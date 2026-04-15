@@ -66,15 +66,17 @@
   --transition-medium: 0.3s ease;
   --transition-slow: 0.4s ease;
 
-  /* Border radius — matches desktop app (6px universal) */
-  --radius: 6px;
-  --radius-sm: 6px;
-  --radius-md: 6px;
-  --radius-lg: 6px;
-  --radius-xl: 6px;
-  --radius-xxl: 6px;
+  /* Border radius — soft, refracted edges */
+  --radius: 1rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-xxl: 2rem;
   --radius-round: 50%;
-  --radius-full: 6px;
+  --radius-full: 9999px;
+  --radius-btn: 9999px;
+  --radius-card: 3rem;
 }
 
 /* === Base Styles === */
@@ -90,9 +92,8 @@ html, body {
 body {
   margin: 0;
   font-family: var(--font-body);
-  /* Tonal gradient: Ice (top) to Settled Juice (bottom) */
-  background: linear-gradient(to bottom, #FFFFFF 0%, #FFFFFF 30%, #FFF9C4 100%);
-  background-attachment: fixed;
+  /* Tonal gradient: matches reference (1804px body, 30%=541px, 100%=1804px) */
+  background: linear-gradient(to bottom, #FFFFFF 0px, #FFFFFF 541px, #FFF9C4 1804px, #FFF9C4 100%);
   color: var(--text-primary);
   min-height: 100vh;
   display: flex;
@@ -444,7 +445,7 @@ body.install-options {
   font-size: 1rem;
   font-weight: 600;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-btn);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   text-decoration: none;
@@ -526,7 +527,7 @@ body.install-options {
   font-weight: 700;
   font-size: 1.18rem;
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius);
   padding: 1.1em 2.5em 0.9em 2.5em;
   margin: 0.2em 0.2em 0.2em 0;
   text-decoration: none !important;
@@ -3927,7 +3928,21 @@ body.install-options {
    HOMEPAGE v6 — tighter layout + stronger section hierarchy
    ============================================================= */
 
+/* Page-level spacing scale (perfect fourth, 1.333 ratio)
+   --page-space-sm  = base           ≈ 1.5rem
+   --page-space-md  = base × 1.333   ≈ 2rem
+   --page-space-lg  = base × 1.333²  ≈ 2.66rem
+   --page-space-xl  = base × 1.333³  ≈ 3.55rem
+   --page-space-xxl = base × 1.333⁴  ≈ 4.73rem */
 .hp-main {
+  --page-space-base: 2rem;
+  --page-scale: 1.333;
+  --page-space-sm: var(--page-space-base);
+  --page-space-md: calc(var(--page-space-base) * var(--page-scale));
+  --page-space-lg: calc(var(--page-space-base) * var(--page-scale) * var(--page-scale));
+  --page-space-xl: calc(var(--page-space-base) * var(--page-scale) * var(--page-scale) * var(--page-scale));
+  --page-space-xxl: calc(var(--page-space-base) * var(--page-scale) * var(--page-scale) * var(--page-scale) * var(--page-scale));
+
   max-width: none;
   padding-top: 0;
 }
@@ -3951,7 +3966,7 @@ body.install-options {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: calc(var(--hero-section-gap) * 2.5) 1.5rem calc(var(--hero-section-gap) * 3);
+  padding: var(--page-space-xl) 1.5rem var(--page-space-xl);
   min-height: auto;
   position: relative;
 }
@@ -4052,7 +4067,7 @@ body.install-options {
   background: rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-card);
   padding: 1.4rem;
   height: 290px;
   position: relative;
@@ -4315,7 +4330,7 @@ body.install-options {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 4.5rem 1.8rem;
+  padding: var(--page-space-xxl) 1.8rem;
   text-align: center;
   position: relative;
 }
@@ -4345,7 +4360,8 @@ body.install-options {
 
 .hp-section-heading {
   font-family: var(--font-display);
-  font-size: clamp(1.65rem, 3.2vw, 2.5rem);
+  /* One perfect fourth step below hero headline (hero = base × 1.333³, section = base × 1.333²) */
+  font-size: clamp(1.35rem, 2.4vw, 2.1rem);
   font-weight: 800;
   color: var(--text-primary);
   margin: 0 0 0.9rem;
@@ -4362,160 +4378,177 @@ body.install-options {
   line-height: 1.65;
 }
 
-/* --- Open source section --- */
-.hp-open-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: 1.2rem;
-  align-items: start;
-  text-align: left;
-}
-
-@media (min-width: 1000px) {
-  .hp-open-layout {
-    align-items: stretch;
-  }
-
-  .hp-open-story,
-  .hp-open-stack {
-    height: 100%;
-  }
-}
-
-.hp-open-story,
-.hp-open-stack {
-  background: var(--surface-container-lowest);
-  border: none;
-  border-radius: var(--radius-xl);
-  padding: 1.6rem;
-  box-shadow: var(--shadow-ambient);
-}
-
-.hp-open-story {
-  display: flex;
-  flex-direction: column;
-}
-
-.hp-open-story h3,
-.hp-open-stack h3 {
-  font-family: var(--font-display);
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-
-.hp-community-cta {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.62rem;
-  margin-top: 1.5rem;
-  margin-left: 10px;
-  justify-items: start;
-}
-
-.hp-community-btn {
-  display: flex;
-  align-items: stretch;
-  text-decoration: none;
-  border-radius: var(--radius-lg);
-  padding: 0;
-  border: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  overflow: hidden;
-  min-height: 72px;
+/* --- Engine logo strip --- */
+.hp-engines-strip {
   width: 100%;
-  max-width: 270px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 1.8rem 0;
+  display: flex;
+  align-items: center;
+  gap: var(--page-space-md);
 }
 
-.hp-community-btn:hover {
-  transform: translateY(-2px);
+.hp-engines-label {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.hp-community-btn-icon-col {
-  width: 3rem;
+.hp-engines-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  flex: 1;
+}
+
+.hp-engine-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.06);
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+  opacity: 0.45;
 }
 
-.hp-community-btn-text {
+.hp-engine-logo:hover {
+  opacity: 0.85;
+}
+
+.hp-engine-logo img {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+  filter: grayscale(1);
+  transition: filter 0.2s ease;
+}
+
+.hp-engine-logo:hover img {
+  filter: grayscale(0);
+}
+
+/* --- Value proposition cards --- */
+.hp-value-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  text-align: left;
+}
+
+.hp-value-card {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-card);
+  padding: 2rem;
+  min-height: 320px;
+  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+}
+
+.hp-value-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 64px rgba(45, 47, 47, 0.08);
+}
+
+.hp-value-card-body {
+  flex: 1;
+}
+
+.hp-value-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-round);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 1);
+  display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 0.62rem 0.9rem 0.58rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.hp-community-btn-icon {
-  display: inline-flex;
-  width: 1.55rem;
-  height: 1.55rem;
-  opacity: 0.95;
+.hp-value-icon .material-symbols-outlined {
+  font-size: 1.4rem;
+  color: var(--accent-gold);
 }
 
-.hp-community-btn-icon img,
-.hp-community-btn-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: contain;
-  fill: currentColor;
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-.hp-community-btn-label {
+.hp-value-link {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   font-family: var(--font-display);
-  font-size: 1.08rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  line-height: 1.16;
+  color: var(--accent-gold);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: 1.5rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.hp-community-btn-sub {
-  margin-top: 0.2rem;
-  font-size: 0.92rem;
-  line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+.hp-value-card:hover .hp-value-link {
+  opacity: 1;
 }
 
-.hp-community-btn-github {
-  background: #181818;
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.17);
+.hp-value-card h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem;
 }
 
-.hp-community-btn-github .hp-community-btn-sub {
-  color: rgba(255, 255, 255, 0.72);
+.hp-value-card p {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
 }
 
-.hp-community-btn-github .hp-community-btn-icon-col {
-  background: rgba(255, 255, 255, 0.07);
+.hp-value-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
-.hp-community-btn-discord {
-  background: linear-gradient(145deg, #6677f9, #5865f2);
-  color: #fff;
-  box-shadow: 0 8px 16px rgba(88, 101, 242, 0.24);
+.hp-value-list li {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  padding-left: 1.1em;
+  position: relative;
 }
 
-.hp-community-btn-discord .hp-community-btn-sub {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.hp-community-btn-discord .hp-community-btn-icon-col {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.hp-community-btn-github:hover {
-  border-color: rgba(255, 224, 102, 0.36);
-  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.2);
-}
-
-.hp-community-btn-discord:hover {
-  box-shadow: 0 12px 22px rgba(88, 101, 242, 0.3);
+.hp-value-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 0.45em;
+  height: 0.45em;
+  background: var(--primary-yellow);
+  border-radius: var(--radius-round);
 }
 
 .hp-logo-grid {
@@ -4702,7 +4735,7 @@ body.install-options {
 .hp-tech-card {
   background: var(--surface-container-lowest);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-card);
   padding: 1.2rem;
   box-shadow: var(--shadow-light);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -5004,7 +5037,7 @@ body.install-options {
     grid-template-columns: 1fr;
     justify-items: center;
     gap: var(--hero-section-gap);
-    padding: var(--hero-section-gap) 1rem calc(var(--hero-section-gap) * 1.5);
+    padding: var(--page-space-xl) 1rem var(--page-space-lg);
     text-align: center;
   }
 
@@ -5032,26 +5065,18 @@ body.install-options {
     margin: 0 auto;
   }
 
-  .hp-open-layout {
-    grid-template-columns: 1fr;
+  .hp-engines-strip {
+    flex-wrap: wrap;
   }
 
-  .hp-open-story {
-    width: 100%;
-    max-width: 440px;
-    justify-self: center;
+  .hp-engines-row {
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    justify-content: flex-start;
   }
 
-  .hp-open-story h3 {
-    text-align: center;
-  }
-
-  .hp-community-cta {
-    margin-left: 0;
-    justify-items: center;
-  }
-
-  .hp-tech-grid {
+  .hp-tech-grid,
+  .hp-value-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -5156,7 +5181,8 @@ body.install-options {
 }
 
 @media (max-width: 480px) {
-  .hp-tech-grid {
+  .hp-tech-grid,
+  .hp-value-grid {
     grid-template-columns: 1fr;
   }
 
@@ -5170,8 +5196,6 @@ body.install-options {
   }
 
   .hp-demo-panel,
-  .hp-open-story,
-  .hp-open-stack,
   .hp-tech-card,
   .hp-api-modality,
   .hp-api-sample-panel,

@@ -45,21 +45,21 @@ We do not use structural lines. We use physics.
     * *Level 2:* `surface_container_lowest` (The "Ice" layer/Active Cards).
 - **Ambient Shadows:** Shadows must mimic light passing through liquid. Use the `on_surface` color at 5% opacity with a `48px` blur and `12px` Y-offset. Never use pure black shadows.
 - **Ghost Borders:** For essential accessibility on white-on-white elements, use `outline_variant` at 15% opacity. It should be felt, not seen.
-- **Roundedness:** Use `6px` as the universal corner radius for all interactive elements (buttons, chips, badges, inputs) and containers (cards, panels). This matches the desktop app's consistent `6px` radius. Use `50%` only for circular avatars/indicators and `9999px` sparingly if a fully-round pill shape is explicitly required.
+- **Roundedness:** Use the `lg` (2rem) and `xl` (3rem) tokens for containers to mimic the soft, refracted edges of ice cubes and glassware. Use `DEFAULT` (1rem) for buttons and interactive elements.
 
 ---
 
 ## 5. Components
 
 ### Buttons
-- **Primary:** `primary_container` (#FCD846) background with `on_primary_container` (#5C4B00) text. Shape: `6px` radius (matching the universal corner radius).
+- **Primary:** `primary_container` (#FCD846) background with `on_primary_container` (#5C4B00) text. Shape: `DEFAULT` (1rem) radius.
 - **Secondary (Glass):** Semi-transparent white with `20px` backdrop blur and a `ghost border`.
 - **Tertiary:** `tertiary` (#3C6531) text only, used for "Organic" actions.
 
 ### Cards & 4-Column Blocks
 - **The Layout:** Content must align to a 4-column structure.
 - **Separation:** Forbid divider lines. Use `md` (1.5rem) spacing or a shift from `surface_container_low` to `surface_container_high`.
-- **Styling:** Cards should use `6px` roundedness (the universal radius) and a soft ambient shadow to appear as if floating in the "juice."
+- **Styling:** Cards should use `DEFAULT` (1rem) roundedness and a soft ambient shadow to appear as if floating in the "juice."
 
 ### Input Fields
 - **Surface:** `surface_container_lowest` with a 10% `outline` token.
