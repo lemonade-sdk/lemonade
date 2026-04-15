@@ -10,6 +10,7 @@
 #include <iostream>
 #include <filesystem>
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <cstdlib>
 #include <set>
 #include <sstream>
@@ -113,7 +114,6 @@ static bool is_flag_token(const std::string& value) {
 
 static bool has_speculative_decoding_enabled(const std::vector<std::string>& tokens) {
     bool has_model_draft = false;
-    bool has_spec_params = false;
     std::string spec_type = "none";
 
     for (size_t i = 0; i < tokens.size(); ++i) {
@@ -121,17 +121,6 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
 
         if (token == "--model-draft" || token.rfind("--model-draft=", 0) == 0) {
             has_model_draft = true;
-        }
-
-        if (token == "--draft-max" || token.rfind("--draft-max=", 0) == 0 ||
-            token == "--draft-min" || token.rfind("--draft-min=", 0) == 0 ||
-            token == "--draft-p-min" || token.rfind("--draft-p-min=", 0) == 0 ||
-            token == "--ctx-size-draft" || token.rfind("--ctx-size-draft=", 0) == 0 ||
-            token == "--device-draft" || token.rfind("--device-draft=", 0) == 0 ||
-            token == "--spec-ngram-size-n" || token.rfind("--spec-ngram-size-n=", 0) == 0 ||
-            token == "--spec-ngram-size-m" || token.rfind("--spec-ngram-size-m=", 0) == 0 ||
-            token == "--spec-ngram-min-hits" || token.rfind("--spec-ngram-min-hits=", 0) == 0) {
-            has_spec_params = true;
         }
 
         if (token == "--spec-type") {
@@ -143,7 +132,15 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
         }
     }
 
-    return has_model_draft || has_spec_params || (!spec_type.empty() && spec_type != "none");
+    return has_model_draft || (!spec_type.empty() && spec_type != "none");
+}
+
+static void strip_redundant_no_mmproj_tokens(std::vector<std::string>& tokens) {
+    tokens.erase(
+        std::remove_if(tokens.begin(), tokens.end(), [](const std::string& token) {
+            return token == "--no-mmproj" || token.rfind("--no-mmproj=", 0) == 0;
+        }),
+        tokens.end());
 }
 
 static void validate_model_draft_value_or_throw(const std::string& draft_value) {
@@ -346,6 +343,12 @@ void LlamaCppServer::load(const std::string& model_name,
     llamacpp_args = resolve_draft_checkpoint_in_args(llamacpp_args, model_manager_);
     std::vector<std::string> custom_tokens = parse_custom_args(llamacpp_args);
     bool speculative_enabled = has_speculative_decoding_enabled(custom_tokens);
+    if (speculative_enabled) {
+        // We enforce --no-mmproj ourselves; strip redundant custom copies to
+        // avoid reserved-argument validation failures.
+        strip_redundant_no_mmproj_tokens(custom_tokens);
+    }
+    std::string normalized_llamacpp_args = join_custom_args(custom_tokens);
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
@@ -416,22 +419,22 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (llamacpp_backend == "vulkan" || llamacpp_backend == "rocm") {
-        push_overridable_arg(args, llamacpp_args, "--context-shift");
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
+        push_overridable_arg(args, normalized_llamacpp_args, "--context-shift");
+        push_overridable_arg(args, normalized_llamacpp_args, "--keep", "16");
     } else {
         // For Metal, just use keep without context-shift
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
+        push_overridable_arg(args, normalized_llamacpp_args, "--keep", "16");
     }
 
     // Use legacy reasoning formatting
-    push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
+    push_overridable_arg(args, normalized_llamacpp_args, "--reasoning-format", "auto");
 
     // Disable llamacpp webui by default
-    push_overridable_arg(args, llamacpp_args, "--no-webui");
+    push_overridable_arg(args, normalized_llamacpp_args, "--no-webui");
 
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, llamacpp_args, "--no-mmap");
+        push_overridable_arg(args, normalized_llamacpp_args, "--no-mmap");
     }
 
     // Add embeddings support if the model supports it
@@ -454,15 +457,15 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
-    if (!llamacpp_args.empty()) {
-        std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
+    if (!normalized_llamacpp_args.empty()) {
+        std::string validation_error = validate_custom_args(normalized_llamacpp_args, reserved_flags);
         if (!validation_error.empty()) {
             throw std::invalid_argument(
                 "Invalid custom llama-server arguments:\n" + validation_error
             );
         }
 
-        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << normalized_llamacpp_args << std::endl;
         args.insert(args.end(), custom_tokens.begin(), custom_tokens.end());
     }
 

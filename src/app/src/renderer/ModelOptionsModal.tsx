@@ -80,6 +80,10 @@ const SPEC_VALUE_FLAGS = new Set([
   '--device-draft',
 ]);
 
+const MANAGED_SPEC_FLAGS = new Set([
+  '--no-mmproj',
+]);
+
 const SPEC_TYPES: Array<{ value: SpecType; label: string }> = [
   { value: 'none', label: 'None' },
   { value: 'draft', label: 'Draft Model' },
@@ -190,11 +194,17 @@ const parseSpecFromArgs = (llamacppArgs: string): { state: SpecState; nonSpecTok
   const tokens = tokenizeArgs(llamacppArgs);
   const state: SpecState = { ...SPEC_DEFAULTS };
   const nonSpecTokens: string[] = [];
+  let sawDraftModel = false;
 
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
     const eqPos = token.indexOf('=');
     const flag = eqPos >= 0 ? token.slice(0, eqPos) : token;
+
+    if (MANAGED_SPEC_FLAGS.has(flag)) {
+      // Managed runtime flags are never user-facing options in this modal.
+      continue;
+    }
 
     if (!SPEC_VALUE_FLAGS.has(flag)) {
       nonSpecTokens.push(token);
@@ -221,6 +231,7 @@ const parseSpecFromArgs = (llamacppArgs: string): { state: SpecState; nonSpecTok
         break;
       case '--model-draft':
         state.draftModelCheckpoint = value;
+        sawDraftModel = value.trim().length > 0;
         break;
       case '--spec-ngram-size-n':
         state.specNgramSizeN = toIntOrDefault(value, state.specNgramSizeN);
@@ -245,19 +256,29 @@ const parseSpecFromArgs = (llamacppArgs: string): { state: SpecState; nonSpecTok
     }
   }
 
+  // Draft mode may omit --spec-type by design, so infer it from --model-draft.
+  if (sawDraftModel && state.type === 'none') {
+    state.type = 'draft';
+  }
+
   return { state, nonSpecTokens };
 };
 
 const serializeSpecToArgs = (state: SpecState, nonSpecTokens: string[]): string => {
   const tokens = [...nonSpecTokens];
+  const draftCheckpoint = state.draftModelCheckpoint.trim();
 
   if (state.type !== 'none') {
-    tokens.push('--spec-type', state.type);
+    // Keep --spec-type draft only as a temporary UI state marker when no draft
+    // checkpoint is selected yet. Once --model-draft is present, omit --spec-type.
+    if (state.type !== 'draft' || !draftCheckpoint) {
+      tokens.push('--spec-type', state.type);
+    }
     tokens.push('--draft-max', String(Math.max(0, Math.trunc(state.draftMax))));
     tokens.push('--draft-min', String(Math.max(0, Math.trunc(state.draftMin))));
 
-    if (state.type === 'draft' && state.draftModelCheckpoint.trim()) {
-      tokens.push('--model-draft', state.draftModelCheckpoint.trim());
+    if (state.type === 'draft' && draftCheckpoint) {
+      tokens.push('--model-draft', draftCheckpoint);
     }
 
     if (state.type === 'ngram-simple' || state.type === 'ngram-mod') {
@@ -408,6 +429,27 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
     const currentArgs = (options as any).llamacppArgs?.value ?? '';
     const parsed = parseSpecFromArgs(currentArgs);
+    const normalizedArgs = serializeSpecToArgs(parsed.state, parsed.nonSpecTokens);
+
+    if (normalizedArgs !== currentArgs) {
+      setOptions((prev) => {
+        if (!prev || prev.recipe !== 'llamacpp') return prev;
+
+        const previousArgs = (prev as any).llamacppArgs?.value ?? '';
+        if (previousArgs === normalizedArgs) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          llamacppArgs: {
+            value: normalizedArgs,
+            useDefault: false,
+          },
+        } as RecipeOptions;
+      });
+    }
+
     setSpecState(parsed.state);
     setSpecNonTokens(parsed.nonSpecTokens);
 
@@ -585,6 +627,10 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   };
 
   const updateSpecField = <K extends keyof SpecState>(key: K, value: SpecState[K]) => {
+    if (key === 'type' && value === 'none') {
+      applySpecState({ ...SPEC_DEFAULTS, type: 'none' }, 'custom');
+      return;
+    }
     applySpecState({ ...specState, [key]: value }, 'custom');
   };
 
