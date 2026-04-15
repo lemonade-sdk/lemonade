@@ -67,7 +67,7 @@ static void push_arg(std::vector<std::string>& args,
 
 // Helper to add a flag-only overridable argument (e.g., --context-shift)
 static void push_overridable_arg(std::vector<std::string>& args,
-                    const std::string& custom_args,
+                    const std::vector<std::string>& custom_tokens,
                     const std::string& key) {
     // boolean flags in llama-server can be turned off adding the --no- prefix to their name
     std::string anti_key;
@@ -77,17 +77,34 @@ static void push_overridable_arg(std::vector<std::string>& args,
         anti_key = "--no-" + key.substr(2); //remove -- prefix
     }
 
-    if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
+    auto has_flag = [&](const std::string& flag) {
+        for (const auto& token : custom_tokens) {
+            if (token == flag || token.rfind(flag + "=", 0) == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (!has_flag(key) && !has_flag(anti_key)) {
         args.push_back(key);
     }
 }
 
 // Helper to add a flag-value overridable pair (e.g., --keep 16)
 static void push_overridable_arg(std::vector<std::string>& args,
-                    const std::string& custom_args,
+                    const std::vector<std::string>& custom_tokens,
                     const std::string& key,
                     const std::string& value) {
-    if (custom_args.find(key) == std::string::npos) {
+    bool has_flag = false;
+    for (const auto& token : custom_tokens) {
+        if (token == key || token.rfind(key + "=", 0) == 0) {
+            has_flag = true;
+            break;
+        }
+    }
+
+    if (!has_flag) {
         args.push_back(key);
         args.push_back(value);
     }
@@ -187,7 +204,7 @@ static std::string join_custom_args(const std::vector<std::string>& tokens) {
     return oss.str();
 }
 
-static std::string resolve_draft_checkpoint_in_args(const std::string& custom_args,
+static std::string resolve_draft_model_path_in_args(const std::string& custom_args,
                                                     ModelManager* model_manager) {
     if (custom_args.empty() || model_manager == nullptr) {
         return custom_args;
@@ -219,11 +236,9 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
             continue;
         }
 
-        // The local draft model path must be a GGUF file path. Any non-GGUF value
-        // is interpreted as a model identifier (checkpoint/model name) and resolved.
+        // Local draft model path
         if (ends_with_ignore_case(draft_value, ".gguf")) {
-            fs::path draft_path = path_from_utf8(draft_value);
-            if (!fs::exists(draft_path)) {
+            if (!is_existing_gguf_file(draft_value)) {
                 throw std::runtime_error(
                     "Invalid --model-draft value '" + draft_value +
                     "': .gguf local file does not exist."
@@ -232,35 +247,27 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
             continue;
         }
 
-        std::string resolved_draft = model_manager->resolve_checkpoint_path("llamacpp", draft_value, "main");
-
-        // First, treat non-GGUF input as a checkpoint string. If resolution yields
-        // a non-GGUF path (e.g., a cache directory), continue to model-name fallback.
-        if (!is_existing_gguf_file(resolved_draft)) {
-            resolved_draft.clear();
-        }
-
-        // If checkpoint resolution fails, treat it as a model name.
-        if (resolved_draft.empty()) {
-            if (model_manager->model_exists(draft_value)) {
-                auto draft_info = model_manager->get_model_info(draft_value);
-                if (draft_info.recipe != "llamacpp") {
-                    throw std::runtime_error(
-                        "Invalid --model-draft model '" + draft_value +
-                        "': only llamacpp models are valid draft models."
-                    );
-                }
-                resolved_draft = draft_info.resolved_path();
-                if (!is_existing_gguf_file(resolved_draft)) {
-                    resolved_draft.clear();
-                }
-            }
-        }
-
-        if (resolved_draft.empty()) {
+        // Otherwise treat non-.gguf value as a model id.
+        if (!model_manager->model_exists(draft_value)) {
             throw std::runtime_error(
-                "Unable to resolve --model-draft value '" + draft_value +
-                "' to a local GGUF file. Provide a local .gguf path, a downloaded checkpoint, or a downloaded llamacpp model name."
+                "Invalid --model-draft model '" + draft_value +
+                "': model not found. Provide a downloaded llamacpp model id or a local .gguf path."
+            );
+        }
+
+        auto draft_info = model_manager->get_model_info(draft_value);
+        if (draft_info.recipe != "llamacpp") {
+            throw std::runtime_error(
+                "Invalid --model-draft model '" + draft_value +
+                "': only llamacpp models are valid draft models."
+            );
+        }
+
+        std::string resolved_draft = draft_info.resolved_path();
+        if (!is_existing_gguf_file(resolved_draft)) {
+            throw std::runtime_error(
+                "Invalid --model-draft model '" + draft_value +
+                "': model is not downloaded or GGUF file is unavailable locally."
             );
         }
 
@@ -348,8 +355,8 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
-    // Convert draft checkpoint references into concrete local GGUF paths.
-    llamacpp_args = resolve_draft_checkpoint_in_args(llamacpp_args, model_manager_);
+    // Convert --model-draft model ids into concrete local GGUF paths.
+    llamacpp_args = resolve_draft_model_path_in_args(llamacpp_args, model_manager_);
     std::vector<std::string> custom_tokens = parse_custom_args(llamacpp_args);
     bool speculative_enabled = has_speculative_decoding_enabled(custom_tokens);
     if (speculative_enabled) {
@@ -428,22 +435,22 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (llamacpp_backend == "vulkan" || llamacpp_backend == "rocm") {
-        push_overridable_arg(args, normalized_llamacpp_args, "--context-shift");
-        push_overridable_arg(args, normalized_llamacpp_args, "--keep", "16");
+        push_overridable_arg(args, custom_tokens, "--context-shift");
+        push_overridable_arg(args, custom_tokens, "--keep", "16");
     } else {
         // For Metal, just use keep without context-shift
-        push_overridable_arg(args, normalized_llamacpp_args, "--keep", "16");
+        push_overridable_arg(args, custom_tokens, "--keep", "16");
     }
 
     // Use legacy reasoning formatting
-    push_overridable_arg(args, normalized_llamacpp_args, "--reasoning-format", "auto");
+    push_overridable_arg(args, custom_tokens, "--reasoning-format", "auto");
 
     // Disable llamacpp webui by default
-    push_overridable_arg(args, normalized_llamacpp_args, "--no-webui");
+    push_overridable_arg(args, custom_tokens, "--no-webui");
 
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, normalized_llamacpp_args, "--no-mmap");
+        push_overridable_arg(args, custom_tokens, "--no-mmap");
     }
 
     // Add embeddings support if the model supports it

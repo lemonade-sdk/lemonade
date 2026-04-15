@@ -145,12 +145,6 @@ public:
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
-    // Resolve an arbitrary checkpoint string to a local path using recipe-specific logic.
-    // Returns an empty string when resolution fails.
-    std::string resolve_checkpoint_path(const std::string& recipe,
-                                        const std::string& checkpoint,
-                                        const std::string& type = "main") const;
-
     // Set extra models directory for GGUF discovery
     void set_extra_models_dir(const std::string& dir);
 
