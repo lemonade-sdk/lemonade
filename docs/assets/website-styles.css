@@ -66,14 +66,15 @@
   --transition-medium: 0.3s ease;
   --transition-slow: 0.4s ease;
 
-  /* Border radius — soft, refracted edges */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 1rem;
-  --radius-xl: 2rem;
-  --radius-xxl: 3rem;
+  /* Border radius — matches desktop app (6px universal) */
+  --radius: 6px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-xxl: 6px;
   --radius-round: 50%;
-  --radius-full: 9999px;
+  --radius-full: 6px;
 }
 
 /* === Base Styles === */
@@ -212,35 +213,31 @@ body.install-options {
   justify-self: end;
 }
 
-.navbar-github-btn {
+.navbar-install-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.35em;
   font-family: var(--font-display);
   font-size: var(--nav-action);
-  font-weight: 600;
-  color: #52525b;
-  background: none;
+  font-weight: 700;
+  color: var(--accent-gold);
+  background: var(--primary-yellow);
   border: none;
-  box-shadow: none;
-  padding: 0;
+  box-shadow: 0 4px 16px rgba(252, 216, 70, 0.25);
+  padding: 0.25em 1em;
+  border-radius: var(--radius-full);
   text-decoration: none;
-  transition: color 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   letter-spacing: -0.01em;
 }
 
-.navbar-github-btn:hover {
-  color: #18181b;
+.navbar-install-btn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 24px rgba(252, 216, 70, 0.35);
+  color: var(--accent-gold);
 }
 
-.navbar-github-btn:active {
-  opacity: 0.8;
-}
-
-.navbar-github-icon {
-  width: 1.1em;
-  height: 1.1em;
-  flex-shrink: 0;
+.navbar-install-btn:active {
+  transform: scale(0.97);
 }
 
 .navbar-back {
@@ -1251,7 +1248,7 @@ body.install-options {
   background: #007acc;
   color: white;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   font-size: 12px;
   margin-right: 8px;
   margin-bottom: 4px;
@@ -1303,7 +1300,7 @@ body.install-options {
   transform: translateY(-50%);
   background: var(--primary-yellow);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius);
   color: var(--text-primary);
   font-size: 0.9rem;
   padding: 0.3em 0.6em;
@@ -1409,7 +1406,7 @@ body.install-options {
 }
 
 .lmn-badges img {
-  border-radius: 6px;
+  border-radius: var(--radius);
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   transition: transform 0.2s ease;
 }
@@ -1422,7 +1419,7 @@ body.install-options {
 .lmn-command pre {
   background: var(--text-primary);
   color: var(--bg-white);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0.8em 4.5em 0.8em var(--spacing-md);
   font-size: 1.08rem;
   margin: 0.5em 0 0 0;
@@ -1436,7 +1433,7 @@ body.install-options {
 }
 
 .lmn-download-section {
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 0.5em 0 1em 0;
   margin-bottom: 0.8em;
   text-align: center;
@@ -1450,7 +1447,7 @@ body.install-options {
   display: inline-block;
   padding: 1em 2em;
   background: linear-gradient(135deg, #ffe066 0%, #ffd43b 100%);
-  border-radius: 10px;
+  border-radius: var(--radius);
   transition: all 0.2s ease;
   border: 1px solid rgba(230, 184, 0, 0.3);
   box-shadow: 0 4px 16px rgba(255, 224, 102, 0.4);
@@ -1513,7 +1510,7 @@ body.install-options {
   transform: translateY(-50%);
   background: var(--primary-yellow);
   border: none;
-  border-radius: 0.7em;
+  border-radius: var(--radius);
   color: var(--text-primary);
   font-size: 1.02rem;
   padding: 0.2em 0.8em;
@@ -1606,7 +1603,7 @@ body.install-options {
   right: 0;
   bottom: -0.26rem;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: currentColor;
   opacity: 0;
   transform: scaleX(0.35);
@@ -2010,7 +2007,7 @@ body.install-options {
   bottom: 12px;
   right: 12px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   font-size: 0.8rem;
   font-weight: 500;
   color: white;
@@ -2159,7 +2156,7 @@ body.install-options {
 /* Unified content container */
 .lmn-content-section {
   background: #fff;
-  border-radius: 18px;
+  border-radius: var(--radius);
   padding: 1.5em;
   margin-top: 1.2em;
   box-shadow: 0 4px 24px #ffe06633;
@@ -2222,7 +2219,7 @@ body.install-options {
 }
 
 .lmn-badges img {
-  border-radius: 6px;
+  border-radius: var(--radius);
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   transition: transform 0.2s ease;
 }
@@ -2235,7 +2232,7 @@ body.install-options {
 .lmn-command pre {
   background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
   color: #fff;
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 1em 4.5em 1em 1.2em;
   font-size: 1.06rem;
   margin: 0;
@@ -2247,7 +2244,7 @@ body.install-options {
 }
 
 .lmn-download-section {
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 0.5em 0 1em 0;
   margin-bottom: 0.8em;
   text-align: center;
@@ -2261,7 +2258,7 @@ body.install-options {
   display: inline-block;
   padding: 1em 2em;
   background: linear-gradient(135deg, #ffe066 0%, #ffd43b 100%);
-  border-radius: 10px;
+  border-radius: var(--radius);
   transition: all 0.2s ease;
   border: 1px solid rgba(230, 184, 0, 0.3);
   box-shadow: 0 4px 16px rgba(255, 224, 102, 0.4);
@@ -2316,7 +2313,7 @@ body.install-options {
   font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', monospace;
   background: #f5f5f5;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   font-size: 0.95em;
 }
 
@@ -2331,7 +2328,7 @@ body.install-options {
   color: #666;
   padding: 2em 1em;
   background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid #ddd;
 }
 
@@ -2374,7 +2371,7 @@ body.install-options {
   transform: translateY(-50%);
   background: #ffe066;
   border: none;
-  border-radius: 0.7em;
+  border-radius: var(--radius);
   color: #222;
   font-size: 1.02rem;
   padding: 0.2em 0.8em;
@@ -3192,7 +3189,7 @@ body.install-options {
 .blog-article .hero-section {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.58));
   border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 24px;
+  border-radius: var(--radius);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
   padding: 3rem 2rem 2.4rem;
   margin-bottom: 1.5rem;
@@ -3213,7 +3210,7 @@ body.install-options {
   color: var(--accent-gold-dark);
   background: rgba(255, 224, 102, 0.2);
   padding: 0.36rem 0.95rem;
-  border-radius: 100px;
+  border-radius: var(--radius);
   margin-bottom: 1rem;
 }
 
@@ -3251,7 +3248,7 @@ body.install-options {
   color: #4b4b4b;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 0.38rem 0.8rem;
 }
 
@@ -3280,7 +3277,7 @@ body.install-options {
 .section-card {
   background: rgba(255, 255, 255, 0.48);
   border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 20px;
+  border-radius: var(--radius);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.025);
   padding: 1.8rem;
   margin: 1.35rem 0;
@@ -3400,7 +3397,7 @@ body.install-options {
   gap: 0.25rem;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: rgba(255, 255, 255, 0.55);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 0.6rem 0.7rem;
 }
 
@@ -3419,7 +3416,7 @@ body.install-options {
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(230, 184, 0, 0.36);
   border-left: 4px solid var(--accent-gold);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 0.95rem 1rem 0.95rem 0.9rem;
   box-shadow: none;
 }
@@ -3465,7 +3462,7 @@ body.install-options {
   color: var(--accent-gold-dark);
   background: rgba(255, 224, 102, 0.2);
   padding: 0.34rem 0.9rem;
-  border-radius: 100px;
+  border-radius: var(--radius);
 }
 
 .section-title {
@@ -3489,7 +3486,7 @@ body.install-options {
 
 .blog-media {
   margin: 1.2rem 0;
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
@@ -3511,7 +3508,7 @@ body.install-options {
 .feature-item {
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 1rem;
 }
 
@@ -3554,7 +3551,7 @@ body.install-options {
 .model-card-enhanced {
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 16px;
+  border-radius: var(--radius);
   padding: 1.15rem;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.04);
 }
@@ -3575,7 +3572,7 @@ body.install-options {
   text-transform: uppercase;
   color: #675100;
   background: rgba(255, 224, 102, 0.34);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 0.2rem 0.56rem;
 }
 
@@ -3599,7 +3596,7 @@ body.install-options {
   margin-top: 1rem;
   background: linear-gradient(180deg, rgba(255, 224, 102, 0.22), rgba(255, 224, 102, 0.14));
   border: 1px solid rgba(255, 224, 102, 0.48);
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 0.95rem 1rem;
 }
 
@@ -3622,7 +3619,7 @@ body.install-options {
   margin: 0.85rem 0 0.7rem;
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 14px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -3667,7 +3664,7 @@ body.install-options {
 .step-card {
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 0.95rem;
 }
 
@@ -3686,7 +3683,7 @@ body.install-options {
 .enhanced-code-block {
   background: #191a2e;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
+  border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
   padding: 1rem;
   margin: 0.9rem 0;
@@ -3704,7 +3701,7 @@ body.install-options {
   border: 1px solid rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.9);
-  border-radius: 9px;
+  border-radius: var(--radius);
   padding: 0.3rem 0.62rem;
   font-size: 0.74rem;
   font-weight: 650;
@@ -3763,7 +3760,7 @@ body.install-options {
 .cta-section {
   margin-top: 1.2rem;
   background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 58%, var(--primary-yellow-darker) 100%);
-  border-radius: 20px;
+  border-radius: var(--radius);
   padding: 1.8rem;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.3) inset;
 }
@@ -3802,7 +3799,7 @@ body.install-options {
   align-items: center;
   gap: 0.38rem;
   min-height: 54px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: rgba(255, 255, 255, 0.86);
   color: #1f1f1f;
@@ -3833,7 +3830,7 @@ body.install-options {
 
 .cta-note {
   margin-top: 1rem;
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.5);
   padding: 0.75rem 0.9rem;
@@ -3875,7 +3872,7 @@ body.install-options {
 .cta-section-minimal .cta-action-secondary {
   min-width: 240px;
   min-height: 52px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 0.72rem 1.05rem;
   text-decoration: none;
   font-weight: 700;
@@ -3927,7 +3924,7 @@ body.install-options {
   justify-content: center;
   gap: 0.42rem;
   padding: 0.78rem 1.2rem;
-  border-radius: 14px;
+  border-radius: var(--radius);
   font-size: 0.9rem;
   font-weight: 700;
   line-height: 1;
@@ -4622,7 +4619,7 @@ body.install-options {
   transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease, background-color 0.2s ease;
   opacity: 0.94;
   position: relative;
-  border-radius: 10px;
+  border-radius: var(--radius);
   --hp-scale: 1;
   width: 100%;
 }
@@ -4631,7 +4628,7 @@ body.install-options {
   content: "";
   position: absolute;
   inset: 6px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -4866,7 +4863,7 @@ body.install-options {
   -webkit-backdrop-filter: blur(12px);
   color: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
+  border-radius: var(--radius);
   padding: 0.62rem 0.72rem;
   text-align: left;
   cursor: pointer;
@@ -4943,7 +4940,7 @@ body.install-options {
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.9);
-  border-radius: 9px;
+  border-radius: var(--radius);
   line-height: 0;
   padding: 0.46rem;
   cursor: pointer;
@@ -5002,7 +4999,7 @@ body.install-options {
 
 .hp-api-sample-panel pre {
   margin: 0.68rem 0 0;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.08);
   padding: 0.86rem 0.95rem;
   overflow: visible;
@@ -5042,7 +5039,7 @@ body.install-options {
   font-size: 0.62rem;
   font-weight: 700;
   padding: 0.15rem 0.38rem;
-  border-radius: 4px;
+  border-radius: var(--radius);
   letter-spacing: 0.04em;
 }
 
@@ -5323,7 +5320,7 @@ body.install-options {
   .hp-api-modality,
   .hp-api-sample-panel,
   .hp-eco-app {
-    border-radius: 12px;
+    border-radius: var(--radius);
   }
 
   .hp-logo-grid {
