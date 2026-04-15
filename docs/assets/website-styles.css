@@ -2,32 +2,44 @@
 
 /* === CSS Variables === */
 :root {
-  /* Colors */
-  --primary-yellow: #ffe066;
-  --primary-yellow-dark: #ffd43b;
-  --primary-yellow-darker: #ffcc00;
-  --accent-gold: #e6b800;
-  --accent-gold-dark: #bfa100;
+  /* Colors — Crystalline Zest Design System */
+  --primary-yellow: #FCD846;
+  --primary-yellow-dark: #FAF972;
+  --primary-yellow-darker: #f0cc00;
+  --accent-gold: #5C4B00;
+  --accent-gold-dark: #5C4B00;
 
-  --text-primary: #222;
-  --text-secondary: #555;
-  --text-muted: #666;
+  /* Tonal Architecture */
+  --surface: #F6F6F6;
+  --surface-bright: rgba(255, 255, 255, 0.85);
+  --surface-container: #EFEFEF;
+  --surface-container-low: #F3F3F3;
+  --surface-container-lowest: #FFFFFF;
+  --surface-container-high: #E8E8E8;
+  --tertiary: #3C6531;
+  --outline-variant: rgba(45, 47, 47, 0.15);
+
+  --text-primary: #2D2F2F;
+  --text-secondary: #474747;
+  --text-muted: #6b6b6b;
   --text-light: #999;
-  --text-success: #4ca64c;
+  --text-success: #3C6531;
 
-  --bg-primary: #fffbe9;
-  --bg-secondary: #fff8dd;
-  --bg-tertiary: #fff5d1;
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #FAFAF5;
+  --bg-tertiary: #FCD846;
   --bg-white: #fff;
-  --bg-overlay: rgba(255, 251, 233, 0.95);
+  --bg-overlay: rgba(246, 246, 246, 0.72);
 
-  --border-light: #e6e6e6;
-  --border-medium: #ccc;
-  --border-primary: #e6b800;
+  --border-light: rgba(45, 47, 47, 0.08);
+  --border-medium: rgba(45, 47, 47, 0.12);
+  --border-primary: #FCD846;
 
-  --shadow-light: 0 2px 8px rgba(230, 184, 0, 0.3);
-  --shadow-medium: 0 4px 12px rgba(230, 184, 0, 0.4);
-  --shadow-heavy: 0 8px 24px rgba(0, 0, 0, 0.15);
+  /* Ambient Shadows — light through liquid, never pure black */
+  --shadow-light: 0 4px 16px rgba(45, 47, 47, 0.04);
+  --shadow-medium: 0 8px 32px rgba(45, 47, 47, 0.06);
+  --shadow-heavy: 0 12px 48px rgba(45, 47, 47, 0.05);
+  --shadow-ambient: 0 12px 48px rgba(45, 47, 47, 0.05);
 
   /* Spacing */
   --spacing-xs: 0.25rem;
@@ -37,8 +49,10 @@
   --spacing-xl: 2rem;
   --spacing-xxl: 3rem;
 
-  /* Typography */
-  --font-family: 'Inter', 'Segoe UI', 'Arial', sans-serif;
+  /* Typography — Crystalline Zest */
+  --font-display: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
+  --font-body: 'Manrope', 'Segoe UI', sans-serif;
+  --font-family: var(--font-body);
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.85rem;
   --font-size-base: 1rem;
@@ -52,13 +66,14 @@
   --transition-medium: 0.3s ease;
   --transition-slow: 0.4s ease;
 
-  /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 18px;
-  --radius-xxl: 24px;
+  /* Border radius — soft, refracted edges */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 1rem;
+  --radius-xl: 2rem;
+  --radius-xxl: 3rem;
   --radius-round: 50%;
+  --radius-full: 9999px;
 }
 
 /* === Base Styles === */
@@ -73,8 +88,10 @@ html, body {
 
 body {
   margin: 0;
-  font-family: var(--font-family);
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%);
+  font-family: var(--font-body);
+  /* Tonal gradient: Ice (top) to Settled Juice (bottom) */
+  background: linear-gradient(to bottom, #FFFFFF 0%, #FFFFFF 30%, #FFF9C4 100%);
+  background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
   display: flex;
@@ -83,17 +100,7 @@ body {
 }
 
 body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(255, 224, 102, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(255, 212, 59, 0.1) 0%, transparent 50%);
-  pointer-events: none;
-  z-index: -1;
+  display: none;
 }
 
 body.install-options {
@@ -101,31 +108,50 @@ body.install-options {
   justify-content: flex-start;
 }
 
-/* === Navigation === */
+/* === Navigation — Glassmorphism Rule === */
+/* Major third typographic scale (1.25 ratio):
+   links = base, github = base×1.25, brand = base×1.563
+   Icons use em units so they scale with their parent text. */
 .navbar {
-  display: flex;
-  justify-content: space-between;
+  --nav-base: 1.05rem;
+  --nav-scale: 1.25;
+  --nav-link: var(--nav-base);
+  --nav-action: calc(var(--nav-base) * var(--nav-scale));
+  --nav-brand: calc(var(--nav-base) * var(--nav-scale) * var(--nav-scale));
+
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: var(--spacing-md) var(--spacing-xxl) var(--spacing-sm) var(--spacing-md);
-  font-size: 1.25rem;
-  font-weight: 500;
-  background: transparent;
-  letter-spacing: 0.02em;
+  padding: 1rem 3rem;
+  background: rgba(255, 255, 255, 0.70);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   position: relative;
   transition: var(--transition-medium);
+  border-bottom: none;
 }
 
 .navbar-brand {
   display: flex;
   align-items: center;
+  justify-self: start;
 }
 
 .brand-title {
-  font-size: var(--font-size-xl);
-  font-weight: 700;
-  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: var(--nav-brand);
+  font-weight: 900;
+  color: #18181b;
   text-decoration: none;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.04em;
+}
+
+.brand-icon {
+  width: 1.2em;
+  height: 1.2em;
+  object-fit: contain;
+  margin-right: 0.3em;
+  vertical-align: -0.15em;
 }
 
 .navbar-context {
@@ -144,16 +170,15 @@ body.install-options {
 
 .navbar-links {
   display: flex;
-  gap: 2.5rem;
+  gap: 2rem;
   align-items: center;
-  font-size: 1.22rem;
+  justify-self: center;
   line-height: 1.1;
 }
 
 .navbar a {
-  color: #444;
   text-decoration: none;
-  transition: var(--transition-fast);
+  transition: color 0.2s ease;
 }
 
 .navbar-links a,
@@ -164,12 +189,58 @@ body.install-options {
 }
 
 .navbar-links a {
-  font-size: 1.22rem;
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-size: var(--nav-link);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #71717a;
 }
 
-.navbar a:hover {
-  color: var(--accent-gold);
+.navbar-brand .brand-title a {
+  color: #18181b;
+}
+
+.navbar a:hover,
+.navbar-brand .brand-title a:hover {
+  color: #18181b;
+}
+
+/* Navbar right-side actions */
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+}
+
+.navbar-github-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-family: var(--font-display);
+  font-size: var(--nav-action);
+  font-weight: 600;
+  color: #52525b;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  text-decoration: none;
+  transition: color 0.2s ease;
+  letter-spacing: -0.01em;
+}
+
+.navbar-github-btn:hover {
+  color: #18181b;
+}
+
+.navbar-github-btn:active {
+  opacity: 0.8;
+}
+
+.navbar-github-icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex-shrink: 0;
 }
 
 .navbar-back {
@@ -185,15 +256,16 @@ body.install-options {
   color: var(--accent-gold-dark);
 }
 
-/* Breadcrumb */
+/* Breadcrumb — Glassmorphism */
 .breadcrumb {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
-  background: var(--bg-overlay);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(230, 184, 0, 0.2);
+  background: rgba(246, 246, 246, 0.68);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--outline-variant);
   padding: 0.8rem var(--spacing-xl);
   z-index: 200;
   display: flex;
@@ -273,15 +345,15 @@ body.install-options {
   padding-top: 80px;
 }
 
-/* Typography */
+/* Typography — Editorial Authority */
 .main-heading {
-  font-size: clamp(1.75rem, 6vw, 4rem);
-  font-weight: 400;
-  color: #1a1a1a;
-  line-height: 1.1;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 6vw, 3.5rem);
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.08;
   margin: var(--spacing-sm) 0 var(--spacing-xxl) 0;
   letter-spacing: -0.03em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   animation: fadeInUp 0.8s ease-out;
   max-width: 1000px;
   width: 100%;
@@ -300,8 +372,8 @@ body.install-options {
 
 .subtitle {
   font-size: clamp(0.95rem, 2.5vw, var(--font-size-lg));
-  font-weight: 500;
-  font-family: var(--font-family);
+  font-weight: 450;
+  font-family: var(--font-body);
   color: var(--text-secondary);
   margin-bottom: var(--spacing-xl);
   margin-left: auto;
@@ -311,7 +383,6 @@ body.install-options {
   width: 100%;
   line-height: 1.6;
   animation: fadeInUp 0.8s ease-out 0.2s both;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
@@ -420,42 +491,49 @@ body.install-options {
 }
 
 .download-btn {
-  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 50%, var(--primary-yellow-darker) 100%);
-  color: var(--text-primary);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.3) inset;
+  background: var(--primary-yellow);
+  color: var(--accent-gold);
+  box-shadow: var(--shadow-medium);
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
 }
 
 .download-btn:hover, .download-btn:focus {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.4) inset;
+  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
   transform: translateY(-2px) scale(1.02);
 }
 
 .download-btn:active {
-  background: var(--primary-yellow);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f0cc00;
+  box-shadow: var(--shadow-light);
   transform: scale(0.98);
 }
 
 .dev-btn, .marketplace-cta-btn {
-  background: linear-gradient(135deg, var(--bg-white) 0%, #f8f9fa 100%);
-  color: #333;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.6) inset;
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-medium);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
 }
 
 .dev-btn:hover, .dev-btn:focus {
-  background: linear-gradient(135deg, #f8f9fa 0%, var(--bg-white) 100%);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.6) inset;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 36px rgba(45, 47, 47, 0.08);
   transform: translateY(-2px) scale(1.02);
 }
 
 .marketplace-cta-btn:hover, .marketplace-cta-btn:focus {
   transform: none;
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .dev-btn:active {
-  background: #ededed;
-  box-shadow: 0 2px 8px rgba(187, 187, 187, 0.13);
-  border-color: #888;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-light);
   transform: scale(0.98);
 }
 
@@ -470,11 +548,13 @@ body.install-options {
   flex-direction: unset;
   align-items: unset;
   justify-content: unset;
+  border-radius: var(--radius-full);
 }
 
 .download-btn .download-sub, .dev-btn .dev-sub {
+  font-family: var(--font-body);
   font-size: var(--font-size-sm);
-  color: #3d4000;
+  color: inherit;
   font-weight: 400;
   opacity: 0.7;
   margin-top: 0.25em;
@@ -495,16 +575,17 @@ body.install-options {
 
 .lmn-btn {
   display: inline-block;
-  background: linear-gradient(90deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 100%);
-  color: var(--text-primary) !important;
+  background: var(--primary-yellow);
+  color: var(--accent-gold) !important;
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.18rem;
   border: none;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-full);
   padding: 1.1em 2.5em 0.9em 2.5em;
   margin: 0.2em 0.2em 0.2em 0;
   text-decoration: none !important;
-  box-shadow: var(--shadow-light), 0 1.5px 0 var(--bg-primary) inset;
+  box-shadow: var(--shadow-medium);
   transition: var(--transition-fast);
   cursor: pointer;
   outline: none;
@@ -708,11 +789,10 @@ body.install-options {
   max-width: 1100px;
   width: 100%;
   padding: var(--spacing-xl);
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: var(--shadow-heavy);
-  backdrop-filter: blur(8px);
+  background: var(--surface-container-low);
+  border-radius: var(--radius-xl);
+  border: none;
+  box-shadow: var(--shadow-ambient);
   overflow: hidden;
 }
 
@@ -725,20 +805,23 @@ body.install-options {
 }
 
 .feature-box {
-  background: transparent;
-  border-radius: 12px;
+  background: var(--surface-container-lowest);
+  border-radius: var(--radius-lg);
   padding: var(--spacing-md);
   text-align: center;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   transition: var(--transition-medium);
+  box-shadow: var(--shadow-light);
 }
 
 .feature-box:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--surface-container-lowest);
+  box-shadow: var(--shadow-medium);
+  transform: translateY(-2px);
   position: relative;
 }
 
@@ -760,12 +843,13 @@ body.install-options {
 }
 
 .feature-title {
+  font-family: var(--font-display);
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
   margin-bottom: var(--spacing-sm);
   line-height: 1.3;
-  min-height: 2.6em; /* Reserve space for 2 lines */
+  min-height: 2.6em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -812,12 +896,11 @@ body.install-options {
 .release-announcement {
   margin: var(--spacing-xl) auto;
   max-width: 1000px;
-  background: rgba(255, 255, 255, 0.6);
-  border-radius: 20px;
+  background: var(--surface-container-lowest);
+  border-radius: var(--radius-xl);
   padding: 0 var(--spacing-md);
-  box-shadow: var(--shadow-heavy);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-ambient);
+  border: 1px solid var(--outline-variant);
   animation: fadeInUp 0.8s ease-out 0.8s both;
   position: relative;
   overflow: hidden;
@@ -832,8 +915,8 @@ body.install-options {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(45deg, transparent 30%, rgba(255, 224, 102, 0.05) 50%, transparent 70%);
-  border-radius: 20px;
+  background: linear-gradient(180deg, transparent 60%, rgba(252, 216, 70, 0.04) 100%);
+  border-radius: var(--radius-xl);
   pointer-events: none;
 }
 
@@ -866,9 +949,10 @@ body.install-options {
 }
 
 .release-name {
+  font-family: var(--font-display);
   font-size: 1.3rem;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
   margin: 0 0 0.3rem 0;
   line-height: 1.2;
 }
@@ -888,23 +972,24 @@ body.install-options {
   font-size: 0.9rem;
   color: var(--text-secondary);
   margin: 0.4rem 0;
-  padding: 0.3rem 0.8rem;
-  border-left: 3px solid var(--accent-gold);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 0.5rem 0.8rem;
+  background: var(--surface-container-low);
+  border-radius: var(--radius-sm);
+  border: none;
   line-height: 1.3;
 }
 
 .release-link {
-  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 50%, var(--primary-yellow-darker) 100%);
-  color: var(--text-primary);
+  background: var(--primary-yellow);
+  color: var(--accent-gold);
   text-decoration: none;
-  padding: var(--spacing-md) 2rem;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: var(--font-size-base);
   padding: 0.8rem var(--spacing-lg);
   transition: var(--transition-medium);
-  box-shadow: 0 6px 20px rgba(255, 224, 102, 0.4), 0 2px 0 rgba(255, 255, 255, 0.3) inset;
+  box-shadow: var(--shadow-medium);
   align-self: flex-start;
   margin: auto var(--spacing-md) var(--spacing-md) var(--spacing-md);
   display: inline-block;
@@ -919,12 +1004,12 @@ body.install-options {
 
 .release-link:hover {
   transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 8px 25px rgba(255, 224, 102, 0.5), 0 2px 0 rgba(255, 255, 255, 0.4) inset;
+  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
 }
 
 .release-link:active {
-  background: var(--primary-yellow);
-  box-shadow: 0 2px 8px rgba(255, 224, 102, 0.33);
+  background: #f0cc00;
+  box-shadow: var(--shadow-light);
   transform: scale(0.98);
 }
 
@@ -1491,7 +1576,7 @@ body.install-options {
   padding: calc(var(--spacing-xxl) / 8) 0 var(--spacing-lg) 0;
   margin: calc(var(--spacing-xxl) / 8) auto 0 auto;
   background-color: transparent;
-  border-top: 1px solid #f3f4f6;
+  border-top: none;
   position: relative;
   overflow: hidden;
 }
@@ -1511,7 +1596,7 @@ body.install-options {
   justify-content: center;
   gap: 0.9rem 1.15rem;
   padding: 0.1rem 0 0.85rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.09);
+  border-bottom: none;
 }
 
 .footer-rail-link {
@@ -3964,10 +4049,11 @@ body.install-options {
 }
 
 .hp-headline {
-  font-size: clamp(2rem, 4.1vw, 3.25rem);
-  font-weight: 400;
-  color: #171717;
-  line-height: 1.08;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4.1vw, 3.5rem);
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.06;
   margin: 0;
   letter-spacing: -0.035em;
 }
@@ -4015,8 +4101,8 @@ body.install-options {
   top: 0;
   left: 0;
   display: block;
-  color: var(--accent-gold-dark);
-  font-weight: 700;
+  color: #c9a200;
+  font-weight: 800;
   white-space: nowrap;
   text-align: left;
   line-height: var(--hp-carousel-line-height);
@@ -4025,8 +4111,9 @@ body.install-options {
 }
 
 .hp-subtitle {
+  font-family: var(--font-body);
   font-size: clamp(0.95rem, 1.8vw, 1.15rem);
-  color: #474747;
+  color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
   font-weight: 450;
@@ -4064,14 +4151,16 @@ body.install-options {
 .hp-demo-panel {
   width: 100%;
   max-width: 440px;
-  background: #1a1b30;
-  border-radius: 18px;
+  background: rgba(26, 27, 48, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: var(--radius-xl);
   padding: 1.4rem;
   height: 290px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18), 0 4px 10px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -4263,52 +4352,51 @@ body.install-options {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 3.4rem 1.8rem;
+  padding: 4.5rem 1.8rem;
   text-align: center;
   position: relative;
 }
 
+/* No-Line Rule: use spacing, not dividers */
 .hp-section + .hp-section::before {
-  content: '';
-  display: block;
-  width: 72px;
-  height: 1px;
-  background: rgba(0, 0, 0, 0.1);
-  margin: 0 auto;
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  display: none;
 }
 
 .hp-section-label {
+  /* Ice Chip component */
   display: inline-block;
+  font-family: var(--font-display);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--accent-gold-dark);
-  background: rgba(255, 224, 102, 0.2);
-  padding: 0.36rem 0.95rem;
-  border-radius: 100px;
+  color: var(--accent-gold);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.42rem 1.1rem;
+  border-radius: var(--radius-full);
   margin-bottom: 0.95rem;
+  border: 1px solid var(--outline-variant);
 }
 
 .hp-section-heading {
+  font-family: var(--font-display);
   font-size: clamp(1.65rem, 3.2vw, 2.5rem);
-  font-weight: 750;
+  font-weight: 800;
   color: var(--text-primary);
   margin: 0 0 0.9rem;
   letter-spacing: -0.03em;
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 .hp-section-desc {
+  font-family: var(--font-body);
   font-size: clamp(0.96rem, 1.65vw, 1.08rem);
-  color: #505050;
-  margin: 0 auto 2rem;
+  color: var(--text-secondary);
+  margin: 0 auto 2.5rem;
   max-width: 760px;
-  line-height: 1.62;
+  line-height: 1.65;
 }
 
 /* --- Open source section --- */
@@ -4333,11 +4421,11 @@ body.install-options {
 
 .hp-open-story,
 .hp-open-stack {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.56));
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 20px;
-  padding: 1.4rem;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
+  background: var(--surface-container-lowest);
+  border: none;
+  border-radius: var(--radius-xl);
+  padding: 1.6rem;
+  box-shadow: var(--shadow-ambient);
 }
 
 .hp-open-story {
@@ -4347,9 +4435,11 @@ body.install-options {
 
 .hp-open-story h3,
 .hp-open-stack h3 {
+  font-family: var(--font-display);
   margin: 0;
   font-size: 1.15rem;
-  color: #1e1e1e;
+  font-weight: 700;
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
@@ -4366,10 +4456,10 @@ body.install-options {
   display: flex;
   align-items: stretch;
   text-decoration: none;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 0;
-  border: 1px solid transparent;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  border: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   overflow: hidden;
   min-height: 72px;
   width: 100%;
@@ -4413,6 +4503,7 @@ body.install-options {
 }
 
 .hp-community-btn-label {
+  font-family: var(--font-display);
   font-size: 1.08rem;
   font-weight: 700;
   line-height: 1.16;
@@ -4602,10 +4693,10 @@ body.install-options {
   max-width: 700px;
   min-height: 300px;
   animation: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.56));
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 20px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05);
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-ambient);
   backdrop-filter: none;
   padding: 0;
 }
@@ -4643,28 +4734,29 @@ body.install-options {
   justify-content: center;
   gap: 0.45rem;
   padding: 0.78rem 1.2rem;
-  border-radius: 14px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
   font-size: 0.94rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
-  color: var(--text-primary);
+  color: var(--accent-gold);
   text-decoration: none;
-  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 58%, var(--primary-yellow-darker) 100%);
+  background: var(--primary-yellow);
   border: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.3) inset;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  box-shadow: var(--shadow-medium);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .hp-release-section .release-link:hover,
 .hp-release-section .release-link:focus {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.4) inset;
+  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
   transform: translateY(-2px) scale(1.02);
 }
 
 .hp-release-section .release-link:active {
-  background: var(--primary-yellow);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f0cc00;
+  box-shadow: var(--shadow-light);
   transform: scale(0.98);
 }
 
@@ -4677,11 +4769,17 @@ body.install-options {
 }
 
 .hp-tech-card {
-  background: rgba(255, 255, 255, 0.64);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 15px;
-  padding: 1rem;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+  background: var(--surface-container-lowest);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 1.2rem;
+  box-shadow: var(--shadow-light);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hp-tech-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-medium);
 }
 
 .hp-tech-icon {
@@ -4692,17 +4790,20 @@ body.install-options {
 }
 
 .hp-tech-card h3 {
+  font-family: var(--font-display);
   margin: 0 0 0.4rem;
   font-size: 0.95rem;
-  color: #242424;
+  font-weight: 700;
+  color: var(--text-primary);
   line-height: 1.3;
 }
 
 .hp-tech-card p {
+  font-family: var(--font-body);
   margin: 0;
   font-size: 0.83rem;
-  line-height: 1.45;
-  color: #535353;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* --- Unified API section --- */
@@ -4726,9 +4827,11 @@ body.install-options {
 .hp-api-modality {
   appearance: none;
   -webkit-appearance: none;
-  background: linear-gradient(145deg, #191a2e, #1f2036);
+  background: rgba(26, 27, 48, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   padding: 0.62rem 0.72rem;
   text-align: left;
@@ -4779,10 +4882,12 @@ body.install-options {
 }
 
 .hp-api-sample-panel {
-  background: #191a2e;
+  background: rgba(26, 27, 48, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-xl);
   padding: 1.1rem 1.15rem;
   height: auto;
   width: min(var(--hp-api-block-width), 100%);
@@ -4790,6 +4895,7 @@ body.install-options {
   display: flex;
   flex-direction: column;
   align-self: center;
+  box-shadow: var(--shadow-ambient);
 }
 
 .hp-api-sample-head {
@@ -4853,6 +4959,11 @@ body.install-options {
   align-items: center;
   justify-content: center;
   line-height: 1.2;
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
+  background: var(--primary-yellow);
+  color: var(--accent-gold);
+  box-shadow: var(--shadow-medium);
 }
 
 .hp-api-sample-panel pre {
@@ -4920,33 +5031,33 @@ body.install-options {
   align-items: center;
   justify-content: flex-start;
   gap: 0.45rem;
-  padding: 0.45rem 0.35rem;
-  border-radius: 12px;
+  padding: 0.6rem 0.5rem;
+  border-radius: var(--radius-lg);
   text-decoration: none;
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   transition: all 0.22s ease;
 }
 
 .hp-eco-app:hover {
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--surface-container-lowest);
   transform: translateY(-2px);
-  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.05);
-  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-medium);
 }
 
 .hp-eco-app img {
   width: 70px;
   height: 70px;
   object-fit: contain;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   flex-shrink: 0;
 }
 
 .hp-eco-app-name {
+  font-family: var(--font-body);
   font-size: 0.82rem;
   font-weight: 620;
-  color: #1f1f1f;
+  color: var(--text-primary);
   line-height: 1.25;
   text-align: center;
   max-width: 100%;
@@ -4968,28 +5079,29 @@ body.install-options {
   justify-content: center;
   gap: 0.45rem;
   padding: 0.78rem 1.2rem;
-  border-radius: 14px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
   font-size: 0.94rem;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.01em;
-  color: var(--text-primary);
+  color: var(--accent-gold);
   text-decoration: none;
-  background: linear-gradient(135deg, var(--primary-yellow) 0%, var(--primary-yellow-dark) 58%, var(--primary-yellow-darker) 100%);
+  background: var(--primary-yellow);
   border: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.3) inset;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  box-shadow: var(--shadow-medium);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .hp-eco-cta .marketplace-cta-btn:hover,
 .hp-eco-cta .marketplace-cta-btn:focus {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15), 0 2px 0 rgba(255, 255, 255, 0.4) inset;
+  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
   transform: translateY(-2px) scale(1.02);
 }
 
 .hp-eco-cta .marketplace-cta-btn:active {
-  background: var(--primary-yellow);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f0cc00;
+  box-shadow: var(--shadow-light);
   transform: scale(0.98);
 }
 
