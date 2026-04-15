@@ -18,25 +18,16 @@
     <section class="hp-hero">
       <div class="hp-hero-left">
         <h1 class="hp-headline">
-          <span class="hp-headline-top">Refreshingly fast <span class="hp-carousel-wrap" aria-live="polite">
-            <span class="hp-carousel-sizer" aria-hidden="true">images</span>
-            <span class="hp-carousel-track" id="hpCarouselTrack" aria-hidden="true">
-              <span class="hp-carousel-slot" id="hpCarouselCurrent">LLMs</span>
-              <span class="hp-carousel-slot" id="hpCarouselNext"></span>
-            </span>
-          </span></span>
-          <br>on GPUs and NPUs
+          Refreshingly simple<br><span class="hp-headline-line2">local <span class="hp-carousel-word" id="hpCarouselWord" aria-live="polite">chat.</span></span>
         </h1>
         <div class="hp-subtitle-group">
-          <p class="hp-subtitle">Open source. Private. Ready in minutes on any PC.</p>
+          <p class="hp-subtitle">The omni-modal alternative to cloud. Automatically optimized for your GPU and NPU.</p>
           <div class="hp-cta-row">
             <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">
-              Download<br>
-              <span class="download-sub">for Windows 11</span>
+              Download for Windows
             </a>
             <a class="dev-btn" href="#" onclick="showInstaller(); return false;">
-              Developer Setup<br>
-              <span class="dev-sub">Linux, Windows, macOS</span>
+              Developer Setup
             </a>
           </div>
         </div>
@@ -49,7 +40,7 @@
               <div class="hp-chat-user">What can I do with 128 GB of unified RAM?</div>
               <div class="hp-chat-ai">Load up models like gpt-oss-120b or Qwen-Coder-Next for advanced tool use.</div>
               <div class="hp-chat-user">What should I tune first?</div>
-              <div class="hp-chat-ai">You can use --no-mmap to speed up load times and increase context size to 64 or more.</div>
+              <div class="hp-chat-ai">You can increase context size to 64k or more.</div>
             </div>
           </div>
           <div class="hp-demo-item" data-mode="1">
@@ -60,6 +51,18 @@
             </div>
           </div>
           <div class="hp-demo-item" data-mode="2">
+            <div class="hp-demo-label">Coding</div>
+            <div class="hp-demo-coding">
+              <div class="hp-chat-user">Build a real-time dashboard that streams GPU metrics over WebSockets</div>
+              <pre class="hp-code-block"><svg class="hp-code-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><code><span class="hp-code-kw">async def</span> <span class="hp-code-fn">stream_gpu_metrics</span>(ws):
+    <span class="hp-code-kw">while</span> <span class="hp-code-lit">True</span>:
+        stats = <span class="hp-code-kw">await</span> gpu.poll()
+        <span class="hp-code-kw">await</span> ws.send_json(stats)
+        <span class="hp-code-kw">await</span> asyncio.sleep(<span class="hp-code-lit">0.5</span>)
+<span class="hp-code-ellipsis">...</span></code></pre>
+            </div>
+          </div>
+          <div class="hp-demo-item" data-mode="3">
             <div class="hp-demo-label">Speech</div>
             <div class="hp-demo-audio">
               <div class="hp-chat-user hp-demo-prompt">Hello, I am your AI assistant. What can I do for you today?</div>
@@ -338,20 +341,18 @@
   <script>
     // ---- Carousel + Demo panel sync ----
     (function() {
-      var track = document.getElementById('hpCarouselTrack');
-      var currentEl = document.getElementById('hpCarouselCurrent');
-      var nextEl = document.getElementById('hpCarouselNext');
-      if (!track || !currentEl || !nextEl) return;
+      var wordEl = document.getElementById('hpCarouselWord');
+      if (!wordEl) return;
 
       var demos = document.querySelectorAll('.hp-demo-item');
-      var labels = ['LLMs', 'images', 'speech'];
+      var labels = ['chat.', 'images.', 'coding.', 'speech.'];
       var current = 0;
       var total = Math.min(demos.length, labels.length);
       if (total <= 0) return;
 
       var intervalMs = 3000;
-      var durationMs = 420;
-      var easing = 'cubic-bezier(0.4,0,0.2,1)';
+      var exitMs = 200;
+      var enterMs = 200;
       var intervalId = null;
       var isAnimating = false;
       var activeDemoIndex = 0;
@@ -376,14 +377,7 @@
             if (i !== activeDemoIndex) d.classList.remove('exiting-up');
           });
           demoExitTimer = null;
-        }, durationMs + 30);
-      }
-
-      function parkSlots() {
-        currentEl.style.transition = 'none';
-        nextEl.style.transition = 'none';
-        currentEl.style.transform = 'translate3d(0, 0, 0)';
-        nextEl.style.transform = 'translate3d(0, 100%, 0)';
+        }, exitMs + enterMs + 30);
       }
 
       function advance() {
@@ -391,64 +385,50 @@
         var nextIndex = (current + 1) % total;
 
         if (prefersReducedMotion) {
-          currentEl.textContent = labels[nextIndex];
+          wordEl.textContent = labels[nextIndex];
           current = nextIndex;
           setDemo(current);
           return;
         }
 
         isAnimating = true;
-        nextEl.textContent = labels[nextIndex];
-        parkSlots();
-        currentEl.offsetHeight;
-
-        var transition = 'transform ' + durationMs + 'ms ' + easing;
-        currentEl.style.transition = transition;
-        nextEl.style.transition = transition;
         setDemo(nextIndex);
 
-        window.requestAnimationFrame(function() {
-          currentEl.style.transform = 'translate3d(0, -100%, 0)';
-          nextEl.style.transform = 'translate3d(0, 0, 0)';
-        });
+        // Phase 1: fade out + slide up
+        wordEl.classList.add('is-exiting');
 
-        var done = function(event) {
-          if (event.propertyName !== 'transform') return;
-          nextEl.removeEventListener('transitionend', done);
+        setTimeout(function() {
+          // Phase 2: swap text, snap to entering position
+          wordEl.textContent = labels[nextIndex];
+          wordEl.classList.remove('is-exiting');
+          wordEl.classList.add('is-entering');
+          wordEl.offsetHeight; // force reflow
 
-          var oldCurrent = currentEl;
-          currentEl = nextEl;
-          nextEl = oldCurrent;
-          current = nextIndex;
+          // Phase 3: animate in
+          wordEl.classList.remove('is-entering');
 
-          parkSlots();
-          isAnimating = false;
-        };
-        nextEl.addEventListener('transitionend', done);
+          setTimeout(function() {
+            current = nextIndex;
+            isAnimating = false;
+          }, enterMs);
+        }, exitMs);
       }
 
       function handleVisibility() {
         if (document.hidden) {
-          if (intervalId) {
-            clearInterval(intervalId);
-            intervalId = null;
-          }
-          return;
-        }
-        if (!intervalId) {
+          if (intervalId) { clearInterval(intervalId); intervalId = null; }
+        } else if (!intervalId) {
           intervalId = setInterval(advance, intervalMs);
         }
       }
 
-      currentEl.textContent = labels[0];
-      nextEl.textContent = labels[1 % total];
+      wordEl.textContent = labels[0];
       demos.forEach(function(d, i) {
         d.classList.remove('active', 'exiting-up');
         if (i === 0) d.classList.add('active');
       });
       activeDemoIndex = 0;
       setDemo(0);
-      parkSlots();
       intervalId = setInterval(advance, intervalMs);
       document.addEventListener('visibilitychange', handleVisibility);
       window.addEventListener('beforeunload', function() {

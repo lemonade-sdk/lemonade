@@ -466,75 +466,59 @@ body.install-options {
 }
 
 .download-btn, .dev-btn, .marketplace-cta-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
   font-weight: 700;
+  font-size: 1rem;
   border: none;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: var(--transition-medium);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   text-decoration: none;
   outline: none;
   letter-spacing: 0.01em;
-  position: relative;
-  overflow: hidden;
-  font-size: 1.1rem;
-  padding: var(--spacing-md) 2.5rem 0.8rem 2.5rem;
-  margin-bottom: var(--spacing-md);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  padding: 1rem 2rem;
   line-height: 1.2;
-  min-width: min(250px, 80vw);
-  max-width: min(250px, 80vw);
-  height: 70px;
-  justify-content: center;
 }
 
 .download-btn {
   background: var(--primary-yellow);
   color: var(--accent-gold);
-  box-shadow: var(--shadow-medium);
-  border-radius: var(--radius-full);
-  font-family: var(--font-display);
+  box-shadow: 0 12px 48px rgba(252, 216, 70, 0.3);
 }
 
 .download-btn:hover, .download-btn:focus {
-  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
-  transform: translateY(-2px) scale(1.02);
+  transform: scale(1.02);
+  box-shadow: 0 16px 56px rgba(252, 216, 70, 0.38);
 }
 
 .download-btn:active {
-  background: #f0cc00;
-  box-shadow: var(--shadow-light);
-  transform: scale(0.98);
+  transform: scale(0.95);
 }
 
 .dev-btn, .marketplace-cta-btn {
-  background: rgba(255, 255, 255, 0.68);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   color: var(--text-primary);
-  box-shadow: var(--shadow-medium);
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-full);
-  font-family: var(--font-display);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
 }
 
 .dev-btn:hover, .dev-btn:focus {
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 12px 36px rgba(45, 47, 47, 0.08);
-  transform: translateY(-2px) scale(1.02);
+  background: rgba(255, 255, 255, 0.6);
+  transform: scale(1.02);
 }
 
 .marketplace-cta-btn:hover, .marketplace-cta-btn:focus {
-  transform: none;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .dev-btn:active {
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--shadow-light);
-  transform: scale(0.98);
+  transform: scale(0.95);
 }
 
 /* Marketplace button - single line variant */
@@ -4020,15 +4004,25 @@ body.install-options {
 }
 
 /* --- Split Hero --- */
+/* Perfect fourth typographic scale (1.333 ratio) for hero:
+   subtitle = base, headline = base × 1.333^3 ≈ base × 2.37
+   Spacing uses the same scale for vertical rhythm. */
 .hp-hero {
+  --hero-base: clamp(1rem, 1.6vw, 1.18rem);
+  --hero-scale: 1.333;
+  --hero-subtitle: var(--hero-base);
+  --hero-headline: calc(var(--hero-base) * var(--hero-scale) * var(--hero-scale) * var(--hero-scale));
+  --hero-gap: calc(var(--hero-base) * var(--hero-scale));
+  --hero-section-gap: calc(var(--hero-base) * var(--hero-scale) * var(--hero-scale));
+
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
-  gap: 2rem;
+  gap: var(--hero-section-gap);
   align-items: center;
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 7rem 1.5rem 9rem;
+  padding: calc(var(--hero-section-gap) * 2.5) 1.5rem calc(var(--hero-section-gap) * 3);
   min-height: auto;
   position: relative;
 }
@@ -4037,20 +4031,20 @@ body.install-options {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1.15rem;
+  gap: var(--hero-gap);
   max-width: 560px;
 }
 
 .hp-subtitle-group {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--hero-gap);
   width: min(460px, 100%);
 }
 
 .hp-headline {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4.1vw, 3.5rem);
+  font-size: var(--hero-headline);
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1.06;
@@ -4058,88 +4052,62 @@ body.install-options {
   letter-spacing: -0.035em;
 }
 
-.hp-headline-top {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.22em;
+/* "local ___." line — keeps static text and carousel on the same baseline */
+.hp-headline-line2 {
+  display: inline;
   white-space: nowrap;
 }
 
-.hp-carousel-wrap {
-  --hp-carousel-line-height: 1.14;
-  position: relative;
-  display: inline-block;
-  vertical-align: baseline;
-  overflow: hidden;
-  text-align: left;
-  line-height: var(--hp-carousel-line-height);
-  padding-right: 0.06em;
-  padding-bottom: 0.08em;
-}
-
-.hp-carousel-sizer {
-  display: inline-block;
-  visibility: hidden;
-  color: transparent;
-  pointer-events: none;
-  user-select: none;
-  font-weight: 700;
-  line-height: var(--hp-carousel-line-height);
-  white-space: nowrap;
-}
-
-.hp-carousel-track {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-}
-
-.hp-carousel-slot {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: block;
-  color: #c9a200;
+/* Carousel word — inline, normal flow, baseline-aligned by nature */
+.hp-carousel-word {
+  display: inline;
+  color: var(--primary-yellow-darker);
   font-weight: 800;
-  white-space: nowrap;
-  text-align: left;
-  line-height: var(--hp-carousel-line-height);
-  transform: translate3d(0, 100%, 0);
-  will-change: transform;
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+/* Exiting — fades out and slides up slightly */
+.hp-carousel-word.is-exiting {
+  opacity: 0;
+  transform: translateY(-0.15em);
+}
+
+/* Entering — starts below, snaps instantly (no transition) */
+.hp-carousel-word.is-entering {
+  opacity: 0;
+  transform: translateY(0.15em);
+  transition: none;
 }
 
 .hp-subtitle {
   font-family: var(--font-body);
-  font-size: clamp(0.95rem, 1.8vw, 1.15rem);
+  font-size: var(--hero-subtitle);
   color: var(--text-secondary);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.55;
   font-weight: 450;
+  max-width: 420px;
 }
 
 .hp-cta-row {
   display: flex;
-  gap: 0.85rem;
+  flex-wrap: wrap;
+  gap: 1rem;
   width: 100%;
-  max-width: 460px;
 }
 
 .hp-cta-row .download-btn,
 .hp-cta-row .dev-btn {
-  flex: 1 1 0;
-  min-width: 0;
   margin: 0;
-  padding: 0.8rem 1rem;
-  font-size: 1rem;
-  text-align: center;
-  line-height: 1.1;
+  padding: 1rem 2rem;
 }
 
 .hp-cta-row .download-sub,
 .hp-cta-row .dev-sub {
-  font-size: 0.75rem;
+  font-size: 0.8em;
+  font-weight: 500;
+  opacity: 0.75;
+  font-style: normal;
 }
 
 .hp-hero-right {
@@ -4148,19 +4116,20 @@ body.install-options {
   justify-content: center;
 }
 
+/* Demo panel — glassmorphic light theme per DESIGN.md */
 .hp-demo-panel {
   width: 100%;
   max-width: 440px;
-  background: rgba(26, 27, 48, 0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-radius: var(--radius-xl);
   padding: 1.4rem;
   height: 290px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.6);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -4192,66 +4161,139 @@ body.install-options {
 }
 
 .hp-demo-label {
-  font-size: 0.72rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.55);
-  margin-bottom: 0.2rem;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  display: inline-block;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
 }
 
-.hp-demo-chat {
+/* Carousel item shared layout tokens */
+.hp-demo-panel {
+  --demo-gap: 0.5rem;
+  --demo-font: 0.82rem;
+  --demo-padding: 0.6rem 0.85rem;
+  --demo-radius: var(--radius-lg);
+  --demo-user-max: 80%;
+  --demo-response-max: clamp(220px, 68vw, 300px);
+}
+
+.hp-demo-chat,
+.hp-demo-coding,
+.hp-demo-image,
+.hp-demo-audio {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--demo-gap);
   height: 100%;
 }
 
+.hp-demo-chat {
+  justify-content: space-between;
+}
+
 .hp-chat-user {
-  background: rgba(255, 224, 102, 0.15);
-  color: #ffe066;
-  font-size: 0.82rem;
-  padding: 0.66rem 0.9rem;
-  border-radius: 15px 15px 15px 5px;
+  background: rgba(252, 216, 70, 0.18);
+  color: var(--accent-gold);
+  font-family: var(--font-body);
+  font-size: var(--demo-font);
+  font-weight: 500;
+  padding: var(--demo-padding);
+  border-radius: var(--demo-radius) var(--demo-radius) var(--demo-radius) 4px;
   line-height: 1.38;
   align-self: flex-start;
-  max-width: 78%;
+  max-width: var(--demo-user-max);
   width: fit-content;
+  border: 1px solid rgba(252, 216, 70, 0.12);
 }
 
 .hp-demo-prompt {
-  max-width: 78%;
+  max-width: var(--demo-user-max);
   align-self: flex-start;
 }
 
 .hp-chat-ai {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 0.82rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: 10px 10px 3px 10px;
+  background: var(--surface-container-low);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--demo-font);
+  padding: var(--demo-padding);
+  border-radius: var(--demo-radius) var(--demo-radius) 4px var(--demo-radius);
   line-height: 1.4;
   align-self: flex-end;
-  max-width: 90%;
+  max-width: var(--demo-response-max);
+  border: none;
+}
+
+/* Coding demo */
+.hp-code-block {
+  margin: 0;
+  padding: var(--demo-padding);
+  padding-top: 1.4rem;
+  background: var(--surface-container-low);
+  border-radius: var(--demo-radius) var(--demo-radius) 4px var(--demo-radius);
+  border: none;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  overflow: hidden;
+  align-self: flex-end;
+  max-width: var(--demo-response-max);
+  width: var(--demo-response-max);
+  position: relative;
+}
+
+.hp-code-copy {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.55rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--text-light);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.hp-code-block code {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.hp-code-kw { color: #8b5cf6; }
+.hp-code-fn { color: #059669; }
+.hp-code-str { color: #059669; }
+.hp-code-lit { color: #e44d26; }
+.hp-code-ellipsis {
+  color: var(--text-light);
+  display: block;
+  margin-top: 0.15rem;
+  letter-spacing: 0.15em;
 }
 
 .hp-demo-image {
-  display: flex;
-  flex-direction: column;
   justify-content: space-between;
-  gap: 0.7rem;
-  height: 100%;
 }
 
 .hp-demo-image-placeholder {
-  width: clamp(220px, 68vw, 300px);
+  width: var(--demo-response-max);
   aspect-ratio: 2 / 1;
   height: auto;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: var(--demo-radius);
   align-self: flex-end;
-  background: #1f2035 url("https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/generated_image.png") center/contain no-repeat;
+  background: var(--surface-container-low) url("https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/generated_image.png") center/contain no-repeat;
+  border: none;
 }
 
 @keyframes hp-gradient-shift {
@@ -4260,18 +4302,11 @@ body.install-options {
 }
 
 .hp-demo-image-prompt {
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-body);
+  font-size: var(--demo-font);
+  color: var(--text-muted);
   font-style: italic;
   line-height: 1.4;
-}
-
-.hp-demo-audio {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0.7rem;
-  height: 100%;
 }
 
 .hp-waveform {
@@ -4280,12 +4315,11 @@ body.install-options {
   justify-content: center;
   gap: 3px;
   height: 96px;
-  width: 82%;
-  max-width: 82%;
-  align-self: center;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  width: var(--demo-response-max);
+  align-self: flex-end;
+  border-radius: var(--demo-radius);
+  background: none;
+  border: none;
   padding: 0.75rem 1rem;
   margin-top: 20px;
   flex-shrink: 0;
@@ -4295,8 +4329,8 @@ body.install-options {
   display: block;
   width: 4px;
   border-radius: 2px;
-  background: var(--primary-yellow);
-  opacity: 0.82;
+  background: var(--primary-yellow-darker);
+  opacity: 0.7;
   animation: hp-wave 1.2s ease-in-out infinite;
 }
 
@@ -5116,8 +5150,8 @@ body.install-options {
   .hp-hero {
     grid-template-columns: 1fr;
     justify-items: center;
-    gap: 1.75rem;
-    padding: 2.8rem 1rem 4rem;
+    gap: var(--hero-section-gap);
+    padding: var(--hero-section-gap) 1rem calc(var(--hero-section-gap) * 1.5);
     text-align: center;
   }
 
@@ -5234,26 +5268,13 @@ body.install-options {
     padding: 2.8rem 1rem;
   }
 
-  .hp-headline {
-    font-size: 1.9rem;
+  .hp-hero {
+    --hero-base: 0.95rem;
   }
 
   .hp-cta-row {
     flex-direction: column;
-    width: auto;
-    max-width: 460px;
     align-items: center;
-  }
-
-  .hp-cta-row .download-btn,
-  .hp-cta-row .dev-btn {
-    width: min(250px, 80vw);
-    min-width: min(250px, 80vw);
-    max-width: min(250px, 80vw);
-    height: 70px;
-    min-height: 70px;
-    padding: 0.8rem 1rem;
-    justify-content: center;
   }
 
   .hp-demo-panel {
