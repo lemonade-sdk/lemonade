@@ -70,6 +70,14 @@ const SPEC_DEFAULTS: SpecState = {
   deviceDraft: '',
 };
 
+const SPEC_NUMERIC_MINIMUMS: Record<SpecNumericFieldKey, number> = {
+  draftMax: 0,
+  draftMin: 0,
+  specNgramSizeN: 1,
+  specNgramSizeM: 1,
+  specNgramMinHits: 1,
+};
+
 const SPEC_MANAGED_FLAGS = [
   '--spec-type',
   '--draft-max',
@@ -179,6 +187,33 @@ const quoteArgValueIfNeeded = (value: string): string => {
 const toIntOrDefault = (raw: string, fallback: number): number => {
   const parsed = parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const getCommittedSpecState = (
+  sourceState: SpecState,
+  drafts: Partial<Record<SpecNumericFieldKey, string>>,
+): SpecState => {
+  const nextState: SpecState = { ...sourceState };
+
+  (Object.entries(SPEC_NUMERIC_MINIMUMS) as Array<[SpecNumericFieldKey, number]>).forEach(([key, minValue]) => {
+    const input = drafts[key];
+    if (input === undefined) {
+      return;
+    }
+
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    nextState[key] = Math.max(minValue, Math.trunc(toIntOrDefault(trimmed, nextState[key])));
+  });
+
+  return nextState;
+};
+
+const isDraftSpecSelectionIncomplete = (state: SpecState): boolean => {
+  return state.type === 'draft' && state.draftModelId.trim().length === 0;
 };
 
 const parseSpecFromArgs = (llamacppArgs: string): SpecState => {
@@ -496,10 +531,40 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     setOptions(createDefaultOptions(options.recipe));
   };
 
+  const getPreparedOptions = (): RecipeOptions | undefined => {
+    if (!options) {
+      return undefined;
+    }
+
+    let prepared = getCommittedOptions(options, numericDrafts);
+
+    if (prepared.recipe !== 'llamacpp') {
+      return prepared;
+    }
+
+    const committedSpecState = getCommittedSpecState(specState, specNumericDrafts);
+    const currentArgs = ((prepared as any).llamacppArgs?.value ?? '') as string;
+    const mergedArgs = mergeSpecArgsIntoLlamacppArgs(currentArgs, committedSpecState);
+    const currentUseDefault = ((prepared as any).llamacppArgs?.useDefault ?? true) as boolean;
+    const nextUseDefault = mergedArgs.trim() === '' ? currentUseDefault : false;
+
+    prepared = {
+      ...prepared,
+      llamacppArgs: {
+        value: mergedArgs,
+        useDefault: nextUseDefault,
+      },
+    } as RecipeOptions;
+
+    return prepared;
+  };
+
   const handleModelExport = () => {
     if (!modelInfo || !options) return;
+    if (isDraftSpecSelectionIncomplete(specState)) return;
 
-    const committedOptions = getCommittedOptions(options, numericDrafts);
+    const committedOptions = getPreparedOptions();
+    if (!committedOptions) return;
     const recipeOptions = recipeOptionsToApi(committedOptions);
     const modelId = String(modelInfo.id ?? modelName);
     const exportName = modelId.startsWith('user.') ? modelId : `user.${modelId}`;
@@ -533,8 +598,12 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
   const handleSubmit = () => {
     if (!options || !modelName) return;
+    if (isDraftSpecSelectionIncomplete(specState)) return;
 
-    onSubmit(modelName, getCommittedOptions(options, numericDrafts));
+    const preparedOptions = getPreparedOptions();
+    if (!preparedOptions) return;
+
+    onSubmit(modelName, preparedOptions);
   };
 
   const applySpecState = (nextState: SpecState, preset: SpecPresetId = 'custom') => {
@@ -617,6 +686,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   };
 
   if (!isOpen || !options) return null;
+
+  const hasIncompleteDraftSpecSelection = isDraftSpecSelectionIncomplete(specState);
 
   const recipe = options.recipe;
   const availableOptions = getOptionsForRecipe(recipe);
@@ -972,7 +1043,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           <button
             className="settings-save-button"
             onClick={handleSubmit}
-            disabled={isSubmitting || isLoading}
+            disabled={isSubmitting || isLoading || hasIncompleteDraftSpecSelection}
           >
             {isSubmitting ? 'Connecting…' : 'Load'}
           </button>

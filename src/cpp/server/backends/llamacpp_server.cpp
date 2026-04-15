@@ -175,20 +175,19 @@ static void validate_model_draft_value_or_throw(const std::string& draft_value) 
 }
 
 static std::string quote_arg_if_needed(const std::string& token) {
-    if (token.find(' ') == std::string::npos && token.find('"') == std::string::npos) {
+    if (token.find_first_of(" \t\r\n") == std::string::npos) {
         return token;
     }
 
-    std::string escaped;
-    escaped.reserve(token.size() + 4);
-    for (char c : token) {
-        if (c == '\\' || c == '"') {
-            escaped.push_back('\\');
-        }
-        escaped.push_back(c);
+    if (token.find('"') == std::string::npos) {
+        return "\"" + token + "\"";
     }
 
-    return "\"" + escaped + "\"";
+    if (token.find('\'') == std::string::npos) {
+        return "'" + token + "'";
+    }
+
+    return token;
 }
 
 static std::string join_custom_args(const std::vector<std::string>& tokens) {
