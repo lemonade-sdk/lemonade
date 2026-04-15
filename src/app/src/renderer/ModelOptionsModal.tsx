@@ -9,6 +9,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { serverFetch } from "./utils/serverConfig";
 import { ModelInfo } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
+import { useModels } from "./hooks/useModels";
 import {
   RecipeOptions,
   getOptionsForRecipe,
@@ -36,7 +37,7 @@ type SpecType = 'none' | 'draft' | 'ngram-simple' | 'ngram-map-k' | 'ngram-mod';
 
 interface SpecState {
   type: SpecType;
-  draftModelCheckpoint: string;
+  draftModelId: string;
   draftMax: number;
   draftMin: number;
   specNgramSizeN: number;
@@ -58,7 +59,7 @@ type SpecPresetId = 'custom' | 'safe-default' | 'ngram-simple-code' | 'ngram-map
 
 const SPEC_DEFAULTS: SpecState = {
   type: 'none',
-  draftModelCheckpoint: '',
+  draftModelId: '',
   draftMax: 16,
   draftMin: 0,
   specNgramSizeN: 12,
@@ -69,7 +70,7 @@ const SPEC_DEFAULTS: SpecState = {
   deviceDraft: '',
 };
 
-const SPEC_VALUE_FLAGS = new Set([
+const SPEC_MANAGED_FLAGS = [
   '--spec-type',
   '--draft-max',
   '--draft-min',
@@ -80,11 +81,7 @@ const SPEC_VALUE_FLAGS = new Set([
   '--draft-p-min',
   '--ctx-size-draft',
   '--device-draft',
-]);
-
-const MANAGED_SPEC_FLAGS = new Set([
-  '--no-mmproj',
-]);
+];
 
 const SPEC_TYPES: Array<{ value: SpecType; label: string }> = [
   { value: 'none', label: 'None' },
@@ -145,184 +142,116 @@ const normalizeSpecType = (value: string): SpecType => {
   return 'none';
 };
 
-const tokenizeArgs = (input: string): string[] => {
-  if (!input.trim()) return [];
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  const tokens: string[] = [];
-  let current = '';
-  let quote: '"' | "'" | null = null;
+const unquoteValue = (value: string): string => {
+  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+    return value.slice(1, -1);
+  }
+  return value;
+};
 
-  for (let i = 0; i < input.length; i += 1) {
-    const c = input[i];
+const getManagedFlagValue = (args: string, flag: string): string => {
+  const escaped = escapeRegex(flag);
+  const pattern = new RegExp(`(?:^|\\s)${escaped}(?:=("[^"]*"|'[^']*'|[^\\s]+)|\\s+("[^"]*"|'[^']*'|[^\\s]+))(?=\\s|$)`);
+  const match = args.match(pattern);
+  const raw = match?.[1] ?? match?.[2] ?? '';
+  return unquoteValue(raw);
+};
 
-    if (c === '\\' && i + 1 < input.length) {
-      const next = input[i + 1];
+const stripManagedSpecFlags = (args: string): string => {
+  let output = args;
 
-      if (quote) {
-        if (next === quote || next === '\\') {
-          current += next;
-          i += 1;
-          continue;
-        }
-      } else if (/\s|["'\\]/.test(next)) {
-        current += next;
-        i += 1;
-        continue;
-      }
-    }
-
-    if (!quote && (c === '"' || c === "'")) {
-      quote = c;
-      continue;
-    }
-
-    if (quote && c === quote) {
-      quote = null;
-      continue;
-    }
-
-    if (!quote && /\s/.test(c)) {
-      if (current.length > 0) {
-        tokens.push(current);
-        current = '';
-      }
-      continue;
-    }
-
-    current += c;
+  for (const flag of SPEC_MANAGED_FLAGS) {
+    const escaped = escapeRegex(flag);
+    const pattern = new RegExp(`(^|\\s+)${escaped}(?:(?:=("[^"]*"|'[^']*'|[^\\s]+))|(?:\\s+("[^"]*"|'[^']*'|[^\\s]+)))?(?=\\s+|$)`, 'g');
+    output = output.replace(pattern, ' ');
   }
 
-  if (current.length > 0) tokens.push(current);
-  return tokens;
+  return output.trim();
 };
 
-const quoteArgIfNeeded = (token: string): string => {
-  if (!/[\s"']/.test(token)) return token;
-  return `"${token.replace(/(["\\])/g, '\\$1')}"`;
+const quoteArgValueIfNeeded = (value: string): string => {
+  if (!/[\s"']/.test(value)) return value;
+  return `"${value.replace(/(["\\])/g, '\\$1')}"`;
 };
-
-const serializeTokens = (tokens: string[]): string => tokens.map(quoteArgIfNeeded).join(' ').trim();
 
 const toIntOrDefault = (raw: string, fallback: number): number => {
   const parsed = parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const parseSpecFromArgs = (llamacppArgs: string): { state: SpecState; nonSpecTokens: string[] } => {
-  const tokens = tokenizeArgs(llamacppArgs);
+const parseSpecFromArgs = (llamacppArgs: string): SpecState => {
   const state: SpecState = { ...SPEC_DEFAULTS };
-  const nonSpecTokens: string[] = [];
-  let sawDraftModel = false;
+  const specTypeValue = getManagedFlagValue(llamacppArgs, '--spec-type');
+  const draftModelValue = getManagedFlagValue(llamacppArgs, '--model-draft');
 
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i];
-    const eqPos = token.indexOf('=');
-    const flag = eqPos >= 0 ? token.slice(0, eqPos) : token;
-
-    if (MANAGED_SPEC_FLAGS.has(flag)) {
-      // Managed runtime flags are never user-facing options in this modal.
-      continue;
-    }
-
-    if (!SPEC_VALUE_FLAGS.has(flag)) {
-      nonSpecTokens.push(token);
-      continue;
-    }
-
-    let value = '';
-    if (eqPos >= 0) {
-      value = token.slice(eqPos + 1);
-    } else if (i + 1 < tokens.length) {
-      value = tokens[i + 1];
-      i += 1;
-    }
-
-    switch (flag) {
-      case '--spec-type':
-        state.type = normalizeSpecType(value);
-        break;
-      case '--draft-max':
-        state.draftMax = toIntOrDefault(value, state.draftMax);
-        break;
-      case '--draft-min':
-        state.draftMin = toIntOrDefault(value, state.draftMin);
-        break;
-      case '--model-draft':
-        state.draftModelCheckpoint = value;
-        sawDraftModel = value.trim().length > 0;
-        break;
-      case '--spec-ngram-size-n':
-        state.specNgramSizeN = toIntOrDefault(value, state.specNgramSizeN);
-        break;
-      case '--spec-ngram-size-m':
-        state.specNgramSizeM = toIntOrDefault(value, state.specNgramSizeM);
-        break;
-      case '--spec-ngram-min-hits':
-        state.specNgramMinHits = toIntOrDefault(value, state.specNgramMinHits);
-        break;
-      case '--draft-p-min':
-        state.draftPMin = value;
-        break;
-      case '--ctx-size-draft':
-        state.ctxSizeDraft = value;
-        break;
-      case '--device-draft':
-        state.deviceDraft = value;
-        break;
-      default:
-        break;
-    }
-  }
+  state.type = normalizeSpecType(specTypeValue);
+  state.draftModelId = draftModelValue;
+  state.draftMax = toIntOrDefault(getManagedFlagValue(llamacppArgs, '--draft-max'), state.draftMax);
+  state.draftMin = toIntOrDefault(getManagedFlagValue(llamacppArgs, '--draft-min'), state.draftMin);
+  state.specNgramSizeN = toIntOrDefault(getManagedFlagValue(llamacppArgs, '--spec-ngram-size-n'), state.specNgramSizeN);
+  state.specNgramSizeM = toIntOrDefault(getManagedFlagValue(llamacppArgs, '--spec-ngram-size-m'), state.specNgramSizeM);
+  state.specNgramMinHits = toIntOrDefault(getManagedFlagValue(llamacppArgs, '--spec-ngram-min-hits'), state.specNgramMinHits);
+  state.draftPMin = getManagedFlagValue(llamacppArgs, '--draft-p-min');
+  state.ctxSizeDraft = getManagedFlagValue(llamacppArgs, '--ctx-size-draft');
+  state.deviceDraft = getManagedFlagValue(llamacppArgs, '--device-draft');
 
   // Draft mode may omit --spec-type by design, so infer it from --model-draft.
-  if (sawDraftModel && state.type === 'none') {
+  if (draftModelValue.trim().length > 0 && state.type === 'none') {
     state.type = 'draft';
   }
 
-  return { state, nonSpecTokens };
+  return state;
 };
 
-const serializeSpecToArgs = (state: SpecState, nonSpecTokens: string[]): string => {
-  const tokens = [...nonSpecTokens];
-  const draftCheckpoint = state.draftModelCheckpoint.trim();
+const buildSpecArgs = (state: SpecState): string => {
+  const tokens: string[] = [];
+  const draftModelId = state.draftModelId.trim();
 
   if (state.type !== 'none') {
     // Keep --spec-type draft only as a temporary UI state marker when no draft
-    // checkpoint is selected yet. Once --model-draft is present, omit --spec-type.
-    if (state.type !== 'draft' || !draftCheckpoint) {
-      tokens.push('--spec-type', state.type);
+    // model id is selected yet. Once --model-draft is present, omit --spec-type.
+    if (state.type !== 'draft' || !draftModelId) {
+      tokens.push(`--spec-type=${state.type}`);
     }
-    tokens.push('--draft-max', String(Math.max(0, Math.trunc(state.draftMax))));
-    tokens.push('--draft-min', String(Math.max(0, Math.trunc(state.draftMin))));
+    tokens.push(`--draft-max=${Math.max(0, Math.trunc(state.draftMax))}`);
+    tokens.push(`--draft-min=${Math.max(0, Math.trunc(state.draftMin))}`);
 
-    if (state.type === 'draft' && draftCheckpoint) {
-      tokens.push('--model-draft', draftCheckpoint);
+    if (state.type === 'draft' && draftModelId) {
+      tokens.push(`--model-draft=${quoteArgValueIfNeeded(draftModelId)}`);
     }
 
     if (state.type === 'ngram-simple' || state.type === 'ngram-mod') {
-      tokens.push('--spec-ngram-size-n', String(Math.max(1, Math.trunc(state.specNgramSizeN))));
+      tokens.push(`--spec-ngram-size-n=${Math.max(1, Math.trunc(state.specNgramSizeN))}`);
     }
 
     if (state.type === 'ngram-mod') {
-      tokens.push('--spec-ngram-size-m', String(Math.max(1, Math.trunc(state.specNgramSizeM))));
+      tokens.push(`--spec-ngram-size-m=${Math.max(1, Math.trunc(state.specNgramSizeM))}`);
     }
 
     if (state.type === 'ngram-map-k') {
-      tokens.push('--spec-ngram-min-hits', String(Math.max(1, Math.trunc(state.specNgramMinHits))));
+      tokens.push(`--spec-ngram-min-hits=${Math.max(1, Math.trunc(state.specNgramMinHits))}`);
     }
 
     if (state.draftPMin.trim()) {
-      tokens.push('--draft-p-min', state.draftPMin.trim());
+      tokens.push(`--draft-p-min=${quoteArgValueIfNeeded(state.draftPMin.trim())}`);
     }
     if (state.ctxSizeDraft.trim()) {
-      tokens.push('--ctx-size-draft', state.ctxSizeDraft.trim());
+      tokens.push(`--ctx-size-draft=${quoteArgValueIfNeeded(state.ctxSizeDraft.trim())}`);
     }
     if (state.deviceDraft.trim()) {
-      tokens.push('--device-draft', state.deviceDraft.trim());
+      tokens.push(`--device-draft=${quoteArgValueIfNeeded(state.deviceDraft.trim())}`);
     }
   }
 
-  return serializeTokens(tokens);
+  return tokens.join(' ').trim();
+};
+
+const mergeSpecArgsIntoLlamacppArgs = (existingArgs: string, specState: SpecState): string => {
+  const nonSpecArgs = stripManagedSpecFlags(existingArgs);
+  const managedSpecArgs = buildSpecArgs(specState);
+  return [nonSpecArgs, managedSpecArgs].filter((part) => part.length > 0).join(' ').trim();
 };
 
 const getCommittedOptions = (
@@ -363,6 +292,7 @@ interface SettingsModalProps {
 }
 
 const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onSubmit, model }) => {
+  const { modelsData } = useModels();
   const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [modelInfo, setModelInfo] = useState<ModelInfo>();
   const [modelName, setModelName] = useState("");
@@ -370,9 +300,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [options, setOptions] = useState<RecipeOptions>();
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
   const [specNumericDrafts, setSpecNumericDrafts] = useState<Partial<Record<'draftMax' | 'draftMin' | 'specNgramSizeN' | 'specNgramSizeM' | 'specNgramMinHits', string>>>({});
-  const [llamacppArgsDraft, setLlamacppArgsDraft] = useState<string | null>(null);
   const [specState, setSpecState] = useState<SpecState>(SPEC_DEFAULTS);
-  const [specNonTokens, setSpecNonTokens] = useState<string[]>([]);
   const [selectedSpecPreset, setSelectedSpecPreset] = useState<SpecPresetId>('custom');
   const [showSpecAdvanced, setShowSpecAdvanced] = useState(false);
   const [draftModelChoices, setDraftModelChoices] = useState<DraftModelChoice[]>([]);
@@ -387,12 +315,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     let isMounted = true;
     setNumericDrafts({});
     setSpecNumericDrafts({});
-    setLlamacppArgsDraft(null);
     setSpecState(SPEC_DEFAULTS);
-    setSpecNonTokens([]);
     setSelectedSpecPreset('custom');
     setShowSpecAdvanced(false);
-    setDraftModelChoices([]);
     void ensureSystemInfoLoaded();
 
     const fetchOptions = async () => {
@@ -406,14 +331,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         const response = await serverFetch(`/models/${model}`);
         const data = await response.json();
 
-        const modelsResponse = await serverFetch('/models?show_all=true');
-        const modelsPayload = await modelsResponse.json();
-        const modelsList = Array.isArray(modelsPayload) ? modelsPayload : modelsPayload.data || [];
-
-        const draftChoices: DraftModelChoice[] = modelsList
-          .filter((item: any) => item?.recipe === 'llamacpp' && item?.downloaded === true && typeof item?.checkpoint === 'string')
-          .map((item: any) => ({ id: String(item.id), checkpoint: String(item.checkpoint) }));
-
         setModelName(model);
         setModelInfo({ ...data });
 
@@ -425,7 +342,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
         if (isMounted) {
           setOptions(apiToRecipeOptions(recipe, recipeOptions));
-          setDraftModelChoices(draftChoices);
         }
       } catch (error) {
         console.error('Failed to load options:', error);
@@ -442,48 +358,27 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   }, [isOpen, model, ensureSystemInfoLoaded]);
 
   useEffect(() => {
+    const choices: DraftModelChoice[] = Object.entries(modelsData)
+      .filter(([id, item]) => item?.recipe === 'llamacpp' && item?.downloaded === true && typeof item?.checkpoint === 'string')
+      .map(([id, item]) => ({ id, checkpoint: String(item.checkpoint) }));
+    setDraftModelChoices(choices);
+  }, [modelsData]);
+
+  useEffect(() => {
     if (!options || options.recipe !== 'llamacpp') {
       setSpecNumericDrafts({});
       setSpecState(SPEC_DEFAULTS);
-      setSpecNonTokens([]);
       setSelectedSpecPreset('custom');
-      return;
-    }
-
-    if (llamacppArgsDraft !== null) {
-      // Don't rewrite arguments while user is actively typing.
       return;
     }
 
     const currentArgs = (options as any).llamacppArgs?.value ?? '';
     const parsed = parseSpecFromArgs(currentArgs);
-    const normalizedArgs = serializeSpecToArgs(parsed.state, parsed.nonSpecTokens);
+    setSpecState(parsed);
 
-    if (normalizedArgs !== currentArgs) {
-      setOptions((prev) => {
-        if (!prev || prev.recipe !== 'llamacpp') return prev;
-
-        const previousArgs = (prev as any).llamacppArgs?.value ?? '';
-        if (previousArgs === normalizedArgs) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          llamacppArgs: {
-            value: normalizedArgs,
-            useDefault: false,
-          },
-        } as RecipeOptions;
-      });
-    }
-
-    setSpecState(parsed.state);
-    setSpecNonTokens(parsed.nonSpecTokens);
-
-    const preset = SPEC_PRESETS.find((candidate) => matchesPreset(parsed.state, candidate.state));
+    const preset = SPEC_PRESETS.find((candidate) => matchesPreset(parsed, candidate.state));
     setSelectedSpecPreset(preset ? preset.id : 'custom');
-  }, [options, llamacppArgsDraft]);
+  }, [options]);
 
   // Handle click outside and escape key
   useEffect(() => {
@@ -651,7 +546,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       return;
     }
 
-    const mergedArgs = serializeSpecToArgs(nextState, specNonTokens);
+    const currentArgs = ((options as any).llamacppArgs?.value ?? '') as string;
+    const mergedArgs = mergeSpecArgsIntoLlamacppArgs(currentArgs, nextState);
     handleStringChange('llamacppArgs', mergedArgs);
   };
 
@@ -781,7 +677,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     if (value === undefined) return null;
 
     const isLlamacppArgs = key === 'llamacppArgs' && recipe === 'llamacpp';
-    const stringValue = isLlamacppArgs && llamacppArgsDraft !== null ? llamacppArgsDraft : value;
 
     return (
       <div className="form-section" key={key}>
@@ -790,24 +685,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           type="text"
           className="form-input"
           placeholder=""
-          value={stringValue}
-          onFocus={() => {
-            if (isLlamacppArgs && llamacppArgsDraft === null) {
-              setLlamacppArgsDraft(value);
-            }
-          }}
-          onBlur={() => {
-            if (!isLlamacppArgs || llamacppArgsDraft === null) return;
-            handleStringChange(key, llamacppArgsDraft);
-            setLlamacppArgsDraft(null);
-          }}
-          onChange={(e) => {
-            if (isLlamacppArgs) {
-              setLlamacppArgsDraft(e.target.value);
-              return;
-            }
-            handleStringChange(key, e.target.value);
-          }}
+          value={value}
+          onChange={(e) => handleStringChange(key, e.target.value)}
         />
 
         {isLlamacppArgs && (
@@ -857,12 +736,12 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
                       <label className="form-label">Draft Model</label>
                       <select
                         className="form-input form-select"
-                        value={specState.draftModelCheckpoint}
-                        onChange={(e) => updateSpecField('draftModelCheckpoint', e.target.value)}
+                        value={specState.draftModelId}
+                        onChange={(e) => updateSpecField('draftModelId', e.target.value)}
                       >
                         <option value="">Select a downloaded llama model</option>
                         {draftModelChoices.map((choice) => (
-                          <option key={choice.id} value={choice.checkpoint}>
+                          <option key={choice.id} value={choice.id}>
                             {choice.id} ({choice.checkpoint})
                           </option>
                         ))}
