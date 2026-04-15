@@ -570,10 +570,10 @@ void Server::setup_static_files(httplib::Server &web_server) {
             std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             file.close();
 
-            // Inject mock API for web compatibility with Electron app code
+            // Inject mock window.api for web compatibility with the shared Tauri app renderer
             std::string mock_api = R"(
 <script>
-// Mock Electron API for web compatibility
+// Mock window.api for web compatibility (the Tauri shim is skipped in pure-web mode)
 window.api = {
     isWebApp: true,  // Explicit flag to indicate web mode
     platform: navigator.platform || 'web',
@@ -615,108 +615,7 @@ window.api = {
         const settings = await window.api.getSettings();
         return settings.apiKey?.value || '';
     },
-    fetchWithApiKey: async (url) => {
-        try {
-            let apiKey = await window.api.getServerAPIKey();
-            const options = {};
-            if(apiKey != null && apiKey != '') {
-                options.headers = {
-                Authorization: `Bearer ${apiKey}`,
-                }
-            }
-            return await fetch(url, options);
-        } catch (e) {
-            console.error('fetchWithApiKey error:', e);
-            throw e;
-        }
-    },
-    getVersion: async () => {
-        try {
-            const response = await window.api.fetchWithApiKey('/api/v1/health');
-            if (response.ok) {
-                const data = await response.json();
-                return data.version || 'Unknown';
-            } else {
-                console.error('Health response not OK:', response.status, response.statusText);
-            }
-        } catch (e) {
-            console.error('Failed to fetch version:', e);
-        }
-        return 'Unknown';
-    },
-    restartApp: () => window.location.reload(),
-    getSystemStats: async () => {
-        try {
-            const response = await window.api.fetchWithApiKey('/api/v1/system-stats');
-            if (response.ok) {
-                return await response.json();
-            }
-        } catch (e) {
-            console.warn('Failed to fetch system stats:', e);
-        }
-        return { cpu_percent: null, memory_gb: 0, gpu_percent: null, vram_gb: null };
-    },
-    getSystemInfo: async () => {
-        try {
-            const response = await window.api.fetchWithApiKey('/api/v1/system-info');
-            if (response.ok) {
-                const data = await response.json();
-                let maxGttGb = 0;
-                let maxVramGb = 0;
-
-                const considerAmdGpu = (gpu) => {
-                    if (gpu && typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
-                        maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
-                    }
-                    if (gpu && typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
-                        maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
-                    }
-                };
-
-                if (data.devices?.amd_igpu) {
-                    considerAmdGpu(data.devices.amd_igpu);
-                }
-                if (Array.isArray(data.devices?.amd_dgpu)) {
-                    data.devices.amd_dgpu.forEach(considerAmdGpu);
-                }
-
-                // Transform server response to match the About window format
-                const systemInfo = {
-                    system: 'Unknown',
-                    os: data['OS Version'] || 'Unknown',
-                    cpu: data['Processor'] || 'Unknown',
-                    gpus: [],
-                    gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : undefined,
-                    vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : undefined,
-                };
-
-                // Extract GPU information from devices
-                if (data.devices) {
-                    if (data.devices.amd_igpu?.name) {
-                        systemInfo.gpus.push(data.devices.amd_igpu.name);
-                    }
-                    if (data.devices.nvidia_igpu?.name) {
-                        systemInfo.gpus.push(data.devices.nvidia_igpu.name);
-                    }
-                    if (Array.isArray(data.devices.amd_dgpu)) {
-                        data.devices.amd_dgpu.forEach(gpu => {
-                            if (gpu.name) systemInfo.gpus.push(gpu.name);
-                        });
-                    }
-                    if (Array.isArray(data.devices.nvidia_dgpu)) {
-                        data.devices.nvidia_dgpu.forEach(gpu => {
-                            if (gpu.name) systemInfo.gpus.push(gpu.name);
-                        });
-                    }
-                }
-
-                return systemInfo;
-            }
-        } catch (e) {
-            console.warn('Failed to fetch system info:', e);
-        }
-        return { system: 'Unknown', os: 'Unknown', cpu: 'Unknown', gpus: [], gtt_gb: undefined, vram_gb: undefined };
-    }
+    restartApp: () => window.location.reload()
 };
 </script>
 )";
