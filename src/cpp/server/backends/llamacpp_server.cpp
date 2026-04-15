@@ -79,7 +79,7 @@ static void push_overridable_arg(std::vector<std::string>& args,
 
     auto has_flag = [&](const std::string& flag) {
         for (const auto& token : custom_tokens) {
-            if (token == flag || token.rfind(flag + "=", 0) == 0) {
+            if (token == flag) {
                 return true;
             }
         }
@@ -98,7 +98,7 @@ static void push_overridable_arg(std::vector<std::string>& args,
                     const std::string& value) {
     bool has_flag = false;
     for (const auto& token : custom_tokens) {
-        if (token == key || token.rfind(key + "=", 0) == 0) {
+        if (token == key) {
             has_flag = true;
             break;
         }
@@ -146,7 +146,7 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
     for (size_t i = 0; i < tokens.size(); ++i) {
         const std::string& token = tokens[i];
 
-        if (token == "--model-draft" || token.rfind("--model-draft=", 0) == 0) {
+        if (token == "--model-draft") {
             has_model_draft = true;
         }
 
@@ -154,8 +154,6 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
             if (i + 1 < tokens.size() && !is_flag_token(tokens[i + 1])) {
                 spec_type = tokens[i + 1];
             }
-        } else if (token.rfind("--spec-type=", 0) == 0) {
-            spec_type = token.substr(std::string("--spec-type=").size());
         }
     }
 
@@ -165,7 +163,7 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
 static void strip_redundant_no_mmproj_tokens(std::vector<std::string>& tokens) {
     tokens.erase(
         std::remove_if(tokens.begin(), tokens.end(), [](const std::string& token) {
-            return token == "--no-mmproj" || token.rfind("--no-mmproj=", 0) == 0;
+            return token == "--no-mmproj";
         }),
         tokens.end());
 }
@@ -216,7 +214,6 @@ static std::string resolve_draft_model_path_in_args(const std::string& custom_ar
     for (size_t i = 0; i < tokens.size(); ++i) {
         std::string draft_value;
         bool has_draft_flag = false;
-        bool inline_value = false;
 
         if (tokens[i] == "--model-draft") {
             if (i + 1 >= tokens.size()) {
@@ -225,11 +222,6 @@ static std::string resolve_draft_model_path_in_args(const std::string& custom_ar
             draft_value = tokens[i + 1];
             validate_model_draft_value_or_throw(draft_value);
             has_draft_flag = true;
-        } else if (tokens[i].rfind("--model-draft=", 0) == 0) {
-            draft_value = tokens[i].substr(std::string("--model-draft=").size());
-            validate_model_draft_value_or_throw(draft_value);
-            has_draft_flag = true;
-            inline_value = true;
         }
 
         if (!has_draft_flag || draft_value.empty()) {
@@ -271,11 +263,7 @@ static std::string resolve_draft_model_path_in_args(const std::string& custom_ar
             );
         }
 
-        if (inline_value) {
-            tokens[i] = "--model-draft=" + resolved_draft;
-        } else {
-            tokens[i + 1] = resolved_draft;
-        }
+        tokens[i + 1] = resolved_draft;
         changed = true;
     }
 
