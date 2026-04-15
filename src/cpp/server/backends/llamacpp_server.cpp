@@ -12,6 +12,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cstdlib>
+#include <cctype>
 #include <set>
 #include <sstream>
 
@@ -106,6 +107,15 @@ static bool ends_with_ignore_case(const std::string& value, const std::string& s
     }
 
     return true;
+}
+
+static bool is_existing_gguf_file(const std::string& value) {
+    if (value.empty() || !ends_with_ignore_case(value, ".gguf")) {
+        return false;
+    }
+
+    fs::path candidate_path = path_from_utf8(value);
+    return fs::exists(candidate_path) && fs::is_regular_file(candidate_path);
 }
 
 static bool is_flag_token(const std::string& value) {
@@ -222,13 +232,16 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
             continue;
         }
 
-        std::string resolved_draft;
+        std::string resolved_draft = model_manager->resolve_checkpoint_path("llamacpp", draft_value, "main");
 
-        // First, treat non-GGUF input as a checkpoint string.
-        resolved_draft = model_manager->resolve_checkpoint_path("llamacpp", draft_value, "main");
+        // First, treat non-GGUF input as a checkpoint string. If resolution yields
+        // a non-GGUF path (e.g., a cache directory), continue to model-name fallback.
+        if (!is_existing_gguf_file(resolved_draft)) {
+            resolved_draft.clear();
+        }
 
         // If checkpoint resolution fails, treat it as a model name.
-        if (resolved_draft.empty() || !fs::exists(path_from_utf8(resolved_draft))) {
+        if (resolved_draft.empty()) {
             if (model_manager->model_exists(draft_value)) {
                 auto draft_info = model_manager->get_model_info(draft_value);
                 if (draft_info.recipe != "llamacpp") {
@@ -238,20 +251,16 @@ static std::string resolve_draft_checkpoint_in_args(const std::string& custom_ar
                     );
                 }
                 resolved_draft = draft_info.resolved_path();
+                if (!is_existing_gguf_file(resolved_draft)) {
+                    resolved_draft.clear();
+                }
             }
         }
 
-        if (resolved_draft.empty() || !fs::exists(path_from_utf8(resolved_draft))) {
+        if (resolved_draft.empty()) {
             throw std::runtime_error(
                 "Unable to resolve --model-draft value '" + draft_value +
                 "' to a local GGUF file. Provide a local .gguf path, a downloaded checkpoint, or a downloaded llamacpp model name."
-            );
-        }
-
-        if (!ends_with_ignore_case(resolved_draft, ".gguf")) {
-            throw std::runtime_error(
-                "Resolved --model-draft value '" + draft_value +
-                "' to a non-GGUF path: '" + resolved_draft + "'."
             );
         }
 
