@@ -67,7 +67,7 @@ static void push_arg(std::vector<std::string>& args,
 
 // Helper to add a flag-only overridable argument (e.g., --context-shift)
 static void push_overridable_arg(std::vector<std::string>& args,
-                    const std::vector<std::string>& custom_tokens,
+                    const std::string& custom_args,
                     const std::string& key) {
     // boolean flags in llama-server can be turned off adding the --no- prefix to their name
     std::string anti_key;
@@ -77,34 +77,17 @@ static void push_overridable_arg(std::vector<std::string>& args,
         anti_key = "--no-" + key.substr(2); //remove -- prefix
     }
 
-    auto has_flag = [&](const std::string& flag) {
-        for (const auto& token : custom_tokens) {
-            if (token == flag) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    if (!has_flag(key) && !has_flag(anti_key)) {
+    if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
         args.push_back(key);
     }
 }
 
 // Helper to add a flag-value overridable pair (e.g., --keep 16)
 static void push_overridable_arg(std::vector<std::string>& args,
-                    const std::vector<std::string>& custom_tokens,
+                    const std::string& custom_args,
                     const std::string& key,
                     const std::string& value) {
-    bool has_flag = false;
-    for (const auto& token : custom_tokens) {
-        if (token == key) {
-            has_flag = true;
-            break;
-        }
-    }
-
-    if (!has_flag) {
+    if (custom_args.find(key) == std::string::npos) {
         args.push_back(key);
         args.push_back(value);
     }
@@ -160,12 +143,15 @@ static bool has_speculative_decoding_enabled(const std::vector<std::string>& tok
     return has_model_draft || (!spec_type.empty() && spec_type != "none");
 }
 
-static void strip_redundant_no_mmproj_tokens(std::vector<std::string>& tokens) {
+static bool strip_redundant_no_mmproj_tokens(std::vector<std::string>& tokens) {
+    size_t previous_size = tokens.size();
     tokens.erase(
         std::remove_if(tokens.begin(), tokens.end(), [](const std::string& token) {
             return token == "--no-mmproj";
         }),
         tokens.end());
+
+    return tokens.size() != previous_size;
 }
 
 static void validate_model_draft_value_or_throw(const std::string& draft_value) {
@@ -345,13 +331,16 @@ void LlamaCppServer::load(const std::string& model_name,
     // Convert --model-draft model ids into concrete local GGUF paths.
     llamacpp_args = resolve_draft_model_path_in_args(llamacpp_args, model_manager_);
     std::vector<std::string> custom_tokens = parse_custom_args(llamacpp_args);
+    std::string effective_llamacpp_args = llamacpp_args;
+
     bool speculative_enabled = has_speculative_decoding_enabled(custom_tokens);
     if (speculative_enabled) {
         // We enforce --no-mmproj ourselves; strip redundant custom copies to
         // avoid reserved-argument validation failures.
-        strip_redundant_no_mmproj_tokens(custom_tokens);
+        if (strip_redundant_no_mmproj_tokens(custom_tokens)) {
+            effective_llamacpp_args = join_custom_args(custom_tokens);
+        }
     }
-    std::string normalized_llamacpp_args = join_custom_args(custom_tokens);
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
@@ -422,22 +411,22 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (llamacpp_backend == "vulkan" || llamacpp_backend == "rocm") {
-        push_overridable_arg(args, custom_tokens, "--context-shift");
-        push_overridable_arg(args, custom_tokens, "--keep", "16");
+        push_overridable_arg(args, effective_llamacpp_args, "--context-shift");
+        push_overridable_arg(args, effective_llamacpp_args, "--keep", "16");
     } else {
         // For Metal, just use keep without context-shift
-        push_overridable_arg(args, custom_tokens, "--keep", "16");
+        push_overridable_arg(args, effective_llamacpp_args, "--keep", "16");
     }
 
     // Use legacy reasoning formatting
-    push_overridable_arg(args, custom_tokens, "--reasoning-format", "auto");
+    push_overridable_arg(args, effective_llamacpp_args, "--reasoning-format", "auto");
 
     // Disable llamacpp webui by default
-    push_overridable_arg(args, custom_tokens, "--no-webui");
+    push_overridable_arg(args, effective_llamacpp_args, "--no-webui");
 
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, custom_tokens, "--no-mmap");
+        push_overridable_arg(args, effective_llamacpp_args, "--no-mmap");
     }
 
     // Add embeddings support if the model supports it
@@ -460,15 +449,15 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
-    if (!normalized_llamacpp_args.empty()) {
-        std::string validation_error = validate_custom_args(normalized_llamacpp_args, reserved_flags);
+    if (!effective_llamacpp_args.empty()) {
+        std::string validation_error = validate_custom_args(effective_llamacpp_args, reserved_flags);
         if (!validation_error.empty()) {
             throw std::invalid_argument(
                 "Invalid custom llama-server arguments:\n" + validation_error
             );
         }
 
-        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << normalized_llamacpp_args << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << effective_llamacpp_args << std::endl;
         args.insert(args.end(), custom_tokens.begin(), custom_tokens.end());
     }
 
