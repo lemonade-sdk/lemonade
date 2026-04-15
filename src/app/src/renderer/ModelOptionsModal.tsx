@@ -52,6 +52,8 @@ interface DraftModelChoice {
   checkpoint: string;
 }
 
+type SpecNumericFieldKey = 'draftMax' | 'draftMin' | 'specNgramSizeN' | 'specNgramSizeM' | 'specNgramMinHits';
+
 type SpecPresetId = 'custom' | 'safe-default' | 'ngram-simple-code' | 'ngram-map-k-keys' | 'ngram-mod-reasoning';
 
 const SPEC_DEFAULTS: SpecState = {
@@ -351,6 +353,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [modelUrl, setModelUrl] = useState<string>("");
   const [options, setOptions] = useState<RecipeOptions>();
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
+  const [specNumericDrafts, setSpecNumericDrafts] = useState<Partial<Record<'draftMax' | 'draftMin' | 'specNgramSizeN' | 'specNgramSizeM' | 'specNgramMinHits', string>>>({});
+  const [llamacppArgsDraft, setLlamacppArgsDraft] = useState<string | null>(null);
   const [specState, setSpecState] = useState<SpecState>(SPEC_DEFAULTS);
   const [specNonTokens, setSpecNonTokens] = useState<string[]>([]);
   const [selectedSpecPreset, setSelectedSpecPreset] = useState<SpecPresetId>('custom');
@@ -366,6 +370,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     if (!isOpen) return;
     let isMounted = true;
     setNumericDrafts({});
+    setSpecNumericDrafts({});
+    setLlamacppArgsDraft(null);
     setSpecState(SPEC_DEFAULTS);
     setSpecNonTokens([]);
     setSelectedSpecPreset('custom');
@@ -421,9 +427,15 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
   useEffect(() => {
     if (!options || options.recipe !== 'llamacpp') {
+      setSpecNumericDrafts({});
       setSpecState(SPEC_DEFAULTS);
       setSpecNonTokens([]);
       setSelectedSpecPreset('custom');
+      return;
+    }
+
+    if (llamacppArgsDraft !== null) {
+      // Don't rewrite arguments while user is actively typing.
       return;
     }
 
@@ -455,7 +467,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
 
     const preset = SPEC_PRESETS.find((candidate) => matchesPreset(parsed.state, candidate.state));
     setSelectedSpecPreset(preset ? preset.id : 'custom');
-  }, [options]);
+  }, [options, llamacppArgsDraft]);
 
   // Handle click outside and escape key
   useEffect(() => {
@@ -615,6 +627,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   };
 
   const applySpecState = (nextState: SpecState, preset: SpecPresetId = 'custom') => {
+    setSpecNumericDrafts({});
     setSpecState(nextState);
     setSelectedSpecPreset(preset);
 
@@ -648,6 +661,47 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       ...preset.state,
     };
     applySpecState(nextState, presetId);
+  };
+
+  const setSpecNumericDraft = (key: SpecNumericFieldKey, input: string) => {
+    if (!/^[0-9]*$/.test(input)) return;
+    setSpecNumericDrafts((prev) => ({ ...prev, [key]: input }));
+  };
+
+  const clearSpecNumericDraft = (key: SpecNumericFieldKey) => {
+    setSpecNumericDrafts((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const commitSpecNumericDraft = (key: SpecNumericFieldKey, minValue: number) => {
+    const input = specNumericDrafts[key];
+    if (input !== undefined && input.trim() !== '') {
+      const currentValue = specState[key];
+      const committed = Math.max(minValue, Math.trunc(toIntOrDefault(input, currentValue)));
+      updateSpecField(key, committed);
+    }
+    clearSpecNumericDraft(key);
+  };
+
+  const renderSpecNumericField = (label: string, key: SpecNumericFieldKey, minValue: number) => {
+    const draft = specNumericDrafts[key];
+    return (
+      <div className="form-section">
+        <label className="form-label">{label}</label>
+        <input
+          type="text"
+          className="form-input"
+          inputMode="numeric"
+          value={draft ?? String(specState[key])}
+          onChange={(e) => setSpecNumericDraft(key, e.target.value)}
+          onBlur={() => commitSpecNumericDraft(key, minValue)}
+        />
+      </div>
+    );
   };
 
   if (!isOpen || !options) return null;
@@ -711,6 +765,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     if (value === undefined) return null;
 
     const isLlamacppArgs = key === 'llamacppArgs' && recipe === 'llamacpp';
+    const stringValue = isLlamacppArgs && llamacppArgsDraft !== null ? llamacppArgsDraft : value;
 
     return (
       <div className="form-section" key={key}>
@@ -719,8 +774,24 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           type="text"
           className="form-input"
           placeholder=""
-          value={value}
-          onChange={(e) => handleStringChange(key, e.target.value)}
+          value={stringValue}
+          onFocus={() => {
+            if (isLlamacppArgs && llamacppArgsDraft === null) {
+              setLlamacppArgsDraft(value);
+            }
+          }}
+          onBlur={() => {
+            if (!isLlamacppArgs || llamacppArgsDraft === null) return;
+            handleStringChange(key, llamacppArgsDraft);
+            setLlamacppArgsDraft(null);
+          }}
+          onChange={(e) => {
+            if (isLlamacppArgs) {
+              setLlamacppArgsDraft(e.target.value);
+              return;
+            }
+            handleStringChange(key, e.target.value);
+          }}
         />
 
         {isLlamacppArgs && (
@@ -760,27 +831,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
             {specState.type !== 'none' && (
               <>
                 <div className="spec-row two-col">
-                  <div className="form-section">
-                    <label className="form-label">Draft Max</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={specState.draftMax}
-                      min={0}
-                      onChange={(e) => updateSpecField('draftMax', toIntOrDefault(e.target.value, specState.draftMax))}
-                    />
-                  </div>
-
-                  <div className="form-section">
-                    <label className="form-label">Draft Min</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={specState.draftMin}
-                      min={0}
-                      onChange={(e) => updateSpecField('draftMin', toIntOrDefault(e.target.value, specState.draftMin))}
-                    />
-                  </div>
+                  {renderSpecNumericField('Draft Max', 'draftMax', 0)}
+                  {renderSpecNumericField('Draft Min', 'draftMin', 0)}
                 </div>
 
                 {specState.type === 'draft' && (
@@ -809,42 +861,15 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
                 {(specState.type === 'ngram-simple' || specState.type === 'ngram-map-k' || specState.type === 'ngram-mod') && (
                   <div className="spec-row two-col">
                     {(specState.type === 'ngram-simple' || specState.type === 'ngram-mod') && (
-                      <div className="form-section">
-                        <label className="form-label">N-gram Size N</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          min={1}
-                          value={specState.specNgramSizeN}
-                          onChange={(e) => updateSpecField('specNgramSizeN', toIntOrDefault(e.target.value, specState.specNgramSizeN))}
-                        />
-                      </div>
+                      renderSpecNumericField('N-gram Size N', 'specNgramSizeN', 1)
                     )}
 
                     {specState.type === 'ngram-mod' && (
-                      <div className="form-section">
-                        <label className="form-label">N-gram Size M</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          min={1}
-                          value={specState.specNgramSizeM}
-                          onChange={(e) => updateSpecField('specNgramSizeM', toIntOrDefault(e.target.value, specState.specNgramSizeM))}
-                        />
-                      </div>
+                      renderSpecNumericField('N-gram Size M', 'specNgramSizeM', 1)
                     )}
 
                     {specState.type === 'ngram-map-k' && (
-                      <div className="form-section">
-                        <label className="form-label">N-gram Min Hits</label>
-                        <input
-                          type="number"
-                          className="form-input"
-                          min={1}
-                          value={specState.specNgramMinHits}
-                          onChange={(e) => updateSpecField('specNgramMinHits', toIntOrDefault(e.target.value, specState.specNgramMinHits))}
-                        />
-                      </div>
+                      renderSpecNumericField('N-gram Min Hits', 'specNgramMinHits', 1)
                     )}
                   </div>
                 )}
