@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
+import { isExperienceModel } from './utils/experienceModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -77,20 +77,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   }, [selectedModel, modelsData]);
 
   const experienceMode = activeModelType === 'llm' && isExperienceSelected;
-
-  const prevExperienceModeRef = useRef(experienceMode);
-  useEffect(() => {
-    if (prevExperienceModeRef.current !== experienceMode) {
-      prevExperienceModeRef.current = experienceMode;
-      window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: experienceMode } }));
-    }
-    return () => {
-      if (prevExperienceModeRef.current) {
-        prevExperienceModeRef.current = false;
-        window.dispatchEvent(new CustomEvent('experienceModeChanged', { detail: { active: false } }));
-      }
-    };
-  }, [experienceMode]);
 
   // Use refs so the mount-once effect can read current values without re-running
   const selectedModelRef = useRef(selectedModel);
@@ -218,36 +204,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setResetKey(k => k + 1);
   };
 
-  const handleUnloadExperienceModel = async () => {
-    if (!selectedModel || inference.isBusy) return;
-
-    try {
-      const info = modelsData[selectedModel];
-      const components = isExperienceModel(info) ? getExperienceComponents(info) : [selectedModel];
-
-      for (const component of components) {
-        const response = await serverFetch('/unload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: component }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to unload ${component}: ${response.statusText}`);
-        }
-      }
-
-      inference.reset();
-      setCurrentLoadedModel(null);
-      setSelectedModel('');
-      setUserHasSelectedModel(false);
-      window.dispatchEvent(new CustomEvent('modelUnload'));
-    } catch (error) {
-      console.error('Failed to unload experience model:', error);
-      showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
   if (!isVisible) return null;
 
   const headerTitle = activeModelType === 'embedding' ? 'Lemonade Embeddings'
@@ -269,7 +225,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   };
   return (
     <div
-      className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''} ${isExperienceSelected ? 'chat-window-experience' : ''} ${experienceMode ? 'chat-window-experience-mode' : ''}`}
+      className={`chat-window ${activeModelType === 'llm' ? 'chat-window-llm' : ''}`}
       style={width ? { width: `${width}px` } : undefined}
     >
       <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -301,7 +257,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           setCurrentLoadedModel={setCurrentLoadedModel}
           experienceMode={experienceMode}
           onNewChat={handleNewChat}
-          onUnloadExperience={handleUnloadExperienceModel}
         />
       )}
       <input

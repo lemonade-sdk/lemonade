@@ -13,7 +13,7 @@ import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
 import { Message, MessageContent, TextContent, ImageContent, AudioContent, Artifact } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
-import { SendIcon, ImageUploadIcon, PlusIcon, MicrophoneIcon, RefreshIcon, EjectIcon } from '../Icons';
+import { SendIcon, ImageUploadIcon, RefreshIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
@@ -42,14 +42,13 @@ interface LLMChatPanelProps {
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
   onNewChat?: () => void;
-  onUnloadExperience?: () => void;
 }
 
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
   isVision, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
-  onNewChat, onUnloadExperience,
+  onNewChat,
 }) => {
   const { selectedModel, modelsData } = useModels();
   const { systemInfo } = useSystem();
@@ -66,11 +65,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [editingImages, setEditingImages] = useState<string[]>([]);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [uploadedAudioFiles, setUploadedAudioFiles] = useState<Array<{ data: string; mime: string; name: string }>>([]);
-  const [isMicRecording, setIsMicRecording] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
-  const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
-  const [modeTransitionClass, setModeTransitionClass] = useState('');
   const [lemonadeTools, setLemonadeTools] = useState<LemonadeToolsResult | null>(null);
   const userScrolledAwayRef = useRef(false);
 
@@ -80,14 +76,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
-  const speechRecognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const autoScrollInProgressRef = useRef(false);
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
-  const modeTransitionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -140,33 +134,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       window.removeEventListener('popstate', applyPromptFromQuery);
     };
   }, []);
-
-  useEffect(() => {
-    const TRANSITION_MS = 420;
-    if (modeTransitionTimerRef.current !== null) {
-      window.clearTimeout(modeTransitionTimerRef.current);
-      modeTransitionTimerRef.current = null;
-    }
-
-    if (experienceMode) {
-      setIsExperienceLayoutActive(true);
-      setModeTransitionClass('mode-transition-to-experience');
-      modeTransitionTimerRef.current = window.setTimeout(() => {
-        setModeTransitionClass('');
-        modeTransitionTimerRef.current = null;
-      }, TRANSITION_MS);
-      return;
-    }
-
-    if (isExperienceLayoutActive) {
-      setModeTransitionClass('mode-transition-to-llm');
-      modeTransitionTimerRef.current = window.setTimeout(() => {
-        setIsExperienceLayoutActive(false);
-        setModeTransitionClass('');
-        modeTransitionTimerRef.current = null;
-      }, TRANSITION_MS);
-    }
-  }, [experienceMode, isExperienceLayoutActive]);
 
   // Build lemonade tools when experience mode activates
   useEffect(() => {
@@ -221,35 +188,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const uploadedImageHandlers = createImageHandlers(setUploadedImages, true);
   const editingImageHandlers = createImageHandlers(setEditingImages, false);
 
-  // Combined file upload handler for experience mode (images + audio)
-  const handleExperienceFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result;
-      if (typeof result !== 'string') return;
-      if (file.type.startsWith('image/')) {
-        setUploadedImages(prev => [...prev, result]);
-      } else if (file.type.startsWith('audio/')) {
-        // Extract base64 data from data URL (remove "data:audio/...;base64," prefix)
-        const base64Data = result.split(',')[1] || '';
-        setUploadedAudioFiles(prev => [...prev, { data: base64Data, mime: file.type, name: file.name }]);
-      }
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
-  };
-
   // Abort on unmount
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
-      stopMicDictation();
-      if (modeTransitionTimerRef.current !== null) {
-        window.clearTimeout(modeTransitionTimerRef.current);
-      }
     };
   }, []);
 
@@ -898,81 +840,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (abortControllerRef.current) abortControllerRef.current.abort();
   };
 
-  const stopMicDictation = () => {
-    const recognition = speechRecognitionRef.current;
-    if (recognition) {
-      try {
-        recognition.stop();
-      } catch {
-        // no-op
-      }
-      speechRecognitionRef.current = null;
-    }
-    setIsMicRecording(false);
-  };
-
-  const toggleMicDictation = () => {
-    if (isMicRecording) {
-      stopMicDictation();
-      return;
-    }
-
-    const SpeechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) {
-      showError('Microphone dictation is not supported in this environment.');
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognitionCtor();
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) {
-            transcript += result[0]?.transcript || '';
-          }
-        }
-
-        const trimmed = transcript.trim();
-        if (!trimmed) return;
-
-        setInputValue(prev => (prev.trim().length > 0 ? `${prev}${prev.endsWith(' ') ? '' : ' '}${trimmed}` : trimmed));
-
-        window.requestAnimationFrame(() => {
-          if (!inputTextareaRef.current) return;
-          adjustTextareaHeight(inputTextareaRef.current);
-          inputTextareaRef.current.focus();
-          const len = inputTextareaRef.current.value.length;
-          inputTextareaRef.current.setSelectionRange(len, len);
-        });
-      };
-
-      recognition.onerror = (event: any) => {
-        if (event?.error === 'aborted' || event?.error === 'no-speech') return;
-        showError(`Microphone error: ${event?.error || 'unknown error'}`);
-      };
-
-      recognition.onend = () => {
-        setIsMicRecording(false);
-        speechRecognitionRef.current = null;
-      };
-
-      recognition.start();
-      speechRecognitionRef.current = recognition;
-      setIsMicRecording(true);
-    } catch {
-      showError('Failed to start microphone dictation.');
-      setIsMicRecording(false);
-      speechRecognitionRef.current = null;
-    }
-  };
-
   const toggleThinking = (index: number) => {
     setExpandedThinking(prev => {
       const next = new Set(prev);
@@ -1124,55 +991,25 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   return (
-    <div className={`llm-chat-panel ${isExperienceLayoutActive && messages.length === 0 ? 'experience-empty-chat' : ''} ${modeTransitionClass}`}>
-      {experienceMode && selectedModel && (
-        <div className="experience-topbar">
-          <div className="experience-topbar-left">
-            <div className="experience-model-name">{selectedModel}</div>
-            <button
-              className="model-action-btn unload-btn active-model-eject-button experience-unload-icon-button"
-              onClick={onUnloadExperience}
-              disabled={isBusy}
-              title="Eject experience"
-              aria-label="Unload experience"
-            >
-              <EjectIcon />
-            </button>
-          </div>
-          <button
-            className="experience-refresh-button"
-            onClick={onNewChat}
-            disabled={isBusy}
-            title="Start a new chat"
-            aria-label="Start a new chat"
-          >
-            <RefreshIcon />
-          </button>
-        </div>
-      )}
-      {!experienceMode && (
-        <div className="chat-header">
-          <h3>LLM Chat</h3>
-          <button
-            className="new-chat-button"
-            onClick={onNewChat}
-            disabled={isBusy}
-            title="Start a new chat"
-          >
-            <RefreshIcon />
-          </button>
-        </div>
-      )}
+    <div className="llm-chat-panel">
+      <div className="chat-header">
+        <h3>LLM Chat</h3>
+        <button
+          className="new-chat-button"
+          onClick={onNewChat}
+          disabled={isBusy}
+          title="Start a new chat"
+        >
+          <RefreshIcon />
+        </button>
+      </div>
       <div
         className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
         onClick={editingIndex !== null ? cancelEdit : undefined}
       >
-        {messages.length === 0 && !experienceMode && <EmptyState title="Lemonade Chat" />}
-        {messages.length === 0 && experienceMode && (
-          <div className="experience-empty-message">Chat and create, naturally.</div>
-        )}
+        {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
           return (
@@ -1292,36 +1129,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0 && uploadedAudioFiles.length === 0}
-            modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
-            rightControls={experienceMode && window.isSecureContext ?
-              <button
-                className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
-                onClick={toggleMicDictation}
-                title={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
-                aria-label={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
-              >
-                <MicrophoneIcon active={isMicRecording} />
-              </button>
-            : undefined}
-            leftControls={experienceMode ? (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,audio/*"
-                  onChange={handleExperienceFileUpload}
-                  style={{ display: 'none' }}
-                />
-                <button
-                  className="image-upload-button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isBusy}
-                  title="Upload image or audio file"
-                >
-                  <PlusIcon />
-                </button>
-              </>
-            ) : (
+            modelSelector={<ModelSelector disabled={isBusy} />}
+            leftControls={(
               <>
                 {isVision && (
                   <>
