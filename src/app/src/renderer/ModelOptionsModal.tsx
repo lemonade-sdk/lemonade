@@ -213,35 +213,35 @@ const buildSpecArgs = (state: SpecState): string => {
     // Keep --spec-type draft only as a temporary UI state marker when no draft
     // model id is selected yet. Once --model-draft is present, omit --spec-type.
     if (state.type !== 'draft' || !draftModelId) {
-      tokens.push(`--spec-type=${state.type}`);
+      tokens.push(`--spec-type ${state.type}`);
     }
-    tokens.push(`--draft-max=${Math.max(0, Math.trunc(state.draftMax))}`);
-    tokens.push(`--draft-min=${Math.max(0, Math.trunc(state.draftMin))}`);
+    tokens.push(`--draft-max ${Math.max(0, Math.trunc(state.draftMax))}`);
+    tokens.push(`--draft-min ${Math.max(0, Math.trunc(state.draftMin))}`);
 
     if (state.type === 'draft' && draftModelId) {
-      tokens.push(`--model-draft=${quoteArgValueIfNeeded(draftModelId)}`);
+      tokens.push(`--model-draft ${quoteArgValueIfNeeded(draftModelId)}`);
     }
 
     if (state.type === 'ngram-simple' || state.type === 'ngram-mod') {
-      tokens.push(`--spec-ngram-size-n=${Math.max(1, Math.trunc(state.specNgramSizeN))}`);
+      tokens.push(`--spec-ngram-size-n ${Math.max(1, Math.trunc(state.specNgramSizeN))}`);
     }
 
     if (state.type === 'ngram-mod') {
-      tokens.push(`--spec-ngram-size-m=${Math.max(1, Math.trunc(state.specNgramSizeM))}`);
+      tokens.push(`--spec-ngram-size-m ${Math.max(1, Math.trunc(state.specNgramSizeM))}`);
     }
 
     if (state.type === 'ngram-map-k') {
-      tokens.push(`--spec-ngram-min-hits=${Math.max(1, Math.trunc(state.specNgramMinHits))}`);
+      tokens.push(`--spec-ngram-min-hits ${Math.max(1, Math.trunc(state.specNgramMinHits))}`);
     }
 
     if (state.draftPMin.trim()) {
-      tokens.push(`--draft-p-min=${quoteArgValueIfNeeded(state.draftPMin.trim())}`);
+      tokens.push(`--draft-p-min ${quoteArgValueIfNeeded(state.draftPMin.trim())}`);
     }
     if (state.ctxSizeDraft.trim()) {
-      tokens.push(`--ctx-size-draft=${quoteArgValueIfNeeded(state.ctxSizeDraft.trim())}`);
+      tokens.push(`--ctx-size-draft ${quoteArgValueIfNeeded(state.ctxSizeDraft.trim())}`);
     }
     if (state.deviceDraft.trim()) {
-      tokens.push(`--device-draft=${quoteArgValueIfNeeded(state.deviceDraft.trim())}`);
+      tokens.push(`--device-draft ${quoteArgValueIfNeeded(state.deviceDraft.trim())}`);
     }
   }
 
