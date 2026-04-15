@@ -435,12 +435,13 @@ body.install-options {
   left: 100%;
 }
 
-.download-btn, .dev-btn, .marketplace-cta-btn, .navbar-install-btn {
+.download-btn, .dev-btn, .marketplace-cta-btn, .release-link, .navbar-install-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   font-family: var(--font-display);
+  font-size: 1rem;
   font-weight: 600;
   border: none;
   border-radius: var(--radius);
@@ -453,19 +454,22 @@ body.install-options {
   line-height: 1.2;
 }
 
-.download-btn, .navbar-install-btn {
+.download-btn, .marketplace-cta-btn, .release-link, .navbar-install-btn {
   background: var(--primary-yellow);
   color: var(--accent-gold);
   box-shadow: 0 12px 48px rgba(252, 216, 70, 0.3);
 }
 
 .download-btn:hover, .download-btn:focus,
+.marketplace-cta-btn:hover, .marketplace-cta-btn:focus,
+.release-link:hover, .release-link:focus,
 .navbar-install-btn:hover, .navbar-install-btn:focus {
   transform: scale(1.02);
   box-shadow: 0 16px 56px rgba(252, 216, 70, 0.38);
 }
 
-.download-btn:active, .navbar-install-btn:active {
+.download-btn:active, .marketplace-cta-btn:active,
+.release-link:active, .navbar-install-btn:active {
   transform: scale(0.95);
 }
 
@@ -474,7 +478,7 @@ body.install-options {
   padding: 0.625em 1.5em;
 }
 
-.dev-btn, .marketplace-cta-btn {
+.dev-btn {
   background: rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
@@ -488,26 +492,8 @@ body.install-options {
   transform: scale(1.02);
 }
 
-.marketplace-cta-btn:hover, .marketplace-cta-btn:focus {
-  background: rgba(255, 255, 255, 0.6);
-}
-
 .dev-btn:active {
   transform: scale(0.95);
-}
-
-/* Marketplace button - single line variant */
-.marketplace-cta-btn {
-  display: inline-block;
-  min-width: auto;
-  max-width: none;
-  height: auto;
-  padding: var(--spacing-md) 2rem;
-  font-size: 1rem;
-  flex-direction: unset;
-  align-items: unset;
-  justify-content: unset;
-  border-radius: var(--radius-full);
 }
 
 .download-btn .download-sub, .dev-btn .dev-sub {
@@ -939,37 +925,8 @@ body.install-options {
 }
 
 .release-link {
-  background: var(--primary-yellow);
-  color: var(--accent-gold);
-  text-decoration: none;
-  border-radius: var(--radius-full);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--font-size-base);
-  padding: 0.8rem var(--spacing-lg);
-  transition: var(--transition-medium);
-  box-shadow: var(--shadow-medium);
   align-self: flex-start;
   margin: auto var(--spacing-md) var(--spacing-md) var(--spacing-md);
-  display: inline-block;
-  cursor: pointer;
-  outline: none;
-  letter-spacing: 0.01em;
-  position: relative;
-  overflow: hidden;
-  min-width: 140px;
-  text-align: center;
-}
-
-.release-link:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
-}
-
-.release-link:active {
-  background: #f0cc00;
-  box-shadow: var(--shadow-light);
-  transform: scale(0.98);
 }
 
 /* News Banner */
@@ -2893,9 +2850,6 @@ body.install-options {
   }
 
   .release-link {
-    font-size: var(--font-size-base);
-    padding: 0.8rem var(--spacing-lg);
-    min-width: 120px;
     align-self: center;
   }
 
@@ -4735,38 +4689,6 @@ body.install-options {
 
 .hp-release-section .release-link {
   margin: 0 auto 1.05rem;
-  min-width: min(250px, 80vw);
-  max-width: min(250px, 80vw);
-  height: 70px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.78rem 1.2rem;
-  border-radius: var(--radius-full);
-  font-family: var(--font-display);
-  font-size: 0.94rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.01em;
-  color: var(--accent-gold);
-  text-decoration: none;
-  background: var(--primary-yellow);
-  border: none;
-  box-shadow: var(--shadow-medium);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-}
-
-.hp-release-section .release-link:hover,
-.hp-release-section .release-link:focus {
-  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
-  transform: translateY(-2px) scale(1.02);
-}
-
-.hp-release-section .release-link:active {
-  background: #f0cc00;
-  box-shadow: var(--shadow-light);
-  transform: scale(0.98);
 }
 
 /* --- Technical details section --- */
@@ -4961,18 +4883,6 @@ body.install-options {
 
 .hp-api-cta .marketplace-cta-btn {
   margin: 0;
-  min-width: min(250px, 80vw);
-  max-width: min(250px, 80vw);
-  height: 70px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1.2;
-  border-radius: var(--radius-full);
-  font-family: var(--font-display);
-  background: var(--primary-yellow);
-  color: var(--accent-gold);
-  box-shadow: var(--shadow-medium);
 }
 
 .hp-api-sample-panel pre {
@@ -5080,38 +4990,6 @@ body.install-options {
 
 .hp-eco-cta .marketplace-cta-btn {
   margin: 0;
-  min-width: min(250px, 80vw);
-  max-width: min(250px, 80vw);
-  height: 70px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.78rem 1.2rem;
-  border-radius: var(--radius-full);
-  font-family: var(--font-display);
-  font-size: 0.94rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.01em;
-  color: var(--accent-gold);
-  text-decoration: none;
-  background: var(--primary-yellow);
-  border: none;
-  box-shadow: var(--shadow-medium);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-}
-
-.hp-eco-cta .marketplace-cta-btn:hover,
-.hp-eco-cta .marketplace-cta-btn:focus {
-  box-shadow: 0 12px 36px rgba(252, 216, 70, 0.35);
-  transform: translateY(-2px) scale(1.02);
-}
-
-.hp-eco-cta .marketplace-cta-btn:active {
-  background: #f0cc00;
-  box-shadow: var(--shadow-light);
-  transform: scale(0.98);
 }
 
 /* --- Homepage responsive --- */
