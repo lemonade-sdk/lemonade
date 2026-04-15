@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Generate a WiX fragment that packages every file from the Electron app directory.
+Generate a WiX fragment that packages every file from the Tauri app build output.
 
-This script walks the unpacked Electron app (e.g. electron-builder's win-unpacked)
-and produces a WiX source fragment with:
+This script walks the staged Tauri app directory (typically containing just
+`lemonade-app.exe` plus any sibling resources) and produces a WiX source
+fragment with:
 
-1. Directory structure rooted at a caller-provided Directory Id (e.g. ElectronAppDir)
+1. Directory structure rooted at a caller-provided Directory Id (e.g. TauriAppDir)
 2. A ComponentGroup that installs every file under that directory.
 
 Each component receives a deterministic GUID based on the relative file path to
@@ -70,7 +71,7 @@ def ensure_directory_nodes(
         if rel_path.parts
         else root
     )
-    dir_id = make_safe_id("ElectronDir", rel_str or "root")
+    dir_id = make_safe_id("TauriDir", rel_str or "root")
     node = DirNode(rel_path, dir_id, rel_path.name or None, parent)
     parent.children[rel_path.name] = node
     nodes_by_rel[rel_str or "."] = node
@@ -97,14 +98,15 @@ def generate_wxs(
 ) -> None:
     if not source_dir.exists():
         raise FileNotFoundError(
-            f"Electron app directory not found: {source_dir}\n"
-            "Run the electron-app target (npm run build:win) before building the installer."
+            f"Tauri app directory not found: {source_dir}\n"
+            "Run the tauri-app target (cmake --build --target tauri-app) "
+            "before building the installer."
         )
 
     files = sorted(p for p in source_dir.rglob("*") if p.is_file())
     if not files:
         raise FileNotFoundError(
-            f"No files found under {source_dir}. Did the Electron build complete successfully?"
+            f"No files found under {source_dir}. Did the Tauri build complete successfully?"
         )
 
     root_node = DirNode(Path("."), root_id, None, None)
@@ -121,10 +123,10 @@ def generate_wxs(
         rel_path = file_path.relative_to(source_dir).as_posix()
         rel_dir = file_path.relative_to(source_dir).parent.as_posix() or "."
         dir_node = nodes_by_rel[rel_dir]
-        component_id = make_safe_id("ElectronComponent", rel_path)
-        file_id = make_safe_id("ElectronFile", rel_path)
+        component_id = make_safe_id("TauriComponent", rel_path)
+        file_id = make_safe_id("TauriFile", rel_path)
         guid_value = str(
-            uuid.uuid5(uuid.NAMESPACE_URL, f"lemonade/electron/{rel_path}")
+            uuid.uuid5(uuid.NAMESPACE_URL, f"lemonade/tauri/{rel_path}")
         ).upper()
         guid = f"{{{guid_value}}}"
         windows_rel_path = rel_path.replace("/", "\\")
@@ -162,13 +164,13 @@ def generate_wxs(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate WiX fragment for Electron app files."
+        description="Generate WiX fragment for Tauri app files."
     )
     parser.add_argument(
         "--source",
         required=True,
         type=Path,
-        help="Path to Electron win-unpacked directory.",
+        help="Path to the staged Tauri app build directory.",
     )
     parser.add_argument(
         "--output", required=True, type=Path, help="Destination .wxs fragment path."
@@ -179,12 +181,12 @@ def main() -> int:
     parser.add_argument(
         "--root-id",
         required=True,
-        help="Directory Id where the Electron app root will be installed.",
+        help="Directory Id where the Tauri app root will be installed.",
     )
     parser.add_argument(
         "--path-variable",
-        default="ElectronSourceDir",
-        help="WiX preprocessor variable resolving to the Electron source directory.",
+        default="TauriSourceDir",
+        help="WiX preprocessor variable resolving to the Tauri source directory.",
     )
     args = parser.parse_args()
 
@@ -197,7 +199,7 @@ def main() -> int:
             args.path_variable,
         )
     except Exception as exc:  # pylint: disable=broad-except
-        print(f"[generate_electron_fragment] ERROR: {exc}", file=sys.stderr)
+        print(f"[generate_tauri_fragment] ERROR: {exc}", file=sys.stderr)
         return 1
     return 0
 

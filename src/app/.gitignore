@@ -6,6 +6,10 @@ dist/
 dist-app/
 build/
 
+# Rust / Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
 # OS files
 .DS_Store
 Thumbs.db

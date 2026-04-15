@@ -57,6 +57,7 @@ export async function connectLogStream(
   socket.addEventListener('message', (event) => {
     try {
       const message = JSON.parse(event.data);
+      console.log('[LogStream] Received message type:', message.type, 'entries:', message.entries?.length ?? message.entry?.seq ?? 'n/a');
       if (message.type === 'logs.snapshot') {
         callbacks.onSnapshot(message.entries ?? []);
       } else if (message.type === 'logs.entry' && message.entry) {

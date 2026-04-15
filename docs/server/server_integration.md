@@ -109,7 +109,7 @@ sudo systemctl status lemonade-server
 
 **Available Installers:**
 - `lemonade-server-minimal.msi` - Server only (~3 MB)
-- `lemonade.msi` - Full installer with Electron desktop app (~105 MB)
+- `lemonade.msi` - Full installer with Tauri desktop app (~10 MB)
 
 **GUI Installation:**
 

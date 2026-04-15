@@ -63,8 +63,9 @@ const StatusBar: React.FC = () => {
     lastSystemStatsFetchRef.current = now;
 
     try {
-      if (window.api?.getSystemStats) {
-        const stats = await window.api.getSystemStats();
+      const response = await serverConfig.fetch('/system-stats');
+      if (response.ok) {
+        const stats = await response.json();
         setSystemStats({
           cpu_percent: stats.cpu_percent ?? null,
           memory_gb: stats.memory_gb ?? 0,

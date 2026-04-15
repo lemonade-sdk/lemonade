@@ -253,10 +253,11 @@ lemonade backends
 
 | Under Development          | Under Consideration         | Recently Completed      |
 |---------------------------|-----------------------------|------------------------|
-| Native multi-modal tool calling | vLLM support           | Embeddable binary release           |
-| More whisper.cpp backends | Port app to Tauri            | Image generation       |
-| More SD.cpp backends      |                              | Speech-to-text         |
-| MLX support               |                              | Text-to-speech         |
+| Native multi-modal tool calling | vLLM support           | Port app to Tauri      |
+| More whisper.cpp backends |                              | Embeddable binary release |
+| More SD.cpp backends      |                              | Image generation       |
+| MLX support               |                              | Speech-to-text         |
+|                           |                              | Text-to-speech         |
 |                           |                              | Apps marketplace       |
 
 

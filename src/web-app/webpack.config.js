@@ -42,9 +42,15 @@ module.exports = (env, argv) => {
     // process package not installed locally
   }
 
+  // The shared renderer source lives in ../app/src (sibling tree). The
+  // web-app build resolves it directly via these relative paths instead of
+  // checking in OS-level symlinks (which break Windows checkouts unless
+  // core.symlinks=true and developer mode are both enabled). The CMake
+  // staging step (BuildWebApp.cmake) preserves this layout by copying both
+  // src/app and src/web-app into the build directory side by side.
   const config = {
     mode: argv.mode || 'development',
-    entry: './src/renderer/index.tsx',
+    entry: '../app/src/renderer/index.tsx',
     target: 'web',  // Changed from 'electron-renderer' to 'web' for browser
     devtool: argv.mode === 'production' ? false : 'source-map',
     module: {
@@ -93,7 +99,18 @@ module.exports = (env, argv) => {
         path.resolve(__dirname, 'node_modules'),
         'node_modules'
       ],
-      alias: katexAlias,
+      alias: {
+        ...katexAlias,
+        // The shared renderer (symlinked from ../app/src) imports @tauri-apps/*
+        // modules in tauriShim.ts. The web-app intentionally excludes those
+        // packages; alias each specifier to a no-op stub. The shim never calls
+        // into them at runtime in pure-web mode (isTauri() is always false).
+        '@tauri-apps/api/core$': path.resolve(__dirname, 'tauri-stub.js'),
+        '@tauri-apps/api/event$': path.resolve(__dirname, 'tauri-stub.js'),
+        '@tauri-apps/api/window$': path.resolve(__dirname, 'tauri-stub.js'),
+        '@tauri-apps/plugin-opener$': path.resolve(__dirname, 'tauri-stub.js'),
+        '@tauri-apps/plugin-clipboard-manager$': path.resolve(__dirname, 'tauri-stub.js'),
+      },
       fallback: {
         "path": false,
         "fs": false,
@@ -112,7 +129,7 @@ module.exports = (env, argv) => {
     },
     plugins: [
       new HtmlWebpackPlugin({
-        template: './src/renderer/index.html',
+        template: '../app/src/renderer/index.html',
         filename: 'index.html',
       }),
       ...(bufferPolyfill && processPolyfill ? [

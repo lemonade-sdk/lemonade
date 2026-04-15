@@ -151,17 +151,25 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  // Handle lemonade:// protocol navigation from main process
+  // Handle lemonade:// protocol navigation from main process.
+  // Must await tauriReady because window.api is installed asynchronously
+  // and isn't available on the first render.
   useEffect(() => {
-    if (!window?.api?.onNavigate) return;
-    const unsubscribe = window.api.onNavigate((data: { view?: string; model?: string }) => {
-      if (data.view === 'logs') {
-        setIsLogsVisible(true);
-      }
-    });
-    // Tell main process that IPC listeners are active — safe to deliver pending nav
-    window?.api?.signalReady?.();
-    return unsubscribe;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const { tauriReady } = await import('./tauriShim');
+      await tauriReady;
+      if (cancelled || !window?.api?.onNavigate) return;
+      const unsub = window.api.onNavigate((data: { view?: string; model?: string }) => {
+        if (data.view === 'logs') {
+          setIsLogsVisible(true);
+        }
+      });
+      if (typeof unsub === 'function') unsubscribe = unsub;
+      window?.api?.signalReady?.();
+    })();
+    return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
   useEffect(() => {
@@ -275,6 +283,11 @@ const AppContent: React.FC = () => {
   }, [theme]);
 
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
+    // preventDefault stops the WebKit-based webview (Tauri) from starting a
+    // drag-text-selection on the divider, which would swallow our mousemove
+    // events and break the resize. Chromium ignored this implicitly; WebKit
+    // does not.
+    e.preventDefault();
     isDraggingRef.current = 'left';
     startXRef.current = e.clientX;
     startWidthRef.current = modelManagerWidth;
@@ -283,6 +296,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleRightDividerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
     isDraggingRef.current = 'right';
     startXRef.current = e.clientX;
     startWidthRef.current = chatWidth;
@@ -358,7 +372,36 @@ const AppContent: React.FC = () => {
         )}
       </div>
       <StatusBar />
+      <WindowResizeHandles />
     </>
+  );
+};
+
+// Frameless windows on webkit2gtk (Tauri on Linux) get no resize handles from
+// the OS. We paint 8 invisible regions on each edge and corner of the window;
+// each one captures mousedown and asks Tauri to start a resize drag. Skipped
+// in web mode and when window controls are unavailable for any other reason.
+const WindowResizeHandles: React.FC = () => {
+  if (typeof window === 'undefined' || !window.api?.startResizeDragging || window.api?.isWebApp) {
+    return null;
+  }
+  const start = (direction: string) => (e: React.MouseEvent) => {
+    // Only the primary button initiates a resize.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    window.api.startResizeDragging!(direction as never);
+  };
+  return (
+    <div className="window-resize-handles" aria-hidden="true">
+      <div className="resize-handle resize-handle-top" onMouseDown={start('Top')} />
+      <div className="resize-handle resize-handle-right" onMouseDown={start('Right')} />
+      <div className="resize-handle resize-handle-bottom" onMouseDown={start('Bottom')} />
+      <div className="resize-handle resize-handle-left" onMouseDown={start('Left')} />
+      <div className="resize-handle resize-handle-top-left" onMouseDown={start('TopLeft')} />
+      <div className="resize-handle resize-handle-top-right" onMouseDown={start('TopRight')} />
+      <div className="resize-handle resize-handle-bottom-left" onMouseDown={start('BottomLeft')} />
+      <div className="resize-handle resize-handle-bottom-right" onMouseDown={start('BottomRight')} />
+    </div>
   );
 };
 
