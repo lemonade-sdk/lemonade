@@ -213,33 +213,6 @@ body.install-options {
   justify-self: end;
 }
 
-.navbar-install-btn {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-display);
-  font-size: var(--nav-action);
-  font-weight: 700;
-  color: var(--accent-gold);
-  background: var(--primary-yellow);
-  border: none;
-  box-shadow: 0 4px 16px rgba(252, 216, 70, 0.25);
-  padding: 0.25em 1em;
-  border-radius: var(--radius-full);
-  text-decoration: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  letter-spacing: -0.01em;
-}
-
-.navbar-install-btn:hover {
-  transform: scale(1.03);
-  box-shadow: 0 6px 24px rgba(252, 216, 70, 0.35);
-  color: var(--accent-gold);
-}
-
-.navbar-install-btn:active {
-  transform: scale(0.97);
-}
-
 .navbar-back {
   color: var(--accent-gold);
   text-decoration: none;
@@ -462,38 +435,43 @@ body.install-options {
   left: 100%;
 }
 
-.download-btn, .dev-btn, .marketplace-cta-btn {
+.download-btn, .dev-btn, .marketplace-cta-btn, .navbar-install-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1rem;
+  font-weight: 600;
   border: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   text-decoration: none;
   outline: none;
-  letter-spacing: 0.01em;
-  padding: 1rem 2rem;
+  letter-spacing: -0.01em;
+  padding: 0.75em 1.5em;
   line-height: 1.2;
 }
 
-.download-btn {
+.download-btn, .navbar-install-btn {
   background: var(--primary-yellow);
   color: var(--accent-gold);
   box-shadow: 0 12px 48px rgba(252, 216, 70, 0.3);
 }
 
-.download-btn:hover, .download-btn:focus {
+.download-btn:hover, .download-btn:focus,
+.navbar-install-btn:hover, .navbar-install-btn:focus {
   transform: scale(1.02);
   box-shadow: 0 16px 56px rgba(252, 216, 70, 0.38);
 }
 
-.download-btn:active {
+.download-btn:active, .navbar-install-btn:active {
   transform: scale(0.95);
+}
+
+.navbar-install-btn {
+  font-size: var(--nav-link);
+  padding: 0.625em 1.5em;
 }
 
 .dev-btn, .marketplace-cta-btn {
@@ -4096,7 +4074,7 @@ body.install-options {
 .hp-cta-row .download-btn,
 .hp-cta-row .dev-btn {
   margin: 0;
-  padding: 1rem 2rem;
+  font-size: 1.1rem;
 }
 
 .hp-cta-row .download-sub,

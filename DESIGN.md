@@ -52,14 +52,14 @@ We do not use structural lines. We use physics.
 ## 5. Components
 
 ### Buttons
-- **Primary:** `primary_container` (#FCD846) background with `on_primary_container` (#5C4B00) text. Shape: `full` (pill-shaped).
+- **Primary:** `primary_container` (#FCD846) background with `on_primary_container` (#5C4B00) text. Shape: `6px` radius (matching the universal corner radius).
 - **Secondary (Glass):** Semi-transparent white with `20px` backdrop blur and a `ghost border`.
 - **Tertiary:** `tertiary` (#3C6531) text only, used for "Organic" actions.
 
 ### Cards & 4-Column Blocks
 - **The Layout:** Content must align to a 4-column structure.
 - **Separation:** Forbid divider lines. Use `md` (1.5rem) spacing or a shift from `surface_container_low` to `surface_container_high`.
-- **Styling:** Cards should use `DEFAULT` (1rem) roundedness and a soft ambient shadow to appear as if floating in the "juice."
+- **Styling:** Cards should use `6px` roundedness (the universal radius) and a soft ambient shadow to appear as if floating in the "juice."
 
 ### Input Fields
 - **Surface:** `surface_container_lowest` with a 10% `outline` token.
