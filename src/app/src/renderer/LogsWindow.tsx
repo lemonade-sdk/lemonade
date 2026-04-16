@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getServerBaseUrl, onServerUrlChange, serverConfig } from './utils/serverConfig';
+import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig, serverFetch } from './utils/serverConfig';
 import { connectLogStream, LogEntry, LogStreamHandle } from './utils/logWebSocketClient';
 
 interface LogsWindowProps {
@@ -8,11 +8,18 @@ interface LogsWindowProps {
 }
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal', 'none'] as const;
+type LogLevel = typeof LOG_LEVELS[number];
+
+const isLogLevel = (value: unknown): value is LogLevel =>
+  typeof value === 'string' && LOG_LEVELS.includes(value as LogLevel);
 
 const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [logLevel, setLogLevel] = useState<LogLevel>('info');
+  const [isSettingLogLevel, setIsSettingLogLevel] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
@@ -51,6 +58,34 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       setIsInitialized(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (!isInitialized || !serverUrl) return;
+
+    const loadLogLevel = async () => {
+      try {
+        const headers: HeadersInit = {};
+        const apiKey = getAPIKey();
+        if (apiKey) {
+          headers.Authorization = `Bearer ${apiKey}`;
+        }
+
+        const response = await fetch(`${serverUrl}/internal/config`, { headers });
+        if (!response.ok) {
+          return;
+        }
+
+        const config = await response.json();
+        if (isLogLevel(config.log_level)) {
+          setLogLevel(config.log_level);
+        }
+      } catch (error) {
+        console.error('Failed to load log level:', error);
+      }
+    };
+
+    loadLogLevel();
+  }, [isInitialized, serverUrl]);
 
   // Listen for URL changes (covers both port changes and explicit URL updates)
   useEffect(() => {
@@ -211,6 +246,38 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     scrollToBottom();
   };
 
+  const handleLogLevelChange = async (nextLevel: LogLevel) => {
+    if (!isLogLevel(nextLevel)) {
+      return;
+    }
+
+    const previousLevel = logLevel;
+    setLogLevel(nextLevel);
+    setIsSettingLogLevel(true);
+
+    try {
+      const response = await serverFetch('/log-level', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: nextLevel }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (isLogLevel(data.level)) {
+        setLogLevel(data.level);
+      }
+    } catch (error) {
+      console.error('Failed to update log level:', error);
+      setLogLevel(previousLevel);
+    } finally {
+      setIsSettingLogLevel(false);
+    }
+  };
+
   if (!isVisible) return null;
 
   return (
@@ -218,6 +285,20 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       <div className="logs-header">
         <h3>Server Logs</h3>
         <div className="logs-controls">
+          <label className="logs-level-control">
+            <span>Level</span>
+            <select
+              className="logs-level-select"
+              value={logLevel}
+              disabled={isSettingLogLevel}
+              onChange={(event) => handleLogLevelChange(event.target.value as LogLevel)}
+              title="Set server log level"
+            >
+              {LOG_LEVELS.map(level => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </label>
           <span className={`connection-status status-${connectionStatus}`}>
             {connectionStatus === 'connecting' && '⟳ Connecting...'}
             {connectionStatus === 'connected' && '● Connected'}

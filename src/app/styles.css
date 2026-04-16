@@ -1562,6 +1562,17 @@ footer {
     flex-shrink: 0;
 }
 
+.hf-source-pill {
+    font-size: 0.56rem;
+    color: var(--text-quaternary);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 3px;
+    padding: 1px 5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .hf-quant-select {
     font-size: 0.62rem;
     background: rgba(255, 255, 255, 0.04);
@@ -2017,6 +2028,24 @@ footer {
     border-left-color: #666;
 }
 
+.model-catalog-item.downloaded {
+    background: rgba(255, 255, 255, 0.018);
+}
+
+.model-catalog-item.downloaded:hover {
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.model-catalog-item.loaded {
+    background: rgba(76, 175, 80, 0.09);
+    border-left-color: rgba(76, 175, 80, 0.65);
+}
+
+.model-catalog-item.loaded:hover {
+    background: rgba(76, 175, 80, 0.13);
+    border-left-color: rgba(76, 175, 80, 0.85);
+}
+
 .model-family-group {
     margin: 0;
 }
@@ -2056,6 +2085,38 @@ footer {
 
 .model-family-member-row {
     padding-left: 28px;
+}
+
+.model-dynamic-group {
+    margin: 2px 0;
+}
+
+.model-dynamic-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 13px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(255, 255, 255, 0.025);
+    border-left: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+.model-dynamic-group-header:hover {
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.dynamic-group-name {
+    font-weight: 560;
+    color: var(--text-primary);
+}
+
+.model-dynamic-group-members-list {
+    padding-left: 8px;
+}
+
+.model-dynamic-group-member-row {
+    padding-left: 30px;
 }
 
 .model-item-content {
@@ -4741,6 +4802,34 @@ input::-webkit-calendar-picker-indicator {
     display: flex;
     gap: 10px;
     align-items: center;
+}
+
+.logs-level-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+}
+
+.logs-level-select {
+    font-size: 0.68rem;
+    padding: 3px 22px 3px 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.logs-level-select:focus {
+    outline: none;
+    border-color: #555;
+}
+
+.logs-level-select:disabled {
+    opacity: 0.65;
+    cursor: default;
 }
 
 .connection-status {

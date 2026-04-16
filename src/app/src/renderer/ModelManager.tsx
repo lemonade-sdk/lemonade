@@ -95,7 +95,13 @@ const MODEL_FAMILIES: ModelFamily[] = [
 
 type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo }
-  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
+  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] }
+  | {
+      type: 'dynamic-group';
+      groupName: string;
+      defaultExpanded: boolean;
+      members: { label: string; name: string; info: ModelInfo }[];
+    };
 
 // Types for Hugging Face API responses
 interface HFModelInfo {
@@ -154,16 +160,44 @@ function buildModelList(
     }
   }
 
-  // Build individual items for non-consumed models
-  const individualItems: ModelListItem[] = models
-    .filter(m => !consumed.has(m.name))
+  const remainingModels = models.filter(m => !consumed.has(m.name));
+  const dynamicCandidates = new Map<string, { label: string; name: string; info: ModelInfo }[]>();
+
+  for (const model of remainingModels) {
+    const segments = model.name.split('.');
+    if (segments.length < 3) continue;
+    const groupName = segments.slice(0, 2).join('.');
+    const label = segments.slice(2).join('.');
+    if (!dynamicCandidates.has(groupName)) {
+      dynamicCandidates.set(groupName, []);
+    }
+    dynamicCandidates.get(groupName)!.push({ label, name: model.name, info: model.info });
+  }
+
+  const dynamicallyGrouped = new Set<string>();
+  const dynamicGroupItems: ModelListItem[] = [];
+  for (const [groupName, members] of dynamicCandidates) {
+    if (members.length < 2) continue;
+    members.sort((a, b) => a.label.localeCompare(b.label));
+    members.forEach(member => dynamicallyGrouped.add(member.name));
+    dynamicGroupItems.push({
+      type: 'dynamic-group',
+      groupName,
+      defaultExpanded: groupName.startsWith('user.'),
+      members,
+    });
+  }
+
+  // Build individual items for non-consumed and non-dynamically-grouped models
+  const individualItems: ModelListItem[] = remainingModels
+    .filter(m => !dynamicallyGrouped.has(m.name))
     .map(m => ({ type: 'model' as const, name: m.name, info: m.info }));
 
   // Merge and sort alphabetically by display name
-  const allItems = [...familyItems, ...individualItems];
+  const allItems = [...familyItems, ...dynamicGroupItems, ...individualItems];
   allItems.sort((a, b) => {
-    const nameA = a.type === 'family' ? a.family.displayName : a.name;
-    const nameB = b.type === 'family' ? b.family.displayName : b.name;
+    const nameA = a.type === 'family' ? a.family.displayName : a.type === 'dynamic-group' ? a.groupName : a.name;
+    const nameB = b.type === 'family' ? b.family.displayName : b.type === 'dynamic-group' ? b.groupName : b.name;
     return nameA.localeCompare(nameB);
   });
 
@@ -213,6 +247,8 @@ const [searchQuery, setSearchQuery] = useState('');
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
   const [marketplaceCategories, setMarketplaceCategories] = useState<MarketplaceCategory[]>([]);
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+  const [expandedDynamicGroups, setExpandedDynamicGroups] = useState<Set<string>>(new Set());
+  const initializedDynamicGroupsRef = useRef<Set<string>>(new Set());
   const filterAnchorRef = useRef<HTMLDivElement | null>(null);
   // HuggingFace search state
   const [hfSearchResults, setHfSearchResults] = useState<HFModelInfo[]>([]);
@@ -434,6 +470,25 @@ const [searchQuery, setSearchQuery] = useState('');
     ),
     [groupedModels]
   );
+
+  useEffect(() => {
+    const groupsToExpand = new Set<string>();
+    Object.values(builtModelLists).forEach((items) => {
+      items.forEach((item) => {
+        if (item.type === 'dynamic-group' && item.defaultExpanded && !initializedDynamicGroupsRef.current.has(item.groupName)) {
+          groupsToExpand.add(item.groupName);
+          initializedDynamicGroupsRef.current.add(item.groupName);
+        }
+      });
+    });
+
+    if (groupsToExpand.size === 0) return;
+    setExpandedDynamicGroups(prev => {
+      const next = new Set(prev);
+      groupsToExpand.forEach(groupName => next.add(groupName));
+      return next;
+    });
+  }, [builtModelLists]);
 
   // Auto-expand the single category if only one is available
   useEffect(() => {
@@ -1162,12 +1217,12 @@ const [searchQuery, setSearchQuery] = useState('');
     modelName: string, modelInfo: ModelInfo, hoverKey: string,
     displayName?: string, extraClass?: string
   ) => {
-    const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
+    const { isDownloaded, isLoaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
     return (
       <div
         key={modelName}
-        className={`model-item model-catalog-item ${extraClass ?? ''} ${isDownloaded ? 'downloaded' : ''}`}
+        className={`model-item model-catalog-item ${extraClass ?? ''} ${isDownloaded ? 'downloaded' : ''} ${isLoaded ? 'loaded' : ''}`}
         onMouseEnter={() => setHoveredModel(hoverKey)}
         onMouseLeave={() => setHoveredModel(null)}
       >
@@ -1195,6 +1250,16 @@ const [searchQuery, setSearchQuery] = useState('');
       const next = new Set(prev);
       if (next.has(familyName)) next.delete(familyName);
       else next.add(familyName);
+      return next;
+    });
+  };
+
+  const toggleDynamicGroup = (groupName: string) => {
+    setExpandedDynamicGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
+      initializedDynamicGroupsRef.current.add(groupName);
       return next;
     });
   };
@@ -1231,6 +1296,37 @@ const [searchQuery, setSearchQuery] = useState('');
                 m.name, m.info,
                 `family-${family.displayName}-${m.label}`,
                 m.label, 'model-family-member-row'
+              )
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderDynamicGroupItem = (item: Extract<ModelListItem, { type: 'dynamic-group' }>) => {
+    const { groupName, members } = item;
+    const isExpanded = expandedDynamicGroups.has(groupName);
+
+    return (
+      <div key={groupName} className="model-dynamic-group">
+        <div
+          className="model-dynamic-group-header"
+          onClick={() => toggleDynamicGroup(groupName)}
+        >
+          <span className={`family-chevron ${isExpanded ? 'expanded' : ''}`}>
+            <ChevronRight size={11} strokeWidth={2.1} />
+          </span>
+          <span className="model-name dynamic-group-name">{groupName}</span>
+          <span className="category-count">({members.length})</span>
+        </div>
+        {isExpanded && (
+          <div className="model-dynamic-group-members-list">
+            {members.map(m =>
+              renderModelItem(
+                m.name, m.info,
+                `dynamic-${groupName}-${m.label}`,
+                m.label, 'model-dynamic-group-member-row'
               )
             )}
           </div>
@@ -1321,6 +1417,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 {listItems.map(item => {
                   if (item.type === 'family') {
                     return renderFamilyItem(item);
+                  }
+                  if (item.type === 'dynamic-group') {
+                    return renderDynamicGroupItem(item);
                   }
                   return renderModelItem(item.name, item.info, item.name);
                 })}
@@ -1523,6 +1622,7 @@ const [searchQuery, setSearchQuery] = useState('');
                         <span className="hf-model-name" title={hfModel.id}>{hfModel.id}</span>
                         {size !== undefined && <span className="hf-model-size">{formatSize(size / (1024 ** 3))}</span>}
                         <span className="hf-model-meta">↓ {formatDownloads(hfModel.downloads)}</span>
+                        <span className="hf-source-pill">Hugging Face</span>
                         {isDetecting && <span className="hf-search-spinner" />}
                         <div className="hf-model-actions">
                           {!isDetecting && backend && (
