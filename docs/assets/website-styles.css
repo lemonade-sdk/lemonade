@@ -7,7 +7,8 @@
   --primary-yellow-dark: #FAF972;
   --primary-yellow-darker: #f0cc00;
   --accent-gold: #5C4B00;
-  --accent-gold-dark: #5C4B00;
+  --on-primary: #000000;           /* text/icons on yellow buttons */
+  --on-primary-muted: #3a3000;     /* text on light-yellow surfaces (e.g. user chat bubbles) */
 
   /* Tonal Architecture */
   --surface: #F6F6F6;
@@ -19,8 +20,17 @@
   --tertiary: #3C6531;
   --outline-variant: rgba(45, 47, 47, 0.15);
 
+  /* Glassmorphism tokens */
+  --glass-bg: rgba(255, 255, 255, 0.4);
+  --glass-bg-hover: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-blur: 24px;
+
+  /* Text hierarchy — darkest to lightest */
+  --text-on-light: #000000;        /* max contrast on light backgrounds */
   --text-primary: #2D2F2F;
   --text-secondary: #474747;
+  --text-nav: #52525b;
   --text-muted: #6b6b6b;
   --text-light: #999;
   --text-success: #3C6531;
@@ -35,11 +45,13 @@
   --border-medium: rgba(45, 47, 47, 0.12);
   --border-primary: #FCD846;
 
-  /* Ambient Shadows — light through liquid, never pure black */
+  /* Ambient Shadows — on-surface color, never pure black */
   --shadow-light: 0 4px 16px rgba(45, 47, 47, 0.04);
   --shadow-medium: 0 8px 32px rgba(45, 47, 47, 0.06);
-  --shadow-heavy: 0 12px 48px rgba(45, 47, 47, 0.05);
+  --shadow-heavy: 0 14px 52px rgba(45, 47, 47, 0.085);
   --shadow-ambient: 0 12px 48px rgba(45, 47, 47, 0.05);
+  --shadow-yellow: 0 12px 48px rgba(252, 216, 70, 0.3);
+  --shadow-yellow-hover: 0 16px 56px rgba(252, 216, 70, 0.38);
 
   /* Spacing */
   --spacing-xs: 0.25rem;
@@ -52,6 +64,7 @@
   /* Typography — Crystalline Zest */
   --font-display: 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
   --font-body: 'Manrope', 'Segoe UI', sans-serif;
+  --font-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
   --font-family: var(--font-body);
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.85rem;
@@ -81,12 +94,12 @@
 
 /* === Ice Card — Glassmorphic base (DESIGN.md §4 "Ice" layer) === */
 .ice-card {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
-  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
+  box-shadow: var(--shadow-ambient);
 }
 
 /* === Base Styles === */
@@ -205,7 +218,7 @@ body.install-options {
   font-size: var(--nav-link);
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: #71717a;
+  color: var(--text-nav);
 }
 
 .navbar-brand .brand-title a {
@@ -467,8 +480,8 @@ body.install-options {
 
 .download-btn, .marketplace-cta-btn, .release-link, .navbar-install-btn {
   background: var(--primary-yellow);
-  color: var(--accent-gold);
-  box-shadow: 0 12px 48px rgba(252, 216, 70, 0.3);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-yellow);
 }
 
 .download-btn:hover, .download-btn:focus,
@@ -476,7 +489,7 @@ body.install-options {
 .release-link:hover, .release-link:focus,
 .navbar-install-btn:hover, .navbar-install-btn:focus {
   transform: scale(1.02);
-  box-shadow: 0 16px 56px rgba(252, 216, 70, 0.38);
+  box-shadow: var(--shadow-yellow-hover);
 }
 
 .download-btn:active, .marketplace-cta-btn:active,
@@ -494,7 +507,7 @@ body.install-options {
 }
 
 .dev-btn:hover, .dev-btn:focus {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--glass-bg-hover);
   transform: scale(1.02);
 }
 
@@ -3689,7 +3702,7 @@ body.install-options {
   color: #fff;
   font-size: 0.9rem;
   line-height: 1.5;
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-family: var(--font-mono);
   background: transparent;
   padding: 0;
 }
@@ -4089,6 +4102,7 @@ body.install-options {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  box-shadow: var(--shadow-heavy);
 }
 
 .hp-demo-item {
@@ -4158,8 +4172,8 @@ body.install-options {
 }
 
 .hp-chat-user {
-  background: rgba(252, 216, 70, 0.18);
-  color: var(--accent-gold);
+  background: rgba(252, 216, 70, 0.25);
+  color: var(--on-primary-muted);
   font-family: var(--font-body);
   font-size: var(--demo-font);
   font-weight: 500;
@@ -4178,8 +4192,8 @@ body.install-options {
 }
 
 .hp-chat-ai {
-  background: var(--surface-container-low);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--demo-font);
   padding: var(--demo-padding);
@@ -4827,7 +4841,7 @@ body.install-options {
   color: #ffffff;
   font-size: 0.9rem;
   line-height: 1.5;
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-family: var(--font-mono);
   display: block;
   min-width: 0;
   white-space: pre-wrap !important;
@@ -4837,7 +4851,7 @@ body.install-options {
 }
 
 .hp-api-method {
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.52);
   margin-bottom: 0.6rem;
@@ -4884,9 +4898,9 @@ body.install-options {
 }
 
 .hp-eco-app:hover {
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg-hover);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow-medium);
   transform: scale(1.06);
 }
@@ -4944,7 +4958,7 @@ body.install-options {
   border: none;
   border-radius: var(--radius-xl);
   cursor: pointer;
-  opacity: 0.5;
+  opacity: 0.75;
   transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   -webkit-tap-highlight-color: transparent;
   outline: none;
@@ -4957,9 +4971,9 @@ body.install-options {
 
 .gs-platform.is-active {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg-hover);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow-medium);
   transform: scale(1.06);
 }
@@ -5046,7 +5060,7 @@ body.install-options {
   color: var(--text-primary);
   font-size: 0.88rem;
   line-height: 1.55;
-  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  font-family: var(--font-mono);
   display: block;
 }
 
@@ -5063,15 +5077,15 @@ body.install-options {
   min-width: 320px;
   border-radius: var(--radius-btn);
   background: var(--primary-yellow);
-  color: var(--accent-gold);
+  color: var(--on-primary);
   text-decoration: none;
-  box-shadow: 0 12px 48px rgba(252, 216, 70, 0.3);
+  box-shadow: var(--shadow-yellow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .gs-download-link:hover {
   transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 16px 56px rgba(252, 216, 70, 0.38);
+  box-shadow: var(--shadow-yellow-hover);
 }
 
 .gs-download-link .material-symbols-outlined {
