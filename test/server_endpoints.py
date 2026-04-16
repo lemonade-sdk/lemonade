@@ -638,7 +638,7 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(devices, dict)
 
         # Check required device types
-        required_devices = ["cpu", "amd_igpu", "amd_dgpu", "amd_npu"]
+        required_devices = ["cpu", "amd_gpu", "amd_npu"]
         for device in required_devices:
             self.assertIn(device, devices, f"Missing device type: {device}")
 
