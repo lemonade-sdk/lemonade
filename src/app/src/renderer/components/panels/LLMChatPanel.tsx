@@ -347,9 +347,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       }
     }
 
-    // Seed artifacts with only the most recent image from conversation history
-    // (needed for edit_image auto-routing). Audio is not carried forward — each TTS is independent.
-    const artifacts: Artifact[] = [];
+    // sourceArtifacts: images from prior history / current user upload — used as
+    // tool input context (e.g. edit_image source). Not rendered in the assistant
+    // response; the user's message already shows their upload.
+    const sourceArtifacts: Artifact[] = [];
 
     // Find the last image in prior messages (scan in reverse)
     let seededImage = false;
@@ -363,7 +364,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           const b64Marker = ';base64,';
           const b64Pos = url.indexOf(b64Marker);
           if (b64Pos !== -1) {
-            artifacts.push({
+            sourceArtifacts.push({
               type: 'image',
               data: url.substring(b64Pos + b64Marker.length),
               mime: url.substring(5, b64Pos),
@@ -374,19 +375,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       }
     }
 
-    // Also seed from user-uploaded images extracted this turn
-    for (const img of extractedImages) {
-      const b64Marker = ';base64,';
-      const b64Pos = img.dataUrl.indexOf(b64Marker);
-      if (b64Pos !== -1) {
-        const b64Data = img.dataUrl.substring(b64Pos + b64Marker.length);
-        let mime = 'image/png';
-        if (img.dataUrl.length > 5) {
-          mime = img.dataUrl.substring(5, b64Pos); // skip "data:"
-        }
-        artifacts.push({ type: 'image', data: b64Data, mime });
-      }
-    }
+    // artifacts: generated this turn — rendered in the assistant response.
+    const artifacts: Artifact[] = [];
 
     // Agentic loop
     const llmMessages = [...processedMessages];
@@ -459,12 +449,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             const context: ToolExecutionContext = {
               extractedAudio,
               extractedImages,
-              previousArtifacts: artifacts,
+              previousArtifacts: [...sourceArtifacts, ...artifacts],
             };
             const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData);
 
             if (result.type === 'image' && result.data) {
-              // For edits, replace the last image; for generation, append
+              // For edits, replace the last generated image from this turn if
+              // one exists; otherwise append. The source image is never
+              // rendered, so there's nothing to replace on the first edit.
               let lastImageIdx = -1;
               for (let i = artifacts.length - 1; i >= 0; i--) {
                 if (artifacts[i].type === 'image') { lastImageIdx = i; break; }

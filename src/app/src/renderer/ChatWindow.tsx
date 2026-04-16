@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isExperienceModel } from './utils/experienceModels';
+import { isExperienceModel, getExperiencePrimaryChatModel } from './utils/experienceModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -68,7 +68,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
-    return modelsData[selectedModel]?.labels?.includes('vision') || false;
+    const info = modelsData[selectedModel];
+    if (isExperienceModel(info)) {
+      const chatModel = getExperiencePrimaryChatModel(selectedModel, modelsData);
+      return modelsData[chatModel]?.labels?.includes('vision') || false;
+    }
+    return info?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
   const isExperienceSelected = useMemo(() => {
