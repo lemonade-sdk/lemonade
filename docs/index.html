@@ -172,99 +172,56 @@
 
     <!-- ==================== MARKETPLACE ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Ecosystem</span>
       <h2 class="hp-section-heading">Works with great apps.</h2>
       <p class="hp-section-desc">Lemonade is integrated in many apps and works out-of-box with hundreds more thanks to the OpenAI API standard.</p>
 
-      <div class="hp-eco-apps">
-        <a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/openwebui.jpg" alt="Open WebUI" />
-          <span class="hp-eco-app-name">Open WebUI</span>
-        </a>
-        <a href="https://n8n.io/integrations/lemonade-model/" title="n8n" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/n8n.png" alt="n8n" />
-          <span class="hp-eco-app-name">n8n</span>
-        </a>
-        <a href="https://github.com/amd/gaia" title="Gaia" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/gaia.png" alt="Gaia" />
-          <span class="hp-eco-app-name">Gaia</span>
-        </a>
-        <a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/infinity_arcade.png" alt="Infinity Arcade" />
-          <span class="hp-eco-app-name">Infinity Arcade</span>
-        </a>
-        <a href="https://lemonade-server.ai/docs/server/apps/continue/" title="Continue" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/continue.png" alt="Continue" />
-          <span class="hp-eco-app-name">Continue</span>
-        </a>
-        <a href="https://marketplace.visualstudio.com/items?itemName=lemonade-sdk.lemonade-sdk" title="GitHub Copilot" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/github_copilot.png" alt="GitHub Copilot" />
-          <span class="hp-eco-app-name">GitHub Copilot</span>
-        </a>
-        <a href="https://openhands.dev/" title="OpenHands" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/openhands.png" alt="OpenHands" />
-          <span class="hp-eco-app-name">OpenHands</span>
-        </a>
-        <a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/dify.png" alt="Dify" />
-          <span class="hp-eco-app-name">Dify</span>
-        </a>
-        <a href="https://deeptutor.knowhiz.us/" title="Deep Tutor" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/deep_tutor.png" alt="Deep Tutor" />
-          <span class="hp-eco-app-name">Deep Tutor</span>
-        </a>
-        <a href="https://www.iterate.ai/" title="Iterate.ai" target="_blank" class="hp-eco-app">
-          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/app/marketplace/iterate_ai.png" alt="Iterate.ai" />
-          <span class="hp-eco-app-name">Iterate.ai</span>
-        </a>
-      </div>
+      <div class="hp-eco-apps" id="hpEcoApps"></div>
       <div class="hp-eco-cta">
-        <a href="marketplace.html" class="marketplace-cta-btn">Explore the Marketplace</a>
+        <a href="marketplace.html" class="marketplace-cta-btn hp-section-cta"><span class="material-symbols-outlined">open_in_new</span> Explore the Marketplace</a>
       </div>
     </section>
 
     <!-- ==================== TECH SPECS ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Tech Specs</span>
-      <h2 class="hp-section-heading">Built for practical local AI workflows.</h2>
+      <h2 class="hp-section-heading">Tech specs that enable AI workflows.</h2>
       <p class="hp-section-desc">Everything from install to runtime is optimized for fast setup, broad compatibility, and local-first execution.</p>
       <div class="hp-tech-grid">
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/8_cpp.png" alt="Native C++ Icon" class="hp-tech-icon" />
           <h3>Native C++ Backend</h3>
-          <p>Lightweight service that is only 2MB.</p>
+          <p>Lightweight service that is only 3MB.</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/1_install.png" alt="Install Icon" class="hp-tech-icon" />
           <h3>One Minute Install</h3>
           <p>Simple installer that sets up the stack automatically.</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/OpenAI-black-monoblossom.png" alt="OpenAI Icon" class="hp-tech-icon" />
           <h3>OpenAI API Compatible</h3>
           <p>Works with hundreds of apps out-of-box and integrates in minutes.</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/3_configuresHW.png" alt="Auto-config Icon" class="hp-tech-icon" />
           <h3>Auto-configures for your hardware</h3>
           <p>Configures dependencies for your GPU and NPU.</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/2_multiengine.png" alt="Multi-engine Icon" class="hp-tech-icon" />
           <h3>Multi-engine compatibility</h3>
           <p>Works with llama.cpp, Ryzen AI SW, FastFlowLM, and more.</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/4_multimodel.png" alt="Multiple Models Icon" class="hp-tech-icon" />
           <h3>Multiple Models at Once</h3>
           <p>Run more than one model at the same time.</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/5_crossplatform.png" alt="Cross-platform Icon" class="hp-tech-icon" />
           <h3>Cross-platform</h3>
           <p>A consistent experience across Windows, Linux, and macOS (beta).</p>
         </div>
-        <div class="hp-tech-card">
+        <div class="hp-tech-card ice-card">
           <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/LemonadeIcons/7_app.png" alt="Built-in app Icon" class="hp-tech-icon" />
           <h3>Built-in app</h3>
           <p>A GUI that lets you download, try, and switch models quickly.</p>
@@ -275,7 +232,6 @@
 
     <!-- ==================== UNIFIED API ==================== -->
     <section class="hp-section hp-reveal">
-      <span class="hp-section-label">Unified API</span>
       <h2 class="hp-section-heading">One local service for every modality.</h2>
       <p class="hp-section-desc">Point your app at Lemonade and get chat, vision, image gen, transcription, speech gen, and more with standard APIs.</p>
 
@@ -311,13 +267,12 @@
         </div>
       </div>
       <div class="hp-api-cta">
-        <a href="https://lemonade-server.ai/docs/server/server_spec/" class="marketplace-cta-btn" target="_blank" rel="noopener">View the Server Spec</a>
+        <a href="https://lemonade-server.ai/docs/server/server_spec/" class="marketplace-cta-btn hp-section-cta" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span> View the Server Spec</a>
       </div>
     </section>
 
     <!-- ==================== RELEASE NOTES ==================== -->
     <section class="hp-section hp-reveal hp-release-section">
-      <span class="hp-section-label">Latest Release</span>
       <h2 class="hp-section-heading">Always improving.</h2>
       <p class="hp-section-desc">Track the newest improvements and highlights from the Lemonade release  stream.</p>
       <div class="hp-section-release">
@@ -325,7 +280,7 @@
           <button class="hp-release-nav hp-release-nav-prev" id="releasePrevBtn" type="button" aria-label="Show previous release" title="Show previous release">
             <span aria-hidden="true">&#8249;</span>
           </button>
-          <div class="release-announcement" id="releaseAnnouncement">
+          <div class="release-announcement ice-card" id="releaseAnnouncement">
             <div class="release-content">
               <div class="release-info">
                 <p class="release-name" id="releaseName">Loading releases...</p>
@@ -333,7 +288,7 @@
                 <div class="release-highlights" id="releaseHighlights"></div>
               </div>
             </div>
-            <a class="release-link" href="#" id="releaseLink" target="_blank" rel="noopener">View Release</a>
+            <a class="release-link hp-section-cta" href="#" id="releaseLink" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span> View Release</a>
           </div>
           <button class="hp-release-nav hp-release-nav-next" id="releaseNextBtn" type="button" aria-label="Show newer release" title="Show newer release">
             <span aria-hidden="true">&#8250;</span>
@@ -355,6 +310,7 @@
   <script src="assets/navbar.js"></script>
   <script src="assets/install-selector.js"></script>
   <script src="assets/footer.js"></script>
+  <script src="assets/marketplace.js"></script>
   <script src="assets/news-data.js"></script>
   <script>
     // ---- Getting Started section ----
@@ -663,11 +619,11 @@
         highlights = parseBodyHighlights(release.body);
       }
       if (highlights.length > 0) {
-        releaseHighlights.innerHTML = highlights.map(function(item) {
-          return '<div class="highlight-item">' + item + '</div>';
-        }).join('');
+        releaseHighlights.innerHTML = '<ul class="highlight-list">' + highlights.map(function(item) {
+          return '<li>' + item + '</li>';
+        }).join('') + '</ul>';
       } else {
-        releaseHighlights.innerHTML = '<div class="highlight-item">No headline notes published for this release.</div>';
+        releaseHighlights.innerHTML = '<p class="highlight-empty">No headline notes published for this release.</p>';
       }
       updateReleaseNavState();
     }
@@ -698,7 +654,7 @@
         document.getElementById('releaseName').textContent = 'Lemonade latest';
         document.getElementById('releaseDate').textContent = 'Check for updates';
         document.getElementById('releaseLink').href = 'https://github.com/lemonade-sdk/lemonade/releases/latest';
-        document.getElementById('releaseHighlights').innerHTML = '<div class="highlight-item">Unable to load releases right now.</div>';
+        document.getElementById('releaseHighlights').innerHTML = '<p class="highlight-empty">Unable to load releases right now.</p>';
         releaseCarouselState.items = [];
         releaseCarouselState.index = 0;
         updateReleaseNavState();
@@ -919,6 +875,21 @@
         // Duplicate for seamless loop
         track.innerHTML = html + html;
       })();
+      // Featured apps from marketplace
+      if (typeof fetchFeaturedApps === 'function') {
+        fetchFeaturedApps(10).then(function(apps) {
+          var grid = document.getElementById('hpEcoApps');
+          if (!grid || !apps.length) return;
+          grid.innerHTML = apps.map(function(app) {
+            var href = (app.links && (app.links.guide || app.links.app)) || '#';
+            var logo = app.logo || '';
+            var name = app.name || '';
+            return '<a href="' + href + '" title="' + name + '" target="_blank" class="hp-eco-app">' +
+              '<img src="' + logo + '" alt="' + name + '" />' +
+              '<span class="hp-eco-app-name">' + name + '</span></a>';
+          }).join('');
+        });
+      }
       if (document.getElementById('lmn-install-view').style.display === 'flex') {
         if (typeof lmnInit === 'function') lmnInit();
       }

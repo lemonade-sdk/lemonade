@@ -293,5 +293,25 @@ function debounce(func, wait) {
   };
 }
 
+/**
+ * Fetch the top N featured (pinned) apps for use on other pages.
+ * Returns a promise that resolves to an array of app objects.
+ */
+async function fetchFeaturedApps(count) {
+  if (allApps.length > 0) {
+    return allApps.filter(function(a) { return a.pinned; }).slice(0, count);
+  }
+  try {
+    var response = await fetch(APPS_JSON_URL);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    var data = await response.json();
+    var apps = data.apps || [];
+    return apps.filter(function(a) { return a.pinned; }).slice(0, count);
+  } catch (err) {
+    console.warn('Failed to fetch featured apps:', err);
+    return [];
+  }
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', initMarketplace);
