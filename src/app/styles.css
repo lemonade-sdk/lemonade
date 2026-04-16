@@ -1562,6 +1562,17 @@ footer {
     flex-shrink: 0;
 }
 
+.hf-source-pill {
+    font-size: 0.56rem;
+    color: var(--text-quaternary);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 3px;
+    padding: 1px 5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .hf-quant-select {
     font-size: 0.62rem;
     background: rgba(255, 255, 255, 0.04);
@@ -2017,6 +2028,24 @@ footer {
     border-left-color: #666;
 }
 
+.model-catalog-item.downloaded {
+    background: rgba(255, 255, 255, 0.018);
+}
+
+.model-catalog-item.downloaded:hover {
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.model-catalog-item.loaded {
+    background: rgba(76, 175, 80, 0.09);
+    border-left-color: rgba(76, 175, 80, 0.65);
+}
+
+.model-catalog-item.loaded:hover {
+    background: rgba(76, 175, 80, 0.13);
+    border-left-color: rgba(76, 175, 80, 0.85);
+}
+
 .model-family-group {
     margin: 0;
 }
@@ -2025,13 +2054,16 @@ footer {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 10px 4px 13px;
+    padding: 6px 10px 6px 13px;
     cursor: pointer;
     user-select: none;
+    background: rgba(255, 255, 255, 0.015);
+    border-radius: 4px;
+    margin: 1px 0;
 }
 
 .model-family-header:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.035);
 }
 
 .family-chevron {
@@ -2058,13 +2090,58 @@ footer {
     padding-left: 28px;
 }
 
+.model-dynamic-group {
+    margin: 2px 0;
+}
+
+.model-dynamic-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px 6px 13px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(255, 255, 255, 0.025);
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0 4px 4px 0;
+    margin: 2px 0;
+}
+
+.model-dynamic-group-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dynamic-group-name {
+    font-weight: 560;
+    color: var(--text-primary);
+}
+
+.model-dynamic-group-members-list {
+    padding-left: 8px;
+}
+
+.model-dynamic-group-member-row {
+    padding-left: 30px;
+}
+
 .model-item-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    overflow: hidden;
+    min-height: 32px;
+}
+
+.model-info-row-primary {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    overflow: hidden;
-    min-height: 18px;
+    width: 100%;
+}
+
+.model-info-row-secondary {
+    display: none;
 }
 
 .model-actions {
@@ -2229,60 +2306,58 @@ footer {
 }
 
 .model-labels {
-    display: flex;
-    gap: 3px;
+    display: inline-flex;
+    gap: 4px;
     flex-shrink: 0;
-    margin-left: auto;
-    padding-right: 2px;
+    align-items: center;
+    margin-left: 2px;
 }
+
+.model-label-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.55;
+    transition: all 0.2s ease;
+    color: var(--text-secondary);
+}
+
+.model-label-icon-wrapper:hover {
+    opacity: 1;
+    transform: translateY(-1px);
+}
+
+.model-modality-tooltip {
+    background: #2a2a2a;
+    color: #e0e0e0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    pointer-events: none;
+    z-index: 10000;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: 500;
+}
+
+/* Modality-specific colors for icons */
+.model-label-icon-wrapper[title*="Reasoning"] { color: #6495ED; }
+.model-label-icon-wrapper[title*="Coding"] { color: #48BB78; }
+.model-label-icon-wrapper[title*="Vision"] { color: #9F7AEA; }
+.model-label-icon-wrapper[title*="Hot"] { color: #F56565; }
+.model-label-icon-wrapper[title*="Embeddings"] { color: #ED8936; }
+.model-label-icon-wrapper[title*="Reranking"] { color: #D69E2E; }
+.model-label-icon-wrapper[title*="Tool Calling"] { color: #38B2AC; }
+.model-label-icon-wrapper[title*="Custom"] { color: #FAD02C; }
+.model-label-icon-wrapper[title*="Experience"] { color: #e2b757; }
 
 .model-label {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     display: inline-block;
-    cursor: help;
-}
-
-.model-label.label-reasoning {
-    background: #6495ED;
-}
-
-.model-label.label-coding {
-    background: #48BB78;
-}
-
-.model-label.label-vision {
-    background: #9F7AEA;
-}
-
-.model-label.label-hot {
-    background: #F56565;
-}
-
-.model-label.label-embeddings {
-    background: #ED8936;
-}
-
-.model-label.label-reranking {
-    background: #D69E2E;
-}
-
-.model-label.label-tool-calling {
-    background: #38B2AC;
-}
-
-.model-label.label-custom {
-    background: #FAD02C;
-}
-
-.model-label.label-experience {
-    width: 7px;
-    height: 7px;
-    border-radius: 1px;
-    transform: rotate(45deg);
-    background: #e2b757;
-    box-shadow: 0 0 2px rgba(226, 183, 87, 0.45);
+    background: currentColor;
 }
 
 .model-manager-footer {
@@ -4741,6 +4816,34 @@ input::-webkit-calendar-picker-indicator {
     display: flex;
     gap: 10px;
     align-items: center;
+}
+
+.logs-level-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+}
+
+.logs-level-select {
+    font-size: 0.68rem;
+    padding: 3px 22px 3px 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.logs-level-select:focus {
+    outline: none;
+    border-color: #555;
+}
+
+.logs-level-select:disabled {
+    opacity: 0.65;
+    cursor: default;
 }
 
 .connection-status {
