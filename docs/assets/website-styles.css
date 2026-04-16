@@ -1493,34 +1493,6 @@ body.install-options {
 }
 
 /* === Footer === */
-.footer-engines {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 0 1.5rem 2rem;
-}
-
-.footer-engines a {
-  display: inline-flex;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-  text-decoration: none;
-}
-
-.footer-engines a:hover {
-  opacity: 1;
-}
-
-.footer-engines img {
-  height: 22px;
-  width: auto;
-  object-fit: contain;
-}
-
 .site-footer {
   width: 100%;
   padding: calc(var(--spacing-xxl) / 8) 0 var(--spacing-lg) 0;
@@ -4529,93 +4501,44 @@ body.install-options {
   border-radius: var(--radius-round);
 }
 
-.hp-logo-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  justify-items: center;
+.hp-logo-ticker {
+  overflow: hidden;
+  margin-top: var(--page-space-sm);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+.hp-logo-ticker-track {
+  display: flex;
   align-items: center;
-  gap: 0.45rem 0.72rem;
-  margin-top: 0.95rem;
-  /* Partner logo tuning controls (desktop defaults). */
-  --hp-logo-lockup-width: 176px;
-  --hp-logo-base-height: 34px;
-  --hp-logo-scale-1: 1.3; /* llama.cpp */
-  --hp-logo-scale-2: 2; /* ONNX Runtime */
-  --hp-logo-scale-3: 1.08; /* FastFlowLM */
-  --hp-logo-scale-4: 1.5; /* Ryzen AI */
-  --hp-logo-scale-5: 1.3; /* ROCm */
-  --hp-logo-scale-6: 2; /* Hugging Face */
-  --hp-logo-scale-7: 1.1; /* Vulkan */
-  --hp-logo-scale-8: 1.25; /* whisper.cpp */
-  --hp-logo-scale-9: 2.5; /* stable-diffusion.cpp */
-  --hp-logo-scale-10: 2.3; /* Kokoros */
+  gap: 2.5rem;
+  white-space: nowrap;
+  will-change: transform;
+  animation: ticker-scroll 30s linear infinite;
+}
+
+.hp-logo-ticker:hover .hp-logo-ticker-track {
+  animation-play-state: paused;
 }
 
 .hp-logo-chip {
-  min-height: 70px;
-  display: flex;
-  justify-content: center;
+  display: inline-flex;
   align-items: center;
-  padding: 0.26rem 0.32rem;
+  justify-content: center;
+  flex-shrink: 0;
   text-decoration: none;
-  filter: grayscale(0.04) saturate(0.97);
-  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease, background-color 0.2s ease;
-  opacity: 0.94;
-  position: relative;
-  border-radius: var(--radius);
-  --hp-scale: 1;
-  width: 100%;
-}
-
-.hp-logo-chip::before {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.06));
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .hp-logo-chip:hover {
   transform: translateY(-1px);
-  filter: grayscale(0) saturate(1);
-  opacity: 1;
-}
-
-.hp-logo-chip:hover::before {
-  opacity: 1;
-}
-
-.hp-logo-lockup {
-  width: min(var(--hp-logo-lockup-width), 100%);
-  height: auto;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  overflow: visible;
-  position: relative;
-  z-index: 1;
 }
 
 .hp-logo-chip img {
+  height: 34px;
   width: auto;
-  max-width: min(182px, 100%);
-  height: max(28px, calc(var(--hp-logo-base-height) * var(--hp-scale)));
   object-fit: contain;
-  mix-blend-mode: multiply;
 }
-
-.hp-logo-chip:nth-child(1) { --hp-scale: var(--hp-logo-scale-1); }
-.hp-logo-chip:nth-child(2) { --hp-scale: var(--hp-logo-scale-2); }
-.hp-logo-chip:nth-child(3) { --hp-scale: var(--hp-logo-scale-3); }
-.hp-logo-chip:nth-child(4) { --hp-scale: var(--hp-logo-scale-4); }
-.hp-logo-chip:nth-child(5) { --hp-scale: var(--hp-logo-scale-5); }
-.hp-logo-chip:nth-child(6) { --hp-scale: var(--hp-logo-scale-6); }
-.hp-logo-chip:nth-child(7) { --hp-scale: var(--hp-logo-scale-7); }
-.hp-logo-chip:nth-child(8) { --hp-scale: var(--hp-logo-scale-8); }
-.hp-logo-chip:nth-child(9) { --hp-scale: var(--hp-logo-scale-9); }
-.hp-logo-chip:nth-child(10) { --hp-scale: var(--hp-logo-scale-10); }
 
 .hp-section-release {
   margin-top: 1.3rem;
@@ -5265,15 +5188,8 @@ body.install-options {
     min-height: 300px;
   }
 
-  .hp-logo-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.34rem 0.58rem;
-    --hp-logo-base-height: 32px;
-    --hp-logo-lockup-width: 164px;
-  }
-
-  .hp-logo-chip {
-    min-height: 64px;
+  .hp-logo-chip img {
+    height: 28px;
   }
 
   .hp-eco-apps {
@@ -5320,10 +5236,6 @@ body.install-options {
     font-size: 0.84rem;
   }
 
-  .hp-logo-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .hp-eco-apps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -5362,15 +5274,8 @@ body.install-options {
     border-radius: var(--radius);
   }
 
-  .hp-logo-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.24rem 0.4rem;
-    --hp-logo-base-height: 30px;
-    --hp-logo-lockup-width: 144px;
-  }
-
-  .hp-logo-chip {
-    min-height: 58px;
+  .hp-logo-chip img {
+    height: 24px;
   }
 
   .hp-eco-apps {

@@ -164,6 +164,10 @@
           <a class="hp-value-link" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">Visit the GitHub <span aria-hidden="true">&rarr;</span></a>
         </div>
       </div>
+
+      <div class="hp-logo-ticker" id="hpLogoTicker">
+        <div class="hp-logo-ticker-track" id="hpLogoTickerTrack"></div>
+      </div>
     </section>
 
     <!-- ==================== MARKETPLACE ==================== -->
@@ -891,6 +895,30 @@
       if (typeof initializeFooter === 'function') initializeFooter('../');
       if (typeof fetchLatestVersion === 'function') fetchLatestVersion();
       if (typeof gsInit === 'function') gsInit();
+      // Engine logo ticker
+      (function() {
+        var track = document.getElementById('hpLogoTickerTrack');
+        if (!track) return;
+        var base = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';
+        var logos = [
+          { href: 'https://github.com/ggml-org/llama.cpp', img: 'llama_cpp.png', alt: 'llama.cpp' },
+          { href: 'https://github.com/microsoft/onnxruntime', img: 'onnx_runtime.png', alt: 'ONNX Runtime' },
+          { href: 'https://github.com/FastFlowLM/FastFlowLM', img: 'fastflowlm.png', alt: 'FastFlowLM' },
+          { href: 'https://github.com/amd/RyzenAI-SW', img: 'ryzen_ai_sw.png', alt: 'Ryzen AI SW' },
+          { href: 'https://rocm.docs.amd.com/', img: 'rocm.png', alt: 'ROCm' },
+          { href: 'https://huggingface.co/', img: 'hugging_face.png', alt: 'Hugging Face' },
+          { href: 'https://www.vulkan.org/', img: 'vulkan.png', alt: 'Vulkan' },
+          { href: 'https://github.com/ggml-org/whisper.cpp', img: 'whisper_cpp.png', alt: 'whisper.cpp' },
+          { href: 'https://github.com/leejet/stable-diffusion.cpp', img: 'stable_diffusion_cpp.png', alt: 'stable-diffusion.cpp' },
+          { href: 'https://github.com/lucasjinreal/Kokoros', img: 'kokoros.png', alt: 'Kokoros' }
+        ];
+        var html = logos.map(function(l) {
+          return '<a href="' + l.href + '" title="' + l.alt + '" target="_blank" rel="noopener" class="hp-logo-chip">' +
+            '<img src="' + base + l.img + '" alt="' + l.alt + '" /></a>';
+        }).join('');
+        // Duplicate for seamless loop
+        track.innerHTML = html + html;
+      })();
       if (document.getElementById('lmn-install-view').style.display === 'flex') {
         if (typeof lmnInit === 'function') lmnInit();
       }
