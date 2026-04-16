@@ -22,19 +22,21 @@
           Refreshingly simple<br><span class="hp-headline-line2">local <span class="hp-carousel-word" id="hpCarouselWord" aria-live="polite">chat.</span></span>
         </h1>
         <div class="hp-subtitle-group">
-          <p class="hp-subtitle">The omni-modal alternative to cloud AI. Automatically optimized for your GPU and NPU.</p>
+          <p class="hp-subtitle">The omni-modal alternative to cloud AI. Automatically optimized for your GPU and NPU. Community driven, free, and private.</p>
           <div class="hp-cta-row">
-            <a class="download-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">
-              <span class="material-symbols-outlined">desktop_windows</span> Get started
+            <a class="download-btn" href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener">
+              <img src="https://cdn.simpleicons.org/discord/5C4B00" alt="" class="hp-cta-icon" /> Discord
+              <span class="hp-cta-stat" id="discordOnlineCount">Loading...</span>
             </a>
-            <a class="dev-btn" href="#" onclick="showInstaller(); return false;">
-              <span class="material-symbols-outlined">terminal</span> Embed in your app
+            <a class="dev-btn ice-card" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">
+              <img src="https://cdn.simpleicons.org/github/2D2F2F" alt="" class="hp-cta-icon" /> GitHub
+              <span class="hp-cta-stat" id="githubStarsCount">Loading...</span>
             </a>
           </div>
         </div>
       </div>
       <div class="hp-hero-right">
-        <div class="hp-demo-panel">
+        <div class="hp-demo-panel ice-card">
           <div class="hp-demo-item active" data-mode="0">
             <div class="hp-demo-label">Chat</div>
             <div class="hp-demo-chat">
@@ -80,85 +82,87 @@
       </div>
     </section>
 
+    <!-- ==================== GETTING STARTED ==================== -->
+    <section class="hp-section hp-reveal" id="getting-started">
+      <h2 class="hp-section-heading">Quick, start.</h2>
+
+      <div class="gs-platforms" id="gsPlatforms">
+        <button class="gs-platform" type="button" data-platform="windows">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/windows.png" alt="Windows" />
+          <span class="gs-platform-name">Windows</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="docker">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/docker.png" alt="Docker" />
+          <span class="gs-platform-name">Docker</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="snap">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/snapcraft.png" alt="Snap" />
+          <span class="gs-platform-name">Snap</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="ubuntu">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/ubuntu.png" alt="Ubuntu" />
+          <span class="gs-platform-name">Ubuntu</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="arch">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/arch_linux.png" alt="Arch" />
+          <span class="gs-platform-name">Arch</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="fedora">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/fedora.png" alt="Fedora" />
+          <span class="gs-platform-name">Fedora</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="debian">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/debian.png" alt="Debian" />
+          <span class="gs-platform-name">Debian</span>
+        </button>
+        <button class="gs-platform" type="button" data-platform="apple">
+          <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/apple.png" alt="macOS" />
+          <span class="gs-platform-name">macOS</span>
+        </button>
+      </div>
+
+      <div class="gs-install" id="gsInstall"></div>
+      <div class="gs-quickstart" id="gsQuickstart"></div>
+    </section>
+
     <!-- ==================== WHY LEMONADE ==================== -->
     <section class="hp-section hp-reveal">
       <h2 class="hp-section-heading">Built by the community. Optimized by AMD.</h2>
       <p class="hp-section-desc">Lemonade is a local AI runtime with every capability you need to build great experiences.</p>
 
       <div class="hp-value-grid">
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">bolt</span>
-            </div>
+        <div class="hp-value-card ice-card">
+          <div class="hp-value-header">
+            <div class="hp-value-icon"><span class="material-symbols-outlined">bolt</span></div>
             <h3>Agile</h3>
-            <p>Automatically deploys the latest models and engines. Extra optimized for Ryzen AI, Radeon, and Strix Halo PCs.</p>
           </div>
+          <p>Automatically deploys the latest models and engines. Extra optimized for Ryzen AI, Radeon, and Strix Halo PCs.</p>
           <a class="hp-value-link" href="models.html">Explore Models <span aria-hidden="true">&rarr;</span></a>
         </div>
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">terminal</span>
-            </div>
+        <div class="hp-value-card ice-card">
+          <div class="hp-value-header">
+            <div class="hp-value-icon"><span class="material-symbols-outlined">terminal</span></div>
             <h3>Portable</h3>
-            <p>Integrate once, deploy on any computer running Windows, Linux, or macOS.</p>
           </div>
+          <p>Integrate once, deploy on any computer running Windows, Linux, or macOS.</p>
           <a class="hp-value-link" href="https://lemonade-server.ai/docs/embeddable/" target="_blank" rel="noopener">Embed in Your App <span aria-hidden="true">&rarr;</span></a>
         </div>
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">auto_awesome</span>
-            </div>
+        <div class="hp-value-card ice-card">
+          <div class="hp-value-header">
+            <div class="hp-value-icon"><span class="material-symbols-outlined">auto_awesome</span></div>
             <h3>Omni Modal</h3>
-            <p>Standard endpoints for chat, vision, image gen, editing, speech gen, and ASR.</p>
           </div>
+          <p>Standard endpoints for chat, vision, image gen, editing, speech gen, and ASR.</p>
           <a class="hp-value-link" href="https://lemonade-server.ai/docs/server/server_spec/" target="_blank" rel="noopener">Read Endpoints Spec <span aria-hidden="true">&rarr;</span></a>
         </div>
-        <div class="hp-value-card">
-          <div class="hp-value-card-body">
-            <div class="hp-value-icon">
-              <span class="material-symbols-outlined">shield_with_heart</span>
-            </div>
+        <div class="hp-value-card ice-card">
+          <div class="hp-value-header">
+            <div class="hp-value-icon"><span class="material-symbols-outlined">shield_with_heart</span></div>
             <h3>Free &amp; Private</h3>
-            <p>No strings attached. No telemetry. Customize and redistribute to your heart's content.</p>
           </div>
+          <p>No strings attached. No telemetry. Customize and redistribute to your heart's content.</p>
           <a class="hp-value-link" href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener">Visit the GitHub <span aria-hidden="true">&rarr;</span></a>
         </div>
-      </div>
-
-      <div class="hp-engines-card">
-        <a href="https://github.com/ggml-org/llama.cpp" title="llama.cpp" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png" alt="llama.cpp" />
-        </a>
-        <a href="https://github.com/microsoft/onnxruntime" title="ONNX Runtime" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://raw.githubusercontent.com/microsoft/onnxruntime/main/docs/images/ONNX_Runtime_logo.png" alt="ONNX Runtime" />
-        </a>
-        <a href="https://github.com/FastFlowLM/FastFlowLM" title="FastFlowLM" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/main/assets/logo_next_to_flm.png" alt="FastFlowLM" />
-        </a>
-        <a href="https://github.com/amd/RyzenAI-SW" title="Ryzen AI SW" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://www.phoronix.net/image.php?id=2025&image=ryzen_ai_sw_1" alt="Ryzen AI SW" />
-        </a>
-        <a href="https://rocm.docs.amd.com/" title="ROCm" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://upload.wikimedia.org/wikipedia/commons/0/06/20467978-A_AMD_ROCm_Lockup_85tall.png" alt="ROCm" />
-        </a>
-        <a href="https://huggingface.co/" title="Hugging Face" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.png" alt="Hugging Face" />
-        </a>
-        <a href="https://www.vulkan.org/" title="Vulkan" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Vulkan_API_logo.svg/330px-Vulkan_API_logo.svg.png" alt="Vulkan" />
-        </a>
-        <a href="https://github.com/ggml-org/whisper.cpp" title="whisper.cpp" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://user-images.githubusercontent.com/1991296/235238348-05d0f6a4-da44-4900-a1de-d0707e75b763.jpeg" alt="whisper.cpp" />
-        </a>
-        <a href="https://github.com/leejet/stable-diffusion.cpp" title="stable-diffusion.cpp" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://raw.githubusercontent.com/leejet/stable-diffusion.cpp/master/assets/logo.png" alt="stable-diffusion.cpp" />
-        </a>
-        <a href="https://github.com/lucasjinreal/Kokoros" title="Kokoros" target="_blank" rel="noopener" class="hp-engine-logo">
-          <img src="https://camo.githubusercontent.com/8b7b5be44f4ee1542bbcf55b2ab7e5e51f5e020f6b497bfab3e596a3b4715b75/68747470733a2f2f696d67323032332e636e626c6f67732e636f6d2f626c6f672f333537323332332f3230323530312f333537323332332d32303235303131323138343130303337382d3930373938383637302e6a7067" alt="Kokoros" />
-        </a>
       </div>
     </section>
 
@@ -349,6 +353,155 @@
   <script src="assets/footer.js"></script>
   <script src="assets/news-data.js"></script>
   <script>
+    // ---- Getting Started section ----
+    (function() {
+      var gsPlatform = 'windows';
+      var gsCopySvg = '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M9 9a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2V9Zm-6 4V5a2 2 0 0 1 2-2h8v2H5v8H3Z"></path></svg>';
+
+      function gsDetectPlatform() {
+        var ua = navigator.userAgent || '';
+        if (/Win/.test(ua)) return 'windows';
+        if (/Mac/.test(ua)) return 'apple';
+        if (/Linux/.test(ua)) return 'ubuntu';
+        return 'windows';
+      }
+
+      function gsVersion() {
+        return window.lmnLatestVersion || 'VERSION';
+      }
+
+      function gsConsoleHtml(commands) {
+        var id = 'gs-cmd-' + Math.random().toString(36).substr(2, 6);
+        var lines = commands.map(function(c) {
+          return c.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }).join('\n');
+        return '<div class="gs-console ice-card">' +
+          '<pre><code id="' + id + '">' + lines + '</code></pre>' +
+          '<button class="gs-copy-btn" type="button" aria-label="Copy" data-copy-target="' + id + '">' + gsCopySvg + '</button>' +
+        '</div>';
+      }
+
+      function gsCopyHandler(e) {
+        var btn = e.target.closest('.gs-copy-btn');
+        if (!btn) return;
+        var targetId = btn.getAttribute('data-copy-target');
+        var codeEl = document.getElementById(targetId);
+        if (!codeEl) return;
+        var text = codeEl.textContent || '';
+        try { navigator.clipboard.writeText(text); } catch (err) {}
+        btn.classList.add('is-copied');
+        btn.setAttribute('aria-label', 'Copied');
+        setTimeout(function() {
+          btn.classList.remove('is-copied');
+          btn.setAttribute('aria-label', 'Copy');
+        }, 1200);
+      }
+
+      function gsRenderInstall() {
+        var el = document.getElementById('gsInstall');
+        if (!el) return;
+        var v = gsVersion();
+        var html = '';
+        switch (gsPlatform) {
+          case 'windows':
+            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">' +
+              '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>';
+            break;
+          case 'apple':
+            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade-' + v + '-Darwin.pkg">' +
+              '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>';
+            break;
+          case 'docker':
+            html = gsConsoleHtml([
+              'docker run -d \\',
+              '  --name lemonade-server \\',
+              '  -p 13305:13305 \\',
+              '  -v lemonade-cache:/root/.cache/huggingface \\',
+              '  -v lemonade-llama:/opt/lemonade/llama \\',
+              '  ghcr.io/lemonade-sdk/lemonade-server:latest'
+            ]);
+            break;
+          case 'snap':
+            html = gsConsoleHtml(['sudo snap install lemonade']);
+            break;
+          case 'ubuntu':
+            html = gsConsoleHtml([
+              'sudo add-apt-repository ppa:lemonade-team/stable',
+              'sudo apt install lemonade-server'
+            ]);
+            break;
+          case 'arch':
+            html = gsConsoleHtml(['yay -S lemonade-server']);
+            break;
+          case 'fedora':
+            var rpm = 'lemonade-server-' + v + '.x86_64.rpm';
+            html = gsConsoleHtml([
+              'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm,
+              'sudo dnf install ./' + rpm
+            ]);
+            break;
+          case 'debian':
+            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank" rel="noopener">' +
+              '<span class="material-symbols-outlined">open_in_new</span> Build from source</a>';
+            break;
+        }
+        el.innerHTML = html;
+      }
+
+      function gsRenderQuickstart() {
+        var el = document.getElementById('gsQuickstart');
+        if (!el) return;
+        if (gsPlatform === 'windows' || gsPlatform === 'apple') {
+          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Open the desktop app and explore the models.</p>';
+        } else {
+          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Open <a href="http://localhost:13305" target="_blank">http://localhost:13305</a> and explore the models.</p>';
+        }
+      }
+
+      function gsSetPlatform(name) {
+        gsPlatform = name;
+        var btns = document.querySelectorAll('.gs-platform');
+        btns.forEach(function(btn) {
+          btn.classList.toggle('is-active', btn.getAttribute('data-platform') === name);
+        });
+        gsRenderInstall();
+        gsRenderQuickstart();
+      }
+
+      function gsInit() {
+        var container = document.getElementById('gsPlatforms');
+        if (!container) return;
+
+        // Click handlers
+        container.addEventListener('click', function(e) {
+          var btn = e.target.closest('.gs-platform');
+          if (!btn) return;
+          gsSetPlatform(btn.getAttribute('data-platform'));
+        });
+
+        // Copy handlers (delegated)
+        var section = document.getElementById('getting-started');
+        if (section) section.addEventListener('click', gsCopyHandler);
+
+        // Auto-detect and render
+        gsSetPlatform(gsDetectPlatform());
+
+        // Re-render when version becomes available
+        var versionCheck = setInterval(function() {
+          if (window.lmnLatestVersion) {
+            clearInterval(versionCheck);
+            gsRenderInstall();
+            gsRenderQuickstart();
+          }
+        }, 500);
+        // Stop checking after 15s
+        setTimeout(function() { clearInterval(versionCheck); }, 15000);
+      }
+
+      // Expose for DOMContentLoaded
+      window.gsInit = gsInit;
+    })();
+
     // ---- Carousel + Demo panel sync ----
     (function() {
       var wordEl = document.getElementById('hpCarouselWord');
@@ -570,14 +723,14 @@
         if (inviteResponse.ok) {
           var inviteData = await inviteResponse.json();
           var online = compactCount(inviteData.approximate_presence_count);
-          if (online) discordEl.textContent = online + ' online now';
+          if (online) discordEl.textContent = online + ' online';
         }
       } catch (error) {}
       if (githubEl.textContent.indexOf('Loading') === 0) {
         githubEl.textContent = 'See stars';
       }
       if (discordEl.textContent.indexOf('Loading') === 0) {
-        discordEl.textContent = 'Online now';
+        discordEl.textContent = 'Online';
       }
     }
     function initUnifiedApiSamples() {
@@ -736,6 +889,8 @@
       fetchCommunityStats();
       initUnifiedApiSamples();
       if (typeof initializeFooter === 'function') initializeFooter('../');
+      if (typeof fetchLatestVersion === 'function') fetchLatestVersion();
+      if (typeof gsInit === 'function') gsInit();
       if (document.getElementById('lmn-install-view').style.display === 'flex') {
         if (typeof lmnInit === 'function') lmnInit();
       }

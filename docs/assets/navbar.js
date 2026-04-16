@@ -14,7 +14,7 @@ function createNavbar(basePath = '') {
         <a href="${basePath}news/">News</a>
       </div>
       <div class="navbar-actions">
-        <a class="navbar-install-btn" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi">Get started</a>
+        <a class="navbar-install-btn" href="${basePath}index.html#getting-started">Get started</a>
       </div>
     </nav>
   `;

@@ -79,6 +79,16 @@
   --radius-card: 3rem;
 }
 
+/* === Ice Card — Glassmorphic base (DESIGN.md §4 "Ice" layer) === */
+.ice-card {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-card);
+  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
+}
+
 /* === Base Styles === */
 * {
   box-sizing: border-box;
@@ -480,12 +490,7 @@ body.install-options {
 }
 
 .dev-btn {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
 }
 
 .dev-btn:hover, .dev-btn:focus {
@@ -1488,6 +1493,34 @@ body.install-options {
 }
 
 /* === Footer === */
+.footer-engines {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
+}
+
+.footer-engines a {
+  display: inline-flex;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  text-decoration: none;
+}
+
+.footer-engines a:hover {
+  opacity: 1;
+}
+
+.footer-engines img {
+  height: 22px;
+  width: auto;
+  object-fit: contain;
+}
+
 .site-footer {
   width: 100%;
   padding: calc(var(--spacing-xxl) / 8) 0 var(--spacing-lg) 0;
@@ -4046,6 +4079,20 @@ body.install-options {
   font-size: 1.1rem;
 }
 
+.hp-cta-icon {
+  width: 1.15em;
+  height: 1.15em;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.hp-cta-stat {
+  font-family: var(--font-body);
+  font-size: 0.78em;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
 .hp-cta-row .download-sub,
 .hp-cta-row .dev-sub {
   font-size: 0.8em;
@@ -4064,16 +4111,10 @@ body.install-options {
 .hp-demo-panel {
   width: 100%;
   max-width: 440px;
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-radius: var(--radius-card);
   padding: 1.4rem;
   height: 290px;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.6);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -4354,7 +4395,7 @@ body.install-options {
   -webkit-backdrop-filter: blur(12px);
   padding: 0.42rem 1.1rem;
   border-radius: var(--radius-full);
-  margin-bottom: 0.95rem;
+  margin-bottom: calc(var(--page-space-base) * 0.475);
   border: 1px solid var(--outline-variant);
 }
 
@@ -4364,7 +4405,7 @@ body.install-options {
   font-size: clamp(1.35rem, 2.4vw, 2.1rem);
   font-weight: 800;
   color: var(--text-primary);
-  margin: 0 0 0.9rem;
+  margin: 0 0 var(--page-space-sm);
   letter-spacing: -0.03em;
   line-height: 1.12;
 }
@@ -4373,50 +4414,11 @@ body.install-options {
   font-family: var(--font-body);
   font-size: clamp(0.96rem, 1.65vw, 1.08rem);
   color: var(--text-secondary);
-  margin: 0 auto 2.5rem;
+  margin: 0 auto var(--page-space-sm);
   max-width: 760px;
   line-height: 1.65;
 }
 
-/* --- Engine logos glass card --- */
-.hp-engines-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: var(--radius-card);
-  padding: 1.5rem 2rem;
-  margin-top: 1.5rem;
-  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
-}
-
-.hp-engine-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  transition: opacity 0.2s ease;
-  opacity: 0.75;
-}
-
-.hp-engine-logo:hover {
-  opacity: 1;
-}
-
-.hp-engine-logo img {
-  height: 22px;
-  width: auto;
-  object-fit: contain;
-  filter: grayscale(1);
-  transition: filter 0.2s ease;
-}
-
-.hp-engine-logo:hover img {
-  filter: grayscale(0);
-}
 
 /* --- Value proposition cards --- */
 .hp-value-grid {
@@ -4427,18 +4429,8 @@ body.install-options {
 }
 
 .hp-value-card {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: var(--radius-card);
-  padding: 2rem;
-  min-height: 320px;
-  box-shadow: 0 12px 48px rgba(45, 47, 47, 0.05);
+  padding: 1.5rem;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
 }
 
 .hp-value-card:hover {
@@ -4446,25 +4438,28 @@ body.install-options {
   box-shadow: 0 24px 64px rgba(45, 47, 47, 0.08);
 }
 
-.hp-value-card-body {
-  flex: 1;
+.hp-value-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
 }
 
 .hp-value-icon {
-  width: 3rem;
-  height: 3rem;
+  width: 2.2rem;
+  height: 2.2rem;
   border-radius: var(--radius-round);
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(255, 255, 255, 1);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 1.5rem;
+  flex-shrink: 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .hp-value-icon .material-symbols-outlined {
-  font-size: 1.4rem;
+  font-size: 1.1rem;
   color: var(--accent-gold);
 }
 
@@ -4473,7 +4468,7 @@ body.install-options {
 }
 
 .hp-value-link {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   font-family: var(--font-display);
@@ -4481,7 +4476,7 @@ body.install-options {
   font-weight: 700;
   color: var(--accent-gold);
   text-decoration: none;
-  margin-top: 1.5rem;
+  margin-top: 1rem;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
@@ -4495,7 +4490,7 @@ body.install-options {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 0.5rem;
+  margin: 0;
 }
 
 .hp-value-card p {
@@ -5008,6 +5003,178 @@ body.install-options {
   margin: 0;
 }
 
+/* --- Getting Started section --- */
+.gs-platforms {
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--page-space-base) * 0.3);
+  flex-wrap: wrap;
+  margin-bottom: var(--page-space-sm);
+}
+
+.gs-platform {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--page-space-base) * 0.15);
+  padding: calc(var(--page-space-base) * 0.275);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.gs-platform:hover {
+  opacity: 0.82;
+  transform: translateY(-2px);
+}
+
+.gs-platform.is-active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-medium);
+  transform: scale(1.06);
+}
+
+.gs-platform img {
+  width: 52px;
+  height: 52px;
+  display: block;
+  pointer-events: none;
+}
+
+.gs-platform-name {
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 550;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.gs-platform.is-active .gs-platform-name {
+  color: var(--text-primary);
+}
+
+/* Install action row */
+.gs-install {
+  margin-bottom: calc(var(--page-space-base) * 0.5);
+  min-height: 60px;
+}
+
+.gs-console {
+  position: relative;
+  padding: calc(var(--page-space-base) * 0.55) calc(var(--page-space-base) * 1.4) calc(var(--page-space-base) * 0.55) calc(var(--page-space-base) * 0.65);
+  max-width: 550px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.gs-copy-btn {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--page-space-base) * 0.425);
+  transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  line-height: 0;
+  padding: 0.38rem;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.gs-copy-btn svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  display: block;
+  fill: currentColor;
+}
+
+.gs-copy-btn:hover,
+.gs-copy-btn:focus {
+  background: var(--primary-yellow);
+  border-color: var(--primary-yellow-darker);
+  color: var(--accent-gold);
+  transform: translateY(-50%) translateY(-1px);
+}
+
+.gs-copy-btn.is-copied {
+  background: var(--primary-yellow);
+  border-color: var(--primary-yellow-darker);
+  color: var(--accent-gold);
+}
+
+.gs-console pre {
+  margin: 0;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.gs-console code {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  display: block;
+}
+
+/* Install download button */
+.gs-download-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.85rem 2rem;
+  min-width: 320px;
+  border-radius: var(--radius-btn);
+  background: var(--primary-yellow);
+  color: var(--accent-gold);
+  text-decoration: none;
+  box-shadow: 0 12px 48px rgba(252, 216, 70, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gs-download-link:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 16px 56px rgba(252, 216, 70, 0.38);
+}
+
+.gs-download-link .material-symbols-outlined {
+  font-size: 1.2em;
+}
+
+/* Quick start row */
+.gs-quickstart {
+}
+
+.gs-quickstart-text {
+  font-family: var(--font-body);
+  font-size: 1.02rem;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.gs-quickstart-text .material-symbols-outlined {
+  font-size: 1.1em;
+  vertical-align: -0.15em;
+  color: var(--accent-gold);
+}
+
 /* --- Homepage responsive --- */
 @media (max-width: 1024px) {
   .hp-main {
@@ -5048,11 +5215,6 @@ body.install-options {
     margin: 0 auto;
   }
 
-  .hp-engines-card {
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 1rem 1.5rem;
-  }
 
   .hp-tech-grid,
   .hp-value-grid {
@@ -5118,6 +5280,14 @@ body.install-options {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .gs-platform img {
+    width: 44px;
+    height: 44px;
+  }
+
+  .gs-console {
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 720px) {
@@ -5157,6 +5327,16 @@ body.install-options {
   .hp-eco-apps {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .gs-platforms {
+    gap: 0.4rem;
+  }
+
+  .gs-platform img {
+    width: 38px;
+    height: 38px;
+  }
+
 }
 
 @media (max-width: 480px) {
@@ -5198,4 +5378,29 @@ body.install-options {
     gap: 0.62rem 0.5rem;
   }
 
+  .gs-platforms {
+    gap: 0.25rem;
+  }
+
+  .gs-platform {
+    padding: 0.35rem;
+  }
+
+  .gs-platform img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .gs-platform-name {
+    display: none;
+  }
+
+  .gs-console {
+    border-radius: var(--radius);
+    padding: 0.7rem 0.85rem;
+  }
+
+  .gs-console code {
+    font-size: 0.8rem;
+  }
 }
