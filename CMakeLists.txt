@@ -708,7 +708,7 @@ elseif(UNIX)
     if(PkgConfig_FOUND)
         pkg_check_modules(SYSTEMD QUIET libsystemd)
         if(SYSTEMD_FOUND)
-            set(LEMONADE_SYSTEMD_UNIT_NAME "lemonade-server.service" CACHE STRING
+            set(LEMONADE_SYSTEMD_UNIT_NAME "lemond.service" CACHE STRING
                 "Systemd unit name to match for journald log mode (overridable at runtime via LEMONADE_SYSTEMD_UNIT env var)")
             target_include_directories(lemonade-server-core PUBLIC ${SYSTEMD_INCLUDE_DIRS})
             target_link_libraries(lemonade-server-core PUBLIC ${SYSTEMD_LIBRARIES})
@@ -1379,13 +1379,13 @@ if(UNIX AND NOT APPLE)
 
     # Configure systemd service file (uses CMAKE_INSTALL_FULL_* variables)
     configure_file(
-        ${CMAKE_SOURCE_DIR}/data/lemonade-server.service.in
-        ${CMAKE_BINARY_DIR}/lemonade-server.service
+        ${CMAKE_SOURCE_DIR}/data/lemond.service.in
+        ${CMAKE_BINARY_DIR}/lemond.service
         @ONLY
     )
 
     # Install systemd service file
-    install(FILES ${CMAKE_BINARY_DIR}/lemonade-server.service
+    install(FILES ${CMAKE_BINARY_DIR}/lemond.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
     # Create symlink in standard systemd search path only if not installing to /usr
@@ -1395,8 +1395,8 @@ if(UNIX AND NOT APPLE)
             file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/system\")
             execute_process(
                 COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemonade-server.service
-                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemonade-server.service\"
+                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service
+                    \"\$ENV{DESTDIR}/usr/lib/systemd/system/lemond.service\"
             )
         ")
     endif()

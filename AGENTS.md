@@ -110,7 +110,7 @@ cmake --build --preset default --target appimage
 
 CMake presets: `default` (Ninja, Release), `windows` (VS 2022), `vs18` (VS 2026), `debug` (Ninja, Debug).
 
-CMake options: `BUILD_WEB_APP` (ON by default on non-Windows), `BUILD_TAURI_APP` (Linux only, include Tauri desktop app in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemonade-server.service`).
+CMake options: `BUILD_WEB_APP` (ON by default on non-Windows), `BUILD_TAURI_APP` (Linux only, include Tauri desktop app in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemond.service`).
 
 ## Testing
 

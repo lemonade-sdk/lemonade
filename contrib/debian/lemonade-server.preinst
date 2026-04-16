@@ -6,5 +6,13 @@ if [ -L "/usr/lib/systemd/system/lemonade-server.service" ]; then
 	deb-systemd-helper purge 'lemonade-server.service' >/dev/null || true
 	rm -f /etc/systemd/system/lemonade-server.service
 	rm -f /etc/systemd/system/*/lemonade-server.service
-	systemctl --system daemon-reload
+	systemctl --system daemon-reload || true
+fi
+
+# Clean up old lemonade-server.service if it exists (migration to lemond.service)
+if systemctl is-enabled lemonade-server.service >/dev/null 2>&1; then
+	systemctl stop lemonade-server.service >/dev/null 2>&1 || true
+	systemctl disable lemonade-server.service >/dev/null 2>&1 || true
+	deb-systemd-helper purge 'lemonade-server.service' >/dev/null || true
+	systemctl --system daemon-reload || true
 fi
