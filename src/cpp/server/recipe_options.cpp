@@ -30,7 +30,10 @@ static const json DEFAULTS = {
     {"sampling_method", ""},
     {"flow_shift", 0.0},
     // FLM-specific options
-    {"flm_args", ""}       // Custom arguments to pass to flm serve
+    {"flm_args", ""},      // Custom arguments to pass to flm serve
+    // MLX-specific options
+    {"mlx_args", ""},      // Custom arguments to pass to mlx-engine server
+    {"mlx_max_tokens", 4096}  // Max tokens for MLX generation
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
@@ -45,7 +48,9 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
-    {"flm_args", "--flm-args"}
+    {"flm_args", "--flm-args"},
+    {"mlx_args", "--mlx-args"},
+    {"mlx_max_tokens", "--mlx-max-tokens"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -59,6 +64,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift"};
+    } else if (recipe == "mlx") {
+        return {"ctx_size", "mlx_args", "mlx_max_tokens"};
     } else {
         return {};
     }

@@ -25,5 +25,8 @@
   "kokoro": {
     "cpu": "b16"
   },
+  "mlx": {
+    "rocm": "b1004-tech-preview"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

@@ -1401,5 +1401,40 @@
             "image"
         ],
         "size": 0.017
+    },
+    "Qwen3-0.6B-mlx": {
+        "checkpoint": "mlx-community/Qwen3-0.6B-4bit",
+        "recipe": "mlx",
+        "suggested": true,
+        "labels": ["reasoning", "mlx", "hot"],
+        "size": 0.6
+    },
+    "Qwen3-1.7B-mlx": {
+        "checkpoint": "mlx-community/Qwen3-1.7B-4bit",
+        "recipe": "mlx",
+        "suggested": true,
+        "labels": ["reasoning", "mlx"],
+        "size": 1.2
+    },
+    "Qwen3-4B-mlx": {
+        "checkpoint": "mlx-community/Qwen3-4B-4bit",
+        "recipe": "mlx",
+        "suggested": true,
+        "labels": ["reasoning", "mlx"],
+        "size": 2.5
+    },
+    "Qwen3-8B-mlx": {
+        "checkpoint": "mlx-community/Qwen3-8B-4bit",
+        "recipe": "mlx",
+        "suggested": true,
+        "labels": ["reasoning", "mlx"],
+        "size": 5.0
+    },
+    "Phi-4-mini-mlx": {
+        "checkpoint": "mlx-community/Phi-4-mini-instruct-4bit",
+        "recipe": "mlx",
+        "suggested": true,
+        "labels": ["reasoning", "mlx"],
+        "size": 3.0
     }
 }
