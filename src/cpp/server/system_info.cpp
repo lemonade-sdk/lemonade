@@ -2831,7 +2831,7 @@ bool SystemInfo::is_running_under_systemd() {
     }
 
 #ifdef HAVE_SYSTEMD
-    // Use systemd journal only when actually running as lemonade-server.service.
+    // Use systemd journal only when actually running as lemond.service.
     // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
     // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
     // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.
