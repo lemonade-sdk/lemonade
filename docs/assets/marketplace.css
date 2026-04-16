@@ -18,23 +18,22 @@
     var(--mp-grid-max-columns) * var(--mp-grid-gap) - 1px
   );
 
-  /* Light theme - matches website warm yellow/cream */
-  --mp-bg-page: #fffbe6;
-  --mp-bg-card: #ffffff;
-  --mp-text-primary: #1a1a1a;
-  --mp-text-secondary: #666666;
-  --mp-text-muted: #999999;
-  --mp-border: rgba(0, 0, 0, 0.08);
-  --mp-accent: #1a1a1a;
-  --mp-accent-hover: #333333;
-  --mp-accent-yellow: #ffe066;
-  --mp-accent-yellow-dark: #ffd43b;
-  --mp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --mp-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --mp-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
-  --mp-radius-sm: 8px;
-  --mp-radius-md: 12px;
-  --mp-radius-lg: 16px;
+  /* Light theme — Crystalline Zest design system */
+  --mp-bg-page: transparent;
+  --mp-bg-card: var(--glass-bg);
+  --mp-text-primary: var(--text-primary);
+  --mp-text-secondary: var(--text-secondary);
+  --mp-text-muted: var(--text-muted);
+  --mp-border: var(--glass-border);
+  --mp-accent: var(--primary-yellow);
+  --mp-accent-hover: var(--primary-yellow-darker);
+  --mp-accent-text: var(--on-primary);
+  --mp-shadow-sm: var(--shadow-light);
+  --mp-shadow-md: var(--shadow-medium);
+  --mp-shadow-lg: var(--shadow-heavy);
+  --mp-radius-sm: var(--radius);
+  --mp-radius-md: var(--radius-xl);
+  --mp-radius-lg: var(--radius-card);
 }
 
 [data-theme="dark"] {
@@ -129,7 +128,7 @@ body.embedded .marketplace-hero {
 
 /* === Hero Section === */
 .marketplace-hero {
-  padding: 48px 0 48px; /* More spacing before content like news page */
+  padding: var(--spacing-xxl, 3rem) 0;
 }
 
 /* In embedded mode, use compact heading matching app section headers */
@@ -196,9 +195,13 @@ body.embedded .apps-grid {
   width: 100%;
   padding: 8px 12px 8px 34px;
   font-size: 0.875rem;
-  border: 1px solid var(--mp-border);
+  font-family: var(--font-body, inherit);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
   border-radius: var(--mp-radius-sm);
-  background: var(--mp-bg-card);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.4));
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  box-shadow: var(--shadow-ambient, 0 12px 48px rgba(45, 47, 47, 0.05));
   color: var(--mp-text-primary);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   outline: none;
@@ -209,8 +212,8 @@ body.embedded .apps-grid {
 }
 
 .search-input:focus {
-  border-color: var(--mp-accent);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+  border-color: var(--primary-yellow, #FCD846);
+  box-shadow: 0 0 0 2px rgba(252, 216, 70, 0.3);
 }
 
 [data-theme="dark"] .search-input {
@@ -289,9 +292,9 @@ body.embedded .search-input {
 .mp-filter-btn {
   padding: 6px 12px;
   font-size: 0.8125rem;
-  font-weight: 450;
+  font-weight: 500;
   border: none;
-  border-radius: var(--mp-radius-sm);
+  border-radius: var(--radius-btn, 9999px);
   background: transparent;
   color: var(--mp-text-muted);
   cursor: pointer;
@@ -299,18 +302,18 @@ body.embedded .search-input {
   white-space: nowrap;
   width: auto;
   box-shadow: none;
-  flex-shrink: 0; /* Prevent buttons from shrinking */
+  flex-shrink: 0;
 }
 
 .mp-filter-btn:hover {
   color: var(--mp-text-primary);
-  background: transparent;
+  background: var(--glass-bg-hover, rgba(255, 255, 255, 0.65));
 }
 
 .mp-filter-btn.active {
   background: var(--mp-accent);
-  color: var(--mp-bg-card);
-  font-weight: 500;
+  color: var(--mp-accent-text, #000);
+  font-weight: 600;
 }
 
 /* Category Dropdown (embedded mode) - matches search input styling */
@@ -405,10 +408,13 @@ body.embedded .mp-filter-select option {
 /* === App Card === */
 .app-card {
   background: var(--mp-bg-card);
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
   border: 1px solid var(--mp-border);
   border-radius: var(--mp-radius-md);
   padding: 16px;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: var(--mp-shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   cursor: pointer;
   text-decoration: none;
   color: inherit;
@@ -418,7 +424,7 @@ body.embedded .mp-filter-select option {
 }
 
 .app-card:hover {
-  border-color: rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
   box-shadow: var(--mp-shadow-md);
 }
 
@@ -441,7 +447,7 @@ body.embedded .mp-filter-select option {
   height: 44px;
   border-radius: var(--mp-radius-sm);
   object-fit: cover;
-  background: var(--mp-bg-page);
+  background: var(--surface-container-lowest, #fff);
   flex-shrink: 0;
 }
 
@@ -503,41 +509,55 @@ body.embedded .mp-filter-select option {
 .app-link {
   font-size: 0.75rem;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-btn, 9999px);
   text-decoration: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: inline-flex;
   align-items: center;
-  font-weight: 500;
+  font-weight: 600;
   border: 1px solid transparent;
 }
 
 .app-link.primary {
-  background: var(--mp-accent);
-  color: var(--mp-bg-card);
+  background: var(--primary-yellow, #FCD846);
+  color: var(--on-primary, #000);
+  box-shadow: var(--shadow-yellow, 0 12px 48px rgba(252, 216, 70, 0.3));
 }
 
 .app-link.primary:hover {
-  background: var(--mp-accent-hover);
+  transform: scale(1.02);
+  box-shadow: var(--shadow-yellow-hover, 0 16px 56px rgba(252, 216, 70, 0.38));
+}
+
+.app-link.primary:active {
+  transform: scale(0.95);
 }
 
 .app-link.secondary {
-  background: transparent;
-  color: var(--mp-text-secondary);
-  border-color: var(--mp-border);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.4));
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
+  color: var(--text-primary, #2D2F2F);
+  box-shadow: var(--shadow-ambient, 0 12px 48px rgba(45, 47, 47, 0.05));
 }
 
 .app-link.secondary:hover {
-  color: var(--mp-text-primary);
-  border-color: var(--mp-text-muted);
+  background: var(--glass-bg-hover, rgba(255, 255, 255, 0.65));
+  transform: scale(1.02);
 }
 
 [data-theme="dark"] .app-link.secondary {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-color: #444444;
   color: #aaaaaa;
+  box-shadow: none;
 }
 
 [data-theme="dark"] .app-link.secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
   border-color: #666666;
   color: #ffffff;
 }
@@ -599,11 +619,11 @@ body.embedded .mp-filter-select option {
   margin-top: 16px;
   padding: 8px 16px;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 600;
   background: var(--mp-accent);
-  color: var(--mp-bg-card);
+  color: var(--mp-accent-text, #000);
   border: none;
-  border-radius: var(--mp-radius-sm);
+  border-radius: var(--radius-btn, 9999px);
   cursor: pointer;
   transition: background 0.15s ease;
 }
