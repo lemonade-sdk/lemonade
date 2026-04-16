@@ -194,6 +194,15 @@ chmod +x build/app-appimage/lemonade-app-*.AppImage
 - The build uses static linking to minimize DLL dependencies
 - All dependencies are built from source (no external DLL requirements)
 - Security features enabled: Control Flow Guard, ASLR, DEP
+- **Troubleshooting:** If `npm run dev` or `cargo` commands fail with "program not found", ensure `%USERPROFILE%\.cargo\bin` is in your PATH. Add it permanently from PowerShell with a duplicate-safe update, then restart your IDE or terminal:
+  ```powershell
+  $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+  $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+  if (($userPath -split ";") -notcontains $cargoBin) {
+      [System.Environment]::SetEnvironmentVariable("PATH", "$cargoBin;$userPath", "User")
+  }
+  ```
+- **Troubleshooting:** If Rust/Tauri fails with `link.exe` or `msvcrt.lib` errors, launch from a Visual Studio Developer shell and confirm `where link` lists the Visual Studio linker before Git's `link.exe`.
 
 **Linux:**
 - `lemond` is always headless on Linux (GTK-free, daemon-friendly); use `lemond` to start the server directly
@@ -661,7 +670,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 |-----|------|-------------|
 | `port` | int (1–65535) | HTTP rebind |
 | `host` | string | HTTP rebind |
-| `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
+| `log_level` | string (`trace`, `debug`, `info`, `notice`, `warning`, `error`, `critical`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
 | `no_broadcast` | bool | Stops or starts UDP beacon |
 | `extra_models_dir` | string | Updates model manager search path |
