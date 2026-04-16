@@ -4035,6 +4035,53 @@ input::-webkit-calendar-picker-indicator {
     display: block;
 }
 
+/* Audio dropdown menu (Upload file / Record audio) */
+.audio-menu-wrapper {
+    position: relative;
+    display: inline-flex;
+}
+
+.audio-dropdown-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: 4px 0;
+    min-width: 140px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+}
+
+.audio-dropdown-menu button {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.audio-dropdown-menu button:hover {
+    background: var(--bg-alpha-1);
+}
+
+/* Pulsing red ring on the audio button while recording */
+.audio-upload-button.recording {
+    color: #ef4444;
+    animation: audio-record-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes audio-record-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
 /* Typing Indicator */
 .typing-indicator {
     display: flex;
