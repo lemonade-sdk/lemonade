@@ -941,7 +941,24 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             bool version_known = !installed_version.empty() && installed_version != "unknown";
             bool has_expected = !expected_version.empty();
-            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+            bool needs_update;
+#if !defined(_WIN32)
+            // On non-Windows, FLM is a system-managed package; a version newer
+            // than the minimum required is acceptable.
+            if (def.recipe == "flm") {
+                auto installed_ver = utils::Version::parse(installed_version);
+                auto expected_ver = utils::Version::parse(expected_version);
+                // If either version cannot be parsed, fall back to exact equality check
+                bool version_at_least_expected = (!installed_ver.empty() && !expected_ver.empty())
+                    ? (installed_ver >= expected_ver)
+                    : (installed_version == expected_version);
+                needs_update = has_expected && (!version_known || !version_at_least_expected);
+            } else {
+                needs_update = has_expected && (!version_known || installed_version != expected_version);
+            }
+#else
+            needs_update = has_expected && (!version_known || installed_version != expected_version);
+#endif
 
             if (needs_update) {
                 backend["state"] = "update_required";
