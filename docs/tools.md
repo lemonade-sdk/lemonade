@@ -4,7 +4,7 @@ Lemonade exposes multimodal capabilities through standard OpenAI-compatible endp
 
 ## Tool Definitions
 
-The canonical tool definitions live in [`src/app/src/renderer/utils/toolDefinitions.json`](../src/app/src/renderer/utils/toolDefinitions.json). This is the single source of truth used by both the Electron app and this documentation.
+The canonical tool definitions live in [`src/app/src/renderer/utils/toolDefinitions.json`](../src/app/src/renderer/utils/toolDefinitions.json). This is the single source of truth used by both the desktop app and this documentation.
 
 Each entry has a `function` object in standard OpenAI tool-calling format (pass directly to any LLM), plus `requires_labels` or `requires_llm_labels` indicating which model capabilities are needed.
 
@@ -23,7 +23,7 @@ Each entry has a `function` object in standard OpenAI tool-calling format (pass 
 ### 1. Find your models
 
 ```bash
-curl http://localhost:8000/v1/models
+curl http://localhost:13305/v1/models
 ```
 
 Model labels tell you their capabilities:
@@ -48,84 +48,22 @@ tools = [
 
 ### 3. Run your agentic loop
 
-```python
-from openai import OpenAI
-import json, base64
+A complete working example is at [`examples/lemonade_tools.py`](../examples/lemonade_tools.py). Try it:
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="na")
-
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "generate_image",
-            "description": "Generate an image from a text description.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "prompt": {"type": "string", "description": "Image description"}
-                },
-                "required": ["prompt"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "text_to_speech",
-            "description": "Convert text to spoken audio.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "input": {"type": "string", "description": "Text to speak"}
-                },
-                "required": ["input"]
-            }
-        }
-    }
-]
-
-messages = [{"role": "user", "content": "Generate an image of a sunset over mountains"}]
-
-response = client.chat.completions.create(
-    model="your-llm-model",
-    messages=messages,
-    tools=tools
-)
-
-message = response.choices[0].message
-if message.tool_calls:
-    for tool_call in message.tool_calls:
-        args = json.loads(tool_call.function.arguments)
-
-        if tool_call.function.name == "generate_image":
-            result = client.images.generate(
-                model="SDXL-Turbo",
-                prompt=args["prompt"],
-                response_format="b64_json",
-                n=1
-            )
-            image_b64 = result.data[0].b64_json
-            with open("output.png", "wb") as f:
-                f.write(base64.b64decode(image_b64))
-            print("Image saved to output.png")
-
-        elif tool_call.function.name == "text_to_speech":
-            audio = client.audio.speech.create(
-                model="kokoro-v1",
-                input=args["input"],
-                voice="af_heart"
-            )
-            audio.write_to_file("output.wav")
-            print("Audio saved to output.wav")
+```bash
+pip install openai
+python examples/lemonade_tools.py "Generate an image of a sunset"
+python examples/lemonade_tools.py "Say hello world out loud"
 ```
+
+The example sends tools to the LLM, executes the tool calls against Lemonade's endpoints, and feeds the results back in a loop.
 
 ## Endpoint Details
 
 ### generate_image
 
 ```bash
-curl -X POST http://localhost:8000/v1/images/generations \
+curl -X POST http://localhost:13305/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{"model": "SDXL-Turbo", "prompt": "a cat in space", "response_format": "b64_json", "n": 1}'
 ```
@@ -135,7 +73,7 @@ curl -X POST http://localhost:8000/v1/images/generations \
 Requires `multipart/form-data`. Attach the source image as a file field named `image`:
 
 ```bash
-curl -X POST http://localhost:8000/v1/images/edits \
+curl -X POST http://localhost:13305/v1/images/edits \
   -F "model=SDXL-Turbo" \
   -F "prompt=make it nighttime" \
   -F "image=@source.png" \
@@ -146,7 +84,7 @@ curl -X POST http://localhost:8000/v1/images/edits \
 ### text_to_speech
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/speech \
+curl -X POST http://localhost:13305/v1/audio/speech \
   -H "Content-Type: application/json" \
   -d '{"model": "kokoro-v1", "input": "Hello world", "voice": "af_heart"}' \
   --output speech.wav
@@ -155,7 +93,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 ### transcribe_audio
 
 ```bash
-curl -X POST http://localhost:8000/v1/audio/transcriptions \
+curl -X POST http://localhost:13305/v1/audio/transcriptions \
   -F "file=@audio.wav" \
   -F "model=Whisper-Large-v3-Turbo" \
   -F "language=en"
@@ -164,7 +102,7 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 ### analyze_image
 
 ```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
+curl -X POST http://localhost:13305/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "your-vision-model",
