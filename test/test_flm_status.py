@@ -674,6 +674,34 @@ class FlmStatusTests(unittest.TestCase):
                 print(f"  [OK] update_required (old ver) install: action URL returned")
 
     # ------------------------------------------------------------------ #
+    #  Scenario 3b: newer version installed (>= required) — should be OK
+    # ------------------------------------------------------------------ #
+
+    @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
+    def test_newer_version_system_info(self):
+        """NPU present, FLM version newer than required -> state=installed (not update_required)."""
+        # Compute a version one patch level higher than the required version
+        base = REQUIRED_FLM_VERSION.lstrip("v")
+        parts = base.split(".")
+        parts[-1] = str(int(parts[-1]) + 1)
+        newer_version = ".".join(parts)
+
+        with self._mock_flm(version=newer_version, validate_ready=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
+                data = self._get_system_info()
+                npu = self._get_flm_npu(data)
+
+                self.assertEqual(
+                    npu["state"],
+                    "installed",
+                    f"Newer FLM version should be accepted as installed: {npu}",
+                )
+                print(
+                    f"  [OK] newer version system-info: state={npu['state']} (installed, not update_required)"
+                )
+
+    # ------------------------------------------------------------------ #
     #  Scenario 4: update_required (unknown version — FLM too old for --json)
     # ------------------------------------------------------------------ #
 
