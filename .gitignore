@@ -184,3 +184,6 @@ CLAUDE.local.md
 # WiX Toolset build artifacts
 *.msi
 *.wixpdb
+
+# Local dev folder
+local.dev/

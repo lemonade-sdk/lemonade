@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
+import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon, Brain, SquareCode, Eye, Flame, Layers, ListOrdered, Wrench, User, Sparkles } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -19,89 +19,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
-
-interface ModelFamily {
-  displayName: string;
-  regex: RegExp;
-}
-
-const SIZE_TOKEN = String.raw`(\d+\.?\d*B(?:-A\d+\.?\d*B)?)`;
-const FLM_SIZE_TOKEN = String.raw`(\d+\.?\d*[bm])`;
-
-function buildFamilyRegex(prefix: string, suffix = '-GGUF$'): RegExp {
-  return new RegExp(`^${prefix}-${SIZE_TOKEN}${suffix}`);
-}
-
-function buildFlmFamilyRegex(prefix: string): RegExp {
-  return new RegExp(`^${prefix}-${FLM_SIZE_TOKEN}-FLM$`);
-}
-
-const MODEL_FAMILIES: ModelFamily[] = [
-  // Standardized family matching: capture *B or *B-A*B.
-  {
-    displayName: 'Qwen3',
-    regex: buildFamilyRegex('Qwen3'),
-  },
-  {
-    displayName: 'Qwen3-Instruct-2507',
-    regex: buildFamilyRegex('Qwen3', '-Instruct-2507-GGUF$'),
-  },
-  {
-    displayName: 'Qwen3.5',
-    regex: buildFamilyRegex('Qwen3\\.5'),
-  },
-  {
-    displayName: 'Qwen3-Embedding',
-    regex: buildFamilyRegex('Qwen3-Embedding'),
-  },
-  {
-    displayName: 'Qwen2.5-VL-Instruct',
-    regex: buildFamilyRegex('Qwen2\\.5-VL', '-Instruct-GGUF$'),
-  },
-  {
-    displayName: 'Qwen3-VL-Instruct',
-    regex: buildFamilyRegex('Qwen3-VL', '-Instruct-GGUF$'),
-  },
-  {
-    displayName: 'Llama-3.2-Instruct',
-    regex: buildFamilyRegex('Llama-3\\.2', '-Instruct-GGUF$'),
-  },
-  {
-    displayName: 'gpt-oss',
-    regex: /^gpt-oss-(\d+\.?\d*b)-mxfp4?-GGUF$/,
-  },
-  {
-    displayName: 'LFM2',
-    regex: buildFamilyRegex('LFM2'),
-  },
-  // FLM families
-  {
-    displayName: 'gemma3',
-    regex: buildFlmFamilyRegex('gemma3'),
-  },
-  {
-    displayName: 'lfm2',
-    regex: buildFlmFamilyRegex('lfm2'),
-  },
-  {
-    displayName: 'llama3.2',
-    regex: buildFlmFamilyRegex('llama3\\.2'),
-  },
-  {
-    displayName: 'qwen3',
-    regex: buildFlmFamilyRegex('qwen3'),
-  },
-];
-
-type ModelListItem =
-  | { type: 'model'; name: string; info: ModelInfo }
-  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] }
-  | {
-      type: 'dynamic-group';
-      groupName: string;
-      defaultExpanded: boolean;
-      members: { label: string; name: string; info: ModelInfo }[];
-    };
+import { buildModelList, ModelListItem, ModelFamily, MODEL_FAMILIES } from './utils/modelGrouping';
 
 // Types for Hugging Face API responses
 interface HFModelInfo {
@@ -136,73 +54,44 @@ interface DetectedBackend {
   mmprojFiles?: string[];
 }
 
-function buildModelList(
-  models: Array<{ name: string; info: ModelInfo }>
-): ModelListItem[] {
-  // Build family groups
-  const consumed = new Set<string>();
-  const familyItems: ModelListItem[] = [];
-
-  for (const family of MODEL_FAMILIES) {
-    const members: { label: string; name: string; info: ModelInfo }[] = [];
-    for (const m of models) {
-      const match = family.regex.exec(m.name);
-      if (match) {
-        members.push({ label: match[1], name: m.name, info: m.info });
-        consumed.add(m.name);
-      }
+const ModalityIcon = ({ label, getCategoryLabel, onHover }: {
+  label: string,
+  getCategoryLabel: (l: string) => string,
+  onHover: (text: string | null, x: number, y: number) => void
+}) => {
+  const size = 11;
+  const strokeWidth = 2.2;
+  const icon = (() => {
+    switch (label) {
+      case 'reasoning': return <Brain size={size} strokeWidth={strokeWidth} />;
+      case 'coding': return <SquareCode size={size} strokeWidth={strokeWidth} />;
+      case 'vision': return <Eye size={size} strokeWidth={strokeWidth} />;
+      case 'hot': return <Flame size={size} strokeWidth={strokeWidth} />;
+      case 'embeddings': return <Layers size={size} strokeWidth={strokeWidth} />;
+      case 'reranking': return <ListOrdered size={size} strokeWidth={strokeWidth} />;
+      case 'tool-calling': return <Wrench size={size} strokeWidth={strokeWidth} />;
+      case 'custom': return <User size={size} strokeWidth={strokeWidth} />;
+      case 'experience': return <Sparkles size={size} strokeWidth={strokeWidth} />;
+      default: return null;
     }
-    if (members.length > 1) {
-      members.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
-      familyItems.push({ type: 'family', family, members });
-    } else {
-      members.forEach(m => consumed.delete(m.name));
-    }
-  }
+  })();
 
-  const remainingModels = models.filter(m => !consumed.has(m.name));
-  const dynamicCandidates = new Map<string, { label: string; name: string; info: ModelInfo }[]>();
+  if (!icon) return null;
 
-  for (const model of remainingModels) {
-    const segments = model.name.split('.');
-    if (segments.length < 3) continue;
-    const groupName = segments.slice(0, 2).join('.');
-    const label = segments.slice(2).join('.');
-    if (!dynamicCandidates.has(groupName)) {
-      dynamicCandidates.set(groupName, []);
-    }
-    dynamicCandidates.get(groupName)!.push({ label, name: model.name, info: model.info });
-  }
+  return (
+    <span
+      className="model-label-icon-wrapper"
+      onMouseEnter={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        onHover(getCategoryLabel(label), rect.left + rect.width / 2, rect.top);
+      }}
+      onMouseLeave={() => onHover(null, 0, 0)}
+    >
+      {icon}
+    </span>
+  );
+};
 
-  const dynamicallyGrouped = new Set<string>();
-  const dynamicGroupItems: ModelListItem[] = [];
-  for (const [groupName, members] of dynamicCandidates) {
-    if (members.length < 2) continue;
-    members.sort((a, b) => a.label.localeCompare(b.label));
-    members.forEach(member => dynamicallyGrouped.add(member.name));
-    dynamicGroupItems.push({
-      type: 'dynamic-group',
-      groupName,
-      defaultExpanded: groupName.startsWith('user.'),
-      members,
-    });
-  }
-
-  // Build individual items for non-consumed and non-dynamically-grouped models
-  const individualItems: ModelListItem[] = remainingModels
-    .filter(m => !dynamicallyGrouped.has(m.name))
-    .map(m => ({ type: 'model' as const, name: m.name, info: m.info }));
-
-  // Merge and sort alphabetically by display name
-  const allItems = [...familyItems, ...dynamicGroupItems, ...individualItems];
-  allItems.sort((a, b) => {
-    const nameA = a.type === 'family' ? a.family.displayName : a.type === 'dynamic-group' ? a.groupName : a.name;
-    const nameB = b.type === 'family' ? b.family.displayName : b.type === 'dynamic-group' ? b.groupName : b.name;
-    return nameA.localeCompare(nameB);
-  });
-
-  return allItems;
-}
 
 interface ModelManagerProps {
   isContentVisible: boolean;
@@ -242,6 +131,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const [loadedModels, setLoadedModels] = useState<Set<string>>(new Set());
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<{ text: string, x: number, y: number } | null>(null);
   const [optionsModel, setOptionsModel] = useState<string | null>(null);
   const [showModelOptionsModal, setShowModelOptionsModal] = useState(false);
   const [selectedMarketplaceCategory, setSelectedMarketplaceCategory] = useState<string>('all');
@@ -260,8 +150,15 @@ const [searchQuery, setSearchQuery] = useState('');
   const [detectingBackendFor, setDetectingBackendFor] = useState<string | null>(null);
   const hfSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const handleModalityHover = useCallback((text: string | null, x: number, y: number) => {
+    if (text) {
+      setTooltip({ text, x, y });
+    } else {
+      setTooltip(null);
+    }
+  }, []);
 
-  const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
+  const { toasts, removeToast, showError, showSuccess, showWarning, showInfo } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
 
   const fetchCurrentLoadedModel = useCallback(async () => {
@@ -1219,6 +1116,7 @@ const [searchQuery, setSearchQuery] = useState('');
   ) => {
     const { isDownloaded, isLoaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
+
     return (
       <div
         key={modelName}
@@ -1227,19 +1125,21 @@ const [searchQuery, setSearchQuery] = useState('');
         onMouseLeave={() => setHoveredModel(null)}
       >
         <div className="model-item-content">
-          <div className="model-info-left">
-            <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name">{displayName ?? modelName}</span>
-            <span className="model-size">{formatSize(modelInfo.size)}</span>
-            {renderActionButtons(modelName, isHovered)}
+          <div className="model-info-row-primary">
+            <div className="model-info-left">
+              <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
+              <span className="model-name">{displayName ?? modelName}</span>
+              <span className="model-size">{formatSize(modelInfo.size)}</span>
+              {modelInfo.labels && modelInfo.labels.length > 0 && (
+                <span className="model-labels">
+                  {modelInfo.labels.map(label => (
+                    <ModalityIcon key={label} label={label} getCategoryLabel={getCategoryLabel} onHover={handleModalityHover} />
+                  ))}
+                </span>
+              )}
+              {renderActionButtons(modelName, isHovered)}
+            </div>
           </div>
-          {modelInfo.labels && modelInfo.labels.length > 0 && (
-            <span className="model-labels">
-              {modelInfo.labels.map(label => (
-                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
-              ))}
-            </span>
-          )}
         </div>
       </div>
     );
@@ -1270,6 +1170,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
     // Collect shared labels from first member (labels are shared at family level)
     const sharedLabels = members[0]?.info.labels;
+    const allDownloaded = members.every(m => getModelDownloadedState(m.name, m.info));
 
     return (
       <div key={family.displayName} className="model-family-group">
@@ -1282,9 +1183,9 @@ const [searchQuery, setSearchQuery] = useState('');
           </span>
           <span className="model-name family-model-name">{family.displayName}</span>
           {sharedLabels && sharedLabels.length > 0 && (
-            <span className="model-labels">
+            <span className="model-labels" style={{ marginLeft: '4px' }}>
               {sharedLabels.map(label => (
-                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+                <ModalityIcon key={label} label={label} getCategoryLabel={getCategoryLabel} onHover={handleModalityHover} />
               ))}
             </span>
           )}
@@ -1713,6 +1614,19 @@ const [searchQuery, setSearchQuery] = useState('');
 
         </div>}
       </div>
+      {tooltip && (
+        <div
+          className="model-modality-tooltip"
+          style={{
+            position: 'fixed',
+            left: `${tooltip.x}px`,
+            top: `${tooltip.y - 8}px`,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 };

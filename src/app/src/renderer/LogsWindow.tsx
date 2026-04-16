@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig, serverFetch } from './utils/serverConfig';
 import { connectLogStream, LogEntry, LogStreamHandle } from './utils/logWebSocketClient';
 
@@ -8,7 +8,7 @@ interface LogsWindowProps {
 }
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
-const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal', 'none'] as const;
+const LOG_LEVELS = ['trace', 'debug', 'info', 'notice', 'warning', 'error', 'critical', 'fatal', 'none'] as const;
 type LogLevel = typeof LOG_LEVELS[number];
 
 const isLogLevel = (value: unknown): value is LogLevel =>
@@ -20,6 +20,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const [autoScroll, setAutoScroll] = useState(true);
   const [logLevel, setLogLevel] = useState<LogLevel>('info');
   const [isSettingLogLevel, setIsSettingLogLevel] = useState(false);
+  const [serverSupportsLogLevel, setServerSupportsLogLevel] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
@@ -51,41 +52,34 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     });
   };
 
-  // Wait for serverConfig to initialize and get the correct URL
+  // Initialize server configuration and load the current log level
   useEffect(() => {
-    serverConfig.waitForInit().then(() => {
-      setServerUrl(getServerBaseUrl());
+    const init = async () => {
+      await serverConfig.waitForInit();
+      const url = getServerBaseUrl();
+      setServerUrl(url);
       setIsInitialized(true);
-    });
-  }, []);
 
-  useEffect(() => {
-    if (!isInitialized || !serverUrl) return;
-
-    const loadLogLevel = async () => {
       try {
-        const headers: HeadersInit = {};
-        const apiKey = getAPIKey();
-        if (apiKey) {
-          headers.Authorization = `Bearer ${apiKey}`;
-        }
-
-        const response = await fetch(`${serverUrl}/internal/config`, { headers });
-        if (!response.ok) {
-          return;
-        }
+        // Using serverFetch with the full URL to reach the root-level /internal/config
+        // endpoint while benefiting from automatic authentication and init-waiting.
+        const response = await serverFetch(`${url}/internal/config`);
+        if (!response.ok) return;
 
         const config = await response.json();
-        if (isLogLevel(config.log_level)) {
-          setLogLevel(config.log_level);
+        if ('log_level' in config) {
+          setServerSupportsLogLevel(true);
+          if (isLogLevel(config.log_level)) {
+            setLogLevel(config.log_level);
+          }
         }
       } catch (error) {
         console.error('Failed to load log level:', error);
       }
     };
 
-    loadLogLevel();
-  }, [isInitialized, serverUrl]);
+    init();
+  }, []);
 
   // Listen for URL changes (covers both port changes and explicit URL updates)
   useEffect(() => {
@@ -278,6 +272,28 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     }
   };
 
+  const getSeverityPriority = (level: string): number => {
+    const p: Record<string, number> = {
+      'trace': 0,
+      'debug': 1,
+      'info': 2,
+      'notice': 3,
+      'warning': 4,
+      'warn': 4,
+      'error': 5,
+      'critical': 6,
+      'fatal': 6,
+      'none': 10
+    };
+    return p[level.toLowerCase()] ?? 2; // Default to info
+  };
+
+  const filteredLogs = useMemo(() => {
+    if (logLevel === 'none') return [];
+    const threshold = getSeverityPriority(logLevel);
+    return logs.filter((log: LogEntry) => getSeverityPriority(log.severity) >= threshold);
+  }, [logs, logLevel]);
+
   if (!isVisible) return null;
 
   return (
@@ -285,20 +301,22 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       <div className="logs-header">
         <h3>Server Logs</h3>
         <div className="logs-controls">
-          <label className="logs-level-control">
-            <span>Level</span>
-            <select
-              className="logs-level-select"
-              value={logLevel}
-              disabled={isSettingLogLevel}
-              onChange={(event) => handleLogLevelChange(event.target.value as LogLevel)}
-              title="Set server log level"
-            >
-              {LOG_LEVELS.map(level => (
-                <option key={level} value={level}>{level}</option>
-              ))}
-            </select>
-          </label>
+          {serverSupportsLogLevel && (
+            <label className="logs-level-control">
+              <span>Level</span>
+              <select
+                className="logs-level-select"
+                value={logLevel}
+                disabled={isSettingLogLevel}
+                onChange={(event) => handleLogLevelChange(event.target.value as LogLevel)}
+                title="Set server log level"
+              >
+                {LOG_LEVELS.map(level => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <span className={`connection-status status-${connectionStatus}`}>
             {connectionStatus === 'connecting' && '⟳ Connecting...'}
             {connectionStatus === 'connected' && '● Connected'}
@@ -316,8 +334,10 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         </div>
       </div>
       <div className="logs-content" ref={logsContentRef}>
-        {logs.length === 0 && connectionStatus === 'connected' && (
-          <div className="logs-placeholder">Waiting for logs...</div>
+        {filteredLogs.length === 0 && connectionStatus === 'connected' && (
+          <div className="logs-placeholder">
+            {logLevel === 'none' ? 'Logging is disabled' : 'Waiting for logs...'}
+          </div>
         )}
         {logs.length === 0 && connectionStatus === 'error' && (
           <div className="logs-error">
@@ -327,7 +347,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           </div>
         )}
         <pre className="logs-text">
-          {logs.map((log) => (
+          {filteredLogs.map((log: LogEntry) => (
             <div key={log.seq} className="log-line">
               {log.line}
             </div>

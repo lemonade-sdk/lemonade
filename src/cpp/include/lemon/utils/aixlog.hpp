@@ -191,8 +191,10 @@ static Severity to_severity(std::string severity, Severity def = Severity::info)
         return Severity::warning;
     else if (severity == "error")
         return Severity::error;
-    else if (severity == "fatal")
+    else if (severity == "fatal" || severity == "critical")
         return Severity::fatal;
+    else if (severity == "none")
+        return static_cast<Severity>(10);
     else
         return def;
 }

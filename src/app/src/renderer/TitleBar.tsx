@@ -42,7 +42,9 @@ const TitleBar: React.FC<TitleBarProps> = ({
 
   useEffect(() => {
     if (!window.api?.onMaximizeChange) {
-      console.warn('window.api.onMaximizeChange is unavailable. Running outside Tauri?');
+      if (!isWebApp) {
+        console.warn('window.api.onMaximizeChange is unavailable. Running outside Tauri?');
+      }
       return;
     }
 
