@@ -215,7 +215,8 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
 void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
                        RecipeOptions options,
-                       bool do_not_upgrade) {
+                       bool do_not_upgrade,
+                       bool allow_reload_on_option_change) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options());
 
@@ -247,11 +248,18 @@ void Router::load_model(const std::string& model_name,
         // Check if model is already loaded
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
         if (existing) {
-        LOG(INFO, "Router") << "Model already loaded, updating access time" << std::endl;
-            existing->update_access_time();
-            is_loading_ = false;
-            load_cv_.notify_all();
-            return;
+            if (allow_reload_on_option_change &&
+                existing->get_recipe_options().to_json() != effective_options.to_json()) {
+                LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
+                evict_server(existing);
+                // Fall through to create and load with new options
+            } else {
+                LOG(INFO, "Router") << "Model already loaded, updating access time" << std::endl;
+                existing->update_access_time();
+                is_loading_ = false;
+                load_cv_.notify_all();
+                return;
+            }
         }
 
         // Determine model type and device
