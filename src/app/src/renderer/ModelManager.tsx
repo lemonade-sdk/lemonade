@@ -1207,7 +1207,7 @@ const [searchQuery, setSearchQuery] = useState('');
               renderModelItem(
                 m.name, m.info,
                 `family-${family.displayName}-${m.label}`,
-                m.label, 'model-family-member-row'
+                m.displayName || m.label, 'model-family-member-row'
               )
             )}
           </div>

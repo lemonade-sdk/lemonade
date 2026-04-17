@@ -25,6 +25,22 @@ function getGroupingName(modelName: string): string {
   return modelName.startsWith('user.') ? modelName.slice('user.'.length) : modelName;
 }
 
+function buildDisplayNameResolver(models: Array<{ name: string; info: ModelInfo }>) {
+  const visibleNameCounts = new Map<string, number>();
+  for (const model of models) {
+    const visibleName = getGroupingName(model.name);
+    visibleNameCounts.set(visibleName, (visibleNameCounts.get(visibleName) || 0) + 1);
+  }
+
+  return (modelName: string) => {
+    const visibleName = getGroupingName(modelName);
+    if (modelName.startsWith('user.') && (visibleNameCounts.get(visibleName) || 0) > 1) {
+      return modelName;
+    }
+    return visibleName;
+  };
+}
+
 export const MODEL_FAMILIES: ModelFamily[] = [
   // Standardized family matching: capture *B or *B-A*B.
   {
@@ -92,7 +108,7 @@ export const MODEL_FAMILIES: ModelFamily[] = [
 
 export type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo; displayName?: string }
-  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] }
+  | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo; displayName?: string }[] }
   | {
       type: 'dynamic-group';
       groupName: string;
@@ -107,12 +123,14 @@ export type ModelListItem =
 export function buildModelList(
   models: Array<{ name: string; info: ModelInfo }>
 ): ModelListItem[] {
+  const getDisplayName = buildDisplayNameResolver(models);
+
   // Build family groups
   const consumed = new Set<string>();
   const familyItems: ModelListItem[] = [];
 
   for (const family of MODEL_FAMILIES) {
-    const members: { label: string; name: string; info: ModelInfo }[] = [];
+    const members: { label: string; name: string; info: ModelInfo; displayName?: string }[] = [];
     for (const m of models) {
       const groupingName = getGroupingName(m.name);
       const match = family.regex.exec(groupingName)
@@ -123,6 +141,16 @@ export function buildModelList(
       }
     }
     if (members.length > 1) {
+      const labelCounts = new Map<string, number>();
+      for (const member of members) {
+        labelCounts.set(member.label, (labelCounts.get(member.label) || 0) + 1);
+      }
+      for (const member of members) {
+        if ((labelCounts.get(member.label) || 0) > 1) {
+          member.displayName = getDisplayName(member.name);
+        }
+      }
+
       // Sort members (usually by size token like 8B)
       members.sort((a, b) => {
         const floatA = parseFloat(a.label);
@@ -148,7 +176,7 @@ export function buildModelList(
       type: 'model' as const,
       name: m.name,
       info: m.info,
-      displayName: getGroupingName(m.name),
+      displayName: getDisplayName(m.name),
     }));
 
   // Helper for sorting display names

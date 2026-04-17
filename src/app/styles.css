@@ -2346,11 +2346,8 @@ footer {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
+    width: 14px;
     height: 16px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.08);
     opacity: 0.86;
     cursor: default;
     user-select: none;
