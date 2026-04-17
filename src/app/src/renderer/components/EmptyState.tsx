@@ -1,5 +1,5 @@
 import React from 'react';
-// @ts-ignore - SVG assets live outside of the TypeScript rootDir for Electron packaging
+// @ts-ignore - SVG assets live outside of the TypeScript rootDir
 import logoSvg from '../../../assets/logo.svg';
 
 const EmptyState: React.FC<{ title: string }> = ({ title }) => (
