@@ -203,10 +203,15 @@ async function executeTTSTool(
   args: Record<string, any>,
   model: string,
 ): Promise<ToolExecutionResult> {
+  // Request MP3 — it's widely playable in <audio> and is what the server
+  // defaults to anyway. We collect the full body on the client; true
+  // incremental playback would need MediaSource integration (stream_format:
+  // "audio" returns raw PCM which <audio> can't decode).
   const body = {
     model,
     input: args.input || '',
     voice: args.voice || 'af_heart',
+    response_format: 'mp3',
   };
 
   const response = await serverFetch('/audio/speech', {
@@ -228,7 +233,7 @@ async function executeTTSTool(
   }
   const b64 = btoa(binary);
 
-  return { type: 'audio', data: b64, mime: 'audio/wav' };
+  return { type: 'audio', data: b64, mime: 'audio/mpeg' };
 }
 
 async function executeTranscriptionTool(

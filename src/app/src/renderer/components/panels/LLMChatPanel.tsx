@@ -18,6 +18,7 @@ import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import EmptyState from '../EmptyState';
+import StreamingAudio from '../StreamingAudio';
 import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 import RecordButton from '../RecordButton';
@@ -908,7 +909,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               const safeMime = SAFE_AUDIO_MIMES.includes(audioItem.audio.mime) ? audioItem.audio.mime : 'audio/wav';
               return (
                 <div key={index} className="message-audio">
-                  <audio controls src={`data:${safeMime};base64,${audioItem.audio.data}`} />
+                  <StreamingAudio data={audioItem.audio.data} mime={safeMime} />
                 </div>
               );
             }
