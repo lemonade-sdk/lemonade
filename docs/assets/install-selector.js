@@ -556,6 +556,7 @@ function renderQuickStart() {
   }
 
   let commands = ['lemonade-server -h'];
+  let dockerROCmCommand = '';
 
   if (fw === 'oga') {
     if (dev === 'npu') {
@@ -613,9 +614,19 @@ function renderQuickStart() {
   -p 13305:13305 \\
   -v lemonade-cache:/root/.cache/huggingface \\
   -v lemonade-llama:/opt/lemonade/llama \\
-  -e LEMONADE_LLAMACPP_BACKEND=vulkan \\
+  -e LEMONADE_LLAMACPP=vulkan \\
   ghcr.io/lemonade-sdk/lemonade-server:latest`);
-      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP_BACKEND environment variable: <code>LEMONADE_LLAMACPP_BACKEND=vulkan</code></div>`;
+      dockerROCmCommand = `docker run -d \\
+  --name lemonade-server \\
+  -p 13305:13305 \\
+  -v lemonade-cache:/root/.cache/huggingface \\
+  -v lemonade-llama:/opt/lemonade/llama \\
+  -e LEMONADE_LLAMACPP=rocm \\
+  --device=/dev/kfd \\
+  --device=/dev/dri \\
+  --group-add video \\
+  ghcr.io/lemonade-sdk/lemonade-server:latest`;
+      notes = `<div class="lmn-note"><strong>Tip:</strong> To use ROCm instead of Vulkan, replace <code>-e LEMONADE_LLAMACPP=vulkan</code> with <code>-e LEMONADE_LLAMACPP=rocm</code> and add the ROCm device flags. The full ROCm command:<pre id="lmn-rocm-pre-block"></pre></div>`;
     }
 
     if (fw === 'llama' && dev === 'cpu') {
@@ -624,9 +635,9 @@ function renderQuickStart() {
   -p 13305:13305 \\
   -v lemonade-cache:/root/.cache/huggingface \\
   -v lemonade-llama:/opt/lemonade/llama \\
-  -e LEMONADE_LLAMACPP_BACKEND=cpu \\
+  -e LEMONADE_LLAMACPP=cpu \\
   ghcr.io/lemonade-sdk/lemonade-server:latest`);
-      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP_BACKEND environment variable: <code>LEMONADE_LLAMACPP_BACKEND=cpu</code></div>`;
+      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP environment variable: <code>LEMONADE_LLAMACPP=cpu</code></div>`;
     }
   }
 
@@ -642,8 +653,27 @@ function renderQuickStart() {
         return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyLine(event, ${idx})">📋</button></div>`;
       }).join('');
     }
+    const rocmPre = document.getElementById('lmn-rocm-pre-block');
+    if (rocmPre && dockerROCmCommand) {
+      const safe = dockerROCmCommand.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      rocmPre.innerHTML = `<div class="lmn-command-line"><span>${safe}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDockerRocmLine(event)">📋</button></div>`;
+    }
   }, 0);
 }
+
+window.lmnCopyDockerRocmLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-rocm-pre-block');
+  if (!pre) return;
+  const span = pre.querySelector('.lmn-command-line span');
+  if (span) {
+    navigator.clipboard.writeText(span.textContent);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
 
 window.lmnCopyLine = function(e, idx) {
   e.stopPropagation();

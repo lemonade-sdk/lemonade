@@ -164,6 +164,8 @@ void LlamaCppServer::load(const std::string& model_name,
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
+    LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
+
     bool use_gpu = (llamacpp_backend != "cpu");
 
     // Update device type based on the actual backend selected.

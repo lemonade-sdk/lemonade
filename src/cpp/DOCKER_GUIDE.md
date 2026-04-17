@@ -13,7 +13,6 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP_BACKEND=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
@@ -26,12 +25,26 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP_BACKEND=cpu \
+  -e LEMONADE_LLAMACPP=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
   ./lemond --host 0.0.0.0 --port 5000
 ```
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
+
+### Docker Run with CPU backend
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-recipe:/root/.cache/lemonade \
+  -e LEMONADE_LLAMACPP=cpu \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
 
 ### Docker Run with AMD GPU Passthrough using ROCm
 
@@ -42,7 +55,7 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP_BACKEND=rocm \
+  -e LEMONADE_LLAMACPP=rocm \
   --device=/dev/kfd \
   --device=/dev/dri \
   ghcr.io/lemonade-sdk/lemonade-server:latest
@@ -72,7 +85,7 @@ services:
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
     environment:
-      - LEMONADE_LLAMACPP_BACKEND=cpu
+      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
@@ -261,7 +274,7 @@ services:
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
     environment:
-      - LEMONADE_LLAMACPP_BACKEND=cpu
+      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
