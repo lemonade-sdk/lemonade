@@ -135,7 +135,6 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         const bool stream = request_json.value("stream", false);
         if (stream) {
             const std::string body = request_json.dump();
-            res.set_header("Content-Type", "text/event-stream");
             res.set_header("Cache-Control", "no-cache");
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
