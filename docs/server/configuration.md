@@ -76,7 +76,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 |-----|------|---------|-------------|
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
-| `log_level` | string | "info" | Logging level (trace, debug, info, notice, warning, error, critical, fatal, none) |
+| `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
 | `global_timeout` | int | 300 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |

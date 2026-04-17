@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 const std::vector<std::string> RuntimeConfig::valid_log_levels_ = {
-    "trace", "debug", "info", "notice", "warning", "error", "critical", "fatal", "none"
+    "trace", "debug", "info", "warning", "error", "fatal", "none"
 };
 
 // Global instance pointer (set once at startup, read from any thread after)
@@ -294,7 +294,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (std::find(valid_log_levels_.begin(), valid_log_levels_.end(), level)
             == valid_log_levels_.end()) {
             throw std::invalid_argument(
-                "'log_level' must be one of: trace, debug, info, notice, warning, error, critical, fatal, none");
+                "'log_level' must be one of: trace, debug, info, warning, error, fatal, none");
         }
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {

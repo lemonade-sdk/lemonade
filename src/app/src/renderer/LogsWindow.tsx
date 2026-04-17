@@ -8,7 +8,7 @@ interface LogsWindowProps {
 }
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 60;
-const LOG_LEVELS = ['trace', 'debug', 'info', 'notice', 'warning', 'error', 'critical', 'fatal', 'none'] as const;
+const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal', 'none'] as const;
 type LogLevel = typeof LOG_LEVELS[number];
 
 const isLogLevel = (value: unknown): value is LogLevel =>
@@ -277,11 +277,9 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       'trace': 0,
       'debug': 1,
       'info': 2,
-      'notice': 3,
       'warning': 4,
       'warn': 4,
       'error': 5,
-      'critical': 6,
       'fatal': 6,
       'none': 10
     };
@@ -305,7 +303,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
             <label className="logs-level-control">
               <span>Level</span>
               <select
-                className="logs-level-select"
+                className="logs-level-select form-input form-select"
                 value={logLevel}
                 disabled={isSettingLogLevel}
                 onChange={(event) => handleLogLevelChange(event.target.value as LogLevel)}

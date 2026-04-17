@@ -670,7 +670,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 |-----|------|-------------|
 | `port` | int (1–65535) | HTTP rebind |
 | `host` | string | HTTP rebind |
-| `log_level` | string (`trace`, `debug`, `info`, `notice`, `warning`, `error`, `critical`, `fatal`, `none`) | Reconfigures log filter |
+| `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
 | `no_broadcast` | bool | Stops or starts UDP beacon |
 | `extra_models_dir` | string | Updates model manager search path |
