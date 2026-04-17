@@ -18,6 +18,7 @@ import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import EmptyState from '../EmptyState';
+import ImageLightbox from '../ImageLightbox';
 import StreamingAudio from '../StreamingAudio';
 import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
@@ -69,6 +70,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [lemonadeTools, setLemonadeTools] = useState<LemonadeToolsResult | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const userScrolledAwayRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -883,7 +885,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                     <div className="generated-images-row">
                       <div className="generated-image-column">
                         <div className="image-wrapper">
-                          <img src={url} alt="Generated" className="generated-image" />
+                          <img
+                            src={url}
+                            alt="Generated"
+                            className="generated-image in-chat"
+                            onClick={() => setLightboxSrc(url)}
+                            title="Click to expand"
+                          />
                         </div>
                       </div>
                     </div>
@@ -1159,6 +1167,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           />
         </div>
       </div>
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 };

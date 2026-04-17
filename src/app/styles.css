@@ -6690,6 +6690,61 @@ input::-webkit-calendar-picker-indicator {
     display: block;
 }
 
+/* Chat-embedded generated images stay compact so multi-image responses
+   don't take over the scroll. Click opens the lightbox for full view. */
+.generated-image.in-chat {
+    max-height: 280px;
+    cursor: zoom-in;
+    transition: filter 0.15s ease;
+}
+
+.generated-image.in-chat:hover {
+    filter: brightness(1.08);
+}
+
+.image-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    animation: fadeIn 0.15s ease;
+    cursor: zoom-out;
+}
+
+.image-lightbox-img {
+    max-width: 92vw;
+    max-height: 92vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    cursor: default;
+}
+
+.image-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.image-lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
 .save-image-button {
     display: flex;
     align-items: center;
