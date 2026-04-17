@@ -1,0 +1,31 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for Lemonade main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-min-size",
+    "core:window:allow-set-size",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:webview:allow-set-webview-zoom",
+    "core:webview:allow-webview-show",
+    "core:webview:allow-webview-hide",
+    "core:event:default",
+    "opener:default",
+    "opener:allow-open-url",
+    "clipboard-manager:default",
+    "clipboard-manager:allow-write-text",
+    "deep-link:default"
+  ]
+}
