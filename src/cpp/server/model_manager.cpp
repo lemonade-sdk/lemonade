@@ -1003,6 +1003,7 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.hidden = JsonUtils::get_or_default<bool>(value, "hidden", false);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1373,11 +1374,15 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded models
+    // Filter and return only downloaded, non-hidden models. Hidden models
+    // are things like experience bundles which are Lemonade-specific UX
+    // abstractions — OpenAI-compatible clients (AnythingLLM, Continue,
+    // etc.) shouldn't see them as if they were regular LLMs. The desktop
+    // app uses ?show_all=true to fetch everything including hidden ones.
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded) {
+        if (info.downloaded && !info.hidden) {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;

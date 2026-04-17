@@ -1270,6 +1270,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
+        {"hidden", info.hidden},
         {"labels", info.labels},
         {"composite_models", info.composite_models},
         {"recipe_options", info.recipe_options.to_json()},

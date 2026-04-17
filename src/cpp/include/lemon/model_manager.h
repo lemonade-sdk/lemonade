@@ -53,6 +53,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
+    bool hidden = false;         // Hide from OpenAI-compat /models (still visible with ?show_all=true)
     double size = 0.0;   // Model size in GB
     RecipeOptions recipe_options;
 
