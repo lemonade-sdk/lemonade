@@ -26,10 +26,14 @@ public:
 
     // Load a model with the appropriate backend
     // Optional per-model settings override the defaults
+    // allow_reload_on_option_change: intended for explicit /load callers only.
+    // Auto-load callers (inference-triggered) should leave this false so they
+    // don't overturn options set by a prior explicit /load.
     void load_model(const std::string& model_name,
                     const ModelInfo& model_info,
                     RecipeOptions options,
-                    bool do_not_upgrade = true);
+                    bool do_not_upgrade = true,
+                    bool allow_reload_on_option_change = false);
 
     // Unload model(s)
     void unload_model(const std::string& model_name = "");  // Empty = unload all
