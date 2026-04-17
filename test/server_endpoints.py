@@ -1,6 +1,10 @@
 """
 Inference-agnostic endpoint tests for Lemonade Server.
 
+Requires a Lemonade server to already be running on port 13305.
+This test module does not start the server, and its inherited
+`--server-binary` argument is not used here.
+
 Tests endpoints that don't require specific inference backends:
 - /health
 - /models
@@ -14,26 +18,22 @@ Tests endpoints that don't require specific inference backends:
 
 Usage:
     python server_endpoints.py
-    python server_endpoints.py --server-per-test
-    python server_endpoints.py --server-binary /path/to/lemonade-server
 """
 
-import json
 import platform
-import os
+import uuid
 import requests
 from openai import NotFoundError
 
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
-    parse_args,
-    get_config,
     OpenAI,
 )
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
+    SHARED_REPO_MODEL_B_CHECKPOINT,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
     USER_MODEL_MAIN_CHECKPOINT,
@@ -43,30 +43,16 @@ from utils.test_models import (
 )
 
 
-def get_recipe_options_path():
-    """Get the path to recipe_options.json file."""
-    # Default location is ~/.cache/lemonade/recipe_options.json
-    cache_dir = os.environ.get(
-        "LEMONADE_CACHE_DIR", os.path.expanduser("~/.cache/lemonade")
-    )
-    return os.path.join(cache_dir, "recipe_options.json")
-
-
 class EndpointTests(ServerTestBase):
     """Tests for inference-agnostic endpoints."""
 
-    # Track if model has been pulled in per-test mode (persists across tests)
+    # Track if model has been pulled (persists across tests)
     _model_pulled = False
 
     @classmethod
     def setUpClass(cls):
-        """Set up class - start server and ensure test model is pulled."""
+        """Set up class - verify server and ensure test model is pulled."""
         super().setUpClass()
-
-        # In per-test mode, server isn't started until setUp(), so defer pre-pull
-        if get_config().get("server_per_test", False):
-            print("\n[SETUP] Per-test mode: will pull model in setUp()")
-            return
 
         # Ensure the test model is pulled once for all tests
         cls._ensure_model_pulled()
@@ -92,10 +78,6 @@ class EndpointTests(ServerTestBase):
     def setUp(self):
         """Set up each test."""
         super().setUp()
-
-        # In per-test mode, ensure model is pulled after server starts
-        if get_config().get("server_per_test", False):
-            self._ensure_model_pulled()
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
@@ -428,28 +410,20 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # Check recipe_options.json file
-        options_path = get_recipe_options_path()
-        if os.path.exists(options_path):
-            with open(options_path, "r") as f:
-                saved_options = json.load(f)
+        model_info_response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_info_response.status_code, 200)
 
-            if ENDPOINT_TEST_MODEL in saved_options:
-                model_options = saved_options[ENDPOINT_TEST_MODEL]
-                self.assertEqual(
-                    model_options.get("ctx_size"),
-                    custom_ctx_size,
-                    f"Expected ctx_size={custom_ctx_size} in recipe_options.json",
-                )
-                print(
-                    f"[OK] Verified recipe_options.json contains ctx_size={custom_ctx_size}"
-                )
-            else:
-                print(
-                    f"[INFO] Model not found in recipe_options.json (may be expected)"
-                )
-        else:
-            print(f"[INFO] recipe_options.json not found at {options_path}")
+        model_info = model_info_response.json()
+        self.assertIn("recipe_options", model_info)
+        self.assertEqual(
+            model_info["recipe_options"].get("ctx_size"),
+            custom_ctx_size,
+            f"Expected saved ctx_size={custom_ctx_size} in model info recipe_options",
+        )
+        print(f"[OK] Verified saved ctx_size={custom_ctx_size} via model info")
 
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""
@@ -924,6 +898,161 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
+
+    def test_021a_pull_sdcpp_import_preserves_merged_recipe_options(self):
+        """Test /pull keeps image_defaults + recipe_options visible immediately.
+
+        This exercises the import/warm-cache path for user models:
+        add_model_to_cache() builds merged recipe options from image_defaults and
+        JSON recipe_options, and download_model() must not overwrite that merged
+        state with only the import recipe_options payload.
+        """
+        if platform.system() == "Darwin":
+            self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
+
+        model_name = f"user.Pull-Merge-Regression-{uuid.uuid4().hex[:8]}"
+        image_defaults = {
+            "steps": 33,
+            "cfg_scale": 8.5,
+            "width": 640,
+            "height": 768,
+            "sampling_method": "euler",
+            "flow_shift": 1.25,
+        }
+        recipe_options = {
+            "sd-cpp_backend": "cpu",
+            "sdcpp_args": "--diffusion-fa 1 --offload-to-cpu 1",
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "checkpoints": {
+                        # Use a different main quant than USER_MODEL_NAME so this test's
+                        # cleanup does not delete the same shared main file and poison
+                        # later reruns of test_021_pull_multi in server-per-test CI.
+                        "main": SHARED_REPO_MODEL_B_CHECKPOINT,
+                        "text_encoder": USER_MODEL_TE_CHECKPOINT,
+                        "vae": USER_MODEL_VAE_CHECKPOINT,
+                    },
+                    "recipe": "sd-cpp",
+                    "image_defaults": image_defaults,
+                    "recipe_options": recipe_options,
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            model_info_response = requests.get(
+                f"{self.base_url}/models/{model_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_info_response.status_code, 200)
+
+            model_data = model_info_response.json()
+            self.assertIn("recipe_options", model_data)
+
+            actual_options = model_data["recipe_options"]
+            for key, value in image_defaults.items():
+                self.assertIn(
+                    key,
+                    actual_options,
+                    f"Expected image_defaults key '{key}' in recipe_options after pull",
+                )
+                self.assertEqual(
+                    actual_options[key],
+                    value,
+                    f"Expected recipe_options['{key}']={value!r} after pull",
+                )
+
+            for key, value in recipe_options.items():
+                self.assertIn(
+                    key,
+                    actual_options,
+                    f"Expected recipe_options key '{key}' after pull",
+                )
+                self.assertEqual(
+                    actual_options[key],
+                    value,
+                    f"Expected recipe_options['{key}']={value!r} after pull",
+                )
+
+            print(
+                f"[OK] Pull preserved merged image_defaults + recipe_options for {model_name}"
+            )
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021b_appear_builtin_aliases_user_model(self):
+        """User models labeled appear-builtin should expose a bare public ID."""
+        canonical_name = f"user.AppearBuiltin-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "labels": ["appear-builtin"],
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            model_ids = {model["id"] for model in models_response.json()["data"]}
+            self.assertIn(public_name, model_ids)
+            self.assertNotIn(canonical_name, model_ids)
+
+            model_info_response = requests.get(
+                f"{self.base_url}/models/{public_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_info_response.status_code, 200)
+            self.assertEqual(model_info_response.json()["id"], public_name)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200)
+            self.assertEqual(load_response.json()["model_name"], public_name)
+
+            unload_response = requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(unload_response.status_code, 200)
+
+            print(f"[OK] appear-builtin alias exposed and accepted for {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": public_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""

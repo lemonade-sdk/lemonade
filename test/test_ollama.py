@@ -6,13 +6,13 @@ with Lemonade's inference backends.
 
 Usage:
     python test_ollama.py
-    python test_ollama.py --server-per-test
     python test_ollama.py --server-binary /path/to/lemonade-server
 """
 
 import base64
 import json
 import sys
+import uuid
 import requests
 
 try:
@@ -23,7 +23,6 @@ except ImportError:
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
-    parse_args,
 )
 from utils.test_models import (
     PORT,
@@ -34,6 +33,7 @@ from utils.test_models import (
     SAMPLE_TOOL,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    USER_MODEL_MAIN_CHECKPOINT,
 )
 
 OLLAMA_BASE_URL = f"http://localhost:{PORT}"
@@ -46,7 +46,7 @@ class OllamaTests(ServerTestBase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up class - start server and ensure test model is pulled."""
+        """Set up class - verify server is running."""
         super().setUpClass()
 
     def get_ollama_client(self):
@@ -181,7 +181,52 @@ class OllamaTests(ServerTestBase):
             f"Model name should end with ':latest', got: {model['name']}",
         )
 
-    def test_007_pull_streaming_progress(self):
+    def test_007_user_model_appear_builtin_alias(self):
+        """Aliased user models should appear built-in through Ollama endpoints."""
+        canonical_name = f"user.OllamaAlias-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "labels": ["appear-builtin"],
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            tags_response = requests.get(
+                f"{OLLAMA_BASE_URL}/api/tags",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(tags_response.status_code, 200)
+            tag_names = {
+                model["model"].replace(":latest", "")
+                for model in tags_response.json()["models"]
+            }
+            self.assertIn(public_name, tag_names)
+            self.assertNotIn(canonical_name, tag_names)
+
+            show_response = requests.post(
+                f"{OLLAMA_BASE_URL}/api/show",
+                json={"name": public_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(show_response.status_code, 200)
+            self.assertIn("details", show_response.json())
+        finally:
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_008_pull_streaming_progress(self):
         """Test /api/pull streams NDJSON progress with digest field."""
         self.ensure_model_pulled()
         response = requests.post(
@@ -474,10 +519,10 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # 1x1 red PNG (smallest valid PNG)
+        # 10x10 red PNG to avoid backend assertions on tiny images.
         png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4"
-            "2mP8/58BAwAI/AL+hc2rNAAAAABJRU5ErkJggg=="
+            "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFElEQVR42mP4"
+            "z8DwnxjMMKqQvgoBksPHOXvuG4oAAAAASUVORK5CYII="
         )
 
         response = requests.post(
@@ -694,5 +739,4 @@ class OllamaTests(ServerTestBase):
 
 
 if __name__ == "__main__":
-    parse_args()
     run_server_tests(OllamaTests, "OLLAMA API TESTS")

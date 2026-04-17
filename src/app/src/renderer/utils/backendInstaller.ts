@@ -625,7 +625,7 @@ async function ensureModelReadyInternal(
 
       if (!loadResponse.ok) {
         const errorData = await loadResponse.json().catch(() => ({}));
-        const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
+        const errorMsg = (typeof errorData.error === 'string' ? errorData.error : errorData.error?.message) || `Failed to load model: ${loadResponse.statusText}`;
 
         throw new Error(errorMsg);
       }

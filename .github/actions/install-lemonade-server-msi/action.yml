@@ -13,7 +13,7 @@ runs:
   using: "composite"
   steps:
     - name: Download Lemonade Server Installer
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: .
@@ -81,9 +81,9 @@ runs:
 
         # Check for key binaries
         $expectedBinaries = @(
-            "bin\lemonade-router.exe",
+            "bin\LemonadeServer.exe",
             "bin\lemonade-server.exe",
-            "bin\lemonade-tray.exe"
+            "bin\lemonade.exe"
         )
 
         $missingItems = @()
@@ -135,3 +135,96 @@ runs:
             Write-Host "ERROR: Failed to run version check: $_" -ForegroundColor Red
             exit 1
         }
+
+    - name: Restart server with CI environment
+      shell: powershell
+      run: |
+        # The MSI AutoLaunchLemonade custom action auto-starts LemonadeServer.exe
+        # after install, but that process does NOT inherit CI environment variables
+        # (LEMONADE_CI_MODE, LEMONADE_CACHE_DIR, etc.) because msiexec's custom
+        # action creates the process in its own environment context.
+        #
+        # Kill the auto-started server and restart it from this CI step so it
+        # inherits the correct environment.
+
+        $installPath = "${{ inputs.install-path }}"
+        $serverExe = Join-Path $installPath "bin\LemonadeServer.exe"
+
+        # --- Kill the MSI-auto-started server and its subprocess ---
+        Write-Host "Stopping MSI-auto-started LemonadeServer.exe and lemond.exe..." -ForegroundColor Cyan
+        Stop-Process -Name LemonadeServer -Force -ErrorAction SilentlyContinue
+        Stop-Process -Name lemond -Force -ErrorAction SilentlyContinue
+        # Wait for ports to be released (13305 for LemonadeServer, 8000 for orphan lemond)
+        $portWait = 0
+        while ($portWait -lt 10) {
+          $listening = netstat -an | Select-String ":(13305|8000) .*LISTENING"
+          if (-not $listening) { break }
+          Start-Sleep -Seconds 1
+          $portWait++
+        }
+
+        # --- Restart with CI env vars ---
+        Write-Host "Starting LemonadeServer.exe with CI environment..." -ForegroundColor Cyan
+        # Pass lemonade home dir if LEMONADE_CACHE_DIR is set (config.json lives there)
+        $homeDir = $env:LEMONADE_CACHE_DIR
+        if ($homeDir) {
+          Start-Process -FilePath $serverExe -ArgumentList "`"$homeDir`"" -WorkingDirectory (Split-Path $serverExe)
+        } else {
+          Start-Process -FilePath $serverExe -WorkingDirectory (Split-Path $serverExe)
+        }
+        Write-Host "  LemonadeServer.exe started" -ForegroundColor Green
+
+    - name: Wait for server to be ready
+      shell: powershell
+      run: |
+        # --- Health check loop ---
+        Write-Host "Waiting for server to be ready..."
+        $maxWait = 90
+        $waited = 0
+        while ($waited -lt $maxWait) {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:13305/live" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+              Write-Host "Server is running and healthy" -ForegroundColor Green
+              exit 0
+            }
+          } catch {
+            if ($waited % 10 -eq 0) {
+              Write-Host "  Connection error: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+          }
+          Start-Sleep -Seconds 2
+          $waited += 2
+          Write-Host "Waiting for server... ($waited/$maxWait)"
+        }
+
+        # --- Failure diagnostics ---
+        Write-Host "`n=== Failure Diagnostics ===" -ForegroundColor Red
+
+        Write-Host "`nProcess check:" -ForegroundColor Cyan
+        Get-Process -Name LemonadeServer -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime -AutoSize
+
+        Write-Host "`nPort 13305 state:" -ForegroundColor Cyan
+        netstat -an | Select-String ":13305 "
+
+        Write-Host "`nTrying 127.0.0.1 directly:" -ForegroundColor Cyan
+        try {
+          $r = Invoke-WebRequest -Uri "http://127.0.0.1:13305/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+          Write-Host "  127.0.0.1 responded: $($r.StatusCode)" -ForegroundColor Green
+        } catch {
+          Write-Host "  127.0.0.1 failed: $($_.Exception.Message)" -ForegroundColor Red
+        }
+
+        Write-Host "`nTrying [::1] directly:" -ForegroundColor Cyan
+        try {
+          $r = Invoke-WebRequest -Uri "http://[::1]:13305/live" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+          Write-Host "  [::1] responded: $($r.StatusCode)" -ForegroundColor Green
+        } catch {
+          Write-Host "  [::1] failed: $($_.Exception.Message)" -ForegroundColor Red
+        }
+
+        Write-Host "`n=== Server log ===" -ForegroundColor Yellow
+        $logFile = Join-Path $env:TEMP "lemonade-server.log"
+        if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
+        Write-Error "Server did not start within $maxWait seconds"
+        exit 1

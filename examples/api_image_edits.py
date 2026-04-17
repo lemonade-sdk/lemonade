@@ -4,7 +4,7 @@ images using Stable Diffusion models via the OpenAI Python client.
 
 Prerequisites:
 1. Install the OpenAI client: pip install openai pillow
-2. Start the lemonade server with SD backend: lemonade-server --sdcpp rocm  (or --sdcpp cpu)
+2. The lemonade server should be running (starts automatically after installation)
 3. An image editing model will be auto-downloaded on first use
 4. You need a source image to edit (example creates a simple one)
 
@@ -54,7 +54,7 @@ def edit_image_with_openai_client(image_path, backend="cpu"):
 
     # Point to local lemonade server
     client = OpenAI(
-        base_url="http://localhost:8000/api/v1",
+        base_url="http://localhost:13305/api/v1",
         api_key="not-needed",  # Lemonade doesn't require API key
     )
 
@@ -111,7 +111,7 @@ def edit_image_with_requests(image_path, backend="cpu"):
         }
 
         response = requests.post(
-            "http://localhost:8000/api/v1/images/edits",
+            "http://localhost:13305/api/v1/images/edits",
             files=files,
             data=data,
             timeout=600,  # 10 minutes for image generation
@@ -163,8 +163,7 @@ if __name__ == "__main__":
     print("Lemonade Image Editing Example")
     print("=" * 60)
     print()
-    print("Make sure the lemonade server is running with SD backend:")
-    print("  lemonade-server --sdcpp rocm")
+    print("Make sure the lemonade server is running (lemonade status)")
     print()
 
     # Get or create an image

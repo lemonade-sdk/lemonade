@@ -1,14 +1,17 @@
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/fastflowlm_server.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/process_manager.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -34,6 +37,7 @@ namespace lemon::backends {
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        if (recipe == "flm") return &FastFlowLMServer::SPEC;
         return nullptr;
     }
 
@@ -52,22 +56,15 @@ namespace lemon::backends {
 
     static bool is_native_tar_available() {
         std::string tar_path = get_native_tar_path();
-        return system((tar_path + " --version >nul 2>&1").c_str()) == 0;
+        std::string command = tar_path + " --version >nul 2>&1";
+        std::string unused;
+        return lemon::utils::ProcessManager::run_command(command, unused) == 0;
     }
 #endif
-
-    static void ensure_directory(const std::string& dir) {
-#ifdef _WIN32
-        std::string cmd = "if not exist \"" + dir + "\" mkdir \"" + dir + "\" >nul 2>&1";
-#else
-        std::string cmd = "mkdir -p \"" + dir + "\"";
-#endif
-        system(cmd.c_str());
-    }
 
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        ensure_directory(dest_dir);
+        fs::create_directories(dest_dir);
 #ifdef _WIN32
         if (is_native_tar_available()) {
             LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
@@ -100,7 +97,7 @@ namespace lemon::backends {
 
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
         std::string command;
-        ensure_directory(dest_dir);
+        fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
 #ifdef _WIN32
         if (!is_native_tar_available()) {
@@ -134,23 +131,30 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& backend) {
-        fs::path ret = (fs::path(utils::get_downloaded_bin_dir()) / dir_name);
-        return ((backend != "") ? (ret / backend) : ret).string();
+        // Use fs::path throughout to ensure consistent native separators
+        fs::path ret = fs::path(utils::get_downloaded_bin_dir()) / dir_name;
+        if (!backend.empty()) ret /= backend;
+        return ret.make_preferred().string();
     }
 
     std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
-        std::string upper = backend == "" ? recipe : (recipe + "_" + backend);
-        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-        // turn SD-CPP into SDCPP since '-' is not valid in ENV names
-        upper.erase(remove_if(upper.begin(), upper.end(), [](const char& c) { return c == '-'; }), upper.end());
-        std::string env = "LEMONADE_" + upper + "_BIN";
-        const char* backend_bin_env = std::getenv(env.c_str());
-        if (!backend_bin_env) {
+        auto* cfg = lemon::RuntimeConfig::global();
+        if (!cfg) return "";
+
+        std::string section = RuntimeConfig::recipe_to_config_section(recipe);
+
+        // Build the config key: e.g. "vulkan_bin", "cpu_bin", "server_bin"
+        std::string bin_key = backend.empty() ? "server_bin" : (backend + "_bin");
+
+        std::string bin_value = cfg->backend_string(section, bin_key);
+
+        // "builtin" or empty means use the built-in binary (not an external override)
+        if (bin_value.empty() || bin_value == "builtin") {
             return "";
         }
 
-        std::string backend_bin = std::string(backend_bin_env);
-        return fs::exists(backend_bin) ? backend_bin : "";
+        RuntimeConfig::validate_bin_path(section, bin_key, bin_value);
+        return bin_value;
     }
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
@@ -205,7 +209,6 @@ namespace lemon::backends {
         return get_version_file(install_dir);
     }
 
-#ifndef LEMONADE_TRAY
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string config_path = utils::get_resource_path("resources/backend_versions.json");
 
@@ -380,5 +383,4 @@ namespace lemon::backends {
             }
         }
     }
-#endif
 } // namespace lemon::backends

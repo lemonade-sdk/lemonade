@@ -29,7 +29,7 @@ cmake -DREQUIRE_LINUX_TRAY=ON ../src/cpp
 
 ## React App Build Configuration
 
-The CMake build system allows you to control whether the React web app and/or Electron desktop app are built and included in the server.
+The CMake build system allows you to control whether the React web app and/or Tauri desktop app are built and included in the server.
 
 ### Build Options
 
@@ -40,68 +40,68 @@ Build and include the React web app for browser access via the `/app` endpoint.
 - When **OFF**: The `/app` endpoint will serve a minimal fallback page
 - Requires: Node.js and npm
 
-#### `BUILD_ELECTRON_APP` (Default: **OFF**)
-Build and include the full Electron desktop application.
+#### `BUILD_TAURI_APP` (Default: **OFF**)
+Build and include the full Tauri desktop application.
 
-- When **ON**: Enables the `electron-app` target for building the packaged desktop app
+- When **ON**: Enables the `tauri-app` target for building the desktop app (Rust host + React renderer)
 - When **OFF**: Desktop app targets are disabled
-- Requires: Node.js, npm, and Electron dependencies
+- Requires: Node.js, npm, Rust toolchain (rustup), and Linux webkit2gtk development libraries
 
 ### Usage Examples
 
 #### 1. Default Configuration (Web App Only)
 ```bash
 cd build
-cmake ../src/cpp
-ninja lemonade-router
+cmake ..
+ninja lemond
 ```
 
 Result:
-- ✅ Web app available at `http://localhost:8000/app`
-- ❌ No Electron desktop app
+- ✅ Web app available at `http://localhost:13305/app`
+- ❌ No Tauri desktop app
 - Minimal build time and dependencies
 
 #### 2. Server Only (No UI)
 ```bash
 cd build
-cmake -DBUILD_WEB_APP=OFF ../src/cpp
-ninja lemonade-router
+cmake -DBUILD_WEB_APP=OFF ..
+ninja lemond
 ```
 
 Result:
 - ❌ No web app
-- ❌ No Electron app
+- ❌ No Tauri desktop app
 - Minimal fallback page at `/app`
 - Fastest build time
 
-#### 3. Both Web App and Electron App
+#### 3. Both Web App and Tauri App
 ```bash
 cd build
-cmake -DBUILD_WEB_APP=ON -DBUILD_ELECTRON_APP=ON ../src/cpp
-ninja lemonade-router
-ninja electron-app  # Build desktop app separately
+cmake -DBUILD_WEB_APP=ON -DBUILD_TAURI_APP=ON ..
+ninja lemond
+ninja tauri-app  # Build desktop app separately
 ```
 
 Result:
-- ✅ Web app at `http://localhost:8000/app`
-- ✅ Electron desktop app available
-- Both `webapp` and `electron-app` targets enabled
+- ✅ Web app at `http://localhost:13305/app`
+- ✅ Tauri desktop app available
+- Both `webapp` and `tauri-app` targets enabled
 
-#### 4. Electron App Only
+#### 4. Tauri App Only
 ```bash
 cd build
-cmake -DBUILD_WEB_APP=OFF -DBUILD_ELECTRON_APP=ON ../src/cpp
-ninja electron-app
+cmake -DBUILD_WEB_APP=OFF -DBUILD_TAURI_APP=ON ..
+ninja tauri-app
 ```
 
 Result:
 - ❌ No web app
-- ✅ Electron desktop app available
+- ✅ Tauri desktop app available
 - Useful for desktop-only deployments
 
 ### Build Targets
 
-When Node.js/npm are available, the following targets are created:
+When Node.js/npm/Cargo are available, the following targets are created:
 
 #### `webapp` (when `BUILD_WEB_APP=ON`)
 ```bash
@@ -110,40 +110,42 @@ cmake --build . --target webapp
 ninja webapp
 ```
 
-Builds just the React web app bundle using Webpack, without Electron dependencies. Output goes to `build/resources/app/`.
+Builds just the React web app bundle using Webpack. Output goes to `build/resources/web-app/`.
 
-#### `electron-app` (when `BUILD_ELECTRON_APP=ON`)
+#### `tauri-app` (when `BUILD_TAURI_APP=ON`)
 ```bash
-cmake --build . --target electron-app
+cmake --build . --target tauri-app
 # or
-ninja electron-app
+ninja tauri-app
 ```
 
-Builds the full packaged Electron desktop application. This includes compiling the React app and packaging it with Electron.
+Builds the full Tauri desktop application. This compiles the React renderer via webpack and then invokes `cargo tauri build` to compile the Rust host and link against the system WebView (WebView2 on Windows, WKWebView on macOS, webkit2gtk on Linux). Output is staged at `build/app/lemonade-app[.exe|.app]`.
 
 ### Automatic Building
 
-During CMake configuration, if `BUILD_WEB_APP=ON` or `BUILD_ELECTRON_APP=ON` and the app hasn't been built yet:
+During CMake configuration, if `BUILD_WEB_APP=ON` or `BUILD_TAURI_APP=ON` and the app hasn't been built yet:
 
 1. CMake checks for existing `dist/renderer` directory
 2. If not found and Node.js is available, automatically runs:
-   - `npm install` (in `src/web-app/` for web builds)
-   - `npm run build:renderer:prod`
-3. Copies the built app to `build/resources/app/`
-4. If build fails or Node.js is missing, creates a fallback HTML page with instructions
+   - `npm ci` (in `src/web-app/` for web builds, `src/app/` for Tauri builds)
+   - `npm run build:renderer:prod` (webpack) / `cargo tauri build` (Tauri)
+3. Copies the built app to the expected location
+4. If build fails or dependencies are missing, creates a fallback HTML page with instructions
 
 ### Source Directories
 
 - **Web App**: `src/web-app/`
   - Symlinks to shared source: `src/` → `../app/src/`
-  - Minimal dependencies (no Electron)
+  - Minimal dependencies (no Tauri, no Node runtime)
   - Target: browser (`webpack target: 'web'`)
   - Build output: `src/web-app/dist/renderer/`
 
-- **Electron App**: `src/app/`
-  - Full Electron dependencies
-  - Target: Electron renderer process
-  - Build output: `src/app/dist/renderer/`
+- **Tauri App**: `src/app/`
+  - Rust host in `src/app/src-tauri/`
+  - React renderer in `src/app/src/renderer/` (shared with web-app via symlink)
+  - Webpack target: `web` (Tauri hosts a standard webview, not electron-renderer)
+  - Renderer build output: `src/app/dist/renderer/`
+  - Cargo build output: `src/app/src-tauri/target/release/lemonade-app[.exe|.app]`
 
 ### Configuration Status
 
@@ -152,21 +154,21 @@ When running CMake, you'll see:
 ```
 -- === App Build Configuration ===
 --   BUILD_WEB_APP: ON
---   BUILD_ELECTRON_APP: OFF
+--   BUILD_TAURI_APP: OFF
 -- React web app target enabled: cmake --build . --target webapp
--- Full Electron app target disabled (BUILD_ELECTRON_APP=OFF)
+-- Full Tauri app target disabled (BUILD_TAURI_APP=OFF)
 ```
 
 ### Requirements
 
 - **Server Only**: No special requirements
 - **Web App**: Node.js 18+ and npm
-- **Electron App**: Node.js 18+, npm, and Electron dependencies (~600MB)
+- **Tauri App**: Node.js 18+, npm, Rust (via https://rustup.rs), plus on Linux `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`
 
 ### Deployment Recommendations
 
-| Use Case | BUILD_WEB_APP | BUILD_ELECTRON_APP | Benefits |
-|----------|--------------|-------------------|----------|
+| Use Case | BUILD_WEB_APP | BUILD_TAURI_APP | Benefits |
+|----------|--------------|-----------------|----------|
 | Server deployment | ON | OFF | Web UI accessible from any browser |
 | Desktop-only | OFF | ON | Standalone app, no web browser needed |
 | Development | ON | OFF | Fast builds, easy testing |
@@ -177,12 +179,13 @@ When running CMake, you'll see:
 
 **"React app build failed - creating fallback page"**
 - Install Node.js from https://nodejs.org/
-- Run `npm install` in `src/web-app/`
+- Run `npm install` in `src/web-app/` or `src/app/`
 - Check Node.js version: `node --version` (requires 18+)
 
-**"app build targets disabled"**
-- Node.js or npm not found in PATH
-- Install Node.js or add it to your PATH
+**"Tauri app build targets disabled"**
+- Node.js, npm, or Cargo not found in PATH
+- Install Node.js and Rust (via https://rustup.rs) and add them to your PATH
+- On Linux, install the webkit2gtk development packages (see Requirements above)
 
 **Both options OFF but still seeing an app?**
 - The `/app` endpoint will serve a minimal fallback HTML page with instructions

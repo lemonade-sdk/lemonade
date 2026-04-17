@@ -3,13 +3,15 @@
 #include "lemon_tray/platform/linux_tray.h"
 #include "lemon_tray/platform/linux_systemd.h"
 #include <lemon/utils/aixlog.hpp>
+
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <optional>
-#include <cstring>
-#include <cstdlib>
-#include <unistd.h>
 #include <utility>
+#include <unistd.h>
+
 #ifdef HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
 #include <systemd/sd-daemon.h>
@@ -31,7 +33,7 @@ namespace lemon_tray {
 
 // Known systemd unit names for lemonade server (native or snap)
 static const char* kSystemdUnitNames[] = {
-    "lemonade-server.service",
+    "lemond.service",
     "snap.lemonade-server.daemon.service"
 };
 

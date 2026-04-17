@@ -1,10 +1,11 @@
 #ifdef _WIN32
 
 #include "lemon_tray/platform/windows_tray.h"
-#include <iostream>
+
 #include <codecvt>
-#include <locale>
+#include <iostream>
 #include <lemon/utils/aixlog.hpp>
+#include <locale>
 
 // Undefine Windows macros that conflict with our enums
 #ifdef ERROR

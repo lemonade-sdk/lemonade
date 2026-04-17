@@ -47,7 +47,7 @@ maybe_sudo() {
 }
 
 # Detect OS
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+if [[ "$OSTYPE" == "linux"* ]]; then
     OS="linux"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     OS="macos"
@@ -74,6 +74,8 @@ if ! command_exists pre-commit; then
         missing_packages+=("pre-commit")
     elif [ "$OS" = "linux" ] && command_exists dnf; then
         missing_packages+=("pre-commit")
+    elif [ "$OS" = "linux" ] && command_exists zypper; then
+        missing_packages+=("python313-pre-commit")
     elif [ "$OS" = "macos" ] && command_exists brew; then
         missing_packages+=("pre-commit")
     elif command_exists pip || command_exists pip3; then
@@ -109,6 +111,8 @@ if [ ${#missing_tools[@]} -gt 0 ]; then
             missing_packages+=("git" "cmake" "ninja" "base-devel")
         elif command_exists dnf; then
             missing_packages+=("git" "cmake" "ninja-build" "gcc" "gcc-c++" "make")
+        elif command_exists zypper; then
+            missing_packages+=("git" "cmake" "ninja" "gcc" "gcc-c++" "make")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("git" "cmake" "ninja")
@@ -140,7 +144,7 @@ if command_exists pkg-config; then
                 # Map pkg-config names to apt packages
                 for lib in "${missing_libs[@]}"; do
                     case "$lib" in
-                        libcurl) missing_packages+=("libcurl4-openssl-dev") ;;
+                        libcurl) missing_packages+=("curl" "libcurl4-openssl-dev") ;;
                         openssl) missing_packages+=("libssl-dev") ;;
                         zlib) missing_packages+=("zlib1g-dev") ;;
                         libsystemd) missing_packages+=("libsystemd-dev") ;;
@@ -175,6 +179,19 @@ if command_exists pkg-config; then
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
                     esac
                 done
+            elif command_exists zypper; then
+                # Map pkg-config names to zypper packages
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("libcurl-devel") ;;
+                        openssl) missing_packages+=("libopenssl-devel") ;;
+                        zlib) missing_packages+=("zlib-devel") ;;
+                        libsystemd) missing_packages+=("systemd-devel") ;;
+                        libdrm) missing_packages+=("libdrm-devel") ;;
+                        libcap) missing_packages+=("libcap-devel") ;;
+                        libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                    esac
+                done
             fi
         elif [ "$OS" = "macos" ]; then
             # macOS typically has these via Xcode Command Line Tools
@@ -192,11 +209,13 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
+            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
         elif command_exists pacman; then
             missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
         elif command_exists dnf; then
             missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+        elif command_exists zypper; then
+            missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("pkg-config" "curl" "openssl" "zlib" "libdrm")
@@ -227,6 +246,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             missing_tray_packages+=("libayatana-appindicator")
         elif command_exists dnf; then
             missing_tray_packages+=("libayatana-appindicator-gtk3-devel")
+        elif command_exists zypper; then
+            missing_tray_packages+=("libayatana-appindicator3-devel")
         fi
     fi
 
@@ -243,6 +264,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                 missing_tray_packages+=("libdbusmenu-glib")
             elif command_exists dnf; then
                 missing_tray_packages+=("dbusmenu-glib-devel")
+            elif command_exists zypper; then
+                missing_tray_packages+=("libdbusmenu-glib-devel")
             fi
         fi
     fi
@@ -259,6 +282,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                 missing_tray_packages+=("gtk3")
             elif command_exists dnf; then
                 missing_tray_packages+=("gtk3-devel")
+            elif command_exists zypper; then
+                missing_tray_packages+=("gtk3-devel")
             fi
         fi
     fi
@@ -272,6 +297,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
         elif command_exists pacman; then
             missing_tray_packages+=("libnotify")
         elif command_exists dnf; then
+            missing_tray_packages+=("libnotify-devel")
+        elif command_exists zypper; then
             missing_tray_packages+=("libnotify-devel")
         fi
     fi
@@ -291,6 +318,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             tray_install_cmd="sudo pacman -S --needed --noconfirm ${missing_tray_packages[*]}"
         elif command_exists dnf; then
             tray_install_cmd="sudo dnf install -y ${missing_tray_packages[*]}"
+        elif command_exists zypper; then
+            tray_install_cmd="sudo zypper install -y ${missing_tray_packages[*]}"
         fi
 
         if [ -n "$tray_install_cmd" ]; then
@@ -312,6 +341,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                     maybe_sudo pacman -S --needed --noconfirm "${missing_tray_packages[@]}"
                 elif command_exists dnf; then
                     maybe_sudo dnf install -y "${missing_tray_packages[@]}"
+                elif command_exists zypper; then
+                    maybe_sudo zypper install -y "${missing_tray_packages[@]}"
                 fi
                 print_success "Optional tray dependencies installed"
             else
@@ -330,7 +361,7 @@ print_info "Checking Node.js and npm installation..."
 if ! command_exists node; then
     print_warning "Node.js not found"
     if [ "$OS" = "linux" ]; then
-        if command_exists apt || command_exists pacman || command_exists dnf; then
+        if command_exists apt || command_exists pacman || command_exists dnf || command_exists zypper; then
             missing_packages+=("nodejs" "npm")
         fi
     elif [ "$OS" = "macos" ]; then
@@ -348,6 +379,80 @@ fi
 if command_exists node && ! command_exists npm; then
     print_warning "npm not found"
     missing_packages+=("npm")
+fi
+
+# Detect Tauri desktop-app dependencies that need installation.
+tauri_linux_deps=()
+if [ "$OS" = "linux" ]; then
+    print_info "Checking Tauri Linux development dependencies..."
+    if command_exists apt; then
+        tauri_dep_candidates=(
+            libwebkit2gtk-4.1-dev
+            libsoup-3.0-dev
+            libjavascriptcoregtk-4.1-dev
+            librsvg2-dev
+            libayatana-appindicator3-dev
+            wget
+            file
+        )
+        for dep in "${tauri_dep_candidates[@]}"; do
+            if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
+                tauri_linux_deps+=("$dep")
+            fi
+        done
+    elif command_exists dnf; then
+        tauri_dep_candidates=(
+            webkit2gtk4.1-devel
+            libsoup3-devel
+            librsvg2-devel
+            libappindicator-gtk3-devel
+            wget
+            file
+        )
+        for dep in "${tauri_dep_candidates[@]}"; do
+            if ! rpm -q "$dep" >/dev/null 2>&1; then
+                tauri_linux_deps+=("$dep")
+            fi
+        done
+    elif command_exists pacman; then
+        # Arch Linux. webkit2gtk-4.1 + libsoup3 + librsvg are confirmed by
+        # the official Tauri v2 prerequisites doc. javascriptcoregtk ships
+        # inside webkit2gtk-4.1 on Arch so it doesn't need a separate entry.
+        tauri_dep_candidates=(
+            webkit2gtk-4.1
+            libsoup3
+            librsvg
+            wget
+            file
+        )
+        for dep in "${tauri_dep_candidates[@]}"; do
+            if ! pacman -Qi "$dep" >/dev/null 2>&1; then
+                tauri_linux_deps+=("$dep")
+            fi
+        done
+    elif command_exists zypper; then
+        # openSUSE package names vary, so only auto-detect the broadly stable
+        # CLI utilities here. Rust still prefers zypper before rustup.
+        for dep in wget file; do
+            if ! rpm -q "$dep" >/dev/null 2>&1; then
+                tauri_linux_deps+=("$dep")
+            fi
+        done
+    fi
+fi
+
+rust_needs_install=false
+if ! command_exists cargo || ! command_exists rustc; then
+    if [ -f "$HOME/.cargo/env" ]; then
+        # shellcheck source=/dev/null
+        . "$HOME/.cargo/env"
+    fi
+fi
+if ! command_exists cargo || ! command_exists rustc; then
+    rust_needs_install=true
+    print_info "Rust toolchain not found"
+else
+    print_success "Rust toolchain is already installed"
 fi
 
 # Check for KaTeX fonts (optional but recommended for packaging)
@@ -394,6 +499,12 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             else
                 install_cmd="sudo dnf install -y ${missing_packages[*]}"
             fi
+        elif command_exists zypper; then
+            if is_root; then
+                install_cmd="zypper install -y ${missing_packages[*]}"
+            else
+                install_cmd="sudo zypper install -y ${missing_packages[*]}"
+            fi
         fi
     elif [ "$OS" = "macos" ]; then
         install_cmd="brew install ${missing_packages[*]}"
@@ -436,6 +547,8 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             maybe_sudo pacman -Syu --needed --noconfirm ${missing_packages[@]}
         elif command_exists dnf; then
             maybe_sudo dnf install -y ${missing_packages[@]}
+        elif command_exists zypper; then
+            maybe_sudo zypper install -y ${missing_packages[@]}
         fi
     elif [ "$OS" = "macos" ]; then
         brew install ${missing_packages[@]}
@@ -466,6 +579,114 @@ fi
 
 echo ""
 
+# Install Tauri desktop-app dependencies automatically. Prefer distro-native
+# packages for Rust and only fall back to rustup if the package-manager path
+# is unavailable or fails.
+if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
+    print_info "Installing Tauri desktop-app dependencies..."
+    if [ ${#tauri_linux_deps[@]} -gt 0 ]; then
+        for d in "${tauri_linux_deps[@]}"; do
+            echo "  - $d"
+        done
+    fi
+    if [ "$rust_needs_install" = true ]; then
+        echo "  - Rust toolchain"
+    fi
+    echo ""
+
+    if [ ${#tauri_linux_deps[@]} -gt 0 ]; then
+        print_info "Installing Tauri Linux dependencies..."
+        if command_exists apt; then
+            maybe_sudo apt update
+            maybe_sudo apt install -y "${tauri_linux_deps[@]}"
+        elif command_exists dnf; then
+            maybe_sudo dnf install -y "${tauri_linux_deps[@]}"
+        elif command_exists pacman; then
+            maybe_sudo pacman -S --needed --noconfirm "${tauri_linux_deps[@]}"
+        elif command_exists zypper; then
+            maybe_sudo zypper install -y "${tauri_linux_deps[@]}"
+        fi
+        print_success "Tauri Linux dependencies installed"
+    fi
+
+    if [ "$rust_needs_install" = true ]; then
+        print_info "Trying distro-native Rust installation first..."
+        rust_install_ok=false
+
+        if [ "$OS" = "linux" ]; then
+            if command_exists apt; then
+                maybe_sudo apt update
+                if maybe_sudo apt install -y rustc cargo; then
+                    rust_install_ok=true
+                fi
+            elif command_exists pacman; then
+                if maybe_sudo pacman -S --needed --noconfirm rust; then
+                    rust_install_ok=true
+                fi
+            elif command_exists dnf; then
+                if maybe_sudo dnf install -y rust cargo; then
+                    rust_install_ok=true
+                fi
+            elif command_exists zypper; then
+                if maybe_sudo zypper install -y rust cargo; then
+                    rust_install_ok=true
+                fi
+            fi
+        elif [ "$OS" = "macos" ] && command_exists brew; then
+            if brew install rust; then
+                rust_install_ok=true
+            fi
+        fi
+
+        hash -r
+        if ! command_exists cargo || ! command_exists rustc; then
+            if [ -f "$HOME/.cargo/env" ]; then
+                # shellcheck source=/dev/null
+                . "$HOME/.cargo/env"
+            fi
+        fi
+
+        if command_exists cargo && command_exists rustc; then
+            rust_install_ok=true
+        fi
+
+        if [ "$rust_install_ok" != true ]; then
+            print_warning "Distro-native Rust installation was unavailable or failed"
+            if ! command_exists curl; then
+                print_error "curl is required for the rustup fallback but is not available"
+                exit 1
+            fi
+
+            print_info "Falling back to rustup installer..."
+            if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path; then
+                if [ -f "$HOME/.cargo/env" ]; then
+                    # shellcheck source=/dev/null
+                    . "$HOME/.cargo/env"
+                fi
+                hash -r
+            else
+                print_error "rustup fallback failed"
+                exit 1
+            fi
+        fi
+
+        if command_exists cargo && command_exists rustc; then
+            print_success "Rust toolchain installed"
+        else
+            print_error "Rust installation completed, but cargo/rustc are still unavailable"
+            exit 1
+        fi
+    fi
+
+    if [ "$OS" = "linux" ] && command_exists zypper && [ ${#tauri_linux_deps[@]} -eq 0 ]; then
+        print_info "Note: openSUSE Tumbleweed Tauri package names are not yet"
+        print_info "auto-installable by this script. To build the Tauri desktop app,"
+        print_info "install the prerequisites manually per https://v2.tauri.app/start/prerequisites/"
+    fi
+
+    echo ""
+fi
+
 # Clean and create build directory
 print_info "Preparing build directory..."
 
@@ -491,9 +712,12 @@ echo "=========================================="
 print_success "Setup completed successfully!"
 echo "=========================================="
 echo ""
+
 print_info "Next steps:"
 echo "  Build the project: cmake --build --preset default"
-echo "  Build the electron app: cmake --build --preset default --target electron-app"
-echo "  Build AppImage (Linux): cmake --build --preset default --target appimage"
+echo "  Build the Tauri desktop app: cmake --build --preset default --target tauri-app"
+echo "    (first build downloads ~80 Rust crates and may take several minutes)"
+echo "  Hot-reload the desktop UI during development: cd src/app && npm run dev"
+echo "  Build AppImage (Linux): cmake --preset default -DBUILD_APPIMAGE=ON && cmake --build --preset default --target appimage"
 echo ""
 print_info "For more information, see the docs/dev-getting-started.md file"

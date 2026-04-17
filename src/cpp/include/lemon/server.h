@@ -11,26 +11,18 @@
 #include <atomic>
 #include <chrono>
 #include <httplib.h>
+#include "runtime_config.h"
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
-#ifdef LEMON_HAS_WEBSOCKET
 #include "websocket_server.h"
-#endif
 #include "lemon/utils/network_beacon.h"
 
 namespace lemon {
 
 class Server {
 public:
-    Server(int port,
-           const std::string& host,
-           const std::string& log_level,
-           const json& default_options,
-           int max_loaded_models,
-           const std::string& extra_models_dir,
-           bool no_broadcast,
-           long http_timeout);
+    Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir);
 
     ~Server();
 
@@ -52,6 +44,16 @@ private:
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);
 
+    // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
+    void setup_http_servers();
+
+    // Unified config endpoints
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+
+    // Side-effect callback for RuntimeConfig::set()
+    void apply_config_side_effects(const std::vector<std::string>& changed_keys);
+
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
@@ -63,19 +65,17 @@ private:
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
+    void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
+    void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
-    void handle_logs_stream(const httplib::Request& req, httplib::Response& res);
-#ifdef HAVE_SYSTEMD
-    void handle_logs_stream_journald(const httplib::Request& req, httplib::Response& res);
-#endif
 
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
@@ -104,6 +104,7 @@ private:
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
+    void handle_image_upscale(const httplib::Request& req, httplib::Response& res);
 
     // Shared helpers for image multipart handlers
     // Return true on success; on failure set res status/body and return false.
@@ -125,12 +126,9 @@ private:
     double get_vram_usage();
     double get_npu_utilization();
 
-    int port_;
-    std::string host_;
-    std::string log_level_;
-    json default_options_;
-    std::string log_file_path_;
-    bool no_broadcast_;
+    std::shared_ptr<RuntimeConfig> config_;
+    std::string cache_dir_;  // Lemonade cache dir for config.json persistence
+    std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
@@ -142,13 +140,13 @@ private:
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
-#ifdef LEMON_HAS_WEBSOCKET
     std::unique_ptr<WebSocketServer> websocket_server_;
-#endif
 
     bool running_;
+    std::atomic<bool> rebind_requested_{false};
 
     std::string api_key_;
+    std::string admin_api_key_;
     NetworkBeacon udp_beacon_;
 
     // CPU usage tracking

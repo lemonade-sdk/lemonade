@@ -343,6 +343,9 @@ const [searchQuery, setSearchQuery] = useState('');
   const getFilteredModels = () => {
     let filtered = suggestedModels;
 
+    // Hide ESRGAN upscaler models (managed via the Image Generation panel)
+    filtered = filtered.filter(model => !model.info?.labels?.includes('esrgan'));
+
     // Filter by downloaded status
     if (showDownloadedOnly) {
       filtered = filtered.filter(model => modelsData[model.name]?.downloaded);
@@ -616,57 +619,42 @@ const [searchQuery, setSearchQuery] = useState('');
         } catch { /* ignore */ }
       }
 
-      // GGUF detection
-      const allGgufFiles = data.siblings.filter(s => s.rfilename.toLowerCase().endsWith('.gguf'));
-      if (allGgufFiles.length > 0) {
-        // Separate mmproj files from regular model files
-        const mmprojGgufs = allGgufFiles.filter(s => s.rfilename.toLowerCase().includes('mmproj'));
-        const ggufFiles = allGgufFiles.filter(s => !s.rfilename.toLowerCase().includes('mmproj'));
-        const mmprojFiles = mmprojGgufs.map(s => {
-          const parts = s.rfilename.split('/');
-          return parts[parts.length - 1];
-        });
-
-        const folderGroups: Record<string, { files: string[]; totalSize: number }> = {};
-        const rootFiles: { filename: string; size?: number }[] = [];
-        ggufFiles.forEach(f => {
-          const slashIdx = f.rfilename.indexOf('/');
-          if (slashIdx > 0) {
-            const folder = f.rfilename.substring(0, slashIdx);
-            if (!folderGroups[folder]) folderGroups[folder] = { files: [], totalSize: 0 };
-            folderGroups[folder].files.push(f.rfilename);
-            if (fileSizes[f.rfilename]) folderGroups[folder].totalSize += fileSizes[f.rfilename];
-          } else {
-            rootFiles.push({ filename: f.rfilename, size: fileSizes[f.rfilename] });
+      // GGUF detection — delegate to the lemond /pull/variants endpoint so the
+      // CLI and the app share one source of truth for variant enumeration,
+      // mmproj detection, and label inference.
+      const hasGguf = data.siblings.some(s => s.rfilename.toLowerCase().endsWith('.gguf'));
+      if (hasGguf) {
+        try {
+          const variantsRes = await serverFetch(`/pull/variants?checkpoint=${encodeURIComponent(modelId)}`);
+          if (variantsRes.ok) {
+            const payload: {
+              variants: { name: string; primary_file: string; files: string[]; sharded: boolean; size_bytes: number }[];
+              mmproj_files: string[];
+              recipe: string;
+            } = await variantsRes.json();
+            if (payload.variants && payload.variants.length > 0) {
+              const quantizations: GGUFQuantization[] = payload.variants.map(v => ({
+                filename: v.name,
+                quantization: v.name,
+                size: v.size_bytes || undefined,
+              }));
+              setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
+                ...prev,
+                [modelId]: {
+                  recipe: payload.recipe || 'llamacpp',
+                  label: 'GGUF',
+                  quantizations,
+                  mmprojFiles: payload.mmproj_files && payload.mmproj_files.length > 0 ? payload.mmproj_files : undefined,
+                },
+              }));
+              if (!hfSelectedQuantizations[modelId]) {
+                setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: quantizations[0].filename }));
+                if (quantizations[0].size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: quantizations[0].size }));
+              }
+              return;
+            }
           }
-        });
-        const quantizations: GGUFQuantization[] = [];
-        Object.entries(folderGroups).forEach(([folder, g]) => {
-          const m = folder.match(/(Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)/i);
-          quantizations.push({ filename: folder, quantization: m ? m[1].toUpperCase() : folder, size: g.totalSize || undefined });
-        });
-        rootFiles.forEach(({ filename, size }) => {
-          const m = filename.match(/[-._](Q\d+(?:_\d)?(?:_[KS])?(?:_[MSL])?|F(?:16|32)|IQ\d+(?:_[A-Z]+)?|BF16)(?:[-._]|\.gguf$)/i);
-          if (m) quantizations.push({ filename, quantization: m[1].toUpperCase(), size });
-        });
-        if (quantizations.length > 0) {
-          const priority: Record<string, number> = { Q4_K_M: 1, Q4_K_S: 2, Q5_K_M: 3, Q5_K_S: 4, Q6_K: 5, Q8_0: 6 };
-          quantizations.sort((a, b) => (priority[a.quantization] ?? 100) - (priority[b.quantization] ?? 100));
-          setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
-            ...prev,
-            [modelId]: {
-              recipe: 'llamacpp',
-              label: 'GGUF',
-              quantizations,
-              mmprojFiles: mmprojFiles.length > 0 ? mmprojFiles : undefined,
-            },
-          }));
-          if (!hfSelectedQuantizations[modelId]) {
-            setHfSelectedQuantizations((prev: Record<string, string>) => ({ ...prev, [modelId]: quantizations[0].filename }));
-            if (quantizations[0].size !== undefined) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: quantizations[0].size }));
-          }
-          return;
-        }
+        } catch { /* fall through to backend detection below */ }
       }
 
       const totalFileSize = Object.values(fileSizes).reduce((a, b) => a + b, 0) || undefined;
@@ -1104,6 +1092,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
+    const isEsrgan = modelsData[modelName]?.labels?.includes('esrgan');
     return (
       <>
         {!isDownloaded && (
@@ -1119,7 +1108,12 @@ const [searchQuery, setSearchQuery] = useState('');
             </svg>
           </button>
         )}
-        {isDownloaded && !isLoaded && !isLoading && (
+        {isDownloaded && !isLoaded && !isLoading && isEsrgan && (
+          <>
+            {renderDeleteButton(modelName)}
+          </>
+        )}
+        {isDownloaded && !isLoaded && !isLoading && !isEsrgan && (
           <>
             <button
               className="model-action-btn load-btn"

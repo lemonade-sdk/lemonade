@@ -1,5 +1,6 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/json_utils.h>
+#include <lemon/utils/process_manager.h>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -21,6 +22,22 @@
 namespace fs = std::filesystem;
 
 namespace lemon::utils {
+
+// ---------------------------------------------------------------------------
+// Lemonade cache dir and models dir — set once at startup before any
+// concurrent access, then read-only from that point on.
+// ---------------------------------------------------------------------------
+
+static std::string g_cache_dir;
+static std::string g_models_dir;
+
+void set_cache_dir(const std::string& dir) {
+    g_cache_dir = dir;
+}
+
+void set_models_dir(const std::string& dir) {
+    g_models_dir = dir;
+}
 
 #ifdef _WIN32
 static std::wstring utf8_to_wstring(const std::string& str) {
@@ -139,8 +156,8 @@ std::string get_resource_path(const std::string& relative_path) {
     // Also check user's local install directory
     const char* home = std::getenv("HOME");
     if (home) {
-        std::string home_local = std::string(home) + "/.local/share/lemonade-server";
-        install_prefixes.insert(install_prefixes.begin(), home_local);
+        std::string user_local = std::string(home) + "/.local/share/lemonade-server";
+        install_prefixes.insert(install_prefixes.begin(), user_local);
     }
 
     for (const auto& prefix : install_prefixes) {
@@ -173,44 +190,19 @@ bool is_safe_executable_path(const std::string& path) {
 
 std::string find_flm_executable() {
 #ifdef _WIN32
-    // Refresh PATH from Windows registry to pick up any changes since process started
-    // This is important because users may install FLM after starting lemonade-server
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                      "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
-                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        char buffer[32767];
-        DWORD bufferSize = sizeof(buffer);
-        if (RegQueryValueExA(hKey, "PATH", nullptr, nullptr,
-                            reinterpret_cast<LPBYTE>(buffer), &bufferSize) == ERROR_SUCCESS) {
-            std::string system_path = buffer;
-            // Combine with current process PATH (system PATH takes priority for FLM lookup)
-            const char* current_path = std::getenv("PATH");
-            if (current_path) {
-                system_path = system_path + ";" + std::string(current_path);
+    // On Windows, only check the Lemonade install directory (auto-installed zip).
+    // No system PATH fallback - FLM should be installed via install_backend().
+    std::string install_dir = (fs::path(get_downloaded_bin_dir()) / "flm" / "npu").make_preferred().string();
+    if (fs::exists(install_dir)) {
+        for (const auto& entry : fs::recursive_directory_iterator(install_dir)) {
+            if (entry.is_regular_file() && entry.path().filename().string() == "flm.exe") {
+                std::string path = entry.path().string();
+                if (is_safe_executable_path(path)) {
+                    return path;
+                }
             }
-            _putenv(("PATH=" + system_path).c_str());
         }
-        RegCloseKey(hKey);
     }
-
-    // Use SearchPathA which is the same API that CreateProcessA uses internally
-    // This ensures we find the exact same executable that will be launched
-    char found_path[MAX_PATH];
-    DWORD result = SearchPathA(
-        nullptr,      // Use system PATH
-        "flm.exe",    // File to search for
-        nullptr,      // No default extension needed
-        MAX_PATH,
-        found_path,
-        nullptr
-    );
-
-    if (result > 0 && result < MAX_PATH) {
-        std::string path(found_path);
-        return is_safe_executable_path(path) ? path : "";
-    }
-
     return "";
 #else
     // On Linux/Mac, check PATH using which
@@ -275,43 +267,37 @@ bool is_ggml_hip_plugin_available() {
 }
 
 std::string get_cache_dir() {
-    std::string cache_dir_env = get_environment_variable_utf8("LEMONADE_CACHE_DIR");
-    if (!cache_dir_env.empty()) {
-        std::string cache_dir = cache_dir_env;
-#ifdef __APPLE__
-        // Ensure directory exists on macOS
-        fs::path cache_path = path_from_utf8(cache_dir);
-        if (!fs::exists(cache_path)) {
-            fs::create_directories(cache_path);
-        }
-#endif
-        return cache_dir;
+    // If set_cache_dir() was called at startup, use that
+    if (!g_cache_dir.empty()) {
+        return g_cache_dir;
     }
 
+    // Check LEMONADE_CACHE_DIR environment variable
+    std::string env_cache_dir = get_environment_variable_utf8("LEMONADE_CACHE_DIR");
+    if (!env_cache_dir.empty()) {
+        return env_cache_dir;
+    }
+
+    // Fallback to platform-specific defaults (for backward compat / CLI client)
 #ifdef _WIN32
     std::string userprofile = get_environment_variable_utf8("USERPROFILE");
     if (!userprofile.empty()) {
         return userprofile + "\\.cache\\lemonade";
     }
 #elif defined(__APPLE__)
-    // Check if we are running as root (UID 0)
     if (geteuid() != 0) {
-        // --- NORMAL USER MODE ---
         std::string home = get_environment_variable_utf8("HOME");
         if (!home.empty()) {
             std::string cache_dir = home + "/.cache/lemonade";
-            // Ensure directory exists
             fs::path cache_path = path_from_utf8(cache_dir);
             if (!fs::exists(cache_path)) {
                 fs::create_directories(cache_path);
             }
             return cache_dir;
         }
-        // Fallback if HOME is missing but we aren't root
         struct passwd* pw = getpwuid(getuid());
         if (pw) {
             std::string cache_dir = std::string(pw->pw_dir) + "/.cache/lemonade";
-            // Ensure directory exists
             fs::path cache_path = path_from_utf8(cache_dir);
             if (!fs::exists(cache_path)) {
                 fs::create_directories(cache_path);
@@ -320,42 +306,25 @@ std::string get_cache_dir() {
         }
     }
 
-    // --- SYSTEM SERVICE / ROOT MODE ---
-    // If we are root (or getting HOME failed), use a shared system location.
-    // /Users/Shared is okay, but /Library/Application Support is the standard macOS system path.
-    std::string cache_dir = "/Library/Application Support/lemonade/.cache";
-    // Ensure directory exists
-    fs::path cache_path = path_from_utf8(cache_dir);
-    if (!fs::exists(cache_path)) {
-        fs::create_directories(cache_path);
+    {
+        std::string cache_dir = "/Library/Application Support/lemonade/.cache";
+        fs::path cache_path = path_from_utf8(cache_dir);
+        if (!fs::exists(cache_path)) {
+            fs::create_directories(cache_path);
+        }
+        return cache_dir;
     }
-    return cache_dir;
-
 #else
-    // Linux and other Unix systems
     std::string home = get_environment_variable_utf8("HOME");
     if (!home.empty()) {
         return home + "/.cache/lemonade";
     }
-    #endif
+#endif
 
     return ".cache/lemonade";
 }
 
-std::string get_hf_cache_dir() {
-    // Check HF_HUB_CACHE first (highest priority)
-    std::string hf_hub_cache_env = get_environment_variable_utf8("HF_HUB_CACHE");
-    if (!hf_hub_cache_env.empty()) {
-        return hf_hub_cache_env;
-    }
-
-    // Check HF_HOME second (append /hub)
-    std::string hf_home_env = get_environment_variable_utf8("HF_HOME");
-    if (!hf_home_env.empty()) {
-        return hf_home_env + "/hub";
-    }
-
-    // Default platform-specific paths
+std::string default_hf_cache_dir() {
 #ifdef _WIN32
     std::string userprofile = get_environment_variable_utf8("USERPROFILE");
     if (!userprofile.empty()) {
@@ -369,6 +338,37 @@ std::string get_hf_cache_dir() {
     }
     return "/tmp/.cache/huggingface/hub";
 #endif
+}
+
+std::string resolve_hf_cache_dir() {
+    // Follow the HuggingFace spec for cache directory resolution:
+    // 1. HF_HUB_CACHE — direct path to the hub cache
+    // 2. HF_HOME — base HF directory; cache is at $HF_HOME/hub
+    // 3. Platform-specific default (~/.cache/huggingface/hub)
+    std::string hf_hub_cache = get_environment_variable_utf8("HF_HUB_CACHE");
+    if (!hf_hub_cache.empty()) {
+        return hf_hub_cache;
+    }
+    std::string hf_home = get_environment_variable_utf8("HF_HOME");
+    if (!hf_home.empty()) {
+#ifdef _WIN32
+        return hf_home + "\\hub";
+#else
+        return hf_home + "/hub";
+#endif
+    }
+    return default_hf_cache_dir();
+}
+
+std::string get_hf_cache_dir() {
+    if (!g_models_dir.empty() && g_models_dir != "auto") {
+        fs::path p = path_from_utf8(g_models_dir);
+        if (p.is_relative()) {
+            p = path_from_utf8(get_executable_dir()) / p;
+        }
+        return path_to_utf8(p);
+    }
+    return resolve_hf_cache_dir();
 }
 
 std::string get_runtime_dir() {
@@ -405,7 +405,8 @@ std::string get_runtime_dir() {
 std::string get_downloaded_bin_dir() {
     // Use cache directory on all platforms for consistent multi-user support
     // This is important for All Users installs on Windows where Program Files is read-only
-    std::string bin_dir = get_cache_dir() + "/bin";
+    // Use fs::path to ensure native path separators (avoids cmd.exe issues on Windows)
+    std::string bin_dir = (fs::path(get_cache_dir()) / "bin").make_preferred().string();
 
     // Ensure directory exists
     fs::path bin_path = path_from_utf8(bin_dir);
@@ -417,8 +418,6 @@ std::string get_downloaded_bin_dir() {
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
-    FILE* pipe;
-
     std::string flm_exe = flm_path.empty() ? find_flm_executable() : flm_path;
     if (flm_exe.empty()) {
         error_message = "FLM executable not found";
@@ -430,27 +429,23 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message) {
     }
 
     std::string command = "\"" + flm_exe + "\" validate --json";
+    std::string output;
+    int exit_code;
 #ifdef _WIN32
-    pipe = _popen(command.c_str(), "r");
+    exit_code = ProcessManager::run_command(command, output);
 #else
-    pipe = popen(command.c_str(), "r");
-#endif
-
+    FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) {
         error_message = "Failed to execute " + flm_exe;
         return false;
     }
 
     char buffer[1024];
-    std::string output;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
 
-#ifdef _WIN32
-    int exit_code = _pclose(pipe);
-#else
-    int exit_code = pclose(pipe);
+    exit_code = pclose(pipe);
     if (exit_code != -1) {
         exit_code = WEXITSTATUS(exit_code);
     }

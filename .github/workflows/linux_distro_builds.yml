@@ -34,10 +34,13 @@ jobs:
           - distro: Fedora
             image: fedora:latest
             python: python3
+          - distro: openSUSE
+            image: opensuse/tumbleweed:latest
+            python: python3
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -64,33 +67,33 @@ jobs:
         run: |
           set -e
 
-          echo "Building lemonade-router and lemonade-server on ${{ matrix.distro }}..."
+          echo "Building lemond and lemonade on ${{ matrix.distro }}..."
 
           # Build
           echo "Building binaries..."
           cmake --build --preset default
 
           # Verify binaries exist
-          if [ ! -f "build/lemonade-router" ]; then
-              echo "ERROR: lemonade-router not found!"
+          if [ ! -f "build/lemond" ]; then
+              echo "ERROR: lemond not found!"
               echo "Build directory contents:"
               ls -lh build/
               exit 1
           fi
 
-          if [ ! -f "build/lemonade-server" ]; then
-              echo "ERROR: lemonade-server not found!"
+          if [ ! -f "build/lemonade" ]; then
+              echo "ERROR: lemonade not found!"
               echo "Build directory contents:"
               ls -lh build/
               exit 1
           fi
 
           echo "Binaries found successfully"
-          ls -lh build/lemonade-router build/lemonade-server
+          ls -lh build/lemond build/lemonade
 
           echo "Verifying binary executability..."
-          ./build/lemonade-router --version
-          ./build/lemonade-server --version
+          ./build/lemond --version
+          ./build/lemonade --version
 
           echo "${{ matrix.distro }} build successful!"
 
@@ -99,12 +102,12 @@ jobs:
           echo "Checking library dependencies..."
           cd build
 
-          echo "=== lemonade-router dependencies ==="
-          ldd lemonade-router
+          echo "=== lemond dependencies ==="
+          ldd lemond
 
           echo ""
-          echo "=== lemonade-server dependencies ==="
-          ldd lemonade-server
+          echo "=== lemonade dependencies ==="
+          ldd lemonade
 
           echo ""
           echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
@@ -125,6 +128,25 @@ jobs:
 
           echo "Python environment setup complete!"
 
+      - name: Start server
+        env:
+          LEMONADE_CI_MODE: "True"
+        run: |
+          echo "Starting lemond in background..."
+          ./build/lemond --port 13305 > /tmp/lemonade-server.log 2>&1 &
+
+          echo "Waiting for server to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "Server is running and healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: Server did not start"
+          cat /tmp/lemonade-server.log 2>/dev/null || true
+          exit 1
+
       - name: Run CLI tests
         env:
           LEMONADE_CI_MODE: "True"
@@ -133,7 +155,7 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade"
 
           echo "Running CLI tests..."
           python test/server_cli.py --server-binary "$SERVER_BINARY"
@@ -148,9 +170,15 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade-server"
+          SERVER_BINARY="$(pwd)/build/lemonade"
 
           echo "Running endpoint tests..."
           python test/server_endpoints.py --server-binary "$SERVER_BINARY"
 
           echo "Endpoint tests PASSED!"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-distro-${{ matrix.distro }}

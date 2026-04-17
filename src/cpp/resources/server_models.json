@@ -658,6 +658,56 @@
         ],
         "size": 3.61
     },
+    "Gemma-4-26B-A4B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+	        "hot",
+            "tool-calling",
+            "vision",
+            "llamacpp"
+        ],
+        "size": 16.9
+    },
+    "Gemma-4-31B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-31B-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+	        "hot",
+            "tool-calling",
+	        "vision",
+            "llamacpp"
+        ],
+        "size": 18.3
+    },
+    "Gemma-4-E4B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "vision",
+            "llamacpp"
+        ],
+        "size": 5.0
+    },
+    "Gemma-4-E2B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_M",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "vision",
+            "llamacpp"
+        ],
+        "size": 3.1
+    },
     "Phi-4-mini-instruct-GGUF": {
         "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -850,6 +900,18 @@
             "tool-calling"
         ],
         "size": 16.7
+    },
+    "Qwen3.6-35B-A3B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 22.4
     },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
@@ -1191,7 +1253,8 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 16.0,
         "image_defaults": {
@@ -1210,7 +1273,8 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 18.0,
         "image_defaults": {
@@ -1218,6 +1282,54 @@
             "cfg_scale": 1,
             "width": 1024,
             "height": 1024
+        }
+    },
+    "Qwen-Image-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/Qwen-Image-GGUF:qwen-image-Q4_K_M.gguf",
+            "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+            "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 10.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 2.5,
+            "width": 512,
+            "height": 512,
+            "sampling_method": "euler",
+            "flow_shift": 3.0
+        },
+        "recipe_options": {
+            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
+        }
+    },
+    "Qwen-Image-2512-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/Qwen-Image-2512-GGUF:qwen-image-2512-Q5_0.gguf",
+            "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+            "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 12.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 2.5,
+            "width": 512,
+            "height": 512,
+            "sampling_method": "euler",
+            "flow_shift": 3.0
+        },
+        "recipe_options": {
+            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
     "Z-Image-Turbo": {
@@ -1281,5 +1393,25 @@
             "speech"
         ],
         "size": 0.34
+    },
+    "RealESRGAN-x4plus": {
+        "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "esrgan",
+            "image"
+        ],
+        "size": 0.064
+    },
+    "RealESRGAN-x4plus-anime": {
+        "checkpoint": "amd/realesrgan-x4plus-anime-6b:RealESRGAN_x4plus_anime_6B.pth",
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "esrgan",
+            "image"
+        ],
+        "size": 0.017
     }
 }

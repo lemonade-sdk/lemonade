@@ -259,14 +259,14 @@ class FlmStatusTests(unittest.TestCase):
         cls.server_version = get_server_version(cls.server_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
-        # Derive lemonade-router path from the server binary
+        # Derive lemond path from the server binary
         server_dir = os.path.dirname(cls.server_binary)
         if IS_WINDOWS:
-            cls.router_binary = os.path.join(server_dir, "lemonade-router.exe")
+            cls.router_binary = os.path.join(server_dir, "lemond.exe")
         else:
-            cls.router_binary = os.path.join(server_dir, "lemonade-router")
+            cls.router_binary = os.path.join(server_dir, "lemond")
         if not os.path.exists(cls.router_binary):
-            cls.router_binary = shutil.which("lemonade-router") or cls.router_binary
+            cls.router_binary = shutil.which("lemond") or cls.router_binary
         print(f"[SETUP] Using router binary: {cls.router_binary}")
 
         # Read required FLM version from backend_versions.json
@@ -296,7 +296,7 @@ class FlmStatusTests(unittest.TestCase):
     def _server(self, hardware, flm_dir=None):
         """Start router directly with mock hardware + optional PATH-based FLM mocking.
 
-        Starts lemonade-router directly (not via lemonade-server serve) to avoid
+        Starts lemond directly (not via lemonade-server serve) to avoid
         the fork/exec indirection that can leave orphaned router processes between
         test methods. With ~20 test methods each starting a fresh server, the
         lemonade-server serve approach (fork + execv) risks the previous test's
@@ -329,8 +329,12 @@ class FlmStatusTests(unittest.TestCase):
                 json.dump(cache_data, f, indent=2)
 
             env = os.environ.copy()
-            env["LEMONADE_CACHE_DIR"] = temp_cache_dir
             env.pop("LEMONADE_CI_MODE", None)
+
+            # Write config.json with debug log level to the temp dir
+            config_file = os.path.join(temp_cache_dir, "config.json")
+            with open(config_file, "w") as cf:
+                json.dump({"log_level": "debug"}, cf)
 
             if flm_dir is not None:
                 if flm_dir == "":
@@ -345,10 +349,9 @@ class FlmStatusTests(unittest.TestCase):
 
             cmd = [
                 self.router_binary,
+                temp_cache_dir,
                 "--port",
                 str(PORT),
-                "--log-level",
-                "debug",
             ]
             # Use a new process group so we can kill the entire group on cleanup
             kwargs = {}
@@ -669,6 +672,34 @@ class FlmStatusTests(unittest.TestCase):
                     "action", body, f"Expected action URL in response: {body}"
                 )
                 print(f"  [OK] update_required (old ver) install: action URL returned")
+
+    # ------------------------------------------------------------------ #
+    #  Scenario 3b: newer version installed (>= required) — should be OK
+    # ------------------------------------------------------------------ #
+
+    @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "mock FLM requires PATH manipulation (Linux only)")
+    def test_newer_version_system_info(self):
+        """NPU present, FLM version newer than required -> state=installed (not update_required)."""
+        # Compute a version one patch level higher than the required version
+        base = REQUIRED_FLM_VERSION.lstrip("v")
+        parts = base.split(".")
+        parts[-1] = str(int(parts[-1]) + 1)
+        newer_version = ".".join(parts)
+
+        with self._mock_flm(version=newer_version, validate_ready=True) as mock_dir:
+            with self._server(NPU_HARDWARE, flm_dir=mock_dir):
+                data = self._get_system_info()
+                npu = self._get_flm_npu(data)
+
+                self.assertEqual(
+                    npu["state"],
+                    "installed",
+                    f"Newer FLM version should be accepted as installed: {npu}",
+                )
+                print(
+                    f"  [OK] newer version system-info: state={npu['state']} (installed, not update_required)"
+                )
 
     # ------------------------------------------------------------------ #
     #  Scenario 4: update_required (unknown version — FLM too old for --json)
