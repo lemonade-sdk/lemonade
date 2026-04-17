@@ -132,6 +132,12 @@ public:
     virtual json completion(const json& request) override = 0;
     virtual json responses(const json& request) = 0;
 
+    // Anthropic Messages API passthrough (available to all wrapped backends).
+    virtual json anthropic_messages(const json& request);
+    virtual void anthropic_messages_stream(const std::string& request_body,
+                                           httplib::DataSink& sink);
+    virtual json anthropic_count_tokens(const json& request);
+
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
     virtual void forward_streaming_request(const std::string& endpoint,

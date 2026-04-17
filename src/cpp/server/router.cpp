@@ -660,25 +660,13 @@ json Router::responses(const json& request) {
 
 json Router::anthropic_messages(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
-        if (!anthropic_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Anthropic messages", device_type_to_string(server->get_device_type()))
-            );
-        }
-        return anthropic_server->anthropic_messages(request);
+        return server->anthropic_messages(request);
     });
 }
 
 json Router::anthropic_count_tokens(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
-        if (!anthropic_server) {
-            return ErrorResponse::from_exception(
-                UnsupportedOperationException("Anthropic token counting", device_type_to_string(server->get_device_type()))
-            );
-        }
-        return anthropic_server->anthropic_count_tokens(request);
+        return server->anthropic_count_tokens(request);
     });
 }
 
@@ -787,17 +775,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
 
 void Router::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
-        if (!anthropic_server) {
-            const std::string payload =
-                "event: error\n"
-                "data: {\"type\":\"error\",\"error\":{\"type\":\"unsupported_operation\","
-                "\"message\":\"Anthropic messages is not supported on this backend\"}}\n\n";
-            sink.write(payload.c_str(), payload.size());
-            sink.done();
-            return;
-        }
-        anthropic_server->anthropic_messages_stream(request_body, sink);
+        server->anthropic_messages_stream(request_body, sink);
     });
 }
 

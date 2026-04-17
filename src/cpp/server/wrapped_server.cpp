@@ -109,9 +109,44 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     }
 }
 
+json WrappedServer::anthropic_messages(const json& request) {
+    const auto raw = forward_request_raw("/v1/messages", request);
+    if (raw.status_code == 200) {
+        return json::parse(raw.body);
+    }
+
+    return {
+        {"_lemonade_raw_backend", {
+            {"status_code", raw.status_code},
+            {"content_type", raw.content_type},
+            {"body", raw.body}
+        }}
+    };
+}
+
+void WrappedServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
+    // Anthropic SSE events should pass through untouched.
+    forward_streaming_request("/v1/messages", request_body, sink, false);
+}
+
+json WrappedServer::anthropic_count_tokens(const json& request) {
+    const auto raw = forward_request_raw("/v1/messages/count_tokens", request);
+    if (raw.status_code == 200) {
+        return json::parse(raw.body);
+    }
+
+    return {
+        {"_lemonade_raw_backend", {
+            {"status_code", raw.status_code},
+            {"content_type", raw.content_type},
+            {"body", raw.body}
+        }}
+    };
+}
+
 WrappedServer::RawBackendResponse WrappedServer::forward_request_raw(const std::string& endpoint,
-                                                                     const json& request,
-                                                                     long timeout_seconds) {
+                                                                      const json& request,
+                                                                      long timeout_seconds) {
     RawBackendResponse raw;
 
     if (!is_process_running()) {
