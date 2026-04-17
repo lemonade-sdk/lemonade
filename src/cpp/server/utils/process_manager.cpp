@@ -259,9 +259,30 @@ ProcessHandle ProcessManager::start_process(
     HANDLE stdout_write = nullptr;
     HANDLE stderr_read = nullptr;
     HANDLE stderr_write = nullptr;
+    HANDLE nul_input = nullptr;
+
+    bool use_filtered_output = (inherit_output && filter_health_logs);
+
+    if (inherit_output && !filter_health_logs) {
+        const HANDLE std_in = GetStdHandle(STD_INPUT_HANDLE);
+        const HANDLE std_out = GetStdHandle(STD_OUTPUT_HANDLE);
+        const HANDLE std_err = GetStdHandle(STD_ERROR_HANDLE);
+
+        const bool invalid_stdio =
+            (std_in == nullptr || std_in == INVALID_HANDLE_VALUE) ||
+            (std_out == nullptr || std_out == INVALID_HANDLE_VALUE) ||
+            (std_err == nullptr || std_err == INVALID_HANDLE_VALUE);
+
+        if (invalid_stdio) {
+            use_filtered_output = true;
+            LOG(WARNING, "ProcessManager")
+                << "Parent std handles are unavailable; enabling filtered output capture"
+                << std::endl;
+        }
+    }
 
     // If inherit_output is true, either use pipes with filtering or direct inheritance
-    if (inherit_output && filter_health_logs) {
+    if (inherit_output && use_filtered_output) {
         // Create pipes for stdout and stderr to filter output
         SECURITY_ATTRIBUTES sa;
         sa.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -283,6 +304,15 @@ ProcessHandle ProcessManager::start_process(
 
         si.dwFlags = STARTF_USESTDHANDLES;
         si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        if (si.hStdInput == nullptr || si.hStdInput == INVALID_HANDLE_VALUE) {
+            nul_input = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (nul_input != INVALID_HANDLE_VALUE) {
+                SetHandleInformation(nul_input, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+                si.hStdInput = nul_input;
+            } else {
+                si.hStdInput = nullptr;
+            }
+        }
         si.hStdOutput = stdout_write;
         si.hStdError = stderr_write;
 
@@ -319,7 +349,7 @@ ProcessHandle ProcessManager::start_process(
         nullptr,
         nullptr,
         TRUE,  // Inherit handles
-        (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
+        (inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW,
         environment_block.empty() ? nullptr : environment_block.data(),
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
@@ -352,7 +382,12 @@ ProcessHandle ProcessManager::start_process(
         std::string full_error = "Failed to start process '" + executable +
                                 "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
         LOG(ERROR, "ProcessManager") << full_error << std::endl;
+        if (nul_input && nul_input != INVALID_HANDLE_VALUE) CloseHandle(nul_input);
         throw std::runtime_error(full_error);
+    }
+
+    if (nul_input && nul_input != INVALID_HANDLE_VALUE) {
+        CloseHandle(nul_input);
     }
 
     // Close write ends of pipes in parent process
@@ -360,7 +395,7 @@ ProcessHandle ProcessManager::start_process(
     if (stderr_write) CloseHandle(stderr_write);
 
     // Start filter threads if needed
-    if (inherit_output && filter_health_logs) {
+    if (inherit_output && use_filtered_output) {
         CreateThread(nullptr, 0, output_filter_thread, stdout_read, 0, nullptr);
         CreateThread(nullptr, 0, output_filter_thread, stderr_read, 0, nullptr);
     }

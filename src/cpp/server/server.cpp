@@ -2689,12 +2689,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
 
-        if (router_->is_model_loaded(model_name)) {
-            router_->unload_model(model_name);
-            LOG(INFO, "Server") << "Reloading model: " << model_name;
-        } else {
-            LOG(INFO, "Server") << "Loading model: " << model_name;
-        }
+        LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
@@ -2731,7 +2726,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                 }
                 LOG(INFO, "Server") << "Loading component: " << component << std::endl;
                 RecipeOptions comp_options = RecipeOptions(comp_info.recipe, request_json);
-                router_->load_model(component, comp_info, comp_options, true);
+                router_->load_model(component, comp_info, comp_options, true,
+                                    /*allow_reload_on_option_change=*/true);
             }
 
             nlohmann::json response = {
@@ -2741,8 +2737,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             };
             res.set_content(response.dump(), "application/json");
         } else {
-            // Load model with optional per-model settings
-            router_->load_model(model_name, info, options, true);
+            // Load model with optional per-model settings (declarative: no-op
+            // if already loaded with matching options, reload only if options
+            // differ)
+            router_->load_model(model_name, info, options, true,
+                                /*allow_reload_on_option_change=*/true);
 
             // Return success response
             nlohmann::json response = {
