@@ -120,14 +120,15 @@ NPU_HARDWARE = {
             "available": True,
             "family": "x86_64",
         },
-        "amd_igpu": {
-            "name": "AMD Radeon 890M",
-            "vram_gb": 8.0,
-            "available": True,
-            "family": "gfx1150",
-        },
-        "amd_dgpu": [],
-        "nvidia_dgpu": [],
+        "amd_gpu": [
+            {
+                "name": "AMD Radeon 890M",
+                "vram_gb": 8.0,
+                "available": True,
+                "family": "gfx1150",
+            }
+        ],
+        "nvidia_gpu": [],
         "amd_npu": {
             "name": "AMD Ryzen AI 9 HX 370",
             "available": True,
@@ -154,9 +155,8 @@ NO_NPU_HARDWARE = {
             "available": True,
             "family": "x86_64",
         },
-        "amd_igpu": {"name": "None", "available": False, "family": ""},
-        "amd_dgpu": [],
-        "nvidia_dgpu": [],
+        "amd_gpu": [],
+        "nvidia_gpu": [],
         "amd_npu": {"name": "None", "available": False, "family": ""},
     },
 }
