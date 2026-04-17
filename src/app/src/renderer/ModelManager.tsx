@@ -533,9 +533,27 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   };
 
-  const loadedModelEntries = Array.from(loadedModels)
-    .map(modelName => ({ modelName }))
-    .sort((a, b) => a.modelName.localeCompare(b.modelName));
+  // Merge loaded and loading models so the list shows components as they
+  // start loading, not just after /health confirms them. Loading entries
+  // get an `isLoading` flag so the UI can render a pending indicator.
+  // Skip experience bundle entries themselves — only show component models.
+  const loadedModelEntries = (() => {
+    const entries: Array<{ modelName: string; isLoading: boolean }> = [];
+    const seen = new Set<string>();
+    for (const modelName of loadedModels) {
+      if (isExperienceModel(modelsData[modelName])) continue;
+      if (seen.has(modelName)) continue;
+      seen.add(modelName);
+      entries.push({ modelName, isLoading: false });
+    }
+    for (const modelName of loadingModels) {
+      if (isExperienceModel(modelsData[modelName])) continue;
+      if (seen.has(modelName)) continue;
+      seen.add(modelName);
+      entries.push({ modelName, isLoading: true });
+    }
+    return entries.sort((a, b) => a.modelName.localeCompare(b.modelName));
+  })();
 
 
 
@@ -719,6 +737,13 @@ const [searchQuery, setSearchQuery] = useState('');
       // For registered models, verify metadata exists; for new models, we're registering now
       if (!registrationData && !modelsData[modelName]) {
         showError('Model metadata is unavailable. Please refresh and try again.');
+        return;
+      }
+
+      // Skip the download flow entirely if an experience bundle is already complete
+      const info = modelsData[modelName];
+      if (isExperienceModel(info) && isExperienceFullyDownloaded(modelName, modelsData)) {
+        showSuccess(`"${modelName}" is already downloaded.`);
         return;
       }
 
@@ -1459,19 +1484,31 @@ const [searchQuery, setSearchQuery] = useState('');
             <div className="loaded-model-section widget">
               <div className="loaded-model-header">
                 <div className="loaded-model-label">ACTIVE MODELS</div>
-                <div className="loaded-model-count-pill">{loadedModelEntries.length} loaded</div>
+                <div className="loaded-model-count-pill">
+                  {loadedModelEntries.filter(e => !e.isLoading).length} loaded
+                </div>
               </div>
               {loadedModelEntries.length === 0 && <div className="loaded-model-empty">No models loaded</div>}
               <div className="loaded-model-list">
-                {loadedModelEntries.map(({ modelName }) => (
+                {loadedModelEntries.map(({ modelName, isLoading }) => (
                   <div key={modelName} className="loaded-model-info">
                     <div className="loaded-model-details">
-                      <span className="loaded-model-indicator">●</span>
-                      <span className="loaded-model-name">{modelName}</span>
+                      <span
+                        className="loaded-model-indicator"
+                        style={isLoading ? { opacity: 0.5 } : undefined}
+                        title={isLoading ? 'Loading' : 'Loaded'}
+                      >
+                        {isLoading ? '○' : '●'}
+                      </span>
+                      <span className="loaded-model-name">
+                        {modelName}{isLoading ? ' (loading…)' : ''}
+                      </span>
                     </div>
-                    <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                      <EjectIcon />
-                    </button>
+                    {!isLoading && (
+                      <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
+                        <EjectIcon />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

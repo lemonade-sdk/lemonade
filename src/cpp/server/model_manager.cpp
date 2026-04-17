@@ -1322,6 +1322,23 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
+
+        // Recompute downloaded status for any experience bundles that
+        // depend on this model, so the bundle reflects component changes
+        // without requiring a full cache rebuild.
+        for (auto& [name, entry] : models_cache_) {
+            if (entry.recipe != "experience") continue;
+            if (std::find(entry.composite_models.begin(), entry.composite_models.end(),
+                          model_name) == entry.composite_models.end()) {
+                continue;
+            }
+            bool new_state = check_composite_downloaded(entry, models_cache_);
+            if (entry.downloaded != new_state) {
+                entry.downloaded = new_state;
+                LOG(INFO, "ModelManager") << "Experience '" << name
+                          << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
+            }
+        }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
     }
@@ -1976,6 +1993,18 @@ void ModelManager::download_model(const std::string& model_name,
         }
         LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
                                   << " component(s) for experience: " << model_name << std::endl;
+
+        // Wrap the callback so recursive per-component downloads don't each
+        // emit a "complete" event — the SSE stream should only see one final
+        // completion after every component finishes.
+        DownloadProgressCallback forward = nullptr;
+        if (progress_callback) {
+            forward = [&progress_callback](const DownloadProgress& p) -> bool {
+                if (p.complete) return true;
+                return progress_callback(p);
+            };
+        }
+
         for (const auto& component : info.composite_models) {
             if (!model_exists(component)) {
                 LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
@@ -1988,7 +2017,15 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
-            download_model(component, comp_data, do_not_upgrade, progress_callback);
+            download_model(component, comp_data, do_not_upgrade, forward);
+        }
+
+        // Emit a single completion event for the whole bundle
+        if (progress_callback) {
+            DownloadProgress progress;
+            progress.complete = true;
+            progress.percent = 100;
+            (void)progress_callback(progress);
         }
         return;
     }
