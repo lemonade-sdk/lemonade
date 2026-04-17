@@ -674,6 +674,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `ctx_size` | int (positive) |
 | `llamacpp_backend` | string |
 | `llamacpp_args` | string |
+| `llamacpp_device` | string |
 | `sdcpp_backend` | string |
 | `whispercpp_backend` | string |
 | `whispercpp_args` | string |
