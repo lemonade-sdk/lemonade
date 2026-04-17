@@ -78,7 +78,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         considerAmdGpu(info.devices?.amd_igpu);
         info.devices?.amd_dgpu?.forEach(considerAmdGpu);
 
-        info.devices?.nvidia_dgpu?.forEach((gpu) => {
+        info.devices?.nvidia_gpu?.forEach((gpu) => {
           if (gpu?.name) gpus.push(gpu.name);
         });
 

@@ -1866,13 +1866,14 @@ curl "http://localhost:13305/api/v1/system-info"
       "available": true,
       "family": "x86_64"
     },
-    "amd_igpu": {
-      "name": "AMD Radeon(TM) 890M Graphics",
-      "vram_gb": 0.5,
-      "available": true,
-      "family": "gfx1150"
-    },
-    "amd_dgpu": [],
+    "amd_gpu": [
+      {
+        "name": "AMD Radeon(TM) 890M Graphics",
+        "vram_gb": 0.5,
+        "available": true,
+        "family": "gfx1150"
+      }
+    ],
     "amd_npu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
       "power_mode": "Default",
@@ -1885,14 +1886,14 @@ curl "http://localhost:13305/api/v1/system-info"
       "default_backend": "vulkan",
       "backends": {
         "vulkan": {
-          "devices": ["cpu", "amd_igpu"],
+          "devices": ["cpu", "amd_gpu"],
           "state": "installed",
           "message": "",
           "action": "",
           "version": "b7869"
         },
         "rocm": {
-          "devices": ["amd_igpu"],
+          "devices": ["amd_gpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
           "action": "lemonade backends install llamacpp:rocm"
@@ -1973,9 +1974,8 @@ curl "http://localhost:13305/api/v1/system-info"
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
-  - `amd_igpu` - AMD integrated GPU (if present)
-  - `amd_dgpu` - Array of AMD discrete GPUs (if present)
-  - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
+  - `amd_gpu` - Array of AMD GPUs, both integrated and discrete (if present)
+  - `nvidia_gpu` - Array of NVIDIA GPUs (if present)
   - `amd_npu` - AMD NPU device (if present)
 
 - `recipes` - Software recipes and their backend support status
