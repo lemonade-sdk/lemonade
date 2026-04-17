@@ -2023,6 +2023,10 @@ footer {
     min-height: 24px;
 }
 
+.model-catalog-item {
+    container-type: inline-size;
+}
+
 .model-item:hover {
     background: rgba(255, 255, 255, 0.04);
     border-left-color: #666;
@@ -2137,7 +2141,9 @@ footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     width: 100%;
+    min-width: 0;
 }
 
 .model-info-row-secondary {
@@ -2147,9 +2153,29 @@ footer {
 .model-actions {
     display: inline-flex;
     gap: 2px;
-    margin-left: 4px;
     align-items: center;
+    justify-content: flex-end;
+    width: 64px;
     flex-shrink: 0;
+    padding: 1px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.025);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+}
+
+.model-actions.action-count-0,
+.model-actions.action-count-1 {
+    width: 22px;
+}
+
+.model-actions.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .model-action-btn {
@@ -2208,7 +2234,7 @@ footer {
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
-    flex-shrink: 1;
+    flex: 1 1 auto;
     display: block;
     cursor: default;
     min-width: 0;
@@ -2289,7 +2315,10 @@ footer {
 .model-size {
     font-size: 0.6rem;
     color: #565656;
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -2310,21 +2339,26 @@ footer {
     gap: 4px;
     flex-shrink: 0;
     align-items: center;
-    margin-left: 2px;
+    margin-left: 6px;
 }
 
 .model-label-icon-wrapper {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.55;
-    transition: all 0.2s ease;
+    width: 18px;
+    height: 16px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    opacity: 0.86;
+    cursor: default;
+    user-select: none;
     color: var(--text-secondary);
 }
 
 .model-label-icon-wrapper:hover {
-    opacity: 1;
-    transform: translateY(-1px);
+    opacity: 0.86;
 }
 
 .model-modality-tooltip {
@@ -2341,16 +2375,16 @@ footer {
     font-weight: 500;
 }
 
-/* Modality-specific colors for icons */
-.model-label-icon-wrapper[title*="Reasoning"] { color: #6495ED; }
-.model-label-icon-wrapper[title*="Coding"] { color: #48BB78; }
-.model-label-icon-wrapper[title*="Vision"] { color: #9F7AEA; }
-.model-label-icon-wrapper[title*="Hot"] { color: #F56565; }
-.model-label-icon-wrapper[title*="Embeddings"] { color: #ED8936; }
-.model-label-icon-wrapper[title*="Reranking"] { color: #D69E2E; }
-.model-label-icon-wrapper[title*="Tool Calling"] { color: #38B2AC; }
-.model-label-icon-wrapper[title*="Custom"] { color: #FAD02C; }
-.model-label-icon-wrapper[title*="Experience"] { color: #e2b757; }
+/* Modality-specific colors for icons. Mirrors the old model label dot palette. */
+.model-label-icon-wrapper.label-reasoning { color: #6495ED; }
+.model-label-icon-wrapper.label-coding { color: #48BB78; }
+.model-label-icon-wrapper.label-vision { color: #9F7AEA; }
+.model-label-icon-wrapper.label-hot { color: #F56565; }
+.model-label-icon-wrapper.label-embeddings { color: #ED8936; }
+.model-label-icon-wrapper.label-reranking { color: #D69E2E; }
+.model-label-icon-wrapper.label-tool-calling { color: #38B2AC; }
+.model-label-icon-wrapper.label-custom { color: #FAD02C; }
+.model-label-icon-wrapper.label-experience { color: #e2b757; }
 
 .model-label {
     width: 6px;
@@ -2358,6 +2392,32 @@ footer {
     border-radius: 50%;
     display: inline-block;
     background: currentColor;
+}
+
+@container (max-width: 260px) {
+    .model-catalog-item .model-labels {
+        display: none;
+    }
+}
+
+@container (max-width: 210px) {
+    .model-catalog-item .model-size {
+        display: none;
+    }
+}
+
+@container (max-width: 170px) {
+    .model-catalog-item .model-info-row-primary {
+        gap: 4px;
+    }
+
+    .model-catalog-item .model-actions {
+        width: 22px;
+        overflow: hidden;
+        padding: 0;
+        border-color: transparent;
+        background: transparent;
+    }
 }
 
 .model-manager-footer {

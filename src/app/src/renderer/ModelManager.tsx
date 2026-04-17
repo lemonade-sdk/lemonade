@@ -80,7 +80,7 @@ const ModalityIcon = ({ label, getCategoryLabel, onHover }: {
 
   return (
     <span
-      className="model-label-icon-wrapper"
+      className={`model-label-icon-wrapper label-${label}`}
       onMouseEnter={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         onHover(getCategoryLabel(label), rect.left + rect.width / 2, rect.top);
@@ -1101,10 +1101,21 @@ const [searchQuery, setSearchQuery] = useState('');
     );
   };
 
+  const getActionButtonCount = (modelName: string) => {
+    const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
+    const isEsrgan = modelsData[modelName]?.labels?.includes('esrgan');
+
+    if (!isDownloaded) return 1;
+    if (isDownloaded && !isLoaded && !isLoading && isEsrgan) return 1;
+    if (isDownloaded && !isLoaded && !isLoading && !isEsrgan) return 3;
+    if (isLoaded) return 3;
+    return 0;
+  };
+
   const renderActionButtons = (modelName: string, isHovered: boolean) => {
-    if (!isHovered) return null;
+    const buttonCount = getActionButtonCount(modelName);
     return (
-      <span className="model-actions">
+      <span className={`model-actions action-count-${buttonCount} ${isHovered ? 'visible' : ''}`}>
         {renderActionButtonsContent(modelName)}
       </span>
     );
@@ -1137,8 +1148,8 @@ const [searchQuery, setSearchQuery] = useState('');
                   ))}
                 </span>
               )}
-              {renderActionButtons(modelName, isHovered)}
             </div>
+            {renderActionButtons(modelName, isHovered)}
           </div>
         </div>
       </div>
@@ -1322,7 +1333,7 @@ const [searchQuery, setSearchQuery] = useState('');
                   if (item.type === 'dynamic-group') {
                     return renderDynamicGroupItem(item);
                   }
-                  return renderModelItem(item.name, item.info, item.name);
+                  return renderModelItem(item.name, item.info, item.name, item.displayName);
                 })}
               </div>
             )}

@@ -3,6 +3,7 @@ import { ModelInfo } from './modelData';
 export interface ModelFamily {
   displayName: string;
   regex: RegExp;
+  userRegex?: RegExp;
 }
 
 const SIZE_TOKEN = String.raw`(\d+\.?\d*B(?:-A\d+\.?\d*B)?)`;
@@ -12,8 +13,16 @@ function buildFamilyRegex(prefix: string, suffix = '-GGUF$'): RegExp {
   return new RegExp(`^${prefix}-${SIZE_TOKEN}${suffix}`);
 }
 
+function buildUserFamilyRegex(prefix: string): RegExp {
+  return new RegExp(`^${prefix}-${SIZE_TOKEN}(?:-.+)?$`);
+}
+
 function buildFlmFamilyRegex(prefix: string): RegExp {
   return new RegExp(`^${prefix}-${FLM_SIZE_TOKEN}-FLM$`);
+}
+
+function getGroupingName(modelName: string): string {
+  return modelName.startsWith('user.') ? modelName.slice('user.'.length) : modelName;
 }
 
 export const MODEL_FAMILIES: ModelFamily[] = [
@@ -21,30 +30,37 @@ export const MODEL_FAMILIES: ModelFamily[] = [
   {
     displayName: 'Qwen3',
     regex: buildFamilyRegex('Qwen3'),
+    userRegex: buildUserFamilyRegex('Qwen3'),
   },
   {
     displayName: 'Qwen3-Instruct-2507',
     regex: buildFamilyRegex('Qwen3', '-Instruct-2507-GGUF$'),
+    userRegex: buildUserFamilyRegex('Qwen3'),
   },
   {
     displayName: 'Qwen3.5',
     regex: buildFamilyRegex('Qwen3\\.5'),
+    userRegex: buildUserFamilyRegex('Qwen3\\.5'),
   },
   {
     displayName: 'Qwen3-Embedding',
     regex: buildFamilyRegex('Qwen3-Embedding'),
+    userRegex: buildUserFamilyRegex('Qwen3-Embedding'),
   },
   {
     displayName: 'Qwen2.5-VL-Instruct',
     regex: buildFamilyRegex('Qwen2\\.5-VL', '-Instruct-GGUF$'),
+    userRegex: buildUserFamilyRegex('Qwen2\\.5-VL'),
   },
   {
     displayName: 'Qwen3-VL-Instruct',
     regex: buildFamilyRegex('Qwen3-VL', '-Instruct-GGUF$'),
+    userRegex: buildUserFamilyRegex('Qwen3-VL'),
   },
   {
     displayName: 'Llama-3.2-Instruct',
     regex: buildFamilyRegex('Llama-3\\.2', '-Instruct-GGUF$'),
+    userRegex: buildUserFamilyRegex('Llama-3\\.2'),
   },
   {
     displayName: 'gpt-oss',
@@ -53,6 +69,7 @@ export const MODEL_FAMILIES: ModelFamily[] = [
   {
     displayName: 'LFM2',
     regex: buildFamilyRegex('LFM2'),
+    userRegex: buildUserFamilyRegex('LFM2'),
   },
   // FLM families
   {
@@ -74,7 +91,7 @@ export const MODEL_FAMILIES: ModelFamily[] = [
 ];
 
 export type ModelListItem =
-  | { type: 'model'; name: string; info: ModelInfo }
+  | { type: 'model'; name: string; info: ModelInfo; displayName?: string }
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] }
   | {
       type: 'dynamic-group';
@@ -97,7 +114,9 @@ export function buildModelList(
   for (const family of MODEL_FAMILIES) {
     const members: { label: string; name: string; info: ModelInfo }[] = [];
     for (const m of models) {
-      const match = family.regex.exec(m.name);
+      const groupingName = getGroupingName(m.name);
+      const match = family.regex.exec(groupingName)
+        || (m.name.startsWith('user.') && family.userRegex?.exec(groupingName));
       if (match) {
         members.push({ label: match[1], name: m.name, info: m.info });
         consumed.add(m.name);
@@ -120,53 +139,29 @@ export function buildModelList(
   }
 
   const remainingModels = models.filter(m => !consumed.has(m.name));
-  const dynamicCandidates = new Map<string, { label: string; name: string; info: ModelInfo }[]>();
 
-  for (const model of remainingModels) {
-    const segments = model.name.split('.');
-    if (segments.length < 2) continue;
-
-    // For 3+ segments, group by the first two (e.g., user.provider).
-    // For 2 segments, group by the first segment (e.g., provider).
-    const groupName = segments.length >= 3 ? segments.slice(0, 2).join('.') : segments[0];
-    const label = segments.length >= 3 ? segments.slice(2).join('.') : segments[1];
-
-    if (!dynamicCandidates.has(groupName)) {
-      dynamicCandidates.set(groupName, []);
-    }
-    dynamicCandidates.get(groupName)!.push({ label, name: model.name, info: model.info });
-  }
-
-  const dynamicallyGrouped = new Set<string>();
-  const dynamicGroupItems: ModelListItem[] = [];
-  for (const [groupName, members] of dynamicCandidates) {
-    if (members.length < 2) continue;
-    members.sort((a, b) => a.label.localeCompare(b.label));
-    members.forEach(member => dynamicallyGrouped.add(member.name));
-    dynamicGroupItems.push({
-      type: 'dynamic-group',
-      groupName,
-      defaultExpanded: groupName.startsWith('user.'),
-      members,
-    });
-  }
-
-  // Build individual items for non-consumed and non-dynamically-grouped models
+  // Build individual items for non-consumed models. User-managed models use
+  // their display name without the management prefix, but keep the real name for
+  // load/download/delete operations.
   const individualItems: ModelListItem[] = remainingModels
-    .filter(m => !dynamicallyGrouped.has(m.name))
-    .map(m => ({ type: 'model' as const, name: m.name, info: m.info }));
+    .map(m => ({
+      type: 'model' as const,
+      name: m.name,
+      info: m.info,
+      displayName: getGroupingName(m.name),
+    }));
 
   // Helper for sorting display names
   const getItemName = (item: ModelListItem) => {
     switch (item.type) {
       case 'family': return item.family.displayName;
       case 'dynamic-group': return item.groupName;
-      default: return item.name;
+      default: return item.displayName || item.name;
     }
   };
 
   // Merge and sort alphabetically by display name
-  const allItems = [...familyItems, ...dynamicGroupItems, ...individualItems];
+  const allItems = [...familyItems, ...individualItems];
   allItems.sort((a, b) => getItemName(a).localeCompare(getItemName(b)));
 
   return allItems;
