@@ -19,7 +19,17 @@ import base64
 import sys
 from openai import OpenAI
 
+# Print non-ASCII characters (emoji) without choking on Windows cp1252
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 LEMONADE_URL = "http://localhost:13305/v1"
+
+# Edit these to match models you have installed. Defaults are small so
+# they fit on most hardware.
+LLM_MODEL = "Qwen3-4B-Instruct-2507-GGUF"   # any model with the "tool-calling" label
+IMAGE_MODEL = "SD-Turbo"                    # any model with the "image" label
+TTS_MODEL = "kokoro-v1"                     # any model with the "tts" label
 
 # Tool definitions — same format the app uses (from toolDefinitions.json)
 TOOLS = [
@@ -73,7 +83,7 @@ def execute_tool(client, tool_call):
 
     if name == "generate_image":
         result = client.images.generate(
-            model="SDXL-Turbo",
+            model=IMAGE_MODEL,
             prompt=args["prompt"],
             response_format="b64_json",
             n=1,
@@ -86,7 +96,7 @@ def execute_tool(client, tool_call):
 
     if name == "text_to_speech":
         audio = client.audio.speech.create(
-            model="kokoro-v1",
+            model=TTS_MODEL,
             input=args["input"],
             voice="af_heart",
         )
@@ -111,7 +121,7 @@ def main():
     # Agentic loop (max 3 iterations)
     for i in range(3):
         response = client.chat.completions.create(
-            model="auto",
+            model=LLM_MODEL,
             messages=messages,
             tools=TOOLS,
         )
