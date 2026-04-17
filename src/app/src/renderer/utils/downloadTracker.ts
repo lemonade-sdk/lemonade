@@ -28,7 +28,12 @@ class DownloadTracker {
   /**
    * Start tracking a new download
    */
-  startDownload(modelName: string, abortController: AbortController, downloadType?: 'model' | 'backend'): string {
+  startDownload(
+    modelName: string,
+    abortController: AbortController,
+    downloadType?: 'model' | 'backend',
+    bundleComponents?: string[],
+  ): string {
     // Remove any existing downloads for this model (completed, error, cancelled, or paused)
     // This ensures only one entry per model is shown
     const existingDownloads = Array.from(this.activeDownloads.entries());
@@ -62,6 +67,7 @@ class DownloadTracker {
       bytesResumed: 0,
       abortController,
       downloadType,
+      bundleComponents,
     };
 
     this.activeDownloads.set(downloadId, downloadItem);

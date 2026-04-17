@@ -750,8 +750,12 @@ const [searchQuery, setSearchQuery] = useState('');
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
 
+      const bundleComponents = isExperienceModel(info)
+        ? getExperienceComponents(info)
+        : undefined;
+
       // Use the single consolidated download function
-      await pullModel(modelName, { registrationData: registrationData });
+      await pullModel(modelName, { registrationData, bundleComponents });
 
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" downloaded successfully.`);
@@ -979,9 +983,17 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const handleDeleteModel = async (modelName: string) => {
+    const info = modelsData[modelName];
+    const bundleComponents = isExperienceModel(info) ? getExperienceComponents(info) : [];
+    const isBundle = bundleComponents.length > 0;
+
+    const message = isBundle
+      ? `"${modelName}" is a bundle. Deleting it will remove the following ${bundleComponents.length} models from disk:\n\n${bundleComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
+      : `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`;
+
     const confirmed = await confirm({
-      title: 'Delete Model',
-      message: `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`,
+      title: isBundle ? 'Delete Bundle' : 'Delete Model',
+      message,
       confirmText: 'Delete',
       cancelText: 'Cancel',
       danger: true
@@ -992,10 +1004,20 @@ const [searchQuery, setSearchQuery] = useState('');
     }
 
     try {
-      await deleteModel(modelName);
-      // No manual modelsUpdated dispatch needed — deleteModel() handles it
+      if (isBundle) {
+        for (const component of bundleComponents) {
+          try {
+            await deleteModel(component);
+          } catch (err) {
+            console.error(`Failed to delete component ${component}:`, err);
+          }
+        }
+        showSuccess(`Bundle "${modelName}" deleted (${bundleComponents.length} models removed).`);
+      } else {
+        await deleteModel(modelName);
+        showSuccess(`Model "${modelName}" deleted successfully.`);
+      }
       await fetchCurrentLoadedModel();
-      showSuccess(`Model "${modelName}" deleted successfully.`);
     } catch (error) {
       console.error('Error deleting model:', error);
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1059,8 +1081,14 @@ const [searchQuery, setSearchQuery] = useState('');
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
   const getModelStatus = (modelName: string) => {
-    const isDownloaded = modelsData[modelName]?.downloaded ?? false;
-    const isLoaded = loadedModels.has(modelName);
+    const info = modelsData[modelName];
+    // Experience bundles: downloaded when all components are downloaded,
+    // loaded when all components are loaded. Fall back to naive checks
+    // for regular models.
+    const isDownloaded = isModelEffectivelyDownloaded(modelName, info, modelsData);
+    const isLoaded = isExperienceModel(info)
+      ? isExperienceFullyLoaded(modelName, modelsData, loadedModels)
+      : loadedModels.has(modelName);
     const isLoading = loadingModels.has(modelName);
 
     let statusClass = 'not-downloaded';
@@ -1117,7 +1145,9 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
-    const isEsrgan = modelsData[modelName]?.labels?.includes('esrgan');
+    const info = modelsData[modelName];
+    const isEsrgan = info?.labels?.includes('esrgan');
+    const isBundle = isExperienceModel(info);
     return (
       <>
         {!isDownloaded && (
@@ -1150,7 +1180,7 @@ const [searchQuery, setSearchQuery] = useState('');
               </svg>
             </button>
             {renderDeleteButton(modelName)}
-            {renderLoadOptionsButton(modelName)}
+            {!isBundle && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1167,7 +1197,7 @@ const [searchQuery, setSearchQuery] = useState('');
               </svg>
             </button>
             {renderDeleteButton(modelName)}
-            {renderLoadOptionsButton(modelName)}
+            {!isBundle && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
@@ -1189,6 +1219,19 @@ const [searchQuery, setSearchQuery] = useState('');
   ) => {
     const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
+
+    // For experience bundles, show the component list (with sizes) as a
+    // tooltip so users can see what gets downloaded/loaded.
+    let nameTooltip: string | undefined;
+    if (isExperienceModel(modelInfo)) {
+      const components = getExperienceComponents(modelInfo);
+      const lines = components.map((c) => {
+        const s = modelsData[c]?.size;
+        return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
+      });
+      nameTooltip = `Bundle of ${components.length} models:\n${lines.join('\n')}`;
+    }
+
     return (
       <div
         key={modelName}
@@ -1199,7 +1242,7 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name">{displayName ?? modelName}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? modelName}</span>
             <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>

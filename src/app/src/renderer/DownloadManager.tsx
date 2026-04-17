@@ -16,6 +16,9 @@ export interface DownloadItem {
   bytesResumed: number;  // Bytes already on disk at session start (for accurate speed)
   abortController?: AbortController;
   downloadType?: 'model' | 'backend';
+  // Component model names when this download is an experience bundle.
+  // UI uses this to explain the bundle is made up of separate models.
+  bundleComponents?: string[];
 }
 
 interface DownloadManagerProps {
@@ -379,7 +382,20 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                           </svg>
                         </button>
                         <div className="download-item-text">
-                          <span className="download-model-name">{download.modelName}</span>
+                          <span className="download-model-name">
+                            {download.bundleComponents && download.bundleComponents.length > 0
+                              ? `Setting up ${download.modelName}`
+                              : download.modelName}
+                          </span>
+                          {download.bundleComponents && download.bundleComponents.length > 0 && (
+                            <span
+                              className="download-file-info"
+                              style={{ fontStyle: 'italic', opacity: 0.8 }}
+                              title={download.bundleComponents.join('\n')}
+                            >
+                              {download.bundleComponents.length} models: {download.bundleComponents.join(', ')}
+                            </span>
+                          )}
                           <span className="download-file-info">
                             {download.status === 'downloading' && (
                               <>

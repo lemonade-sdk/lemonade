@@ -315,6 +315,7 @@ export async function pullModel(
   options?: {
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
+    bundleComponents?: string[];
   }
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;
@@ -322,7 +323,9 @@ export async function pullModel(
 
   let downloadId: string | undefined;
   if (showInDownloadManager) {
-    downloadId = downloadTracker.startDownload(modelName, abortController, 'model');
+    downloadId = downloadTracker.startDownload(
+      modelName, abortController, 'model', options?.bundleComponents,
+    );
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
   }
 
