@@ -211,7 +211,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"cpu", "CPU"},
     {"amd_gpu", "AMD GPU"},
     {"amd_npu", "AMD NPU"},
-    {"nvidia_dgpu", "NVIDIA GPU"},
+    {"nvidia_gpu", "NVIDIA GPU"},
     {"metal", "MacOS Metal GPU"}
 };
 
@@ -499,9 +499,9 @@ json SystemInfo::get_device_dict() {
 
     // Get NVIDIA dGPU info - with fault tolerance
     try {
-        auto nvidia_dgpus = get_nvidia_dgpu_devices();
-        devices["nvidia_dgpu"] = json::array();
-        for (const auto& gpu : nvidia_dgpus) {
+        auto nvidia_gpus = get_nvidia_gpu_devices();
+        devices["nvidia_gpu"] = json::array();
+        for (const auto& gpu : nvidia_gpus) {
             json gpu_json = {
                 {"name", gpu.name},
                 {"available", gpu.available}
@@ -515,11 +515,11 @@ json SystemInfo::get_device_dict() {
             if (!gpu.error.empty()) {
                 gpu_json["error"] = gpu.error;
             }
-            devices["nvidia_dgpu"].push_back(gpu_json);
+            devices["nvidia_gpu"].push_back(gpu_json);
         }
     } catch (const std::exception& e) {
-        devices["nvidia_dgpu"] = json::array();
-        devices["nvidia_dgpu_error"] = std::string("Detection exception: ") + e.what();
+        devices["nvidia_gpu"] = json::array();
+        devices["nvidia_gpu_error"] = std::string("Detection exception: ") + e.what();
     }
 
     // Get NPU info - with fault tolerance
@@ -1584,7 +1584,7 @@ std::vector<GPUInfo> WindowsSystemInfo::get_amd_dgpu_devices() {
     return detect_amd_gpus("discrete");
 }
 
-std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
+std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
     wmi::WMIConnection wmi;
@@ -2030,7 +2030,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_amd_dgpu_devices() {
     return detect_amd_gpus("discrete");
 }
 
-std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
+std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
     // Execute lspci to find GPUs
@@ -2595,7 +2595,7 @@ std::vector<GPUInfo> MacOSSystemInfo::get_amd_dgpu_devices() {
     return {gpu};
 }
 
-std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_dgpu_devices() {
+std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_gpu_devices() {
     GPUInfo gpu;
     gpu.available = false;
     gpu.error = "NVIDIA GPUs not detected on macOS";

@@ -60,7 +60,7 @@ public:
     virtual CPUInfo get_cpu_device() = 0;
     virtual GPUInfo get_amd_igpu_device() = 0;
     virtual std::vector<GPUInfo> get_amd_dgpu_devices() = 0;
-    virtual std::vector<GPUInfo> get_nvidia_dgpu_devices() = 0;
+    virtual std::vector<GPUInfo> get_nvidia_gpu_devices() = 0;
     virtual NPUInfo get_npu_device() = 0;
 
     // Common methods (can be overridden for detailed platform info)
@@ -122,7 +122,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Windows-specific fields
@@ -153,7 +153,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Linux-specific fields
@@ -183,7 +183,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add macOS-specific fields

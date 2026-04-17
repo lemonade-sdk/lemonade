@@ -1975,7 +1975,7 @@ curl "http://localhost:13305/api/v1/system-info"
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
   - `amd_gpu` - Array of AMD GPUs, both integrated and discrete (if present)
-  - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
+  - `nvidia_gpu` - Array of NVIDIA GPUs (if present)
   - `amd_npu` - AMD NPU device (if present)
 
 - `recipes` - Software recipes and their backend support status

@@ -128,7 +128,7 @@ NPU_HARDWARE = {
                 "family": "gfx1150",
             }
         ],
-        "nvidia_dgpu": [],
+        "nvidia_gpu": [],
         "amd_npu": {
             "name": "AMD Ryzen AI 9 HX 370",
             "available": True,
@@ -156,7 +156,7 @@ NO_NPU_HARDWARE = {
             "family": "x86_64",
         },
         "amd_gpu": [],
-        "nvidia_dgpu": [],
+        "nvidia_gpu": [],
         "amd_npu": {"name": "None", "available": False, "family": ""},
     },
 }

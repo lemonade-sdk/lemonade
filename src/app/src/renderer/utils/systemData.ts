@@ -11,7 +11,7 @@ interface Devices {
   amd_igpu: GPUDevice;
   cpu: CPUInfo;
   npu: NPUInfo;
-  nvidia_dgpu: GPUDevice[];
+  nvidia_gpu: GPUDevice[];
 }
 
 interface Device {
