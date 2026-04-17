@@ -514,8 +514,13 @@ body.embedded .mp-filter-select option {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   display: inline-flex;
   align-items: center;
+  gap: 0.3em;
   font-weight: 600;
   border: 1px solid transparent;
+}
+
+.app-link .material-symbols-outlined {
+  font-size: 1.15em;
 }
 
 .app-link.primary {

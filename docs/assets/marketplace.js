@@ -242,13 +242,13 @@ function renderAppCard(app) {
   let linksHtml = '';
   if (app.links) {
     if (app.links.app) {
-      linksHtml += `<a href="${app.links.app}" class="app-link primary" target="_blank" rel="noopener noreferrer">Visit</a>`;
+      linksHtml += `<a href="${app.links.app}" class="app-link primary" target="_blank" rel="noopener noreferrer"><span class="material-symbols-outlined">open_in_new</span> Visit</a>`;
     }
     if (app.links.guide) {
-      linksHtml += `<a href="${app.links.guide}" class="app-link secondary" target="_blank" rel="noopener noreferrer">Guide</a>`;
+      linksHtml += `<a href="${app.links.guide}" class="app-link secondary" target="_blank" rel="noopener noreferrer"><span class="material-symbols-outlined">menu_book</span> Guide</a>`;
     }
     if (app.links.video) {
-      linksHtml += `<a href="${app.links.video}" class="app-link secondary" target="_blank" rel="noopener noreferrer">Video</a>`;
+      linksHtml += `<a href="${app.links.video}" class="app-link secondary" target="_blank" rel="noopener noreferrer"><span class="material-symbols-outlined">play_circle</span> Video</a>`;
     }
   }
 
