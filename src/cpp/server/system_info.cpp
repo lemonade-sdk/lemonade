@@ -911,9 +911,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
             } else {
                 auto* cfg = RuntimeConfig::global();
                 bool no_fetch = cfg && cfg->no_fetch_executables();
-                backend["state"] = "installable";
+                backend["state"] = no_fetch ? "unsupported" : "installable";
                 std::string default_message = no_fetch
-                    ? "Backend is not installed."
+                    ? "Automatic backend install is disabled."
                     : "Backend is supported but not installed.";
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
