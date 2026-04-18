@@ -168,6 +168,7 @@ static const EnvMapping env_mappings[] = {
     // llamacpp
     {"LEMONADE_LLAMACPP",                "llamacpp",  "backend"},
     {"LEMONADE_LLAMACPP_ARGS",           "llamacpp",  "args"},
+    {"LEMONADE_LLAMACPP_DEVICE",         "llamacpp",  "device"},
     {"LEMONADE_LLAMACPP_PREFER_SYSTEM",  "llamacpp",  "prefer_system"},
     {"LEMONADE_LLAMACPP_ROCM_BIN",       "llamacpp",  "rocm_bin"},
     {"LEMONADE_LLAMACPP_VULKAN_BIN",     "llamacpp",  "vulkan_bin"},

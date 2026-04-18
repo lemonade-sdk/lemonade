@@ -14,7 +14,8 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
+    {"llamacpp_device", ""},
+    {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
     {"sdcpp_args", ""},
@@ -40,6 +41,7 @@ static const json DEFAULTS = {
 static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"ctx_size", "--ctx-size"},
     {"llamacpp_backend", "--llamacpp"},
+    {"llamacpp_device", "--llamacpp-device"},
     {"llamacpp_args", "--llamacpp-args"},
     {"sd-cpp_backend", "--sdcpp"},
     {"sdcpp_args", "--sdcpp-args"},
@@ -50,7 +52,7 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
+        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend", "whispercpp_args"};
     } else if (recipe == "flm") {
@@ -189,6 +191,12 @@ json RecipeOptions::get_option(const std::string& opt) const {
 static const json CLI_OPTIONS = {
     {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
+    {"--llamacpp-device", {
+        {"option_name", "llamacpp_device"},
+        {"type_name", "DEVICES"},
+        {"envname", "LEMONADE_LLAMACPP_DEVICE"},
+        {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}
+    }},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
