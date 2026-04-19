@@ -2,7 +2,7 @@
  * WebSocket client for realtime transcription.
  * Uses a raw WebSocket with OpenAI Realtime API message format.
  */
-import { getAPIKey, getServerHost, serverFetch } from './serverConfig';
+import { getAPIKey, getServerHost, getWebSocketProtocol, serverFetch } from './serverConfig';
 
 export interface TranscriptionCallbacks {
   /** Called with transcription text. isFinal=false for interim results that replace previous interim. */
@@ -28,7 +28,7 @@ export class TranscriptionWebSocket {
     if (apiKey) {
       query.set('api_key', apiKey);
     }
-    const wsUrl = `ws://${getServerHost()}:${wsPort}/realtime?${query.toString()}`;
+    const wsUrl = `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/realtime?${query.toString()}`;
 
     console.log('[WebSocket] Connecting to:', wsUrl);
 
