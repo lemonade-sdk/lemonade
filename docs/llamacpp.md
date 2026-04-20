@@ -105,18 +105,18 @@ To switch between channels, update your `config.json`:
 Or use the Lemonade CLI:
 ```bash
 # Switch to stable channel
-lemonade config set rocm_channel stable
+lemonade config set rocm_channel=stable
 
 # Switch to preview channel (default)
-lemonade config set rocm_channel preview
+lemonade config set rocm_channel=preview
 
 # Switch to nightly channel (experimental)
-lemonade config set rocm_channel nightly
+lemonade config set rocm_channel=nightly
 ```
 
 After changing channels, you'll need to reinstall the ROCm backend:
 ```bash
-lemonade backend install llamacpp rocm
+lemonade backend install llamacpp:rocm
 ```
 
 ## Choosing the Right Backend
