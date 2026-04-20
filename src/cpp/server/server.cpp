@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <iostream>
@@ -3068,6 +3069,11 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Enrich with release_url, download_filename, version from BackendManager config
     if (system_info.contains("recipes")) {
         enrich_recipes(system_info["recipes"]);
+    }
+
+    // Surface runtime config flags that affect client-side install/download UX.
+    if (auto* cfg = RuntimeConfig::global()) {
+        system_info["no_fetch_executables"] = cfg->no_fetch_executables();
     }
 
     res.set_content(system_info.dump(), "application/json");

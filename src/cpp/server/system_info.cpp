@@ -371,6 +371,11 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->no_fetch_executables()) {
+            return "";
+        }
+    }
     return "lemonade backends install " + recipe + ":" + backend;
 }
 
@@ -904,8 +909,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["action"] = get_install_command(def.recipe, def.backend);
 #endif
             } else {
-                backend["state"] = "installable";
-                backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+                auto* cfg = RuntimeConfig::global();
+                bool no_fetch = cfg && cfg->no_fetch_executables();
+                backend["state"] = no_fetch ? "unsupported" : "installable";
+                std::string default_message = no_fetch
+                    ? "Automatic backend install is disabled."
+                    : "Backend is supported but not installed.";
+                backend["message"] = install_error.empty() ? default_message : install_error;
 
                 // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
                 if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"

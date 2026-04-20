@@ -33,6 +33,7 @@ public:
 
     // Feature flags
     bool offline() const;
+    bool no_fetch_executables() const;
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
 
