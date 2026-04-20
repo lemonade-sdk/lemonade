@@ -2,6 +2,7 @@
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
+#include <regex>
 #include <sstream>
 #include <nlohmann/json.hpp>
 
@@ -12,6 +13,48 @@ using json = nlohmann::json;
 static const int DEFAULT_CONNECTION_TIMEOUT_MS = 30000;
 static const int DEFAULT_READ_TIMEOUT_MS = 30000;
 static const int LONG_TIMEOUT_MS = 86400000;
+
+static std::regex build_name_filter_regex(const std::string& name_filter) {
+    std::string regex_pattern;
+    regex_pattern.reserve(name_filter.size() * 2);
+
+    for (char ch : name_filter) {
+        switch (ch) {
+            case '*':
+                regex_pattern += ".*";
+                break;
+            case '\\':
+            case '^':
+            case '$':
+            case '.':
+            case '|':
+            case '?':
+            case '+':
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+                regex_pattern += '\\';
+                regex_pattern += ch;
+                break;
+            default:
+                regex_pattern += ch;
+                break;
+        }
+    }
+
+    return std::regex(regex_pattern, std::regex_constants::ECMAScript | std::regex_constants::icase);
+}
+
+static bool model_name_matches_filter(const std::string& model_name, const std::regex* name_filter_regex) {
+    if (name_filter_regex == nullptr) {
+        return true;
+    }
+
+    return std::regex_search(model_name, *name_filter_regex);
+}
 
 HttpError::HttpError(int status, std::string body, const std::string& message)
     : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
@@ -297,11 +340,22 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
     return models;
 }
 
-int LemonadeClient::list_models(bool show_all) const {
+int LemonadeClient::list_models(bool show_all, const std::string& name_filter) const {
     try {
         std::vector<ModelInfo> models = get_models(show_all);
+        std::vector<ModelInfo> filtered_models;
+        filtered_models.reserve(models.size());
+        const bool has_name_filter = !name_filter.empty();
+        const std::regex name_filter_regex = has_name_filter ? build_name_filter_regex(name_filter) : std::regex();
+        const std::regex* active_name_filter_regex = has_name_filter ? &name_filter_regex : nullptr;
 
-        if (models.empty()) {
+        for (const auto& model : models) {
+            if (model_name_matches_filter(model.id, active_name_filter_regex)) {
+                filtered_models.push_back(model);
+            }
+        }
+
+        if (filtered_models.empty()) {
             std::cout << "No models available" << std::endl;
             return 0;
         }
@@ -311,7 +365,7 @@ int LemonadeClient::list_models(bool show_all) const {
                   << "Details" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
-        for (const auto& model : models) {
+        for (const auto& model : filtered_models) {
             std::string downloaded = model.downloaded ? "Yes" : "No";
             std::string details = model.recipe.empty() ? "-" : model.recipe;
 
