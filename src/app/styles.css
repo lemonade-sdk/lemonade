@@ -1719,6 +1719,14 @@ footer {
     animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* Same dot, but amber + faster pulse to signal "loading, not ready yet".
+   Matches the visual language used for loading in the model list rows. */
+.loaded-model-indicator.loading {
+    background-color: #facc15;
+    animation: pulse 1.5s ease-in-out infinite;
+    filter: drop-shadow(0 0 2px #facc15);
+}
+
 @keyframes pulse-glow {
     0%, 100% {
         opacity: 1;

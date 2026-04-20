@@ -1541,15 +1541,10 @@ const [searchQuery, setSearchQuery] = useState('');
                   <div key={modelName} className="loaded-model-info">
                     <div className="loaded-model-details">
                       <span
-                        className="loaded-model-indicator"
-                        style={isLoading ? { opacity: 0.5 } : undefined}
+                        className={`loaded-model-indicator${isLoading ? ' loading' : ''}`}
                         title={isLoading ? 'Loading' : 'Loaded'}
-                      >
-                        {isLoading ? '○' : '●'}
-                      </span>
-                      <span className="loaded-model-name">
-                        {modelName}{isLoading ? ' (loading…)' : ''}
-                      </span>
+                      />
+                      <span className="loaded-model-name">{modelName}</span>
                     </div>
                     {!isLoading && (
                       <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
