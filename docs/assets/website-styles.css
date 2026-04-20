@@ -234,7 +234,43 @@ body.install-options {
 .navbar-actions {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   justify-self: end;
+}
+
+/* Hamburger toggle — hidden at desktop, shown at mobile via media query */
+.navbar-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.navbar-toggle-bar {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: #18181b;
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.navbar-toggle.is-open .navbar-toggle-bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.navbar-toggle.is-open .navbar-toggle-bar:nth-child(2) {
+  opacity: 0;
+}
+.navbar-toggle.is-open .navbar-toggle-bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
 }
 
 .navbar-back {
@@ -2466,39 +2502,47 @@ body.install-options {
 
 @media (max-width: 825px) {
   .navbar {
-    flex-direction: column;
-    gap: var(--spacing-md);
-    padding: 1rem;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .navbar-brand,
+  .navbar-actions {
+    flex: 0 0 auto;
+    justify-self: auto;
+  }
+
+  .navbar-toggle {
+    display: inline-flex;
   }
 
   .navbar-links {
-    gap: 1.5rem;
-    font-size: 1.18rem;
-    flex-wrap: wrap;
-    justify-content: center;
+    order: 5;
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-top: 0.25rem;
+    display: none;
+  }
+
+  .navbar-links.is-open {
+    display: flex;
   }
 
   .navbar-links a {
-    font-size: 1.18rem;
+    padding: 0.75rem 0.25rem;
+    font-size: 1.05rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
   }
 }
 
 @media (max-width: 768px) {
-  .navbar {
-    flex-direction: column;
-    gap: var(--spacing-md);
-    padding: 1rem;
-  }
-
-  .navbar-links {
-    gap: var(--spacing-lg);
-    font-size: 1.12rem;
-  }
-
-  .navbar-links a {
-    font-size: 1.12rem;
-  }
-
   .navbar-context {
     position: static;
     font-size: var(--font-size-sm);
@@ -2782,17 +2826,6 @@ body.install-options {
 }
 
 @media (max-width: 600px) {
-  .navbar-links {
-    gap: 1rem;
-    font-size: 1.08rem;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .navbar-links a {
-    font-size: 1.08rem;
-  }
-
   .hero-section {
     padding: var(--spacing-md) var(--spacing-xs);
   }
@@ -4631,7 +4664,7 @@ body.install-options {
 }
 
 .hp-release-section .release-link {
-  margin: calc(var(--page-space-base) * 0.4) auto 0;
+  margin: var(--page-space-sm) auto 0;
   align-self: center;
 }
 
@@ -4875,11 +4908,11 @@ body.install-options {
 /* --- Ecosystem section --- */
 .hp-eco-apps {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1.2rem 0.85rem;
   text-align: center;
   margin-top: 1.35rem;
-  width: min(860px, 100%);
+  width: min(960px, 100%);
   margin-left: auto;
   margin-right: auto;
 }
@@ -4942,11 +4975,12 @@ body.install-options {
 
 /* --- Getting Started section --- */
 .gs-platforms {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  justify-items: center;
   gap: calc(var(--page-space-base) * 0.3);
-  flex-wrap: wrap;
-  margin-bottom: var(--page-space-sm);
+  max-width: 760px;
+  margin: 0 auto var(--page-space-sm);
 }
 
 .gs-platform {
@@ -5148,7 +5182,7 @@ body.install-options {
 
   .hp-demo-panel {
     max-width: 440px;
-    height: 280px;
+    height: 310px;
     margin: 0 auto;
   }
 
@@ -5209,6 +5243,11 @@ body.install-options {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .hp-eco-app img {
+    width: 60px;
+    height: 60px;
+  }
+
   .gs-platform img {
     width: 44px;
     height: 44px;
@@ -5221,7 +5260,7 @@ body.install-options {
 
 @media (max-width: 720px) {
   .hp-section {
-    padding: 2.8rem 1rem;
+    padding: var(--page-space-xxl) 1rem 0;
   }
 
   .hp-hero {
@@ -5233,14 +5272,6 @@ body.install-options {
     align-items: center;
   }
 
-  .hp-demo-panel {
-    height: 265px;
-  }
-
-  .hp-demo-image-placeholder {
-    height: 128px;
-  }
-
   .hp-api-modalities {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5250,16 +5281,27 @@ body.install-options {
   }
 
   .hp-eco-apps {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .hp-eco-app img {
+    width: 52px;
+    height: 52px;
+  }
+
+  .hp-eco-app-name {
+    font-size: 0.75rem;
   }
 
   .gs-platforms {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 420px;
     gap: 0.4rem;
   }
 
   .gs-platform img {
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
   }
 
 }
@@ -5292,11 +5334,26 @@ body.install-options {
   }
 
   .hp-eco-apps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.62rem 0.5rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.62rem 0.4rem;
+  }
+
+  .hp-eco-app {
+    padding: 0.4rem 0.25rem;
+  }
+
+  .hp-eco-app img {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hp-eco-app-name {
+    font-size: 0.7rem;
   }
 
   .gs-platforms {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 340px;
     gap: 0.25rem;
   }
 
@@ -5305,8 +5362,8 @@ body.install-options {
   }
 
   .gs-platform img {
-    width: 32px;
-    height: 32px;
+    width: 38px;
+    height: 38px;
   }
 
   .gs-platform-name {

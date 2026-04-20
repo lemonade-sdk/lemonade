@@ -877,7 +877,7 @@
       })();
       // Featured apps from marketplace
       if (typeof fetchFeaturedApps === 'function') {
-        fetchFeaturedApps(10).then(function(apps) {
+        fetchFeaturedApps(12).then(function(apps) {
           var grid = document.getElementById('hpEcoApps');
           if (!grid || !apps.length) return;
           grid.innerHTML = apps.map(function(app) {
