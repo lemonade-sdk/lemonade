@@ -755,7 +755,11 @@ const [searchQuery, setSearchQuery] = useState('');
         : undefined;
 
       // Use the single consolidated download function
-      await pullModel(modelName, { registrationData, bundleComponents });
+      await pullModel(modelName, {
+        registrationData,
+        bundleComponents,
+        declaredSizeGB: modelsData[modelName]?.size,
+      });
 
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" downloaded successfully.`);

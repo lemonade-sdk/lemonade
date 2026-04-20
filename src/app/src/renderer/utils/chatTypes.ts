@@ -11,11 +11,10 @@ export interface TextContent {
 }
 
 export interface AudioContent {
-  type: 'audio';
-  audio: {
+  type: 'input_audio';
+  input_audio: {
     data: string;
-    mime: string;
-    name?: string;
+    format?: string;
   };
 }
 
@@ -55,4 +54,11 @@ export interface Artifact {
   type: 'image' | 'audio';
   data: string;
   mime: string;
+}
+
+export interface UploadedAudio {
+  dataUrl: string;
+  base64: string;
+  format: string;
+  filename: string;
 }

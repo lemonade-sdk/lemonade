@@ -316,6 +316,9 @@ export async function pullModel(
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
     bundleComponents?: string[];
+    /** Declared model size in GB from the registry, used as the download
+     *  total when the server can't emit a cumulative size (e.g. FLM pull). */
+    declaredSizeGB?: number;
   }
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;
@@ -323,8 +326,15 @@ export async function pullModel(
 
   let downloadId: string | undefined;
   if (showInDownloadManager) {
+    const declaredTotalBytes = options?.declaredSizeGB
+      ? Math.round(options.declaredSizeGB * 1024 * 1024 * 1024)
+      : undefined;
     downloadId = downloadTracker.startDownload(
-      modelName, abortController, 'model', options?.bundleComponents,
+      modelName,
+      abortController,
+      'model',
+      options?.bundleComponents,
+      declaredTotalBytes,
     );
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
   }
@@ -614,7 +624,7 @@ async function ensureModelReadyInternal(
 
     // Step 5: Pull model if not downloaded (shows in Download Manager)
     if (!isDownloaded) {
-      await pullModel(modelName);
+      await pullModel(modelName, { declaredSizeGB: modelsData[modelName]?.size });
     }
 
     // Step 6: Load model into memory (merge loadBody if provided)

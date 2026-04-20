@@ -106,7 +106,10 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         const res = await serverFetch(`/models/${upscaleModel}`);
         const info = await res.json();
         if (!info.downloaded) {
-          await pullModel(upscaleModel, { showInDownloadManager: true });
+          await pullModel(upscaleModel, {
+            showInDownloadManager: true,
+            declaredSizeGB: info.size,
+          });
         }
       } catch (error: any) {
         console.error('Failed to download upscale model:', error);

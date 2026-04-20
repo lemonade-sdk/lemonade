@@ -19,6 +19,10 @@ export interface DownloadItem {
   // Component model names when this download is an experience bundle.
   // UI uses this to explain the bundle is made up of separate models.
   bundleComponents?: string[];
+  // Declared size from the model registry (bytes). Used as the total when the
+  // server doesn't emit a cumulative download size, instead of extrapolating
+  // from the first file or two (which overshoots badly for FLM pulls).
+  declaredTotalBytes?: number;
 }
 
 interface DownloadManagerProps {
