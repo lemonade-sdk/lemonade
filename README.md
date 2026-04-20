@@ -253,10 +253,11 @@ lemonade backends
 
 | Under Development          | Under Consideration         | Recently Completed      |
 |---------------------------|-----------------------------|------------------------|
-| Native multi-modal tool calling | vLLM support           | Embeddable binary release           |
-| More whisper.cpp backends | Port app to Tauri            | Image generation       |
-| More SD.cpp backends      |                              | Speech-to-text         |
-| MLX support               |                              | Text-to-speech         |
+| Native multi-modal tool calling | vLLM support           | Port app to Tauri      |
+| More whisper.cpp backends |                              | Embeddable binary release |
+| More SD.cpp backends      |                              | Image generation       |
+| MLX support               |                              | Speech-to-text         |
+|                           |                              | Text-to-speech         |
 |                           |                              | Apps marketplace       |
 
 
@@ -339,7 +340,7 @@ This project is:
   - [IRON/MLIR-AIE](https://github.com/Xilinx/mlir-aie)
   - and more...
 - Licensed under the [Apache 2.0 License](https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE).
-  - Portions of the project are licensed as described in [NOTICE.md](./NOTICE.md).
+  - Portions of the project are licensed as described in [LICENSE](./LICENSE).
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
 Modifications Copyright (c) 2025 AMD-->

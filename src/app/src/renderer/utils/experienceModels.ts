@@ -9,17 +9,8 @@ export const getExperienceComponents = (info?: ModelInfo): string[] => {
   return info.composite_models.filter((name): name is string => typeof name === 'string' && name.length > 0);
 };
 
-export const isOmniModel = (info?: ModelInfo): boolean => {
-  return !!info && (info.labels?.includes('omni') ?? false);
-};
-
 export const isExperienceModel = (info?: ModelInfo): boolean => {
   return !!info && info.recipe === 'experience' && getExperienceComponents(info).length > 0;
-};
-
-/** True for models that should activate experience-mode UI (composite experiences OR omni models). */
-export const isExperienceOrOmni = (info?: ModelInfo): boolean => {
-  return isExperienceModel(info) || isOmniModel(info);
 };
 
 export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo | undefined, modelsData: ModelsData): boolean => {
@@ -42,9 +33,6 @@ export const isExperienceFullyLoaded = (
   loadedModels: Set<string>,
 ): boolean => {
   const info = modelsData[modelName];
-  if (isOmniModel(info)) {
-    return loadedModels.has(modelName);
-  }
   const components = getExperienceComponents(info);
   if (components.length === 0) return false;
   return components.every((component) => loadedModels.has(component));

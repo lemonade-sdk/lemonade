@@ -819,7 +819,8 @@
         "suggested": true,
         "labels": [
             "vision",
-            "omni"
+            "audio",
+            "transcription"
         ],
         "size": 4.68
     },
@@ -830,7 +831,8 @@
         "suggested": true,
         "labels": [
             "vision",
-            "omni"
+            "audio",
+            "transcription"
         ],
         "size": 2.10
     },
@@ -922,6 +924,18 @@
             "tool-calling"
         ],
         "size": 16.7
+    },
+    "Qwen3.6-35B-A3B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 22.4
     },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
@@ -1292,6 +1306,54 @@
             "cfg_scale": 1,
             "width": 1024,
             "height": 1024
+        }
+    },
+    "Qwen-Image-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/Qwen-Image-GGUF:qwen-image-Q4_K_M.gguf",
+            "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+            "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 10.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 2.5,
+            "width": 512,
+            "height": 512,
+            "sampling_method": "euler",
+            "flow_shift": 3.0
+        },
+        "recipe_options": {
+            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
+        }
+    },
+    "Qwen-Image-2512-GGUF": {
+        "checkpoints": {
+            "main": "unsloth/Qwen-Image-2512-GGUF:qwen-image-2512-Q5_0.gguf",
+            "text_encoder": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF:Qwen2.5-VL-7B-Instruct-UD-Q4_K_XL.gguf",
+            "vae": "Comfy-Org/Qwen-Image_ComfyUI:split_files/vae/qwen_image_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 12.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 2.5,
+            "width": 512,
+            "height": 512,
+            "sampling_method": "euler",
+            "flow_shift": 3.0
+        },
+        "recipe_options": {
+            "sdcpp_args": "--diffusion-fa --offload-to-cpu"
         }
     },
     "Z-Image-Turbo": {

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
-import { isExperienceOrOmni } from '../utils/experienceModels';
+import { isExperienceModel } from '../utils/experienceModels';
 
 interface ModelSelectorProps {
   disabled: boolean;
@@ -22,7 +22,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
 
   const visibleDownloadedModels = downloadedModels.filter((model) => {
     if (model.info?.labels?.includes('esrgan')) return false;
-    if (!isExperienceOrOmni(model.info)) {
+    if (!isExperienceModel(model.info)) {
       return true;
     }
     return model.info.suggested === true;

@@ -83,6 +83,10 @@ bool fetch_models_from_endpoint(lemonade::LemonadeClient& client,
         }
 
         return true;
+    } catch (const lemonade::HttpError& e) {
+        LOG(ERROR, "ModelSelector") << "Error: Failed to query /api/v1/models: "
+                                    << lemonade::extract_server_error_message(e) << std::endl;
+        return false;
     } catch (const std::exception& e) {
         LOG(ERROR, "ModelSelector") << "Error: Failed to query /api/v1/models: " << e.what() << std::endl;
         return false;
@@ -132,7 +136,7 @@ bool is_qwen35_family_model(const lemonade::ModelInfo& model) {
 
 std::vector<std::string> preferred_recipe_directories_for_agent(const std::string& agent_name) {
     const std::string agent = normalize_agent_key(agent_name);
-    if (agent == "claude" || agent == "codex") {
+    if (agent == "claude" || agent == "codex" || agent == "opencode") {
         return {"coding-agents"};
     }
     return {};

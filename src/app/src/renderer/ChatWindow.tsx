@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isExperienceOrOmni, isOmniModel, getExperienceComponents } from './utils/experienceModels';
+import { isExperienceModel, getExperienceComponents } from './utils/experienceModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -47,7 +47,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return 'llm';
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
-    if (isExperienceOrOmni(info)) return 'llm';
+    if (isExperienceModel(info)) return 'llm';
+    // Chat-indicator labels win over modality labels so multimodal "any-to-text"
+    // models (e.g. Gemma 4 on FLM) — which carry both "vision" / "tool-calling"
+    // AND modality labels like "audio" / "transcription" — route to the LLM
+    // panel rather than the Transcription/Image panel.
+    const chatIndicators = ['vision', 'reasoning', 'tool-calling', 'tools'];
+    if (info.labels?.some(l => chatIndicators.includes(l))) return 'llm';
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
@@ -71,14 +77,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return modelsData[selectedModel]?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
-  const isOmni = useMemo(() => {
+  // A multimodal chat model that accepts audio *as input* to a chat turn —
+  // distinct from a pure ASR (Whisper) model which is also labeled "audio" but
+  // should only appear in the Transcription panel. We require the model to
+  // also carry a chat-indicator label so we don't surface an audio-attach
+  // button on a Whisper model.
+  const isAudioChat = useMemo(() => {
     if (!selectedModel) return false;
-    return isOmniModel(modelsData[selectedModel]);
+    const labels = modelsData[selectedModel]?.labels || [];
+    if (!labels.includes('audio')) return false;
+    return labels.some(l => l === 'vision' || l === 'reasoning' || l === 'tool-calling' || l === 'tools');
   }, [selectedModel, modelsData]);
 
   const isExperienceSelected = useMemo(() => {
     if (!selectedModel) return false;
-    return isExperienceOrOmni(modelsData[selectedModel]);
+    return isExperienceModel(modelsData[selectedModel]);
   }, [selectedModel, modelsData]);
 
   const experienceMode = activeModelType === 'llm' && isExperienceSelected;
@@ -228,8 +241,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
 
     try {
       const info = modelsData[selectedModel];
-      const experienceComponents = getExperienceComponents(info);
-      const components = experienceComponents.length > 0 ? experienceComponents : [selectedModel];
+      const components = isExperienceModel(info) ? getExperienceComponents(info) : [selectedModel];
 
       for (const component of components) {
         const response = await serverFetch('/unload', {
@@ -303,7 +315,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           key={resetKey}
           {...sharedProps}
           isVision={isVision}
-          isOmni={isOmni}
+          isAudioChat={isAudioChat}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
           experienceMode={experienceMode}
