@@ -1363,7 +1363,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0}
-            modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
+            modelSelector={<ModelSelector disabled={isBusy} />}
             rightControls={
               <RecordButton
                 disabled={isBusy}
