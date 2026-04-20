@@ -5155,29 +5155,44 @@ body.install-options {
 
 @media (max-width: 980px) {
   .hp-hero {
-    grid-template-columns: 1fr;
-    justify-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: var(--hero-section-gap);
     padding: var(--page-space-xl) 1rem 0;
     text-align: center;
   }
 
-  .hp-hero-left {
-    text-align: center;
-    align-items: center;
-    width: 100%;
+  /* Flatten left column and subtitle group so we can reorder:
+     headline -> subtitle -> demo -> CTAs */
+  .hp-hero-left,
+  .hp-subtitle-group {
+    display: contents;
+  }
+
+  .hp-headline {
+    order: 1;
     max-width: 560px;
-    margin: 0 auto;
+  }
+
+  .hp-subtitle {
+    order: 2;
+    max-width: 440px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hp-cta-row {
+    order: 3;
+    justify-content: center;
+    width: 100%;
+    max-width: 440px;
   }
 
   .hp-hero-right {
+    order: 4;
     width: 100%;
-    margin: 0 auto;
-  }
-
-  .hp-subtitle-group {
-    width: 100%;
-    max-width: 440px;
+    margin: var(--page-space-md) auto 0;
   }
 
   .hp-demo-panel {
@@ -5268,8 +5283,16 @@ body.install-options {
   }
 
   .hp-cta-row {
-    flex-direction: column;
-    align-items: center;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 0.6rem;
+  }
+
+  .hp-cta-row .download-btn,
+  .hp-cta-row .dev-btn {
+    font-size: 0.95rem;
+    padding: 0.6em 1em;
+    flex: 0 1 auto;
   }
 
   .hp-api-modalities {
