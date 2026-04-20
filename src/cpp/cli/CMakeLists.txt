@@ -8,12 +8,15 @@ set(COMMON_SOURCES
     lemonade_client.cpp
     model_selection.cpp
     recipe_import.cpp
+    hf_pull.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp
     ../server/utils/json_utils.cpp
     ../server/utils/http_client.cpp
     agent_launcher.cpp
+    agent_config_file.cpp
+    opencode_profile.cpp
 )
 
 # ============================================================

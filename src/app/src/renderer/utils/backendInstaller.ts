@@ -315,6 +315,9 @@ export async function pullModel(
   options?: {
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
+    /** Declared model size in GB from the registry, used as the download
+     *  total when the server can't emit a cumulative size (e.g. FLM pull). */
+    declaredSizeGB?: number;
   }
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;
@@ -322,7 +325,10 @@ export async function pullModel(
 
   let downloadId: string | undefined;
   if (showInDownloadManager) {
-    downloadId = downloadTracker.startDownload(modelName, abortController, 'model');
+    const declaredTotalBytes = options?.declaredSizeGB
+      ? Math.round(options.declaredSizeGB * 1024 * 1024 * 1024)
+      : undefined;
+    downloadId = downloadTracker.startDownload(modelName, abortController, 'model', declaredTotalBytes);
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
   }
 
@@ -611,7 +617,7 @@ async function ensureModelReadyInternal(
 
     // Step 5: Pull model if not downloaded (shows in Download Manager)
     if (!isDownloaded) {
-      await pullModel(modelName);
+      await pullModel(modelName, { declaredSizeGB: modelsData[modelName]?.size });
     }
 
     // Step 6: Load model into memory (merge loadBody if provided)
@@ -625,7 +631,7 @@ async function ensureModelReadyInternal(
 
       if (!loadResponse.ok) {
         const errorData = await loadResponse.json().catch(() => ({}));
-        const errorMsg = errorData.error || `Failed to load model: ${loadResponse.statusText}`;
+        const errorMsg = (typeof errorData.error === 'string' ? errorData.error : errorData.error?.message) || `Failed to load model: ${loadResponse.statusText}`;
 
         throw new Error(errorMsg);
       }

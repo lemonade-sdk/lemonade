@@ -11,8 +11,10 @@
   "models_dir": "auto",
   "ctx_size": 4096,
   "offline": false,
+  "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
+  "rocm_channel": "preview",
   "llamacpp": {
     "backend": "auto",
     "args": "",

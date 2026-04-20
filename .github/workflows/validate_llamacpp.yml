@@ -32,6 +32,7 @@ jobs:
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
       llamacpp_rocm_release: ${{ steps.llamacpp_rocm.outputs.release }}
+      llamacpp_rocm_preview_release: ${{ steps.llamacpp_rocm_preview.outputs.release }}
     steps:
       - name: Get latest llama.cpp release
         id: llamacpp
@@ -51,6 +52,15 @@ jobs:
           echo "Latest llamacpp-rocm release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
+      - name: Get latest llamacpp-rocm-preview release
+        id: llamacpp_rocm_preview
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE=$(gh api repos/lemonade-sdk/llama.cpp/releases/latest --jq '.tag_name')
+          echo "Latest llamacpp-rocm-preview release: $RELEASE"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+
   # ========================================================================
   # Build binaries with updated backend versions
   # ========================================================================
@@ -60,7 +70,7 @@ jobs:
     if: always() && !failure() && !cancelled()
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
@@ -71,6 +81,7 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
         run: |
           $ErrorActionPreference = "Stop"
           $path = "src/cpp/resources/backend_versions.json"
@@ -85,10 +96,22 @@ jobs:
           }
 
           $rocm = $env:LLAMACPP_ROCM_RELEASE
-          Write-Host "Updating llamacpp rocm to $rocm" -ForegroundColor Cyan
-          $old = $data.llamacpp.rocm
-          $data.llamacpp.rocm = $rocm
-          Write-Host "  llamacpp.rocm: $old -> $rocm"
+          Write-Host "Updating llamacpp rocm-nightly to $rocm" -ForegroundColor Cyan
+          $old = $data.llamacpp.'rocm-nightly'
+          $data.llamacpp.'rocm-nightly' = $rocm
+          Write-Host "  llamacpp.rocm-nightly: $old -> $rocm"
+
+          $rocmStable = $env:LLAMACPP_RELEASE
+          Write-Host "Updating llamacpp rocm-stable to $rocmStable" -ForegroundColor Cyan
+          $old = $data.llamacpp.'rocm-stable'
+          $data.llamacpp.'rocm-stable' = $rocmStable
+          Write-Host "  llamacpp.rocm-stable: $old -> $rocmStable"
+
+          $rocmPreview = $env:LLAMACPP_ROCM_PREVIEW_RELEASE
+          Write-Host "Updating llamacpp rocm-preview to $rocmPreview" -ForegroundColor Cyan
+          $old = $data.llamacpp.'rocm-preview'
+          $data.llamacpp.'rocm-preview' = $rocmPreview
+          Write-Host "  llamacpp.rocm-preview: $old -> $rocmPreview"
 
           $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
@@ -109,7 +132,7 @@ jobs:
           Write-Host "Build successful!" -ForegroundColor Green
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: llamacpp-build
           path: |
@@ -121,16 +144,23 @@ jobs:
   # Validate backends on self-hosted runner
   # ========================================================================
   validate:
-    name: Validate ${{ matrix.backend }}
+    name: Validate ${{ matrix.backend }}${{ matrix.channel && format(' ({0})', matrix.channel) || '' }}
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
     runs-on: [self-hosted, Windows, 128gb]
     strategy:
       fail-fast: false
       matrix:
-        backend: [vulkan, rocm]
+        include:
+          - backend: vulkan
+          - backend: rocm
+            channel: stable
+          - backend: rocm
+            channel: preview
+          - backend: rocm
+            channel: nightly
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           clean: true
 
@@ -138,7 +168,7 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: llamacpp-build
           path: build
@@ -168,8 +198,10 @@ jobs:
           $ErrorActionPreference = "Stop"
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
           $backend = "${{ matrix.backend }}"
-          $logsDir = "server-logs-$backend"
-          $cacheDir = Join-Path $PWD "ci-cache-$backend"
+          $channel = "${{ matrix.channel }}"
+          $label = if ($channel) { "$backend-$channel" } else { $backend }
+          $logsDir = "server-logs-$label"
+          $cacheDir = Join-Path $PWD "ci-cache-$label"
           $venvPython = ".\.venv\Scripts\python.exe"
 
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
@@ -192,9 +224,13 @@ jobs:
             $validationArgs = @(
               "test/validate_llamacpp.py",
               "--backend", $backend,
-              "--output", "llamacpp_validation_$backend.json",
+              "--output", "llamacpp_validation_$label.json",
               "--logs-dir", $logsDir
             )
+            if ($channel) {
+              $validationArgs += "--channel"
+              $validationArgs += $channel
+            }
             if ("${{ env.LITE_MODE }}" -eq "true") {
               $validationArgs += "--lite"
             }
@@ -213,18 +249,18 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: validation-results-${{ matrix.backend }}
-          path: llamacpp_validation_${{ matrix.backend }}.json
+          name: validation-results-${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}
+          path: llamacpp_validation_${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}.json
           retention-days: 30
 
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: server-logs-${{ matrix.backend }}
-          path: server-logs-${{ matrix.backend }}/
+          name: server-logs-${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}
+          path: server-logs-${{ matrix.channel && format('{0}-{1}', matrix.backend, matrix.channel) || matrix.backend }}/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -243,10 +279,10 @@ jobs:
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
       needs.validate.result == 'success'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download validation results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: validation-results-*
           merge-multiple: true
@@ -256,6 +292,7 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
         run: |
           python3 -c "
           import json, os
@@ -263,15 +300,18 @@ jobs:
           with open(path, 'r') as f:
               data = json.load(f)
           llamacpp = os.environ['LLAMACPP_RELEASE']
-          rocm = os.environ['LLAMACPP_ROCM_RELEASE']
+          rocm_preview = os.environ['LLAMACPP_ROCM_PREVIEW_RELEASE']
+          rocm_nightly = os.environ['LLAMACPP_ROCM_RELEASE']
           data['llamacpp']['vulkan'] = llamacpp
           data['llamacpp']['cpu'] = llamacpp
           data['llamacpp']['metal'] = llamacpp
-          data['llamacpp']['rocm'] = rocm
+          data['llamacpp']['rocm-stable'] = llamacpp
+          data['llamacpp']['rocm-nightly'] = rocm_nightly
+          data['llamacpp']['rocm-preview'] = rocm_preview
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          print(f'Updated: vulkan/cpu/metal={llamacpp}, rocm={rocm}')
+          print(f'Updated: vulkan/cpu/metal/rocm-stable={llamacpp}, rocm-nightly={rocm_nightly}, rocm-preview={rocm_preview}')
           "
 
       - name: Generate PR body
@@ -279,25 +319,29 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
         run: |
           python3 << 'PYEOF'
           import json, os
 
           body_lines = []
           llamacpp = os.environ.get("LLAMACPP_RELEASE", "unknown")
-          rocm = os.environ.get("LLAMACPP_ROCM_RELEASE", "unknown")
+          rocm_nightly = os.environ.get("LLAMACPP_ROCM_RELEASE", "unknown")
+          rocm_preview = os.environ.get("LLAMACPP_ROCM_PREVIEW_RELEASE", "unknown")
 
           body_lines.append("## Auto-update llama.cpp backends")
           body_lines.append("")
-          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal): `{llamacpp}`")
-          body_lines.append(f"- **llamacpp-rocm**: `{rocm}`")
+          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal/rocm-stable): `{llamacpp}`")
+          body_lines.append(f"- **llamacpp-rocm** (rocm-nightly): `{rocm_nightly}`")
+          body_lines.append(f"- **llamacpp-rocm-preview**: `{rocm_preview}`")
           body_lines.append("")
           body_lines.append("## Validation Results")
           body_lines.append("")
           body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
           body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          for backend in ["vulkan", "rocm"]:
+          for backend in ["vulkan", "rocm-stable", "rocm-preview", "rocm-nightly"]:
+              # Labels match the artifact names produced by the validate job
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
                   body_lines.append(f"| _{backend}: no results_ | | | | | | |")
@@ -334,8 +378,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
         run: |
-          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
+          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_ROCM_RELEASE}-${LLAMACPP_ROCM_PREVIEW_RELEASE}"
 
           # Check if a PR already exists for this update
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
@@ -355,7 +400,7 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm to ${LLAMACPP_ROCM_RELEASE}"
+          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}, rocm-preview to ${LLAMACPP_ROCM_PREVIEW_RELEASE}"
           git push origin "$BRANCH"
 
           gh pr create \

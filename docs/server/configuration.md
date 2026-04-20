@@ -6,13 +6,15 @@ Lemonade Server starts automatically with the OS after installation. Configurati
 
 ## config.json
 
-All settings are in `config.json`, located in the lemonade cache directory:
+If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
 - **Linux (systemd):** `/var/lib/lemonade/.cache/lemonade/config.json`
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
 - **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
 
-If `config.json` doesn't exist, it's created automatically with default values on first run.
+If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
+
+> Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
 
 ### Example config.json
 
@@ -29,6 +31,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
   "models_dir": "auto",
   "ctx_size": 4096,
   "offline": false,
+  "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
   "llamacpp": {
@@ -82,6 +85,7 @@ If `config.json` doesn't exist, it's created automatically with default values o
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | 4096 | Default context size for LLM models |
 | `offline` | bool | false | Skip model downloads |
+| `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 
@@ -191,7 +195,24 @@ lemond [cache_dir] [--port PORT] [--host HOST]
 
 ## API Key and Security
 
-The `LEMONADE_API_KEY` environment variable sets an API key for authentication. On Linux with systemd, set it in the service environment (e.g., via a systemd override or drop-in file). On Windows, set it as a system environment variable.
+### Regular API Key
+
+The `LEMONADE_API_KEY` environment variable sets an API key for authentication on regular API endpoints (`/api/*`, `/v0/*`, `/v1/*`). On Linux with systemd, set it in the service environment (e.g., via a systemd override or drop-in file). On Windows, set it as a system environment variable.
+
+### Admin API Key
+
+The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to both regular API endpoints and internal endpoints (`/internal/*`). When set, it takes precedence over `LEMONADE_API_KEY` for client authentication.
+
+**Authentication Hierarchy:**
+
+| Scenario | `LEMONADE_API_KEY` | `LEMONADE_ADMIN_API_KEY` | Internal Endpoints | Regular API Endpoints |
+|----------|-------------------|--------------------------|-------------------|----------------------|
+| No keys set | (not set) | (not set) | No auth required | No auth required |
+| Only API key | "secret" | (not set) | Requires key | Requires key |
+| Only admin key | (not set) | "admin" | Requires admin key | No auth required |
+| Both keys different | "regular" | "admin" | Requires admin key | Either key accepted |
+
+**Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
 
 ## Remote Server Connection
 
@@ -201,7 +222,7 @@ To make Lemonade Server accessible from other machines on your network, set the 
 lemonade config set host=0.0.0.0
 ```
 
-> **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` to manage access.
+> **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` to manage access.
 
 ## Next Steps
 

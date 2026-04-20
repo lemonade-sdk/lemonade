@@ -166,8 +166,9 @@ std::string TrayUI::http_get(const std::string& endpoint) {
     cli.set_connection_timeout(2);
     cli.set_read_timeout(5);
 
-    // Pass API key if set
-    const char* api_key = std::getenv("LEMONADE_API_KEY");
+    // Pass API key if set - prefer admin key over regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
     httplib::Headers headers;
     if (api_key && api_key[0]) {
         headers.emplace("Authorization", std::string("Bearer ") + api_key);
@@ -185,7 +186,9 @@ std::string TrayUI::http_post(const std::string& endpoint, const std::string& bo
     cli.set_connection_timeout(2);
     cli.set_read_timeout(30);
 
-    const char* api_key = std::getenv("LEMONADE_API_KEY");
+    // Pass API key if set - prefer admin key over regular API key
+    const char* admin_api_key = std::getenv("LEMONADE_ADMIN_API_KEY");
+    const char* api_key = admin_api_key ? admin_api_key : std::getenv("LEMONADE_API_KEY");
     httplib::Headers headers;
     if (api_key && api_key[0]) {
         headers.emplace("Authorization", std::string("Bearer ") + api_key);
@@ -233,6 +236,22 @@ std::vector<LoadedModelInfo> TrayUI::get_all_loaded_models() {
     return fetch_server_state().second;
 }
 
+void TrayUI::fetch_runtime_config() {
+    try {
+        std::string body = http_get("/internal/config");
+        if (body.empty()) return;
+        auto config = nlohmann::json::parse(body);
+        if (config.contains("max_loaded_models") && config["max_loaded_models"].is_number_integer()) {
+            max_loaded_models_ = config["max_loaded_models"].get<int>();
+        }
+        if (config.contains("ctx_size") && config["ctx_size"].is_number_integer()) {
+            recipe_options_["ctx_size"] = config["ctx_size"].get<int>();
+        }
+    } catch (...) {
+        // Leave defaults in place if parsing fails
+    }
+}
+
 std::vector<ModelInfo> TrayUI::get_downloaded_models() {
     try {
         std::string body = http_get("/api/v1/models");
@@ -268,6 +287,7 @@ void TrayUI::build_menu() {
     // Fetch once, use for both the menu and the cache
     auto [reachable, loaded_models] = fetch_server_state();
     auto available_models = get_downloaded_models();
+    if (reachable) fetch_runtime_config();
 
     Menu menu = create_menu(loaded_models, available_models);
     tray_->set_menu(menu);
@@ -398,6 +418,20 @@ Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
     }
     menu.add_item(MenuItem::Submenu("Context Size", ctx_submenu));
 
+    // Max Loaded Models submenu
+    auto max_models_submenu = std::make_shared<Menu>();
+    std::vector<std::pair<std::string, int>> max_models_options = {
+        {"1 (default)", 1}, {"2", 2}, {"3", 3}, {"5", 5}, {"7", 7}, {"Unlimited", -1},
+    };
+    for (const auto& [label, value] : max_models_options) {
+        max_models_submenu->add_item(MenuItem::Checkable(
+            label,
+            [this, v = value]() { on_change_max_loaded_models(v); },
+            value == max_loaded_models_
+        ));
+    }
+    menu.add_item(MenuItem::Submenu("Max Loaded Models", max_models_submenu));
+
     menu.add_separator();
     menu.add_item(MenuItem::Action("Documentation", [this]() { on_open_documentation(); }));
     menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
@@ -493,6 +527,19 @@ void TrayUI::on_change_context_size(int new_ctx_size) {
         ? std::to_string(new_ctx_size / 1024) + "K"
         : std::to_string(new_ctx_size);
     show_notification("Context Size Changed", "Lemonade Server context size is now " + label);
+}
+
+void TrayUI::on_change_max_loaded_models(int new_max) {
+    nlohmann::json body;
+    body["max_loaded_models"] = new_max;
+    std::string result = http_post("/internal/set", body.dump());
+    if (!result.empty()) {
+        max_loaded_models_ = new_max;
+        build_menu();
+        std::string label = (new_max == -1) ? "Unlimited" : std::to_string(new_max);
+        show_notification("Max Loaded Models Changed",
+                          "Lemonade Server max loaded models is now " + label);
+    }
 }
 
 void TrayUI::on_show_logs() {

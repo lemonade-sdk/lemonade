@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { serverConfig } from './utils/serverConfig';
 import { fetchSystemInfoData } from './utils/systemData';
 
 interface AboutModalProps {
@@ -22,81 +23,84 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isOpen && window.api?.getVersion) {
-      setVersion('Loading...');
-      setIsLoadingInfo(true);
+    if (!isOpen) return;
 
-      // Retry logic to handle backend startup delay
-      const fetchVersionWithRetry = async (retries = 3, delay = 1000) => {
-        for (let i = 0; i < retries; i++) {
-          const v = await window.api.getVersion!();
-          if (v !== 'Unknown') {
-            setVersion(v);
-            return;
-          }
-          if (i < retries - 1) {
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-        setVersion('Unknown (Backend not running)');
-      };
+    setVersion('Loading...');
+    setIsLoadingInfo(true);
 
-      const fetchSystemInfo = async () => {
+    // Retry logic to handle backend startup delay. /health returns the server
+    // version; if it's unreachable for the first few attempts the renderer
+    // backs off and shows a friendly fallback.
+    const fetchVersionWithRetry = async (retries = 3, delay = 1000) => {
+      for (let i = 0; i < retries; i++) {
         try {
-          if (window.api?.getSystemInfo) {
-            const info = await window.api.getSystemInfo();
-            console.log('SystemInfo received in AboutModal:', info);
-            setSystemInfo(info);
-            return;
-          }
-
-          const { info } = await fetchSystemInfoData();
-          if (!info) {
-            return;
-          }
-
-          const gpus: string[] = [];
-          let maxGttGb = 0;
-          let maxVramGb = 0;
-
-          const considerAmdGpu = (gpu?: { name?: string; virtual_mem_gb?: number; vram_gb?: number }) => {
-            if (!gpu) return;
-            if (gpu.name) gpus.push(gpu.name);
-            if (typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
-              maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+          const response = await serverConfig.fetch('/health');
+          if (response.ok) {
+            const data = await response.json();
+            const v = data.version;
+            if (v && v !== 'Unknown') {
+              setVersion(v);
+              return;
             }
-            if (typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
-              maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
-            }
-          };
-
-          considerAmdGpu(info.devices?.amd_igpu);
-          info.devices?.amd_dgpu?.forEach(considerAmdGpu);
-
-          info.devices?.nvidia_dgpu?.forEach((gpu) => {
-            if (gpu?.name) gpus.push(gpu.name);
-          });
-
-          const normalized: SystemInfo = {
-            system: 'Unknown',
-            os: info.os_version || 'Unknown',
-            cpu: info.processor || 'Unknown',
-            gpus,
-            gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : 'Unknown',
-            vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : 'Unknown',
-          };
-
-          setSystemInfo(normalized);
-        } catch (error) {
-          console.error('Failed to fetch system info:', error);
-        } finally {
-          setIsLoadingInfo(false);
+          }
+        } catch {
+          // fall through to retry
         }
-      };
+        if (i < retries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+      setVersion('Unknown (Backend not running)');
+    };
 
-      fetchVersionWithRetry();
-      fetchSystemInfo();
-    }
+    const fetchSystemInfo = async () => {
+      try {
+        const { info } = await fetchSystemInfoData();
+        if (!info) {
+          return;
+        }
+
+        const gpus: string[] = [];
+        let maxGttGb = 0;
+        let maxVramGb = 0;
+
+        const considerAmdGpu = (gpu?: { name?: string; virtual_mem_gb?: number; vram_gb?: number }) => {
+          if (!gpu) return;
+          if (gpu.name) gpus.push(gpu.name);
+          if (typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
+            maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
+          }
+          if (typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
+            maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
+          }
+        };
+
+        considerAmdGpu(info.devices?.amd_igpu);
+        info.devices?.amd_dgpu?.forEach(considerAmdGpu);
+
+        info.devices?.nvidia_gpu?.forEach((gpu) => {
+          if (gpu?.name) gpus.push(gpu.name);
+        });
+
+        const normalized: SystemInfo = {
+          system: 'Unknown',
+          os: info.os_version || 'Unknown',
+          cpu: info.processor || 'Unknown',
+          gpus,
+          gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : 'Unknown',
+          vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : 'Unknown',
+        };
+
+        setSystemInfo(normalized);
+      } catch (error) {
+        console.error('Failed to fetch system info:', error);
+      } finally {
+        setIsLoadingInfo(false);
+      }
+    };
+
+    fetchVersionWithRetry();
+    fetchSystemInfo();
   }, [isOpen]);
 
   useEffect(() => {

@@ -163,6 +163,7 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_EXTRA_MODELS_DIR",        "extra_models_dir",         nullptr},
     {"LEMONADE_CTX_SIZE",                "ctx_size",                 nullptr},
     {"LEMONADE_OFFLINE",                 "offline",                  nullptr},
+    {"LEMONADE_NO_FETCH_EXECUTABLES",     "no_fetch_executables",     nullptr},
     {"LEMONADE_DISABLE_MODEL_FILTERING", "disable_model_filtering",  nullptr},
     {"LEMONADE_ENABLE_DGPU_GTT",         "enable_dgpu_gtt",          nullptr},
     // llamacpp

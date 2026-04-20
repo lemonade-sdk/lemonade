@@ -23,7 +23,7 @@ namespace lemon::backends {
         const std::string binary;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
-        InstallParamsFn install_params_fn;  // nullptr for FLM (special installer)
+        InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
             : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}
@@ -56,6 +56,7 @@ namespace lemon::backends {
         */
         static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name);
 
+
         /**
         * Detect if archive is tar or zip
         * @param tarball_path Path to the archive file
@@ -70,6 +71,22 @@ namespace lemon::backends {
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
+
+        /** Check if ROCm libraries are installed system-wide (Linux only) */
+        static bool is_rocm_installed_system_wide();
+
+        /** Get TheRock installation directory for a specific architecture and version */
+        static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
+
+        /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
+        static void install_therock(const std::string& arch, const std::string& version,
+                                   DownloadProgressCallback progress_cb = nullptr);
+
+        /** Clean up old TheRock versions, keeping only the specified version */
+        static void cleanup_old_therock_versions(const std::string& current_version);
+
+        /** Get TheRock lib directory path if available, or empty string if not needed */
+        static std::string get_therock_lib_path(const std::string& rocm_arch);
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);

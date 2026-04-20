@@ -6,6 +6,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
@@ -22,9 +23,71 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
+static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
+
+namespace {
+bool is_rocm_backend(const std::string& backend) {
+    return backend == "rocm" || backend == "rocm-stable" || backend == "rocm-preview";
+}
+
+std::string resolve_sdcpp_backend(const std::string& backend) {
+    if (backend == "rocm") {
+        std::string channel = "preview";
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel();
+        }
+        // sd.cpp has no nightly build - fall back to preview
+        if (channel == "nightly") {
+            channel = "preview";
+        }
+        return "rocm-" + channel;
+    }
+    return backend;
+}
+
+std::string trim_version_prefix(const std::string& version) {
+    if (!version.empty() && version[0] == 'v') {
+        return version.substr(1);
+    }
+    return version;
+}
+
+std::string trim_to_major_minor(const std::string& version) {
+    // Trim to MAJOR.MINOR format (e.g., "7.12.0" -> "7.12")
+    std::string trimmed = trim_version_prefix(version);
+    size_t second_dot = trimmed.find('.', trimmed.find('.') + 1);
+    if (second_dot != std::string::npos) {
+        return trimmed.substr(0, second_dot);
+    }
+    return trimmed;
+}
+
+std::string get_rocm_stable_runtime_version() {
+    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+
+    if (config.contains("rocm-stable-runtime") && config["rocm-stable-runtime"].is_string()) {
+        return trim_version_prefix(config["rocm-stable-runtime"].get<std::string>());
+    }
+
+    throw std::runtime_error("backend_versions.json is missing 'rocm-stable-runtime'");
+}
+
+std::string get_therock_version() {
+    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+    if (!config.contains("therock") || !config["therock"].is_object() ||
+        !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
+        throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+    }
+    // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
+    // (for example: rocm-7.12.0), so keep the patch component.
+    return trim_version_prefix(config["therock"]["version"].get<std::string>());
+}
+}
+
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "superm1/stable-diffusion.cpp";
+    params.repo = "lemonade-sdk/stable-diffusion.cpp";
+    std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform version for URL (master-NNN-HASH -> master-HASH)
     std::string short_version = version;
@@ -37,23 +100,36 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         }
     }
 
-    if (backend == "rocm") {
+    if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
+
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
 #ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-rocm-x64.zip";
+        if (resolved_backend == "rocm-stable") {
+            // Windows stable diffusion artifacts are currently built against ROCm 7.1.1
+            // and don't follow the rocm-stable-runtime version from backend_versions.json
+            params.filename = "sd-" + short_version + "-bin-win-rocm-7.1.1-x64.zip";
+        } else {  // rocm-preview
+            params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
+        }
 #elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm.zip";
+    if (resolved_backend == "rocm-stable") {
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
+                  get_rocm_stable_runtime_version() + ".zip";
+    } else {
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
+                  get_therock_version() + ".zip";
+    }
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
     } else {
         // CPU build (default)
-#ifdef _WIN32
+    #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
@@ -84,9 +160,18 @@ void SDServer::load(const std::string& model_name,
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     std::string backend = options.get_option("sd-cpp_backend");
+    std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.get_option("sdcpp_args");
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
+
+    // Update device type based on the actual backend selected.
+    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan are GPU backends.
+    if (backend == "rocm" || backend == "vulkan") {
+        device_type_ = DEVICE_GPU;
+    } else {
+        device_type_ = DEVICE_CPU;
+    }
 
     // Install sd-server if needed
     backend_manager_->install_backend(SPEC.recipe, backend);
@@ -173,6 +258,21 @@ void SDServer::load(const std::string& model_name,
     // For Linux, always set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
+    if (resolved_backend == "rocm-stable") {
+        std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
+        if (fs::exists(runtime_dir)) {
+            lib_path = runtime_dir + ":" + lib_path;
+        }
+    } else if (resolved_backend == "rocm-preview") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
+            if (!therock_lib.empty()) {
+                lib_path = therock_lib + ":" + lib_path;
+            }
+        }
+    }
+
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
     if (existing_ld_path && strlen(existing_ld_path) > 0) {
         lib_path = lib_path + ":" + std::string(existing_ld_path);
@@ -183,10 +283,26 @@ void SDServer::load(const std::string& model_name,
 #else
     // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
-    if (backend == "rocm") {
+    if (is_rocm_backend(resolved_backend)) {
         // Add executable directory to PATH for ROCm runtime DLLs
         // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
         std::string new_path = exe_dir.string();
+
+        if (resolved_backend == "rocm-stable") {
+            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
+            if (fs::exists(runtime_dir)) {
+                new_path = runtime_dir + ";" + new_path;
+            }
+        } else if (resolved_backend == "rocm-preview") {
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
+                if (!therock_bin.empty()) {
+                    new_path = therock_bin + ";" + new_path;
+                }
+            }
+        }
+
         const char* existing_path = std::getenv("PATH");
         if (existing_path && strlen(existing_path) > 0) {
             new_path = new_path + ";" + std::string(existing_path);
@@ -272,6 +388,22 @@ json SDServer::image_generations(const json& request) {
     if (request.contains("seed")) {
         extra_args["seed"] = request["seed"].get<int>();
     }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"].get<std::string>();
+    } else {
+        std::string sm = recipe_options_.get_option("sampling_method");
+        if (!sm.empty()) {
+            extra_args["sample_method"] = sm;
+        }
+    }
+    {
+        float fs = recipe_options_.get_option("flow_shift");
+        if (request.contains("flow_shift")) {
+            extra_args["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (fs > 0.0f) {
+            extra_args["flow_shift"] = fs;
+        }
+    }
 
     // Append extra args to prompt
     {
@@ -307,6 +439,22 @@ json SDServer::image_edits(const json& request) {
     }
     if (request.contains("seed")) {
         extra_args["seed"] = request["seed"].get<int>();
+    }
+    if (request.contains("sample_method")) {
+        extra_args["sample_method"] = request["sample_method"].get<std::string>();
+    } else {
+        std::string sm = recipe_options_.get_option("sampling_method");
+        if (!sm.empty()) {
+            extra_args["sample_method"] = sm;
+        }
+    }
+    {
+        float fs = recipe_options_.get_option("flow_shift");
+        if (request.contains("flow_shift")) {
+            extra_args["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (fs > 0.0f) {
+            extra_args["flow_shift"] = fs;
+        }
     }
 
     // Append extra args to prompt (same pattern as image_generations)

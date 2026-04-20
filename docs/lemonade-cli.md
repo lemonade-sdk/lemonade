@@ -41,7 +41,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
-| `pull MODEL_NAME`   | Download and install a model. See command options [below](#options-for-pull). |
+| `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
@@ -69,7 +69,7 @@ The following options are available for all commands:
 These options can also be set via environment variables:
 - `LEMONADE_HOST` for `--host`
 - `LEMONADE_PORT` for `--port`
-- `LEMONADE_API_KEY` for `--api-key`
+- `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` for `--api-key`
 
 **Examples:**
 
@@ -94,6 +94,28 @@ On Windows (PowerShell):
 $env:LEMONADE_HOST="192.168.1.100"
 $env:LEMONADE_PORT="13305"
 $env:LEMONADE_API_KEY="your-api-key-here"
+lemonade list
+```
+
+**Admin API Key Example:**
+
+To use the admin API key (which provides full access including internal endpoints):
+
+On Linux/macOS:
+```bash
+export LEMONADE_ADMIN_API_KEY=admin-secret-key
+lemonade list
+```
+
+On Windows (Command Prompt):
+```cmd
+set LEMONADE_ADMIN_API_KEY=admin-secret-key
+lemonade list
+```
+
+On Windows (PowerShell):
+```powershell
+$env:LEMONADE_ADMIN_API_KEY="admin-secret-key"
 lemonade list
 ```
 
@@ -128,42 +150,65 @@ lemonade list [options]
 
 ## Options for pull
 
-The `pull` command downloads and installs models. For models already in the [Lemonade Server registry](https://lemonade-server.ai/models.html), only the model name is required. To register and install custom models from Hugging Face, use the registration options below:
+The `pull` command downloads and installs models. The single positional argument can be either:
+
+1. **A registered model name** from the [Lemonade Server registry](https://lemonade-server.ai/models.html), e.g. `Qwen3-0.6B-GGUF`.
+2. **A Hugging Face checkpoint** of the form `owner/repo`, with an optional `:variant` suffix, e.g. `unsloth/Qwen3-8B-GGUF` or `unsloth/Qwen3-8B-GGUF:Q4_K_M`. When the variant is omitted (or doesn't match), Lemonade fetches the repository, lists the available quantizations (including sharded folder variants), auto-detects any `mmproj-*.gguf` files for vision models, infers labels from the repo id (`embed`/`rerank`), and presents an interactive menu.
+3. **A custom `user.*` model name** when you want to manually register a model with explicit checkpoints, recipe, and optional labels.
 
 ```bash
-lemonade pull MODEL_NAME [options]
+lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL]
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `MODEL_NAME` | Model name to pull (e.g., `Qwen3-0.6B-GGUF` or `user.MyModel`) | Yes |
-| `--checkpoint TYPE CHECKPOINT` | Hugging Face checkpoint in the format `org/model:variant`. The `TYPE` specifies the component type. Can be specified multiple times. Valid types: `main`, `mmproj`, `vae`, `text_encoder`. For GGUF models, the variant (after the colon) is required. Examples: `unsloth/Qwen3-8B-GGUF:Q4_0`, `amd/Qwen3-4B-awq-quant-onnx-hybrid` | For custom models |
-| `--recipe RECIPE` | Inference recipe to use. Options: `llamacpp`, `flm`, `ryzenai-llm` | For custom models |
-| `--label LABEL` | Add a label to the model. Can be specified multiple times. Valid labels: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
+| `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
+| `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `whispercpp`, `sd-cpp`, `kokoro`) | No |
+| `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 
-**Notes:**
-- Custom model names must use the `user.` namespace prefix (e.g., `user.MyModel`)
-- GGUF models require a variant specified in the checkpoint after the colon
-- To import a model from a JSON configuration file, use the [`import`](#options-for-import) command instead
+**Happy path**
 
-**Examples:**
+Most users only need one of these:
 
 ```bash
 # Pull a registered model from the Lemonade Server registry
 lemonade pull Qwen3-0.6B-GGUF
 
+# Pull a Hugging Face GGUF — interactive variant menu appears
+lemonade pull unsloth/Qwen3-8B-GGUF
+
+# Pull a specific variant directly (no menu)
+lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
+
+# Vision model — mmproj is auto-detected and the `vision` label is auto-applied
+lemonade pull ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
+
+# Sharded variant — all shards in the matching folder are downloaded
+lemonade pull unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+```
+
+**Manual registration from the same command**
+
+When you need explicit multi-file checkpoints, a non-default recipe, or custom labels, use the same `pull` command with a `user.*` model name plus `--checkpoint` and `--recipe`:
+
+```bash
+lemonade pull user.NAME --checkpoint TYPE CHECKPOINT [--recipe RECIPE] [--label LABEL]
+```
+
+```bash
 # Register and pull a custom GGUF model with main checkpoint
 lemonade pull user.Phi-4-Mini-GGUF \
   --checkpoint main unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M \
   --recipe llamacpp
 
-# Register and pull a model with multiple checkpoints (e.g., main model + mmproj)
+# Register and pull a vision model with main + mmproj
 lemonade pull user.Gemma-3-4b \
   --checkpoint main ggml-org/gemma-3-4b-it-GGUF:Q4_K_M \
-  --checkpoint mmproj mmproj-model-f16.gguf \
+  --checkpoint mmproj ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf \
   --recipe llamacpp
 
-# Register and pull a model with multiple labels
+# Register a model with multiple labels
 lemonade pull user.MyCodingModel \
   --checkpoint main org/model:Q4_0 \
   --recipe llamacpp \
@@ -254,7 +299,7 @@ lemonade import --directory coding-agents --recipe-file GLM-4.7-Flash-GGUF-NoThi
   "model_name": "MyMultimodalModel",
   "checkpoints": {
     "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
-    "mmproj": "mmproj-model-f16.gguf"
+    "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
   },
   "recipe": "llamacpp",
   "labels": ["vision", "reasoning"]
@@ -454,10 +499,12 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex` | Yes |
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode` | Yes |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
+| `--provider,-p [PROVIDER]` | Codex only: select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
+| `--agent-args ARGS` | Custom arguments to pass directly to the launched agent process | `""` |
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
@@ -468,22 +515,41 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 - `--directory` and `--recipe-file` are only used for remote recipe import at prompt time.
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
 - `--api-key` is propagated to the launched agent process.
-- Supported agents: `claude`, `codex`
+- For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
+- `--provider` is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
+- `--agent-args` is parsed and appended to the launched agent command.
+- Supported agents: `claude`, `codex`, `opencode`
+- `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
+- When no `--api-key` is provided, the generated opencode provider uses a default `apiKey` value of `lemonade`.
 
 **Examples:**
 
 ```bash
 # Launch an agent with default model settings
-lemonade launch claude --model Qwen3-0.6B-GGUF
+lemonade launch claude --model Qwen3.5-0.8B-GGUF
 
 # Launch an agent with custom context size
-lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 8192
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768
 
 # Launch an agent with a specific llama.cpp backend
-lemonade launch codex --model Qwen3-0.6B-GGUF --llamacpp vulkan
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --llamacpp vulkan
+
+# Launch codex using provider from your Codex config.toml (default provider: lemonade)
+lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
+
+# Launch codex using a custom provider name from your Codex config.toml
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 
 # Launch an agent with custom llama.cpp arguments
-lemonade launch claude --model Qwen3-0.6B-GGUF --ctx-size 4096 --llamacpp-args "--flash-attn on --no-mmap"
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768 --llamacpp-args "--flash-attn on --no-mmap"
+
+# Pass additional arguments directly to the agent
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"
+
+# Resume from previous session
+lemonade launch codex --model Qwen3.5-0.8B-GGUF --agent-args "resume SESSION_ID"
+
+lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_ID"
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json

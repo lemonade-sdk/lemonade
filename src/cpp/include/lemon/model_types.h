@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace lemon {
 
@@ -68,8 +70,25 @@ inline std::string device_type_to_string(DeviceType device) {
     return result;
 }
 
-// Determine model type from labels
+// Determine model type from labels.
+//
+// Labels describe *capabilities* (what the model accepts or produces). ModelType
+// describes the *deployment mode* we spawn the backend subprocess in (LLM chat,
+// ASR, embedding, etc.) and the LRU bucket the router uses. These are different
+// concepts, and multimodal "any-to-text" chat models (e.g. Gemma 4 on FLM)
+// carry both chat indicators and modality labels like "audio" / "vision" to
+// signal which input modalities they accept. Those must still deploy as LLMs.
+//
+// Resolution: chat-indicator labels win. Modality labels are only used to pick
+// a deployment mode when no chat indicator is present (pure Whisper = "audio",
+// pure embedding model = "embedding", etc.).
 inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
+    for (const auto& label : labels) {
+        if (label == "vision" || label == "reasoning" ||
+            label == "tool-calling" || label == "tools") {
+            return ModelType::LLM;
+        }
+    }
     for (const auto& label : labels) {
         if (label == "embeddings" || label == "embedding") {
             return ModelType::EMBEDDING;
@@ -93,15 +112,15 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 // Determine device type from recipe
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return DEVICE_GPU;
+        return DEVICE_GPU;  // Default; LlamaCppServer::load() overrides to DEVICE_CPU for the cpu backend
     } else if (recipe == "ryzenai-llm") {
         return DEVICE_NPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;  // Whisper.cpp runs on CPU (with optional GPU acceleration)
+        return DEVICE_CPU;  // Default; WhisperServer::load() overrides to DEVICE_NPU/DEVICE_GPU for npu/vulkan backends
     } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;  // stable-diffusion.cpp uses CPU (AVX2) by default
+        return DEVICE_CPU;  // Default; SDServer::load() overrides to DEVICE_GPU for rocm/vulkan backends
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;  // Kokoros runs on CPU
     } else if (recipe == "experience") {
