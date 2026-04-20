@@ -1013,7 +1013,7 @@ int main(int argc, char* argv[]) {
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
 
     // List options
-    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
+    list_cmd->add_flag("--downloaded", config.downloaded, "Show only downloaded models");
     list_cmd->add_option("name_filter", config.list_filter,
         "Optional case-insensitive model-name filter; supports * wildcards")
         ->type_name("NAME_FILTER");
