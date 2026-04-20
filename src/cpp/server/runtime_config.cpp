@@ -160,6 +160,11 @@ bool RuntimeConfig::offline() const {
     return config_["offline"].get<bool>();
 }
 
+bool RuntimeConfig::no_fetch_executables() const {
+    std::shared_lock lock(mutex_);
+    return config_["no_fetch_executables"].get<bool>();
+}
+
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
     return config_["disable_model_filtering"].get<bool>();
@@ -301,6 +306,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'" + key + "' must be a string");
         }
     } else if (key == "no_broadcast" || key == "offline" ||
+               key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + key + "' must be a boolean");
