@@ -1,5 +1,15 @@
 import type { AppSettings } from './renderer/utils/appSettings';
 
+export type ResizeDirection =
+  | 'Left'
+  | 'Right'
+  | 'Top'
+  | 'Bottom'
+  | 'TopLeft'
+  | 'TopRight'
+  | 'BottomLeft'
+  | 'BottomRight';
+
 declare module '*.svg' {
   const content: string;
   export default content;
@@ -28,7 +38,7 @@ declare global {
   interface Window {
     api: {
       writeClipboard?: (text: string) => Promise<void>;
-      isWebApp?: boolean;  // Explicit flag to indicate web mode (vs Electron)
+      isWebApp?: boolean;  // Explicit flag to indicate web mode (vs Tauri desktop)
       platform: string;
       minimizeWindow: () => void;
       maximizeWindow: () => void;
@@ -38,10 +48,14 @@ declare global {
       updateMinWidth: (width: number) => void;
       zoomIn: () => void;
       zoomOut: () => void;
+      // Frameless windows on webkit2gtk get no edge resize handles from the OS,
+      // so the renderer paints invisible 6-px regions on each edge/corner and
+      // calls this from their mousedown handler. The Tauri shim forwards to
+      // `getCurrentWindow().startResizeDragging(direction)`. No-op in web mode.
+      startResizeDragging?: (direction: ResizeDirection) => void;
       getSettings?: () => Promise<AppSettings>;
       saveSettings?: (settings: AppSettings) => Promise<AppSettings>;
       onSettingsUpdated?: (callback: (settings: AppSettings) => void) => void | (() => void);
-      getVersion?: () => Promise<string>;
       discoverServerPort?: () => Promise<number | null>;
       getServerPort?: () => Promise<number>;
       // Returns the configured server base URL or null if using localhost discovery
@@ -49,8 +63,6 @@ declare global {
       getServerAPIKey?: () => Promise<string | null>;
       onServerPortUpdated?: (callback: (port: number) => void) => void | (() => void);
       onConnectionSettingsUpdated?: (callback: (baseURL: string, apiKey: string) => void) => void | (() => void);
-      getSystemStats?: () => Promise<{ cpu_percent: number | null; memory_gb: number; gpu_percent: number | null; vram_gb: number | null; npu_percent: number | null }>;
-      getSystemInfo?: () => Promise<{ system: string; os: string; cpu: string; gpus: string[]; gtt_gb?: string; vram_gb?: string }>;
       getLocalMarketplaceUrl?: () => Promise<string | null>;
       signalReady?: () => void;
       onNavigate?: (callback: (data: { view?: string; model?: string }) => void) => void | (() => void);

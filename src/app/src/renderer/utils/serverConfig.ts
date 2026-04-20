@@ -7,6 +7,8 @@
  * Falls back to localhost + port discovery when no explicit URL is provided.
  */
 
+import { tauriReady } from '../tauriShim';
+
 type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
@@ -22,31 +24,22 @@ class ServerConfig {
   private initPromise: Promise<void> | null = null;
 
   constructor() {
-    // Initialize from Electron API on startup
+    // Initialize from the host (Tauri invoke bridge or web-app mock) on startup.
+    // Event listeners are registered inside initialize() rather than here
+    // because window.api is installed asynchronously by tauriShim.ts and is
+    // not yet available during synchronous module-graph evaluation.
     this.initPromise = this.initialize();
-
-    // Listen for port updates from main process (only relevant for localhost mode)
-    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
-      window.api.onServerPortUpdated((port: number) => {
-        // Only update port if we're not using an explicit URL
-        if (!this.explicitBaseUrl) {
-          this.setPort(port);
-        }
-      });
-
-      window.api.onConnectionSettingsUpdated((baseURL: string, apiKey: string) => {
-        if (this.explicitBaseUrl != baseURL) {
-            this.setUpdatedURL(baseURL);
-        }
-
-        if (this.apiKey != apiKey) {
-           this.setUpdatedAPIKey(apiKey);
-        }
-      });
-    }
   }
 
   private async initialize(): Promise<void> {
+    // Wait for tauriShim.ts to finish installing window.api. Both
+    // installTauriApi() and this method are kicked off during module
+    // evaluation as fire-and-forget promises; without this await,
+    // initialize() races installTauriApi() and loses — every window.api
+    // check below sees undefined, and we fall through to localhost:13305
+    // with no API key.
+    await tauriReady;
+
     try {
       // Get API Key if available
       if (typeof window !== 'undefined'&& window.api?.getServerAPIKey) {
@@ -90,6 +83,28 @@ class ServerConfig {
     } catch (error) {
       console.error('Failed to initialize server config:', error);
       this.initialized = true;
+    }
+
+    // Register event listeners AFTER the first await-cycle so window.api is
+    // guaranteed to be installed. tauriShim.ts installs window.api via a
+    // fire-and-forget async call that completes on the microtask queue; the
+    // constructor runs synchronously during module-graph evaluation and would
+    // see window.api as undefined if we registered there.
+    if (typeof window !== 'undefined' && window.api?.onServerPortUpdated && window.api?.onConnectionSettingsUpdated) {
+      window.api.onServerPortUpdated((port: number) => {
+        if (!this.explicitBaseUrl) {
+          this.setPort(port);
+        }
+      });
+
+      window.api.onConnectionSettingsUpdated((baseURL: string, apiKey: string) => {
+        if (this.explicitBaseUrl != baseURL) {
+          this.setUpdatedURL(baseURL);
+        }
+        if (this.apiKey != apiKey) {
+          this.setUpdatedAPIKey(apiKey);
+        }
+      });
     }
   }
 
@@ -283,6 +298,8 @@ class ServerConfig {
    * (only attempts discovery in localhost mode)
    */
   async fetch(endpoint: string, opts?: RequestInit): Promise<Response> {
+    await this.waitForInit();
+
     const fullUrl = endpoint.startsWith('http')
       ? endpoint
       : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
@@ -333,6 +350,7 @@ export const getServerHost = () => serverConfig.getServerHost();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
+export const getWebSocketProtocol = () => new URL(serverConfig.getServerBaseUrl()).protocol === 'https:' ? 'wss' : 'ws';
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);

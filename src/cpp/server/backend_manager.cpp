@@ -1,5 +1,6 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
@@ -71,6 +72,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     // System backend uses a pre-installed binary from PATH - nothing to install
     if (backend == "system") {
         return;
+    }
+
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->no_fetch_executables()) {
+            throw std::runtime_error(
+                "Fetching executable artifacts is disabled");
+        }
     }
 
     auto params = get_install_params(recipe, backend);

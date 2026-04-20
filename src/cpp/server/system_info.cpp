@@ -71,7 +71,8 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
 
-// ROCm architecture mapping - maps specific gfx architectures to their family
+// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
+// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     // RDNA2 family (gfx103X)
     {"gfx1030", "gfx103X"},
@@ -79,6 +80,10 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1032", "gfx103X"},
     {"gfx1034", "gfx103X"},
     // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
+    // map to "" so get_rocm_arch skips them
+    {"gfx1033", ""},
+    {"gfx1035", ""},
+    {"gfx1036", ""},
 
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
@@ -128,12 +133,10 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
-        {"amd_igpu", {}},      // all iGPU families
-        {"amd_dgpu", {}},      // all dGPU families
+        {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},                      // STX Point/Halo iGPUs (explicit binaries)
-        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},          // RDNA2/3/4 dGPUs (family binaries)
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -157,13 +160,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
-        {"amd_igpu", {
+        {"amd_gpu", {
 #ifdef __linux__
             "gfx1150",   // Strix Point - Linux only (ROCm not yet supported on Windows)
 #endif
-            "gfx1151"
+            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
         }},
-        {"amd_dgpu", {"gfx103X", "gfx110X", "gfx120X"}},
     }},
 
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
@@ -193,7 +195,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"x86_64", "x86-64 processors"},
     {"arm64", "ARM64 processors"},
 
-    // AMD iGPU/dGPU architectures (ROCm)
+    // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
@@ -207,10 +209,9 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
 // Maps device types to human-readable names (for error messages)
 static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"cpu", "CPU"},
-    {"amd_igpu", "AMD iGPU"},
-    {"amd_dgpu", "AMD dGPU"},
+    {"amd_gpu", "AMD GPU"},
     {"amd_npu", "AMD NPU"},
-    {"nvidia_dgpu", "NVIDIA GPU"},
+    {"nvidia_gpu", "NVIDIA GPU"},
     {"metal", "MacOS Metal GPU"}
 };
 
@@ -220,7 +221,7 @@ static std::string get_family_name(const std::string& family) {
     return it != DEVICE_FAMILY_NAMES.end() ? it->second : family;
 }
 
-// Get human-readable name for a device type (e.g., "amd_igpu" -> "AMD iGPU")
+// Get human-readable name for a device type (e.g., "amd_gpu" -> "AMD GPU")
 static std::string get_device_type_name(const std::string& device_type) {
     auto it = DEVICE_TYPE_NAMES.find(device_type);
     return it != DEVICE_TYPE_NAMES.end() ? it->second : device_type;
@@ -266,7 +267,7 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
 
 // Detected device with its family
 struct DetectedDevice {
-    std::string type;      // "cpu", "amd_igpu", "amd_dgpu", "amd_npu"
+    std::string type;      // "cpu", "amd_gpu", "amd_npu"
     std::string name;      // Full device name
     std::string family;    // "x86_64", "gfx1150", "XDNA2", etc.
     bool present;
@@ -370,6 +371,11 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
 }
 
 static std::string get_install_command(const std::string& recipe, const std::string& backend) {
+    if (auto* cfg = RuntimeConfig::global()) {
+        if (cfg->no_fetch_executables()) {
+            return "";
+        }
+    }
     return "lemonade backends install " + recipe + ":" + backend;
 }
 
@@ -445,61 +451,62 @@ json SystemInfo::get_device_dict() {
         };
     }
 
-    // Get AMD iGPU info - with fault tolerance
+    // Get AMD GPU info (both integrated and discrete) - with fault tolerance
     try {
-        auto amd_igpu = get_amd_igpu_device();
-        devices["amd_igpu"] = {
-            {"name", amd_igpu.name},
-            {"vram_gb", amd_igpu.vram_gb},
-            {"virtual_mem_gb", amd_igpu.virtual_gb},
-            {"available", amd_igpu.available}
-        };
-        devices["amd_igpu"]["family"] = identify_rocm_arch_from_name(amd_igpu.name);
-        if (!amd_igpu.error.empty()) {
-            devices["amd_igpu"]["error"] = amd_igpu.error;
-        }
-    } catch (const std::exception& e) {
-        devices["amd_igpu"] = {
-            {"name", "Unknown"},
-            {"available", true},  // Assume available - trust the user
-            {"error", std::string("Detection exception: ") + e.what()}
-        };
-    }
+        devices["amd_gpu"] = json::array();
 
-    // Get AMD dGPU info - with fault tolerance
-    try {
-        auto amd_dgpus = get_amd_dgpu_devices();
-        devices["amd_dgpu"] = json::array();
-        for (const auto& gpu : amd_dgpus) {
+        auto amd_igpu = get_amd_igpu_device();
+        if (amd_igpu.available) {
             json gpu_json = {
-                {"name", gpu.name},
-                {"available", gpu.available}
+                {"name", amd_igpu.name},
+                {"available", amd_igpu.available}
             };
-            if (gpu.vram_gb > 0) {
-                gpu_json["vram_gb"] = gpu.vram_gb;
+            if (amd_igpu.vram_gb > 0) {
+                gpu_json["vram_gb"] = amd_igpu.vram_gb;
             }
-            if (gpu.virtual_gb > 0) {
-                gpu_json["virtual_mem_gb"] = gpu.virtual_gb;
+            if (amd_igpu.virtual_gb > 0) {
+                gpu_json["virtual_mem_gb"] = amd_igpu.virtual_gb;
             }
-            if (!gpu.driver_version.empty()) {
-                gpu_json["driver_version"] = gpu.driver_version;
+            gpu_json["family"] = identify_rocm_arch_from_name(amd_igpu.name);
+            if (!amd_igpu.error.empty()) {
+                gpu_json["error"] = amd_igpu.error;
             }
-            gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
-            if (!gpu.error.empty()) {
-                gpu_json["error"] = gpu.error;
+            devices["amd_gpu"].push_back(gpu_json);
+        }
+
+        auto amd_dgpus = get_amd_dgpu_devices();
+        for (const auto& gpu : amd_dgpus) {
+            if (gpu.available) {
+                json gpu_json = {
+                    {"name", gpu.name},
+                    {"available", gpu.available}
+                };
+                if (gpu.vram_gb > 0) {
+                    gpu_json["vram_gb"] = gpu.vram_gb;
+                }
+                if (gpu.virtual_gb > 0) {
+                    gpu_json["virtual_mem_gb"] = gpu.virtual_gb;
+                }
+                if (!gpu.driver_version.empty()) {
+                    gpu_json["driver_version"] = gpu.driver_version;
+                }
+                gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
+                if (!gpu.error.empty()) {
+                    gpu_json["error"] = gpu.error;
+                }
+                devices["amd_gpu"].push_back(gpu_json);
             }
-            devices["amd_dgpu"].push_back(gpu_json);
         }
     } catch (const std::exception& e) {
-        devices["amd_dgpu"] = json::array();
-        devices["amd_dgpu_error"] = std::string("Detection exception: ") + e.what();
+        devices["amd_gpu"] = json::array();
+        devices["amd_gpu_error"] = std::string("Detection exception: ") + e.what();
     }
 
     // Get NVIDIA dGPU info - with fault tolerance
     try {
-        auto nvidia_dgpus = get_nvidia_dgpu_devices();
-        devices["nvidia_dgpu"] = json::array();
-        for (const auto& gpu : nvidia_dgpus) {
+        auto nvidia_gpus = get_nvidia_gpu_devices();
+        devices["nvidia_gpu"] = json::array();
+        for (const auto& gpu : nvidia_gpus) {
             json gpu_json = {
                 {"name", gpu.name},
                 {"available", gpu.available}
@@ -513,11 +520,11 @@ json SystemInfo::get_device_dict() {
             if (!gpu.error.empty()) {
                 gpu_json["error"] = gpu.error;
             }
-            devices["nvidia_dgpu"].push_back(gpu_json);
+            devices["nvidia_gpu"].push_back(gpu_json);
         }
     } catch (const std::exception& e) {
-        devices["nvidia_dgpu"] = json::array();
-        devices["nvidia_dgpu_error"] = std::string("Detection exception: ") + e.what();
+        devices["nvidia_gpu"] = json::array();
+        devices["nvidia_gpu_error"] = std::string("Detection exception: ") + e.what();
     }
 
     // Get NPU info - with fault tolerance
@@ -641,32 +648,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
         detected_devices.push_back({"cpu", "CPU", "", true});
     }
 
-    // AMD iGPU
-    if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
-        const auto& igpu = devices["amd_igpu"];
-        if (igpu.value("available", false)) {
-            std::string name = igpu.value("name", "");
-            std::string family = igpu.value("family", "");
-            if (!name.empty()) {
-                detected_devices.push_back({
-                    "amd_igpu",
-                    name,
-                    family,
-                    true
-                });
-            }
-        }
-    }
-
-    // AMD dGPUs
-    if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
-        for (const auto& gpu : devices["amd_dgpu"]) {
+    // AMD GPUs
+    if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+        for (const auto& gpu : devices["amd_gpu"]) {
             if (gpu.value("available", false)) {
                 std::string name = gpu.value("name", "");
                 std::string family = gpu.value("family", "");
                 if (!name.empty()) {
                     detected_devices.push_back({
-                        "amd_dgpu",
+                        "amd_gpu",
                         name,
                         family,
                         true
@@ -854,7 +844,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     : missing_devices[0];
 
                 // For AMD GPUs, include the detected family in the message
-                if (device_type == "amd_dgpu" || device_type == "amd_igpu") {
+                if (device_type == "amd_gpu") {
                     // Find the detected GPU family for this device type
                     std::string detected_family;
                     for (const auto& detected : detected_devices) {
@@ -919,8 +909,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["action"] = get_install_command(def.recipe, def.backend);
 #endif
             } else {
-                backend["state"] = "installable";
-                backend["message"] = install_error.empty() ? "Backend is supported but not installed." : install_error;
+                auto* cfg = RuntimeConfig::global();
+                bool no_fetch = cfg && cfg->no_fetch_executables();
+                backend["state"] = no_fetch ? "unsupported" : "installable";
+                std::string default_message = no_fetch
+                    ? "Automatic backend install is disabled."
+                    : "Backend is supported but not installed.";
+                backend["message"] = install_error.empty() ? default_message : install_error;
 
                 // Special action for ROCm backend on llamacpp/sd-cpp if CWSR fix is missing
                 if ((def.recipe == "llamacpp" || def.recipe == "sd-cpp") && def.backend == "rocm"
@@ -940,7 +935,24 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             bool version_known = !installed_version.empty() && installed_version != "unknown";
             bool has_expected = !expected_version.empty();
-            bool needs_update = has_expected && (!version_known || installed_version != expected_version);
+            bool needs_update;
+#if !defined(_WIN32)
+            // On non-Windows, FLM is a system-managed package; a version newer
+            // than the minimum required is acceptable.
+            if (def.recipe == "flm") {
+                auto installed_ver = utils::Version::parse(installed_version);
+                auto expected_ver = utils::Version::parse(expected_version);
+                // If either version cannot be parsed, fall back to exact equality check
+                bool version_at_least_expected = (!installed_ver.empty() && !expected_ver.empty())
+                    ? (installed_ver >= expected_ver)
+                    : (installed_version == expected_version);
+                needs_update = has_expected && (!version_known || !version_at_least_expected);
+            } else {
+                needs_update = has_expected && (!version_known || installed_version != expected_version);
+            }
+#else
+            needs_update = has_expected && (!version_known || installed_version != expected_version);
+#endif
 
             if (needs_update) {
                 backend["state"] = "update_required";
@@ -1125,8 +1137,9 @@ std::string SystemInfo::get_system_llamacpp_version() {
     return "unknown";
 }
 
-// Helper to identify ROCm architecture from GPU name
-// Returns the detected architecture even if not in ROCM_ARCH_MAPPING
+// Helper to identify ROCm architecture from GPU name.
+// Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
+// If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
@@ -1399,23 +1412,9 @@ std::string SystemInfo::get_rocm_arch() {
 
         const auto& devices = system_info["devices"];
 
-        // Check iGPU first
-        if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
-            const auto& igpu = devices["amd_igpu"];
-            if (igpu.value("available", false)) {
-                std::string name = igpu.value("name", "");
-                if (!name.empty()) {
-                    std::string arch = identify_rocm_arch_from_name(name);
-                    if (!arch.empty()) {
-                        return arch;
-                    }
-                }
-            }
-        }
-
-        // Check dGPUs
-        if (devices.contains("amd_dgpu") && devices["amd_dgpu"].is_array()) {
-            for (const auto& gpu : devices["amd_dgpu"]) {
+        // Check AMD GPUs
+        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+            for (const auto& gpu : devices["amd_gpu"]) {
                 if (gpu.value("available", false)) {
                     std::string name = gpu.value("name", "");
                     if (!name.empty()) {
@@ -1435,24 +1434,13 @@ std::string SystemInfo::get_rocm_arch() {
 }
 
 bool SystemInfo::get_has_igpu() {
-    // Returns if the device is an iGPU. Only AMD iGPUs are detected at the moment
+    // Detect at runtime using OS-level iGPU detection
+    // Linux: checks for absence of board_info in sysfs (iGPUs don't have it)
+    // Windows: checks GPU name against discrete GPU keywords
     try {
-        // Use cached system info to avoid re-detecting GPUs
-        json system_info = SystemInfoCache::get_system_info_with_cache();
-
-        if (!system_info.contains("devices")) {
-            return false;
-        }
-
-        const auto& devices = system_info["devices"];
-
-        // Check iGPU first
-        if (devices.contains("amd_igpu") && devices["amd_igpu"].is_object()) {
-            const auto& igpu = devices["amd_igpu"];
-            if (igpu.value("available", false)) {
-                return true;
-            }
-        }
+        auto sys_info = create_system_info();
+        GPUInfo igpu = sys_info->get_amd_igpu_device();
+        return igpu.available;
     } catch (...) {
         // Detection failed
     }
@@ -1623,7 +1611,7 @@ std::vector<GPUInfo> WindowsSystemInfo::get_amd_dgpu_devices() {
     return detect_amd_gpus("discrete");
 }
 
-std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_dgpu_devices() {
+std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
     wmi::WMIConnection wmi;
@@ -2069,7 +2057,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_amd_dgpu_devices() {
     return detect_amd_gpus("discrete");
 }
 
-std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_dgpu_devices() {
+std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
     // Execute lspci to find GPUs
@@ -2634,7 +2622,7 @@ std::vector<GPUInfo> MacOSSystemInfo::get_amd_dgpu_devices() {
     return {gpu};
 }
 
-std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_dgpu_devices() {
+std::vector<GPUInfo> MacOSSystemInfo::get_nvidia_gpu_devices() {
     GPUInfo gpu;
     gpu.available = false;
     gpu.error = "NVIDIA GPUs not detected on macOS";
@@ -2821,7 +2809,7 @@ bool SystemInfo::is_running_under_systemd() {
     }
 
 #ifdef HAVE_SYSTEMD
-    // Use systemd journal only when actually running as lemonade-server.service.
+    // Use systemd journal only when actually running as lemond.service.
     // sd_pid_get_unit() reads the process's cgroup assignment (not environment variables),
     // so it cannot give false positives from inherited env vars like JOURNAL_STREAM or
     // INVOCATION_ID, both of which are inherited by all child processes in a systemd session.

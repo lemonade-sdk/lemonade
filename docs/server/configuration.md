@@ -31,6 +31,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "models_dir": "auto",
   "ctx_size": 4096,
   "offline": false,
+  "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
   "llamacpp": {
@@ -84,6 +85,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | 4096 | Default context size for LLM models |
 | `offline` | bool | false | Skip model downloads |
+| `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 
