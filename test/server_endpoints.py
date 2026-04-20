@@ -396,6 +396,70 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Loaded model with ctx_size={custom_ctx_size}")
 
+    def test_010a_load_model_with_draft_model_id(self):
+        """Test that --model-draft accepts a downloaded llama model id."""
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": (
+                    f"--draft-max 8 --draft-min 0 --model-draft {ENDPOINT_TEST_MODEL}"
+                ),
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        health_response = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(health_response.status_code, 200)
+        loaded_models = [
+            m["model_name"] for m in health_response.json().get("all_models_loaded", [])
+        ]
+        self.assertIn(ENDPOINT_TEST_MODEL, loaded_models)
+
+        print("[OK] Loaded model with --model-draft model id")
+
+    def test_010b_load_model_with_invalid_draft_model_id(self):
+        """Test that unknown --model-draft model ids are rejected."""
+        invalid_model_id = "Definitely-Not-A-Model"
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": f"--model-draft {invalid_model_id}",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 500)
+
+        data = response.json()
+        error_msg = data.get("error", {}).get("message", "")
+        self.assertIn("Invalid --model-draft model", error_msg)
+        self.assertIn("model not found", error_msg)
+
+        print("[OK] Invalid --model-draft model id is rejected")
+
+    def test_010c_load_model_with_missing_draft_value(self):
+        """Test that --model-draft without a value is rejected."""
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--model-draft --draft-max 8",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 500)
+
+        data = response.json()
+        error_msg = data.get("error", {}).get("message", "")
+        self.assertIn("Invalid --model-draft argument", error_msg)
+        self.assertIn("missing value", error_msg)
+
+        print("[OK] Missing --model-draft value is rejected")
+
     def test_011_load_model_save_options(self):
         """Test save_options=true saves settings to recipe_options.json."""
         custom_ctx_size = 4096

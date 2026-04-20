@@ -3,14 +3,18 @@
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <iostream>
 #include <filesystem>
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <cstdlib>
+#include <cctype>
 #include <set>
+#include <sstream>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -89,6 +93,168 @@ static void push_overridable_arg(std::vector<std::string>& args,
     }
 }
 
+static bool ends_with_ignore_case(const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        char a = static_cast<char>(std::tolower(static_cast<unsigned char>(value[value.size() - suffix.size() + i])));
+        char b = static_cast<char>(std::tolower(static_cast<unsigned char>(suffix[i])));
+        if (a != b) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool is_existing_gguf_file(const std::string& value) {
+    if (value.empty() || !ends_with_ignore_case(value, ".gguf")) {
+        return false;
+    }
+
+    fs::path candidate_path = path_from_utf8(value);
+    return fs::exists(candidate_path) && fs::is_regular_file(candidate_path);
+}
+
+static bool is_flag_token(const std::string& value) {
+    return value.size() > 1 && value[0] == '-';
+}
+
+static bool has_speculative_decoding_enabled(const std::vector<std::string>& tokens) {
+    bool has_model_draft = false;
+    std::string spec_type = "none";
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+
+        if (token == "--model-draft") {
+            has_model_draft = true;
+        }
+
+        if (token == "--spec-type") {
+            if (i + 1 < tokens.size() && !is_flag_token(tokens[i + 1])) {
+                spec_type = tokens[i + 1];
+            }
+        }
+    }
+
+    return has_model_draft || (!spec_type.empty() && spec_type != "none");
+}
+
+static bool strip_redundant_no_mmproj_tokens(std::vector<std::string>& tokens) {
+    size_t previous_size = tokens.size();
+    tokens.erase(
+        std::remove_if(tokens.begin(), tokens.end(), [](const std::string& token) {
+            return token == "--no-mmproj";
+        }),
+        tokens.end());
+
+    return tokens.size() != previous_size;
+}
+
+static void validate_model_draft_value_or_throw(const std::string& draft_value) {
+    if (draft_value.empty() || is_flag_token(draft_value)) {
+        throw std::runtime_error("Invalid --model-draft argument: missing value");
+    }
+}
+
+static std::string quote_arg_if_needed(const std::string& token) {
+    if (token.find_first_of(" \t\r\n") == std::string::npos) {
+        return token;
+    }
+
+    if (token.find('"') == std::string::npos) {
+        return "\"" + token + "\"";
+    }
+
+    if (token.find('\'') == std::string::npos) {
+        return "'" + token + "'";
+    }
+
+    return token;
+}
+
+static std::string join_custom_args(const std::vector<std::string>& tokens) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        if (i > 0) {
+            oss << ' ';
+        }
+        oss << quote_arg_if_needed(tokens[i]);
+    }
+    return oss.str();
+}
+
+static std::string resolve_draft_model_path_in_args(const std::string& custom_args,
+                                                    ModelManager* model_manager) {
+    if (custom_args.empty() || model_manager == nullptr) {
+        return custom_args;
+    }
+
+    std::vector<std::string> tokens = parse_custom_args(custom_args);
+    bool changed = false;
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::string draft_value;
+        bool has_draft_flag = false;
+
+        if (tokens[i] == "--model-draft") {
+            if (i + 1 >= tokens.size()) {
+                throw std::runtime_error("Invalid --model-draft argument: missing value");
+            }
+            draft_value = tokens[i + 1];
+            validate_model_draft_value_or_throw(draft_value);
+            has_draft_flag = true;
+        }
+
+        if (!has_draft_flag || draft_value.empty()) {
+            continue;
+        }
+
+        // Local draft model path
+        if (ends_with_ignore_case(draft_value, ".gguf")) {
+            if (!is_existing_gguf_file(draft_value)) {
+                throw std::runtime_error(
+                    "Invalid --model-draft value '" + draft_value +
+                    "': .gguf local file does not exist."
+                );
+            }
+            continue;
+        }
+
+        // Otherwise treat non-.gguf value as a model id.
+        if (!model_manager->model_exists(draft_value)) {
+            throw std::runtime_error(
+                "Invalid --model-draft model '" + draft_value +
+                "': model not found. Provide a downloaded llamacpp model id or a local .gguf path."
+            );
+        }
+
+        auto draft_info = model_manager->get_model_info(draft_value);
+        if (draft_info.recipe != "llamacpp") {
+            throw std::runtime_error(
+                "Invalid --model-draft model '" + draft_value +
+                "': only llamacpp models are valid draft models."
+            );
+        }
+
+        std::string resolved_draft = draft_info.resolved_path();
+        if (!is_existing_gguf_file(resolved_draft)) {
+            throw std::runtime_error(
+                "Invalid --model-draft model '" + draft_value +
+                "': model is not downloaded or GGUF file is unavailable locally."
+            );
+        }
+
+        tokens[i + 1] = resolved_draft;
+        changed = true;
+    }
+
+    return changed ? join_custom_args(tokens) : custom_args;
+}
+
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
@@ -162,6 +328,20 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend = options.get_option("llamacpp_backend");
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
+    // Convert --model-draft model ids into concrete local GGUF paths.
+    llamacpp_args = resolve_draft_model_path_in_args(llamacpp_args, model_manager_);
+    std::vector<std::string> custom_tokens = parse_custom_args(llamacpp_args);
+    std::string effective_llamacpp_args = llamacpp_args;
+
+    bool speculative_enabled = has_speculative_decoding_enabled(custom_tokens);
+    if (speculative_enabled) {
+        // We enforce --no-mmproj ourselves; strip redundant custom copies to
+        // avoid reserved-argument validation failures.
+        if (strip_redundant_no_mmproj_tokens(custom_tokens)) {
+            effective_llamacpp_args = join_custom_args(custom_tokens);
+        }
+    }
+
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend);
 
     LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
@@ -215,34 +395,40 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
-    // Add mmproj file if present (for vision models)
-    if (!mmproj_path.empty()) {
-        push_arg(args, reserved_flags, "--mmproj", mmproj_path);
-        if (!use_gpu) {
-            LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
-            push_arg(args, reserved_flags, "--no-mmproj-offload");
+    // Speculative decoding does not support multimodal mmproj in llama.cpp.
+    if (speculative_enabled) {
+        LOG(INFO, "LlamaCpp") << "Speculative decoding detected; forcing --no-mmproj" << std::endl;
+        push_arg(args, reserved_flags, "--no-mmproj");
+    } else {
+        // Add mmproj file if present (for vision models)
+        if (!mmproj_path.empty()) {
+            push_arg(args, reserved_flags, "--mmproj", mmproj_path);
+            if (!use_gpu) {
+                LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
+                push_arg(args, reserved_flags, "--no-mmproj-offload");
+            }
         }
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
     // Enable context shift for vulkan/rocm (not supported on Metal)
     if (llamacpp_backend == "vulkan" || llamacpp_backend == "rocm") {
-        push_overridable_arg(args, llamacpp_args, "--context-shift");
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
+        push_overridable_arg(args, effective_llamacpp_args, "--context-shift");
+        push_overridable_arg(args, effective_llamacpp_args, "--keep", "16");
     } else {
         // For Metal, just use keep without context-shift
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
+        push_overridable_arg(args, effective_llamacpp_args, "--keep", "16");
     }
 
     // Use legacy reasoning formatting
-    push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
+    push_overridable_arg(args, effective_llamacpp_args, "--reasoning-format", "auto");
 
     // Disable llamacpp webui by default
-    push_overridable_arg(args, llamacpp_args, "--no-webui");
+    push_overridable_arg(args, effective_llamacpp_args, "--no-webui");
 
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, llamacpp_args, "--no-mmap");
+        push_overridable_arg(args, effective_llamacpp_args, "--no-mmap");
     }
 
     // Add embeddings support if the model supports it
@@ -265,17 +451,16 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
-    if (!llamacpp_args.empty()) {
-        std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
+    if (!effective_llamacpp_args.empty()) {
+        std::string validation_error = validate_custom_args(effective_llamacpp_args, reserved_flags);
         if (!validation_error.empty()) {
             throw std::invalid_argument(
                 "Invalid custom llama-server arguments:\n" + validation_error
             );
         }
 
-        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << effective_llamacpp_args << std::endl;
+        args.insert(args.end(), custom_tokens.begin(), custom_tokens.end());
     }
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
