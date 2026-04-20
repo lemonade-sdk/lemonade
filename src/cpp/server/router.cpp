@@ -132,6 +132,35 @@ void Router::load_usage_stats() {
                 };
             }
         }
+
+        if (persisted.contains("by_model") && persisted["by_model"].is_object()) {
+            for (const auto& [model_name, model_data] : persisted["by_model"].items()) {
+                ModelStats& model = lifetime_usage_stats_.by_model[model_name];
+                model.requests = model_data.value("requests", 0ULL);
+                model.input_tokens = model_data.value("input_tokens", 0ULL);
+                model.output_tokens = model_data.value("output_tokens", 0ULL);
+
+                if (model_data.contains("by_day") && model_data["by_day"].is_object()) {
+                    for (const auto& [bucket, value] : model_data["by_day"].items()) {
+                        model.by_day[bucket] = {
+                            value.value("requests", 0ULL),
+                            value.value("input_tokens", 0ULL),
+                            value.value("output_tokens", 0ULL)
+                        };
+                    }
+                }
+
+                if (model_data.contains("by_hour") && model_data["by_hour"].is_object()) {
+                    for (const auto& [bucket, value] : model_data["by_hour"].items()) {
+                        model.by_hour[bucket] = {
+                            value.value("requests", 0ULL),
+                            value.value("input_tokens", 0ULL),
+                            value.value("output_tokens", 0ULL)
+                        };
+                    }
+                }
+            }
+        }
     } catch (const std::exception& e) {
         LOG(WARNING, "Router") << "Failed to load usage stats: " << e.what() << std::endl;
     }
@@ -142,6 +171,17 @@ void Router::persist_usage_stats_locked() const {
         fs::path stats_path = utils::path_from_utf8(usage_stats_path_);
         fs::create_directories(stats_path.parent_path());
 
+        json by_model_json = json::object();
+        for (const auto& [model_name, model_stats] : lifetime_usage_stats_.by_model) {
+            by_model_json[model_name] = {
+                {"requests", model_stats.requests},
+                {"input_tokens", model_stats.input_tokens},
+                {"output_tokens", model_stats.output_tokens},
+                {"by_day", usage_buckets_to_json(model_stats.by_day)},
+                {"by_hour", usage_buckets_to_json(model_stats.by_hour)}
+            };
+        }
+
         json persisted = {
             {"requests", lifetime_usage_stats_.requests},
             {"input_tokens", lifetime_usage_stats_.input_tokens},
@@ -149,7 +189,8 @@ void Router::persist_usage_stats_locked() const {
             {"started_at", lifetime_usage_stats_.started_at},
             {"updated_at", lifetime_usage_stats_.updated_at},
             {"by_day", usage_buckets_to_json(lifetime_usage_stats_.by_day)},
-            {"by_hour", usage_buckets_to_json(lifetime_usage_stats_.by_hour)}
+            {"by_hour", usage_buckets_to_json(lifetime_usage_stats_.by_hour)},
+            {"by_model", by_model_json}
         };
 
         std::ofstream file(stats_path);
@@ -165,25 +206,47 @@ void Router::persist_usage_stats_locked() const {
 }
 
 void Router::record_usage_locked(const std::string& model_name, const std::string& device_type, int input_tokens, int output_tokens, std::time_t recorded_at) {
+    if (input_tokens <= 0 && output_tokens <= 0) {
+        return;
+    }
+
     const auto in_tokens = static_cast<uint64_t>(std::max(input_tokens, 0));
     const auto out_tokens = static_cast<uint64_t>(std::max(output_tokens, 0));
     const std::string day_key = format_day_bucket(recorded_at);
     const std::string hour_key = format_hour_bucket(recorded_at);
-    UsageBucket& day_bucket = lifetime_usage_stats_.by_day[day_key];
-    UsageBucket& hour_bucket = lifetime_usage_stats_.by_hour[hour_key];
 
     lifetime_usage_stats_.requests++;
     lifetime_usage_stats_.input_tokens += in_tokens;
     lifetime_usage_stats_.output_tokens += out_tokens;
     lifetime_usage_stats_.updated_at = format_timestamp(recorded_at);
 
+    UsageBucket& day_bucket = lifetime_usage_stats_.by_day[day_key];
     day_bucket.requests++;
     day_bucket.input_tokens += in_tokens;
     day_bucket.output_tokens += out_tokens;
 
+    UsageBucket& hour_bucket = lifetime_usage_stats_.by_hour[hour_key];
     hour_bucket.requests++;
     hour_bucket.input_tokens += in_tokens;
     hour_bucket.output_tokens += out_tokens;
+
+    // Per-model stats
+    if (!model_name.empty()) {
+        ModelStats& model = lifetime_usage_stats_.by_model[model_name];
+        model.requests++;
+        model.input_tokens += in_tokens;
+        model.output_tokens += out_tokens;
+
+        UsageBucket& model_day = model.by_day[day_key];
+        model_day.requests++;
+        model_day.input_tokens += in_tokens;
+        model_day.output_tokens += out_tokens;
+
+        UsageBucket& model_hour = model.by_hour[hour_key];
+        model_hour.requests++;
+        model_hour.input_tokens += in_tokens;
+        model_hour.output_tokens += out_tokens;
+    }
 
     persist_usage_stats_locked();
 }
@@ -209,11 +272,33 @@ void Router::add_tokens_locked(const std::string& model_name, const std::string&
     lifetime_usage_stats_.by_hour[hour_key].input_tokens += in_tokens;
     lifetime_usage_stats_.by_hour[hour_key].output_tokens += out_tokens;
 
+    if (!model_name.empty()) {
+        ModelStats& model = lifetime_usage_stats_.by_model[model_name];
+        model.input_tokens += in_tokens;
+        model.output_tokens += out_tokens;
+        model.by_day[day_key].input_tokens += in_tokens;
+        model.by_day[day_key].output_tokens += out_tokens;
+        model.by_hour[hour_key].input_tokens += in_tokens;
+        model.by_hour[hour_key].output_tokens += out_tokens;
+    }
+
     persist_usage_stats_locked();
 }
 
 json Router::get_lifetime_usage_stats() const {
     std::lock_guard<std::mutex> stats_lock(stats_mutex_);
+
+    json by_model_json = json::object();
+    for (const auto& [model_name, model_stats] : lifetime_usage_stats_.by_model) {
+        by_model_json[model_name] = {
+            {"requests", model_stats.requests},
+            {"input_tokens", model_stats.input_tokens},
+            {"output_tokens", model_stats.output_tokens},
+            {"by_day", usage_buckets_to_json(model_stats.by_day)},
+            {"by_hour", usage_buckets_to_json(model_stats.by_hour)}
+        };
+    }
+
     return {
         {"requests", lifetime_usage_stats_.requests},
         {"input_tokens", lifetime_usage_stats_.input_tokens},
@@ -223,7 +308,8 @@ json Router::get_lifetime_usage_stats() const {
         {"bucket_timezone", "server_local_time"},
         {"persistence_path", usage_stats_path_},
         {"by_day", usage_buckets_to_json(lifetime_usage_stats_.by_day)},
-        {"by_hour", usage_buckets_to_json(lifetime_usage_stats_.by_hour)}
+        {"by_hour", usage_buckets_to_json(lifetime_usage_stats_.by_hour)},
+        {"by_model", by_model_json}
     };
 }
 
@@ -822,7 +908,8 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             std::lock_guard<std::mutex> stats_lock(stats_mutex_);
             Telemetry telemetry = server->get_telemetry();
             last_completed_telemetry_ = telemetry;
-            record_usage_locked(telemetry.input_tokens, telemetry.output_tokens, std::time(nullptr));
+            record_usage_locked(server->get_model_name(), device_type_to_string(server->get_device_type()),
+                                telemetry.input_tokens, telemetry.output_tokens, std::time(nullptr));
         }
         server->set_busy(false);
     } catch (...) {

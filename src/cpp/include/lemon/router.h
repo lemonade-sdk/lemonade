@@ -111,6 +111,14 @@ private:
         }
     };
 
+    struct ModelStats {
+        uint64_t requests = 0;
+        uint64_t input_tokens = 0;
+        uint64_t output_tokens = 0;
+        std::map<std::string, UsageBucket> by_day;
+        std::map<std::string, UsageBucket> by_hour;
+    };
+
     struct LifetimeUsageStats {
         uint64_t requests = 0;
         uint64_t input_tokens = 0;
@@ -119,6 +127,7 @@ private:
         std::string updated_at;
         std::map<std::string, UsageBucket> by_day;
         std::map<std::string, UsageBucket> by_hour;
+        std::map<std::string, ModelStats> by_model;
     };
 
     // Multi-model support: Manage multiple WrappedServers
