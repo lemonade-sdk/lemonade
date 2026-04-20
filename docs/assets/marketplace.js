@@ -242,13 +242,13 @@ function renderAppCard(app) {
   let linksHtml = '';
   if (app.links) {
     if (app.links.app) {
-      linksHtml += `<a href="${app.links.app}" class="app-link primary" target="_blank" rel="noopener noreferrer">Visit</a>`;
+      linksHtml += `<a href="${app.links.app}" class="app-link primary" target="_blank" rel="noopener noreferrer"><span class="material-symbols-outlined">open_in_new</span> Visit</a>`;
     }
     if (app.links.guide) {
-      linksHtml += `<a href="${app.links.guide}" class="app-link secondary" target="_blank" rel="noopener noreferrer">Guide</a>`;
+      linksHtml += `<a href="${app.links.guide}" class="app-link secondary" target="_blank" rel="noopener noreferrer"><span class="material-symbols-outlined">menu_book</span> Guide</a>`;
     }
     if (app.links.video) {
-      linksHtml += `<a href="${app.links.video}" class="app-link secondary" target="_blank" rel="noopener noreferrer">Video</a>`;
+      linksHtml += `<a href="${app.links.video}" class="app-link secondary" target="_blank" rel="noopener noreferrer"><span class="material-symbols-outlined">play_circle</span> Video</a>`;
     }
   }
 
@@ -291,6 +291,26 @@ function debounce(func, wait) {
     clearTimeout(timeout);
     timeout = setTimeout(later, wait);
   };
+}
+
+/**
+ * Fetch the top N featured (pinned) apps for use on other pages.
+ * Returns a promise that resolves to an array of app objects.
+ */
+async function fetchFeaturedApps(count) {
+  if (allApps.length > 0) {
+    return allApps.filter(function(a) { return a.pinned; }).slice(0, count);
+  }
+  try {
+    var response = await fetch(APPS_JSON_URL);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    var data = await response.json();
+    var apps = data.apps || [];
+    return apps.filter(function(a) { return a.pinned; }).slice(0, count);
+  } catch (err) {
+    console.warn('Failed to fetch featured apps:', err);
+    return [];
+  }
 }
 
 // Initialize when DOM is ready
