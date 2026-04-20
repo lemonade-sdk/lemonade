@@ -13,7 +13,7 @@ import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
 import { Message, MessageContent, TextContent, ImageContent, AudioContent, UploadedAudio } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
-import { SendIcon, ImageUploadIcon, AudioUploadIcon, MicrophoneIcon, RefreshIcon, EjectIcon } from '../Icons';
+import { SendIcon, ImageUploadIcon, AudioUploadIcon, RefreshIcon, EjectIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
@@ -23,7 +23,15 @@ import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 import RecordButton from '../RecordButton';
 import { useAudioCapture } from '../../hooks/useAudioCapture';
-import { encodeWAV } from '../../utils/audioUtils';
+import { encodeWAV, base64ToPlaybackUrl } from '../../utils/audioUtils';
+
+// WebView2 won't play large `data:audio/...;base64,...` URLs reliably, so we
+// feed `<audio>` a blob URL derived from the same base64 and revoke on unmount.
+const MessageAudio: React.FC<{ data: string; format: string }> = ({ data, format }) => {
+  const url = useMemo(() => base64ToPlaybackUrl(data, format), [data, format]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  return <audio controls src={url} className="message-audio" />;
+};
 
 // Map MIME type or filename extension to the OpenAI `input_audio.format` value.
 const AUDIO_FORMAT_BY_MIME: Record<string, string> = {
@@ -303,10 +311,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setIsRecordingAudio(false);
     const chunks = audioChunksRef.current;
     if (chunks.length === 0) return;
-    const { wavBase64, dataUrl, durationSeconds } = encodeWAV(chunks);
+    const { wavBase64, playbackUrl, durationSeconds } = encodeWAV(chunks);
     const label = `recording-${Math.round(durationSeconds)}s.wav`;
     recordTargetRef.current(prev => [...prev, {
-      dataUrl,
+      dataUrl: playbackUrl,
       base64: wavBase64,
       format: 'wav',
       filename: label,
@@ -841,8 +849,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             if (item.type === 'image_url') return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
             if (item.type === 'input_audio') {
               const fmt = item.input_audio.format || 'wav';
-              const src = `data:audio/${fmt};base64,${item.input_audio.data}`;
-              return <audio key={index} controls src={src} className="message-audio" />;
+              return <MessageAudio key={index} data={item.input_audio.data} format={fmt} />;
             }
             return null;
           })}
@@ -870,7 +877,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         setEditingAudio(audioContents.map((audio, i) => {
           const fmt = audio.input_audio.format || 'wav';
           return {
-            dataUrl: `data:audio/${fmt};base64,${audio.input_audio.data}`,
+            dataUrl: base64ToPlaybackUrl(audio.input_audio.data, fmt),
             base64: audio.input_audio.data,
             format: fmt,
             filename: `audio-${i + 1}.${fmt}`,
@@ -1044,7 +1051,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                               onClick={() => { stopAudioRecording(); setShowEditAudioMenu(false); }}
                               title="Stop recording"
                             >
-                              <MicrophoneIcon active />
+                              <span className="recording-dot" />
                             </button>
                           ) : (
                             <button
@@ -1139,7 +1146,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                 onError={showError}
                 runPreFlight={runPreFlight}
                 reset={reset}
-                onAutoSubmit={(text) => sendMessage(text)}
               />
             }
             leftControls={
@@ -1178,7 +1184,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                         onClick={() => { stopAudioRecording(); setShowAudioMenu(false); }}
                         title="Stop recording"
                       >
-                        <MicrophoneIcon active />
+                        <span className="recording-dot" />
                       </button>
                     ) : (
                       <button

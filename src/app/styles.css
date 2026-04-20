@@ -4082,6 +4082,27 @@ input::-webkit-calendar-picker-indicator {
     50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
 }
 
+/* Glowing red dot shown inside the audio button while recording */
+.recording-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ef4444;
+    animation: recording-dot-glow 1.2s ease-in-out infinite;
+}
+
+@keyframes recording-dot-glow {
+    0%, 100% {
+        box-shadow: 0 0 4px 1px rgba(239, 68, 68, 0.6);
+        opacity: 1;
+    }
+    50% {
+        box-shadow: 0 0 10px 3px rgba(239, 68, 68, 0.9);
+        opacity: 0.85;
+    }
+}
+
 /* Typing Indicator */
 .typing-indicator {
     display: flex;
