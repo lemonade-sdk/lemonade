@@ -264,21 +264,22 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const uploadedImageHandlers = createImageHandlers(setUploadedImages, true);
   const editingImageHandlers = createImageHandlers(setEditingImages, false);
 
-  // Audio handlers — mirror the image handlers. Store both the full data URL
-  // (for in-composer playback preview) and the bare base64 payload (what FLM
-  // and the OpenAI spec want in `input_audio.data`).
+  // Audio handlers — mirror the image handlers. Preview plays from a blob URL
+  // (WebView2 won't reliably play long `data:audio/...` URLs); the bare base64
+  // goes to the API in `input_audio.data`.
   const createAudioHandlers = (setAudio: React.Dispatch<React.SetStateAction<UploadedAudio[]>>) => ({
     upload: (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = event.target.files;
       if (!files || files.length === 0) return;
       const file = files[0];
       const format = resolveAudioFormat(file);
+      const playbackUrl = URL.createObjectURL(file);
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result;
         if (typeof result !== 'string') return;
         const { base64 } = splitDataUrl(result);
-        setAudio(prev => [...prev, { dataUrl: result, base64, format, filename: file.name }]);
+        setAudio(prev => [...prev, { dataUrl: playbackUrl, base64, format, filename: file.name }]);
       };
       reader.readAsDataURL(file);
       event.target.value = '';
