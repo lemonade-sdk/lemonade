@@ -10,10 +10,25 @@ export interface TextContent {
   text: string;
 }
 
-export type MessageContent = string | Array<TextContent | ImageContent>;
+export interface AudioContent {
+  type: 'input_audio';
+  input_audio: {
+    data: string;
+    format?: string;
+  };
+}
+
+export type MessageContent = string | Array<TextContent | ImageContent | AudioContent>;
 
 export interface Message {
   role: 'user' | 'assistant';
   content: MessageContent;
   thinking?: string;
+}
+
+export interface UploadedAudio {
+  dataUrl: string;
+  base64: string;
+  format: string;
+  filename: string;
 }

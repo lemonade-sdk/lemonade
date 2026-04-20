@@ -16,6 +16,10 @@ export interface DownloadItem {
   bytesResumed: number;  // Bytes already on disk at session start (for accurate speed)
   abortController?: AbortController;
   downloadType?: 'model' | 'backend';
+  // Declared size from the model registry (bytes). Used as the total when the
+  // server doesn't emit a cumulative download size, instead of extrapolating
+  // from the first file or two (which overshoots badly for FLM pulls).
+  declaredTotalBytes?: number;
 }
 
 interface DownloadManagerProps {

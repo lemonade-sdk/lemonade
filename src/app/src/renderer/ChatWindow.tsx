@@ -48,6 +48,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
     if (isExperienceModel(info)) return 'llm';
+    // Chat-indicator labels win over modality labels so multimodal "any-to-text"
+    // models (e.g. Gemma 4 on FLM) — which carry both "vision" / "tool-calling"
+    // AND modality labels like "audio" / "transcription" — route to the LLM
+    // panel rather than the Transcription/Image panel.
+    const chatIndicators = ['vision', 'reasoning', 'tool-calling', 'tools'];
+    if (info.labels?.some(l => chatIndicators.includes(l))) return 'llm';
     if (info.labels?.includes('embeddings') || (info as any)?.embedding) return 'embedding';
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
@@ -69,6 +75,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
     return modelsData[selectedModel]?.labels?.includes('vision') || false;
+  }, [selectedModel, modelsData]);
+
+  // A multimodal chat model that accepts audio *as input* to a chat turn —
+  // distinct from a pure ASR (Whisper) model which is also labeled "audio" but
+  // should only appear in the Transcription panel. We require the model to
+  // also carry a chat-indicator label so we don't surface an audio-attach
+  // button on a Whisper model.
+  const isAudioChat = useMemo(() => {
+    if (!selectedModel) return false;
+    const labels = modelsData[selectedModel]?.labels || [];
+    if (!labels.includes('audio')) return false;
+    return labels.some(l => l === 'vision' || l === 'reasoning' || l === 'tool-calling' || l === 'tools');
   }, [selectedModel, modelsData]);
 
   const isExperienceSelected = useMemo(() => {
@@ -297,6 +315,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           key={resetKey}
           {...sharedProps}
           isVision={isVision}
+          isAudioChat={isAudioChat}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
           experienceMode={experienceMode}

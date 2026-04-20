@@ -156,6 +156,18 @@ export const EjectIcon: React.FC = () => (
   </svg>
 );
 
+export const AudioUploadIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+    <path
+      d="M9 18V6l12-3v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-3a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export const MicrophoneIcon: React.FC<{ active?: boolean }> = ({ active = false }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
     <path
