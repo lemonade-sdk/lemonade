@@ -1913,9 +1913,9 @@ void ModelManager::download_model(const std::string& model_name,
         // Validate it has the "user." prefix
         if (!is_user_model_name(model_name)) {
             throw std::runtime_error(
-                "When registering a new model, the model name must include the "
-                "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +
-                model_name
+                "No built-in model with the name '" + model_name + "' is registered.\n\n"
+                "If you meant a built-in model, run `lemonade list` to see available models.\n"
+                "If you meant to add a custom model from Hugging Face, run `lemonade pull CHECKPOINT`."
             );
         }
 
