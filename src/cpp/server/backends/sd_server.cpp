@@ -36,6 +36,10 @@ std::string resolve_sdcpp_backend(const std::string& backend) {
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel();
         }
+        // sd.cpp has no nightly build - fall back to preview
+        if (channel == "nightly") {
+            channel = "preview";
+        }
         return "rocm-" + channel;
     }
     return backend;
