@@ -19,6 +19,7 @@ export interface StringSetting {
 }
 
 export interface LayoutSettings {
+  theme: 'dark' | 'light';
   isChatVisible: boolean;
   isModelManagerVisible: boolean;
   leftPanelView: 'models' | 'marketplace' | 'backends' | 'stats' | 'settings';
@@ -77,6 +78,7 @@ export const NUMERIC_SETTING_LIMITS: Record<NumericSettingKey, { min: number; ma
 const numericSettingKeys: NumericSettingKey[] = ['temperature', 'topK', 'topP', 'repeatPenalty'];
 
 export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
+  theme: 'dark',
   isChatVisible: true,
   isModelManagerVisible: true,
   leftPanelView: 'models',

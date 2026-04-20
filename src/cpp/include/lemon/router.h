@@ -28,10 +28,14 @@ public:
 
     // Load a model with the appropriate backend
     // Optional per-model settings override the defaults
+    // allow_reload_on_option_change: intended for explicit /load callers only.
+    // Auto-load callers (inference-triggered) should leave this false so they
+    // don't overturn options set by a prior explicit /load.
     void load_model(const std::string& model_name,
                     const ModelInfo& model_info,
                     RecipeOptions options,
-                    bool do_not_upgrade = true);
+                    bool do_not_upgrade = true,
+                    bool allow_reload_on_option_change = false);
 
     // Unload model(s)
     void unload_model(const std::string& model_name = "");  // Empty = unload all
@@ -158,6 +162,7 @@ private:
     void evict_server(WrappedServer* server);
     void evict_all_servers();
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
+    std::string resolve_model_name(const std::string& model_name) const;
 
     // Generic inference wrapper that handles locking and busy state
     template<typename Func>

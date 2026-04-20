@@ -664,7 +664,7 @@ Upon connection, the server sends a `session.created` message with a session ID.
 
 | Message Type | Description |
 |--------------|-------------|
-| `session.update` | Configure the session (set model, VAD settings) |
+| `session.update` | Configure the session (set model, VAD settings, or disable turn detection) |
 | `input_audio_buffer.append` | Send audio data (base64-encoded PCM16) |
 | `input_audio_buffer.commit` | Force transcription of buffered audio |
 | `input_audio_buffer.clear` | Clear audio buffer without transcribing |
@@ -743,6 +743,18 @@ VAD settings can be configured via `session.update`:
 | `silence_duration_ms` | 800 | Silence duration to trigger speech end |
 | `prefix_padding_ms` | 250 | Minimum speech duration before triggering |
 
+Set `turn_detection` to `null` to disable server-side VAD and use explicit commits instead:
+
+```json
+{
+  "type": "session.update",
+  "session": {
+    "model": "Whisper-Tiny",
+    "turn_detection": null
+  }
+}
+```
+
 #### Code Examples
 
 See the [`examples/`](../../examples/) directory for a complete, runnable example:
@@ -759,7 +771,7 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 - **Audio Format**: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.
 - **Chunk Size**: Send audio in ~85-256ms chunks for optimal latency/efficiency.
 - **VAD Behavior**: Server automatically detects speech boundaries and triggers transcription on speech end.
-- **Manual Commit**: Use `input_audio_buffer.commit` to force transcription (e.g., when user clicks "stop").
+- **Manual Commit**: Set `turn_detection` to `null`, then use `input_audio_buffer.commit` to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.
 - **Clear Buffer**: Use `input_audio_buffer.clear` to discard audio without transcribing.
 - **Chunking**: We are still tuning the chunking to balance latency vs. accuracy.
 
@@ -1854,13 +1866,14 @@ curl "http://localhost:13305/api/v1/system-info"
       "available": true,
       "family": "x86_64"
     },
-    "amd_igpu": {
-      "name": "AMD Radeon(TM) 890M Graphics",
-      "vram_gb": 0.5,
-      "available": true,
-      "family": "gfx1150"
-    },
-    "amd_dgpu": [],
+    "amd_gpu": [
+      {
+        "name": "AMD Radeon(TM) 890M Graphics",
+        "vram_gb": 0.5,
+        "available": true,
+        "family": "gfx1150"
+      }
+    ],
     "amd_npu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
       "power_mode": "Default",
@@ -1873,14 +1886,14 @@ curl "http://localhost:13305/api/v1/system-info"
       "default_backend": "vulkan",
       "backends": {
         "vulkan": {
-          "devices": ["cpu", "amd_igpu"],
+          "devices": ["cpu", "amd_gpu"],
           "state": "installed",
           "message": "",
           "action": "",
           "version": "b7869"
         },
         "rocm": {
-          "devices": ["amd_igpu"],
+          "devices": ["amd_gpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
           "action": "lemonade backends install llamacpp:rocm"
@@ -1961,9 +1974,8 @@ curl "http://localhost:13305/api/v1/system-info"
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
-  - `amd_igpu` - AMD integrated GPU (if present)
-  - `amd_dgpu` - Array of AMD discrete GPUs (if present)
-  - `nvidia_dgpu` - Array of NVIDIA discrete GPUs (if present)
+  - `amd_gpu` - Array of AMD GPUs, both integrated and discrete (if present)
+  - `nvidia_gpu` - Array of NVIDIA GPUs (if present)
   - `amd_npu` - AMD NPU device (if present)
 
 - `recipes` - Software recipes and their backend support status
