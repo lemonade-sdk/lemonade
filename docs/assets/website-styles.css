@@ -1649,7 +1649,7 @@ body.install-options {
 }
 
 .footer-meta {
-  margin-top: var(--spacing-lg);
+  margin-top: var(--spacing-md);
   display: flex;
   justify-content: center;
 }
@@ -4684,25 +4684,44 @@ body.install-options {
 .hp-tech-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.9rem;
   text-align: left;
-}
-
-.hp-tech-card {
-  padding: 1.25rem 1.5rem;
   background: var(--glass-bg-dense);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
 }
 
-.hp-tech-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-medium);
+.hp-tech-item {
+  padding: 1.5rem 1.75rem;
+  position: relative;
+}
+
+/* Etched-glass vertical divider between columns */
+.hp-tech-item:not(:nth-child(4n))::after {
+  content: '';
+  position: absolute;
+  top: 18%;
+  bottom: 18%;
+  right: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(45, 47, 47, 0.14), transparent);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.45);
+}
+
+/* Etched-glass horizontal divider between rows (only after top row of 4) */
+.hp-tech-item:not(:nth-last-child(-n+4))::before {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(45, 47, 47, 0.14), transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 .hp-tech-header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.9rem;
 }
 
 .hp-tech-icon {
@@ -4723,19 +4742,11 @@ body.install-options {
   color: var(--accent-gold);
 }
 
-.hp-tech-card h3 {
+.hp-tech-item h3 {
   font-family: var(--font-display);
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0;
-}
-
-.hp-tech-card p {
-  font-family: var(--font-body);
-  font-size: 0.88rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
   margin: 0;
 }
 
@@ -5249,6 +5260,34 @@ body.install-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Recompute etched dividers for 2-column layout */
+  .hp-tech-item:not(:nth-child(4n))::after { display: none; }
+  .hp-tech-item:not(:nth-last-child(-n+4))::before { display: none; }
+
+  .hp-tech-item:not(:nth-child(2n))::after {
+    content: '';
+    display: block;
+    position: absolute;
+    top: 18%;
+    bottom: 18%;
+    right: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(45, 47, 47, 0.14), transparent);
+    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.45);
+  }
+
+  .hp-tech-item:not(:nth-last-child(-n+2))::before {
+    content: '';
+    display: block;
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(45, 47, 47, 0.14), transparent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  }
+
   .hp-api-modalities {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -5375,6 +5414,22 @@ body.install-options {
   .hp-tech-grid,
   .hp-value-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* 1-column: no vertical dividers; horizontal between all but last */
+  .hp-tech-item:not(:nth-child(2n))::after { display: none; }
+  .hp-tech-item:not(:nth-last-child(-n+2))::before { display: none; }
+
+  .hp-tech-item:not(:last-child)::before {
+    content: '';
+    display: block;
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(45, 47, 47, 0.14), transparent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
   }
 
   .hp-api-modalities {
