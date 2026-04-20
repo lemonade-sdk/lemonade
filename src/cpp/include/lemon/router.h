@@ -124,6 +124,7 @@ private:
         std::map<std::string, UsageBucket> by_day;
         std::map<std::string, UsageBucket> by_hour;
         std::map<std::string, ModelStats> by_model;
+        std::map<std::string, ModelStats> by_device_type;
     };
 
     // Multi-model support: Manage multiple WrappedServers
