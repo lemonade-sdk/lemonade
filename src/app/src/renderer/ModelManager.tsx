@@ -988,11 +988,11 @@ const [searchQuery, setSearchQuery] = useState('');
     const isBundle = bundleComponents.length > 0;
 
     const message = isBundle
-      ? `"${modelName}" is a bundle. Deleting it will remove the following ${bundleComponents.length} models from disk:\n\n${bundleComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
+      ? `"${modelName}" is a collection. Deleting it will remove the following ${bundleComponents.length} models from disk:\n\n${bundleComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
       : `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`;
 
     const confirmed = await confirm({
-      title: isBundle ? 'Delete Bundle' : 'Delete Model',
+      title: isBundle ? 'Delete Collection' : 'Delete Model',
       message,
       confirmText: 'Delete',
       cancelText: 'Cancel',
@@ -1012,7 +1012,7 @@ const [searchQuery, setSearchQuery] = useState('');
             console.error(`Failed to delete component ${component}:`, err);
           }
         }
-        showSuccess(`Bundle "${modelName}" deleted (${bundleComponents.length} models removed).`);
+        showSuccess(`Collection "${modelName}" deleted (${bundleComponents.length} models removed).`);
       } else {
         await deleteModel(modelName);
         showSuccess(`Model "${modelName}" deleted successfully.`);
@@ -1229,7 +1229,7 @@ const [searchQuery, setSearchQuery] = useState('');
         const s = modelsData[c]?.size;
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
-      nameTooltip = `Bundle of ${components.length} models:\n${lines.join('\n')}`;
+      nameTooltip = `Collection of ${components.length} models:\n${lines.join('\n')}`;
     }
 
     return (

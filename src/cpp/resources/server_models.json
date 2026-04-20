@@ -1351,7 +1351,7 @@
             "height": 1024
         }
     },
-    "Ultra Bundle": {
+    "Ultra Collection": {
         "checkpoint": "",
         "recipe": "experience",
         "suggested": true,
@@ -1363,7 +1363,7 @@
             "kokoro-v1"
         ]
     },
-    "Lite Bundle": {
+    "Lite Collection": {
         "checkpoint": "",
         "recipe": "experience",
         "suggested": true,
