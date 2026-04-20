@@ -528,6 +528,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../server/apps/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../server/apps/mindcraft/" class="md-nav__link">
         
   
@@ -1420,7 +1448,6 @@
 
 <h1 id="lemonade-sdk-contribution-guide">Lemonade SDK Contribution Guide</h1>
 <p>The Lemonade SDK project welcomes contributions from everyone!</p>
-<p>See <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/code.md">code organization</a> for an overview of the repository.</p>
 <h2 id="collaborate-with-your-app">Collaborate with Your App</h2>
 <p>Lemonade Server integrates quickly with most OpenAI-compatible LLM apps.</p>
 <p>You can:
@@ -1497,7 +1524,7 @@ black<span class="w"> </span>your_file.py
 pip<span class="w"> </span>install<span class="w"> </span>pylint
 
 <span class="c1"># Run pylint from the root of the repo</span>
-pylint<span class="w"> </span>src/lemonade<span class="w"> </span>--rcfile<span class="w"> </span>.pylintrc<span class="w"> </span>--disable<span class="w"> </span>E0401
+pylint<span class="w"> </span><span class="nb">test</span><span class="w"> </span>contrib<span class="w"> </span>--disable<span class="w"> </span>E0401
 </code></pre></div>
 This will show linting warnings and errors in your terminal.</p>
 <h2 id="testing">Testing</h2>

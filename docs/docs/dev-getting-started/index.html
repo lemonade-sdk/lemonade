@@ -530,6 +530,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../server/apps/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../server/apps/mindcraft/" class="md-nav__link">
         
   
@@ -830,10 +858,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#building-the-electron-desktop-app-optional" class="md-nav__link">
+  <a href="#building-the-tauri-desktop-app-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Building the Electron Desktop App (Optional)
+        Building the Tauri Desktop App (Optional)
       
     </span>
   </a>
@@ -1740,10 +1768,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#building-the-electron-desktop-app-optional" class="md-nav__link">
+  <a href="#building-the-tauri-desktop-app-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Building the Electron Desktop App (Optional)
+        Building the Tauri Desktop App (Optional)
       
     </span>
   </a>
@@ -2273,7 +2301,7 @@
 <li><a href="#prerequisites">Prerequisites</a></li>
 <li><a href="#build-steps">Build Steps</a></li>
 <li><a href="#build-outputs">Build Outputs</a></li>
-<li><a href="#building-the-electron-desktop-app-optional">Building the Electron Desktop App (Optional)</a></li>
+<li><a href="#building-the-tauri-desktop-app-optional">Building the Tauri Desktop App (Optional)</a></li>
 <li><a href="#platform-specific-notes">Platform-Specific Notes</a></li>
 <li><a href="#building-installers">Building Installers</a></li>
 <li><a href="#windows-installer-wixmsi">Windows Installer (WiX/MSI)</a></li>
@@ -2352,27 +2380,40 @@ package managers and create the build directory.</p>
 <li><code>build/lemonade-server</code> - Legacy shim (deprecated)</li>
 <li><strong>Resources:</strong> Automatically copied to <code>build/Release/resources/</code> on Windows, <code>build/resources/</code> on Linux/macOS (web UI files, model registry, backend version configuration)</li>
 </ul>
-<h3 id="building-the-electron-desktop-app-optional">Building the Electron Desktop App (Optional)</h3>
-<p>The tray menu's "Open app" option and the <code>lemonade run</code> command can launch the Electron desktop app. To include it in your build:</p>
-<p>Build the Electron app using CMake (requires Node.js 20+):</p>
-<p><strong>Linux</strong>
-<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>electron-app
+<h3 id="building-the-tauri-desktop-app-optional">Building the Tauri Desktop App (Optional)</h3>
+<p>The tray menu's "Open app" option and the <code>lemonade run</code> command can launch the Tauri desktop app. To include it in your build:</p>
+<p><strong>Prerequisites:</strong>
+- Node.js 20+ (renderer bundle via webpack)
+- Rust toolchain (via <a href="https://rustup.rs">rustup</a>) — required to compile the Tauri host
+- Linux only: <code>libwebkit2gtk-4.1-dev</code>, <code>libsoup-3.0-dev</code>, <code>libjavascriptcoregtk-4.1-dev</code>, <code>librsvg2-dev</code>, <code>libayatana-appindicator3-dev</code> (the <code>setup.sh</code> script checks for these and prompts to install)</p>
+<p>Build the Tauri app using CMake:</p>
+<p><strong>Linux / macOS</strong>
+<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>tauri-app
 </code></pre></div></p>
 <p><strong>Windows (Visual Studio 2022)</strong>
-<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">windows</span> <span class="p">-</span><span class="n">-target</span> <span class="n">electron-app</span>
+<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">windows</span> <span class="p">-</span><span class="n">-target</span> <span class="n">tauri-app</span>
 </code></pre></div></p>
 <p><strong>Windows (Visual Studio 2026)</strong>
-<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">vs18</span> <span class="p">-</span><span class="n">-target</span> <span class="n">electron-app</span>
+<div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="p">-</span><span class="n">-preset</span> <span class="n">vs18</span> <span class="p">-</span><span class="n">-target</span> <span class="n">tauri-app</span>
 </code></pre></div></p>
 <p>This will:
-1. Copy src/app to build/app-src (keeps source tree clean)
-2. Run npm install in build/app-src
-3. Build to build/app/linux-unpacked/ (Linux) or build/app/win-unpacked/ (Windows)</p>
-<p>The tray app searches for the Electron app in these locations:
+1. Run <code>npm ci</code> in <code>src/app/</code> to install webpack and the Tauri CLI
+2. Webpack the React renderer to <code>src/app/dist/renderer/</code>
+3. <code>cargo tauri build</code> the Rust host against that renderer bundle
+4. Stage the output binary into <code>build/app/lemonade-app[.exe|.app]</code></p>
+<blockquote>
+<p><strong>First build is slow.</strong> The cold path downloads ~80 Rust crates and compiles them with LTO; expect several minutes the first time. Incremental rebuilds (cargo cache hot, no Rust changes) are &lt;30s.</p>
+<p><strong>Hot reload during UI iteration.</strong> Going through CMake rebuilds the cargo binary on every change. For frontend iteration, run the Tauri CLI's dev mode directly — it watches the renderer with webpack and only re-runs cargo when Rust source changes:
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>src/app
+npm<span class="w"> </span>run<span class="w"> </span>dev
+</code></pre></div>
+This is dramatically faster (&lt;1s per renderer change) and is the right loop for any work that doesn't touch <code>src-tauri/</code>.</p>
+</blockquote>
+<p>The tray app searches for the Tauri app in these locations:
 - <strong>Windows installed</strong>: <code>../app/lemonade-app.exe</code> (relative to bin/ directory)
-- <strong>Windows development</strong>: <code>../app/win-unpacked/lemonade-app.exe</code> (from build/Release/)
+- <strong>Windows development</strong>: <code>../../build/app/lemonade-app.exe</code> (from build/Release/)
 - <strong>Linux installed</strong>: <code>/opt/share/lemonade-server/app/lemonade-app</code>
-- <strong>Linux development</strong>: <code>../app/linux-unpacked/lemonade-app</code> (from build/)</p>
+- <strong>Linux development</strong>: <code>../app/lemonade-app</code> (from build/)</p>
 <p>If not found, the "Open app" menu option is hidden but everything else works.</p>
 <h3 id="building-an-appimage-linux-only">Building an AppImage (Linux Only)</h3>
 <p>AppImage builds are opt-in. Enable the option at configure time and then build:</p>
@@ -2383,11 +2424,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class=
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>appimage
 </code></pre></div>
 <p>This will:
-1. Copy the Electron app source to a separate build directory
+1. Run <code>npm ci</code> in <code>src/app/</code> to install webpack and the Tauri CLI
 2. Set the package.json version to match the CMake project version
-3. Install npm dependencies
-4. Build the renderer with production optimizations
-5. Package the application as an AppImage using electron-builder</p>
+3. Webpack the React renderer with production optimizations
+4. Invoke <code>cargo tauri build --bundles appimage</code> to compile the Rust host and bundle the AppImage
+5. Stage the artifact at <code>build/app-appimage/lemonade-app-&lt;version&gt;-x86_64.AppImage</code></p>
 <p>The generated AppImage will be located in:
 - <code>build/app-appimage/lemonade-app-&lt;version&gt;-&lt;arch&gt;.AppImage</code></p>
 <p>The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:</p>
@@ -2438,7 +2479,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class=
 - Includes uninstaller</p>
 <p><strong>Available Installers:</strong>
 - <code>lemonade-server-minimal.msi</code> - Server only (~3 MB)
-- <code>lemonade.msi</code> - Full installer with Electron desktop app (~105 MB)</p>
+- <code>lemonade.msi</code> - Full installer with Tauri desktop app (~10 MB)</p>
 <p><strong>Installation:</strong></p>
 <p>For detailed installation instructions including silent install, custom directories, and all-users installation, see the <a href="../../docs/server/server_integration.md#windows-installation">Server Integration Guide</a>.</p>
 <h3 id="linux-deb-package-debianubuntu">Linux .deb Package (Debian/Ubuntu)</h3>
@@ -2522,8 +2563,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <li><strong><code>lemond</code></strong>: The main HTTP server executable that handles LLM inference requests</li>
 <li><strong><code>package-macos</code></strong>: Creates a signed macOS installer package (.pkg) using productbuild</li>
 <li><strong><code>notarize_package</code></strong>: Builds and submits the package to Apple for notarization and staples the ticket</li>
-<li><strong><code>electron-app</code></strong>: Builds the Electron-based GUI application</li>
-<li><strong><code>prepare_electron_app</code></strong>: Prepares the Electron app for inclusion in the installer</li>
+<li><strong><code>tauri-app</code></strong>: Builds the Tauri desktop application (Rust host + React renderer)</li>
+<li><strong><code>prepare_tauri_app</code></strong>: Prepares the Tauri <code>.app</code> bundle for inclusion in the macOS installer</li>
 </ul>
 <h3 id="building-and-notarizing-for-distribution">Building and Notarizing for Distribution</h3>
 <p>To build a notarized macOS installer for distribution:</p>
@@ -2625,7 +2666,6 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </blockquote>
 <h2 id="code-structure">Code Structure</h2>
 <div class="highlight"><pre><span></span><code>src/cpp/
-├── CopyElectronApp.cmake       # CMake module to copy Electron app to build output
 ├── CPackRPM.cmake              # RPM packaging configuration
 ├── DOCKER_GUIDE.md             # Docker containerization guide
 ├── Extra-Models-Dir-Spec.md    # Extra models directory specification

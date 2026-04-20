@@ -530,6 +530,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../apps/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../apps/mindcraft/" class="md-nav__link">
         
   
@@ -5124,7 +5152,7 @@
 <tbody>
 <tr>
 <td><code>session.update</code></td>
-<td>Configure the session (set model, VAD settings)</td>
+<td>Configure the session (set model, VAD settings, or disable turn detection)</td>
 </tr>
 <tr>
 <td><code>input_audio_buffer.append</code></td>
@@ -5253,6 +5281,15 @@
 </tr>
 </tbody>
 </table>
+<p>Set <code>turn_detection</code> to <code>null</code> to disable server-side VAD and use explicit commits instead:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;turn_detection&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
 <h4 id="code-examples">Code Examples</h4>
 <p>See the <a href="../../examples/"><code>examples/</code></a> directory for a complete, runnable example:</p>
 <ul>
@@ -5266,7 +5303,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <li><strong>Audio Format</strong>: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.</li>
 <li><strong>Chunk Size</strong>: Send audio in ~85-256ms chunks for optimal latency/efficiency.</li>
 <li><strong>VAD Behavior</strong>: Server automatically detects speech boundaries and triggers transcription on speech end.</li>
-<li><strong>Manual Commit</strong>: Use <code>input_audio_buffer.commit</code> to force transcription (e.g., when user clicks "stop").</li>
+<li><strong>Manual Commit</strong>: Set <code>turn_detection</code> to <code>null</code>, then use <code>input_audio_buffer.commit</code> to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.</li>
 <li><strong>Clear Buffer</strong>: Use <code>input_audio_buffer.clear</code> to discard audio without transcribing.</li>
 <li><strong>Chunking</strong>: We are still tuning the chunking to balance latency vs. accuracy.</li>
 </ul>
@@ -6720,13 +6757,14 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;family&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;x86_64&quot;</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;amd_igpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD Radeon(TM) 890M Graphics&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;vram_gb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;family&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gfx1150&quot;</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;amd_dgpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">    </span><span class="nt">&quot;amd_gpu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD Radeon(TM) 890M Graphics&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;vram_gb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;family&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gfx1150&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
 <span class="w">    </span><span class="nt">&quot;amd_npu&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD Ryzen AI 9 HX 375 w/ Radeon 890M&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;power_mode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Default&quot;</span><span class="p">,</span>
@@ -6739,14 +6777,14 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">      </span><span class="nt">&quot;default_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vulkan&quot;</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">&quot;vulkan&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;amd_igpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;amd_gpu&quot;</span><span class="p">],</span>
 <span class="w">          </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;installed&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;action&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;b7869&quot;</span>
 <span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="nt">&quot;rocm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;amd_igpu&quot;</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;amd_gpu&quot;</span><span class="p">],</span>
 <span class="w">          </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;installable&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Backend is supported but not installed.&quot;</span><span class="p">,</span>
 <span class="w">          </span><span class="nt">&quot;action&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade backends install llamacpp:rocm&quot;</span>
@@ -6829,9 +6867,8 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <p><code>devices</code> - Hardware devices detected on the system (no software/support information)</p>
 </li>
 <li><code>cpu</code> - CPU information (name, cores, threads)</li>
-<li><code>amd_igpu</code> - AMD integrated GPU (if present)</li>
-<li><code>amd_dgpu</code> - Array of AMD discrete GPUs (if present)</li>
-<li><code>nvidia_dgpu</code> - Array of NVIDIA discrete GPUs (if present)</li>
+<li><code>amd_gpu</code> - Array of AMD GPUs, both integrated and discrete (if present)</li>
+<li><code>nvidia_gpu</code> - Array of NVIDIA GPUs (if present)</li>
 <li>
 <p><code>amd_npu</code> - AMD NPU device (if present)</p>
 </li>

@@ -530,6 +530,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../apps/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../apps/mindcraft/" class="md-nav__link">
         
   
@@ -1513,6 +1541,7 @@
 <span class="w">  </span><span class="nt">&quot;models_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;offline&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;no_fetch_executables&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;disable_model_filtering&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;enable_dgpu_gtt&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -1621,6 +1650,12 @@
 <td>bool</td>
 <td>false</td>
 <td>Skip model downloads</td>
+</tr>
+<tr>
+<td><code>no_fetch_executables</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Prevent downloading backend executable artifacts; backends must already be installed or use the system backend</td>
 </tr>
 <tr>
 <td><code>disable_model_filtering</code></td>
