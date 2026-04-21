@@ -243,7 +243,7 @@ void Router::load_model(const std::string& model_name,
     // process owns every llamacpp model via the preset/directory roster. Any
     // llamacpp /load request that targets a name the router does not already
     // own is rejected rather than silently spinning up a second llama-server.
-    if (model_info.recipe == "llamacpp" && config_ && config_->router_mode()) {
+    if (model_info.recipe == "llamacpp" && is_router_mode_active()) {
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
         if (!existing || !existing->owns_model(canonical_model_name)) {
             throw std::runtime_error(
@@ -490,6 +490,11 @@ void Router::install_router_server(std::unique_ptr<WrappedServer> router_backend
 
     router_backend->update_access_time();
     loaded_servers_.push_back(std::move(router_backend));
+    router_backend_installed_.store(true, std::memory_order_release);
+}
+
+bool Router::is_router_mode_active() const {
+    return router_backend_installed_.load(std::memory_order_acquire);
 }
 
 void Router::unload_model(const std::string& model_name) {

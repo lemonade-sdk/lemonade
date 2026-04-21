@@ -230,6 +230,8 @@ lemond
 
 You must supply *either* `router_models_preset` or `router_models_dir`. If both are set, the preset wins.
 
+The path is read at `lemond` startup time. If the file or directory is missing, Lemonade logs a router startup failure and continues in normal per-model mode (with `router_mode: false` in `/api/v1/health`) so non-llamacpp backends keep working.
+
 ### Behavior under router mode
 
 - **Single llama-server process.** Lemonade spawns one `llama-server --models-preset ...` (or `--models-dir ...`) at startup. The LRU eviction loop does not apply to it; the router is long-lived.

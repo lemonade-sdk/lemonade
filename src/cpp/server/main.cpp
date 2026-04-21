@@ -136,6 +136,10 @@ int main(int argc, char** argv) {
             if (!config->router_models_dir().empty()) {
                 LOG(INFO) << "    models dir: " << config->router_models_dir() << std::endl;
             }
+            if (config->router_models_preset().empty() && config->router_models_dir().empty()) {
+                LOG(WARNING) << "    router mode has no model source configured; "
+                             << "set --models-preset or --models-dir" << std::endl;
+            }
         }
 
         Server server(config, cli_config.cache_dir);

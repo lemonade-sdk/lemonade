@@ -7,6 +7,7 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/system_info.h"
 
@@ -102,6 +103,32 @@ std::vector<std::string> LlamaCppRouter::build_args(
             "Router mode enabled but neither --models-preset nor --models-dir "
             "is configured. Set router_models_preset or router_models_dir "
             "in config.json or via the CLI.");
+    }
+
+    if (!preset.empty()) {
+        const fs::path preset_path = utils::path_from_utf8(preset);
+        if (!fs::exists(preset_path)) {
+            throw std::runtime_error(
+                "Router mode is enabled but --models-preset points to a "
+                "missing file: " + utils::path_to_utf8(preset_path));
+        }
+        if (!fs::is_regular_file(preset_path)) {
+            throw std::runtime_error(
+                "Router mode is enabled but --models-preset is not a file: " +
+                utils::path_to_utf8(preset_path));
+        }
+    } else {
+        const fs::path models_dir_path = utils::path_from_utf8(models_dir);
+        if (!fs::exists(models_dir_path)) {
+            throw std::runtime_error(
+                "Router mode is enabled but --models-dir points to a missing "
+                "directory: " + utils::path_to_utf8(models_dir_path));
+        }
+        if (!fs::is_directory(models_dir_path)) {
+            throw std::runtime_error(
+                "Router mode is enabled but --models-dir is not a directory: " +
+                utils::path_to_utf8(models_dir_path));
+        }
     }
 
     std::vector<std::string> args;

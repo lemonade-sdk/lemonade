@@ -1191,7 +1191,7 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Router mode short-circuit: refuse llamacpp auto-loads that aren't in
     // the llama-server roster *before* we spend time downloading a GGUF we
     // won't be allowed to load.
-    if (info.recipe == "llamacpp" && config_->router_mode()) {
+    if (info.recipe == "llamacpp" && router_->is_router_mode_active()) {
         throw std::runtime_error(
             "Router mode is enabled but model '" + requested_model +
             "' is not in the llama-server roster. Add it to the "
@@ -1248,7 +1248,7 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Expose router-mode status so clients can branch between per-model /load
     // and router-preset workflows without having to inspect config.json.
-    response["router_mode"] = config_->router_mode();
+    response["router_mode"] = router_->is_router_mode_active();
 
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
@@ -2779,8 +2779,23 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             model_manager_->save_model_options(info);
         }
 
-        // Download model if needed (first-time use)
-        if (!info.downloaded) {
+        const bool router_managed_llamacpp =
+            (info.recipe == "llamacpp" && router_->is_router_mode_active());
+
+        // In active router mode, llamacpp models must already be in the
+        // upstream llama-server roster. We intentionally reject early before
+        // any download attempt so /load stays declarative and cheap.
+        if (router_managed_llamacpp && !router_->is_model_loaded(model_name)) {
+            throw std::runtime_error(
+                "Router mode is enabled but model '" + model_name +
+                "' is not in the llama-server roster. Add it to the "
+                "--models-preset .ini file or --models-dir directory and "
+                "restart lemond.");
+        }
+
+        // Download model if needed (first-time use). Skip this in active
+        // router mode where the llamacpp roster is owned externally.
+        if (!router_managed_llamacpp && !info.downloaded) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);

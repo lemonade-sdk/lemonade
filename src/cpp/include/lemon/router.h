@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <vector>
@@ -100,6 +101,10 @@ public:
     // path never unloads it.
     void install_router_server(std::unique_ptr<WrappedServer> router_backend);
 
+    // Returns true when the llama.cpp router backend is actually installed and
+    // running inside this Router instance.
+    bool is_router_mode_active() const;
+
 private:
     // Multi-model support: Manage multiple WrappedServers
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
@@ -113,6 +118,11 @@ private:
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
+
+    // Tracks whether the non-evictable llama.cpp router backend is installed.
+    // This differs from config_->router_mode(): startup can fail soft and leave
+    // the server running in classic per-model mode.
+    std::atomic<bool> router_backend_installed_{false};
 
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
