@@ -16,9 +16,9 @@
     "npu": "v1.8.2"
   },
   "sd-cpp": {
-    "cpu": "master-569-ab6afe8",
-    "rocm-stable": "master-569-ab6afe8",
-    "rocm-preview": "master-569-ab6afe8"
+    "cpu": "master-587-8d8f55a",
+    "rocm-stable": "master-587-8d8f55a",
+    "rocm-preview": "master-587-8d8f55a"
   },
   "therock": {
     "version": "7.12.0",
