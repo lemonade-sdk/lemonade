@@ -166,6 +166,10 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_NO_FETCH_EXECUTABLES",     "no_fetch_executables",     nullptr},
     {"LEMONADE_DISABLE_MODEL_FILTERING", "disable_model_filtering",  nullptr},
     {"LEMONADE_ENABLE_DGPU_GTT",         "enable_dgpu_gtt",          nullptr},
+    {"LEMONADE_ROUTER_MODE",             "router_mode",              nullptr},
+    {"LEMONADE_ROUTER_MODELS_PRESET",    "router_models_preset",     nullptr},
+    {"LEMONADE_ROUTER_MODELS_DIR",       "router_models_dir",        nullptr},
+    {"LEMONADE_ROUTER_DEFAULT_ARGS",     "router_default_args",      nullptr},
     // llamacpp
     {"LEMONADE_LLAMACPP",                "llamacpp",  "backend"},
     {"LEMONADE_LLAMACPP_ARGS",           "llamacpp",  "args"},
