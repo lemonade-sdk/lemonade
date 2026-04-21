@@ -11,6 +11,7 @@ Usage:
 
 import requests
 
+from utils.capabilities import skip_on_macos_ci
 from utils.server_base import ServerTestBase, run_server_tests
 from utils.test_models import (
     PORT,
@@ -23,7 +24,9 @@ from utils.test_models import (
 class StreamingErrorTests(ServerTestBase):
     """Tests that streaming responses terminate cleanly on all code paths."""
 
-    def _post_streaming(self, model_name, messages=None, tools=None, timeout=TIMEOUT_DEFAULT):
+    def _post_streaming(
+        self, model_name, messages=None, tools=None, timeout=TIMEOUT_DEFAULT
+    ):
         """Send a streaming chat/completions request and return the raw response."""
         if messages is None:
             messages = [{"role": "user", "content": "Say hello."}]
@@ -65,8 +68,11 @@ class StreamingErrorTests(ServerTestBase):
         """Streaming request with a malformed model name terminates cleanly."""
         response = self._post_streaming("org/repo:invalid-tag-does-not-exist")
         lines = self._consume_stream(response)
-        print(f"[OK] Malformed model name: stream closed cleanly ({len(lines)} line(s))")
+        print(
+            f"[OK] Malformed model name: stream closed cleanly ({len(lines)} line(s))"
+        )
 
+    @skip_on_macos_ci
     def test_003_streaming_after_unload_terminates_cleanly(self):
         """Streaming request after unloading all models terminates cleanly."""
         unload_resp = requests.post(
@@ -80,6 +86,7 @@ class StreamingErrorTests(ServerTestBase):
         lines = self._consume_stream(response)
         print(f"[OK] Post-unload: stream closed cleanly ({len(lines)} line(s))")
 
+    @skip_on_macos_ci
     def test_004_streaming_context_overflow_terminates_cleanly(self):
         """Context-overflow prompt causes backend non-200; stream must still terminate.
 
@@ -105,6 +112,7 @@ class StreamingErrorTests(ServerTestBase):
         lines = self._consume_stream(response)
         print(f"[OK] Context overflow: stream closed cleanly ({len(lines)} line(s))")
 
+    @skip_on_macos_ci
     def test_005_streaming_with_many_tools_terminates_cleanly(self):
         """Streaming with 15 tools terminates cleanly (original bug report scenario)."""
         many_tools = [
@@ -116,9 +124,18 @@ class StreamingErrorTests(ServerTestBase):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "input": {"type": "string", "description": f"Input for tool {i}."},
-                            "count": {"type": "integer", "description": f"Repeat count for tool {i}."},
-                            "dry_run": {"type": "boolean", "description": "Simulate without executing."},
+                            "input": {
+                                "type": "string",
+                                "description": f"Input for tool {i}.",
+                            },
+                            "count": {
+                                "type": "integer",
+                                "description": f"Repeat count for tool {i}.",
+                            },
+                            "dry_run": {
+                                "type": "boolean",
+                                "description": "Simulate without executing.",
+                            },
                         },
                         "required": ["input"],
                     },
@@ -136,6 +153,7 @@ class StreamingErrorTests(ServerTestBase):
         lines = self._consume_stream(response)
         print(f"[OK] 15 tools: stream closed cleanly ({len(lines)} line(s))")
 
+    @skip_on_macos_ci
     def test_006_successful_stream_includes_done_marker(self):
         """Successful streaming response includes [DONE] and terminates cleanly."""
         load_resp = requests.post(
@@ -156,7 +174,9 @@ class StreamingErrorTests(ServerTestBase):
             any("[DONE]" in line for line in lines),
             f"[DONE] marker not found in stream. Lines: {lines[:10]}",
         )
-        print(f"[OK] Happy path: [DONE] received, stream closed cleanly ({len(lines)} line(s))")
+        print(
+            f"[OK] Happy path: [DONE] received, stream closed cleanly ({len(lines)} line(s))"
+        )
 
 
 if __name__ == "__main__":

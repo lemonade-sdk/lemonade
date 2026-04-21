@@ -20,6 +20,7 @@ try:
 except ImportError:
     ollama_lib = None
 
+from utils.capabilities import skip_on_macos_ci
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -133,6 +134,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 404)
 
+    @skip_on_macos_ci
     def test_006_ps(self):
         """Test /api/ps returns running models with correct Ollama format."""
         self.ensure_model_pulled()
@@ -260,6 +262,7 @@ class OllamaTests(ServerTestBase):
             self.assertIn("total", chunk)
             self.assertIn("completed", chunk)
 
+    @skip_on_macos_ci
     def test_008_unload_via_generate(self):
         """Test model unload via /api/generate with keep_alive=0 (Ollama convention)."""
         self.ensure_model_pulled()
@@ -307,6 +310,7 @@ class OllamaTests(ServerTestBase):
     # Chat completion tests
     # ========================================================================
 
+    @skip_on_macos_ci
     def test_009_chat_non_streaming(self):
         """Test /api/chat non-streaming."""
         self.ensure_model_pulled()
@@ -328,6 +332,7 @@ class OllamaTests(ServerTestBase):
         self.assertTrue(data["done"])
         self.assertEqual(data["model"], ENDPOINT_TEST_MODEL)
 
+    @skip_on_macos_ci
     def test_010_chat_streaming(self):
         """Test /api/chat streaming returns NDJSON."""
         self.ensure_model_pulled()
@@ -381,6 +386,7 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 404)
 
+    @skip_on_macos_ci
     def test_013_chat_with_latest_suffix(self):
         """Test /api/chat strips :latest suffix from model name."""
         self.ensure_model_pulled()
@@ -402,6 +408,7 @@ class OllamaTests(ServerTestBase):
     # Generate (completion) tests
     # ========================================================================
 
+    @skip_on_macos_ci
     def test_014_generate_non_streaming(self):
         """Test /api/generate non-streaming."""
         self.ensure_model_pulled()
@@ -421,6 +428,7 @@ class OllamaTests(ServerTestBase):
         self.assertTrue(data["done"])
         self.assertEqual(data["model"], ENDPOINT_TEST_MODEL)
 
+    @skip_on_macos_ci
     def test_015_generate_streaming(self):
         """Test /api/generate streaming returns NDJSON."""
         self.ensure_model_pulled()
@@ -490,6 +498,7 @@ class OllamaTests(ServerTestBase):
         result = client.list()
         self.assertIsNotNone(result)
 
+    @skip_on_macos_ci
     def test_020_ollama_lib_chat(self):
         """Test ollama.chat() via Python library."""
         client = self.get_ollama_client()
@@ -584,6 +593,7 @@ class OllamaTests(ServerTestBase):
             "Decoded image should start with PNG magic bytes",
         )
 
+    @skip_on_macos_ci
     def test_023_ollama_lib_chat_streaming(self):
         """Test ollama.chat() streaming via Python library."""
         client = self.get_ollama_client()
@@ -601,6 +611,7 @@ class OllamaTests(ServerTestBase):
     # Anthropic-compatible /v1/messages tests
     # ========================================================================
 
+    @skip_on_macos_ci
     def test_024_anthropic_messages_non_streaming(self):
         """Test Anthropic-compatible non-streaming messages endpoint."""
         self.ensure_model_pulled()
@@ -642,6 +653,7 @@ class OllamaTests(ServerTestBase):
         self.assertIn("input_tokens", data["usage"])
         self.assertIn("output_tokens", data["usage"])
 
+    @skip_on_macos_ci
     def test_025_anthropic_messages_streaming(self):
         """Test Anthropic-compatible streaming messages endpoint."""
         self.ensure_model_pulled()
@@ -685,6 +697,7 @@ class OllamaTests(ServerTestBase):
         self.assertIn("content_block_start", event_types)
         self.assertIn("message_stop", event_types)
 
+    @skip_on_macos_ci
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
         # Use a model with native tool-calling support in its chat template;

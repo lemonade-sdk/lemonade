@@ -26,6 +26,7 @@ import uuid
 import requests
 from openai import NotFoundError
 
+from utils.capabilities import skip_on_macos_ci
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -330,6 +331,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Pull (streaming): received events: {set(events_received)}")
 
+    @skip_on_macos_ci
     def test_009_load_model_basic(self):
         """Test loading a model into memory."""
         # Model is already pulled (setUpClass or previous pull tests)
@@ -358,6 +360,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Loaded model: {ENDPOINT_TEST_MODEL}")
 
+    @skip_on_macos_ci
     def test_010_load_model_with_options(self):
         """Test loading a model with custom options (ctx_size, llamacpp_backend, llamacpp_args)."""
         # Load with custom options (reloads only if options differ from current)
@@ -396,6 +399,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Loaded model with ctx_size={custom_ctx_size}")
 
+    @skip_on_macos_ci
     def test_011_load_model_save_options(self):
         """Test save_options=true saves settings to recipe_options.json."""
         custom_ctx_size = 4096
@@ -425,6 +429,7 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] Verified saved ctx_size={custom_ctx_size} via model info")
 
+    @skip_on_macos_ci
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""
         # First, save options with a specific ctx_size
@@ -472,6 +477,7 @@ class EndpointTests(ServerTestBase):
                     print(f"[OK] Load used saved ctx_size={custom_ctx_size}")
                 break
 
+    @skip_on_macos_ci
     def test_012a_load_idempotent_same_options(self):
         """Test that /load is idempotent: loading an already-loaded model with
         the same options is a no-op (no eviction or reload).
@@ -506,6 +512,7 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] Idempotent /load with same options was a no-op ({elapsed:.3f}s)")
 
+    @skip_on_macos_ci
     def test_012b_load_reloads_on_option_change(self):
         """Test that /load evicts and reloads when options differ."""
         # Ensure model is loaded with default options (no ctx_size override)
@@ -531,7 +538,8 @@ class EndpointTests(ServerTestBase):
                 opts_before = m.get("recipe_options", {})
                 break
         self.assertNotEqual(
-            opts_before.get("ctx_size"), 2048,
+            opts_before.get("ctx_size"),
+            2048,
             "Precondition: model should not already have ctx_size=2048",
         )
 
@@ -559,8 +567,11 @@ class EndpointTests(ServerTestBase):
             "Option-change /load should reload with new options",
         )
 
-        print(f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})")
+        print(
+            f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})"
+        )
 
+    @skip_on_macos_ci
     def test_012c_load_noop_when_already_loaded_by_inference(self):
         """Regression test for #1603: /load after an inference-triggered
         auto-load should no-op, not evict and reload the model.
@@ -612,11 +623,10 @@ class EndpointTests(ServerTestBase):
         )
 
         # Model should still be loaded
-        health = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        ).json()
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
         loaded = [
-            m for m in health.get("all_models_loaded", [])
+            m
+            for m in health.get("all_models_loaded", [])
             if m["model_name"] == ENDPOINT_TEST_MODEL
         ]
         self.assertEqual(
@@ -625,6 +635,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] /load after auto-load was a no-op ({elapsed:.3f}s)")
 
+    @skip_on_macos_ci
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
         # First load a model
@@ -686,6 +697,7 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] 404 returned for unloading non-existent model")
 
+    @skip_on_macos_ci
     def test_015_unload_all_models(self):
         """Test unloading all models without specifying model_name."""
         # First load a model
@@ -925,6 +937,7 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] GET / returned HTML ({len(body)} bytes)")
 
+    @skip_on_macos_ci
     def test_021_stats_endpoint(self):
         """Test the /stats endpoint returns performance metrics."""
         # First, make an inference request to populate stats
@@ -1146,6 +1159,7 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    @skip_on_macos_ci
     def test_021b_appear_builtin_aliases_user_model(self):
         """User models labeled appear-builtin should expose a bare public ID."""
         canonical_name = f"user.AppearBuiltin-{uuid.uuid4().hex[:8]}"

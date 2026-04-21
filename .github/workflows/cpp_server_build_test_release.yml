@@ -1178,55 +1178,12 @@ jobs:
           Pop-Location
           Write-Host "Embeddable Windows smoke test PASSED!" -ForegroundColor Green
 
-  test-dmg-inference:
-    name: Test .dmg - llamacpp (metal artifact, cpu-only smoke)
-    runs-on: macos-latest
-    needs: build-lemonade-macos-dmg
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    # Also skip when no signing secrets (tests already ran inline in build job)
-    if: ${{ needs.build-lemonade-macos-dmg.outputs.has_signing == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
-    env:
-      LEMONADE_CI_MODE: "True"
-      PYTHONIOENCODING: utf-8
-      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-      LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
-      GGML_METAL_NO_RESIDENCY: "1"
-      # GitHub-hosted macOS runners are virtualized and cannot execute Metal
-      # kernels reliably on newer llama.cpp builds. Force 0 GPU layers so the
-      # Metal artifact loads but inference stays on CPU. Real Metal coverage
-      # must be validated manually on Apple Silicon hardware before bumping
-      # the metal version in backend_versions.json.
-      LLAMA_ARG_N_GPU_LAYERS: "0"
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set HF_HOME environment variable
-        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
-
-      - name: Install Lemonade Server (.pkg)
-        uses: ./.github/actions/install-lemonade-server-dmg
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
-
-      - name: Setup Python and virtual environment
-        uses: ./.github/actions/setup-venv
-        with:
-          venv-name: '.venv'
-          python-version: '3.10'
-          requirements-file: 'test/requirements.txt'
-
-      - name: Test llamacpp (metal)
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e
-          .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --server-binary /usr/local/bin/lemonade-server
-
-      - name: Capture and upload server logs
-        if: always()
-        uses: ./.github/actions/capture-server-logs
-        with:
-          artifact-name: server-logs-dmg-llamacpp
+  # Metal llama.cpp inference tests are intentionally not run in CI:
+  # GitHub-hosted macOS runners are virtualized and Apple's Virtualization
+  # Framework blocks Metal GPU access. llama.cpp's own CI faces this same
+  # limitation and only build-tests Metal. Metal inference must be validated
+  # manually on Apple Silicon hardware before bumping metal in
+  # backend_versions.json.
 
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)

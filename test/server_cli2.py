@@ -31,6 +31,7 @@ import tempfile
 import unittest
 import uuid
 
+from utils.capabilities import skip_on_macos_ci
 from utils.server_base import wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -751,6 +752,7 @@ sys.exit(0)
     # Load Tests
     # =============================================================================
 
+    @skip_on_macos_ci
     def test_070_load_with_ctx_size(self):
         """Test load command with --ctx-size option."""
         result = run_cli_command(
@@ -759,6 +761,7 @@ sys.exit(0)
         )
         print(f"Load with ctx-size exit code: {result.returncode}")
 
+    @skip_on_macos_ci
     def test_071_load_with_save_options(self):
         """Test load command with --save-options flag."""
         result = run_cli_command(
@@ -771,6 +774,7 @@ sys.exit(0)
     # Run Tests
     # =============================================================================
 
+    @skip_on_macos_ci
     def test_100_run_with_model(self):
         """Test run command with explicit model."""
         with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
@@ -782,6 +786,7 @@ sys.exit(0)
             )
             self.assertEqual(result.returncode, 0)
 
+    @skip_on_macos_ci
     def test_101_run_with_combined_options(self):
         """Test run command with --ctx-size and --save-options together."""
         with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:
@@ -793,6 +798,7 @@ sys.exit(0)
             )
             self.assertEqual(result.returncode, 0)
 
+    @skip_on_macos_ci
     def test_102_run_with_host_port(self):
         """Test run command using global --host/--port options."""
         with tempfile.TemporaryDirectory(prefix="lemonade-open-stub-") as temp_dir:

@@ -8,6 +8,8 @@ Tests use the skip_if_unsupported decorator to skip tests for unsupported featur
 """
 
 from functools import wraps
+import os
+import sys
 import unittest
 
 # Global state for current test configuration
@@ -313,3 +315,16 @@ def requires_backend(backend: str):
         return wrapper
 
     return decorator
+
+
+# GitHub-hosted macOS runners are virtualized and Apple's Virtualization
+# Framework blocks Metal GPU access, so llama-server (built with Metal) fails
+# to start. Developers running tests on real Apple Silicon hardware still
+# execute everything. The LEMONADE_CI_MODE env var is already set by every
+# macOS CI job in .github/workflows/cpp_server_build_test_release.yml.
+_SKIP_MACOS_CI = sys.platform == "darwin" and bool(os.environ.get("LEMONADE_CI_MODE"))
+
+skip_on_macos_ci = unittest.skipIf(
+    _SKIP_MACOS_CI,
+    "macOS CI cannot load models: virtualized runners block Metal GPU access",
+)
