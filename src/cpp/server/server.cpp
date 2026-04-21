@@ -2773,14 +2773,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
-        if (save_options) {
-            info.recipe_options = options;
-            model_manager_->save_model_options(info);
-        }
-
         const bool router_managed_llamacpp =
             (info.recipe == "llamacpp" && router_->is_router_mode_active());
+        const bool has_load_overrides = !options.to_json().empty();
 
         // In active router mode, llamacpp models must already be in the
         // upstream llama-server roster. We intentionally reject early before
@@ -2791,6 +2786,32 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                 "' is not in the llama-server roster. Add it to the "
                 "--models-preset .ini file or --models-dir directory and "
                 "restart lemond.");
+        }
+
+        // Router-owned llamacpp models are configured by the router source
+        // (--models-preset/--models-dir), not by Lemonade /load overrides.
+        if (router_managed_llamacpp && (has_load_overrides || save_options)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message",
+                    "Router mode is active for model '" + model_name +
+                    "'. Per-model /load overrides (e.g. ctx_size, "
+                    "llamacpp_backend, llamacpp_args) and save_options are "
+                    "not supported for router-hosted llamacpp models. "
+                    "Configure model settings in your --models-preset "
+                    "or --models-dir source and restart lemond."},
+                {"type", "invalid_request_error"},
+                {"param", "model_name"},
+                {"code", "router_mode_options_unsupported"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Persist request options to model info if requested
+        if (save_options) {
+            info.recipe_options = options;
+            model_manager_->save_model_options(info);
         }
 
         // Download model if needed (first-time use). Skip this in active

@@ -512,8 +512,7 @@ class LlamaCppRouterTests(unittest.TestCase):
         self.assertNotEqual(
             response.status_code,
             200,
-            f"Expected /unload to refuse a router-owned model; "
-            f"body={response.text!r}",
+            f"Expected /unload to refuse a router-owned model; body={response.text!r}",
         )
 
     def test_006_models_dir_is_plumbed_through(self):
@@ -565,6 +564,46 @@ class LlamaCppRouterTests(unittest.TestCase):
             if isinstance(entry, dict)
         }
         self.assertIn("router-env-alpha", loaded_names)
+
+    def test_008_load_overrides_for_router_model_are_rejected(self):
+        """Router-hosted llamacpp models reject /load overrides and save_options.
+
+        Runtime tuning in router mode must be done in the router source
+        (--models-preset/--models-dir), not via Lemonade /load payload keys.
+        """
+        model_name = "Qwen3-0.6B-GGUF"
+        preset = self._write_preset([model_name])
+        self._start_router(preset_path=preset)
+
+        test_payloads = [
+            {
+                "model_name": model_name,
+                "ctx_size": 8192,
+            },
+            {
+                "model_name": model_name,
+                "save_options": True,
+            },
+        ]
+
+        for payload in test_payloads:
+            response = requests.post(
+                f"http://localhost:{PORT}/api/v1/load",
+                json=payload,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                response.status_code,
+                400,
+                f"Expected /load override rejection; payload={payload!r}, "
+                f"status={response.status_code}, body={response.text!r}",
+            )
+            body = response.json()
+            self.assertEqual(
+                body.get("error", {}).get("code"),
+                "router_mode_options_unsupported",
+                f"Unexpected error payload for {payload!r}: {body!r}",
+            )
 
 
 def _run_tests():
