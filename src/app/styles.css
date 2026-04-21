@@ -4906,6 +4906,44 @@ input::-webkit-calendar-picker-indicator {
     align-items: center;
 }
 
+.logs-level-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.logs-level-control span {
+    color: var(--text-quaternary);
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    text-transform: none;
+}
+
+.logs-level-select {
+    width: auto;
+    min-width: 96px;
+    flex: 0 0 96px;
+    height: 28px;
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    border-color: var(--border-secondary);
+    font-size: 0.75rem;
+    padding-right: 28px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.logs-level-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .connection-status {
     font-size: 0.7rem;
     padding: 4px 8px;
