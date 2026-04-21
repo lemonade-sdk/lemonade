@@ -1656,10 +1656,12 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
                 }
                 gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
 
-                // Get VRAM
-                uint64_t adapter_ram = wmi::get_property_uint64(pObj, L"AdapterRAM");
-                if (adapter_ram > 0) {
-                    gpu.vram_gb = adapter_ram / (1024.0 * 1024.0 * 1024.0);
+                // Try dxdiag first (most reliable for dedicated memory)
+                gpu.vram_gb = get_gpu_vram_dxdiag(name);
+
+                // Fallback to nvidia-smi if dxdiag fails
+                if (gpu.vram_gb == 0.0) {
+                    gpu.vram_gb = get_nvidia_vram_smi();
                 }
 
                 gpus.push_back(gpu);
@@ -1880,90 +1882,109 @@ double WindowsSystemInfo::get_gpu_vram_wmi(uint64_t adapter_ram) {
     return 0.0;
 }
 
-double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
-    // Get GPU VRAM using dxdiag (most reliable for dedicated memory)
-    // Similar to Python's _get_gpu_vram_dxdiag_simple method
+double WindowsSystemInfo::get_nvidia_vram_smi() {
+    std::string output;
+    int rc = lemon::utils::ProcessManager::run_command(
+        "nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits", output, 5);
+    if (rc != 0) {
+        return 0.0;
+    }
+
+    std::istringstream iss(output);
+    std::string first_line;
+    if (!std::getline(iss, first_line)) {
+        return 0.0;
+    }
 
     try {
-        // Create temp file path
-        char temp_path[MAX_PATH];
-        char temp_dir[MAX_PATH];
-        GetTempPathA(MAX_PATH, temp_dir);
-        GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
-
-        // Run dxdiag /t temp_path (use CreateProcess to avoid console window flash)
-        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
-        STARTUPINFOA si = {};
-        si.cb = sizeof(si);
-        PROCESS_INFORMATION pi = {};
-        if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
-                           nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
-                           nullptr, nullptr, &si, &pi)) {
-            DeleteFileA(temp_path);
-            return 0.0;
-        }
-        // Wait for dxdiag to finish (up to 10s)
-        WaitForSingleObject(pi.hProcess, 10000);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-
-        // Read the file
-        std::ifstream file(temp_path);
-        if (!file.is_open()) {
-            DeleteFileA(temp_path);
-            return 0.0;
-        }
-
-        std::string line;
-        bool found_gpu = false;
-        double vram_gb = 0.0;
-
-        // Convert gpu_name to lowercase for case-insensitive comparison
-        std::string gpu_name_lower = gpu_name;
-        std::transform(gpu_name_lower.begin(), gpu_name_lower.end(), gpu_name_lower.begin(), ::tolower);
-
-        while (std::getline(file, line)) {
-            // Convert line to lowercase for case-insensitive search
-            std::string line_lower = line;
-            std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-
-            // Check if this is our GPU
-            if (line_lower.find("card name:") != std::string::npos &&
-                line_lower.find(gpu_name_lower) != std::string::npos) {
-                found_gpu = true;
-                continue;
-            }
-
-            // Look for dedicated memory line
-            if (found_gpu && line_lower.find("dedicated memory:") != std::string::npos) {
-                // Extract memory value (format: "Dedicated Memory: 12345 MB")
-                std::regex memory_regex(R"((\d+(?:\.\d+)?)\s*MB)", std::regex::icase);
-                std::smatch match;
-                if (std::regex_search(line, match, memory_regex)) {
-                    try {
-                        double vram_mb = std::stod(match[1].str());
-                        vram_gb = std::round(vram_mb / 1024.0 * 10.0) / 10.0;  // Convert to GB, round to 1 decimal
-                        break;
-                    } catch (...) {
-                        // Continue searching
-                    }
-                }
-            }
-
-            // Reset if we hit another display device
-            if (line_lower.find("card name:") != std::string::npos &&
-                line_lower.find(gpu_name_lower) == std::string::npos) {
-                found_gpu = false;
-            }
-        }
-
-        file.close();
-        DeleteFileA(temp_path);
-
-        return vram_gb;
+        double vram_mb = std::stod(first_line);
+        return std::round(vram_mb / 1024.0 * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
     }
+}
+
+void WindowsSystemInfo::load_dxdiag_cache() {
+    char temp_path[MAX_PATH];
+    char temp_dir[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_dir);
+    if (GetTempFileNameA(temp_dir, "dxd", 0, temp_path) == 0) {
+        return;
+    }
+
+    std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
+                        nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                        nullptr, nullptr, &si, &pi)) {
+        DeleteFileA(temp_path);
+        return;
+    }
+    WaitForSingleObject(pi.hProcess, 10000);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    std::ifstream file(temp_path);
+    if (!file.is_open()) {
+        DeleteFileA(temp_path);
+        return;
+    }
+
+    std::string line;
+    std::string current_card_lower;
+    std::regex memory_regex(R"((\d+(?:\.\d+)?)\s*MB)", std::regex::icase);
+
+    while (std::getline(file, line)) {
+        std::string line_lower = line;
+        std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+
+        auto card_pos = line_lower.find("card name:");
+        if (card_pos != std::string::npos) {
+            std::string card = line_lower.substr(card_pos + std::string("card name:").size());
+            size_t start = card.find_first_not_of(" \t");
+            size_t end   = card.find_last_not_of(" \t\r\n");
+            current_card_lower = (start == std::string::npos)
+                ? std::string()
+                : card.substr(start, end - start + 1);
+            continue;
+        }
+
+        if (!current_card_lower.empty() &&
+            line_lower.find("dedicated memory:") != std::string::npos) {
+            std::smatch match;
+            if (std::regex_search(line, match, memory_regex)) {
+                try {
+                    double vram_mb = std::stod(match[1].str());
+                    double vram_gb = std::round(vram_mb / 1024.0 * 10.0) / 10.0;
+                    dxdiag_vram_cache_.emplace_back(current_card_lower, vram_gb);
+                } catch (...) {
+                }
+            }
+            current_card_lower.clear();
+        }
+    }
+
+    file.close();
+    DeleteFileA(temp_path);
+}
+
+double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
+    if (!dxdiag_cache_loaded_) {
+        load_dxdiag_cache();
+        dxdiag_cache_loaded_ = true;
+    }
+
+    std::string gpu_name_lower = gpu_name;
+    std::transform(gpu_name_lower.begin(), gpu_name_lower.end(), gpu_name_lower.begin(), ::tolower);
+
+    for (const auto& entry : dxdiag_vram_cache_) {
+        if (entry.first.find(gpu_name_lower) != std::string::npos) {
+            return entry.second;
+        }
+    }
+    return 0.0;
 }
 
 #endif // _WIN32
