@@ -75,7 +75,7 @@ public:
     ~LemonadeClient();
 
     // Model management commands
-    int list_models(bool show_all) const;
+    int list_models(bool show_all, const std::string& name_filter = "") const;
     int pull_model(const nlohmann::json& model_data);
     int delete_model(const std::string& model_name) const;
     int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
