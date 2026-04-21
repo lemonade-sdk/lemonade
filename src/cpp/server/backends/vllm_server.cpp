@@ -154,6 +154,10 @@ void VLLMServer::load(const std::string& model_name,
     // raise KV-cache memory and Triton JIT compile time, so 16K is a balanced default.
     args.push_back("--max-model-len");
     args.push_back("16384");
+
+    args.push_back("--enable-auto-tool-choice");
+    args.push_back("--tool-call-parser");
+    args.push_back("qwen3_coder");
     // Detect the actual quantization method from config.json rather than guessing
     // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
