@@ -11,16 +11,66 @@ import { useSystem } from '../../hooks/useSystem';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
-import { Message, MessageContent, TextContent, ImageContent } from '../../utils/chatTypes';
+import { Message, MessageContent, TextContent, ImageContent, AudioContent, UploadedAudio } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
-import { SendIcon, ImageUploadIcon, MicrophoneIcon, RefreshIcon, EjectIcon } from '../Icons';
+import { SendIcon, ImageUploadIcon, AudioUploadIcon, RefreshIcon, EjectIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
+import AudioPreviewList from '../AudioPreviewList';
 import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
 import RecordButton from '../RecordButton';
+import { useAudioCapture } from '../../hooks/useAudioCapture';
+import { encodeWAV, base64ToPlaybackUrl } from '../../utils/audioUtils';
+
+// WebView2 won't play large `data:audio/...;base64,...` URLs reliably, so we
+// feed `<audio>` a blob URL derived from the same base64 and revoke on unmount.
+const MessageAudio: React.FC<{ data: string; format: string }> = ({ data, format }) => {
+  const url = useMemo(() => base64ToPlaybackUrl(data, format), [data, format]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  return <audio controls src={url} className="message-audio" />;
+};
+
+// Map MIME type or filename extension to the OpenAI `input_audio.format` value.
+const AUDIO_FORMAT_BY_MIME: Record<string, string> = {
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac',
+  'audio/ogg': 'ogg',
+  'audio/webm': 'webm',
+};
+
+const AUDIO_FORMAT_BY_EXT: Record<string, string> = {
+  wav: 'wav',
+  mp3: 'mp3',
+  m4a: 'm4a',
+  mp4: 'm4a',
+  flac: 'flac',
+  ogg: 'ogg',
+  oga: 'ogg',
+  webm: 'webm',
+};
+
+function resolveAudioFormat(file: File): string {
+  const byMime = AUDIO_FORMAT_BY_MIME[file.type.toLowerCase()];
+  if (byMime) return byMime;
+  const ext = file.name.toLowerCase().split('.').pop();
+  if (ext && AUDIO_FORMAT_BY_EXT[ext]) return AUDIO_FORMAT_BY_EXT[ext];
+  return 'wav';
+}
+
+function splitDataUrl(dataUrl: string): { base64: string } {
+  const comma = dataUrl.indexOf(',');
+  return { base64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl };
+}
 
 interface LLMChatPanelProps {
   isBusy: boolean;
@@ -32,6 +82,7 @@ interface LLMChatPanelProps {
   showError: (msg: string) => void;
   appSettings: AppSettings | null;
   isVision: boolean;
+  isAudioChat?: boolean;
   experienceMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
@@ -42,7 +93,7 @@ interface LLMChatPanelProps {
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
+  isVision, isAudioChat = false, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
   onNewChat, onUnloadExperience,
 }) => {
   const { selectedModel, modelsData } = useModels();
@@ -59,7 +110,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [editingValue, setEditingValue] = useState('');
   const [editingImages, setEditingImages] = useState<string[]>([]);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [editingAudio, setEditingAudio] = useState<UploadedAudio[]>([]);
+  const [uploadedAudio, setUploadedAudio] = useState<UploadedAudio[]>([]);
   const [isMicRecording, setIsMicRecording] = useState(false);
+  const [showAudioMenu, setShowAudioMenu] = useState(false);
+  const [showEditAudioMenu, setShowEditAudioMenu] = useState(false);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const audioMenuRef = useRef<HTMLDivElement>(null);
+  const editAudioMenuRef = useRef<HTMLDivElement>(null);
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
@@ -72,6 +130,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const editAudioInputRef = useRef<HTMLInputElement>(null);
   const speechRecognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -203,6 +263,79 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const uploadedImageHandlers = createImageHandlers(setUploadedImages, true);
   const editingImageHandlers = createImageHandlers(setEditingImages, false);
+
+  // Audio handlers — mirror the image handlers. Preview plays from a blob URL
+  // (WebView2 won't reliably play long `data:audio/...` URLs); the bare base64
+  // goes to the API in `input_audio.data`.
+  const createAudioHandlers = (setAudio: React.Dispatch<React.SetStateAction<UploadedAudio[]>>) => ({
+    upload: (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (!files || files.length === 0) return;
+      const file = files[0];
+      const format = resolveAudioFormat(file);
+      const playbackUrl = URL.createObjectURL(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result;
+        if (typeof result !== 'string') return;
+        const { base64 } = splitDataUrl(result);
+        setAudio(prev => [...prev, { dataUrl: playbackUrl, base64, format, filename: file.name }]);
+      };
+      reader.readAsDataURL(file);
+      event.target.value = '';
+    },
+    remove: (index: number) => {
+      setAudio(prev => prev.filter((_, i) => i !== index));
+    },
+  });
+
+  const uploadedAudioHandlers = createAudioHandlers(setUploadedAudio);
+  const editingAudioHandlers = createAudioHandlers(setEditingAudio);
+
+  // Mic-record-to-input_audio: accumulate PCM chunks from useAudioCapture,
+  // then pack them into a WAV on stop and add as an UploadedAudio entry.
+  const audioChunksRef = useRef<string[]>([]);
+  const recordTargetRef = useRef<React.Dispatch<React.SetStateAction<UploadedAudio[]>>>(setUploadedAudio);
+  const audioCapture = useAudioCapture(
+    (base64Chunk) => { audioChunksRef.current.push(base64Chunk); },
+  );
+
+  const startAudioRecording = (target: React.Dispatch<React.SetStateAction<UploadedAudio[]>>) => {
+    audioChunksRef.current = [];
+    recordTargetRef.current = target;
+    setIsRecordingAudio(true);
+    audioCapture.startRecording();
+  };
+
+  const stopAudioRecording = () => {
+    audioCapture.stopRecording();
+    setIsRecordingAudio(false);
+    const chunks = audioChunksRef.current;
+    if (chunks.length === 0) return;
+    const { wavBase64, playbackUrl, durationSeconds } = encodeWAV(chunks);
+    const label = `recording-${Math.round(durationSeconds)}s.wav`;
+    recordTargetRef.current(prev => [...prev, {
+      dataUrl: playbackUrl,
+      base64: wavBase64,
+      format: 'wav',
+      filename: label,
+    }]);
+    audioChunksRef.current = [];
+  };
+
+  // Close audio menus on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (audioMenuRef.current && !audioMenuRef.current.contains(e.target as Node)) {
+        setShowAudioMenu(false);
+      }
+      if (editAudioMenuRef.current && !editAudioMenuRef.current.contains(e.target as Node)) {
+        setShowEditAudioMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Abort on unmount
   useEffect(() => {
@@ -436,7 +569,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const textToSend = typeof textOverride === 'string' ? textOverride : inputValue;
     // When called from voice auto-submit, `isBusy` may still be stale-true
     // because the state update hasn't flushed yet.
-    if (!textToSend.trim() && uploadedImages.length === 0) return;
+    if (!textToSend.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0) return;
 
     const ready = await runPreFlight('llm', {
       modelName: chatModelName,
@@ -453,11 +586,17 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     userScrolledAwayRef.current = false;
 
     let messageContent: MessageContent;
-    if (uploadedImages.length > 0) {
-      const contentArray: Array<TextContent | ImageContent> = [];
+    if (uploadedImages.length > 0 || uploadedAudio.length > 0) {
+      const contentArray: Array<TextContent | ImageContent | AudioContent> = [];
       if (textToSend.trim()) contentArray.push({ type: 'text', text: textToSend });
       uploadedImages.forEach(imageUrl => {
         contentArray.push({ type: 'image_url', image_url: { url: imageUrl } });
+      });
+      uploadedAudio.forEach(audio => {
+        contentArray.push({
+          type: 'input_audio',
+          input_audio: { data: audio.base64, format: audio.format },
+        });
       });
       messageContent = contentArray;
     } else {
@@ -470,6 +609,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setUploadedImages([]);
+    setUploadedAudio([]);
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
@@ -502,7 +642,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   const submitEdit = async () => {
-    if ((!editingValue.trim() && editingImages.length === 0) || editingIndex === null || isBusy) return;
+    if ((!editingValue.trim() && editingImages.length === 0 && editingAudio.length === 0) || editingIndex === null || isBusy) return;
 
     const ready = await runPreFlight('llm', {
       modelName: chatModelName,
@@ -519,11 +659,17 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     const truncatedMessages = messages.slice(0, editingIndex);
 
     let messageContent: MessageContent;
-    if (editingImages.length > 0) {
-      const contentArray: Array<TextContent | ImageContent> = [];
+    if (editingImages.length > 0 || editingAudio.length > 0) {
+      const contentArray: Array<TextContent | ImageContent | AudioContent> = [];
       if (editingValue.trim()) contentArray.push({ type: 'text', text: editingValue });
       editingImages.forEach(imageUrl => {
         contentArray.push({ type: 'image_url', image_url: { url: imageUrl } });
+      });
+      editingAudio.forEach(audio => {
+        contentArray.push({
+          type: 'input_audio',
+          input_audio: { data: audio.base64, format: audio.format },
+        });
       });
       messageContent = contentArray;
     } else {
@@ -537,6 +683,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setEditingIndex(null);
     setEditingValue('');
     setEditingImages([]);
+    setEditingAudio([]);
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
@@ -701,6 +848,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           {content.map((item, index) => {
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
             if (item.type === 'image_url') return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
+            if (item.type === 'input_audio') {
+              const fmt = item.input_audio.format || 'wav';
+              return <MessageAudio key={index} data={item.input_audio.data} format={fmt} />;
+            }
             return null;
           })}
         </div>
@@ -717,11 +868,22 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       if (typeof message.content === 'string') {
         setEditingValue(message.content);
         setEditingImages([]);
+        setEditingAudio([]);
       } else {
-        const textContent = message.content.find(item => item.type === 'text');
+        const textContent = message.content.find((item): item is TextContent => item.type === 'text');
         setEditingValue(textContent ? textContent.text : '');
-        const imageContents = message.content.filter(item => item.type === 'image_url');
+        const imageContents = message.content.filter((item): item is ImageContent => item.type === 'image_url');
         setEditingImages(imageContents.map(img => img.image_url.url));
+        const audioContents = message.content.filter((item): item is AudioContent => item.type === 'input_audio');
+        setEditingAudio(audioContents.map((audio, i) => {
+          const fmt = audio.input_audio.format || 'wav';
+          return {
+            dataUrl: base64ToPlaybackUrl(audio.input_audio.data, fmt),
+            base64: audio.input_audio.data,
+            format: fmt,
+            filename: `audio-${i + 1}.${fmt}`,
+          };
+        }));
       }
     }
   };
@@ -736,6 +898,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setEditingIndex(null);
     setEditingValue('');
     setEditingImages([]);
+    setEditingAudio([]);
   };
 
   const handleEditContainerClick = (e: React.MouseEvent) => {
@@ -839,6 +1002,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                     altPrefix="Edit"
                     className="edit-image-preview-container"
                   />
+                  <AudioPreviewList
+                    audio={editingAudio}
+                    onRemove={editingAudioHandlers.remove}
+                    className="edit-audio-preview-container"
+                  />
                   <div className="edit-message-content">
                     <textarea
                       ref={editTextareaRef}
@@ -869,10 +1037,48 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                           </button>
                         </>
                       )}
+                      {isAudioChat && (
+                        <div className="audio-menu-wrapper" ref={editAudioMenuRef}>
+                          <input
+                            ref={editAudioInputRef}
+                            type="file"
+                            accept="audio/*"
+                            onChange={(e) => { editingAudioHandlers.upload(e); setShowEditAudioMenu(false); }}
+                            style={{ display: 'none' }}
+                          />
+                          {isRecordingAudio ? (
+                            <button
+                              className="audio-upload-button recording"
+                              onClick={() => { stopAudioRecording(); setShowEditAudioMenu(false); }}
+                              title="Stop recording"
+                            >
+                              <span className="recording-dot" />
+                            </button>
+                          ) : (
+                            <button
+                              className="audio-upload-button"
+                              onClick={() => setShowEditAudioMenu(prev => !prev)}
+                              title="Attach audio"
+                            >
+                              <AudioUploadIcon />
+                            </button>
+                          )}
+                          {showEditAudioMenu && !isRecordingAudio && (
+                            <div className="audio-dropdown-menu">
+                              <button onClick={() => { editAudioInputRef.current?.click(); setShowEditAudioMenu(false); }}>
+                                Upload file
+                              </button>
+                              <button onClick={() => { startAudioRecording(setEditingAudio); setShowEditAudioMenu(false); }}>
+                                Record audio
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <button
                         className="edit-send-button"
                         onClick={submitEdit}
-                        disabled={!editingValue.trim() && editingImages.length === 0}
+                        disabled={!editingValue.trim() && editingImages.length === 0 && editingAudio.length === 0}
                         title="Send edited message"
                       >
                         <SendIcon />
@@ -910,6 +1116,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             images={uploadedImages}
             onRemove={uploadedImageHandlers.remove}
           />
+          <AudioPreviewList
+            audio={uploadedAudio}
+            onRemove={uploadedAudioHandlers.remove}
+          />
           <textarea
             ref={inputTextareaRef}
             className="chat-input"
@@ -926,18 +1136,19 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             stoppable={activeModality === 'llm'}
             onSend={sendMessage}
             onStop={handleStopGeneration}
-            sendDisabled={!inputValue.trim() && uploadedImages.length === 0}
+            sendDisabled={!inputValue.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0}
             modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
-            rightControls={experienceMode && window.isSecureContext ?
-              <button
-                className={`chat-mic-button${isMicRecording ? ' recording' : ''}`}
-                onClick={toggleMicDictation}
-                title={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
-                aria-label={isMicRecording ? 'Stop microphone input' : 'Start microphone input'}
-              >
-                <MicrophoneIcon active={isMicRecording} />
-              </button>
-            : undefined}
+            rightControls={
+              <RecordButton
+                disabled={isBusy}
+                inputValue={inputValue}
+                setInputValue={setInputValue}
+                textareaRef={inputTextareaRef}
+                onError={showError}
+                runPreFlight={runPreFlight}
+                reset={reset}
+              />
+            }
             leftControls={
               <>
                 {(isVision || experienceMode) && (
@@ -959,16 +1170,45 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                     </button>
                   </>
                 )}
-                <RecordButton
-                  disabled={isBusy}
-                  inputValue={inputValue}
-                  setInputValue={setInputValue}
-                  textareaRef={inputTextareaRef}
-                  onError={showError}
-                  runPreFlight={runPreFlight}
-                  reset={reset}
-                  onAutoSubmit={(text) => sendMessage(text)}
-                />
+                {(isAudioChat || experienceMode) && (
+                  <div className="audio-menu-wrapper" ref={audioMenuRef}>
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => { uploadedAudioHandlers.upload(e); setShowAudioMenu(false); }}
+                      style={{ display: 'none' }}
+                    />
+                    {isRecordingAudio ? (
+                      <button
+                        className="audio-upload-button recording"
+                        onClick={() => { stopAudioRecording(); setShowAudioMenu(false); }}
+                        title="Stop recording"
+                      >
+                        <span className="recording-dot" />
+                      </button>
+                    ) : (
+                      <button
+                        className="audio-upload-button"
+                        onClick={() => setShowAudioMenu(prev => !prev)}
+                        disabled={isBusy}
+                        title="Attach audio"
+                      >
+                        <AudioUploadIcon />
+                      </button>
+                    )}
+                    {showAudioMenu && !isRecordingAudio && (
+                      <div className="audio-dropdown-menu">
+                        <button onClick={() => { audioInputRef.current?.click(); setShowAudioMenu(false); }}>
+                          Upload file
+                        </button>
+                        <button onClick={() => { startAudioRecording(setUploadedAudio); setShowAudioMenu(false); }}>
+                          Record audio
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             }
           />

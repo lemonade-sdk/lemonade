@@ -2763,13 +2763,12 @@ void ModelManager::delete_model(const std::string& model_name) {
             throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
         }
 
-        // Find flm executable
-        std::string flm_path;
-#ifdef _WIN32
-        flm_path = "flm";
-#else
-        flm_path = "flm";
-#endif
+        // Find flm executable — on Windows flm.exe lives under the lemonade
+        // cache dir, not on PATH, so we must resolve the full path.
+        std::string flm_path = find_flm_binary();
+        if (flm_path.empty()) {
+            throw std::runtime_error("FLM executable not found");
+        }
 
         // Prepare arguments for 'flm remove' command
         std::vector<std::string> args = {"remove", info.checkpoint()};
