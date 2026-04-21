@@ -2,6 +2,7 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
 #include <curl/curl.h>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
@@ -35,6 +36,21 @@ struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;  // Set to true when callback returns false
 };
+
+static fs::path get_disk_space_probe_path(const fs::path& output_path) {
+    fs::path probe_path = output_path.parent_path();
+    if (!probe_path.empty()) {
+        return probe_path;
+    }
+
+    std::error_code ec;
+    fs::path current_path = fs::current_path(ec);
+    if (!ec && !current_path.empty()) {
+        return current_path;
+    }
+
+    return fs::path(".");
+}
 
 // CURL progress callback - returns non-zero to abort transfer
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
@@ -399,6 +415,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     if (res != CURLE_OK) {
         bool retryable = false;
         bool disk_full = false;
+        const fs::path disk_space_probe_path = get_disk_space_probe_path(output_path_fs);
         switch (res) {
             case CURLE_COULDNT_CONNECT:
             case CURLE_COULDNT_RESOLVE_HOST:
@@ -415,7 +432,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
                 // CURLE_WRITE_ERROR (23) typically means disk full.
                 // Check available disk space to confirm.
                 std::error_code ec;
-                auto si = fs::space(output_path_fs.parent_path(), ec);
+                auto si = fs::space(disk_space_probe_path, ec);
                 if (!ec && si.available < 1024 * 1024) {  // Less than 1 MB free
                     disk_full = true;
                 }
@@ -437,7 +454,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
         if (disk_full) {
             oss << "Disk full: not enough space to complete download";
             std::error_code ec;
-            auto si = fs::space(output_path_fs.parent_path(), ec);
+            auto si = fs::space(disk_space_probe_path, ec);
             if (!ec) {
                 oss << " (" << std::fixed << std::setprecision(1)
                     << (si.available / (1024.0 * 1024.0)) << " MB free)";
