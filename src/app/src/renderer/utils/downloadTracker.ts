@@ -32,7 +32,7 @@ class DownloadTracker {
     modelName: string,
     abortController: AbortController,
     downloadType?: 'model' | 'backend',
-    bundleComponents?: string[],
+    collectionComponents?: string[],
     declaredTotalBytes?: number,
   ): string {
     // Remove any existing downloads for this model (completed, error, cancelled, or paused)
@@ -68,7 +68,7 @@ class DownloadTracker {
       bytesResumed: 0,
       abortController,
       downloadType,
-      bundleComponents,
+      collectionComponents,
       declaredTotalBytes,
     };
 

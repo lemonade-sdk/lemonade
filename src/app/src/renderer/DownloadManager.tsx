@@ -16,9 +16,9 @@ export interface DownloadItem {
   bytesResumed: number;  // Bytes already on disk at session start (for accurate speed)
   abortController?: AbortController;
   downloadType?: 'model' | 'backend';
-  // Component model names when this download is an experience bundle.
-  // UI uses this to explain the bundle is made up of separate models.
-  bundleComponents?: string[];
+  // Component model names when this download is an experience collection.
+  // UI uses this to explain the collection is made up of separate models.
+  collectionComponents?: string[];
   // Declared size from the model registry (bytes). Used as the total when the
   // server doesn't emit a cumulative download size, instead of extrapolating
   // from the first file or two (which overshoots badly for FLM pulls).
@@ -387,17 +387,17 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                         </button>
                         <div className="download-item-text">
                           <span className="download-model-name">
-                            {download.bundleComponents && download.bundleComponents.length > 0
+                            {download.collectionComponents && download.collectionComponents.length > 0
                               ? `Setting up ${download.modelName}`
                               : download.modelName}
                           </span>
-                          {download.bundleComponents && download.bundleComponents.length > 0 && (
+                          {download.collectionComponents && download.collectionComponents.length > 0 && (
                             <span
                               className="download-file-info"
                               style={{ fontStyle: 'italic', opacity: 0.8 }}
-                              title={download.bundleComponents.join('\n')}
+                              title={download.collectionComponents.join('\n')}
                             >
-                              {download.bundleComponents.length} models: {download.bundleComponents.join(', ')}
+                              {download.collectionComponents.length} models: {download.collectionComponents.join(', ')}
                             </span>
                           )}
                           <span className="download-file-info">

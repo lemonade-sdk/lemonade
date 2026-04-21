@@ -315,7 +315,7 @@ export async function pullModel(
   options?: {
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
-    bundleComponents?: string[];
+    collectionComponents?: string[];
     /** Declared model size in GB from the registry, used as the download
      *  total when the server can't emit a cumulative size (e.g. FLM pull). */
     declaredSizeGB?: number;
@@ -333,7 +333,7 @@ export async function pullModel(
       modelName,
       abortController,
       'model',
-      options?.bundleComponents,
+      options?.collectionComponents,
       declaredTotalBytes,
     );
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));

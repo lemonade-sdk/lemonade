@@ -536,7 +536,7 @@ const [searchQuery, setSearchQuery] = useState('');
   // Merge loaded and loading models so the list shows components as they
   // start loading, not just after /health confirms them. Loading entries
   // get an `isLoading` flag so the UI can render a pending indicator.
-  // Skip experience bundle entries themselves — only show component models.
+  // Skip experience collection entries themselves — only show component models.
   const loadedModelEntries = (() => {
     const entries: Array<{ modelName: string; isLoading: boolean }> = [];
     const seen = new Set<string>();
@@ -740,7 +740,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      // Skip the download flow entirely if an experience bundle is already complete
+      // Skip the download flow entirely if an experience collection is already complete
       const info = modelsData[modelName];
       if (isExperienceModel(info) && isExperienceFullyDownloaded(modelName, modelsData)) {
         showSuccess(`"${modelName}" is already downloaded.`);
@@ -750,14 +750,14 @@ const [searchQuery, setSearchQuery] = useState('');
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
 
-      const bundleComponents = isExperienceModel(info)
+      const collectionComponents = isExperienceModel(info)
         ? getExperienceComponents(info)
         : undefined;
 
       // Use the single consolidated download function
       await pullModel(modelName, {
         registrationData,
-        bundleComponents,
+        collectionComponents,
         declaredSizeGB: modelsData[modelName]?.size,
       });
 
@@ -988,15 +988,15 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const handleDeleteModel = async (modelName: string) => {
     const info = modelsData[modelName];
-    const bundleComponents = isExperienceModel(info) ? getExperienceComponents(info) : [];
-    const isBundle = bundleComponents.length > 0;
+    const collectionComponents = isExperienceModel(info) ? getExperienceComponents(info) : [];
+    const isCollection = collectionComponents.length > 0;
 
-    const message = isBundle
-      ? `"${modelName}" is a collection. Deleting it will remove the following ${bundleComponents.length} models from disk:\n\n${bundleComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
+    const message = isCollection
+      ? `"${modelName}" is a collection. Deleting it will remove the following ${collectionComponents.length} models from disk:\n\n${collectionComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
       : `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`;
 
     const confirmed = await confirm({
-      title: isBundle ? 'Delete Collection' : 'Delete Model',
+      title: isCollection ? 'Delete Collection' : 'Delete Model',
       message,
       confirmText: 'Delete',
       cancelText: 'Cancel',
@@ -1008,15 +1008,15 @@ const [searchQuery, setSearchQuery] = useState('');
     }
 
     try {
-      if (isBundle) {
-        for (const component of bundleComponents) {
+      if (isCollection) {
+        for (const component of collectionComponents) {
           try {
             await deleteModel(component);
           } catch (err) {
             console.error(`Failed to delete component ${component}:`, err);
           }
         }
-        showSuccess(`Collection "${modelName}" deleted (${bundleComponents.length} models removed).`);
+        showSuccess(`Collection "${modelName}" deleted (${collectionComponents.length} models removed).`);
       } else {
         await deleteModel(modelName);
         showSuccess(`Model "${modelName}" deleted successfully.`);
@@ -1086,7 +1086,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getModelStatus = (modelName: string) => {
     const info = modelsData[modelName];
-    // Experience bundles: downloaded when all components are downloaded,
+    // experience collections: downloaded when all components are downloaded,
     // loaded when all components are loaded. Fall back to naive checks
     // for regular models.
     const isDownloaded = isModelEffectivelyDownloaded(modelName, info, modelsData);
@@ -1151,7 +1151,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isEsrgan = info?.labels?.includes('esrgan');
-    const isBundle = isExperienceModel(info);
+    const isCollection = isExperienceModel(info);
     return (
       <>
         {!isDownloaded && (
@@ -1183,8 +1183,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {renderDeleteButton(modelName)}
-            {!isBundle && renderLoadOptionsButton(modelName)}
+            {!isCollection && renderDeleteButton(modelName)}
+            {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1200,8 +1200,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {renderDeleteButton(modelName)}
-            {!isBundle && renderLoadOptionsButton(modelName)}
+            {!isCollection && renderDeleteButton(modelName)}
+            {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
@@ -1224,7 +1224,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
 
-    // For experience bundles, show the component list (with sizes) as a
+    // For experience collections, show the component list (with sizes) as a
     // tooltip so users can see what gets downloaded/loaded.
     let nameTooltip: string | undefined;
     if (isExperienceModel(modelInfo)) {
