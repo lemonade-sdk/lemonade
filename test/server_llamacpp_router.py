@@ -605,6 +605,44 @@ class LlamaCppRouterTests(unittest.TestCase):
                 f"Unexpected error payload for {payload!r}: {body!r}",
             )
 
+    def test_009_params_returns_router_mode_warning_for_llamacpp_keys(self):
+        """/api/v1/params returns warnings for llama tuning keys in router mode.
+
+        The request is accepted (config can still persist), but response
+        warnings must clarify that these keys do not reconfigure the active
+        router process.
+        """
+        preset = self._write_preset(["Qwen3-0.6B-GGUF"])
+        self._start_router(preset_path=preset)
+
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/params",
+            json={
+                "ctx_size": 2048,
+                "llamacpp": {
+                    "args": "--ctx-size 2048",
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body.get("status"), "success")
+        self.assertIn(
+            "warnings",
+            body,
+            f"Expected router warning in /params response, got {body!r}",
+        )
+        self.assertTrue(
+            isinstance(body["warnings"], list) and len(body["warnings"]) >= 1,
+            f"Expected non-empty warnings list, got {body.get('warnings')!r}",
+        )
+        self.assertIn(
+            "router_mode_ignores_llamacpp_runtime_config",
+            body.get("warning_codes", []),
+            f"Expected router warning code, got {body!r}",
+        )
+
 
 def _run_tests():
     print(f"\n{'=' * 70}")

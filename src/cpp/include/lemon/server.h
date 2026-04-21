@@ -120,6 +120,11 @@ private:
 
     // Helper function to generate detailed model error responses (not found, not supported, load failure)
     nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
+
+    // Router-mode helper: return warning strings for config keys that are
+    // ignored while llama.cpp router mode is active.
+    nlohmann::json build_router_mode_config_warnings(const json& requested_changes) const;
+
     // System stats helper methods
     double get_cpu_usage();
     double get_gpu_usage();

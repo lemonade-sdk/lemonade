@@ -115,6 +115,33 @@ bool prepend_no_think_to_last_user_message(json& request_json) {
 
 } // namespace
 
+nlohmann::json Server::build_router_mode_config_warnings(const json& requested_changes) const {
+    nlohmann::json warnings = nlohmann::json::array();
+    if (!requested_changes.is_object() || !router_ || !router_->is_router_mode_active()) {
+        return warnings;
+    }
+
+    if (requested_changes.contains("ctx_size")) {
+        warnings.push_back(
+            "router mode active: 'ctx_size' in /params does not apply to "
+            "router-hosted llamacpp models; configure per-model context in "
+            "--models-preset/--models-dir and restart lemond.");
+    }
+
+    if (requested_changes.contains("llamacpp") && requested_changes["llamacpp"].is_object()) {
+        const auto& llama = requested_changes["llamacpp"];
+        if (llama.contains("backend") || llama.contains("args")) {
+            warnings.push_back(
+                "router mode active: 'llamacpp.backend' and 'llamacpp.args' in "
+                "/params do not reconfigure the running llama.cpp router; "
+                "restart lemond for backend changes and use router_default_args "
+                "plus --models-preset/--models-dir for router settings.");
+        }
+    }
+
+    return warnings;
+}
+
 
 static const json MIME_TYPES = {
     {"mp3",  "audio/mpeg"},
@@ -3007,11 +3034,18 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
 void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
     try {
         auto body = nlohmann::json::parse(req.body);
+        nlohmann::json warnings = build_router_mode_config_warnings(body);
 
         // Delegate to RuntimeConfig — accepts all known recipe option keys
         auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
             apply_config_side_effects(keys);
         });
+
+        if (!warnings.empty()) {
+            result["warnings"] = warnings;
+            result["warning_codes"] = {"router_mode_ignores_llamacpp_runtime_config"};
+        }
+
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
