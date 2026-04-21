@@ -1546,6 +1546,8 @@ In case of an error, the status will be `error` and the message will contain the
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
 
+> **Router mode:** When `router_mode=true` is active (see [Llama.cpp Router Mode](./configuration.md#llamacpp-router-mode)), `load` requests for llamacpp models *not* in the `llama-server` roster are rejected with a router-mode specific error, and the model is **not** downloaded. Requests for models already in the roster are a no-op — the model is already "loaded" by virtue of being in the router preset.
+
 #### Parameters
 
 | Parameter | Required | Applies to | Description |
@@ -1673,6 +1675,8 @@ In case of an error, the status will be `error` and the message will contain the
 
 Explicitly unload a model from memory. This is useful to free up memory while still leaving the server process running (which takes minimal resources but a few seconds to start).
 
+> **Router mode:** When `router_mode=true` is active, `unload` with an explicit `model_name` that is hosted by the `llama-server` router returns an error — router-hosted models cannot be individually evicted. `unload` without a `model_name` (unload-all) still unloads every non-router backend but leaves the router running; restart `lemond` to shut the router down.
+
 #### Parameters
 
 | Parameter | Required | Description |
@@ -1774,7 +1778,8 @@ curl http://localhost:13305/api/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
-  }
+  },
+  "router_mode": false
 }
 ```
 
@@ -1785,13 +1790,14 @@ curl http://localhost:13305/api/v1/health
 - `model_loaded` - Model name of the most recently accessed model
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
-  - `checkpoint` - Full checkpoint identifier
+  - `checkpoint` - Full checkpoint identifier (empty string for models hosted by the `llama-server` router, since one process serves many checkpoints)
   - `last_use` - Unix timestamp of last access (load or inference)
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
-  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
+  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`). When router mode is active, every model hosted by the router reports the sentinel recipe `"llamacpp-router"`.
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+- `router_mode` - `true` when `llama-server` router mode is active. See [Llama.cpp Router Mode](./configuration.md#llamacpp-router-mode) for behavioral implications.
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](./configuration.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
@@ -2088,6 +2094,17 @@ The `llama-server` backend works with Lemonade's suggested `*-GGUF` models, as w
 ## Installing GGUF Models
 
 To install an arbitrary GGUF from Hugging Face, open the Lemonade web app by navigating to http://localhost:13305 in your web browser, click the Model Management tab, and use the Add a Model form.
+
+## Router Mode (Multi-GGUF in One Process)
+
+Lemonade can optionally launch a single `llama-server` child process in *router mode* and forward every llamacpp request to it, letting one process host many GGUFs simultaneously instead of starting a new `llama-server` for each model.
+
+- Enabled by setting `router_mode=true` (or `--router-mode` on the `lemond` CLI) together with either `router_models_preset` (a `llama-server` `.ini` preset file) or `router_models_dir` (a directory of `.gguf` files).
+- The router's roster — as returned by the child's `GET /v1/models` — is the definitive list of models Lemonade will serve under the llamacpp recipe. `/api/v1/load` and `/api/v1/chat/completions` requests for llamacpp models that are not in that roster are rejected with a router-mode specific error, and individual models cannot be unloaded (the router is a long-lived, non-evictable singleton).
+- Non-llamacpp backends (FastFlowLM, RyzenAI, whisper.cpp, sd.cpp, Kokoro) continue to load and unload on demand exactly as without router mode; they coexist with the router under the same Lemonade HTTP endpoint.
+- See [Llama.cpp Router Mode](./configuration.md#llamacpp-router-mode) in the Configuration guide for full setup details, including `models.ini` formatting and the complete behavior matrix.
+
+> Router mode requires an upstream `llama.cpp` build that supports `--models-preset` / `--models-dir` (see [ggml-org/llama.cpp PR #17079](https://github.com/ggml-org/llama.cpp/pull/17079)). Older pinned `llamacpp.*` versions will refuse to start the router.
 
 ## Platform Support Matrix
 
