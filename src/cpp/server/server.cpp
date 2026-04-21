@@ -4,6 +4,7 @@
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp_router.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -142,6 +143,29 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
+
+    // Start the single llama-server router process if router mode is on.
+    // The router covers llamacpp models only; every other backend (FLM,
+    // whisper.cpp, sd.cpp, ryzenai, kokoro) continues to use the regular
+    // per-model LRU path. We deliberately fail soft here: a misconfigured
+    // router shouldn't prevent lemond from starting (the user may rely on
+    // the non-llamacpp backends or fix config via `lemonade config`).
+    if (config_->router_mode()) {
+        LOG(INFO, "Server") << "router_mode=true, starting llama-server router"
+                            << std::endl;
+        try {
+            auto router_backend = std::make_unique<backends::LlamaCppRouter>(
+                config_->log_level(), model_manager_.get(),
+                backend_manager_.get());
+            router_backend->start();
+            router_->install_router_server(std::move(router_backend));
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server")
+                << "Failed to start llama-server router: " << e.what()
+                << ". Continuing without router mode; fix the configuration "
+                   "and restart lemond to retry." << std::endl;
+        }
+    }
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -1145,7 +1169,10 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
 void Server::auto_load_model_if_needed(const std::string& requested_model) {
-    // Check if this specific model is already loaded (multi-model aware)
+    // Check if this specific model is already loaded (multi-model aware).
+    // For router mode this also matches any model currently in the
+    // llama-server roster via WrappedServer::owns_model(), so we skip the
+    // download/load path entirely for router-hosted names.
     if (router_->is_model_loaded(requested_model)) {
         LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
         return;
@@ -1160,6 +1187,17 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     }
 
     auto info = model_manager_->get_model_info(requested_model);
+
+    // Router mode short-circuit: refuse llamacpp auto-loads that aren't in
+    // the llama-server roster *before* we spend time downloading a GGUF we
+    // won't be allowed to load.
+    if (info.recipe == "llamacpp" && config_->router_mode()) {
+        throw std::runtime_error(
+            "Router mode is enabled but model '" + requested_model +
+            "' is not in the llama-server roster. Add it to the "
+            "--models-preset .ini file or --models-dir directory and "
+            "restart lemond.");
+    }
 
     // Download model if not cached (first-time use)
     // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
@@ -1207,6 +1245,10 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
+
+    // Expose router-mode status so clients can branch between per-model /load
+    // and router-preset workflows without having to inspect config.json.
+    response["router_mode"] = config_->router_mode();
 
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
