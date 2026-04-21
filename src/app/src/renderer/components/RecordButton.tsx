@@ -12,7 +12,6 @@ interface RecordButtonProps {
   onError: (error: string) => void;
   runPreFlight: (modality: Modality, options: { modelName: string; modelsData: ModelsData; onError: (msg: string) => void }) => Promise<boolean>;
   reset: () => void;
-  onAutoSubmit?: (text: string) => void;
 }
 
 const RecordButton: React.FC<RecordButtonProps> = (props) => {

@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <iostream>
@@ -2423,18 +2424,56 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::vector<std::pair<std::string, std::string>> env_vars;
         std::filesystem::path cli_dir = cli_exe.parent_path();
+
+        std::string resolved_backend = backend;
+        if (backend == "rocm") {
+            std::string channel = "preview";
+            if (config_) {
+                channel = config_->rocm_channel();
+            }
+            resolved_backend = "rocm-" + channel;
+        }
 #ifndef _WIN32
         std::string lib_path = cli_dir.string();
+
+        if (resolved_backend == "rocm-stable") {
+            std::string runtime_dir = lemon::backends::BackendUtils::get_install_directory(
+                "rocm-stable-runtime", ""
+            );
+            if (std::filesystem::exists(runtime_dir)) {
+                lib_path = runtime_dir + ":" + lib_path;
+            }
+        } else if (resolved_backend == "rocm-preview") {
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+                if (!therock_lib.empty()) {
+                    lib_path = therock_lib + ":" + lib_path;
+                }
+            }
+        }
+
         const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
         if (existing_ld_path && strlen(existing_ld_path) > 0) {
             lib_path = lib_path + ":" + std::string(existing_ld_path);
         }
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
 #else
-        if (backend == "rocm") {
+        if (resolved_backend == "rocm-stable" || resolved_backend == "rocm-preview") {
             std::string new_path = cli_dir.string();
+
+            if (resolved_backend == "rocm-preview") {
+                std::string rocm_arch = SystemInfo::get_rocm_arch();
+                if (!rocm_arch.empty()) {
+                    std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+                    if (!therock_bin.empty()) {
+                        new_path = therock_bin + ";" + new_path;
+                    }
+                }
+            }
+
             const char* existing_path = std::getenv("PATH");
-            if (existing_path) new_path += ";" + std::string(existing_path);
+            if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
             env_vars.push_back({"PATH", new_path});
         }
 #endif
@@ -3068,6 +3107,11 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Enrich with release_url, download_filename, version from BackendManager config
     if (system_info.contains("recipes")) {
         enrich_recipes(system_info["recipes"]);
+    }
+
+    // Surface runtime config flags that affect client-side install/download UX.
+    if (auto* cfg = RuntimeConfig::global()) {
+        system_info["no_fetch_executables"] = cfg->no_fetch_executables();
     }
 
     res.set_content(system_info.dump(), "application/json");

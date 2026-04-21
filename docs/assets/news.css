@@ -18,7 +18,7 @@
 
 .news-sidebar .sidebar-card {
   border: none;
-  border-bottom: 1px solid rgba(77, 65, 31, 0.16);
+  border-bottom: 1px solid var(--outline-variant, rgba(45, 47, 47, 0.15));
   border-radius: 0;
   background: transparent;
   padding: 0 0 14px;
@@ -37,7 +37,7 @@
 .sidebar-header p {
   margin: 0;
   font-size: 0.84rem;
-  color: #6f6a5b;
+  color: var(--text-muted, #6b6b6b);
 }
 
 .filter-container {
@@ -80,16 +80,20 @@
 }
 
 .news-tile {
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 14px;
-  box-shadow: 0 8px 20px rgba(32, 25, 8, 0.05);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.4));
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
+  border-radius: var(--radius-card, 3rem);
+  box-shadow: var(--shadow-ambient, 0 12px 48px rgba(45, 47, 47, 0.05));
   aspect-ratio: auto;
   height: auto;
+  overflow: hidden;
 }
 
 .news-tile:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 26px rgba(32, 25, 8, 0.09);
+  box-shadow: var(--shadow-medium, 0 8px 32px rgba(45, 47, 47, 0.06));
 }
 
 .news-tile-link {
@@ -136,11 +140,13 @@
     left: 0;
     width: min(360px, 86vw);
     height: 100dvh;
-    background: #f8f3e3;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(var(--glass-blur, 24px));
+    -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
     transform: translateX(calc(-100% - 24px));
     transition: transform 0.25s ease;
-    border-right: 1px solid rgba(84, 72, 32, 0.26);
-    box-shadow: 0 24px 40px rgba(0, 0, 0, 0.2);
+    border-right: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
+    box-shadow: var(--shadow-heavy, 0 14px 52px rgba(45, 47, 47, 0.085));
     z-index: 130;
     padding: 14px;
   }

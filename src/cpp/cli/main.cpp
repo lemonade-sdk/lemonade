@@ -96,6 +96,7 @@ struct CliConfig {
     int port = 13305;
     std::string api_key;
     std::string model;
+    std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
@@ -1012,7 +1013,10 @@ int main(int argc, char* argv[]) {
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
 
     // List options
-    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
+    list_cmd->add_flag("--downloaded", config.downloaded, "Show only downloaded models");
+    list_cmd->add_option("name_filter", config.list_filter,
+        "Optional case-insensitive model-name filter; supports * wildcards")
+        ->type_name("NAME_FILTER");
 
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
@@ -1151,7 +1155,7 @@ int main(int argc, char* argv[]) {
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
-        return client.list_models(!config.downloaded);
+        return client.list_models(!config.downloaded, config.list_filter);
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;

@@ -20,7 +20,7 @@
     "typescript"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
     "@types/katex": "^0.16.7",

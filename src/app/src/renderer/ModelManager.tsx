@@ -726,7 +726,10 @@ const [searchQuery, setSearchQuery] = useState('');
       setLoadingModels(prev => new Set(prev).add(modelName));
 
       // Use the single consolidated download function
-      await pullModel(modelName, { registrationData: registrationData });
+      await pullModel(modelName, {
+        registrationData,
+        declaredSizeGB: modelsData[modelName]?.size,
+      });
 
       await fetchCurrentLoadedModel();
       showSuccess(`Model "${modelName}" downloaded successfully.`);
