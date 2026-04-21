@@ -225,7 +225,11 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
     model_data["recipe"] = config.recipe;
 
     if (!config.checkpoints.empty()) {
-        model_data["checkpoints"] = config.checkpoints;
+        nlohmann::json checkpoints = nlohmann::json::object();
+        for (const auto& [type, checkpoint] : config.checkpoints) {
+            checkpoints[type] = lemon_cli::normalize_huggingface_checkpoint_arg(checkpoint);
+        }
+        model_data["checkpoints"] = std::move(checkpoints);
     }
 
     if (!config.labels.empty()) {
@@ -255,12 +259,14 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         return handle_manual_pull_command(client, config);
     }
 
+    std::string normalized_model = lemon_cli::normalize_huggingface_checkpoint_arg(config.model);
+
     // If the argument looks like a Hugging Face checkpoint id (contains '/'),
     // run the interactive HF flow that discovers variants and auto-fills the
     // pull request. Otherwise treat it as a registered model name and pull by
     // model_name only.
-    if (config.model.find('/') != std::string::npos) {
-        return lemon_cli::hf_pull_flow(client, config.model, false);
+    if (normalized_model.find('/') != std::string::npos) {
+        return lemon_cli::hf_pull_flow(client, normalized_model, false);
     }
 
     nlohmann::json model_data;
