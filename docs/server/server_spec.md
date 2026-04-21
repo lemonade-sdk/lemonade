@@ -1870,6 +1870,7 @@ curl "http://localhost:13305/api/v1/system-info"
   "BIOS Version": "1.0.0",
   "CPU Max Clock": "5100 MHz",
   "Windows Power Setting": "Balanced",
+  "external_url": "",
   "devices": {
     "cpu": {
       "name": "AMD Ryzen AI 9 HX 375 w/ Radeon 890M",
@@ -1983,6 +1984,7 @@ curl "http://localhost:13305/api/v1/system-info"
   - `BIOS Version` - BIOS information (Windows only)
   - `CPU Max Clock` - Maximum CPU clock speed (Windows only)
   - `Windows Power Setting` - Current power plan (Windows only)
+  - `external_url` - The configured public browser-facing base URL for reverse-proxy deployments, or `""` when unset
 
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
