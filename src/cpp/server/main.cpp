@@ -74,6 +74,21 @@ int main(int argc, char** argv) {
             config_json["host"] = cli_config.host;
             cli_overrides = true;
         }
+
+        // CLI router-mode flags override config.json and persist.
+        if (cli_config.router_mode_set) {
+            config_json["router_mode"] = cli_config.router_mode;
+            cli_overrides = true;
+        }
+        if (!cli_config.router_models_preset.empty()) {
+            config_json["router_models_preset"] = cli_config.router_models_preset;
+            cli_overrides = true;
+        }
+        if (!cli_config.router_models_dir.empty()) {
+            config_json["router_models_dir"] = cli_config.router_models_dir;
+            cli_overrides = true;
+        }
+
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
@@ -88,6 +103,18 @@ int main(int argc, char** argv) {
             if (!cli_config.host.empty()) {
                 LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
             }
+            if (cli_config.router_mode_set) {
+                LOG(INFO) << "Persisted router_mode=" << (cli_config.router_mode ? "true" : "false")
+                          << " to config.json" << std::endl;
+            }
+            if (!cli_config.router_models_preset.empty()) {
+                LOG(INFO) << "Persisted router_models_preset=" << cli_config.router_models_preset
+                          << " to config.json" << std::endl;
+            }
+            if (!cli_config.router_models_dir.empty()) {
+                LOG(INFO) << "Persisted router_models_dir=" << cli_config.router_models_dir
+                          << " to config.json" << std::endl;
+            }
         }
 
         utils::set_models_dir(config->models_dir());
@@ -100,6 +127,15 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
+        }
+        if (config->router_mode()) {
+            LOG(INFO) << "  Router mode: enabled" << std::endl;
+            if (!config->router_models_preset().empty()) {
+                LOG(INFO) << "    models preset: " << config->router_models_preset() << std::endl;
+            }
+            if (!config->router_models_dir().empty()) {
+                LOG(INFO) << "    models dir: " << config->router_models_dir() << std::endl;
+            }
         }
 
         Server server(config, cli_config.cache_dir);

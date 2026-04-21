@@ -24,11 +24,30 @@ CLIParser::CLIParser()
 
     app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
         ->type_name("HOST");
+
+    // Llama.cpp router-mode flags. When set they override config.json and are
+    // persisted on startup.
+    app_.add_flag(
+        "--router-mode,!--no-router-mode",
+        config_.router_mode,
+        "Launch a single llama-server in router mode for all llamacpp models");
+
+    app_.add_option("--models-preset", config_.router_models_preset,
+                    ".ini preset file passed to llama-server (router mode)")
+        ->type_name("PATH");
+
+    app_.add_option("--models-dir", config_.router_models_dir,
+                    "GGUF directory passed to llama-server (router mode)")
+        ->type_name("DIR");
 }
 
 int CLIParser::parse(int argc, char** argv) {
     try {
         app_.parse(argc, argv);
+        // Record which CLI-only override flags were actually specified so the
+        // caller knows whether to persist them over config.json.
+        config_.router_mode_set = app_.count("--router-mode") > 0
+                               || app_.count("--no-router-mode") > 0;
         should_continue_ = true;
         exit_code_ = 0;
         return 0;  // Success, continue
