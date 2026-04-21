@@ -27,12 +27,18 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
 
 Router::~Router() {
     LOG(DEBUG, "Router") << "Destructor: unloading all models" << std::endl;
-    unload_model("");  // Unload all
+    // Force = true so we also tear down non-evictable backends (LlamaCppRouter)
+    // during process shutdown.
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    evict_all_servers(/*force=*/true);
 }
 
 WrappedServer* Router::find_server_by_model_name(const std::string& model_name) const {
+    // Delegate to each WrappedServer via owns_model() so backends that host a
+    // roster of models (LlamaCppRouter) can report ownership correctly without
+    // each caller needing to know the difference.
     for (const auto& server : loaded_servers_) {
-        if (server->get_model_name() == model_name) {
+        if (server->owns_model(model_name)) {
             return server.get();
         }
     }
@@ -71,6 +77,9 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
+        // Router-style backends (LlamaCppRouter) report is_evictable() == false;
+        // skip them here so LRU pressure never tears down the router process.
+        if (!server->is_evictable()) continue;
         if (server->get_model_type() == type) {
             if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
                 lru = server.get();
@@ -160,22 +169,33 @@ void Router::evict_server(WrappedServer* server) {
     LOG(INFO, "Router") << "Evicted model: " << model_name << std::endl;
 }
 
-void Router::evict_all_servers() {
-    LOG(INFO, "Router") << "Evicting all models (" << loaded_servers_.size() << " total)" << std::endl;
+void Router::evict_all_servers(bool force) {
+    LOG(INFO, "Router") << "Evicting all models (" << loaded_servers_.size()
+                        << " total, force=" << (force ? "true" : "false") << ")" << std::endl;
 
-    // Wait for all servers to finish
+    // Wait for all servers to finish current work before touching them.
     for (const auto& server : loaded_servers_) {
         server->wait_until_not_busy();
     }
 
-    // Unload all
-    for (const auto& server : loaded_servers_) {
-    LOG(INFO, "Router") << "Unloading: " << server->get_model_name() << std::endl;
+    // Split into servers to keep vs to unload. In the non-force path we keep
+    // non-evictable backends (the llama-server router) so user-triggered
+    // "unload all" doesn't tear them down; destructor paths pass force=true.
+    std::vector<std::unique_ptr<WrappedServer>> kept;
+    for (auto& server : loaded_servers_) {
+        if (!force && !server->is_evictable()) {
+            LOG(INFO, "Router") << "Keeping non-evictable server: "
+                                << server->get_model_name() << std::endl;
+            kept.push_back(std::move(server));
+            continue;
+        }
+        LOG(INFO, "Router") << "Unloading: " << server->get_model_name() << std::endl;
         server->unload();
     }
 
-    loaded_servers_.clear();
-    LOG(INFO, "Router") << "All models evicted" << std::endl;
+    loaded_servers_ = std::move(kept);
+    LOG(INFO, "Router") << "All evictable models evicted (remaining: "
+                        << loaded_servers_.size() << ")" << std::endl;
 }
 
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
@@ -218,6 +238,25 @@ void Router::load_model(const std::string& model_name,
                        bool do_not_upgrade,
                        bool allow_reload_on_option_change) {
     const std::string canonical_model_name = resolve_model_name(model_name);
+
+    // Router-mode load guard: in llamacpp router mode the single llama-server
+    // process owns every llamacpp model via the preset/directory roster. Any
+    // llamacpp /load request that targets a name the router does not already
+    // own is rejected rather than silently spinning up a second llama-server.
+    if (model_info.recipe == "llamacpp" && config_ && config_->router_mode()) {
+        WrappedServer* existing = find_server_by_model_name(canonical_model_name);
+        if (!existing || !existing->owns_model(canonical_model_name)) {
+            throw std::runtime_error(
+                "Router mode is enabled but model '" + model_name +
+                "' is not in the llama-server roster. Add it to the "
+                "--models-preset .ini file or --models-dir directory and "
+                "restart lemond.");
+        }
+        // Model is already owned by the router — nothing to load.
+        existing->update_access_time();
+        return;
+    }
+
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options());
 
     // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
@@ -428,20 +467,52 @@ void Router::load_model(const std::string& model_name,
     }
 }
 
+void Router::install_router_server(std::unique_ptr<WrappedServer> router_backend) {
+    if (!router_backend) {
+        throw std::invalid_argument("install_router_server: backend is null");
+    }
+    if (router_backend->is_evictable()) {
+        // Defensive guard: the router backend is expected to be a long-lived
+        // singleton process; reject anything that claims to be evictable so a
+        // future contributor doesn't accidentally wire up a stale LRU loop.
+        throw std::invalid_argument(
+            "install_router_server: backend must be non-evictable");
+    }
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    while (is_loading_) {
+        load_cv_.wait(lock);
+    }
+
+    LOG(INFO, "Router") << "Installing router backend with "
+                        << router_backend->get_owned_models().size()
+                        << " model(s)" << std::endl;
+
+    router_backend->update_access_time();
+    loaded_servers_.push_back(std::move(router_backend));
+}
+
 void Router::unload_model(const std::string& model_name) {
     std::lock_guard<std::mutex> lock(load_mutex_);
 
     if (model_name.empty()) {
-        // Unload all models
-    LOG(INFO, "Router") << "Unload all models called" << std::endl;
-        evict_all_servers();
+        // Unload all evictable models. Non-evictable backends (LlamaCppRouter)
+        // stay up because they're pinned for the lifetime of the process.
+        LOG(INFO, "Router") << "Unload all models called" << std::endl;
+        evict_all_servers(/*force=*/false);
     } else {
         // Unload specific model
-    LOG(INFO, "Router") << "Unload model called: " << model_name << std::endl;
+        LOG(INFO, "Router") << "Unload model called: " << model_name << std::endl;
         std::string canonical_model_name = resolve_model_name(model_name);
         WrappedServer* server = find_server_by_model_name(canonical_model_name);
         if (!server) {
             throw std::runtime_error("Model not loaded: " + model_name);
+        }
+        if (!server->is_evictable()) {
+            throw std::runtime_error(
+                "Model '" + model_name + "' is hosted by the llama-server "
+                "router and cannot be individually unloaded. Disable "
+                "--router-mode or edit the preset file to remove it.");
         }
         evict_server(server);
     }
@@ -468,23 +539,37 @@ json Router::get_all_loaded_models() const {
     json result = json::array();
 
     for (const auto& server : loaded_servers_) {
-        json model_info;
-        model_info["model_name"] = model_manager_->get_public_model_name(server->get_model_name());
-        model_info["checkpoint"] = server->get_checkpoint();
-        model_info["type"] = model_type_to_string(server->get_model_type());
-        model_info["device"] = device_type_to_string(server->get_device_type());
-        model_info["backend_url"] = server->get_address();  // For debugging port issues
-        RecipeOptions recipe_options =  server->get_recipe_options();
-        model_info["recipe"] = recipe_options.get_recipe();
-        model_info["recipe_options"] = recipe_options.to_json();
+        const auto roster = server->get_owned_models();
+        if (roster.empty()) continue;
 
-        // Convert timestamp to milliseconds since epoch
-        auto time_point = server->get_last_access_time();
-        auto duration = time_point.time_since_epoch();
-        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-        model_info["last_use"] = millis;
+        // Shared per-server fields — all models on a server share the same
+        // process/endpoint/type/device.
+        const std::string recipe = server->get_recipe_options().get_recipe();
+        const std::string type_str = model_type_to_string(server->get_model_type());
+        const std::string device_str = device_type_to_string(server->get_device_type());
+        const std::string backend_url = server->get_address();
+        const auto recipe_options_json = server->get_recipe_options().to_json();
 
-        result.push_back(model_info);
+        // Convert timestamp to milliseconds since epoch once per server.
+        const auto time_point = server->get_last_access_time();
+        const auto duration = time_point.time_since_epoch();
+        const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+        for (const auto& model_name : roster) {
+            json model_info;
+            model_info["model_name"] = model_manager_->get_public_model_name(model_name);
+            // For single-model backends checkpoint matches the sole loaded
+            // model; for router backends we leave it empty since the roster
+            // spans many checkpoints.
+            model_info["checkpoint"] = (roster.size() == 1) ? server->get_checkpoint() : "";
+            model_info["type"] = type_str;
+            model_info["device"] = device_str;
+            model_info["backend_url"] = backend_url;
+            model_info["recipe"] = recipe;
+            model_info["recipe_options"] = recipe_options_json;
+            model_info["last_use"] = millis;
+            result.push_back(model_info);
+        }
     }
 
     return result;

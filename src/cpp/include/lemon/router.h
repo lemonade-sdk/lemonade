@@ -94,6 +94,12 @@ public:
     // Update prompt_tokens field from usage
     void update_prompt_tokens(int prompt_tokens);
 
+    // Install a pre-loaded, long-lived backend (e.g. LlamaCppRouter) into
+    // the Router. The instance is added to loaded_servers_ exactly once during
+    // startup and is expected to report is_evictable() == false so the LRU
+    // path never unloads it.
+    void install_router_server(std::unique_ptr<WrappedServer> router_backend);
+
 private:
     // Multi-model support: Manage multiple WrappedServers
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
@@ -119,7 +125,11 @@ private:
     WrappedServer* find_flm_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server);
-    void evict_all_servers();
+
+    // When force == false, non-evictable backends (LlamaCppRouter) are left in
+    // place; when force == true every server is unloaded. Destruction paths use
+    // force == true so the router process terminates on shutdown.
+    void evict_all_servers(bool force = false);
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
     std::string resolve_model_name(const std::string& model_name) const;
 
