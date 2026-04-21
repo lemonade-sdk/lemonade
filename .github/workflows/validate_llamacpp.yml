@@ -88,12 +88,14 @@ jobs:
           $data = Get-Content $path -Raw | ConvertFrom-Json
 
           $release = $env:LLAMACPP_RELEASE
-          Write-Host "Updating llamacpp vulkan/cpu/metal to $release" -ForegroundColor Cyan
-          foreach ($key in @("vulkan", "cpu", "metal")) {
+          Write-Host "Updating llamacpp vulkan/cpu to $release" -ForegroundColor Cyan
+          foreach ($key in @("vulkan", "cpu")) {
               $old = $data.llamacpp.$key
               $data.llamacpp.$key = $release
               Write-Host "  llamacpp.${key}: $old -> $release"
           }
+
+          Write-Host "Leaving llamacpp metal pinned at $($data.llamacpp.metal)" -ForegroundColor Cyan
 
           $rocm = $env:LLAMACPP_ROCM_RELEASE
           Write-Host "Updating llamacpp rocm-nightly to $rocm" -ForegroundColor Cyan
@@ -304,14 +306,13 @@ jobs:
           rocm_nightly = os.environ['LLAMACPP_ROCM_RELEASE']
           data['llamacpp']['vulkan'] = llamacpp
           data['llamacpp']['cpu'] = llamacpp
-          data['llamacpp']['metal'] = llamacpp
           data['llamacpp']['rocm-stable'] = llamacpp
           data['llamacpp']['rocm-nightly'] = rocm_nightly
           data['llamacpp']['rocm-preview'] = rocm_preview
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          print(f'Updated: vulkan/cpu/metal/rocm-stable={llamacpp}, rocm-nightly={rocm_nightly}, rocm-preview={rocm_preview}')
+          print(f'Updated: vulkan/cpu/rocm-stable={llamacpp}, metal={data[\"llamacpp\"][\"metal\"]} (unchanged), rocm-nightly={rocm_nightly}, rocm-preview={rocm_preview}')
           "
 
       - name: Generate PR body
@@ -331,7 +332,8 @@ jobs:
 
           body_lines.append("## Auto-update llama.cpp backends")
           body_lines.append("")
-          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal/rocm-stable): `{llamacpp}`")
+          body_lines.append(f"- **llama.cpp** (vulkan/cpu/rocm-stable): `{llamacpp}`")
+          body_lines.append(f"- **llama.cpp metal**: unchanged")
           body_lines.append(f"- **llamacpp-rocm** (rocm-nightly): `{rocm_nightly}`")
           body_lines.append(f"- **llamacpp-rocm-preview**: `{rocm_preview}`")
           body_lines.append("")
