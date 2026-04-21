@@ -1546,7 +1546,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
 
-> **Router mode:** When `router_mode=true` is active (see [Llama.cpp Router Mode](./configuration.md#llamacpp-router-mode)), `load` requests for llamacpp models *not* in the `llama-server` roster are rejected with a router-mode specific error, and the model is **not** downloaded. Requests for models already in the roster are a no-op — the model is already "loaded" by virtue of being in the router preset.
+> **Router mode:** When `router_mode=true` is active (see [Llama.cpp Router Mode](./configuration.md#llamacpp-router-mode)), `load` requests for llamacpp models *not* in the `llama-server` roster are rejected with a router-mode specific error, and the model is **not** downloaded. Requests for models already in the roster are a no-op — the model is already "loaded" by virtue of being in the router preset. Runtime override fields for llamacpp (`ctx_size`, `llamacpp_backend`, `llamacpp_args`, and `save_options`) are rejected for router-hosted models with `400 invalid_request_error` (`code: router_mode_options_unsupported`) because router runtime settings are defined by `--models-preset`/`--models-dir`.
 
 #### Parameters
 
@@ -2101,6 +2101,7 @@ Lemonade can optionally launch a single `llama-server` child process in *router 
 
 - Enabled by setting `router_mode=true` (or `--router-mode` on the `lemond` CLI) together with either `router_models_preset` (a `llama-server` `.ini` preset file) or `router_models_dir` (a directory of `.gguf` files).
 - The router's roster — as returned by the child's `GET /v1/models` — is the definitive list of models Lemonade will serve under the llamacpp recipe. `/api/v1/load` and `/api/v1/chat/completions` requests for llamacpp models that are not in that roster are rejected with a router-mode specific error, and individual models cannot be unloaded (the router is a long-lived, non-evictable singleton).
+- Authority split in router mode: Lemonade recipes/registry still control model metadata, listing, pull/delete, and aliases, but llama.cpp runtime tuning comes from the router source (`--models-preset` / `--models-dir`). Per-model llamacpp tuning via `/api/v1/load` is rejected for router-hosted models, and `/api/v1/params` returns warnings when llamacpp runtime keys are changed while the router is active.
 - Non-llamacpp backends (FastFlowLM, RyzenAI, whisper.cpp, sd.cpp, Kokoro) continue to load and unload on demand exactly as without router mode; they coexist with the router under the same Lemonade HTTP endpoint.
 - See [Llama.cpp Router Mode](./configuration.md#llamacpp-router-mode) in the Configuration guide for full setup details, including `models.ini` formatting and the complete behavior matrix.
 
