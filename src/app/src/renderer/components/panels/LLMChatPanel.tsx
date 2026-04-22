@@ -1049,8 +1049,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
             if (item.type === 'image_url') {
               const url = item.image_url.url;
-              // Assistant-generated images get the lightbox treatment.
-              if (role === 'assistant' && url.startsWith('data:image/')) {
+              // Only accept base64-encoded image data URLs. Anything else
+              // (javascript:, http:, etc.) is a CSS/XSS/exfil vector —
+              // CodeQL flags it, and there's no legitimate chat path that
+              // needs an arbitrary remote URL here.
+              if (!url.startsWith('data:image/')) return null;
+              if (role === 'assistant') {
                 return (
                   <div key={index} className="image-generation-item">
                     <div className="generated-images-row">
