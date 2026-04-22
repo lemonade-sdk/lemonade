@@ -120,6 +120,14 @@ std::string normalize_user_model_name(std::string name) {
     return prefix + name;
 }
 
+std::string strip_huggingface_url_prefix(const std::string& arg) {
+    static const std::string prefix = "https://huggingface.co/";
+    if (arg.rfind(prefix, 0) == 0) {
+        return arg.substr(prefix.size());
+    }
+    return arg;
+}
+
 void split_checkpoint_variant(const std::string& arg,
                               std::string& checkpoint, std::string& variant) {
     // HF repo ids never contain ':', so split on the last ':'.
@@ -145,12 +153,17 @@ std::string format_variant_label(const json& v) {
 
 }  // namespace
 
+std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
+    return strip_huggingface_url_prefix(arg);
+}
+
 int hf_pull_flow(lemonade::LemonadeClient& client,
                  const std::string& model_arg,
                  bool assume_yes) {
     std::string checkpoint;
     std::string variant;
-    split_checkpoint_variant(model_arg, checkpoint, variant);
+    std::string normalized_model_arg = normalize_huggingface_checkpoint_arg(model_arg);
+    split_checkpoint_variant(normalized_model_arg, checkpoint, variant);
 
     if (checkpoint.find('/') == std::string::npos) {
         std::cerr << "Error: '" << model_arg
