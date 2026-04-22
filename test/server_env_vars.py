@@ -170,15 +170,19 @@ class TestConfigEnvVars(unittest.TestCase):
     def test_ctx_size(self):
         self.assertEqual(self.snapshot["ctx_size"], 2048)
 
+    @unittest.skipIf(IS_MACOS, "llamacpp backend selection not applicable on macOS")
     def test_llamacpp_backend(self):
         self.assertEqual(self.snapshot["llamacpp"]["backend"], "cpu")
 
+    @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
     def test_llamacpp_args(self):
         self.assertEqual(self.snapshot["llamacpp"]["args"], "--flash-attn on")
 
+    @unittest.skipIf(IS_MACOS, "whispercpp backend selection not applicable on macOS")
     def test_whispercpp_backend(self):
         self.assertEqual(self.snapshot["whispercpp"]["backend"], "cpu")
 
+    @unittest.skipIf(IS_MACOS, "whispercpp args not applicable on macOS")
     def test_whispercpp_args(self):
         self.assertEqual(self.snapshot["whispercpp"]["args"], "--convert")
 
