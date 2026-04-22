@@ -198,14 +198,7 @@ void VLLMServer::load(const std::string& model_name,
     if (!wait_for_ready("/health", 600)) {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
-        std::string err = "vllm-server failed to start within timeout";
-        // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
-        // any GPU dispatch hang or fault. Point users to the docs in that case.
-        if (needs_gfx1151_cwsr_fix()) {
-            err += ". Your kernel may be missing the gfx1151 CWSR fix — "
-                   "see https://lemonade-server.ai/gfx1151_linux.html";
-        }
-        throw std::runtime_error(err);
+        throw std::runtime_error("vllm-server failed to start within timeout");
     }
 
     LOG(DEBUG, "vLLM") << "Model loaded on port " << port_ << std::endl;

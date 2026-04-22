@@ -184,6 +184,21 @@ timeout 30 /tmp/hip_check</code></div>
       </div>
 
       <div class="install-section">
+        <h2>Escape hatch</h2>
+        <p>
+          Lemonade refuses to install the ROCm backends when it believes the kernel lacks the CWSR
+          fix. If you're on a vendor kernel that has a known-good backport below 6.18.4 and the
+          verification steps above all pass, you can bypass the version check with:
+        </p>
+        <div class="code-block"><code>export LEMONADE_SKIP_KERNEL_CHECK=1</code></div>
+        <p class="option-note">
+          Only use this if GPU dispatch actually works on your system. If you see
+          <code>GCVM_L2_PROTECTION_FAULT</code> entries in <code>dmesg</code>, the fix is not active
+          and skipping the check will just defer the failure to inference time.
+        </p>
+      </div>
+
+      <div class="install-section">
         <h2>Need Help?</h2>
         <p>
           If you continue to experience issues after updating your kernel:
