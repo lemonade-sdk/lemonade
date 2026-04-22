@@ -35,6 +35,7 @@ struct StreamingRequestState {
     int last_percent = -1;
     bool success = false;
     std::string error_message;
+    std::string error_code;
     bool total_size_printed = false;
     uint64_t last_file_size = 0;
     std::chrono::steady_clock::time_point file_start_time;
@@ -75,7 +76,7 @@ public:
     ~LemonadeClient();
 
     // Model management commands
-    int list_models(bool show_all) const;
+    int list_models(bool show_all, const std::string& name_filter = "") const;
     int pull_model(const nlohmann::json& model_data);
     int delete_model(const std::string& model_name) const;
     int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;

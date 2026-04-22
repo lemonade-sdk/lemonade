@@ -194,6 +194,15 @@ chmod +x build/app-appimage/lemonade-app-*.AppImage
 - The build uses static linking to minimize DLL dependencies
 - All dependencies are built from source (no external DLL requirements)
 - Security features enabled: Control Flow Guard, ASLR, DEP
+- **Troubleshooting:** If `npm run dev` or `cargo` commands fail with "program not found", ensure `%USERPROFILE%\.cargo\bin` is in your PATH. Add it permanently from PowerShell with a duplicate-safe update, then restart your IDE or terminal:
+  ```powershell
+  $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+  $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+  if (($userPath -split ";") -notcontains $cargoBin) {
+      [System.Environment]::SetEnvironmentVariable("PATH", "$cargoBin;$userPath", "User")
+  }
+  ```
+- **Troubleshooting:** If Rust/Tauri fails with `link.exe` or `msvcrt.lib` errors, launch from a Visual Studio Developer shell and confirm `where link` lists the Visual Studio linker before Git's `link.exe`.
 
 **Linux:**
 - `lemond` is always headless on Linux (GTK-free, daemon-friendly); use `lemond` to start the server directly

@@ -17,6 +17,7 @@
 #include <thread>
 #include <chrono>
 #include <set>
+#include <tuple>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
@@ -1932,7 +1933,8 @@ void ModelManager::download_model(const std::string& model_name,
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (!is_user_model_name(model_name)) {
-            throw std::runtime_error(
+            // See UnknownModelError contract in include/lemon/model_manager.h.
+            throw UnknownModelError(
                 "When registering a new model, the model name must include the "
                 "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +
                 model_name
@@ -2113,6 +2115,75 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     size_t total_download_size = 0;
     for (const auto& file_desc : manifest["files"]) {
         total_download_size += file_desc["size"].get<size_t>();
+    }
+
+    // Pre-flight disk space check: fail fast before downloading anything.
+    // Subtract bytes already on disk (completed files + partial downloads)
+    // so resumed downloads aren't falsely rejected. Group by target path first,
+    // then fold paths that share the same space info so shared filesystems are
+    // checked against the combined remaining download size.
+    {
+        std::map<std::string, size_t> bytes_needed_by_target_path;
+        for (const auto& file_desc : manifest["files"]) {
+            std::string filename = file_desc["name"].get<std::string>();
+            size_t file_size = file_desc["size"].get<size_t>();
+            // Per-file download_path for multi-repo models; fall back to top-level
+            std::string file_download_path = file_desc.value("download_path", download_path);
+            std::string output_path = file_download_path + "/" + filename;
+            std::string partial_path = output_path + ".partial";
+            fs::path output_path_fs = path_from_utf8(output_path);
+            fs::path partial_path_fs = path_from_utf8(partial_path);
+            size_t bytes_needed_for_file = file_size;
+            if (safe_exists(output_path_fs) && !safe_exists(partial_path_fs)) {
+                bytes_needed_for_file = 0;
+            } else if (safe_exists(partial_path_fs)) {
+                // Cap credit to manifest size — partial can't save more than the file costs
+                size_t partial_size = fs::file_size(partial_path_fs);
+                size_t bytes_already_on_disk = (std::min)(partial_size, file_size);
+                // Clamp to zero: manifest can contain size=0 entries while partials exist.
+                bytes_needed_for_file = (file_size > bytes_already_on_disk)
+                    ? file_size - bytes_already_on_disk
+                    : 0;
+            }
+
+            if (bytes_needed_for_file > 0) {
+                bytes_needed_by_target_path[file_download_path] += bytes_needed_for_file;
+            }
+        }
+
+        using SpaceSignature = std::tuple<uintmax_t, uintmax_t, uintmax_t>;
+        std::map<SpaceSignature, std::pair<size_t, std::string>> bytes_needed_by_filesystem;
+        for (const auto& [target_path, bytes_needed] : bytes_needed_by_target_path) {
+            std::error_code ec;
+            auto si = fs::space(path_from_utf8(target_path), ec);
+            if (ec) {
+                continue;
+            }
+
+            auto key = std::make_tuple(si.capacity, si.free, si.available);
+            auto& grouped_entry = bytes_needed_by_filesystem[key];
+            grouped_entry.first += bytes_needed;
+            if (grouped_entry.second.empty()) {
+                grouped_entry.second = target_path;
+            }
+        }
+
+        for (const auto& [space_signature, grouped_entry] : bytes_needed_by_filesystem) {
+            size_t bytes_needed = grouped_entry.first;
+            uintmax_t available = std::get<2>(space_signature);
+            const std::string& target_path = grouped_entry.second;
+            if (bytes_needed <= available) {
+                continue;
+            }
+
+            std::ostringstream oss;
+            oss << "Insufficient disk space: download requires "
+                << std::fixed << std::setprecision(1)
+                << (bytes_needed / (1024.0 * 1024.0 * 1024.0)) << " GB but only "
+                << (available / (1024.0 * 1024.0 * 1024.0)) << " GB is available on "
+                << target_path;
+            throw std::runtime_error(oss.str());
+        }
     }
 
     for (const auto& file_desc : manifest["files"]) {

@@ -2659,6 +2659,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             res.set_content(response.dump(), "application/json");
         }
 
+    } catch (const lemon::UnknownModelError& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 500;
@@ -3746,6 +3751,10 @@ void Server::stream_download_operation(
                     sink.write(event.c_str(), event.size());
                 }
 
+            } catch (const lemon::UnknownModelError& e) {
+                nlohmann::json error_data = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+                std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                sink.write(event.c_str(), event.size());
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();
                 if (error_msg != "Download cancelled") {

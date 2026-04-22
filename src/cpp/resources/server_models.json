@@ -873,8 +873,7 @@
         "suggested": true,
         "labels": [
             "vision",
-            "tool-calling",
-            "hot"
+            "tool-calling"
         ],
         "size": 19.7
     },
@@ -885,8 +884,7 @@
         "suggested": true,
         "labels": [
             "vision",
-            "tool-calling",
-            "hot"
+            "tool-calling"
         ],
         "size": 68.4
     },
