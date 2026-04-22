@@ -250,6 +250,8 @@ bool is_ggml_hip_plugin_available() {
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
         "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so",
+	// Arch AUR path
+	"/usr/lib/libggml-hip.so",
         // Standard Linux paths
         "/usr/lib/ggml/backends0/libggml-hip.so",
         "/usr/lib64/ggml/backends0/libggml-hip.so"
