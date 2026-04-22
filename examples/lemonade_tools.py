@@ -7,7 +7,7 @@ executes the tool against Lemonade's API and feeds the result back.
 
 Prerequisites:
     pip install openai
-    # Lemonade server running with an LLM + image/TTS models loaded
+    # Lemonade server running on port 13305 with an LLM + image/TTS models loaded
 
 Usage:
     python examples/lemonade_tools.py "Generate an image of a sunset"
