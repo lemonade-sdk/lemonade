@@ -219,9 +219,12 @@ void Router::load_model(const std::string& model_name,
                        bool allow_reload_on_option_change) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options());
+    RecipeOptions current_model_options = model_manager_->get_effective_recipe_options(
+        model_info, /*refresh_saved_from_disk=*/true);
 
-    // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
-        RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
+    // Resolve settings: load overrides take precedence over persisted per-model
+    // options, which take precedence over runtime defaults.
+    RecipeOptions effective_options = options.inherit(current_model_options.inherit(default_opt));
 
     LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
