@@ -911,6 +911,17 @@
         ],
         "size": 22.4
     },
+    "Qwen3.6-27B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling"
+        ],
+        "size": 17.6
+    },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
         "mmproj": "mmproj-F16.gguf",
