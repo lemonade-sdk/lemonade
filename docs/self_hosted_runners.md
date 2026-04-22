@@ -77,7 +77,7 @@ This guide will help you set up a computer as a GitHub self-hosted runner.
 
 ### Runner Configuration
 
-These steps will place your machine in the `stx-test` pool, which is where we put machines while we are setting them up. In the next section we will finalize setup and then move the runner into the production pool.
+These steps will place your machine into the production pool.
 
 1. IMPORTANT: before doing step 2, read this:
     - Use a powershell administrator mode terminal
@@ -159,7 +159,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Request only the capability labels your job actually needs (see [Runner Labels](#runner-labels)). For example, `runs-on: [Windows, xdna2]` for NPU work, `runs-on: [Linux, vulkan, rocm]` for a job that exercises both GPU backends. Do not ask for `xdna2` or a GPU capability if your job is CPU-only — use `[self-hosted, Windows]` / `[self-hosted, Linux]`, or move the step to a GitHub-hosted runner like `runs-on: windows-latest` when possible.
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
-    - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#npu-runner-setup) section to see which software is already expected on the system.
+    - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#new-runner-setup) section to see which software is already expected on the system.
 - Always create new virtual environments in the CWD, for example `python -m venv .venv`.
     - This way, the virtual environment is located in `C:\actions-runner\_work\REPO`, which is wiped between tests.
     - Make sure to activate your virtual environment before running any `pip install` commands. Otherwise your workflow will modify the system Python installation!
@@ -178,9 +178,3 @@ Here are some general guidelines to observe when creating or modifying workflows
         - Example: `$Env:HF_HOME=".\hf-cache"`
     - Place your Lemonade cache directory inside the `_work` directory so that it will be wiped after each job.
         - Example: Pass the cache dir as the first argument to `lemond`: `lemond .\ci-cache`
-
-# License
-
-[Apache 2.0 License](../LICENSE)
-
-Copyright(C) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
