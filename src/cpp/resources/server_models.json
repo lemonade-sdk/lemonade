@@ -713,7 +713,8 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-            "llamacpp"
+            "llamacpp",
+	        "hot"
         ],
         "size": 1.2
     },
