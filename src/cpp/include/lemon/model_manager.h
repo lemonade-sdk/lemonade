@@ -21,9 +21,10 @@ using json = nlohmann::json;
 //
 // CONTRACT: the /pull HTTP handler catches this type and attaches
 // {"code": kUnknownModelErrorCode, ...} to the error response. The lemonade
-// CLI keys off that code (NOT the message string) to replace the message with
-// a friendlier one that points at `lemonade list` and `lemonade pull
-// CHECKPOINT`. Do not change kUnknownModelErrorCode without updating the CLI.
+// CLI keys off that code to replace the message with a friendlier one that
+// points at `lemonade list` and `lemonade pull CHECKPOINT`. The CLI inlines
+// the "unknown_model" literal to avoid pulling this server header into the
+// CLI; update cli/lemonade_client.cpp in lockstep if this constant changes.
 class UnknownModelError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

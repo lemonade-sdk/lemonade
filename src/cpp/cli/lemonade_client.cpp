@@ -1,5 +1,4 @@
 #include "lemon_cli/lemonade_client.h"
-#include "lemon/model_manager.h"  // for lemon::kUnknownModelErrorCode
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
@@ -486,8 +485,9 @@ int LemonadeClient::pull_model(const json& model_data) {
         }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
 
         if (!state.success) {
-            // See UnknownModelError contract in include/lemon/model_manager.h.
-            if (state.error_code == lemon::kUnknownModelErrorCode) {
+            // Wire-protocol constant; server-side definition and contract live in
+            // include/lemon/model_manager.h (kUnknownModelErrorCode). Keep in sync.
+            if (state.error_code == "unknown_model") {
                 state.error_message =
                     "No built-in model with the name '" + model_name + "' is registered.\n\n"
                     "If you meant a built-in model, run `lemonade list` to see available models.\n"

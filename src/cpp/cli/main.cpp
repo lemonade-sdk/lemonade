@@ -264,7 +264,6 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
 
     nlohmann::json model_data;
     model_data["model_name"] = config.model;
-
     return client.pull_model(model_data);
 }
 
