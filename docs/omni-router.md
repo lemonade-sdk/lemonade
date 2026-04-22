@@ -11,7 +11,7 @@ You bring the LLM loop. Lemonade brings the tools.
 3. Your client code executes each `tool_call` against the corresponding Lemonade endpoint (`/v1/images/generations`, `/v1/audio/speech`, etc.) and feeds the result back as a `tool` message.
 4. The LLM continues, calling more tools or producing a final response.
 
-This is the same pattern every OpenAI-compatible agent already uses. No custom SDK, no lock-in.
+This is the standard OpenAI tool-calling loop. The tool schemas OmniRouter provides are plain JSON (no Lemonade-specific client library required), the endpoints they target are OpenAI-compatible, and the server returns standard response shapes.
 
 ## Collections
 
@@ -24,7 +24,7 @@ A **Collection** is a preconfigured bundle of models sized for a hardware tier. 
 
 Collections are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "Ultra Collection" as if it were a real model. They surface with `?show_all=true` and appear in the desktop app's model list.
 
-You don't have to use a Collection — any LLM with the `tool-calling` label plus any image / TTS / ASR model works.
+Collections are the intended way to use OmniRouter. They're the only path the desktop app currently surfaces, and they're the configuration the tools have been tested against. A developer integrating the tools into their own agent can in principle mix any `tool-calling` LLM with any model carrying the matching capability label (see the tools table below), but that's a developer path — user documentation should assume Collections.
 
 ## Available tools
 
@@ -52,10 +52,11 @@ python examples/lemonade_tools.py "Say hello world out loud"
 
 ## Using your own agent
 
-Point your OpenAI-compatible client at `http://localhost:13305/v1`, list models, discover capabilities by label, and wire up the tools you care about. The discovery flow:
+Integrate OmniRouter into an existing agent by following the pattern in [`examples/lemonade_tools.py`](../examples/lemonade_tools.py):
 
-```bash
-curl http://localhost:13305/v1/models
-```
+1. Point your OpenAI-compatible client at `http://localhost:13305/v1`.
+2. Copy the tool entries from [`toolDefinitions.json`](../src/app/src/renderer/utils/toolDefinitions.json) into your agent's tool list (or load the JSON directly).
+3. When your agent receives a `tool_call` for one of these tools, POST to the corresponding endpoint from the table above and feed the response back to the LLM as a `tool` message.
+4. If you want to pick models programmatically rather than rely on a Collection being loaded, query `GET /v1/models?show_all=true` and match the `labels` array against the "Needs a model with label" column above.
 
-Each model entry includes a `labels` array. Map labels to tools using the table above.
+The example script implements all four steps end-to-end against the `generate_image` and `text_to_speech` tools.
