@@ -1912,7 +1912,8 @@ void ModelManager::download_model(const std::string& model_name,
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (!is_user_model_name(model_name)) {
-            throw std::runtime_error(
+            // See UnknownModelError contract in include/lemon/model_manager.h.
+            throw UnknownModelError(
                 "When registering a new model, the model name must include the "
                 "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +
                 model_name

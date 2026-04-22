@@ -238,34 +238,6 @@ static bool has_manual_pull_options(const CliConfig& config) {
     return !config.checkpoints.empty() || !config.recipe.empty() || !config.labels.empty();
 }
 
-static bool model_list_contains(const std::vector<lemonade::ModelInfo>& models,
-                                const std::string& model_name) {
-    return std::any_of(models.begin(), models.end(),
-                       [&model_name](const lemonade::ModelInfo& model) {
-                           return model.id == model_name;
-                       });
-}
-
-static int print_unknown_pull_target_error(lemonade::LemonadeClient& client,
-                                           const std::string& model_name) {
-    std::vector<lemonade::ModelInfo> available_models = client.get_models(false);
-    if (model_list_contains(available_models, model_name)) {
-        return -1;
-    }
-
-    std::vector<lemonade::ModelInfo> all_models = client.get_models(true);
-    if (model_list_contains(all_models, model_name)) {
-        return -1;
-    }
-
-    std::cerr << "Error pulling model: No built-in model with the name '" << model_name
-              << "' is registered.\n\n"
-              << "If you meant a built-in model, run `lemonade list` to see available models.\n"
-              << "If you meant to add a custom model from Hugging Face, run `lemonade pull CHECKPOINT`."
-              << std::endl;
-    return 1;
-}
-
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
         if (config.checkpoints.empty()) {
@@ -292,11 +264,6 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
 
     nlohmann::json model_data;
     model_data["model_name"] = config.model;
-
-    int preflight_result = print_unknown_pull_target_error(client, config.model);
-    if (preflight_result != -1) {
-        return preflight_result;
-    }
 
     return client.pull_model(model_data);
 }

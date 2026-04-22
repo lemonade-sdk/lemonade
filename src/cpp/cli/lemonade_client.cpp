@@ -1,4 +1,5 @@
 #include "lemon_cli/lemonade_client.h"
+#include "lemon/model_manager.h"  // for lemon::kUnknownModelErrorCode
 #include <httplib.h>
 #include <iostream>
 #include <iomanip>
@@ -470,8 +471,11 @@ int LemonadeClient::pull_model(const json& model_data) {
             } else if (event_type == "error") {
                 try {
                     auto error_json = json::parse(event_data);
-                    if (error_json.contains("error")) {
+                    if (error_json.contains("error") && error_json["error"].is_string()) {
                         state.error_message = error_json["error"].get<std::string>();
+                    }
+                    if (error_json.contains("code") && error_json["code"].is_string()) {
+                        state.error_code = error_json["code"].get<std::string>();
                     }
                 } catch (...) {
                     state.error_message = event_data;
@@ -482,6 +486,14 @@ int LemonadeClient::pull_model(const json& model_data) {
         }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
 
         if (!state.success) {
+            // See UnknownModelError contract in include/lemon/model_manager.h.
+            if (state.error_code == lemon::kUnknownModelErrorCode) {
+                state.error_message =
+                    "No built-in model with the name '" + model_name + "' is registered.\n\n"
+                    "If you meant a built-in model, run `lemonade list` to see available models.\n"
+                    "If you meant to add a custom model from Hugging Face, run `lemonade pull CHECKPOINT`.";
+            }
+
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
             }
