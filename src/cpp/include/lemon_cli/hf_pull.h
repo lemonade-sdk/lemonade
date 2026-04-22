@@ -6,6 +6,11 @@
 
 namespace lemon_cli {
 
+// Accept either a bare Hugging Face repo id / checkpoint string or a full
+// huggingface.co URL and return the canonical checkpoint form expected by the
+// CLI and server (for example: owner/repo[:variant]).
+std::string normalize_huggingface_checkpoint_arg(const std::string& arg);
+
 // Pull a model from a Hugging Face checkpoint id, optionally with a variant
 // suffix (`owner/repo[:variant]`). Fetches /api/v1/pull/variants from lemond,
 // presents an interactive variant menu when needed, then issues /v1/pull.
