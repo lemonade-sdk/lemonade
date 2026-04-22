@@ -1355,7 +1355,6 @@
         "checkpoint": "",
         "recipe": "collection",
         "suggested": true,
-        "hidden": true,
         "composite_models": [
             "Qwen3.5-35B-A3B-GGUF",
             "Flux-2-Klein-9B-GGUF",
@@ -1367,7 +1366,6 @@
         "checkpoint": "",
         "recipe": "collection",
         "suggested": true,
-        "hidden": true,
         "composite_models": [
             "Qwen3.5-4B-GGUF",
             "SD-Turbo",

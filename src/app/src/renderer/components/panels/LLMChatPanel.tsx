@@ -75,6 +75,27 @@ function resolveAudioFormat(file: File): string {
   return 'wav';
 }
 
+// Inverse of AUDIO_FORMAT_BY_MIME — given an OpenAI input_audio.format like
+// "mp3", return the MIME to feed <audio>/Blob. Single source of truth so
+// handleCollectionChat, buildFinalContent, and renderMessageContent don't
+// all carry their own redundant literal map.
+const AUDIO_MIME_BY_FORMAT: Record<string, string> = {
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  webm: 'audio/webm',
+};
+
+function mimeForFormat(fmt?: string): string {
+  return (fmt && AUDIO_MIME_BY_FORMAT[fmt]) || 'audio/wav';
+}
+
+function formatForMime(mime?: string): string {
+  return (mime && AUDIO_FORMAT_BY_MIME[mime.toLowerCase()]) || 'wav';
+}
+
 function splitDataUrl(dataUrl: string): { base64: string } {
   const comma = dataUrl.indexOf(',');
   return { base64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl };
@@ -120,7 +141,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [editingAudio, setEditingAudio] = useState<UploadedAudio[]>([]);
   const [uploadedAudio, setUploadedAudio] = useState<UploadedAudio[]>([]);
-  const [isMicRecording, setIsMicRecording] = useState(false);
   const [showAudioMenu, setShowAudioMenu] = useState(false);
   const [showEditAudioMenu, setShowEditAudioMenu] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -140,7 +160,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const editAudioInputRef = useRef<HTMLInputElement>(null);
-  const speechRecognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const autoScrollInProgressRef = useRef(false);
@@ -454,16 +473,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       for (const item of msg.content) {
         if (item.type === 'input_audio' && 'input_audio' in item) {
           if (isUser) {
-            const fmt = item.input_audio.format || 'wav';
-            const fmtToMime: Record<string, string> = {
-              wav: 'audio/wav',
-              mp3: 'audio/mpeg',
-              m4a: 'audio/mp4',
-              flac: 'audio/flac',
-              ogg: 'audio/ogg',
-              webm: 'audio/webm',
-            };
-            const mime = fmtToMime[fmt] || 'audio/wav';
+            const mime = mimeForFormat(item.input_audio.format);
             extractedAudio.push({ data: item.input_audio.data, mime });
             newContent.push({ type: 'text', text: `[User provided audio file #${extractedAudio.length}]` });
           }
@@ -531,7 +541,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       // Show thinking indicator while waiting for LLM response
-      const thinkingText = iteration === 0 ? 'Thinking...' : 'Thinking...';
+      const thinkingText = 'Thinking...';
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages[newMessages.length - 1] = {
@@ -599,7 +609,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               extractedImages,
               previousArtifacts: [...sourceArtifacts, ...artifacts],
             };
-            const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData);
+            const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
 
             if (result.type === 'image' && result.data) {
               // For edits, replace the last generated image from this turn if
@@ -672,23 +682,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       } else if (artifact.type === 'audio') {
         // Map the artifact's MIME to an input_audio `format`. The renderer
         // (MessageAudio / StreamingAudio) maps back to MIME for playback.
-        const fmtByMime: Record<string, string> = {
-          'audio/wav': 'wav',
-          'audio/x-wav': 'wav',
-          'audio/wave': 'wav',
-          'audio/mpeg': 'mp3',
-          'audio/mp3': 'mp3',
-          'audio/mp4': 'm4a',
-          'audio/x-m4a': 'm4a',
-          'audio/flac': 'flac',
-          'audio/x-flac': 'flac',
-          'audio/ogg': 'ogg',
-          'audio/webm': 'webm',
-        };
-        const format = fmtByMime[(artifact.mime || 'audio/wav').toLowerCase()] || 'wav';
         contentArray.push({
           type: 'input_audio',
-          input_audio: { data: artifact.data, format },
+          input_audio: { data: artifact.data, format: formatForMime(artifact.mime) },
         });
       }
     }
@@ -750,11 +746,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     };
 
     const requestBody = buildChatRequestBody(messageHistory);
-    console.log('[LLMChat] sending chat request:', {
-      model: requestBody.model,
-      messageCount: requestBody.messages.length,
-      stream: requestBody.stream,
-    });
 
     const response = await serverFetch('/chat/completions', {
       method: 'POST',
@@ -763,7 +754,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       signal: abortControllerRef.current!.signal,
     });
 
-    console.log('[LLMChat] response status:', response.status, response.statusText);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     if (!response.body) throw new Error('Response body is null');
 
@@ -831,20 +821,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     // because the state update hasn't flushed yet.
     if (!textToSend.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0) return;
 
-    console.log('[LLMChat] sendMessage called', {
-      chatModelName, selectedModel, collectionMode,
-      isBusy, isPreFlight, isInferring,
-    });
-
     const ready = await runPreFlight('llm', {
       modelName: chatModelName,
       modelsData,
       onError: (msg) => {
-        console.error('[LLMChat] pre-flight error:', msg);
         setMessages(prev => [...prev, { role: 'assistant', content: `Error preparing model: ${msg}` }]);
       },
     });
-    console.log('[LLMChat] pre-flight result:', ready);
     if (!ready) return;
 
     if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -1081,18 +1064,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               // uses StreamingAudio for autoplay + scrubbing, while user input
               // audio uses the simpler MessageAudio playback.
               if (role === 'assistant') {
-                const mimeByFmt: Record<string, string> = {
-                  wav: 'audio/wav',
-                  mp3: 'audio/mpeg',
-                  m4a: 'audio/mp4',
-                  flac: 'audio/flac',
-                  ogg: 'audio/ogg',
-                  webm: 'audio/webm',
-                };
-                const mime = mimeByFmt[fmt] || 'audio/wav';
                 return (
                   <div key={index} className="message-audio">
-                    <StreamingAudio data={item.input_audio.data} mime={mime} />
+                    <StreamingAudio data={item.input_audio.data} mime={mimeForFormat(fmt)} />
                   </div>
                 );
               }
@@ -1349,7 +1323,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             audio={uploadedAudio}
             onRemove={uploadedAudioHandlers.remove}
           />
-
           <textarea
             ref={inputTextareaRef}
             className="chat-input"

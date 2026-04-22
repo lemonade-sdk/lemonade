@@ -24,7 +24,9 @@ A **Collection** is a preconfigured bundle of models sized for a hardware tier. 
 
 Collections are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "Ultra Collection" as if it were a real model. They surface with `?show_all=true` and appear in the desktop app's model list.
 
-Collections are the intended way to use OmniRouter. They're the only path the desktop app currently surfaces, and they're the configuration the tools have been tested against. A developer integrating the tools into their own agent can in principle mix any `tool-calling` LLM with any model carrying the matching capability label (see the tools table below), but that's a developer path — user documentation should assume Collections.
+Use a Collection. Every part of this doc assumes one is loaded — the desktop app, `examples/lemonade_tools.py`, and the tools themselves were all validated against the Ultra and Lite Collections above.
+
+If you're the developer wiring OmniRouter into your own agent and you want to substitute models, you can, but you take on the compatibility work: any LLM you swap in must carry the `tool-calling` label, and each tool you want to call needs one downloaded model whose `labels` include the row's "Needs a model with label" entry from the tools table below. That's a developer-path discovery step, not a user configuration; the simple answer for everyone else is "install a Collection."
 
 ## Available tools
 

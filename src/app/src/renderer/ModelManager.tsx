@@ -18,7 +18,7 @@ import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
-import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionFullyLoaded, isCollectionModel, isModelEffectivelyDownloaded } from './utils/collectionModels';
+import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 
 interface ModelFamily {
   displayName: string;
@@ -495,10 +495,7 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
-    if (isCollectionModel(info)) {
-      return isCollectionFullyLoaded(modelName, modelsData, loadedModels);
-    }
-    return loadedModels.has(modelName);
+    return isModelEffectivelyLoaded(modelName, info, modelsData, loadedModels);
   };
 
   const getModelLoadingState = (modelName: string): boolean => {
@@ -1099,9 +1096,7 @@ const [searchQuery, setSearchQuery] = useState('');
     // loaded when all components are loaded. Fall back to naive checks
     // for regular models.
     const isDownloaded = isModelEffectivelyDownloaded(modelName, info, modelsData);
-    const isLoaded = isCollectionModel(info)
-      ? isCollectionFullyLoaded(modelName, modelsData, loadedModels)
-      : loadedModels.has(modelName);
+    const isLoaded = isModelEffectivelyLoaded(modelName, info, modelsData, loadedModels);
     const isLoading = loadingModels.has(modelName);
 
     let statusClass = 'not-downloaded';

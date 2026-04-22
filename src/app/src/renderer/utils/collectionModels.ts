@@ -20,6 +20,18 @@ export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo 
   return info?.downloaded === true;
 };
 
+export const isModelEffectivelyLoaded = (
+  modelName: string,
+  info: ModelInfo | undefined,
+  modelsData: ModelsData,
+  loadedModels: Set<string>,
+): boolean => {
+  if (isCollectionModel(info)) {
+    return isCollectionFullyLoaded(modelName, modelsData, loadedModels);
+  }
+  return loadedModels.has(modelName);
+};
+
 export const isCollectionFullyDownloaded = (modelName: string, modelsData: ModelsData): boolean => {
   const info = modelsData[modelName];
   const components = getCollectionComponents(info);

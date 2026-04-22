@@ -632,7 +632,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
-    // Experience models are virtual bundles with no direct checkpoint to resolve
+    // Collections are virtual entries with no direct checkpoint to resolve
     if (info.recipe == "collection") {
         return "";
     }
@@ -1003,7 +1003,6 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
-        info.hidden = JsonUtils::get_or_default<bool>(value, "hidden", false);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1325,7 +1324,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         }
 
         // Recompute downloaded status for any collections that
-        // depend on this model, so the bundle reflects component changes
+        // depend on this model, so the collection reflects component changes
         // without requiring a full cache rebuild.
         for (auto& [name, entry] : models_cache_) {
             if (entry.recipe != "collection") continue;
@@ -1336,7 +1335,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             bool new_state = check_composite_downloaded(entry, models_cache_);
             if (entry.downloaded != new_state) {
                 entry.downloaded = new_state;
-                LOG(INFO, "ModelManager") << "Experience '" << name
+                LOG(INFO, "ModelManager") << "Collection '" << name
                           << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
             }
         }
@@ -1374,15 +1373,14 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded, non-hidden models. Hidden models
-    // are things like collections which are Lemonade-specific UX
-    // abstractions — OpenAI-compatible clients (AnythingLLM, Continue,
-    // etc.) shouldn't see them as if they were regular LLMs. The desktop
-    // app uses ?show_all=true to fetch everything including hidden ones.
+    // Filter and return only downloaded, non-collection models. Collections
+    // are Lemonade-specific (a virtual entry that loads multiple
+    // real models) and aren't meaningful to OpenAI-compatible clients —
+    // the desktop app fetches them explicitly via ?show_all=true.
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded && !info.hidden) {
+        if (info.downloaded && info.recipe != "collection") {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;
@@ -1561,7 +1559,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Experience models are UI-level bundles that orchestrate component models.
+        // Collections are UI-level entries that orchestrate component models.
         // They should always be visible if present in the registry.
         if (recipe == "collection") {
             filtered[name] = info;
@@ -1990,11 +1988,11 @@ void ModelManager::download_model(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
-    // Experience models don't have their own backend — download each component model instead
+    // Collections don't have their own backend — download each component model instead
     if (actual_recipe == "collection") {
         auto info = get_model_info(model_name);
         if (info.composite_models.empty()) {
-            throw std::runtime_error("Experience model '" + model_name + "' has no composite_models defined");
+            throw std::runtime_error("Collection '" + model_name + "' has no composite_models defined");
         }
         LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
                                   << " component(s) for collection: " << model_name << std::endl;
@@ -2002,9 +2000,16 @@ void ModelManager::download_model(const std::string& model_name,
         // Wrap the callback so recursive per-component downloads don't each
         // emit a "complete" event — the SSE stream should only see one final
         // completion after every component finishes.
+        //
+        // Capture progress_callback by value (not by reference) so `forward`
+        // owns a copy of the std::function. This keeps the callback usable
+        // even if `forward` is ever copied or outlives this stack frame;
+        // today it's only consumed synchronously below, but the defensive
+        // copy is free (std::function is copyable) and removes a latent
+        // dangling-reference hazard if the recursion pattern changes.
         DownloadProgressCallback forward = nullptr;
         if (progress_callback) {
-            forward = [&progress_callback](const DownloadProgress& p) -> bool {
+            forward = [progress_callback](const DownloadProgress& p) -> bool {
                 if (p.complete) return true;
                 return progress_callback(p);
             };
@@ -2025,7 +2030,7 @@ void ModelManager::download_model(const std::string& model_name,
             download_model(component, comp_data, do_not_upgrade, forward);
         }
 
-        // Emit a single completion event for the whole bundle
+        // Emit a single completion event for the whole collection
         if (progress_callback) {
             DownloadProgress progress;
             progress.complete = true;

@@ -96,6 +96,7 @@ export async function executeLemonadeTool(
   model: string,
   context: ToolExecutionContext,
   modelsData?: ModelsData,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const funcName = toolCall.function.name;
   let args: Record<string, any>;
@@ -112,16 +113,16 @@ export async function executeLemonadeTool(
   const effectiveName = (funcName === 'generate_image' && hasPreviousImage && modelSupportsEdit) ? 'edit_image' : funcName;
 
   if (effectiveName === 'generate_image' || effectiveName === 'edit_image') {
-    return executeImageTool(effectiveName, args, model, context);
+    return executeImageTool(effectiveName, args, model, context, signal);
   }
   if (effectiveName === 'text_to_speech') {
-    return executeTTSTool(args, model);
+    return executeTTSTool(args, model, signal);
   }
   if (effectiveName === 'transcribe_audio') {
-    return executeTranscriptionTool(args, model, context);
+    return executeTranscriptionTool(args, model, context, signal);
   }
   if (effectiveName === 'analyze_image') {
-    return executeVisionTool(args, model, context);
+    return executeVisionTool(args, model, context, signal);
   }
 
   return { type: 'text', text: `Unknown tool: ${funcName}` };
@@ -132,6 +133,7 @@ async function executeImageTool(
   args: Record<string, any>,
   model: string,
   context: ToolExecutionContext,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const isEdit = effectiveName === 'edit_image';
 
@@ -161,6 +163,7 @@ async function executeImageTool(
     const response = await serverFetch('/images/edits', {
       method: 'POST',
       body: formData,
+      signal,
     });
 
     const data = await response.json();
@@ -190,6 +193,7 @@ async function executeImageTool(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
 
   const data = await response.json();
@@ -202,6 +206,7 @@ async function executeImageTool(
 async function executeTTSTool(
   args: Record<string, any>,
   model: string,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   // Request MP3 — it's widely playable in <audio> and is what the server
   // defaults to anyway. We collect the full body on the client; true
@@ -218,6 +223,7 @@ async function executeTTSTool(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -240,6 +246,7 @@ async function executeTranscriptionTool(
   args: Record<string, any>,
   model: string,
   context: ToolExecutionContext,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   if (context.extractedAudio.length === 0) {
     return { type: 'text', text: 'No audio data provided for transcription.' };
@@ -267,6 +274,7 @@ async function executeTranscriptionTool(
   const response = await serverFetch('/audio/transcriptions', {
     method: 'POST',
     body: formData,
+    signal,
   });
 
   const data = await response.json();
@@ -280,12 +288,24 @@ async function executeVisionTool(
   args: Record<string, any>,
   model: string,
   context: ToolExecutionContext,
+  signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
-  let imageUrl = args.image_url || '';
   const question = args.question || 'Describe this image.';
 
-  if ((!imageUrl || !imageUrl.startsWith('data:')) && context.extractedImages.length > 0) {
+  // Only accept an LLM-provided image_url if it's a base64 data URL. Reject
+  // arbitrary http:/file:/javascript: URIs — if the LLM hallucinates one,
+  // the backend's handling is out of our control, and the rendered
+  // MessageContent already enforces data:image/ for display. Fall back to
+  // the user's uploaded image (same-origin data URL) in all other cases.
+  const rawImageUrl = typeof args.image_url === 'string' ? args.image_url : '';
+  let imageUrl = rawImageUrl.startsWith('data:image/') ? rawImageUrl : '';
+
+  if (!imageUrl && context.extractedImages.length > 0) {
     imageUrl = context.extractedImages[context.extractedImages.length - 1].dataUrl;
+  }
+
+  if (!imageUrl) {
+    return { type: 'text', text: 'No image available to analyze.' };
   }
 
   const body = {
@@ -304,6 +324,7 @@ async function executeVisionTool(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
 
   const data = await response.json();
