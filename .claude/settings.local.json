@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh pr:*)",
-      "Bash(cmake:*)",
-      "Bash(grep:*)"
-    ]
-  }
-}
