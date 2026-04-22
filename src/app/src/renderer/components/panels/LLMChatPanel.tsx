@@ -22,7 +22,7 @@ import EmptyState from '../EmptyState';
 import ImageLightbox from '../ImageLightbox';
 import StreamingAudio from '../StreamingAudio';
 import TypingIndicator from '../TypingIndicator';
-import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
+import { getCollectionPrimaryChatModel } from '../../utils/collectionModels';
 import RecordButton from '../RecordButton';
 import {
   buildLemonadeTools,
@@ -91,24 +91,24 @@ interface LLMChatPanelProps {
   appSettings: AppSettings | null;
   isVision: boolean;
   isAudioChat?: boolean;
-  experienceMode?: boolean;
+  collectionMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
   onNewChat?: () => void;
-  onUnloadExperience?: () => void;
+  onUnloadCollection?: () => void;
 }
 
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, isAudioChat = false, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
-  onNewChat, onUnloadExperience,
+  isVision, isAudioChat = false, collectionMode = false, currentLoadedModel, setCurrentLoadedModel,
+  onNewChat, onUnloadCollection,
 }) => {
   const { selectedModel, modelsData } = useModels();
   const { systemInfo } = useSystem();
   const tts = useTTS(appSettings, modelsData);
   const chatModelName = useMemo(
-    () => getExperiencePrimaryChatModel(selectedModel, modelsData),
+    () => getCollectionPrimaryChatModel(selectedModel, modelsData),
     [selectedModel, modelsData],
   );
 
@@ -200,14 +200,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     };
   }, []);
 
-  // Build lemonade tools when experience mode activates
+  // Build lemonade tools when collection mode activates
   useEffect(() => {
-    if (!experienceMode || !modelsData[selectedModel]) {
+    if (!collectionMode || !modelsData[selectedModel]) {
       setLemonadeTools(null);
       return;
     }
     setLemonadeTools(buildLemonadeTools(selectedModel, modelsData));
-  }, [experienceMode, selectedModel, modelsData]);
+  }, [collectionMode, selectedModel, modelsData]);
 
   // Consolidated image handlers
   const createImageHandlers = (
@@ -430,10 +430,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   /**
-   * Client-side agentic loop for experience mode.
+   * Client-side agentic loop for collection mode.
    * Calls LLM with tools, executes tool_calls locally via Lemonade endpoints, loops.
    */
-  const handleExperienceChat = async (messageHistory: Message[]): Promise<void> => {
+  const handleCollectionChat = async (messageHistory: Message[]): Promise<void> => {
     if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
     const MAX_ITERATIONS = 5;
     const isNewModelLoad = currentLoadedModel !== chatModelName;
@@ -832,7 +832,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!textToSend.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0) return;
 
     console.log('[LLMChat] sendMessage called', {
-      chatModelName, selectedModel, experienceMode,
+      chatModelName, selectedModel, collectionMode,
       isBusy, isPreFlight, isInferring,
     });
 
@@ -880,8 +880,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
-      if (experienceMode && lemonadeTools) {
-        await handleExperienceChat(messageHistory);
+      if (collectionMode && lemonadeTools) {
+        await handleCollectionChat(messageHistory);
       } else {
         await handleStreamingResponse(messageHistory);
       }
@@ -958,8 +958,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
-      if (experienceMode && lemonadeTools) {
-        await handleExperienceChat(messageHistory);
+      if (collectionMode && lemonadeTools) {
+        await handleCollectionChat(messageHistory);
       } else {
         await handleStreamingResponse(messageHistory);
       }
@@ -1077,7 +1077,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             }
             if (item.type === 'input_audio') {
               const fmt = item.input_audio.format || 'wav';
-              // Assistant-generated TTS audio (from the experience agentic loop)
+              // Assistant-generated TTS audio (from the collection agentic loop)
               // uses StreamingAudio for autoplay + scrubbing, while user input
               // audio uses the simpler MessageAudio playback.
               if (role === 'assistant') {
@@ -1185,13 +1185,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       <div className="chat-header">
         <h3>LLM Chat</h3>
         <div className="chat-header-actions">
-          {experienceMode && onUnloadExperience && (
+          {collectionMode && onUnloadCollection && (
             <button
-              className="model-action-btn unload-btn active-model-eject-button experience-unload-icon-button"
-              onClick={onUnloadExperience}
+              className="model-action-btn unload-btn active-model-eject-button collection-unload-icon-button"
+              onClick={onUnloadCollection}
               disabled={isBusy}
-              title="Eject experience"
-              aria-label="Unload experience"
+              title="Eject collection"
+              aria-label="Unload collection"
             >
               <EjectIcon />
             </button>
@@ -1400,7 +1400,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                     </button>
                   </>
                 )}
-                {(isAudioChat || experienceMode) && (
+                {(isAudioChat || collectionMode) && (
                   <div className="audio-menu-wrapper" ref={audioMenuRef}>
                     <input
                       ref={audioInputRef}

@@ -2746,8 +2746,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         }
 
         // Experience models: load each component model instead
-        if (info.recipe == "experience" && !info.composite_models.empty()) {
-            LOG(INFO, "Server") << "Loading experience components for: " << model_name << std::endl;
+        if (info.recipe == "collection" && !info.composite_models.empty()) {
+            LOG(INFO, "Server") << "Loading collection components for: " << model_name << std::endl;
             for (const auto& component : info.composite_models) {
                 if (!model_manager_->model_exists(component)) {
                     LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
@@ -2772,7 +2772,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
-                {"recipe", "experience"}
+                {"recipe", "collection"}
             };
             res.set_content(response.dump(), "application/json");
         } else {

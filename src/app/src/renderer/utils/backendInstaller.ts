@@ -3,7 +3,7 @@ import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
-import { getExperienceComponents, isExperienceModel } from './experienceModels';
+import { getCollectionComponents, isCollectionModel } from './collectionModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -535,14 +535,14 @@ async function ensureModelReadyInternal(
   visited: Set<string>,
 ): Promise<void> {
   if (visited.has(modelName)) {
-    throw new Error(`Circular experience model dependency detected for "${modelName}".`);
+    throw new Error(`Circular collection model dependency detected for "${modelName}".`);
   }
   visited.add(modelName);
   try {
     const modelInfo = modelsData[modelName];
-    if (isExperienceModel(modelInfo)) {
+    if (isCollectionModel(modelInfo)) {
       options?.onModelLoading?.();
-      const components = getExperienceComponents(modelInfo);
+      const components = getCollectionComponents(modelInfo);
       for (const component of components) {
         if (!modelsData[component]) {
           throw new Error(`Experience model "${modelName}" references missing component "${component}".`);

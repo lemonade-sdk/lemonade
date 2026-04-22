@@ -18,7 +18,7 @@ import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
-import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
+import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionFullyLoaded, isCollectionModel, isModelEffectivelyDownloaded } from './utils/collectionModels';
 
 interface ModelFamily {
   displayName: string;
@@ -473,19 +473,19 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const getModelSize = (modelName: string, info: ModelInfo): number | undefined => {
-    if (!isExperienceModel(info)) {
+    if (!isCollectionModel(info)) {
       return info.size;
     }
-    const components = getExperienceComponents(info);
+    const components = getCollectionComponents(info);
     if (components.length === 0) return info.size;
     const total = components.reduce((sum, component) => sum + (modelsData[component]?.size || 0), 0);
     return total > 0 ? total : info.size;
   };
 
   const getDisplayLabelsForModel = (modelName: string, info: ModelInfo): string[] => {
-    if (isExperienceModel(info)) {
+    if (isCollectionModel(info)) {
       // Experiences intentionally show a single, consistent legend marker.
-      return ['experience'];
+      return ['collection'];
     }
     return (info.labels || []).filter((label): label is string => typeof label === 'string' && label.length > 0);
   };
@@ -495,8 +495,8 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
-    if (isExperienceModel(info)) {
-      return isExperienceFullyLoaded(modelName, modelsData, loadedModels);
+    if (isCollectionModel(info)) {
+      return isCollectionFullyLoaded(modelName, modelsData, loadedModels);
     }
     return loadedModels.has(modelName);
   };
@@ -507,7 +507,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
-      'experience': 'OmniRouter',
+      'collection': 'OmniRouter',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
@@ -536,18 +536,18 @@ const [searchQuery, setSearchQuery] = useState('');
   // Merge loaded and loading models so the list shows components as they
   // start loading, not just after /health confirms them. Loading entries
   // get an `isLoading` flag so the UI can render a pending indicator.
-  // Skip experience collection entries themselves — only show component models.
+  // Skip collection entries themselves — only show component models.
   const loadedModelEntries = (() => {
     const entries: Array<{ modelName: string; isLoading: boolean }> = [];
     const seen = new Set<string>();
     for (const modelName of loadedModels) {
-      if (isExperienceModel(modelsData[modelName])) continue;
+      if (isCollectionModel(modelsData[modelName])) continue;
       if (seen.has(modelName)) continue;
       seen.add(modelName);
       entries.push({ modelName, isLoading: false });
     }
     for (const modelName of loadingModels) {
-      if (isExperienceModel(modelsData[modelName])) continue;
+      if (isCollectionModel(modelsData[modelName])) continue;
       if (seen.has(modelName)) continue;
       seen.add(modelName);
       entries.push({ modelName, isLoading: true });
@@ -740,9 +740,9 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      // Skip the download flow entirely if an experience collection is already complete
+      // Skip the download flow entirely if a collection is already complete
       const info = modelsData[modelName];
-      if (isExperienceModel(info) && isExperienceFullyDownloaded(modelName, modelsData)) {
+      if (isCollectionModel(info) && isCollectionFullyDownloaded(modelName, modelsData)) {
         showSuccess(`"${modelName}" is already downloaded.`);
         return;
       }
@@ -759,8 +759,8 @@ const [searchQuery, setSearchQuery] = useState('');
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
 
-      const collectionComponents = isExperienceModel(info)
-        ? getExperienceComponents(info)
+      const collectionComponents = isCollectionModel(info)
+        ? getCollectionComponents(info)
         : undefined;
 
       // Use the single consolidated download function
@@ -883,8 +883,8 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      if (isExperienceModel(modelData)) {
-        const components = getExperienceComponents(modelData);
+      if (isCollectionModel(modelData)) {
+        const components = getCollectionComponents(modelData);
         if (components.length === 0) {
           showError(`Experience model "${modelName}" has no component models.`);
           return;
@@ -944,8 +944,8 @@ const [searchQuery, setSearchQuery] = useState('');
         const next = new Set(prev);
         next.delete(modelName);
         const info = modelsData[modelName];
-        if (isExperienceModel(info)) {
-          getExperienceComponents(info).forEach((component) => next.delete(component));
+        if (isCollectionModel(info)) {
+          getCollectionComponents(info).forEach((component) => next.delete(component));
         }
         return next;
       });
@@ -956,8 +956,8 @@ const [searchQuery, setSearchQuery] = useState('');
   const handleUnloadModel = async (modelName: string) => {
     try {
       const modelData = modelsData[modelName];
-      if (modelData && isExperienceModel(modelData)) {
-        const components = getExperienceComponents(modelData);
+      if (modelData && isCollectionModel(modelData)) {
+        const components = getCollectionComponents(modelData);
         for (const component of components) {
           if (!loadedModels.has(component)) continue;
           const response = await serverFetch('/unload', {
@@ -997,7 +997,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const handleDeleteModel = async (modelName: string) => {
     const info = modelsData[modelName];
-    const collectionComponents = isExperienceModel(info) ? getExperienceComponents(info) : [];
+    const collectionComponents = isCollectionModel(info) ? getCollectionComponents(info) : [];
     const isCollection = collectionComponents.length > 0;
 
     const message = isCollection
@@ -1095,12 +1095,12 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getModelStatus = (modelName: string) => {
     const info = modelsData[modelName];
-    // experience collections: downloaded when all components are downloaded,
+    // collections: downloaded when all components are downloaded,
     // loaded when all components are loaded. Fall back to naive checks
     // for regular models.
     const isDownloaded = isModelEffectivelyDownloaded(modelName, info, modelsData);
-    const isLoaded = isExperienceModel(info)
-      ? isExperienceFullyLoaded(modelName, modelsData, loadedModels)
+    const isLoaded = isCollectionModel(info)
+      ? isCollectionFullyLoaded(modelName, modelsData, loadedModels)
       : loadedModels.has(modelName);
     const isLoading = loadingModels.has(modelName);
 
@@ -1160,7 +1160,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isEsrgan = info?.labels?.includes('esrgan');
-    const isCollection = isExperienceModel(info);
+    const isCollection = isCollectionModel(info);
     return (
       <>
         {!isDownloaded && (
@@ -1233,11 +1233,11 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
 
-    // For experience collections, show the component list (with sizes) as a
+    // For collections, show the component list (with sizes) as a
     // tooltip so users can see what gets downloaded/loaded.
     let nameTooltip: string | undefined;
-    if (isExperienceModel(modelInfo)) {
-      const components = getExperienceComponents(modelInfo);
+    if (isCollectionModel(modelInfo)) {
+      const components = getCollectionComponents(modelInfo);
       const lines = components.map((c) => {
         const s = modelsData[c]?.size;
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;

@@ -2,45 +2,45 @@ import { ModelInfo, ModelsData } from './modelData';
 
 export const NON_LLM_LABELS = new Set(['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding', 'reranking']);
 
-export const getExperienceComponents = (info?: ModelInfo): string[] => {
+export const getCollectionComponents = (info?: ModelInfo): string[] => {
   if (!info || !Array.isArray(info.composite_models)) {
     return [];
   }
   return info.composite_models.filter((name): name is string => typeof name === 'string' && name.length > 0);
 };
 
-export const isExperienceModel = (info?: ModelInfo): boolean => {
-  return !!info && info.recipe === 'experience' && getExperienceComponents(info).length > 0;
+export const isCollectionModel = (info?: ModelInfo): boolean => {
+  return !!info && info.recipe === 'collection' && getCollectionComponents(info).length > 0;
 };
 
 export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo | undefined, modelsData: ModelsData): boolean => {
-  if (isExperienceModel(info)) {
-    return isExperienceFullyDownloaded(modelName, modelsData);
+  if (isCollectionModel(info)) {
+    return isCollectionFullyDownloaded(modelName, modelsData);
   }
   return info?.downloaded === true;
 };
 
-export const isExperienceFullyDownloaded = (modelName: string, modelsData: ModelsData): boolean => {
+export const isCollectionFullyDownloaded = (modelName: string, modelsData: ModelsData): boolean => {
   const info = modelsData[modelName];
-  const components = getExperienceComponents(info);
+  const components = getCollectionComponents(info);
   if (components.length === 0) return false;
   return components.every((component) => modelsData[component]?.downloaded === true);
 };
 
-export const isExperienceFullyLoaded = (
+export const isCollectionFullyLoaded = (
   modelName: string,
   modelsData: ModelsData,
   loadedModels: Set<string>,
 ): boolean => {
   const info = modelsData[modelName];
-  const components = getExperienceComponents(info);
+  const components = getCollectionComponents(info);
   if (components.length === 0) return false;
   return components.every((component) => loadedModels.has(component));
 };
 
-export const getExperienceImageModel = (selectedModel: string, modelsData: ModelsData): string | null => {
+export const getCollectionImageModel = (selectedModel: string, modelsData: ModelsData): string | null => {
   const info = modelsData[selectedModel];
-  const components = getExperienceComponents(info);
+  const components = getCollectionComponents(info);
   const imageModel = components.find((component) => {
     const componentInfo = modelsData[component];
     return componentInfo?.labels?.includes('image');
@@ -48,9 +48,9 @@ export const getExperienceImageModel = (selectedModel: string, modelsData: Model
   return imageModel || null;
 };
 
-export const getExperiencePrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
+export const getCollectionPrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
-  const components = getExperienceComponents(info);
+  const components = getCollectionComponents(info);
   if (components.length === 0) {
     return selectedModel;
   }

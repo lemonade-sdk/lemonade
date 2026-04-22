@@ -633,7 +633,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // Experience models are virtual bundles with no direct checkpoint to resolve
-    if (info.recipe == "experience") {
+    if (info.recipe == "collection") {
         return "";
     }
 
@@ -966,7 +966,7 @@ static void parse_composite_models(ModelInfo& info, const json& model_json) {
     }
 }
 
-// Check if all component models of an experience/composite model are downloaded.
+// Check if all component models of a collection model are downloaded.
 static bool check_composite_downloaded(const ModelInfo& info,
                                         const std::map<std::string, ModelInfo>& model_map) {
     if (info.composite_models.empty()) return false;
@@ -1108,9 +1108,9 @@ void ModelManager::build_cache() {
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
 
     int downloaded_count = 0;
-    // First pass: determine download status for non-experience models
+    // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "experience") {
+        if (info.recipe == "collection") {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
@@ -1159,10 +1159,10 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Second pass: determine download status for experience models
+    // Second pass: determine download status for collection models
     // (must happen after component models have their downloaded status set)
     for (auto& [name, info] : all_models) {
-        if (info.recipe != "experience") continue;
+        if (info.recipe != "collection") continue;
         info.downloaded = check_composite_downloaded(info, all_models);
         if (info.downloaded) {
             downloaded_count++;
@@ -1246,7 +1246,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "experience") {
+    if (info.recipe == "collection") {
         info.downloaded = check_composite_downloaded(info, models_cache_);
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
@@ -1324,11 +1324,11 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
                       << "' downloaded=" << downloaded << std::endl;
         }
 
-        // Recompute downloaded status for any experience bundles that
+        // Recompute downloaded status for any collections that
         // depend on this model, so the bundle reflects component changes
         // without requiring a full cache rebuild.
         for (auto& [name, entry] : models_cache_) {
-            if (entry.recipe != "experience") continue;
+            if (entry.recipe != "collection") continue;
             if (std::find(entry.composite_models.begin(), entry.composite_models.end(),
                           model_name) == entry.composite_models.end()) {
                 continue;
@@ -1375,7 +1375,7 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     build_cache();
 
     // Filter and return only downloaded, non-hidden models. Hidden models
-    // are things like experience bundles which are Lemonade-specific UX
+    // are things like collections which are Lemonade-specific UX
     // abstractions — OpenAI-compatible clients (AnythingLLM, Continue,
     // etc.) shouldn't see them as if they were regular LLMs. The desktop
     // app uses ?show_all=true to fetch everything including hidden ones.
@@ -1563,7 +1563,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Experience models are UI-level bundles that orchestrate component models.
         // They should always be visible if present in the registry.
-        if (recipe == "experience") {
+        if (recipe == "collection") {
             filtered[name] = info;
             continue;
         }
@@ -1991,13 +1991,13 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Experience models don't have their own backend — download each component model instead
-    if (actual_recipe == "experience") {
+    if (actual_recipe == "collection") {
         auto info = get_model_info(model_name);
         if (info.composite_models.empty()) {
             throw std::runtime_error("Experience model '" + model_name + "' has no composite_models defined");
         }
         LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
-                                  << " component(s) for experience: " << model_name << std::endl;
+                                  << " component(s) for collection: " << model_name << std::endl;
 
         // Wrap the callback so recursive per-component downloads don't each
         // emit a "complete" event — the SSE stream should only see one final

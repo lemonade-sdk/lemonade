@@ -1,6 +1,6 @@
 import { serverFetch } from './serverConfig';
 import { ModelsData } from './modelData';
-import { getExperienceComponents, NON_LLM_LABELS } from './experienceModels';
+import { getCollectionComponents, NON_LLM_LABELS } from './collectionModels';
 import toolDefinitions from './toolDefinitions.json';
 
 // Types
@@ -39,15 +39,15 @@ export interface ToolExecutionResult {
 }
 
 /**
- * Build tools, system prompt, and model map from an experience model's components.
+ * Build tools, system prompt, and model map from a collection model's components.
  * Tool definitions are loaded from toolDefinitions.json — the single source of truth.
  */
 export function buildLemonadeTools(
-  experienceName: string,
+  collectionName: string,
   modelsData: ModelsData,
 ): LemonadeToolsResult {
-  const info = modelsData[experienceName];
-  const components = getExperienceComponents(info);
+  const info = modelsData[collectionName];
+  const components = getCollectionComponents(info);
 
   const llmModel = components.find(c => {
     const labels = modelsData[c]?.labels ?? [];

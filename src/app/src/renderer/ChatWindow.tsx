@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isExperienceModel, getExperiencePrimaryChatModel, getExperienceComponents } from './utils/experienceModels';
+import { isCollectionModel, getCollectionPrimaryChatModel, getCollectionComponents } from './utils/collectionModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -47,7 +47,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return 'llm';
     const info = modelsData[selectedModel];
     if (!info) return 'llm';
-    if (isExperienceModel(info)) return 'llm';
+    if (isCollectionModel(info)) return 'llm';
     // Chat-indicator labels win over modality labels so multimodal "any-to-text"
     // models (e.g. Gemma 4 on FLM) — which carry both "vision" / "tool-calling"
     // AND modality labels like "audio" / "transcription" — route to the LLM
@@ -75,8 +75,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const isVision = useMemo(() => {
     if (!selectedModel) return false;
     const info = modelsData[selectedModel];
-    if (isExperienceModel(info)) {
-      const chatModel = getExperiencePrimaryChatModel(selectedModel, modelsData);
+    if (isCollectionModel(info)) {
+      const chatModel = getCollectionPrimaryChatModel(selectedModel, modelsData);
       return modelsData[chatModel]?.labels?.includes('vision') || false;
     }
     return info?.labels?.includes('vision') || false;
@@ -94,12 +94,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return labels.some(l => l === 'vision' || l === 'reasoning' || l === 'tool-calling' || l === 'tools');
   }, [selectedModel, modelsData]);
 
-  const isExperienceSelected = useMemo(() => {
+  const isCollectionSelected = useMemo(() => {
     if (!selectedModel) return false;
-    return isExperienceModel(modelsData[selectedModel]);
+    return isCollectionModel(modelsData[selectedModel]);
   }, [selectedModel, modelsData]);
 
-  const experienceMode = activeModelType === 'llm' && isExperienceSelected;
+  const collectionMode = activeModelType === 'llm' && isCollectionSelected;
 
   // Use refs so the mount-once effect can read current values without re-running
   const selectedModelRef = useRef(selectedModel);
@@ -116,8 +116,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       if (data?.model_loaded) {
         setCurrentLoadedModel(data.model_loaded);
         const selectedInfo = selectedModelRef.current ? modelsDataRef.current[selectedModelRef.current] : undefined;
-        const keepExperienceSelection = !!selectedInfo && isExperienceModel(selectedInfo);
-        if (!userHasSelectedModelRef.current && !keepExperienceSelection) {
+        const keepCollectionSelection = !!selectedInfo && isCollectionModel(selectedInfo);
+        if (!userHasSelectedModelRef.current && !keepCollectionSelection) {
           setSelectedModel(data.model_loaded);
         }
       } else {
@@ -227,12 +227,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setResetKey(k => k + 1);
   };
 
-  const handleUnloadExperienceModel = async () => {
+  const handleUnloadCollectionModel = async () => {
     if (!selectedModel || inference.isBusy) return;
 
     try {
       const info = modelsData[selectedModel];
-      const components = isExperienceModel(info) ? getExperienceComponents(info) : [selectedModel];
+      const components = isCollectionModel(info) ? getCollectionComponents(info) : [selectedModel];
 
       for (const component of components) {
         const response = await serverFetch('/unload', {
@@ -252,7 +252,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       setUserHasSelectedModel(false);
       window.dispatchEvent(new CustomEvent('modelUnload'));
     } catch (error) {
-      console.error('Failed to unload experience model:', error);
+      console.error('Failed to unload collection:', error);
       showError(`Failed to unload model: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -309,9 +309,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           isAudioChat={isAudioChat}
           currentLoadedModel={currentLoadedModel}
           setCurrentLoadedModel={setCurrentLoadedModel}
-          experienceMode={experienceMode}
+          collectionMode={collectionMode}
           onNewChat={handleNewChat}
-          onUnloadExperience={handleUnloadExperienceModel}
+          onUnloadCollection={handleUnloadCollectionModel}
         />
       )}
       <input

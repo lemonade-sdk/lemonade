@@ -9,7 +9,7 @@ import InferenceControls from '../InferenceControls';
 import ModelSelector from '../ModelSelector';
 import EmptyState from '../EmptyState';
 import { ImageUploadIcon } from '../Icons';
-import { isExperienceModel, getExperienceImageModel } from '../../utils/experienceModels';
+import { isCollectionModel, getCollectionImageModel } from '../../utils/collectionModels';
 
 type ImageMode = 'generate' | 'edit' | 'variations';
 
@@ -74,8 +74,8 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
 
   const supportsEdit = useMemo(() => {
     const info = modelsData[selectedModel];
-    if (isExperienceModel(info)) {
-      const imageModel = getExperienceImageModel(selectedModel, modelsData);
+    if (isCollectionModel(info)) {
+      const imageModel = getCollectionImageModel(selectedModel, modelsData);
       return imageModel ? modelsData[imageModel]?.labels?.includes('edit') || false : false;
     }
     return info?.labels?.includes('edit') || false;

@@ -1353,7 +1353,7 @@
     },
     "Ultra Collection": {
         "checkpoint": "",
-        "recipe": "experience",
+        "recipe": "collection",
         "suggested": true,
         "hidden": true,
         "composite_models": [
@@ -1365,7 +1365,7 @@
     },
     "Lite Collection": {
         "checkpoint": "",
-        "recipe": "experience",
+        "recipe": "collection",
         "suggested": true,
         "hidden": true,
         "composite_models": [
