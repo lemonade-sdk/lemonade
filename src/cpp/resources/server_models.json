@@ -1280,8 +1280,8 @@
         "image_defaults": {
             "steps": 4,
             "cfg_scale": 1,
-            "width": 512,
-            "height": 512
+            "width": 256,
+            "height": 256
         }
     },
     "Qwen-Image-GGUF": {
