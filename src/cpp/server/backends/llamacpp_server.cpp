@@ -438,6 +438,11 @@ void LlamaCppServer::load(const std::string& model_name,
     // get a minimal env from launchd and do not inherit HOME, so llama-server
     // crashes before the model ever loads. Terminal/sudo spawns preserve
     // HOME and do not hit this.
+    //
+    // Upstream fix in flight: https://github.com/ggml-org/llama.cpp/pull/22263
+    // Once that PR merges and lemonade's pinned llama.cpp version (in
+    // src/cpp/resources/backend_versions.json) includes it, this HOME
+    // fallback can be deleted.
     const char* home = std::getenv("HOME");
     if (!home || home[0] == '\0') {
         struct passwd* pw = getpwuid(getuid());

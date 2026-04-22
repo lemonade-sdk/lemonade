@@ -182,6 +182,7 @@ class TestConfigEnvVars(unittest.TestCase):
     def test_whispercpp_args(self):
         self.assertEqual(self.snapshot["whispercpp"]["args"], "--convert")
 
+    @unittest.skipIf(IS_MACOS, "FLM is NPU-only, not available on macOS")
     def test_flm_args(self):
         self.assertEqual(self.snapshot["flm"]["args"], "--socket 20")
 
