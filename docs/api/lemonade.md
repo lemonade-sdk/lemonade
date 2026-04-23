@@ -7,20 +7,20 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 - Unload models to save memory space.
 - Understand system resources and state to make dynamic choices.
 
-| Method | Endpoint | Description | Modality |
-|--------|----------|-------------|----------|
-| `POST` | `/v1/pull` | Install a model | model request -> install state |
-| `GET` | `/v1/pull/variants` | Enumerate GGUF variants for a Hugging Face checkpoint | checkpoint -> variant metadata |
-| `POST` | `/v1/delete` | Delete a model | model request -> delete state |
-| `POST` | `/v1/load` | Load a model | model request -> loaded state |
-| `POST` | `/v1/unload` | Unload a model | model request -> unloaded state |
-| `GET` | `/v1/health` | Check server status, such as models loaded | status request -> server state |
-| `GET` | `/v1/stats` | Performance statistics from the last request | stats request -> performance metrics |
-| `GET` | `/v1/system-info` | System information and device enumeration | system request -> hardware metadata |
-| `POST` | `/v1/install` | Install or update a backend | backend request -> install state |
-| `POST` | `/v1/uninstall` | Remove a backend | backend request -> uninstall state |
-| `WS` | `/logs/stream` | Log Streaming | subscribe -> snapshot + live log entries |
-| `GET` | `/live` | Check server liveness for load balancers and orchestrators | liveness request -> health signal |
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
+| `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
+| `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
+| `POST` | [`/v1/load`](#post-apiv1load) | Load a model |
+| `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
+| `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
+| `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
+| `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
+| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend |
+| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
+| `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
+| `GET` | `/live` | Check server liveness for load balancers and orchestrators |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
