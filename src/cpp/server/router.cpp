@@ -107,6 +107,11 @@ void Router::load_usage_stats() {
             return;
         }
 
+        // schema_version defaults to 1 so files written before this field was
+        // added (schema v1 format) parse correctly without migration.
+        const int schema_version = persisted.value("schema_version", 1);
+        (void)schema_version; // reserved for future migration dispatch
+
         lifetime_usage_stats_.requests = persisted.value("requests", 0ULL);
         lifetime_usage_stats_.input_tokens = persisted.value("input_tokens", 0ULL);
         lifetime_usage_stats_.output_tokens = persisted.value("output_tokens", 0ULL);
@@ -179,6 +184,7 @@ void Router::persist_usage_stats_locked() const {
         };
 
         json persisted = {
+            {"schema_version", 1},
             {"requests", lifetime_usage_stats_.requests},
             {"input_tokens", lifetime_usage_stats_.input_tokens},
             {"output_tokens", lifetime_usage_stats_.output_tokens},
