@@ -784,6 +784,68 @@ class LLMTests(ServerTestBase):
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 0)
 
+    @skip_if_unsupported("slots")
+    def test_023_slots(self):
+        """Test the /slots endpoint for llamacpp backend."""
+        # First ensure a model is loaded
+        model = self.get_test_model("llm")
+
+        # Load the model
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": model},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        # Test the slots endpoint
+        response = requests.get(f"{self.base_url}/slots", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        print(f"Slots response: {data}")
+
+        # Basic validation that we get a JSON response
+        # The exact structure may vary, but we should at least get valid JSON
+        self.assertIsInstance(data, (dict, list))
+
+        # If it's a list, it should contain slot information
+        if isinstance(data, list):
+            # Check that each slot has expected fields if any slots exist
+            for slot in data:
+                self.assertIsInstance(slot, dict)
+                # Slots typically have an id field
+                if "id" in slot:
+                    self.assertIsInstance(slot["id"], int)
+
+        # If it's a dict, it might be an error or wrapper object, but is not acceptable
+        elif isinstance(data, dict):
+            # If there's an error, it should have an error field
+            if "error" in data:
+                self.assertIsInstance(data["error"], str)
+                self.fail(f"Error response from /slots endpoint: {data['error']}")
+            else:
+                # Fail
+                self.fail("Unexpected response format for /slots endpoint")
+
+        # Now erase one of the slots
+        if isinstance(data, list) and len(data) > 0:
+            slot_id_to_erase = data[0].get("id")
+            if slot_id_to_erase is not None:
+                erase_response = requests.post(
+                    f"{self.base_url}/slots/{slot_id_to_erase}?action=erase",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(erase_response.status_code, 200)
+                erase_data = erase_response.json()
+                print(f"Slots erase response: {erase_data}")
+                self.assertIn("id_slot", erase_data)
+                self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
+            else:
+                self.fail("No slot id found to erase in /slots response")
+        else:
+            self.fail("No slots available to test erasure in /slots endpoint")
+
 
 if __name__ == "__main__":
-    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING TESTS", modality="llm")
+    run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING/SLOTS TESTS", modality="llm")
