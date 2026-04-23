@@ -1576,6 +1576,11 @@ class EndpointTests(ServerTestBase):
                     persisted,
                     f"on-disk file should not contain API-only field " f"'{api_only}'",
                 )
+            self.assertEqual(
+                persisted.get("schema_version"),
+                1,
+                "on-disk file must contain schema_version == 1",
+            )
             _assert_lifetime(
                 {
                     **persisted,
