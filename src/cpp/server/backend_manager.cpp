@@ -5,6 +5,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -322,6 +323,18 @@ BackendManager::BackendManager() {
     }
 }
 
+// Global accessor — mirrors RuntimeConfig::global(). Set once from Server's
+// constructor; null when invoked from CLI tools that don't run a server.
+static std::atomic<BackendManager*> s_global_backend_manager{nullptr};
+
+void BackendManager::set_global(BackendManager* instance) {
+    s_global_backend_manager.store(instance, std::memory_order_release);
+}
+
+BackendManager* BackendManager::global() {
+    return s_global_backend_manager.load(std::memory_order_acquire);
+}
+
 std::string BackendManager::get_version_from_config(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
 
@@ -349,6 +362,145 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 // Install parameters
 // ============================================================================
 
+std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
+                                                     bool throw_on_failure) {
+    {
+        std::lock_guard<std::mutex> lock(latest_version_cache_mutex_);
+        auto it = latest_version_cache_.find(repo);
+        if (it != latest_version_cache_.end()) {
+            return it->second;
+        }
+    }
+
+    auto* cfg = RuntimeConfig::global();
+    if (cfg && cfg->no_fetch_executables()) {
+        if (throw_on_failure) {
+            throw std::runtime_error(
+                "Cannot resolve 'latest' release for " + repo
+                + ": no_fetch_executables is true");
+        }
+        return "";
+    }
+    if (cfg && cfg->offline()) {
+        if (throw_on_failure) {
+            throw std::runtime_error(
+                "Cannot resolve 'latest' release for " + repo + ": offline mode");
+        }
+        return "";
+    }
+
+    const std::string url = "https://api.github.com/repos/" + repo + "/releases/latest";
+    std::map<std::string, std::string> headers = {
+        {"User-Agent", "lemonade"},
+        {"Accept", "application/vnd.github+json"},
+    };
+
+    LOG(DEBUG, "BackendManager") << "Resolving 'latest' for " << repo << " via " << url << std::endl;
+    utils::HttpResponse resp;
+    try {
+        resp = utils::HttpClient::get(url, headers);
+    } catch (const std::exception& e) {
+        if (throw_on_failure) {
+            throw std::runtime_error(
+                "Failed to query GitHub for latest release of " + repo + ": " + e.what());
+        }
+        LOG(WARNING, "BackendManager") << "GitHub query for " << repo << " failed: " << e.what() << std::endl;
+        return "";
+    }
+    if (resp.status_code < 200 || resp.status_code >= 300) {
+        if (throw_on_failure) {
+            throw std::runtime_error(
+                "GitHub returned HTTP " + std::to_string(resp.status_code)
+                + " when querying latest release of " + repo);
+        }
+        LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
+                                       << " for " << repo << std::endl;
+        return "";
+    }
+
+    std::string tag;
+    try {
+        auto body = json::parse(resp.body);
+        tag = body.at("tag_name").get<std::string>();
+    } catch (const std::exception& e) {
+        if (throw_on_failure) {
+            throw std::runtime_error(
+                "Failed to parse GitHub release response for " + repo + ": " + e.what());
+        }
+        LOG(WARNING, "BackendManager") << "Failed to parse GitHub response for " << repo
+                                       << ": " << e.what() << std::endl;
+        return "";
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(latest_version_cache_mutex_);
+        latest_version_cache_[repo] = tag;
+    }
+    LOG(INFO, "BackendManager") << "Resolved 'latest' for " << repo << " -> " << tag << std::endl;
+    return tag;
+}
+
+std::string BackendManager::resolve_user_version(const std::string& recipe,
+                                                  const std::string& resolved_backend,
+                                                  const std::string& pinned_version,
+                                                  const std::string& repo) {
+    auto* cfg = RuntimeConfig::global();
+    if (!cfg) return pinned_version;
+
+    std::string section, bin_key;
+    backends::BackendUtils::build_bin_config_key(recipe, resolved_backend, section, bin_key);
+    std::string raw = cfg->backend_string(section, bin_key);
+
+    // "" / "builtin" → use lemonade's pinned version.
+    if (raw.empty() || raw == "builtin") return pinned_version;
+
+    // Path overrides skip the install flow entirely (find_external_backend_binary
+    // returns the path), so the version doesn't matter — fall back to pinned for
+    // any UI/metadata callers that still touch this code path.
+    if (utils::looks_like_path(raw)) return pinned_version;
+
+    // "latest" → ask GitHub. If offline and a previously-installed version is
+    // recorded, reuse it instead of failing.
+    if (raw == "latest") {
+        if (cfg->offline()) {
+            std::string install_dir = backends::BackendUtils::get_install_directory(
+                recipe, resolved_backend);
+            std::string cached = read_version_file(fs::path(install_dir) / "version.txt");
+            if (!cached.empty()) {
+                LOG(WARNING, "BackendManager") << "offline: reusing installed " << recipe
+                                               << ":" << resolved_backend << " version "
+                                               << cached << " for 'latest'" << std::endl;
+                return cached;
+            }
+            throw std::runtime_error(
+                "Cannot resolve 'latest' for " + recipe + ":" + resolved_backend
+                + ": offline mode and no installed version found");
+        }
+        return fetch_latest_github_tag(repo, /*throw_on_failure=*/true);
+    }
+
+    // Otherwise: a bare upstream release tag (e.g. "b8664"). Pass through.
+    return raw;
+}
+
+std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
+                                                       const std::string& backend) {
+    try {
+        std::string resolved_backend = normalize_backend_name(recipe, backend);
+        auto* spec = backends::try_get_spec_for_recipe(recipe);
+        if (!spec || !spec->install_params_fn) return "";
+        std::string pinned = get_version_from_config(recipe, resolved_backend);
+        // First call extracts the repo for this (recipe, backend); filename
+        // templating is discarded.
+        auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
+        return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "BackendManager") << "get_or_resolve_latest_tag(" << recipe
+                                       << ":" << backend << ") failed: " << e.what() << std::endl;
+        return "";
+    }
+}
+
 BackendManager::InstallParams BackendManager::get_install_params(const std::string& recipe, const std::string& backend) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
 
@@ -356,14 +508,19 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     if (!spec) {
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
-    std::string version = get_version_from_config(recipe, resolved_backend);
+    std::string pinned = get_version_from_config(recipe, resolved_backend);
 
     if (!spec->install_params_fn) {
         throw std::runtime_error("No install params function for recipe: " + recipe);
     }
 
-    auto params = spec->install_params_fn(resolved_backend, version);
-    return {params.repo, params.filename, version};
+    // Two-pass: first call gets the repo for resolve_user_version (filename
+    // discarded); second call templates the resolved tag into the real filename.
+    auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
+    std::string resolved_version = resolve_user_version(
+        recipe, resolved_backend, pinned, pinned_params.repo);
+    auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
+    return {final_params.repo, final_params.filename, resolved_version};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,

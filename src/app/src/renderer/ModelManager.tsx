@@ -1269,7 +1269,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const renderBackendSetupBanner = (recipe: string) => {
     const info = getRecipeBackendInfo(recipe);
-    if (!info || info.state === 'installed') return null;
+    if (!info || info.state === 'installed' || info.state === 'update_available') return null;
     if (info.state === 'unsupported') return null;
 
     const isUpdate = info.state === 'update_required';

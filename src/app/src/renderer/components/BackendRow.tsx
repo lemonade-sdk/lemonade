@@ -5,6 +5,7 @@ const STATUS_INDICATOR_CLASS: Record<BackendInfo['state'], string> = {
   installed: 'available',
   installable: 'not-downloaded',
   update_required: 'update-required',
+  update_available: 'update-available',
   action_required: 'update-required',
   unsupported: 'unsupported',
 };
@@ -84,10 +85,11 @@ const BackendRow: React.FC<BackendRowProps> = ({
 }) => {
   const showActions = hoverActions ? isHovered : true;
   const message = statusMessage ?? info.message;
-  const canInstall = info.state === 'installable' || info.state === 'update_required';
+  const isUpdate = info.state === 'update_required' || info.state === 'update_available';
+  const canInstall = info.state === 'installable' || isUpdate;
   const hasAction = canInstall || info.state === 'action_required';
-  const canUninstall = info.state === 'installed' && info.can_uninstall !== false && backendName !== 'system';
-  const isUpdate = info.state === 'update_required';
+  const isInstalledLike = info.state === 'installed' || info.state === 'update_available';
+  const canUninstall = isInstalledLike && info.can_uninstall !== false && backendName !== 'system';
 
   return (
     <div

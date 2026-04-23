@@ -238,7 +238,9 @@ export async function ensureBackendForRecipe(
     throw new Error(`Default backend '${defaultBackend}' not found for recipe ${recipe}.`);
   }
 
-  if (backendInfo.state === 'installed') return;
+  // `update_available` is a soft signal: the backend is fully usable, GitHub
+  // just has a newer tag. Don't block model flows on it.
+  if (backendInfo.state === 'installed' || backendInfo.state === 'update_available') return;
 
   if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
     const action = backendInfo.action || '';

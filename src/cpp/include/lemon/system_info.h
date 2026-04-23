@@ -216,7 +216,7 @@ bool needs_gfx1151_cwsr_fix();
 
 // FLM status (derived from system-info cache)
 struct FlmStatus {
-    std::string state;     // "unsupported","installable","update_required","action_required","installed"
+    std::string state;     // "unsupported","installable","update_required","action_required","installed","update_available"
     std::string version;
     std::string message;
     std::string action;

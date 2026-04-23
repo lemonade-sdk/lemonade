@@ -139,31 +139,45 @@ namespace lemon::backends {
         return ret.make_preferred().string();
     }
 
-    std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
-        auto* cfg = lemon::RuntimeConfig::global();
-        if (!cfg) return "";
-
-        std::string section = RuntimeConfig::recipe_to_config_section(recipe);
-
-        // Normalize backend name for config lookup: "rocm-preview"/"rocm-stable"/"rocm-nightly" -> "rocm"
+    void BackendUtils::build_bin_config_key(const std::string& recipe,
+                                              const std::string& backend,
+                                              std::string& out_section,
+                                              std::string& out_bin_key) {
         std::string config_backend = backend;
         if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
             (backend == "rocm-preview" || backend == "rocm-stable" || backend == "rocm-nightly")) {
             config_backend = "rocm";
         }
+        out_section = RuntimeConfig::recipe_to_config_section(recipe);
+        out_bin_key = config_backend.empty() ? "server_bin" : (config_backend + "_bin");
+    }
 
-        // Build the config key: e.g. "vulkan_bin", "cpu_bin", "server_bin"
-        std::string bin_key = config_backend.empty() ? "server_bin" : (config_backend + "_bin");
+    std::string BackendUtils::find_external_backend_binary(const std::string& recipe, const std::string& backend) {
+        auto* cfg = lemon::RuntimeConfig::global();
+        if (!cfg) return "";
 
+        std::string section, bin_key;
+        build_bin_config_key(recipe, backend, section, bin_key);
         std::string bin_value = cfg->backend_string(section, bin_key);
 
-        // "builtin" or empty means use the built-in binary (not an external override)
-        if (bin_value.empty() || bin_value == "builtin") {
+        // Reserved keywords and bare version tags are handled by the install flow.
+        if (bin_value.empty() || bin_value == "builtin" || bin_value == "latest") {
+            return "";
+        }
+        if (!utils::looks_like_path(bin_value)) {
             return "";
         }
 
         RuntimeConfig::validate_bin_path(section, bin_key, bin_value);
         return bin_value;
+    }
+
+    std::string BackendUtils::get_bin_config_value(const std::string& recipe, const std::string& backend) {
+        auto* cfg = lemon::RuntimeConfig::global();
+        if (!cfg) return "";
+        std::string section, bin_key;
+        build_bin_config_key(recipe, backend, section, bin_key);
+        return cfg->backend_string(section, bin_key);
     }
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {

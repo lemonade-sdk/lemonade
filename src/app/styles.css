@@ -2346,6 +2346,12 @@ footer {
     box-shadow: 0 0 4px rgba(255, 183, 77, 0.5);
 }
 
+/* Soft signal: backend is functional but a newer upstream release exists. */
+.model-status-indicator.update-available {
+    background-color: #6ea8fe;
+    box-shadow: 0 0 4px rgba(110, 168, 254, 0.45);
+}
+
 .model-status-indicator.unsupported {
     background-color: var(--error-color);
 }
