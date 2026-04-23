@@ -218,10 +218,6 @@ void Router::persist_usage_stats_locked() const {
 }
 
 void Router::record_usage_locked(const std::string& model_name, const std::string& device_type, int input_tokens, int output_tokens, std::time_t recorded_at) {
-    if (input_tokens <= 0 && output_tokens <= 0) {
-        return;
-    }
-
     const auto in_tokens = static_cast<uint64_t>(std::max(input_tokens, 0));
     const auto out_tokens = static_cast<uint64_t>(std::max(output_tokens, 0));
     const std::string day_key = format_day_bucket(recorded_at);
