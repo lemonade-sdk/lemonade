@@ -39,6 +39,14 @@ public:
     bool enable_dgpu_gtt() const;
     std::string rocm_channel() const;
 
+    // Llama.cpp router mode (single llama-server hosts many GGUFs).
+    // When enabled, Lemonade launches one llama-server with --models-preset
+    // or --models-dir and forwards all llamacpp requests to it.
+    bool router_mode() const;
+    std::string router_models_preset() const;
+    std::string router_models_dir() const;
+    std::string router_default_args() const;
+
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
     std::string backend_string(const std::string& backend, const std::string& key) const;

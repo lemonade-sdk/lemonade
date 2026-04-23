@@ -34,6 +34,10 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
+  "router_mode": false,
+  "router_models_preset": "",
+  "router_models_dir": "",
+  "router_default_args": "",
   "llamacpp": {
     "backend": "auto",
     "args": "",
@@ -88,6 +92,10 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
+| `router_mode` | bool | false | Launch a single `llama-server` in router mode to host many GGUFs simultaneously. See [Llama.cpp Router Mode](#llamacpp-router-mode) |
+| `router_models_preset` | string | "" | Path to a `llama-server` `.ini` preset file passed as `--models-preset`. Takes precedence over `router_models_dir` |
+| `router_models_dir` | string | "" | Directory of `.gguf` files passed as `--models-dir` to the router `llama-server` |
+| `router_default_args` | string | "" | Extra arguments appended to the router `llama-server` command line (after Lemonade's defaults, so they can override them) |
 
 ### Backend Configuration
 
@@ -239,11 +247,69 @@ sudo systemctl restart lemonade-server
 
 ```
 lemond [cache_dir] [--port PORT] [--host HOST]
+       [--router-mode|--no-router-mode]
+       [--models-preset PATH] [--models-dir DIR]
 ```
 
 - **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
 - **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
 - **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **--router-mode / --no-router-mode** — Enable or disable [Llama.cpp Router Mode](#llamacpp-router-mode) at startup (overrides config.json, persisted).
+- **--models-preset PATH** — `.ini` preset file forwarded to the router `llama-server` as `--models-preset`. Persists to `router_models_preset` in `config.json`.
+- **--models-dir DIR** — Directory of `.gguf` files forwarded to the router `llama-server` as `--models-dir`. Persists to `router_models_dir` in `config.json`.
+
+## Llama.cpp Router Mode
+
+Llama.cpp ships an experimental *router mode* in which a single `llama-server` process can host many GGUF models simultaneously and switch between them per request. Enabling router mode in Lemonade causes the server to launch exactly one `llama-server` child process, pass it a `--models-preset` or `--models-dir`, and forward every llamacpp request to that process. All other backends (FastFlowLM, RyzenAI, whisper.cpp, sd.cpp, Kokoro) continue to work exactly as before and coexist with the router under the same Lemonade HTTP endpoint.
+
+> **Requirements:** Router mode requires an upstream `llama.cpp` build that ships `--models-preset` / `--models-dir` support (originally landed in [ggml-org/llama.cpp PR #17079](https://github.com/ggml-org/llama.cpp/pull/17079)). Make sure the `llamacpp.*` entries in `backend_versions.json` point to a release that includes it before enabling this feature.
+
+### Enable router mode
+
+```bash
+# Option 1 — CLI flags (persist to config.json)
+lemond --router-mode --models-preset /path/to/models.ini
+
+# Option 2 — lemonade config (after the server is running)
+lemonade config set router_mode=true router_models_preset=/path/to/models.ini
+# Then restart lemond for the change to take effect.
+
+# Option 3 — environment variables (only applied to fresh config.json files)
+LEMONADE_ROUTER_MODE=true \
+LEMONADE_ROUTER_MODELS_PRESET=/path/to/models.ini \
+lemond
+```
+
+You must supply *either* `router_models_preset` or `router_models_dir`. If both are set, the preset wins.
+
+The path is read at `lemond` startup time. If the file or directory is missing, Lemonade logs a router startup failure and continues in normal per-model mode (with `router_mode: false` in `/api/v1/health`) so non-llamacpp backends keep working.
+
+### Behavior under router mode
+
+- **Single llama-server process.** Lemonade spawns one `llama-server --models-preset ...` (or `--models-dir ...`) at startup. The LRU eviction loop does not apply to it; the router is long-lived.
+- **Model roster.** Lemonade queries the router's `GET /v1/models` endpoint and uses the result as the set of models it routes for. This roster is reported under `all_models_loaded` in `/api/v1/health`.
+- **Loading models.** Calls to `/api/v1/load` that target a llamacpp model already in the roster are a no-op (the model is "loaded" by virtue of being in the roster). Requests for a registered llamacpp model that is *not* in the roster are rejected with a router-mode specific error; Lemonade does not download the missing GGUF, since it cannot load it outside the router preset.
+- **Unloading models.** `/api/v1/unload` with an explicit llamacpp model name is rejected — individual models cannot be evicted from the router. `/api/v1/unload` with an empty body (unload-all) still unloads all non-router backends and leaves the router in place. Restart lemond to shut the router down.
+- **Non-llamacpp backends.** FLM, RyzenAI, whisper.cpp, sd.cpp, and Kokoro continue to load/unload on demand with the usual LRU eviction. The router only intercepts llamacpp traffic.
+- **Extra llama-server args.** `router_default_args` is appended verbatim after Lemonade's own defaults (`--host`, `--port`, `--jinja`, `-ngl`, `--no-webui`, `--no-mmap` on iGPUs). Any flag you list in `router_default_args` overrides the Lemonade default for the same flag.
+
+### Example `models.ini`
+
+`--models-preset` expects the `llama-server` INI format. A minimal file that exposes two aliases might look like:
+
+```ini
+[default]
+ctx_size = 8192
+n_gpu_layers = 99
+
+[qwen3-0.6b]
+model = /var/lib/lemonade/gguf/qwen3-0.6b-q4_k_m.gguf
+
+[llama-3.2-3b]
+model = /var/lib/lemonade/gguf/llama-3.2-3b-q5_k_m.gguf
+```
+
+Clients can then address `qwen3-0.6b` or `llama-3.2-3b` as the `model` field in any OpenAI-style Lemonade request.
 
 ## API Key and Security
 

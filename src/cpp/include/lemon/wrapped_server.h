@@ -5,6 +5,7 @@
 #include <functional>
 #include <chrono>
 #include <mutex>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
@@ -111,6 +112,28 @@ public:
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
+
+    // Multi-model ownership:
+    //
+    // The default implementation of owns_model / get_owned_models reflects the
+    // historic 1-server-per-model model where every WrappedServer instance owns
+    // exactly the name stored in model_name_. Backends that can serve multiple
+    // models from a single process (notably LlamaCppRouter) override these to
+    // declare ownership over a roster of names.
+    //
+    // is_evictable() controls whether the Router is allowed to drop this
+    // instance under LRU pressure. Router-style backends should return false so
+    // the router process stays up for the whole Lemonade lifetime.
+    virtual bool owns_model(const std::string& name) const {
+        return !model_name_.empty() && model_name_ == name;
+    }
+
+    virtual std::vector<std::string> get_owned_models() const {
+        if (model_name_.empty()) return {};
+        return { model_name_ };
+    }
+
+    virtual bool is_evictable() const { return true; }
 
     // Load a model and start the server
     virtual void load(const std::string& model_name,

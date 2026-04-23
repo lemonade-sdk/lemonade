@@ -4,6 +4,7 @@
 #include "lemon/ollama_api.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/llamacpp_router.h"
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -114,6 +115,33 @@ bool prepend_no_think_to_last_user_message(json& request_json) {
 
 } // namespace
 
+nlohmann::json Server::build_router_mode_config_warnings(const json& requested_changes) const {
+    nlohmann::json warnings = nlohmann::json::array();
+    if (!requested_changes.is_object() || !router_ || !router_->is_router_mode_active()) {
+        return warnings;
+    }
+
+    if (requested_changes.contains("ctx_size")) {
+        warnings.push_back(
+            "router mode active: 'ctx_size' in /params does not apply to "
+            "router-hosted llamacpp models; configure per-model context in "
+            "--models-preset/--models-dir and restart lemond.");
+    }
+
+    if (requested_changes.contains("llamacpp") && requested_changes["llamacpp"].is_object()) {
+        const auto& llama = requested_changes["llamacpp"];
+        if (llama.contains("backend") || llama.contains("args")) {
+            warnings.push_back(
+                "router mode active: 'llamacpp.backend' and 'llamacpp.args' in "
+                "/params do not reconfigure the running llama.cpp router; "
+                "restart lemond for backend changes and use router_default_args "
+                "plus --models-preset/--models-dir for router settings.");
+        }
+    }
+
+    return warnings;
+}
+
 
 static const json MIME_TYPES = {
     {"mp3",  "audio/mpeg"},
@@ -143,6 +171,29 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
+
+    // Start the single llama-server router process if router mode is on.
+    // The router covers llamacpp models only; every other backend (FLM,
+    // whisper.cpp, sd.cpp, ryzenai, kokoro) continues to use the regular
+    // per-model LRU path. We deliberately fail soft here: a misconfigured
+    // router shouldn't prevent lemond from starting (the user may rely on
+    // the non-llamacpp backends or fix config via `lemonade config`).
+    if (config_->router_mode()) {
+        LOG(INFO, "Server") << "router_mode=true, starting llama-server router"
+                            << std::endl;
+        try {
+            auto router_backend = std::make_unique<backends::LlamaCppRouter>(
+                config_->log_level(), model_manager_.get(),
+                backend_manager_.get());
+            router_backend->start();
+            router_->install_router_server(std::move(router_backend));
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server")
+                << "Failed to start llama-server router: " << e.what()
+                << ". Continuing without router mode; fix the configuration "
+                   "and restart lemond to retry." << std::endl;
+        }
+    }
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -1146,7 +1197,10 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
 void Server::auto_load_model_if_needed(const std::string& requested_model) {
-    // Check if this specific model is already loaded (multi-model aware)
+    // Check if this specific model is already loaded (multi-model aware).
+    // For router mode this also matches any model currently in the
+    // llama-server roster via WrappedServer::owns_model(), so we skip the
+    // download/load path entirely for router-hosted names.
     if (router_->is_model_loaded(requested_model)) {
         LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
         return;
@@ -1161,6 +1215,17 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     }
 
     auto info = model_manager_->get_model_info(requested_model);
+
+    // Router mode short-circuit: refuse llamacpp auto-loads that aren't in
+    // the llama-server roster *before* we spend time downloading a GGUF we
+    // won't be allowed to load.
+    if (info.recipe == "llamacpp" && router_->is_router_mode_active()) {
+        throw std::runtime_error(
+            "Router mode is enabled but model '" + requested_model +
+            "' is not in the llama-server roster. Add it to the "
+            "--models-preset .ini file or --models-dir directory and "
+            "restart lemond.");
+    }
 
     // Download model if not cached (first-time use)
     // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
@@ -1208,6 +1273,10 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
+
+    // Expose router-mode status so clients can branch between per-model /load
+    // and router-preset workflows without having to inspect config.json.
+    response["router_mode"] = router_->is_router_mode_active();
 
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
@@ -2737,14 +2806,50 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
+        const bool router_managed_llamacpp =
+            (info.recipe == "llamacpp" && router_->is_router_mode_active());
+        const bool has_load_overrides = !options.to_json().empty();
+
+        // In active router mode, llamacpp models must already be in the
+        // upstream llama-server roster. We intentionally reject early before
+        // any download attempt so /load stays declarative and cheap.
+        if (router_managed_llamacpp && !router_->is_model_loaded(model_name)) {
+            throw std::runtime_error(
+                "Router mode is enabled but model '" + model_name +
+                "' is not in the llama-server roster. Add it to the "
+                "--models-preset .ini file or --models-dir directory and "
+                "restart lemond.");
+        }
+
+        // Router-owned llamacpp models are configured by the router source
+        // (--models-preset/--models-dir), not by Lemonade /load overrides.
+        if (router_managed_llamacpp && (has_load_overrides || save_options)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message",
+                    "Router mode is active for model '" + model_name +
+                    "'. Per-model /load overrides (e.g. ctx_size, "
+                    "llamacpp_backend, llamacpp_args) and save_options are "
+                    "not supported for router-hosted llamacpp models. "
+                    "Configure model settings in your --models-preset "
+                    "or --models-dir source and restart lemond."},
+                {"type", "invalid_request_error"},
+                {"param", "model_name"},
+                {"code", "router_mode_options_unsupported"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         // Persist request options to model info if requested
         if (save_options) {
             info.recipe_options = options;
             model_manager_->save_model_options(info);
         }
 
-        // Download model if needed (first-time use)
-        if (!info.downloaded) {
+        // Download model if needed (first-time use). Skip this in active
+        // router mode where the llamacpp roster is owned externally.
+        if (!router_managed_llamacpp && !info.downloaded) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
@@ -2968,11 +3073,18 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
 void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
     try {
         auto body = nlohmann::json::parse(req.body);
+        nlohmann::json warnings = build_router_mode_config_warnings(body);
 
         // Delegate to RuntimeConfig — accepts all known recipe option keys
         auto result = config_->set(body, [this](const json& applied) {
             apply_config_side_effects(applied);
         });
+
+        if (!warnings.empty()) {
+            result["warnings"] = warnings;
+            result["warning_codes"] = {"router_mode_ignores_llamacpp_runtime_config"};
+        }
+
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;

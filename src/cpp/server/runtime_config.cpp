@@ -197,6 +197,38 @@ std::string RuntimeConfig::rocm_channel() const {
     return config_["rocm_channel"].get<std::string>();
 }
 
+bool RuntimeConfig::router_mode() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("router_mode")) {
+        return config_["router_mode"].get<bool>();
+    }
+    return false;
+}
+
+std::string RuntimeConfig::router_models_preset() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("router_models_preset")) {
+        return config_["router_models_preset"].get<std::string>();
+    }
+    return "";
+}
+
+std::string RuntimeConfig::router_models_dir() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("router_models_dir")) {
+        return config_["router_models_dir"].get<std::string>();
+    }
+    return "";
+}
+
+std::string RuntimeConfig::router_default_args() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("router_default_args")) {
+        return config_["router_default_args"].get<std::string>();
+    }
+    return "";
+}
+
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
     std::shared_lock lock(mutex_);
     if (config_.contains(backend_name) && config_[backend_name].is_object()) {
@@ -370,6 +402,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         std::string channel = value.get<std::string>();
         if (channel != "preview" && channel != "stable" && channel != "nightly") {
             throw std::invalid_argument("'rocm_channel' must be either 'preview', 'stable', or 'nightly'");
+        }
+    } else if (key == "router_mode") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'router_mode' must be a boolean");
+        }
+    } else if (key == "router_models_preset" || key == "router_models_dir" ||
+               key == "router_default_args") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + key + "' must be a string");
         }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {

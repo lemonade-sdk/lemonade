@@ -15,6 +15,10 @@
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
   "rocm_channel": "preview",
+  "router_mode": false,
+  "router_models_preset": "",
+  "router_models_dir": "",
+  "router_default_args": "",
   "llamacpp": {
     "backend": "auto",
     "args": "",
