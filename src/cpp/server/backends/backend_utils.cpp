@@ -41,7 +41,7 @@ namespace lemon::backends {
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
-        if (recipe == "mlx-engine") return &MlxServer::SPEC;
+        if (recipe == "lemon-mlx") return &MlxServer::SPEC;
         return nullptr;
     }
 

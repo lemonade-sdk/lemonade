@@ -205,8 +205,8 @@ def _build_runtime_config(additional_server_args=None):
         config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
-    elif wrapped_server == "mlx-engine" and backend:
-        config["mlx-engine"] = {"backend": backend}
+    elif wrapped_server == "lemon-mlx" and backend:
+        config["lemon-mlx"] = {"backend": backend}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -228,8 +228,8 @@ def _build_runtime_config(additional_server_args=None):
         elif arg == "--whispercpp" and i + 1 < len(additional):
             config["whispercpp"] = {"backend": additional[i + 1]}
             i += 2
-        elif arg == "--mlx-engine" and i + 1 < len(additional):
-            config["mlx-engine"] = {"backend": additional[i + 1]}
+        elif arg == "--lemon-mlx" and i + 1 < len(additional):
+            config["lemon-mlx"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--ctx-size" and i + 1 < len(additional):
             config["ctx_size"] = int(additional[i + 1])

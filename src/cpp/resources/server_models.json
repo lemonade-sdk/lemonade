@@ -543,7 +543,7 @@
     },
     "Qwen3-0.6B-MLX": {
         "checkpoint": "mlx-community/Qwen3-0.6B-4bit",
-        "recipe": "mlx-engine",
+        "recipe": "lemon-mlx",
         "suggested": true,
         "labels": [
             "reasoning"
@@ -552,7 +552,7 @@
     },
     "Qwen3-4B-MLX": {
         "checkpoint": "mlx-community/Qwen3-4B-4bit",
-        "recipe": "mlx-engine",
+        "recipe": "lemon-mlx",
         "suggested": false,
         "labels": [
             "reasoning"

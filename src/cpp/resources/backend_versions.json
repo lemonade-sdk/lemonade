@@ -1,5 +1,5 @@
 {
-  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, FLM, and mlx-engine versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
+  "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, FLM, and lemon-mlx versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "rocm-stable-runtime": "v7.2.1",
   "llamacpp": {
     "vulkan": "b8766",
@@ -53,7 +53,7 @@
   "flm": {
     "npu": "v0.9.39"
   },
-  "mlx-engine": {
+  "lemon-mlx": {
     "metal": "b1013-stable",
     "rocm": "b1013-stable",
     "cpu": "b1013-stable"

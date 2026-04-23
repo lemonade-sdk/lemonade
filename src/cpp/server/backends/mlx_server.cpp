@@ -50,19 +50,19 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
 #ifdef __APPLE__
         params.filename = "mlx-engine-" + version + "-macos-arm64.zip";
 #else
-        throw std::runtime_error("Metal mlx-engine is only supported on macOS");
+        throw std::runtime_error("Metal lemon-mlx is only supported on macOS");
 #endif
     } else if (resolved == "rocm") {
 #ifdef __linux__
         std::string arch = SystemInfo::get_rocm_arch();
         if (arch.empty()) {
             throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("mlx-engine", "rocm")
+                SystemInfo::get_unsupported_backend_error("lemon-mlx", "rocm")
             );
         }
         params.filename = "mlx-engine-" + version + "-ubuntu-rocm-stable-" + arch + "-x64.zip";
 #else
-        throw std::runtime_error("ROCm mlx-engine is only supported on Linux");
+        throw std::runtime_error("ROCm lemon-mlx is only supported on Linux");
 #endif
     } else if (resolved == "cpu") {
 #ifdef __linux__
@@ -72,10 +72,10 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
         // (MLX runs through Metal/Accelerate even with no explicit GPU selection).
         params.filename = "mlx-engine-" + version + "-macos-arm64.zip";
 #else
-        throw std::runtime_error("CPU mlx-engine is not supported on this platform");
+        throw std::runtime_error("CPU lemon-mlx is not supported on this platform");
 #endif
     } else {
-        throw std::runtime_error("Unknown mlx-engine backend: " + backend);
+        throw std::runtime_error("Unknown lemon-mlx backend: " + backend);
     }
 
     return params;
@@ -84,7 +84,7 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
 MlxServer::MlxServer(const std::string& log_level,
                      ModelManager* model_manager,
                      BackendManager* backend_manager)
-    : WrappedServer("mlx-engine", log_level, model_manager, backend_manager) {
+    : WrappedServer("lemon-mlx", log_level, model_manager, backend_manager) {
 }
 
 MlxServer::~MlxServer() {
@@ -99,18 +99,18 @@ void MlxServer::load(const std::string& model_name,
     LOG(DEBUG, "MLX") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
-    std::string mlx_backend_option = options.get_option("mlx_engine_backend");
+    std::string mlx_backend_option = options.get_option("lemon_mlx_backend");
     std::string mlx_backend = resolve_mlx_backend(mlx_backend_option);
-    std::string mlx_args = options.get_option("mlx_engine_args");
+    std::string mlx_args = options.get_option("lemon_mlx_args");
 
-    RuntimeConfig::validate_backend_choice("mlx-engine", mlx_backend_option);
+    RuntimeConfig::validate_backend_choice("lemon-mlx", mlx_backend_option);
 
-    LOG(INFO, "MLX") << "Using mlx-engine backend: " << mlx_backend << std::endl;
+    LOG(INFO, "MLX") << "Using lemon-mlx backend: " << mlx_backend << std::endl;
 
     // The CPU build runs on CPU; everything else is GPU (Metal or ROCm).
     device_type_ = (mlx_backend == "cpu") ? DEVICE_CPU : DEVICE_GPU;
 
-    // Install mlx-engine binary if needed.
+    // Install lemon-mlx binary if needed.
     backend_manager_->install_backend(SPEC.recipe, mlx_backend);
 
     // MLX identifies models by HuggingFace repo-id or a local directory path.
@@ -122,7 +122,7 @@ void MlxServer::load(const std::string& model_name,
         model_ref = model_info.checkpoint();
     }
     if (model_ref.empty()) {
-        throw std::runtime_error("mlx-engine: no model path or checkpoint provided");
+        throw std::runtime_error("lemon-mlx: no model path or checkpoint provided");
     }
 
     LOG(DEBUG, "MLX") << "Using model reference: " << model_ref << std::endl;
@@ -153,7 +153,7 @@ void MlxServer::load(const std::string& model_name,
         }
     }
 
-    LOG(INFO, "MLX") << "Starting mlx-engine server..." << std::endl;
+    LOG(INFO, "MLX") << "Starting lemon-mlx server..." << std::endl;
 
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifdef __linux__
@@ -178,7 +178,7 @@ void MlxServer::load(const std::string& model_name,
     if (!wait_for_ready("/health")) {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
-        throw std::runtime_error("mlx-engine server failed to start");
+        throw std::runtime_error("lemon-mlx server failed to start");
     }
 
     LOG(DEBUG, "MLX") << "Model loaded on port " << port_ << std::endl;
@@ -217,7 +217,7 @@ json MlxServer::completion(const json& request) {
 
 json MlxServer::responses(const json& request) {
     return ErrorResponse::from_exception(
-        UnsupportedOperationException("Responses API", "mlx-engine")
+        UnsupportedOperationException("Responses API", "lemon-mlx")
     );
 }
 

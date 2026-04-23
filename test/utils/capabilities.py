@@ -123,7 +123,7 @@ CAPABILITIES = {
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
-        "mlx-engine": {
+        "lemon-mlx": {
             "backends": ["metal", "rocm", "cpu"],
             "supports": {
                 "chat_completions": True,

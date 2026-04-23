@@ -182,15 +182,15 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_npu", {"XDNA2"}},
     }},
 
-    // mlx-engine - Apple Silicon Metal, AMD GPU via ROCm (Linux), CPU fallback.
+    // lemon-mlx - Apple Silicon Metal, AMD GPU via ROCm (Linux), CPU fallback.
     // Order = preference: native Metal on macOS, ROCm on Linux AMD, CPU last.
-    {"mlx-engine", "metal", {"macos"}, {
+    {"lemon-mlx", "metal", {"macos"}, {
         {"metal", {}},
     }},
-    {"mlx-engine", "rocm", {"linux"}, {
+    {"lemon-mlx", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
-    {"mlx-engine", "cpu", {"linux", "macos"}, {
+    {"lemon-mlx", "cpu", {"linux", "macos"}, {
         {"cpu", {"x86_64", "arm64"}},
     }},
 };
