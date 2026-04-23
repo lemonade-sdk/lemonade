@@ -138,19 +138,6 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const handleExperienceModeChanged = (event: Event) => {
-      const customEvent = event as CustomEvent<{ active?: boolean }>;
-      if (customEvent.detail?.active) {
-        setIsModelManagerVisible(false);
-      }
-    };
-    window.addEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
-    return () => {
-      window.removeEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
-    };
-  }, []);
-
   // Handle lemonade:// protocol navigation from main process.
   // Must await tauriReady because window.api is installed asynchronously
   // and isn't available on the first render.

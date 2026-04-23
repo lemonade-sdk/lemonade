@@ -2750,19 +2750,52 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Load model with optional per-model settings (declarative: no-op if
-        // already loaded with matching options, reload only if options differ)
-        router_->load_model(model_name, info, options, true,
-                            /*allow_reload_on_option_change=*/true);
+        // Experience models: load each component model instead
+        if (info.recipe == "collection" && !info.composite_models.empty()) {
+            LOG(INFO, "Server") << "Loading collection components for: " << model_name << std::endl;
+            for (const auto& component : info.composite_models) {
+                if (!model_manager_->model_exists(component)) {
+                    LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
+                    continue;
+                }
+                if (router_->is_model_loaded(component)) {
+                    LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
+                    continue;
+                }
+                auto comp_info = model_manager_->get_model_info(component);
+                if (!comp_info.downloaded) {
+                    LOG(INFO, "Server") << "Downloading component: " << component << std::endl;
+                    model_manager_->download_registered_model(comp_info);
+                    comp_info = model_manager_->get_model_info(component);
+                }
+                LOG(INFO, "Server") << "Loading component: " << component << std::endl;
+                RecipeOptions comp_options = RecipeOptions(comp_info.recipe, request_json);
+                router_->load_model(component, comp_info, comp_options, true,
+                                    /*allow_reload_on_option_change=*/true);
+            }
 
-        // Return success response
-        nlohmann::json response = {
-            {"status", "success"},
-            {"model_name", model_name},
-            {"checkpoint", info.checkpoint()},
-            {"recipe", info.recipe}
-        };
-        res.set_content(response.dump(), "application/json");
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", "collection"}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else {
+            // Load model with optional per-model settings (declarative: no-op
+            // if already loaded with matching options, reload only if options
+            // differ)
+            router_->load_model(model_name, info, options, true,
+                                /*allow_reload_on_option_change=*/true);
+
+            // Return success response
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"checkpoint", info.checkpoint()},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        }
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;

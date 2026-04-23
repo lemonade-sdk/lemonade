@@ -1289,8 +1289,8 @@
         "image_defaults": {
             "steps": 4,
             "cfg_scale": 1,
-            "width": 1024,
-            "height": 1024
+            "width": 256,
+            "height": 256
         }
     },
     "Qwen-Image-GGUF": {
@@ -1360,34 +1360,23 @@
             "height": 1024
         }
     },
-    "Lemonade Ultra": {
+    "Ultra Collection": {
         "checkpoint": "",
-        "recipe": "experience",
-        "suggested": false,
+        "recipe": "collection",
+        "suggested": true,
         "composite_models": [
-            "gpt-oss-120b-mxfp-GGUF",
-            "Z-Image-Turbo",
+            "Qwen3.5-35B-A3B-GGUF",
+            "Flux-2-Klein-9B-GGUF",
             "Whisper-Large-v3-Turbo",
             "kokoro-v1"
         ]
     },
-    "Lemonade Medium": {
+    "Lite Collection": {
         "checkpoint": "",
-        "recipe": "experience",
-        "suggested": false,
+        "recipe": "collection",
+        "suggested": true,
         "composite_models": [
-            "gpt-oss-20b-mxfp4-GGUF",
-            "SDXL-Turbo",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
-    },
-    "Lemonade Lite": {
-        "checkpoint": "",
-        "recipe": "experience",
-        "suggested": false,
-        "composite_models": [
-            "Qwen3-4B-Instruct-2507-GGUF",
+            "Qwen3.5-4B-GGUF",
             "SD-Turbo",
             "Whisper-Tiny",
             "kokoro-v1"

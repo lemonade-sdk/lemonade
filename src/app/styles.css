@@ -1878,6 +1878,14 @@ footer {
     animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* Same dot, but amber + faster pulse to signal "loading, not ready yet".
+   Matches the visual language used for loading in the model list rows. */
+.loaded-model-indicator.loading {
+    background-color: #facc15;
+    animation: pulse 1.5s ease-in-out infinite;
+    filter: drop-shadow(0 0 2px #facc15);
+}
+
 @keyframes pulse-glow {
     0%, 100% {
         opacity: 1;
@@ -3210,100 +3218,6 @@ input::-webkit-calendar-picker-indicator {
     flex: 1 1 auto;
 }
 
-.experience-topbar {
-    position: absolute;
-    left: 22px;
-    right: 22px;
-    top: 0;
-    z-index: 25;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 54px;
-    padding-top: 12px;
-    pointer-events: auto;
-}
-
-.experience-topbar-left {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    pointer-events: auto;
-    position: relative;
-    max-width: calc(100% - 34px);
-}
-
-.experience-model-name {
-    font-size: 0.82rem;
-    color: #a7a7a7;
-    font-weight: 500;
-    letter-spacing: 0.1px;
-    max-width: none;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-
-.experience-topbar-left .model-action-btn {
-    pointer-events: none;
-    border-radius: 999px;
-    color: var(--text-secondary);
-    opacity: 0;
-    visibility: hidden;
-    position: relative;
-    left: auto;
-    top: auto;
-    transform: none;
-    transition: opacity 0.14s ease, visibility 0.14s ease, color 0.14s ease, background 0.14s ease;
-}
-
-.chat-window-experience-mode .experience-topbar:hover .model-action-btn,
-.chat-window-experience-mode .experience-topbar:focus-within .model-action-btn {
-    pointer-events: auto;
-    opacity: 1;
-    visibility: visible;
-}
-
-.experience-topbar-left .model-action-btn:hover:not(:disabled) {
-    color: var(--action-color);
-    background: var(--bg-alpha-06);
-}
-
-.experience-topbar-left .model-action-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.experience-refresh-button {
-    border: none;
-    background: transparent;
-    color: #8a8a8a;
-    padding: 0;
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    pointer-events: auto;
-    transition: color 0.14s ease, transform 0.14s ease;
-}
-
-.experience-refresh-button:hover:not(:disabled) {
-    color: #c1c1c1;
-}
-
-.experience-refresh-button:active:not(:disabled) {
-    transform: scale(0.94);
-}
-
-.experience-refresh-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
 .chat-header {
     padding: 12px 15px;
     border-bottom: 1px solid var(--border-tertiary);
@@ -3339,11 +3253,6 @@ input::-webkit-calendar-picker-indicator {
     padding: 16px;
     width: 440px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-
-.chat-window-experience .chat-header {
-    background: linear-gradient(90deg, rgba(207, 162, 76, 0.08), rgba(0, 0, 0, 0.96) 40%);
-    border-bottom-color: rgba(207, 162, 76, 0.2);
 }
 
 .chat-experience-badge {
@@ -3670,199 +3579,11 @@ input::-webkit-calendar-picker-indicator {
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
 }
 
-.chat-window-llm.chat-window-experience .chat-input-wrapper {
-    border-color: rgba(200, 171, 106, 0.26);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(200, 171, 106, 0.08);
-}
-
-.chat-window-llm.chat-window-experience .chat-input-wrapper:focus-within {
-    border-color: rgba(220, 187, 113, 0.42);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(220, 187, 113, 0.14);
-}
-
-.chat-window-experience-mode.chat-window-llm {
-    /* Experience tokens: tweak these first for layout tuning */
-    --experience-content-gutter: 16px;
-    --experience-topbar-height: 62px;
-    --experience-bottom-gradient-height: 240px;
-    --experience-composer-width: min(920px, 66.666%);
-    --experience-composer-height: auto;
-    --experience-composer-radius: 8px;
-    --experience-composer-side-padding: 10px;
-    --experience-composer-left-padding: 16px;
-    --experience-composer-send-reserved-space: 52px;
-    --experience-composer-action-inset: 10px;
-    --experience-composer-action-size: 30px;
-    --experience-composer-media-action-size: 34px;
-    --experience-composer-text-base-inset: 56px;
-    --experience-composer-text-offset-x: -10px; /* Input text shift */
-    --experience-placeholder-offset-x: 0px; /* Input hint (placeholder) shift */
-    --experience-empty-message-max-width: 900px;
-    position: relative;
-    overflow: hidden;
-}
-
-/* Experience: composer shell */
-.chat-window-experience-mode.chat-window-llm .chat-input-wrapper {
-    width: var(--experience-composer-width);
-    min-height: var(--experience-composer-height);
-    border-radius: var(--experience-composer-radius);
-    border-color: var(--border-alpha-1);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
-    background: rgba(28, 28, 28, 0.86);
-    padding: var(--experience-composer-side-padding) var(--experience-composer-send-reserved-space) var(--experience-composer-side-padding) var(--experience-composer-left-padding);
-    position: relative;
-    gap: 0;
-    justify-content: center;
-}
-
-/* Experience: bottom vignette */
-.chat-window-experience-mode.chat-window-llm::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: var(--experience-bottom-gradient-height);
-    background: linear-gradient(
-        180deg,
-        rgba(10, 10, 10, 0) 0%,
-        rgba(8, 8, 8, 0.72) 45%,
-        #000000 100%
-    );
-    pointer-events: none;
-    z-index: 1;
-}
-
-.chat-window-experience-mode.chat-window-llm .chat-input-wrapper:focus-within {
-    border-color: var(--border-alpha-2);
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
-}
-
-/* Experience: content + composer regions */
-.chat-window-experience-mode .chat-messages {
-    padding-top: var(--experience-topbar-height);
-    position: relative;
-    z-index: 2;
-}
-
-.chat-window-experience-mode .chat-input-container {
-    padding-top: 8px;
-    padding-bottom: 14px;
-    display: flex;
-    justify-content: center;
-    background: transparent;
-    position: relative;
-    z-index: 2;
-}
-
-.chat-window-experience-mode .chat-controls {
-    position: absolute;
-    left: var(--experience-composer-action-inset);
-    right: var(--experience-composer-action-inset);
-    top: 50%;
-    bottom: auto;
-    transform: translateY(-50%);
-    justify-content: flex-end;
-    /* Let textarea receive clicks through the overlay row. */
-    pointer-events: none;
-}
-
-.chat-window-experience-mode .chat-controls-left {
-    display: flex;
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 3;
-    pointer-events: auto;
-}
-
-.chat-window-experience-mode .chat-send-button,
-.chat-window-experience-mode .chat-stop-button {
-    pointer-events: auto;
-    width: var(--experience-composer-action-size);
-    height: var(--experience-composer-action-size);
-    min-width: var(--experience-composer-action-size);
-    min-height: var(--experience-composer-action-size);
-    border-radius: 999px;
-}
-
-.chat-window-experience-mode .chat-mic-button {
-    pointer-events: auto;
-}
-
-.chat-window-experience-mode .image-upload-button {
-    width: var(--experience-composer-media-action-size);
-    height: var(--experience-composer-media-action-size);
-    min-width: var(--experience-composer-media-action-size);
-    min-height: var(--experience-composer-media-action-size);
-    border-radius: 999px;
-    color: var(--text-secondary);
-}
-
-.chat-window-experience-mode .image-upload-button svg {
-    width: 22px;
-    height: 22px;
-}
-
-.chat-window-experience-mode .chat-input {
-    min-height: 22px;
-    max-height: 180px;
-    line-height: 1.4;
-    padding: 0 0 0 calc(var(--experience-composer-text-base-inset) + var(--experience-composer-text-offset-x));
-    display: block;
-}
-
-.chat-window-experience-mode .chat-input::placeholder {
-    text-indent: var(--experience-placeholder-offset-x);
-}
-
-/* Experience: empty-state center message */
-.experience-empty-message {
-    font-size: clamp(1.2rem, 2.3vw, 1.7rem);
-    color: #cfcfcf;
-    font-weight: 500;
-    text-align: center;
-    margin-top: clamp(14vh, 17vh, 21vh);
-    width: min(var(--experience-composer-width), calc(100% - (var(--experience-content-gutter) * 2)));
-    max-width: var(--experience-empty-message-max-width);
-    align-self: center;
-    padding: 0 var(--experience-content-gutter);
-    letter-spacing: 0.01em;
-    line-height: 1.25;
-}
-
 .llm-chat-panel {
     display: flex;
     flex-direction: column;
     flex: 1;
     min-height: 0;
-}
-
-.llm-chat-panel.experience-empty-chat {
-    justify-content: center;
-    padding-bottom: 9vh;
-}
-
-.llm-chat-panel.experience-empty-chat .chat-messages {
-    flex: 0 0 auto;
-    overflow: visible;
-    padding-top: 0;
-    padding-bottom: 16px;
-}
-
-.llm-chat-panel.experience-empty-chat .chat-empty-state {
-    height: auto;
-}
-
-.llm-chat-panel.experience-empty-chat .chat-input-container {
-    padding-top: 0;
-    padding-bottom: 0;
-}
-
-.llm-chat-panel:not(.experience-empty-chat) .chat-input-container {
-    padding-bottom: 12px;
 }
 
 .chat-input {
@@ -3990,14 +3711,6 @@ input::-webkit-calendar-picker-indicator {
     flex-shrink: 0;
 }
 
-.chat-window-experience-mode .chat-mic-button {
-    width: var(--experience-composer-action-size);
-    height: var(--experience-composer-action-size);
-    min-width: var(--experience-composer-action-size);
-    min-height: var(--experience-composer-action-size);
-    border-radius: 999px;
-}
-
 .chat-stop-button:hover {
     background: var(--bg-hover);
     transform: scale(1.05);
@@ -4092,6 +3805,90 @@ input::-webkit-calendar-picker-indicator {
     margin: 8px 0;
     display: block;
     object-fit: contain;
+}
+
+/* Message Audio */
+.message-audio {
+    margin: 8px 0;
+    max-width: 320px;
+}
+
+.message-audio audio {
+    width: 100%;
+    border-radius: 8px;
+}
+
+.message-audio-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: #ccc;
+    font-size: 13px;
+}
+
+.message-audio-file svg {
+    flex-shrink: 0;
+    color: #888;
+}
+
+.message-audio-filename {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Audio File Preview */
+.audio-preview-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 8px 4px;
+}
+
+.audio-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #ccc;
+    max-width: 220px;
+}
+
+.audio-preview-icon {
+    flex-shrink: 0;
+    color: #888;
+}
+
+.audio-preview-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.audio-preview-remove {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.audio-preview-remove:hover {
+    color: #fff;
 }
 
 .message-content-array {
@@ -6952,6 +6749,61 @@ input::-webkit-calendar-picker-indicator {
     display: block;
 }
 
+/* Chat-embedded generated images stay compact so multi-image responses
+   don't take over the scroll. Click opens the lightbox for full view. */
+.generated-image.in-chat {
+    max-height: 280px;
+    cursor: zoom-in;
+    transition: filter 0.15s ease;
+}
+
+.generated-image.in-chat:hover {
+    filter: brightness(1.08);
+}
+
+.image-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    animation: fadeIn 0.15s ease;
+    cursor: zoom-out;
+}
+
+.image-lightbox-img {
+    max-width: 92vw;
+    max-height: 92vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    cursor: default;
+}
+
+.image-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.image-lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
 .save-image-button {
     display: flex;
     align-items: center;
@@ -7557,7 +7409,7 @@ input::-webkit-calendar-picker-indicator {
     }
 }
 
-
+/* Backend Manager Component */
 .backend-manager {
     display: flex;
     flex-direction: column;

@@ -11,7 +11,7 @@ import { useSystem } from '../../hooks/useSystem';
 import { Modality } from '../../hooks/useInferenceState';
 import { ModelsData } from '../../utils/modelData';
 import { useTTS } from '../../hooks/useTTS';
-import { Message, MessageContent, TextContent, ImageContent, AudioContent, UploadedAudio } from '../../utils/chatTypes';
+import { Message, MessageContent, TextContent, ImageContent, AudioContent, UploadedAudio, Artifact } from '../../utils/chatTypes';
 import { adjustTextareaHeight } from '../../utils/textareaUtils';
 import { SendIcon, ImageUploadIcon, AudioUploadIcon, RefreshIcon, EjectIcon } from '../Icons';
 import InferenceControls from '../InferenceControls';
@@ -19,9 +19,17 @@ import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import AudioPreviewList from '../AudioPreviewList';
 import EmptyState from '../EmptyState';
+import ImageLightbox from '../ImageLightbox';
+import StreamingAudio from '../StreamingAudio';
 import TypingIndicator from '../TypingIndicator';
-import { getExperiencePrimaryChatModel } from '../../utils/experienceModels';
+import { getCollectionPrimaryChatModel } from '../../utils/collectionModels';
 import RecordButton from '../RecordButton';
+import {
+  buildLemonadeTools,
+  executeLemonadeTool,
+  LemonadeToolsResult,
+  ToolExecutionContext,
+} from '../../utils/lemonadeTools';
 import { useAudioCapture } from '../../hooks/useAudioCapture';
 import { encodeWAV, base64ToPlaybackUrl } from '../../utils/audioUtils';
 
@@ -67,6 +75,27 @@ function resolveAudioFormat(file: File): string {
   return 'wav';
 }
 
+// Inverse of AUDIO_FORMAT_BY_MIME — given an OpenAI input_audio.format like
+// "mp3", return the MIME to feed <audio>/Blob. Single source of truth so
+// handleCollectionChat, buildFinalContent, and renderMessageContent don't
+// all carry their own redundant literal map.
+const AUDIO_MIME_BY_FORMAT: Record<string, string> = {
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  webm: 'audio/webm',
+};
+
+function mimeForFormat(fmt?: string): string {
+  return (fmt && AUDIO_MIME_BY_FORMAT[fmt]) || 'audio/wav';
+}
+
+function formatForMime(mime?: string): string {
+  return (mime && AUDIO_FORMAT_BY_MIME[mime.toLowerCase()]) || 'wav';
+}
+
 function splitDataUrl(dataUrl: string): { base64: string } {
   const comma = dataUrl.indexOf(',');
   return { base64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl };
@@ -83,24 +112,24 @@ interface LLMChatPanelProps {
   appSettings: AppSettings | null;
   isVision: boolean;
   isAudioChat?: boolean;
-  experienceMode?: boolean;
+  collectionMode?: boolean;
   currentLoadedModel: string | null;
   setCurrentLoadedModel: React.Dispatch<React.SetStateAction<string | null>>;
   onNewChat?: () => void;
-  onUnloadExperience?: () => void;
+  onUnloadCollection?: () => void;
 }
 
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
   runPreFlight, reset, showError, appSettings,
-  isVision, isAudioChat = false, experienceMode = false, currentLoadedModel, setCurrentLoadedModel,
-  onNewChat, onUnloadExperience,
+  isVision, isAudioChat = false, collectionMode = false, currentLoadedModel, setCurrentLoadedModel,
+  onNewChat, onUnloadCollection,
 }) => {
   const { selectedModel, modelsData } = useModels();
   const { systemInfo } = useSystem();
   const tts = useTTS(appSettings, modelsData);
   const chatModelName = useMemo(
-    () => getExperiencePrimaryChatModel(selectedModel, modelsData),
+    () => getCollectionPrimaryChatModel(selectedModel, modelsData),
     [selectedModel, modelsData],
   );
 
@@ -112,7 +141,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [editingAudio, setEditingAudio] = useState<UploadedAudio[]>([]);
   const [uploadedAudio, setUploadedAudio] = useState<UploadedAudio[]>([]);
-  const [isMicRecording, setIsMicRecording] = useState(false);
   const [showAudioMenu, setShowAudioMenu] = useState(false);
   const [showEditAudioMenu, setShowEditAudioMenu] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
@@ -120,8 +148,8 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const editAudioMenuRef = useRef<HTMLDivElement>(null);
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(new Set());
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
-  const [isExperienceLayoutActive, setIsExperienceLayoutActive] = useState(experienceMode);
-  const [modeTransitionClass, setModeTransitionClass] = useState('');
+  const [lemonadeTools, setLemonadeTools] = useState<LemonadeToolsResult | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const userScrolledAwayRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -132,14 +160,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const editAudioInputRef = useRef<HTMLInputElement>(null);
-  const speechRecognitionRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const autoScrollInProgressRef = useRef(false);
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
-  const modeTransitionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -193,32 +219,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     };
   }, []);
 
+  // Build lemonade tools when collection mode activates
   useEffect(() => {
-    const TRANSITION_MS = 420;
-    if (modeTransitionTimerRef.current !== null) {
-      window.clearTimeout(modeTransitionTimerRef.current);
-      modeTransitionTimerRef.current = null;
-    }
-
-    if (experienceMode) {
-      setIsExperienceLayoutActive(true);
-      setModeTransitionClass('mode-transition-to-experience');
-      modeTransitionTimerRef.current = window.setTimeout(() => {
-        setModeTransitionClass('');
-        modeTransitionTimerRef.current = null;
-      }, TRANSITION_MS);
+    if (!collectionMode || !modelsData[selectedModel]) {
+      setLemonadeTools(null);
       return;
     }
-
-    if (isExperienceLayoutActive) {
-      setModeTransitionClass('mode-transition-to-llm');
-      modeTransitionTimerRef.current = window.setTimeout(() => {
-        setIsExperienceLayoutActive(false);
-        setModeTransitionClass('');
-        modeTransitionTimerRef.current = null;
-      }, TRANSITION_MS);
-    }
-  }, [experienceMode, isExperienceLayoutActive]);
+    setLemonadeTools(buildLemonadeTools(selectedModel, modelsData));
+  }, [collectionMode, selectedModel, modelsData]);
 
   // Consolidated image handlers
   const createImageHandlers = (
@@ -341,10 +349,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
-      stopMicDictation();
-      if (modeTransitionTimerRef.current !== null) {
-        window.clearTimeout(modeTransitionTimerRef.current);
-      }
     };
   }, []);
 
@@ -444,6 +448,250 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     return `Error: ${errorMessage}${helpText}`;
   };
 
+  /**
+   * Client-side agentic loop for collection mode.
+   * Calls LLM with tools, executes tool_calls locally via Lemonade endpoints, loops.
+   */
+  const handleCollectionChat = async (messageHistory: Message[]): Promise<void> => {
+    if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
+    const MAX_ITERATIONS = 5;
+    const isNewModelLoad = currentLoadedModel !== chatModelName;
+
+    // Pre-extract audio and image data from user messages
+    const extractedAudio: Array<{ data: string; mime: string }> = [];
+    const extractedImages: Array<{ dataUrl: string }> = [];
+
+    const processedMessages: any[] = messageHistory.map(msg => {
+      if (typeof msg.content === 'string') {
+        return { role: msg.role, content: msg.content };
+      }
+      // Content is an array — strip binary data (images/audio) from all messages
+      // For user messages: extract into context for tool use
+      // For assistant messages: replace with placeholders so LLM doesn't choke
+      const isUser = msg.role === 'user';
+      const newContent: any[] = [];
+      for (const item of msg.content) {
+        if (item.type === 'input_audio' && 'input_audio' in item) {
+          if (isUser) {
+            const mime = mimeForFormat(item.input_audio.format);
+            extractedAudio.push({ data: item.input_audio.data, mime });
+            newContent.push({ type: 'text', text: `[User provided audio file #${extractedAudio.length}]` });
+          }
+          // Drop audio from assistant messages
+        } else if (item.type === 'image_url' && 'image_url' in item) {
+          if (isUser) {
+            extractedImages.push({ dataUrl: item.image_url.url });
+            newContent.push({ type: 'text', text: `[User provided image #${extractedImages.length}]` });
+          } else {
+            newContent.push({ type: 'text', text: '[Generated image]' });
+          }
+        } else {
+          newContent.push(item);
+        }
+      }
+      // Simplify single-text arrays
+      if (newContent.length === 1 && newContent[0].type === 'text') {
+        return { role: msg.role, content: newContent[0].text };
+      }
+      return { role: msg.role, content: newContent.length > 0 ? newContent : '' };
+    });
+
+    // Prepend system prompt
+    if (lemonadeTools.systemPrompt) {
+      if (processedMessages.length > 0 && processedMessages[0].role === 'system') {
+        processedMessages[0].content = lemonadeTools.systemPrompt + '\n\n' + processedMessages[0].content;
+      } else {
+        processedMessages.unshift({ role: 'system', content: lemonadeTools.systemPrompt });
+      }
+    }
+
+    // sourceArtifacts: images from prior history / current user upload — used as
+    // tool input context (e.g. edit_image source). Not rendered in the assistant
+    // response; the user's message already shows their upload.
+    const sourceArtifacts: Artifact[] = [];
+
+    // Find the last image in prior messages (scan in reverse)
+    let seededImage = false;
+    for (let i = messageHistory.length - 1; i >= 0 && !seededImage; i--) {
+      const msg = messageHistory[i];
+      if (typeof msg.content === 'string') continue;
+      for (let j = msg.content.length - 1; j >= 0 && !seededImage; j--) {
+        const item = msg.content[j];
+        if (item.type === 'image_url' && 'image_url' in item) {
+          const url = item.image_url.url;
+          const b64Marker = ';base64,';
+          const b64Pos = url.indexOf(b64Marker);
+          if (b64Pos !== -1) {
+            sourceArtifacts.push({
+              type: 'image',
+              data: url.substring(b64Pos + b64Marker.length),
+              mime: url.substring(5, b64Pos),
+            });
+            seededImage = true;
+          }
+        }
+      }
+    }
+
+    // artifacts: generated this turn — rendered in the assistant response.
+    const artifacts: Artifact[] = [];
+
+    // Agentic loop
+    const llmMessages = [...processedMessages];
+
+    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      // Show thinking indicator while waiting for LLM response
+      const thinkingText = 'Thinking...';
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1] = {
+          role: 'assistant',
+          content: buildFinalContent(thinkingText, artifacts),
+        };
+        return newMessages;
+      });
+
+      const requestBody = {
+        model: chatModelName,
+        messages: llmMessages,
+        stream: false,
+        tools: lemonadeTools.tools,
+        ...buildChatRequestOverrides(appSettings),
+      };
+
+      const response = await serverFetch('/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+        signal: abortControllerRef.current?.signal,
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+
+      // Notify UI that model is loaded on first response
+      if (iteration === 0) {
+        setCurrentLoadedModel(chatModelName);
+        if (isNewModelLoad) {
+          window.dispatchEvent(new CustomEvent('modelLoadEnd', { detail: { modelId: selectedModel } }));
+        }
+      }
+
+      if (data.error) throw new Error(data.error.message || 'LLM returned error');
+      if (!data.choices?.length) throw new Error('LLM returned empty response');
+
+      const assistantMsg = data.choices[0].message;
+
+      // No tool_calls → final response
+      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+        const text = assistantMsg.content || '';
+        const finalContent = buildFinalContent(text, artifacts);
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = { role: 'assistant', content: finalContent };
+          return newMessages;
+        });
+        return;
+      }
+
+      // Process tool calls
+      llmMessages.push(assistantMsg);
+
+      for (const toolCall of assistantMsg.tool_calls) {
+        const funcName = toolCall.function.name;
+        const toolModel = lemonadeTools.models[funcName];
+
+        let resultContent: string;
+        if (toolModel) {
+          try {
+            const context: ToolExecutionContext = {
+              extractedAudio,
+              extractedImages,
+              previousArtifacts: [...sourceArtifacts, ...artifacts],
+            };
+            const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
+
+            if (result.type === 'image' && result.data) {
+              // For edits, replace the last generated image from this turn if
+              // one exists; otherwise append. The source image is never
+              // rendered, so there's nothing to replace on the first edit.
+              let lastImageIdx = -1;
+              for (let i = artifacts.length - 1; i >= 0; i--) {
+                if (artifacts[i].type === 'image') { lastImageIdx = i; break; }
+              }
+              if (funcName === 'edit_image' && lastImageIdx !== -1) {
+                artifacts[lastImageIdx] = { type: 'image', data: result.data, mime: result.mime || 'image/png' };
+              } else {
+                artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
+              }
+              resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+            } else if (result.type === 'audio' && result.data) {
+              artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
+              resultContent = 'Audio generated successfully.';
+            } else {
+              resultContent = result.text || 'Tool executed successfully.';
+            }
+          } catch (err: any) {
+            resultContent = `Error: ${err.message || 'Tool execution failed'}`;
+          }
+        } else {
+          resultContent = `Error: Unknown tool '${funcName}'`;
+        }
+
+        llmMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: resultContent,
+        });
+
+        // Update UI with artifacts as they come in
+        const text = assistantMsg.content || '';
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = {
+            role: 'assistant',
+            content: buildFinalContent(text, artifacts),
+          };
+          return newMessages;
+        });
+      }
+    }
+
+    // Max iterations reached — show whatever we have
+    const fallbackText = artifacts.length === 0 ? 'Sorry, I was unable to complete that request.' : '';
+    setMessages(prev => {
+      const newMessages = [...prev];
+      newMessages[newMessages.length - 1] = {
+        role: 'assistant',
+        content: buildFinalContent(fallbackText, artifacts),
+      };
+      return newMessages;
+    });
+  };
+
+  /** Build MessageContent from artifacts + text */
+  const buildFinalContent = (text: string, artifacts: Artifact[]): MessageContent => {
+    if (artifacts.length === 0) return text;
+    const contentArray: Array<TextContent | ImageContent | AudioContent> = [];
+    for (const artifact of artifacts) {
+      if (artifact.type === 'image') {
+        contentArray.push({
+          type: 'image_url',
+          image_url: { url: `data:${artifact.mime};base64,${artifact.data}` },
+        });
+      } else if (artifact.type === 'audio') {
+        // Map the artifact's MIME to an input_audio `format`. The renderer
+        // (MessageAudio / StreamingAudio) maps back to MIME for playback.
+        contentArray.push({
+          type: 'input_audio',
+          input_audio: { data: artifact.data, format: formatForMime(artifact.mime) },
+        });
+      }
+    }
+    if (text) contentArray.push({ type: 'text', text });
+    return contentArray;
+  };
+
   const extractThinking = (content: string): { content: string; thinking: string } => {
     let extractedThinking = '';
     let cleanedContent = content;
@@ -497,10 +745,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       }
     };
 
+    const requestBody = buildChatRequestBody(messageHistory);
+
     const response = await serverFetch('/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildChatRequestBody(messageHistory)),
+      body: JSON.stringify(requestBody),
       signal: abortControllerRef.current!.signal,
     });
 
@@ -613,7 +863,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
-      await handleStreamingResponse(messageHistory);
+      if (collectionMode && lemonadeTools) {
+        await handleCollectionChat(messageHistory);
+      } else {
+        await handleStreamingResponse(messageHistory);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted - keeping partial response');
@@ -623,7 +877,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           return prev;
         });
       } else {
-        console.error('Failed to send message:', error);
+        console.error('[LLMChat] sendMessage error:', error?.name, error?.message, error);
         setMessages(prev => {
           const newMessages = [...prev];
           newMessages[newMessages.length - 1] = {
@@ -687,7 +941,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     setMessages(prev => [...prev, { role: 'assistant', content: '', thinking: '' }]);
 
     try {
-      await handleStreamingResponse(messageHistory);
+      if (collectionMode && lemonadeTools) {
+        await handleCollectionChat(messageHistory);
+      } else {
+        await handleStreamingResponse(messageHistory);
+      }
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Request aborted - keeping partial response');
@@ -731,81 +989,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (abortControllerRef.current) abortControllerRef.current.abort();
   };
 
-  const stopMicDictation = () => {
-    const recognition = speechRecognitionRef.current;
-    if (recognition) {
-      try {
-        recognition.stop();
-      } catch {
-        // no-op
-      }
-      speechRecognitionRef.current = null;
-    }
-    setIsMicRecording(false);
-  };
-
-  const toggleMicDictation = () => {
-    if (isMicRecording) {
-      stopMicDictation();
-      return;
-    }
-
-    const SpeechRecognitionCtor =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) {
-      showError('Microphone dictation is not supported in this environment.');
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognitionCtor();
-      recognition.continuous = true;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) {
-            transcript += result[0]?.transcript || '';
-          }
-        }
-
-        const trimmed = transcript.trim();
-        if (!trimmed) return;
-
-        setInputValue(prev => (prev.trim().length > 0 ? `${prev}${prev.endsWith(' ') ? '' : ' '}${trimmed}` : trimmed));
-
-        window.requestAnimationFrame(() => {
-          if (!inputTextareaRef.current) return;
-          adjustTextareaHeight(inputTextareaRef.current);
-          inputTextareaRef.current.focus();
-          const len = inputTextareaRef.current.value.length;
-          inputTextareaRef.current.setSelectionRange(len, len);
-        });
-      };
-
-      recognition.onerror = (event: any) => {
-        if (event?.error === 'aborted' || event?.error === 'no-speech') return;
-        showError(`Microphone error: ${event?.error || 'unknown error'}`);
-      };
-
-      recognition.onend = () => {
-        setIsMicRecording(false);
-        speechRecognitionRef.current = null;
-      };
-
-      recognition.start();
-      speechRecognitionRef.current = recognition;
-      setIsMicRecording(true);
-    } catch {
-      showError('Failed to start microphone dictation.');
-      setIsMicRecording(false);
-      speechRecognitionRef.current = null;
-    }
-  };
-
   const toggleThinking = (index: number) => {
     setExpandedThinking(prev => {
       const next = new Set(prev);
@@ -815,7 +998,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
-  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean) => (
+  const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string) => (
     <>
       {thinking && (
         <div className="thinking-section">
@@ -847,9 +1030,46 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         <div className="message-content-array">
           {content.map((item, index) => {
             if (item.type === 'text') return <MarkdownMessage key={index} content={item.text} isComplete={isComplete} />;
-            if (item.type === 'image_url') return <img key={index} src={item.image_url.url} alt="Uploaded" className="message-image" />;
+            if (item.type === 'image_url') {
+              const url = item.image_url.url;
+              // Only accept base64-encoded image data URLs. Anything else
+              // (javascript:, http:, etc.) is a CSS/XSS/exfil vector —
+              // CodeQL flags it, and there's no legitimate chat path that
+              // needs an arbitrary remote URL here.
+              if (!url.startsWith('data:image/')) return null;
+              if (role === 'assistant') {
+                return (
+                  <div key={index} className="image-generation-item">
+                    <div className="generated-images-row">
+                      <div className="generated-image-column">
+                        <div className="image-wrapper">
+                          <img
+                            src={url}
+                            alt="Generated"
+                            className="generated-image in-chat"
+                            onClick={() => setLightboxSrc(url)}
+                            title="Click to expand"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return <img key={index} src={url} alt="Uploaded" className="message-image" />;
+            }
             if (item.type === 'input_audio') {
               const fmt = item.input_audio.format || 'wav';
+              // Assistant-generated TTS audio (from the collection agentic loop)
+              // uses StreamingAudio for autoplay + scrubbing, while user input
+              // audio uses the simpler MessageAudio playback.
+              if (role === 'assistant') {
+                return (
+                  <div key={index} className="message-audio">
+                    <StreamingAudio data={item.input_audio.data} mime={mimeForFormat(fmt)} />
+                  </div>
+                );
+              }
               return <MessageAudio key={index} data={item.input_audio.data} format={fmt} />;
             }
             return null;
@@ -935,35 +1155,21 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   return (
-    <div className={`llm-chat-panel ${isExperienceLayoutActive && messages.length === 0 ? 'experience-empty-chat' : ''} ${modeTransitionClass}`}>
-      {experienceMode && selectedModel && (
-        <div className="experience-topbar">
-          <div className="experience-topbar-left">
-            <div className="experience-model-name">{selectedModel}</div>
+    <div className="llm-chat-panel">
+      <div className="chat-header">
+        <h3>LLM Chat</h3>
+        <div className="chat-header-actions">
+          {collectionMode && onUnloadCollection && (
             <button
-              className="model-action-btn unload-btn active-model-eject-button experience-unload-icon-button"
-              onClick={onUnloadExperience}
+              className="model-action-btn unload-btn active-model-eject-button collection-unload-icon-button"
+              onClick={onUnloadCollection}
               disabled={isBusy}
-              title="Eject experience"
-              aria-label="Unload experience"
+              title="Eject collection"
+              aria-label="Unload collection"
             >
               <EjectIcon />
             </button>
-          </div>
-          <button
-            className="experience-refresh-button"
-            onClick={onNewChat}
-            disabled={isBusy}
-            title="Start a new chat"
-            aria-label="Start a new chat"
-          >
-            <RefreshIcon />
-          </button>
-        </div>
-      )}
-      {!experienceMode && (
-        <div className="chat-header">
-          <h3>LLM Chat</h3>
+          )}
           <button
             className="new-chat-button"
             onClick={onNewChat}
@@ -973,17 +1179,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             <RefreshIcon />
           </button>
         </div>
-      )}
+      </div>
       <div
         className="chat-messages"
         ref={messagesContainerRef}
         onScroll={handleScroll}
         onClick={editingIndex !== null ? cancelEdit : undefined}
       >
-        {messages.length === 0 && !experienceMode && <EmptyState title="Lemonade Chat" />}
-        {messages.length === 0 && experienceMode && (
-          <div className="experience-empty-message">Chat and create, naturally.</div>
-        )}
+        {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
           return (
@@ -1091,7 +1294,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                   onClick={(e) => message.role === 'user' && !isBusy && handleEditMessage(index, e)}
                   style={{ cursor: message.role === 'user' && !isBusy ? 'pointer' : 'default' }}
                 >
-                  {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant')}
+                  {renderMessageContent(message.content, message.thinking, index, message.role === 'assistant', message.role)}
                 </div>
               )}
             </div>
@@ -1137,7 +1340,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             onSend={sendMessage}
             onStop={handleStopGeneration}
             sendDisabled={!inputValue.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0}
-            modelSelector={experienceMode ? null : <ModelSelector disabled={isBusy} />}
+            modelSelector={<ModelSelector disabled={isBusy} />}
             rightControls={
               <RecordButton
                 disabled={isBusy}
@@ -1151,7 +1354,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
             }
             leftControls={
               <>
-                {(isVision || experienceMode) && (
+                {isVision && (
                   <>
                     <input
                       ref={fileInputRef}
@@ -1170,7 +1373,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                     </button>
                   </>
                 )}
-                {(isAudioChat || experienceMode) && (
+                {(isAudioChat || collectionMode) && (
                   <div className="audio-menu-wrapper" ref={audioMenuRef}>
                     <input
                       ref={audioInputRef}
@@ -1214,6 +1417,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           />
         </div>
       </div>
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 };

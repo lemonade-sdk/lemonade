@@ -123,7 +123,7 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;  // Default; SDServer::load() overrides to DEVICE_GPU for rocm/vulkan backends
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;  // Kokoros runs on CPU
-    } else if (recipe == "experience") {
+    } else if (recipe == "collection") {
         return DEVICE_NONE;  // Experience recipes orchestrate multiple component models
     }
     return DEVICE_NONE;
