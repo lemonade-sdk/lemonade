@@ -211,7 +211,7 @@ void Router::persist_usage_stats_locked() const {
             return;
         }
 
-        file << persisted.dump(2);
+        file << persisted.dump();
     } catch (const std::exception& e) {
         LOG(WARNING, "Router") << "Failed to persist usage stats: " << e.what() << std::endl;
     }
@@ -317,8 +317,6 @@ void Router::add_tokens_locked(const std::string& model_name, const std::string&
         dev.by_hour[hour_key].input_tokens += in_tokens;
         dev.by_hour[hour_key].output_tokens += out_tokens;
     }
-
-    persist_usage_stats_locked();
 }
 
 json Router::get_lifetime_usage_stats() const {
