@@ -109,6 +109,21 @@ private:
                 {"output_tokens", output_tokens}
             };
         }
+
+        static UsageBucket from_json(const json& j) {
+            return {
+                j.value("requests", 0ULL),
+                j.value("input_tokens", 0ULL),
+                j.value("output_tokens", 0ULL)
+            };
+        }
+
+        UsageBucket& operator+=(const UsageBucket& rhs) {
+            requests += rhs.requests;
+            input_tokens += rhs.input_tokens;
+            output_tokens += rhs.output_tokens;
+            return *this;
+        }
     };
 
     struct ModelStats {

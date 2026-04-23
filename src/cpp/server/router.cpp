@@ -115,21 +115,13 @@ void Router::load_usage_stats() {
 
         if (persisted.contains("by_day") && persisted["by_day"].is_object()) {
             for (const auto& [bucket, value] : persisted["by_day"].items()) {
-                lifetime_usage_stats_.by_day[bucket] = {
-                    value.value("requests", 0ULL),
-                    value.value("input_tokens", 0ULL),
-                    value.value("output_tokens", 0ULL)
-                };
+                lifetime_usage_stats_.by_day[bucket] = UsageBucket::from_json(value);
             }
         }
 
         if (persisted.contains("by_hour") && persisted["by_hour"].is_object()) {
             for (const auto& [bucket, value] : persisted["by_hour"].items()) {
-                lifetime_usage_stats_.by_hour[bucket] = {
-                    value.value("requests", 0ULL),
-                    value.value("input_tokens", 0ULL),
-                    value.value("output_tokens", 0ULL)
-                };
+                lifetime_usage_stats_.by_hour[bucket] = UsageBucket::from_json(value);
             }
         }
 
@@ -142,21 +134,13 @@ void Router::load_usage_stats() {
 
                 if (data.contains("by_day") && data["by_day"].is_object()) {
                     for (const auto& [bucket, value] : data["by_day"].items()) {
-                        stats.by_day[bucket] = {
-                            value.value("requests", 0ULL),
-                            value.value("input_tokens", 0ULL),
-                            value.value("output_tokens", 0ULL)
-                        };
+                        stats.by_day[bucket] = UsageBucket::from_json(value);
                     }
                 }
 
                 if (data.contains("by_hour") && data["by_hour"].is_object()) {
                     for (const auto& [bucket, value] : data["by_hour"].items()) {
-                        stats.by_hour[bucket] = {
-                            value.value("requests", 0ULL),
-                            value.value("input_tokens", 0ULL),
-                            value.value("output_tokens", 0ULL)
-                        };
+                        stats.by_hour[bucket] = UsageBucket::from_json(value);
                     }
                 }
             }
