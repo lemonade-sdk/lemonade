@@ -101,6 +101,7 @@ not_in_nav: |
   /index.md
   /self_hosted_runners.md
   /eval/finetuned_model_export.md
+  /server/server_spec.md
 
 exclude_docs: |
   code.md

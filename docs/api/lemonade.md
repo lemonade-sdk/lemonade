@@ -12,7 +12,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
-| `POST` | [`/v1/load`](#post-apiv1load) | Load a model |
+| `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
@@ -223,8 +223,6 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
-<!-- Preserve legacy `#post-apiv1load` anchor form for inbound links. -->
-<a id="post-apiv1load"></a>
 ## `POST /v1/load`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 

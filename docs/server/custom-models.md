@@ -135,7 +135,7 @@ This file configures per-model runtime settings. Each key is a **full model name
 }
 ```
 
-> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../api/lemonade.md#post-apiv1load).
+> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../api/lemonade.md#post-v1load).
 
 ## Complete Examples
 
@@ -211,7 +211,7 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 2. Per-model values from `recipe_options.json`
 3. Global configuration values, see [Server Configuration](./configuration.md)
 
-For full details, see the [load endpoint documentation](../api/lemonade.md#post-apiv1load).
+For full details, see the [load endpoint documentation](../api/lemonade.md#post-v1load).
 
 ## See Also
 
