@@ -1486,6 +1486,7 @@ class EndpointTests(ServerTestBase):
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
+        inference_succeeded = False
         try:
             client = self.get_openai_client()
             client.chat.completions.create(
@@ -1493,6 +1494,7 @@ class EndpointTests(ServerTestBase):
                 messages=[{"role": "user", "content": "Hi"}],
                 max_completion_tokens=5,
             )
+            inference_succeeded = True
         except Exception:
             pass  # Schema must be valid even if inference itself fails.
 
@@ -1530,6 +1532,20 @@ class EndpointTests(ServerTestBase):
         )
 
         _assert_lifetime(lifetime, "/stats.lifetime")
+
+        # If inference ran, request counters must be non-zero. This catches a
+        # regression where record_usage_locked early-exits and requests stays 0.
+        if inference_succeeded:
+            self.assertGreaterEqual(
+                lifetime["requests"],
+                1,
+                "lifetime.requests should be >= 1 after a successful completion",
+            )
+            self.assertGreaterEqual(
+                sum(b["requests"] for b in lifetime["by_day"].values()),
+                1,
+                "sum of by_day[*].requests should be >= 1 after a successful completion",
+            )
 
         # After a request, at least one day/hour bucket must exist so we
         # actually exercise the bucket schema above (catches e.g. a rename
