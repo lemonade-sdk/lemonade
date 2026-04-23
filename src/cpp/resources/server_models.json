@@ -708,6 +708,33 @@
         ],
         "size": 3.1
     },
+    "Bonsai-8B-gguf": {
+        "checkpoint": "prism-ml/Bonsai-8B-gguf:Q1_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "llamacpp"
+        ],
+        "size": 1.2
+    },
+    "Bonsai-4B-gguf": {
+        "checkpoint": "prism-ml/Bonsai-4B-gguf:Q1_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "llamacpp"
+        ],
+        "size": 0.6
+    },
+    "Bonsai-1.7B-gguf": {
+        "checkpoint": "prism-ml/Bonsai-1.7B-gguf:Q1_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "llamacpp"
+        ],
+        "size": 0.25
+    },
     "Phi-4-mini-instruct-GGUF": {
         "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
