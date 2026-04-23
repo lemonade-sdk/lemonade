@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ModelsData, ModelInfo, USER_MODEL_PREFIX, fetchSupportedModelsData } from '../utils/modelData';
 import { onServerPortChange } from '../utils/serverConfig';
-import { isModelEffectivelyDownloaded } from '../utils/experienceModels';
+import { isModelEffectivelyDownloaded } from '../utils/collectionModels';
 
 // Default model to use when no models are downloaded (first-time user experience)
 export const DEFAULT_MODEL_ID = 'Qwen3-0.6B-GGUF';

@@ -51,8 +51,17 @@ private:
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
     void handle_config_get(const httplib::Request& req, httplib::Response& res);
 
-    // Side-effect callback for RuntimeConfig::set()
-    void apply_config_side_effects(const std::vector<std::string>& changed_keys);
+    // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
+    // mirroring the input shape, containing only entries that actually changed.
+    void apply_config_side_effects(const json& applied_changes);
+
+    // Hot-swap a backend binary when its *_bin config value changes. Unloads
+    // affected loaded models, runs install_backend (which downloads/replaces
+    // when version.txt mismatches), then best-effort reloads them. Errors are
+    // logged and never propagated — the config change has already been applied.
+    void handle_bin_change(const std::string& section,
+                           const std::string& bin_key,
+                           const std::string& new_value);
 
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);

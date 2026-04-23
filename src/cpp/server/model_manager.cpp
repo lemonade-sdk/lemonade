@@ -633,8 +633,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
-    // Experience models are virtual bundles with no direct checkpoint to resolve
-    if (info.recipe == "experience") {
+    // Collections are virtual entries with no direct checkpoint to resolve
+    if (info.recipe == "collection") {
         return "";
     }
 
@@ -967,7 +967,7 @@ static void parse_composite_models(ModelInfo& info, const json& model_json) {
     }
 }
 
-// Check if all component models of an experience/composite model are downloaded.
+// Check if all component models of a collection model are downloaded.
 static bool check_composite_downloaded(const ModelInfo& info,
                                         const std::map<std::string, ModelInfo>& model_map) {
     if (info.composite_models.empty()) return false;
@@ -1108,9 +1108,9 @@ void ModelManager::build_cache() {
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
 
     int downloaded_count = 0;
-    // First pass: determine download status for non-experience models
+    // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "experience") {
+        if (info.recipe == "collection") {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
@@ -1159,10 +1159,10 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Second pass: determine download status for experience models
+    // Second pass: determine download status for collection models
     // (must happen after component models have their downloaded status set)
     for (auto& [name, info] : all_models) {
-        if (info.recipe != "experience") continue;
+        if (info.recipe != "collection") continue;
         info.downloaded = check_composite_downloaded(info, all_models);
         if (info.downloaded) {
             downloaded_count++;
@@ -1246,7 +1246,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "experience") {
+    if (info.recipe == "collection") {
         info.downloaded = check_composite_downloaded(info, models_cache_);
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
@@ -1323,6 +1323,23 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
+
+        // Recompute downloaded status for any collections that
+        // depend on this model, so the collection reflects component changes
+        // without requiring a full cache rebuild.
+        for (auto& [name, entry] : models_cache_) {
+            if (entry.recipe != "collection") continue;
+            if (std::find(entry.composite_models.begin(), entry.composite_models.end(),
+                          model_name) == entry.composite_models.end()) {
+                continue;
+            }
+            bool new_state = check_composite_downloaded(entry, models_cache_);
+            if (entry.downloaded != new_state) {
+                entry.downloaded = new_state;
+                LOG(INFO, "ModelManager") << "Collection '" << name
+                          << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
+            }
+        }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
     }
@@ -1357,11 +1374,14 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded models
+    // Filter and return only downloaded, non-collection models. Collections
+    // are Lemonade-specific (a virtual entry that loads multiple
+    // real models) and aren't meaningful to OpenAI-compatible clients —
+    // the desktop app fetches them explicitly via ?show_all=true.
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded) {
+        if (info.downloaded && info.recipe != "collection") {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;
@@ -1540,9 +1560,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Experience models are UI-level bundles that orchestrate component models.
+        // Collections are UI-level entries that orchestrate component models.
         // They should always be visible if present in the registry.
-        if (recipe == "experience") {
+        if (recipe == "collection") {
             filtered[name] = info;
             continue;
         }
@@ -1968,6 +1988,58 @@ void ModelManager::download_model(const std::string& model_name,
     if (colon_pos != std::string::npos) {
         repo_id = actual_checkpoint.substr(0, colon_pos);
         variant = actual_checkpoint.substr(colon_pos + 1);
+    }
+
+    // Collections don't have their own backend — download each component model instead
+    if (actual_recipe == "collection") {
+        auto info = get_model_info(model_name);
+        if (info.composite_models.empty()) {
+            throw std::runtime_error("Collection '" + model_name + "' has no composite_models defined");
+        }
+        LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
+                                  << " component(s) for collection: " << model_name << std::endl;
+
+        // Wrap the callback so recursive per-component downloads don't each
+        // emit a "complete" event — the SSE stream should only see one final
+        // completion after every component finishes.
+        //
+        // Capture progress_callback by value (not by reference) so `forward`
+        // owns a copy of the std::function. This keeps the callback usable
+        // even if `forward` is ever copied or outlives this stack frame;
+        // today it's only consumed synchronously below, but the defensive
+        // copy is free (std::function is copyable) and removes a latent
+        // dangling-reference hazard if the recursion pattern changes.
+        DownloadProgressCallback forward = nullptr;
+        if (progress_callback) {
+            forward = [progress_callback](const DownloadProgress& p) -> bool {
+                if (p.complete) return true;
+                return progress_callback(p);
+            };
+        }
+
+        for (const auto& component : info.composite_models) {
+            if (!model_exists(component)) {
+                LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
+                continue;
+            }
+            auto comp_info = get_model_info(component);
+            if (comp_info.downloaded) {
+                LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
+                continue;
+            }
+            LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
+            json comp_data = json::object();
+            download_model(component, comp_data, do_not_upgrade, forward);
+        }
+
+        // Emit a single completion event for the whole collection
+        if (progress_callback) {
+            DownloadProgress progress;
+            progress.complete = true;
+            progress.percent = 100;
+            (void)progress_callback(progress);
+        }
+        return;
     }
 
     // Check if this recipe is supported on the current system

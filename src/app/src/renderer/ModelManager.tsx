@@ -18,7 +18,7 @@ import ConnectedBackendRow from './components/ConnectedBackendRow';
 import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
-import { getExperienceComponents, isExperienceFullyDownloaded, isExperienceFullyLoaded, isExperienceModel, isModelEffectivelyDownloaded } from './utils/experienceModels';
+import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 
 interface ModelFamily {
   displayName: string;
@@ -473,19 +473,19 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const getModelSize = (modelName: string, info: ModelInfo): number | undefined => {
-    if (!isExperienceModel(info)) {
+    if (!isCollectionModel(info)) {
       return info.size;
     }
-    const components = getExperienceComponents(info);
+    const components = getCollectionComponents(info);
     if (components.length === 0) return info.size;
     const total = components.reduce((sum, component) => sum + (modelsData[component]?.size || 0), 0);
     return total > 0 ? total : info.size;
   };
 
   const getDisplayLabelsForModel = (modelName: string, info: ModelInfo): string[] => {
-    if (isExperienceModel(info)) {
+    if (isCollectionModel(info)) {
       // Experiences intentionally show a single, consistent legend marker.
-      return ['experience'];
+      return ['collection'];
     }
     return (info.labels || []).filter((label): label is string => typeof label === 'string' && label.length > 0);
   };
@@ -495,10 +495,7 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const getModelLoadedState = (modelName: string, info: ModelInfo): boolean => {
-    if (isExperienceModel(info)) {
-      return isExperienceFullyLoaded(modelName, modelsData, loadedModels);
-    }
-    return loadedModels.has(modelName);
+    return isModelEffectivelyLoaded(modelName, info, modelsData, loadedModels);
   };
 
   const getModelLoadingState = (modelName: string): boolean => {
@@ -507,7 +504,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
-      'experience': 'Experience',
+      'collection': 'OmniRouter',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
@@ -533,9 +530,27 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   };
 
-  const loadedModelEntries = Array.from(loadedModels)
-    .map(modelName => ({ modelName }))
-    .sort((a, b) => a.modelName.localeCompare(b.modelName));
+  // Merge loaded and loading models so the list shows components as they
+  // start loading, not just after /health confirms them. Loading entries
+  // get an `isLoading` flag so the UI can render a pending indicator.
+  // Skip collection entries themselves — only show component models.
+  const loadedModelEntries = (() => {
+    const entries: Array<{ modelName: string; isLoading: boolean }> = [];
+    const seen = new Set<string>();
+    for (const modelName of loadedModels) {
+      if (isCollectionModel(modelsData[modelName])) continue;
+      if (seen.has(modelName)) continue;
+      seen.add(modelName);
+      entries.push({ modelName, isLoading: false });
+    }
+    for (const modelName of loadingModels) {
+      if (isCollectionModel(modelsData[modelName])) continue;
+      if (seen.has(modelName)) continue;
+      seen.add(modelName);
+      entries.push({ modelName, isLoading: true });
+    }
+    return entries.sort((a, b) => a.modelName.localeCompare(b.modelName));
+  })();
 
 
 
@@ -722,12 +737,33 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
+      // Skip the download flow entirely if a collection is already complete
+      const info = modelsData[modelName];
+      if (isCollectionModel(info) && isCollectionFullyDownloaded(modelName, modelsData)) {
+        showSuccess(`"${modelName}" is already downloaded.`);
+        return;
+      }
+
+      // Don't start a second download if one is already running for this
+      // model. Without this guard, downloadTracker.startDownload would abort
+      // the in-flight request, which surfaces as "Download cancelled" in the
+      // first call's catch block.
+      if (downloadTracker.isActive(modelName)) {
+        showWarning(`Download for "${modelName}" is already in progress.`);
+        return;
+      }
+
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
+
+      const collectionComponents = isCollectionModel(info)
+        ? getCollectionComponents(info)
+        : undefined;
 
       // Use the single consolidated download function
       await pullModel(modelName, {
         registrationData,
+        collectionComponents,
         declaredSizeGB: modelsData[modelName]?.size,
       });
 
@@ -844,8 +880,8 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      if (isExperienceModel(modelData)) {
-        const components = getExperienceComponents(modelData);
+      if (isCollectionModel(modelData)) {
+        const components = getCollectionComponents(modelData);
         if (components.length === 0) {
           showError(`Experience model "${modelName}" has no component models.`);
           return;
@@ -905,8 +941,8 @@ const [searchQuery, setSearchQuery] = useState('');
         const next = new Set(prev);
         next.delete(modelName);
         const info = modelsData[modelName];
-        if (isExperienceModel(info)) {
-          getExperienceComponents(info).forEach((component) => next.delete(component));
+        if (isCollectionModel(info)) {
+          getCollectionComponents(info).forEach((component) => next.delete(component));
         }
         return next;
       });
@@ -917,8 +953,8 @@ const [searchQuery, setSearchQuery] = useState('');
   const handleUnloadModel = async (modelName: string) => {
     try {
       const modelData = modelsData[modelName];
-      if (modelData && isExperienceModel(modelData)) {
-        const components = getExperienceComponents(modelData);
+      if (modelData && isCollectionModel(modelData)) {
+        const components = getCollectionComponents(modelData);
         for (const component of components) {
           if (!loadedModels.has(component)) continue;
           const response = await serverFetch('/unload', {
@@ -957,9 +993,17 @@ const [searchQuery, setSearchQuery] = useState('');
   };
 
   const handleDeleteModel = async (modelName: string) => {
+    const info = modelsData[modelName];
+    const collectionComponents = isCollectionModel(info) ? getCollectionComponents(info) : [];
+    const isCollection = collectionComponents.length > 0;
+
+    const message = isCollection
+      ? `"${modelName}" is a collection. Deleting it will remove the following ${collectionComponents.length} models from disk:\n\n${collectionComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
+      : `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`;
+
     const confirmed = await confirm({
-      title: 'Delete Model',
-      message: `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`,
+      title: isCollection ? 'Delete Collection' : 'Delete Model',
+      message,
       confirmText: 'Delete',
       cancelText: 'Cancel',
       danger: true
@@ -970,10 +1014,20 @@ const [searchQuery, setSearchQuery] = useState('');
     }
 
     try {
-      await deleteModel(modelName);
-      // No manual modelsUpdated dispatch needed — deleteModel() handles it
+      if (isCollection) {
+        for (const component of collectionComponents) {
+          try {
+            await deleteModel(component);
+          } catch (err) {
+            console.error(`Failed to delete component ${component}:`, err);
+          }
+        }
+        showSuccess(`Collection "${modelName}" deleted (${collectionComponents.length} models removed).`);
+      } else {
+        await deleteModel(modelName);
+        showSuccess(`Model "${modelName}" deleted successfully.`);
+      }
       await fetchCurrentLoadedModel();
-      showSuccess(`Model "${modelName}" deleted successfully.`);
     } catch (error) {
       console.error('Error deleting model:', error);
       showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1037,8 +1091,12 @@ const [searchQuery, setSearchQuery] = useState('');
   const showInlineFilterButton = currentView === 'models' || currentView === 'marketplace';
 
   const getModelStatus = (modelName: string) => {
-    const isDownloaded = modelsData[modelName]?.downloaded ?? false;
-    const isLoaded = loadedModels.has(modelName);
+    const info = modelsData[modelName];
+    // collections: downloaded when all components are downloaded,
+    // loaded when all components are loaded. Fall back to naive checks
+    // for regular models.
+    const isDownloaded = isModelEffectivelyDownloaded(modelName, info, modelsData);
+    const isLoaded = isModelEffectivelyLoaded(modelName, info, modelsData, loadedModels);
     const isLoading = loadingModels.has(modelName);
 
     let statusClass = 'not-downloaded';
@@ -1095,7 +1153,9 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
-    const isEsrgan = modelsData[modelName]?.labels?.includes('esrgan');
+    const info = modelsData[modelName];
+    const isEsrgan = info?.labels?.includes('esrgan');
+    const isCollection = isCollectionModel(info);
     return (
       <>
         {!isDownloaded && (
@@ -1127,8 +1187,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {renderDeleteButton(modelName)}
-            {renderLoadOptionsButton(modelName)}
+            {!isCollection && renderDeleteButton(modelName)}
+            {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1144,8 +1204,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {renderDeleteButton(modelName)}
-            {renderLoadOptionsButton(modelName)}
+            {!isCollection && renderDeleteButton(modelName)}
+            {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
@@ -1167,6 +1227,19 @@ const [searchQuery, setSearchQuery] = useState('');
   ) => {
     const { isDownloaded, statusClass, statusTitle } = getModelStatus(modelName);
     const isHovered = hoveredModel === hoverKey;
+
+    // For collections, show the component list (with sizes) as a
+    // tooltip so users can see what gets downloaded/loaded.
+    let nameTooltip: string | undefined;
+    if (isCollectionModel(modelInfo)) {
+      const components = getCollectionComponents(modelInfo);
+      const lines = components.map((c) => {
+        const s = modelsData[c]?.size;
+        return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
+      });
+      nameTooltip = `Collection of ${components.length} models:\n${lines.join('\n')}`;
+    }
+
     return (
       <div
         key={modelName}
@@ -1177,8 +1250,8 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name">{displayName ?? modelName}</span>
-            <span className="model-size">{formatSize(modelInfo.size)}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? modelName}</span>
+            <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (
@@ -1269,7 +1342,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const renderBackendSetupBanner = (recipe: string) => {
     const info = getRecipeBackendInfo(recipe);
-    if (!info || info.state === 'installed') return null;
+    if (!info || info.state === 'installed' || info.state === 'update_available') return null;
     if (info.state === 'unsupported') return null;
 
     const isUpdate = info.state === 'update_required';
@@ -1462,19 +1535,26 @@ const [searchQuery, setSearchQuery] = useState('');
             <div className="loaded-model-section widget">
               <div className="loaded-model-header">
                 <div className="loaded-model-label">ACTIVE MODELS</div>
-                <div className="loaded-model-count-pill">{loadedModelEntries.length} loaded</div>
+                <div className="loaded-model-count-pill">
+                  {loadedModelEntries.filter(e => !e.isLoading).length} loaded
+                </div>
               </div>
               {loadedModelEntries.length === 0 && <div className="loaded-model-empty">No models loaded</div>}
               <div className="loaded-model-list">
-                {loadedModelEntries.map(({ modelName }) => (
+                {loadedModelEntries.map(({ modelName, isLoading }) => (
                   <div key={modelName} className="loaded-model-info">
                     <div className="loaded-model-details">
-                      <span className="loaded-model-indicator">●</span>
+                      <span
+                        className={`loaded-model-indicator${isLoading ? ' loading' : ''}`}
+                        title={isLoading ? 'Loading' : 'Loaded'}
+                      />
                       <span className="loaded-model-name">{modelName}</span>
                     </div>
-                    <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
-                      <EjectIcon />
-                    </button>
+                    {!isLoading && (
+                      <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
+                        <EjectIcon />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

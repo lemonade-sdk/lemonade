@@ -32,6 +32,7 @@ class DownloadTracker {
     modelName: string,
     abortController: AbortController,
     downloadType?: 'model' | 'backend',
+    collectionComponents?: string[],
     declaredTotalBytes?: number,
   ): string {
     // Remove any existing downloads for this model (completed, error, cancelled, or paused)
@@ -67,6 +68,7 @@ class DownloadTracker {
       bytesResumed: 0,
       abortController,
       downloadType,
+      collectionComponents,
       declaredTotalBytes,
     };
 
@@ -298,6 +300,18 @@ class DownloadTracker {
         detail: download,
       })
     );
+  }
+
+  /**
+   * Check whether a download for `modelName` is currently in-flight
+   * (downloading or paused — i.e. not finished/errored/cancelled).
+   */
+  isActive(modelName: string): boolean {
+    for (const d of this.activeDownloads.values()) {
+      if (d.modelName !== modelName) continue;
+      if (d.status === 'downloading' || d.status === 'paused') return true;
+    }
+    return false;
   }
 
   /**
