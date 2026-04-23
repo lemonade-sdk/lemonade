@@ -414,7 +414,7 @@ static int version_compare(const std::string& a, const std::string& b) {
     auto pa = numeric_runs(a);
     auto pb = numeric_runs(b);
     if (pa.empty() || pb.empty()) return 0;
-    size_t n = std::max(pa.size(), pb.size());
+    size_t n = pa.size() > pb.size() ? pa.size() : pb.size();
     for (size_t i = 0; i < n; ++i) {
         int ai = i < pa.size() ? pa[i] : 0;
         int bi = i < pb.size() ? pb[i] : 0;
@@ -982,6 +982,23 @@ json SystemInfo::build_recipes_info(const json& devices) {
         } else {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
+
+            // The user's *_bin pin overrides what the state machine considers
+            // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
+            // perpetually emit update_required because the lemonade baseline
+            // differs, and a path pin would do the same with no version.txt.
+            {
+                std::string user_pin = BackendUtils::get_bin_config_value(def.recipe, def.backend);
+                if (!user_pin.empty() && user_pin != "builtin" && user_pin != "latest") {
+                    if (utils::looks_like_path(user_pin)) {
+                        // User-managed binary; lemonade doesn't track its version.
+                        expected_version.clear();
+                    } else {
+                        // Bare upstream tag — that tag IS what the user expects.
+                        expected_version = user_pin;
+                    }
+                }
+            }
 
             if (!installed_version.empty() && installed_version != "unknown") {
                 backend["version"] = installed_version;
