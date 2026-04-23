@@ -541,6 +541,24 @@
         ],
         "size": 0.38
     },
+    "Qwen3-0.6B-MLX": {
+        "checkpoint": "mlx-community/Qwen3-0.6B-4bit",
+        "recipe": "mlx-engine",
+        "suggested": true,
+        "labels": [
+            "reasoning"
+        ],
+        "size": 0.42
+    },
+    "Qwen3-4B-MLX": {
+        "checkpoint": "mlx-community/Qwen3-4B-4bit",
+        "recipe": "mlx-engine",
+        "suggested": false,
+        "labels": [
+            "reasoning"
+        ],
+        "size": 2.3
+    },
     "Tiny-Test-Model-GGUF": {
         "checkpoint": "unsloth/gemma-3-270m-it-GGUF:gemma-3-270m-it-UD-IQ2_M.gguf",
         "recipe": "llamacpp",
