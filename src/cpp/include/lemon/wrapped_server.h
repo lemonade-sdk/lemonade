@@ -142,6 +142,8 @@ public:
     // Get telemetry data
     Telemetry get_telemetry() const { return telemetry_; }
 
+    void reset_telemetry() { telemetry_.reset(); }
+
     // Set telemetry data (for non-streaming requests)
     void set_telemetry(int input_tokens, int output_tokens,
                       double time_to_first_token, double tokens_per_second) {

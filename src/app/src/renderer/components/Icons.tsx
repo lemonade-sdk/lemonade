@@ -86,6 +86,17 @@ export const Settings: React.FC<IconProps> = ({ size = 24, strokeWidth = 2 }) =>
   </svg>
 );
 
+export const ChartNoAxesCombined: React.FC<IconProps> = ({ size = 24, strokeWidth = 2 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 16v5" />
+    <path d="M16 14v7" />
+    <path d="M20 10v11" />
+    <path d="m22 3-8.5 8.5-5-5L2 13" />
+    <path d="M4 18v3" />
+    <path d="M8 14v7" />
+  </svg>
+);
+
 export const SlidersHorizontal: React.FC<IconProps> = ({ size = 24, strokeWidth = 2 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
     <path d="M10 5H3" />
