@@ -99,14 +99,14 @@ Backend-specific settings are nested under their backend name:
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to llama-server |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
-| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **whispercpp** — Audio transcription:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to whisper-server |
-| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **sdcpp** — Image generation:
 | Key | Default | Description |
@@ -117,7 +117,7 @@ Backend-specific settings are nested under their backend name:
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |
 | `width` | 512 | Image width in pixels |
 | `height` | 512 | Image height in pixels |
-| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **flm** — FastFlowLM NPU inference:
 | Key | Default | Description |
@@ -127,12 +127,62 @@ Backend-specific settings are nested under their backend name:
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `server_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `server_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **kokoro** — Text-to-speech:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `cpu_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `cpu_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
+
+### Backend binary selection
+
+Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm_bin`) accepts the same set of values:
+
+| Value | Meaning |
+|---|---|
+| `"builtin"` *(default)* | Use the version of the upstream backend that lemonade pins in its release. Recommended for most users — these versions are tested with this lemonade build. |
+| `""` | Same as `"builtin"`. |
+| `"latest"` | Resolve to the most-recent upstream GitHub release at `lemond` start, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
+| `"b8664"` / `"v1.8.2"` / etc. | A specific upstream release tag. Lemonade downloads that exact version from GitHub. |
+| `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
+
+Examples:
+
+```bash
+# Track upstream llama.cpp Vulkan releases (auto-resolve at lemond start)
+lemonade config set llamacpp.vulkan_bin=latest
+
+# Pin to a specific llama.cpp build
+lemonade config set llamacpp.vulkan_bin=b8664
+
+# Use your own llama.cpp build
+lemonade config set llamacpp.vulkan_bin=/home/me/llama.cpp/build/bin
+
+# Revert to the version lemonade ships
+lemonade config set llamacpp.vulkan_bin=builtin
+```
+
+#### Behavior when `*_bin` changes
+
+Changing a `*_bin` value applies live: lemonade unloads any model currently using that backend, downloads the new binary if needed, and reloads the model on the new binary. No `lemond` restart is required.
+
+#### `latest` re-resolution
+
+`"latest"` is resolved once per `lemond` process — at the first install attempt for that backend, lemonade queries the upstream GitHub release and caches the resolved tag for the rest of the process lifetime. To pick up a newer upstream release after lemonade has been running for a while, restart `lemond` (which re-resolves) or run the install command for that backend.
+
+#### Upgrade signals in `lemonade backends`
+
+The `lemonade backends` listing surfaces two upgrade signals for backends pinned to `"latest"`:
+
+- **`update_available`** — A newer upstream release exists than what's installed. The backend keeps running on the installed version; the listed `action` is the install command to apply the upgrade when you're ready.
+- **`update_required`** — The installed version is *older* than the version lemonade ships in this release. This forces an upgrade prompt because running below the lemonade-shipped baseline is not supported.
+
+Backends pinned to a specific tag (e.g. `b8664`) do not get either signal — they're treated as an explicit user choice.
+
+#### Interactions with other config
+
+- `offline: true` blocks the GitHub call for `"latest"`. If a previously-installed `version.txt` exists in the install directory, lemonade reuses that version with a warning. Otherwise the install fails.
+- `no_fetch_executables: true` blocks all downloads, including resolving and installing `"latest"` and any version-tag pin. Existing installs continue to work.
 
 ## Editing Configuration
 

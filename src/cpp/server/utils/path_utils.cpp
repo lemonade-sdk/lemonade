@@ -188,6 +188,12 @@ bool is_safe_executable_path(const std::string& path) {
     return !path.empty();
 }
 
+bool looks_like_path(const std::string& v) {
+    if (v.find('/') != std::string::npos) return true;
+    if (v.find('\\') != std::string::npos) return true;
+    return fs::path(v).is_absolute();
+}
+
 std::string find_flm_executable() {
 #ifdef _WIN32
     // On Windows, only check the Lemonade install directory (auto-installed zip).
