@@ -142,9 +142,11 @@ Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm
 |---|---|
 | `"builtin"` *(default)* | Use the version of the upstream backend that lemonade pins in its release. Recommended for most users — these versions are tested with this lemonade build. |
 | `""` | Same as `"builtin"`. |
-| `"latest"` | Resolve to the most-recent upstream GitHub release at `lemond` start, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
+| `"latest"` | Resolve to the most-recent upstream GitHub release on first install or first status query for that backend, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
 | `"b8664"` / `"v1.8.2"` / etc. | A specific upstream release tag. Lemonade downloads that exact version from GitHub. |
 | `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
+
+> Note: the `latest` setting is experimental.
 
 Examples:
 
@@ -168,7 +170,7 @@ Changing a `*_bin` value applies live: lemonade unloads any model currently usin
 
 #### `latest` re-resolution
 
-`"latest"` is resolved once per `lemond` process — at the first install attempt for that backend, lemonade queries the upstream GitHub release and caches the resolved tag for the rest of the process lifetime. To pick up a newer upstream release after lemonade has been running for a while, restart `lemond` (which re-resolves) or run the install command for that backend.
+`"latest"` is resolved once per `lemond` process. The first install or status query for a `latest`-pinned backend hits the GitHub API; the resolved tag is then cached in memory for the rest of the process lifetime. Subsequent installs and status queries (including manual `lemonade backends install`) reuse the cached tag and do not re-query GitHub. **Restart `lemond` to pick up a newer upstream release.**
 
 #### Upgrade signals in `lemonade backends`
 
