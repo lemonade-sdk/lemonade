@@ -20,7 +20,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
-| `GET` | `/live` | Check server liveness for load balancers and orchestrators |
+| `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -223,8 +223,9 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+<!-- Preserve legacy `#post-apiv1load` anchor form for inbound links. -->
 <a id="post-apiv1load"></a>
-### `POST /v1/load`
+## `POST /v1/load`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
@@ -845,3 +846,22 @@ Resume after a known sequence number (e.g., on reconnect):
 - **Reconnection**: Track the last `seq` received and pass it as `after_seq` on reconnect to avoid duplicate entries.
 - **Backlog**: The server retains up to 5000 recent log entries. The snapshot may be smaller if fewer entries exist.
 - **Platform availability**: WebSocket log streaming is available on all platforms (Windows, Linux, and macOS).
+
+## `GET /live`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Lightweight liveness probe for load balancers and orchestrators. Unlike [`/v1/health`](#get-v1health), this endpoint does no work beyond confirming the process is up — it does not inspect loaded models or backends — so it is safe to poll at high frequency. `HEAD /live` is also supported and returns `200 OK` with an empty body.
+
+Unlike the other endpoints on this page, `/live` is not versioned and is not mounted under the `/api/v0/`, `/api/v1/`, `/v0/`, `/v1/` prefixes.
+
+### Example request
+
+```bash
+curl http://localhost:13305/live
+```
+
+### Response format
+
+```json
+{"status":"ok"}
+```

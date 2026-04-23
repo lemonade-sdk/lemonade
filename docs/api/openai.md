@@ -7,7 +7,7 @@ This spec defines Lemonade's implementation of the [OpenAI API](https://develope
 | `POST` | [`/v1/chat/completions`](#post-v1chatcompletions) | Chat Completions | messages -> completion |
 | `POST` | [`/v1/completions`](#post-v1completions) | Text Completions | prompt -> completion |
 | `POST` | [`/v1/embeddings`](#post-v1embeddings) | Embeddings | text -> vector representations |
-| `POST` | [`/v1/responses`](#post-v1responses) | Chat Completions | prompt/messages -> event |
+| `POST` | [`/v1/responses`](#post-v1responses) | Responses API | prompt/messages -> event |
 | `POST` | [`/v1/audio/transcriptions`](#post-v1audiotranscriptions) | Audio Transcription | audio file -> text |
 | `POST` | [`/v1/audio/speech`](#post-v1audiospeech) | Text to speech | text -> audio |
 | `WS` | [`/realtime`](#ws-realtime) | Realtime Audio Transcription, OpenAI SDK compatible | streaming audio -> text |
@@ -283,103 +283,6 @@ Embeddings API. You provide input text and receive vector representations (embed
 - `usage` - Token usage statistics
   - `prompt_tokens` - Number of tokens in the input
   - `total_tokens` - Total tokens processed
-
-
-
-## `POST /v1/reranking`
-<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
-
-Reranking API. You provide a query and a list of documents, and receive the documents reordered by their relevance to the query with relevance scores. This is useful for improving search results quality. This API will also load the model if it is not already loaded.
-
-> **Note:** This endpoint follows API conventions similar to OpenAI's format but is not part of the official OpenAI API. It is inspired by llama.cpp and other inference server implementations.
-
-> **Note:** This endpoint is only available for models using the `llamacpp` recipe. It is not available for FLM or ONNX models.
-
-### Parameters
-
-| Parameter | Required | Description | Status |
-|-----------|----------|-------------|--------|
-| `query` | Yes | The search query text. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `documents` | Yes | Array of document strings to be reranked. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The model to use for reranking. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-
-### Example request
-
-=== "PowerShell"
-
-    ```powershell
-    Invoke-WebRequest `
-      -Uri "http://localhost:13305/v1/reranking" `
-      -Method POST `
-      -Headers @{ "Content-Type" = "application/json" } `
-      -Body '{
-        "model": "bge-reranker-v2-m3-GGUF",
-        "query": "What is the capital of France?",
-        "documents": [
-          "Paris is the capital of France.",
-          "Berlin is the capital of Germany.",
-          "Madrid is the capital of Spain."
-        ]
-      }'
-    ```
-
-=== "Bash"
-
-    ```bash
-    curl -X POST http://localhost:13305/v1/reranking \
-      -H "Content-Type: application/json" \
-      -d '{
-            "model": "bge-reranker-v2-m3-GGUF",
-            "query": "What is the capital of France?",
-            "documents": [
-              "Paris is the capital of France.",
-              "Berlin is the capital of Germany.",
-              "Madrid is the capital of Spain."
-            ]
-          }'
-    ```
-
-### Response format
-
-```json
-{
-  "model": "bge-reranker-v2-m3-GGUF",
-  "object": "list",
-  "results": [
-    {
-      "index": 0,
-      "relevance_score": 8.60673713684082
-    },
-    {
-      "index": 1,
-      "relevance_score": -5.3886260986328125
-    },
-    {
-      "index": 2,
-      "relevance_score": -3.555561065673828
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 51,
-    "total_tokens": 51
-  }
-}
-```
-
-**Field Descriptions:**
-
-- `model` - Model identifier used for reranking
-- `object` - Type of response object, always `"list"`
-- `results` - Array of all documents with relevance scores
-  - `index` - Original index of the document in the input array
-  - `relevance_score` - Relevance score assigned by the model (higher = more relevant)
-- `usage` - Token usage statistics
-  - `prompt_tokens` - Number of tokens in the input
-  - `total_tokens` - Total tokens processed
-
-> **Note:** The results are returned in their original input order, not sorted by relevance score. To get documents ranked by relevance, you need to sort the results by `relevance_score` in descending order on the client side.
-
-
 
 ## `POST /v1/responses`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
