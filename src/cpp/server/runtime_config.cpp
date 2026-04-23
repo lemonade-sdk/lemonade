@@ -87,9 +87,10 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
     //   "latest"  — resolve to the most-recent upstream release at lemond start
     if (value.empty() || value == "builtin" || value == "latest") return;
 
-    // Path-syntax values are treated as user-supplied binary directories and
-    // must exist. The check is on syntax (separator or absolute), not existence,
-    // so a typo'd path does not silently fall through to the version-tag branch.
+    // Absolute-path values are treated as user-supplied binary directories and
+    // must exist. Relative-looking values intentionally fall through to the
+    // version-tag branch so backend pins are not interpreted relative to
+    // lemond's launch directory.
     if (utils::looks_like_path(value)) {
         if (!fs::exists(value)) {
             throw std::invalid_argument(

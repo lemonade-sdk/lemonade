@@ -189,9 +189,11 @@ bool is_safe_executable_path(const std::string& path) {
 }
 
 bool looks_like_path(const std::string& v) {
-    if (v.find('/') != std::string::npos) return true;
-    if (v.find('\\') != std::string::npos) return true;
-    return fs::path(v).is_absolute();
+    try {
+        return fs::path(v).is_absolute();
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 std::string find_flm_executable() {
