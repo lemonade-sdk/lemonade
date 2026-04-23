@@ -68,7 +68,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade cache (default: `~/.cache/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
 
-The `recipe` field defines which software framework and device will be used to load and run the model. For more information on OGA and Hugging Face recipes, see the [Lemonade API README](../lemonade_api.md). For information on GGUF recipes, see [llamacpp](#gguf-support).
+The `recipe` field defines which software framework and device will be used to load and run the model.
 
 > Note: the `model_name` for registering a new model must use the `user` namespace, to prevent collisions with built-in models. For example, `user.Phi-4-Mini-GGUF`.
 
@@ -250,7 +250,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
 2. Per-model values configurable in `recipe_options.json` (see below for details)
-3. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
+3. Values from environment variables or server startup arguments (see [Server Configuration](../server/configuration.md))
 4. Default hardcoded values in `lemond` (lowest priority)
 
 ### Per-model options
@@ -477,14 +477,14 @@ curl http://localhost:13305/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](./configuration.md)):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../server/configuration.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
   - `audio` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
-- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
+- `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
 
 ## `GET /v1/stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -756,7 +756,7 @@ Stream server logs over WebSocket. Clients connect, send a subscribe message, an
 
 ### Connection
 
-The WebSocket server shares the same port as the [Realtime Audio Transcription API](#realtime-audio-transcription-api-websocket). Discover the port via the [`/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect:
+The WebSocket server shares the same port as the [Realtime Audio Transcription API](./openai.md#ws-realtime). Discover the port via the [`/v1/health`](#get-v1health) endpoint (`websocket_port` field), then connect:
 
 ```
 ws://localhost:<websocket_port>/logs/stream

@@ -4,19 +4,19 @@ This spec defines Lemonade's implementation of the [OpenAI API](https://develope
 
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
-| `POST` | [`/v1/chat/completions`](#post-v1-chat-completions) | Chat Completions | messages -> completion |
-| `POST` | [`/v1/completions`](#post-v1-completions) | Text Completions | prompt -> completion |
-| `POST` | [`/v1/embeddings`](#post-v1-embeddings) | Embeddings | text -> vector representations |
-| `POST` | [`/v1/responses`](#post-v1-responses) | Chat Completions | prompt/messages -> event |
-| `POST` | [`/v1/audio/transcriptions`](#post-v1-audio-transcriptions) | Audio Transcription | audio file -> text |
-| `POST` | [`/v1/audio/speech`](#post-v1-audio-speech) | Text to speech | text -> audio |
+| `POST` | [`/v1/chat/completions`](#post-v1chatcompletions) | Chat Completions | messages -> completion |
+| `POST` | [`/v1/completions`](#post-v1completions) | Text Completions | prompt -> completion |
+| `POST` | [`/v1/embeddings`](#post-v1embeddings) | Embeddings | text -> vector representations |
+| `POST` | [`/v1/responses`](#post-v1responses) | Chat Completions | prompt/messages -> event |
+| `POST` | [`/v1/audio/transcriptions`](#post-v1audiotranscriptions) | Audio Transcription | audio file -> text |
+| `POST` | [`/v1/audio/speech`](#post-v1audiospeech) | Text to speech | text -> audio |
 | `WS` | [`/realtime`](#ws-realtime) | Realtime Audio Transcription, OpenAI SDK compatible | streaming audio -> text |
-| `POST` | [`/v1/images/generations`](#post-v1-images-generations) | Image Generation | prompt -> image |
-| `POST` | [`/v1/images/edits`](#post-v1-images-edits) | Image Editing | image + prompt -> edited image |
-| `POST` | [`/v1/images/variations`](#post-v1-images-variations) | Image Variations | image -> varied image |
-| `POST` | [`/v1/images/upscale`](#post-v1-images-upscale) | Image Upscaling | image + ESRGAN model -> upscaled image |
-| `GET` | [`/v1/models`](#get-v1-models) | List models available locally | n/a |
-| `GET` | [`/v1/models/{model_id}`](#get-v1-modelsmodel_id) | Retrieve a specific model by ID | n/a |
+| `POST` | [`/v1/images/generations`](#post-v1imagesgenerations) | Image Generation | prompt -> image |
+| `POST` | [`/v1/images/edits`](#post-v1imagesedits) | Image Editing | image + prompt -> edited image |
+| `POST` | [`/v1/images/variations`](#post-v1imagesvariations) | Image Variations | image -> varied image |
+| `POST` | [`/v1/images/upscale`](#post-v1imagesupscale) | Image Upscaling | image + ESRGAN model -> upscaled image |
+| `GET` | [`/v1/models`](#get-v1models) | List models available locally | n/a |
+| `GET` | [`/v1/models/{model_id}`](#get-v1modelsmodel_id) | Retrieve a specific model by ID | n/a |
 
 ## `POST /v1/chat/completions`
 <sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
@@ -522,7 +522,7 @@ Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream a
 
 ### Connection
 
-The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/v1/health`](#get-apiv1health) endpoint (`websocket_port` field), then connect with the model name:
+The WebSocket server runs on a dynamically assigned port. Discover the port via the [`/v1/health`](./lemonade.md#get-v1health) endpoint (`websocket_port` field), then connect with the model name:
 
 ```
 ws://localhost:<websocket_port>/realtime?model=Whisper-Tiny
@@ -1087,7 +1087,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 
 ### Response format
 
-Returns a single model object with the same fields as described in the [models list endpoint](#get-apiv1models) above.
+Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above.
 
 ```json
 {

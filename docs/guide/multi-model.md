@@ -4,7 +4,7 @@ Lemonade supports loading multiple models simultaneously, allowing you to keep f
 
 ## Configuration
 
-Configure via `lemonade config set max_loaded_models=N`. See [Server Configuration](./configuration.md).
+Configure via `lemonade config set max_loaded_models=N`. See [Server Configuration](../server/configuration.md).
 
 **Default:** `1` (one model of each type). Use `-1` for unlimited.
 
@@ -40,9 +40,9 @@ Models currently processing inference requests cannot be evicted until they fini
 
 ## Per-Model Settings
 
-Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the `/api/v1/load` endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the [`/api/v1/load` endpoint documentation](#post-apiv1load) for details.
+Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the `/api/v1/load` endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the [`/api/v1/load` endpoint documentation](../api/lemonade.md#post-apiv1load) for details.
 
 **Setting Priority Order:**
 1. Values passed explicitly in `/api/v1/load` request (highest priority)
-2. Values from environment variables or server startup arguments (see [Server Configuration](./configuration.md))
+2. Values from environment variables or server startup arguments (see [Server Configuration](../server/configuration.md))
 3. Hardcoded defaults in `lemond` (lowest priority)

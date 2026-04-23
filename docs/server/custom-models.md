@@ -10,7 +10,7 @@ This guide explains how to manually register custom models in Lemonade Server us
 > ```bash
 > lemonade pull org/repo:Q4_K_M
 > ```
-> The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](./server_spec.md#get-apiv1pullvariants) endpoint under the hood.
+> The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](../api/lemonade.md#get-v1pullvariants) endpoint under the hood.
 >
 > If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../lemonade-cli.md#options-for-pull):
 > ```bash
@@ -135,7 +135,7 @@ This file configures per-model runtime settings. Each key is a **full model name
 }
 ```
 
-> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](./server_spec.md#post-apiv1load).
+> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../api/lemonade.md#post-apiv1load).
 
 ## Complete Examples
 
@@ -211,10 +211,10 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 2. Per-model values from `recipe_options.json`
 3. Global configuration values, see [Server Configuration](./configuration.md)
 
-For full details, see the [load endpoint documentation](./server_spec.md#post-apiv1load).
+For full details, see the [load endpoint documentation](../api/lemonade.md#post-apiv1load).
 
 ## See Also
 
 - [CLI pull command](../lemonade-cli.md#options-for-pull) — register and download models from the command line
-- [`/api/v1/pull` endpoint](./server_spec.md#post-apiv1pull) — register and download models via API
+- [`/api/v1/pull` endpoint](../api/lemonade.md#post-v1pull) — register and download models via API
 - [Server Integration Guide](./server_integration.md#installing-additional-models) — overview of model management options

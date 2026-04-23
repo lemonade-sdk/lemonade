@@ -85,7 +85,14 @@ nav:
       - Backends: embeddable/backends.md
       - Models: embeddable/models.md
       - Building from Source: embeddable/building.md
-  - Server Spec: server/server_spec.md
+  - API Spec:
+      - Overview: api/README.md
+      - OpenAI-Compatible: api/openai.md
+      - Ollama-Compatible: api/ollama.md
+      - Anthropic-Compatible: api/anthropic.md
+      - llama.cpp-Specific: api/llamacpp.md
+      - Lemonade-Specific: api/lemonade.md
+  - Multi-Model Support: guide/multi-model.md
   - Integration Guide: server/server_integration.md
   - Custom Model Configuration: server/custom-models.md
   - Contribution Guide: contribute.md

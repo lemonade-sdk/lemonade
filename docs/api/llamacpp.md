@@ -6,7 +6,7 @@ This page documents Lemonade's llama.cpp-specific compatibility surface.
 
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
-| `POST` | [`/v1/reranking`](#post-apiv1reranking) | Reranking | query + documents -> relevance-scored documents |
+| `POST` | [`/v1/reranking`](#post-v1reranking) | Reranking | query + documents -> relevance-scored documents |
 
 ## `POST /v1/reranking`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
