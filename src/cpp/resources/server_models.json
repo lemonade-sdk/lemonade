@@ -844,6 +844,7 @@
         "mmproj": "mmproj-Qwen2.5-Omni-7B-f16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "hf_load": true,
         "labels": [
             "vision",
             "audio",
@@ -856,6 +857,7 @@
         "mmproj": "mmproj-Qwen2.5-Omni-3B-f16.gguf",
         "recipe": "llamacpp",
         "suggested": true,
+        "hf_load": true,
         "labels": [
             "vision",
             "audio",
