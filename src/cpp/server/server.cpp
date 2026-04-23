@@ -138,6 +138,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     model_manager_->set_extra_models_dir(config_->extra_models_dir());
 
     backend_manager_ = std::make_unique<BackendManager>();
+    BackendManager::set_global(backend_manager_.get());
 
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
@@ -2936,8 +2937,8 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
         auto body = nlohmann::json::parse(req.body);
 
         // Delegate to RuntimeConfig — accepts all known recipe option keys
-        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
-            apply_config_side_effects(keys);
+        auto result = config_->set(body, [this](const json& applied) {
+            apply_config_side_effects(applied);
         });
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
@@ -3493,8 +3494,8 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
 
         // Translate {"level":"debug"} -> config_->set({"log_level":"debug"})
         json changes = {{"log_level", request_json["level"]}};
-        config_->set(changes, [this](const std::vector<std::string>& keys) {
-            apply_config_side_effects(keys);
+        config_->set(changes, [this](const json& applied) {
+            apply_config_side_effects(applied);
         });
 
         // Return same response format for backward compatibility
@@ -3543,8 +3544,8 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
     try {
         auto body = nlohmann::json::parse(req.body);
 
-        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
-            apply_config_side_effects(keys);
+        auto result = config_->set(body, [this](const json& applied) {
+            apply_config_side_effects(applied);
         });
 
         // Persist changes to config.json
@@ -3585,8 +3586,93 @@ void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Respons
     }
 }
 
-void Server::apply_config_side_effects(const std::vector<std::string>& changed_keys) {
-    for (const auto& key : changed_keys) {
+void Server::handle_bin_change(const std::string& section,
+                                const std::string& bin_key,
+                                const std::string& new_value) {
+    std::string recipe = RuntimeConfig::config_section_to_recipe(section);
+
+    // bin_key is "<backend>_bin" — strip the suffix to get the backend name
+    // expected by install_backend / find_external_backend_binary.
+    std::string backend = bin_key.substr(0, bin_key.size() - 4);
+
+    // The "server_bin" key (as in ryzenai.server_bin) is not consumed by the
+    // current install flow — find_external_backend_binary uses recipe-based
+    // section lookup and there is no recipe whose section equals "ryzenai".
+    // Skip the hot-swap rather than attempt an install that won't help.
+    if (backend == "server") {
+        LOG(WARNING, "Server") << section << "." << bin_key
+                               << " is not consumed by the install flow; "
+                                  "no hot-swap performed." << std::endl;
+        return;
+    }
+
+    LOG(INFO, "Server") << "*_bin config changed: " << section << "." << bin_key
+                        << " = '" << new_value << "' — hot-swapping "
+                        << recipe << ":" << backend << std::endl;
+
+    // Snapshot loaded models on this (recipe, backend). A model whose options
+    // do not pin a backend (mb empty) is treated as potentially affected since
+    // it could resolve to the changed backend on next load.
+    struct Saved {
+        std::string name;
+        RecipeOptions opts;
+    };
+    std::vector<Saved> previously_loaded;
+    auto loaded = router_->get_all_loaded_models();
+    std::string backend_option_key = recipe + "_backend";
+    for (const auto& m : loaded) {
+        if (m.value("recipe", "") != recipe) continue;
+        std::string mb;
+        if (m.contains("recipe_options") && m["recipe_options"].contains(backend_option_key)) {
+            mb = m["recipe_options"].value(backend_option_key, "");
+        }
+        if (!mb.empty() && mb != backend) continue;
+        std::string name = m.value("model_name", "");
+        if (name.empty()) continue;
+        previously_loaded.push_back({name, router_->get_model_recipe_options(name)});
+    }
+
+    for (const auto& s : previously_loaded) {
+        LOG(INFO, "Server") << "Unloading " << s.name
+                            << " before installing new " << recipe << ":" << backend
+                            << " binary" << std::endl;
+        try {
+            router_->unload_model(s.name);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Failed to unload " << s.name << ": " << e.what() << std::endl;
+        }
+    }
+
+    // Install the new binary. install_from_github bails early when the user's
+    // value resolves to a path (find_external_backend_binary returns it). When
+    // version.txt mismatches the resolved version, the install dir is wiped
+    // and re-downloaded.
+    try {
+        backend_manager_->install_backend(recipe, backend);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "install_backend(" << recipe << ":" << backend
+                               << ") failed after *_bin change: " << e.what() << std::endl;
+    }
+
+    // Best-effort reload of previously-loaded models on the new binary.
+    for (const auto& s : previously_loaded) {
+        try {
+            auto info = model_manager_->get_model_info(s.name);
+            router_->load_model(s.name, info, s.opts, true);
+            LOG(INFO, "Server") << "Reloaded " << s.name << " on new "
+                                << recipe << ":" << backend << " binary" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Failed to reload " << s.name
+                                   << " after *_bin hot-swap: " << e.what() << std::endl;
+        }
+    }
+
+    SystemInfoCache::invalidate_recipes();
+    model_manager_->invalidate_models_cache();
+}
+
+void Server::apply_config_side_effects(const json& applied_changes) {
+    for (auto& [key, value] : applied_changes.items()) {
         if (key == "port") {
             int new_port = config_->port();
             int current_port = port_.load();
@@ -3656,6 +3742,16 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (value.is_object()) {
+            // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
+            // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.
+            for (auto& [sub_key, sub_value] : value.items()) {
+                if (sub_key.size() >= 4
+                    && sub_key.compare(sub_key.size() - 4, 4, "_bin") == 0) {
+                    handle_bin_change(key, sub_key,
+                                      sub_value.is_string() ? sub_value.get<std::string>() : "");
+                }
+            }
         }
     }
 }
