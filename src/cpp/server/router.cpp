@@ -177,6 +177,7 @@ void Router::load_usage_stats() {
 void Router::persist_usage_stats_locked() const {
     try {
         fs::path stats_path = utils::path_from_utf8(usage_stats_path_);
+        fs::path tmp_path = utils::path_from_utf8(usage_stats_path_ + ".tmp");
         fs::create_directories(stats_path.parent_path());
 
         auto serialize_model_stats = [&](const std::map<std::string, ModelStats>& stats_map) {
@@ -205,13 +206,25 @@ void Router::persist_usage_stats_locked() const {
             {"by_device_type", serialize_model_stats(lifetime_usage_stats_.by_device_type)}
         };
 
-        std::ofstream file(stats_path);
-        if (!file) {
-            LOG(WARNING, "Router") << "Failed to persist usage stats to: " << usage_stats_path_ << std::endl;
-            return;
+        {
+            std::ofstream file(tmp_path);
+            if (!file) {
+                LOG(WARNING, "Router") << "Failed to open tmp stats file: " << usage_stats_path_ + ".tmp" << std::endl;
+                return;
+            }
+            file << persisted.dump();
+            file.flush();
         }
 
-        file << persisted.dump();
+        // Atomically replace the live file. On POSIX, rename(2) is atomic
+        // within a filesystem. On Windows, std::filesystem::rename replaces
+        // an existing target (MOVEFILE_REPLACE_EXISTING semantics in MSVC).
+        std::error_code ec;
+        fs::rename(tmp_path, stats_path, ec);
+        if (ec) {
+            LOG(WARNING, "Router") << "Failed to rename stats file: " << ec.message() << std::endl;
+            fs::remove(tmp_path, ec);
+        }
     } catch (const std::exception& e) {
         LOG(WARNING, "Router") << "Failed to persist usage stats: " << e.what() << std::endl;
     }
