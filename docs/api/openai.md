@@ -2,8 +2,6 @@
 
 This spec defines Lemonade's implementation of the [OpenAI API](https://developers.openai.com/api/docs).
 
-## Summary
-
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
 | `POST` | [`/v1/chat/completions`](#post-v1-chat-completions) | Chat Completions | messages -> completion |
