@@ -188,6 +188,14 @@ bool is_safe_executable_path(const std::string& path) {
     return !path.empty();
 }
 
+bool looks_like_path(const std::string& v) {
+    try {
+        return fs::path(v).is_absolute();
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 std::string find_flm_executable() {
 #ifdef _WIN32
     // On Windows, only check the Lemonade install directory (auto-installed zip).
@@ -250,6 +258,8 @@ bool is_ggml_hip_plugin_available() {
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
         "/usr/lib/x86_64-linux-gnu/ggml/backends0/libggml-hip.so",
+	// Arch AUR path
+	"/usr/lib/libggml-hip.so",
         // Standard Linux paths
         "/usr/lib/ggml/backends0/libggml-hip.so",
         "/usr/lib64/ggml/backends0/libggml-hip.so"

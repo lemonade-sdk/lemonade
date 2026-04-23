@@ -147,18 +147,22 @@ jobs:
     name: Validate ${{ matrix.backend }}${{ matrix.channel && format(' ({0})', matrix.channel) || '' }}
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
-    runs-on: [self-hosted, Windows, 128gb]
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - backend: vulkan
+            runner: [self-hosted, Windows, 128gb, vulkan]
           - backend: rocm
             channel: stable
+            runner: [self-hosted, Windows, 128gb, rocm]
           - backend: rocm
             channel: preview
+            runner: [self-hosted, Windows, 128gb, rocm]
           - backend: rocm
             channel: nightly
+            runner: [self-hosted, Windows, 128gb, rocm]
     steps:
       - uses: actions/checkout@v5
         with:

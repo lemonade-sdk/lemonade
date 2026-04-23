@@ -1,6 +1,7 @@
 #include "lemon/system_info.h"
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
+#include "lemon/backend_manager.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
@@ -377,6 +378,55 @@ static std::string get_install_command(const std::string& recipe, const std::str
         }
     }
     return "lemonade backends install " + recipe + ":" + backend;
+}
+
+// Extract every contiguous run of digits from `s` into a vector of ints.
+// Used by version_compare to handle the variety of upstream tag conventions
+// across our backends:
+//   - "b8664"             -> [8664]   (llama.cpp, kokoro)
+//   - "v1.8.2"            -> [1, 8, 2] (whisper.cpp, flm, ryzenai)
+//   - "master-569-ab6afe8"-> [569, 6]  (sd-cpp)
+// Hex hashes contribute their numeric digits; that's noisy but harmless because
+// we only compare tags from the same repo, which share a tag format.
+static std::vector<int> numeric_runs(const std::string& s) {
+    std::vector<int> out;
+    long long cur = 0;
+    bool in_num = false;
+    for (char c : s) {
+        if (std::isdigit(static_cast<unsigned char>(c))) {
+            cur = cur * 10 + (c - '0');
+            in_num = true;
+        } else if (in_num) {
+            out.push_back(static_cast<int>(cur));
+            cur = 0;
+            in_num = false;
+        }
+    }
+    if (in_num) out.push_back(static_cast<int>(cur));
+    return out;
+}
+
+// Returns -1 / 0 / +1 for a < b / a == b / a > b. When either input lacks any
+// digit runs, returns 0 — this is fail-safe: ambiguous comparisons suppress the
+// upgrade signal rather than nag the user incorrectly.
+static int version_compare(const std::string& a, const std::string& b) {
+    if (a == b) return 0;
+    auto pa = numeric_runs(a);
+    auto pb = numeric_runs(b);
+    if (pa.empty() || pb.empty()) return 0;
+    size_t n = pa.size() > pb.size() ? pa.size() : pb.size();
+    for (size_t i = 0; i < n; ++i) {
+        int ai = i < pa.size() ? pa[i] : 0;
+        int bi = i < pb.size() ? pb[i] : 0;
+        if (ai < bi) return -1;
+        if (ai > bi) return +1;
+    }
+    return 0;
+}
+
+// True if the user's *_bin config value for this (recipe, backend) is "latest".
+static bool is_bin_pinned_to_latest(const std::string& recipe, const std::string& backend) {
+    return BackendUtils::get_bin_config_value(recipe, backend) == "latest";
 }
 
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend) {
@@ -933,12 +983,30 @@ json SystemInfo::build_recipes_info(const json& devices) {
             std::string installed_version = get_recipe_version(def.recipe, def.backend);
             std::string expected_version = get_expected_backend_version(def.recipe, def.backend);
 
+            // The user's *_bin pin overrides what the state machine considers
+            // "expected" — otherwise an explicit-tag pin (e.g. b8664) would
+            // perpetually emit update_required because the lemonade baseline
+            // differs, and a path pin would do the same with no version.txt.
+            {
+                std::string user_pin = BackendUtils::get_bin_config_value(def.recipe, def.backend);
+                if (!user_pin.empty() && user_pin != "builtin" && user_pin != "latest") {
+                    if (utils::looks_like_path(user_pin)) {
+                        // User-managed binary; lemonade doesn't track its version.
+                        expected_version.clear();
+                    } else {
+                        // Bare upstream tag — that tag IS what the user expects.
+                        expected_version = user_pin;
+                    }
+                }
+            }
+
             if (!installed_version.empty() && installed_version != "unknown") {
                 backend["version"] = installed_version;
             }
 
             bool version_known = !installed_version.empty() && installed_version != "unknown";
             bool has_expected = !expected_version.empty();
+            bool latest_pin = is_bin_pinned_to_latest(def.recipe, def.backend);
             bool needs_update;
 #if !defined(_WIN32)
             // On non-Windows, FLM is a system-managed package; a version newer
@@ -951,21 +1019,44 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     ? (installed_ver >= expected_ver)
                     : (installed_version == expected_version);
                 needs_update = has_expected && (!version_known || !version_at_least_expected);
+            } else
+#endif
+            if (latest_pin) {
+                // For *_bin = "latest", the installed version is allowed to be
+                // newer than the lemonade-shipped baseline. Only force
+                // update_required when it is *older* than the baseline.
+                needs_update = has_expected
+                    && (!version_known
+                        || version_compare(installed_version, expected_version) < 0);
             } else {
                 needs_update = has_expected && (!version_known || installed_version != expected_version);
             }
-#else
-            needs_update = has_expected && (!version_known || installed_version != expected_version);
-#endif
 
             if (needs_update) {
                 backend["state"] = "update_required";
                 backend["message"] = "Backend update is required before use.";
                 backend["action"] = get_install_command(def.recipe, def.backend);
             } else {
-                backend["state"] = "installed";
-                backend["message"] = "";
-                backend["action"] = "";
+                // Soft "update_available" signal for *_bin = "latest" backends
+                // when GitHub has a newer release than what's installed. The
+                // backend keeps running on the installed version; the user
+                // triggers the upgrade explicitly via the install command/UI.
+                std::string latest_tag;
+                if (latest_pin && version_known) {
+                    if (auto* bm = BackendManager::global()) {
+                        latest_tag = bm->get_or_resolve_latest_tag(def.recipe, def.backend);
+                    }
+                }
+                if (!latest_tag.empty()
+                    && version_compare(installed_version, latest_tag) < 0) {
+                    backend["state"] = "update_available";
+                    backend["message"] = "Newer upstream release available: " + latest_tag;
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                } else {
+                    backend["state"] = "installed";
+                    backend["message"] = "";
+                    backend["action"] = "";
+                }
             }
         }
 
@@ -1656,10 +1747,12 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
                 }
                 gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
 
-                // Get VRAM
-                uint64_t adapter_ram = wmi::get_property_uint64(pObj, L"AdapterRAM");
-                if (adapter_ram > 0) {
-                    gpu.vram_gb = adapter_ram / (1024.0 * 1024.0 * 1024.0);
+                // Try dxdiag first (most reliable for dedicated memory)
+                gpu.vram_gb = get_gpu_vram_dxdiag(name);
+
+                // Fallback to nvidia-smi if dxdiag fails
+                if (gpu.vram_gb == 0.0) {
+                    gpu.vram_gb = get_nvidia_vram_smi();
                 }
 
                 gpus.push_back(gpu);
@@ -1880,90 +1973,109 @@ double WindowsSystemInfo::get_gpu_vram_wmi(uint64_t adapter_ram) {
     return 0.0;
 }
 
-double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
-    // Get GPU VRAM using dxdiag (most reliable for dedicated memory)
-    // Similar to Python's _get_gpu_vram_dxdiag_simple method
+double WindowsSystemInfo::get_nvidia_vram_smi() {
+    std::string output;
+    int rc = lemon::utils::ProcessManager::run_command(
+        "nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits", output, 5);
+    if (rc != 0) {
+        return 0.0;
+    }
+
+    std::istringstream iss(output);
+    std::string first_line;
+    if (!std::getline(iss, first_line)) {
+        return 0.0;
+    }
 
     try {
-        // Create temp file path
-        char temp_path[MAX_PATH];
-        char temp_dir[MAX_PATH];
-        GetTempPathA(MAX_PATH, temp_dir);
-        GetTempFileNameA(temp_dir, "dxd", 0, temp_path);
-
-        // Run dxdiag /t temp_path (use CreateProcess to avoid console window flash)
-        std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
-        STARTUPINFOA si = {};
-        si.cb = sizeof(si);
-        PROCESS_INFORMATION pi = {};
-        if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
-                           nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
-                           nullptr, nullptr, &si, &pi)) {
-            DeleteFileA(temp_path);
-            return 0.0;
-        }
-        // Wait for dxdiag to finish (up to 10s)
-        WaitForSingleObject(pi.hProcess, 10000);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-
-        // Read the file
-        std::ifstream file(temp_path);
-        if (!file.is_open()) {
-            DeleteFileA(temp_path);
-            return 0.0;
-        }
-
-        std::string line;
-        bool found_gpu = false;
-        double vram_gb = 0.0;
-
-        // Convert gpu_name to lowercase for case-insensitive comparison
-        std::string gpu_name_lower = gpu_name;
-        std::transform(gpu_name_lower.begin(), gpu_name_lower.end(), gpu_name_lower.begin(), ::tolower);
-
-        while (std::getline(file, line)) {
-            // Convert line to lowercase for case-insensitive search
-            std::string line_lower = line;
-            std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-
-            // Check if this is our GPU
-            if (line_lower.find("card name:") != std::string::npos &&
-                line_lower.find(gpu_name_lower) != std::string::npos) {
-                found_gpu = true;
-                continue;
-            }
-
-            // Look for dedicated memory line
-            if (found_gpu && line_lower.find("dedicated memory:") != std::string::npos) {
-                // Extract memory value (format: "Dedicated Memory: 12345 MB")
-                std::regex memory_regex(R"((\d+(?:\.\d+)?)\s*MB)", std::regex::icase);
-                std::smatch match;
-                if (std::regex_search(line, match, memory_regex)) {
-                    try {
-                        double vram_mb = std::stod(match[1].str());
-                        vram_gb = std::round(vram_mb / 1024.0 * 10.0) / 10.0;  // Convert to GB, round to 1 decimal
-                        break;
-                    } catch (...) {
-                        // Continue searching
-                    }
-                }
-            }
-
-            // Reset if we hit another display device
-            if (line_lower.find("card name:") != std::string::npos &&
-                line_lower.find(gpu_name_lower) == std::string::npos) {
-                found_gpu = false;
-            }
-        }
-
-        file.close();
-        DeleteFileA(temp_path);
-
-        return vram_gb;
+        double vram_mb = std::stod(first_line);
+        return std::round(vram_mb / 1024.0 * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
     }
+}
+
+void WindowsSystemInfo::load_dxdiag_cache() {
+    char temp_path[MAX_PATH];
+    char temp_dir[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_dir);
+    if (GetTempFileNameA(temp_dir, "dxd", 0, temp_path) == 0) {
+        return;
+    }
+
+    std::string command = "dxdiag /t \"" + std::string(temp_path) + "\"";
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessA(nullptr, const_cast<char*>(command.c_str()),
+                        nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                        nullptr, nullptr, &si, &pi)) {
+        DeleteFileA(temp_path);
+        return;
+    }
+    WaitForSingleObject(pi.hProcess, 10000);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    std::ifstream file(temp_path);
+    if (!file.is_open()) {
+        DeleteFileA(temp_path);
+        return;
+    }
+
+    std::string line;
+    std::string current_card_lower;
+    std::regex memory_regex(R"((\d+(?:\.\d+)?)\s*MB)", std::regex::icase);
+
+    while (std::getline(file, line)) {
+        std::string line_lower = line;
+        std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+
+        auto card_pos = line_lower.find("card name:");
+        if (card_pos != std::string::npos) {
+            std::string card = line_lower.substr(card_pos + std::string("card name:").size());
+            size_t start = card.find_first_not_of(" \t");
+            size_t end   = card.find_last_not_of(" \t\r\n");
+            current_card_lower = (start == std::string::npos)
+                ? std::string()
+                : card.substr(start, end - start + 1);
+            continue;
+        }
+
+        if (!current_card_lower.empty() &&
+            line_lower.find("dedicated memory:") != std::string::npos) {
+            std::smatch match;
+            if (std::regex_search(line, match, memory_regex)) {
+                try {
+                    double vram_mb = std::stod(match[1].str());
+                    double vram_gb = std::round(vram_mb / 1024.0 * 10.0) / 10.0;
+                    dxdiag_vram_cache_.emplace_back(current_card_lower, vram_gb);
+                } catch (...) {
+                }
+            }
+            current_card_lower.clear();
+        }
+    }
+
+    file.close();
+    DeleteFileA(temp_path);
+}
+
+double WindowsSystemInfo::get_gpu_vram_dxdiag(const std::string& gpu_name) {
+    if (!dxdiag_cache_loaded_) {
+        load_dxdiag_cache();
+        dxdiag_cache_loaded_ = true;
+    }
+
+    std::string gpu_name_lower = gpu_name;
+    std::transform(gpu_name_lower.begin(), gpu_name_lower.end(), gpu_name_lower.begin(), ::tolower);
+
+    for (const auto& entry : dxdiag_vram_cache_) {
+        if (entry.first.find(gpu_name_lower) != std::string::npos) {
+            return entry.second;
+        }
+    }
+    return 0.0;
 }
 
 #endif // _WIN32

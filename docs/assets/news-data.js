@@ -1,6 +1,33 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "AMD Making It Easier To Embed Lemonade AI Capabilities Into Other Apps",
+        url: "https://www.phoronix.com/news/Lemonade-SDK-10.2-Released",
+        date: "April 9, 2026",
+        description: "Phoronix covers the Lemonade SDK 10.2 release, which publishes embeddable artifacts so developers can bundle Lemonade's local AI stack into their own apps.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
+        title: "Lemonade 10.1 Released For Latest Improvements For Local LLMs On AMD GPUs & NPUs",
+        url: "https://www.phoronix.com/news/Lemonade-10.1-Released",
+        date: "April 7, 2026",
+        description: "Phoronix highlights Lemonade 10.1, featuring a revamped CLI, async model loading, super resolution upscaling, and Gemma 4 GPU support.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
+        title: "LLMs on Linux with FastFlowLM",
+        url: "https://lemonade-server.ai/flm_npu_linux.html",
+        date: "March 11, 2026",
+        description: "Run LLMs and Whisper on AMD XDNA 2 NPUs under Linux using the upstream NPU driver, AMD IRON compiler, FastFlowLM runtime, and Lemonade.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "tutorial"
+        },
+    {
         title: "Lemonade by AMD: A Unified API for Local AI Developers",
         url: "https://www.amd.com/en/developer/resources/technical-articles/2026/lemonade-for-local-ai.html",
         date: "February 10, 2026",

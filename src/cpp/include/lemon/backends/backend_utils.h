@@ -102,5 +102,22 @@ namespace lemon::backends {
 
         /** Checks the environment for a variable following the scheme LEMONADE_BACKEND_VARIANT_BIN and return its value, if available. Generally only used internally by BackendUtils */
         static std::string find_external_backend_binary(const std::string& recipe, const std::string& backend);
+
+        /**
+         * Returns the raw user-supplied *_bin config value for this (recipe, backend),
+         * e.g. "builtin" / "latest" / "b8664" / "/path/to/bin" / "". Empty string when
+         * RuntimeConfig is unavailable or the key is unset. Does not validate or resolve.
+         */
+        static std::string get_bin_config_value(const std::string& recipe, const std::string& backend);
+
+        /**
+         * Build the (config_section, bin_key) pair used to look up a *_bin value
+         * for a (recipe, backend). Handles the rocm channel collapse and the
+         * "server_bin" singleton. Used by the lookup, install, and validation paths.
+         */
+        static void build_bin_config_key(const std::string& recipe,
+                                         const std::string& backend,
+                                         std::string& out_section,
+                                         std::string& out_bin_key);
     };
 } // namespace lemon::backends
