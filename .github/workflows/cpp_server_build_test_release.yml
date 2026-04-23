@@ -756,7 +756,7 @@ jobs:
             extra_args: "--wrapped-server flm"
             backends: "npu"
             runner: [Windows, xdna2]
-          - name: stable-diffusion
+          - name: stable-diffusion CPU
             script: server_sd.py
             extra_args: ""
             backends: "cpu"
@@ -766,11 +766,11 @@ jobs:
             extra_args: ""
             backends: ""
             runner: [self-hosted, Windows]
-          - name: stable-diffusion (stx-halo)
+          - name: stable-diffusion ROCm
             script: server_sd.py
             extra_args: ""
             backends: "rocm"
-            runner: [Windows, rocm, stx-halo]
+            runner: [Windows, rocm]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
