@@ -5301,7 +5301,7 @@ body.install-options {
     justify-items: stretch;
     gap: 0;
     position: relative;
-    padding: 0 2.1rem;
+    padding: 0;
   }
 
   .hp-release-nav {
@@ -5318,17 +5318,23 @@ body.install-options {
   }
 
   .hp-release-nav-prev {
-    left: 0.1rem;
+    left: -0.35rem;
   }
 
   .hp-release-nav-next {
-    right: 0.1rem;
+    right: -0.35rem;
   }
 
   .hp-release-section .release-announcement {
-    width: min(700px, 100%);
+    width: 100%;
     min-width: 0;
-    max-width: min(700px, 100%);
+    max-width: 100%;
+    padding: var(--page-space-md);
+  }
+
+  .hp-release-section .release-link {
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .hp-logo-chip img {
