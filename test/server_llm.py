@@ -841,21 +841,26 @@ class LLMTests(ServerTestBase):
                 if erase_response.status_code == 200:
                     erase_data = erase_response.json()
                     print(f"Slots erase response: {erase_data}")
-                    self.assertIn("id_slot", erase_data)
-                    self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
-                else:
-                    # Received an error response from the erase endpoint, this may be because the server
-                    # was not started with the --slot-save-path argument,
-                    # but we should at least get a valid JSON error response
-                    try:
-                        error_data = erase_response.json()
-                        print(f"Slots erase error response: {error_data}")
-                        self.assertIn("error", error_data)
-                        self.assertIsInstance(error_data["error"], dict)
-                    except Exception as e:
-                        self.fail(
-                            f"Failed to parse JSON from slots erase response: {e}"
+                    if "id_slot" in erase_data:
+                        self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
+                    elif "error" in erase_data:
+                        # Received an error response from the erase endpoint, this may be because the server
+                        # was not started with the --slot-save-path argument
+                        print(
+                            f"Slots erase backend error response: {erase_data['error']}"
                         )
+                        pass
+                    else:
+                        self.fail(
+                            f"Unexpected response from slots erase endpoint: {erase_data}"
+                        )
+                else:
+                    error_data = erase_response.json()
+                    print(f"Slots erase error response: {error_data}")
+                    self.fail(
+                        f"Failed to erase slot with id {slot_id_to_erase}, "
+                        f"status code: {erase_response.status_code}"
+                    )
 
             else:
                 self.fail("No slot id found to erase in /api/v1/slots response")
