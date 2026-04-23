@@ -41,6 +41,12 @@ We are also actively investigating and developing [additional endpoints](#lemona
 These endpoints defined by `llama.cpp` extend the OpenAI-compatible API with additional functionality.
 
 - POST `/api/v1/reranking` - Reranking (query + documents -> relevance-scored documents)
+- GET `/slots` - Returns the current slots processing state
+- POST `/slots/{id}?action=save` - Save the prompt cache of the specified slot to a file
+- POST `/slots/{id}?action=restore` - Restore the prompt cache of the specified slot from a file
+- POST `/slots/{id}?action=erase` - Erase the prompt cache of the specified slot
+
+**Note:** The `POST /slots` save and restore actions require a `filename` and for the llamacpp backend to be configured with `--slot-save-path <PATH>` argument.  This argument should be added to the `llamacpp.args` string in the `config.json` file.  See [Server Configuration](./configuration.md) for how to configure this.
 
 ### Lemonade-Specific Endpoints
 
