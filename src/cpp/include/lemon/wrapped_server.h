@@ -50,6 +50,12 @@ struct Telemetry {
 
 class WrappedServer : public ICompletionServer {
 public:
+    struct RawBackendResponse {
+        int status_code = 0;
+        std::string content_type;
+        std::string body;
+    };
+
     WrappedServer(const std::string& server_name, const std::string& log_level,
                   ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
@@ -165,6 +171,11 @@ protected:
 
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
+
+    // Raw forwarding variant that preserves backend HTTP status/body exactly.
+    RawBackendResponse forward_request_raw(const std::string& endpoint,
+                                           const json& request,
+                                           long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,

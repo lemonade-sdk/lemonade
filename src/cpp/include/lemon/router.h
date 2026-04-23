@@ -69,6 +69,8 @@ public:
     json embeddings(const json& request);
     json reranking(const json& request);
     json responses(const json& request);
+    json anthropic_messages(const json& request);
+    json anthropic_count_tokens(const json& request);
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     json audio_transcriptions(const json& request);
@@ -83,6 +85,7 @@ public:
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void responses_stream(const std::string& request_body, httplib::DataSink& sink);
+    void anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink);
 
     // Get telemetry data
     json get_stats() const;

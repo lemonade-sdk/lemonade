@@ -68,6 +68,22 @@ public:
     virtual json image_variations(const json& request) = 0;
 };
 
+// Optional Anthropic Messages API capability
+class IAnthropicServer : public virtual ICapability {
+public:
+    virtual ~IAnthropicServer() = default;
+
+    // Anthropic /v1/messages
+    virtual json anthropic_messages(const json& request) = 0;
+
+    // Anthropic /v1/messages streaming
+    virtual void anthropic_messages_stream(const std::string& request_body,
+                                           httplib::DataSink& sink) = 0;
+
+    // Anthropic /v1/messages/count_tokens
+    virtual json anthropic_count_tokens(const json& request) = 0;
+};
+
 // Helper to check if a server supports a capability
 template<typename T>
 bool supports_capability(ICapability* server) {
