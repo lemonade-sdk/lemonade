@@ -23,6 +23,8 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "config_version": 1,
   "port": 13305,
   "host": "localhost",
+  "external_url": "",
+  "websocket_port": "auto",
   "log_level": "info",
   "global_timeout": 300,
   "max_loaded_models": 1,
@@ -77,6 +79,8 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 |-----|------|---------|-------------|
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
+| `external_url` | string | "" | Public browser-facing base URL for the web app when served behind a reverse proxy. Must be an `http://` or `https://` URL. May include a path prefix such as `https://example.com/lemonade` |
+| `websocket_port` | int or `"auto"` | `"auto"` | Port for the standalone WebSocket server used by `/realtime` and `/logs/stream`. Use a fixed value for reverse-proxy deployments |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
 | `global_timeout` | int | 300 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
@@ -154,6 +158,12 @@ Top-level settings use their JSON key name directly. Nested backend settings use
 # Change the server port and log level
 lemonade config set port=9000 log_level=debug
 
+# Configure a public URL for the web app behind a reverse proxy
+lemonade config set external_url=https://example.com/lemonade
+
+# Pin the WebSocket port for reverse-proxy routing
+lemonade config set websocket_port=9000
+
 # Change a backend setting
 lemonade config set llamacpp.backend=rocm
 
@@ -223,6 +233,28 @@ lemonade config set host=0.0.0.0
 ```
 
 > **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` to manage access.
+
+## Reverse Proxy Deployments
+
+When the Lemonade web app is published through a reverse proxy, configure the server with a public URL and a fixed WebSocket port:
+
+```bash
+lemonade config set external_url=https://example.com/lemonade websocket_port=9000
+```
+
+`external_url` is used by the browser-facing web app to derive:
+
+- REST API calls under `<external_url>/api/v1/...`
+- Realtime transcription at `<external_url>/realtime`
+- Log streaming at `<external_url>/logs/stream`
+
+Your reverse proxy should route:
+
+- `<external_url>/api/*` and web app assets to Lemonade's HTTP server (`port`)
+- `<external_url>/realtime` to Lemonade's WebSocket server (`websocket_port`) with WebSocket upgrade enabled
+- `<external_url>/logs/stream` to Lemonade's WebSocket server (`websocket_port`) with WebSocket upgrade enabled
+
+If `websocket_port` is left at `"auto"`, Lemonade will still work for local/direct connections, but reverse proxies cannot reliably target a stable upstream WebSocket port.
 
 ## Next Steps
 

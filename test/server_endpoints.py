@@ -782,9 +782,11 @@ class EndpointTests(ServerTestBase):
             "Physical Memory",
             "devices",
             "recipes",
+            "external_url",
         ]
         for key in required_keys:
             self.assertIn(key, data, f"Missing required key: {key}")
+        self.assertIsInstance(data["external_url"], str)
 
         # Verify devices structure
         devices = data["devices"]

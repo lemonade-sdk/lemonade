@@ -82,8 +82,13 @@ const StatusBar: React.FC = () => {
     fetchStats();
     fetchSystemStats();
 
-    const initialUrl = serverConfig.getServerBaseUrl();
-    setServerUrl(initialUrl);
+    let isMounted = true;
+    serverConfig.waitForInit().then(() => {
+      if (!isMounted) {
+        return;
+      }
+      setServerUrl(serverConfig.getServerBaseUrl());
+    });
 
     const handleInferenceComplete = () => {
       fetchStats();
@@ -97,6 +102,7 @@ const StatusBar: React.FC = () => {
     });
 
     return () => {
+      isMounted = false;
       window.removeEventListener('inference-complete', handleInferenceComplete);
       unsubscribe();
     };

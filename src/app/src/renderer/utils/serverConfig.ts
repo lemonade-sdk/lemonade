@@ -12,6 +12,48 @@ import { tauriReady } from '../tauriShim';
 type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
+const trimTrailingSlashes = (value: string): string => value.replace(/\/+$/, '');
+const ensureLeadingSlash = (value: string): string => value.startsWith('/') ? value : `/${value}`;
+const normalizeWebAppBasePath = (pathname: string): string => {
+  let normalizedPath = trimTrailingSlashes(pathname || '/');
+
+  if (!normalizedPath || normalizedPath === '/') {
+    return '';
+  }
+
+  if (normalizedPath.endsWith('/index.html')) {
+    normalizedPath = trimTrailingSlashes(
+      normalizedPath.slice(0, -'/index.html'.length),
+    );
+  }
+
+  if (normalizedPath === '/web-app') {
+    return '';
+  }
+
+  if (normalizedPath.endsWith('/web-app')) {
+    normalizedPath = trimTrailingSlashes(
+      normalizedPath.slice(0, -'/web-app'.length),
+    );
+  }
+
+  return normalizedPath === '/' ? '' : normalizedPath;
+};
+
+const deriveWebAppBaseUrl = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const origin = window.location?.origin;
+  if (!origin || origin === 'null') {
+    return null;
+  }
+
+  const basePath = normalizeWebAppBasePath(window.location?.pathname ?? '/');
+  return `${trimTrailingSlashes(origin)}${basePath}`;
+};
+
 class ServerConfig {
   private port: number = 13305;
   private explicitBaseUrl: string | null = null;
@@ -22,6 +64,7 @@ class ServerConfig {
   private discoveryPromise: Promise<number | null> | null = null;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+  private hasExternalUrl: boolean = false;
 
   constructor() {
     // Initialize from the host (Tauri invoke bridge or web-app mock) on startup.
@@ -42,49 +85,98 @@ class ServerConfig {
 
     try {
       // Get API Key if available
-      if (typeof window !== 'undefined'&& window.api?.getServerAPIKey) {
+      if (typeof window !== 'undefined' && window.api?.getServerAPIKey) {
         this.apiKey = await window.api.getServerAPIKey();
       }
 
-      // In web app mode, use the current origin as the server base URL
+      let configured = false;
+
       if (typeof window !== 'undefined' && window.api?.isWebApp) {
-        const origin = window.location?.origin;
-        if (origin && origin !== 'null') {
-          const trimmedOrigin = origin.replace(/\/+$/, '');
-          console.log('Using web app origin as server base URL:', trimmedOrigin);
-          this.explicitBaseUrl = trimmedOrigin;
-          this.initialized = true;
-          return;
-        }
+        configured = await this.initializeWebAppBaseUrl();
       }
 
-      // Check if an explicit base URL was configured (--base-url or env var)
-      if (typeof window !== 'undefined' && window.api?.getServerBaseUrl && window.api?.getServerAPIKey) {
+      // In Tauri mode, use an explicit base URL when configured via --base-url
+      // or the environment. The separate websocket_port still applies there.
+      if (!configured && typeof window !== 'undefined' && window.api?.getServerBaseUrl) {
         const baseUrl = await window.api.getServerBaseUrl();
         if (baseUrl) {
-          console.log('Using explicit server base URL:', baseUrl);
-          this.explicitBaseUrl = baseUrl;
+          const normalizedBaseUrl = trimTrailingSlashes(baseUrl);
+          console.log('Using explicit server base URL:', normalizedBaseUrl);
+          this.explicitBaseUrl = normalizedBaseUrl;
+          this.hasExternalUrl = false;
+          configured = true;
         }
-
-        this.initialized = true;
-        return;
       }
 
       // No explicit URL - use localhost with port discovery
-      if (typeof window !== 'undefined' && window.api?.getServerPort) {
+      if (!configured && typeof window !== 'undefined' && window.api?.getServerPort) {
         const port = await window.api.getServerPort();
         if (port) {
           this.port = port;
         }
+
+        console.log('Using localhost mode with port:', this.port);
       }
 
-      console.log('Using localhost mode with port:', this.port);
       this.initialized = true;
     } catch (error) {
       console.error('Failed to initialize server config:', error);
       this.initialized = true;
     }
 
+    this.registerEventListeners();
+  }
+
+  private async initializeWebAppBaseUrl(): Promise<boolean> {
+    const browserBaseUrl = deriveWebAppBaseUrl();
+    if (!browserBaseUrl) {
+      return false;
+    }
+
+    console.log('Using web app request base URL:', browserBaseUrl);
+    this.explicitBaseUrl = browserBaseUrl;
+    this.hasExternalUrl = false;
+
+    await this.loadExternalUrlFromSystemInfo(browserBaseUrl);
+    return true;
+  }
+
+  private async loadExternalUrlFromSystemInfo(browserBaseUrl: string): Promise<void> {
+    try {
+      const headers = this.apiKey
+        ? { Authorization: `Bearer ${this.apiKey}` }
+        : undefined;
+      const response = await fetch(
+        `${browserBaseUrl}/api/v1/system-info`,
+        headers ? { headers } : undefined,
+      );
+
+      if (!response.ok) {
+        console.warn(
+          'Failed to fetch /system-info for external_url:',
+          response.status,
+        );
+        return;
+      }
+
+      const systemInfo = await response.json();
+      const externalUrl = typeof systemInfo.external_url === 'string'
+        ? trimTrailingSlashes(systemInfo.external_url)
+        : '';
+
+      if (!externalUrl) {
+        return;
+      }
+
+      console.log('Using external_url from /system-info:', externalUrl);
+      this.explicitBaseUrl = externalUrl;
+      this.hasExternalUrl = true;
+    } catch (error) {
+      console.warn('Failed to fetch /system-info for external_url:', error);
+    }
+  }
+
+  private registerEventListeners() {
     // Register event listeners AFTER the first await-cycle so window.api is
     // guaranteed to be installed. tauriShim.ts installs window.api via a
     // fire-and-forget async call that completes on the microtask queue; the
@@ -157,6 +249,16 @@ class ServerConfig {
   }
 
   /**
+   * Whether the active web-app base URL came from the server's external_url
+   * config surfaced through /system-info. When true, browser WebSocket
+   * clients should derive public URLs from that base URL instead of using
+   * websocket_port directly.
+   */
+  isExternalUrl(): boolean {
+    return this.hasExternalUrl;
+  }
+
+  /**
    * Get the server API key
    */
   getAPIKey(): string {
@@ -179,9 +281,11 @@ class ServerConfig {
   }
 
   private setUpdatedURL(baseURL: string) {
-    if (this.explicitBaseUrl != baseURL) {
-      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${baseURL}`);
-      this.explicitBaseUrl = baseURL;
+    const normalizedBaseUrl = trimTrailingSlashes(baseURL);
+    if (this.explicitBaseUrl != normalizedBaseUrl) {
+      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${normalizedBaseUrl}`);
+      this.explicitBaseUrl = normalizedBaseUrl;
+      this.hasExternalUrl = false;
       this.notifyPortListeners();
       this.notifyUrlListeners();
     }
@@ -306,11 +410,11 @@ class ServerConfig {
 
     const options = { ...opts };
 
-    if(this.apiKey != null && this.apiKey != '') {
+    if (this.apiKey != null && this.apiKey != '') {
       options.headers = {
         ...options.headers,
         Authorization: `Bearer ${this.apiKey}`,
-      }
+      };
     }
 
     try {
@@ -350,7 +454,28 @@ export const getServerHost = () => serverConfig.getServerHost();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
-export const getWebSocketProtocol = () => new URL(serverConfig.getServerBaseUrl()).protocol === 'https:' ? 'wss' : 'ws';
+export const isExternalUrl = () => serverConfig.isExternalUrl();
+export const getWebSocketUrl = (endpointPath: string, wsPort: number, query?: URLSearchParams) => {
+  const normalizedPath = ensureLeadingSlash(endpointPath);
+  const queryString = query?.toString();
+
+  if (serverConfig.isExternalUrl()) {
+    const baseUrl = new URL(serverConfig.getServerBaseUrl());
+    baseUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const basePath = trimTrailingSlashes(baseUrl.pathname);
+    baseUrl.pathname = `${basePath}${normalizedPath}` || normalizedPath;
+    baseUrl.search = queryString ? `?${queryString}` : '';
+    baseUrl.hash = '';
+    return baseUrl.toString();
+  }
+
+  const serverBaseUrl = new URL(serverConfig.getServerBaseUrl());
+  const wsProtocol = serverBaseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = new URL(`${wsProtocol}//${serverConfig.getServerHost()}:${wsPort}`);
+  wsUrl.pathname = normalizedPath;
+  wsUrl.search = queryString ? `?${queryString}` : '';
+  return wsUrl.toString();
+};
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);

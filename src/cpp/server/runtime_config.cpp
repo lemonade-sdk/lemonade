@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
+#include <regex>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -38,6 +39,13 @@ static bool is_backend_name(const std::string& key) {
 static const std::vector<std::string> s_selectable_backends = {
     "llamacpp", "whispercpp", "sdcpp"
 };
+
+static bool is_valid_external_url(const std::string& url) {
+    static const std::regex s_external_url_re(
+        R"(^(https?)://([^/?#\s]+)(/[^?#\s]*)?$)",
+        std::regex::ECMAScript | std::regex::icase);
+    return std::regex_match(url, s_external_url_re);
+}
 
 static bool has_backend_selection(const std::string& config_section) {
     return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
@@ -118,6 +126,11 @@ int RuntimeConfig::websocket_port() const {
         return 0;  // OS auto-assign
     }
     return val.get<int>();
+}
+
+std::string RuntimeConfig::external_url() const {
+    std::shared_lock lock(mutex_);
+    return config_["external_url"].get<std::string>();
 }
 
 std::string RuntimeConfig::log_level() const {
@@ -279,6 +292,16 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
     } else if (key == "host") {
         if (!value.is_string()) {
             throw std::invalid_argument("'host' must be a string");
+        }
+    } else if (key == "external_url") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'external_url' must be a string");
+        }
+        std::string url = value.get<std::string>();
+        if (!url.empty() && !is_valid_external_url(url)) {
+            throw std::invalid_argument(
+                "'external_url' must be an http:// or https:// URL without query or fragment, "
+                "or empty to disable");
         }
     } else if (key == "websocket_port") {
         if (value.is_string()) {

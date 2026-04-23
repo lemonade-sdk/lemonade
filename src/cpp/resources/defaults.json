@@ -2,6 +2,7 @@
   "config_version": 1,
   "port": 13305,
   "host": "localhost",
+  "external_url": "",
   "websocket_port": "auto",
   "log_level": "info",
   "global_timeout": 300,
