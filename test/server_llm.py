@@ -786,7 +786,7 @@ class LLMTests(ServerTestBase):
 
     @skip_if_unsupported("slots")
     def test_023_slots(self):
-        """Test the /slots endpoint for llamacpp backend."""
+        """Test the /api/v1/slots endpoint for llamacpp backend."""
         # First ensure a model is loaded
         model = self.get_test_model("llm")
 
@@ -823,10 +823,12 @@ class LLMTests(ServerTestBase):
             # If there's an error, it should have an error field
             if "error" in data:
                 self.assertIsInstance(data["error"], str)
-                self.fail(f"Error response from /slots endpoint: {data['error']}")
+                self.fail(
+                    f"Error response from /api/v1/slots endpoint: {data['error']}"
+                )
             else:
                 # Fail
-                self.fail("Unexpected response format for /slots endpoint")
+                self.fail("Unexpected response format for /api/v1/slots endpoint")
 
         # Now erase one of the slots
         if isinstance(data, list) and len(data) > 0:
@@ -842,9 +844,9 @@ class LLMTests(ServerTestBase):
                 self.assertIn("id_slot", erase_data)
                 self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
             else:
-                self.fail("No slot id found to erase in /slots response")
+                self.fail("No slot id found to erase in /api/v1/slots response")
         else:
-            self.fail("No slots available to test erasure in /slots endpoint")
+            self.fail("No slots available to test erasure in /api/v1/slots endpoint")
 
 
 if __name__ == "__main__":

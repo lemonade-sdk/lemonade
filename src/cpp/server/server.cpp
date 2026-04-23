@@ -344,13 +344,13 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_reranking(req, res);
     });
 
-    // Slots (llama.cpp backend information) - NO API PREFIX
-    web_server.Get("/slots", [this](const httplib::Request& req, httplib::Response& res) {
+    // Slots (llama.cpp backend information)
+    register_get("slots", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots(req, res);
     });
 
-    // Slots action endpoints with slot ID (POST /slots/{id}?action=*) - NO API PREFIX
-    web_server.Post(R"(/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+    // Slots action endpoints with slot ID (POST /api/v1/slots/{id}?action=*)
+    web_server.Post(R"(/api/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots_by_id(req, res);
     });
 
@@ -1825,7 +1825,7 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
         if (action_param.empty()) {
             LOG(ERROR, "Server") << "Missing action parameter for slots POST endpoint" << std::endl;
             res.status = 400;
-            res.set_content("{\"error\": \"POST /slots/{id} requires action query parameter (e.g., ?action=erase)\"}", "application/json");
+            res.set_content("{\"error\": \"POST /api/v1/slots/{id} requires action query parameter (e.g., ?action=erase)\"}", "application/json");
             return;
         }
 
