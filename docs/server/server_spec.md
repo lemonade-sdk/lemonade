@@ -46,7 +46,13 @@ These endpoints defined by `llama.cpp` extend the OpenAI-compatible API with add
 - POST `/api/v1/slots/{id}?action=restore` - Restore the prompt cache of the specified slot from a file
 - POST `/api/v1/slots/{id}?action=erase` - Erase the prompt cache of the specified slot
 
-**Note:** The `POST /api/v1/slots/{id}` save and restore actions require a `filename` and for the llamacpp backend to be configured with `--slot-save-path <PATH>` argument.  This argument should be added to the `llamacpp.args` string in the `config.json` file.  See [Server Configuration](./configuration.md) for how to configure this.
+These endpoints are also available with `/api/v0`, `/v0` and `/v1` endpoint prefixes.
+
+**Notes:**
+
+The `POST /api/v1/slots/{id}` save and restore actions require a `filename`.  All the `POST /api/v1/slots/{id}` require the llamacpp backend to be configured with `--slot-save-path <PATH>` argument.  This argument should be added to the `llamacpp.args` string in the `config.json` file.  See [Server Configuration](./configuration.md) for more information.
+
+In the case of multiple loaded models, the `/slots` endpoint will apply to the most recently used backend.
 
 ### Lemonade-Specific Endpoints
 
