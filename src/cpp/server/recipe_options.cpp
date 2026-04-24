@@ -3,6 +3,7 @@
 #include <lemon/system_info.h>
 #endif
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <map>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>

@@ -65,7 +65,6 @@ nav:
   - FAQ Guide: faq.md
   - Lemonade CLI Guide: lemonade-cli.md
   - Application Guides:
-      - AI Dev Gallery: server/apps/ai-dev-gallery.md
       - AI Toolkit: server/apps/ai-toolkit.md
       - AnythingLLM: server/apps/anythingLLM.md
       - CodeGPT: server/apps/codeGPT.md
@@ -76,6 +75,7 @@ nav:
       - Open WebUI: server/apps/open-webui.md
       - Wut: server/apps/wut.md
   - Server Configuration: server/configuration.md
+  - OmniRouter (tools for agents): omni-router.md
   - Understanding local LLM servers: server/concepts.md
   - Developer Getting Started: dev-getting-started.md
   - Embeddable Lemonade:

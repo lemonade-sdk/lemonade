@@ -129,11 +129,6 @@ jobs:
           Write-Host "Using WiX from: $wixExe" -ForegroundColor Green
           & $wixExe --version
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '20'
-
       - name: Cache FetchContent dependencies
         uses: actions/cache@v5
         with:
@@ -142,28 +137,21 @@ jobs:
           restore-keys: |
             fetchcontent-windows-
 
-      - name: Configure CMake
+      - name: Run setup.ps1 to configure environment
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
-
-          # Clean build directory (but preserve cached _deps)
-          if (Test-Path "build") {
-              Get-ChildItem -Path "build" -Exclude "_deps" | Remove-Item -Recurse -Force
-          }
-
-          cmake --preset windows
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\setup.ps1
 
       - name: Build installers
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          Write-Host "Building C++ server, Electron app, web app, and MSI installers..." -ForegroundColor Cyan
+          Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
 
           # Single build command: wix_installers depends on all C++ targets,
-          # electron-app, and web-app via CMake dependency graph
+          # tauri-app, and web-app via CMake dependency graph
           cmake --build --preset windows --target wix_installers
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -173,7 +161,7 @@ jobs:
               "build\Release\lemond.exe",
               "build\Release\lemonade-server.exe",
               "build\Release\LemonadeServer.exe",
-              "build\app\win-unpacked\lemonade-app.exe",
+              "build\app\lemonade-app.exe",
               "build\resources\web-app\index.html",
               "lemonade-server-minimal.msi",
               "lemonade.msi"
@@ -345,7 +333,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-macos-dmg:
-    name: Build Lemonade macOS .dmg (with Electron App)
+    name: Build Lemonade macOS .dmg (with Tauri App)
     runs-on: macos-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -388,7 +376,7 @@ jobs:
       - name: Build macOS .dmg
         uses: ./.github/actions/build-macos-dmg
         with:
-          include-electron: 'true'
+          include-tauri: 'true'
           skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
 
       - name: Upload .pkg package
@@ -575,11 +563,6 @@ jobs:
           bash setup.sh
           echo "Build environment configured successfully!"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '20'
-
       - name: Build AppImage
         shell: bash
         run: |
@@ -752,42 +735,42 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
-            runner: [rai300_400, Windows]
+            runner: [Windows, vulkan, rocm]
           - name: ryzenai
             script: server_llm.py
             extra_args: "--wrapped-server ryzenai"
             backends: "cpu hybrid npu"
-            runner: [rai300_400, Windows]
+            runner: [Windows, xdna2]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
             backends: "npu"
-            runner: [rai300_400, Windows]
+            runner: [Windows, xdna2]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu npu"
-            runner: [rai300_400, Windows]
+            runner: [Windows, xdna2]
           - name: flm-whisper
             script: server_whisper.py
             extra_args: "--wrapped-server flm"
             backends: "npu"
-            runner: [rai300_400, Windows]
+            runner: [Windows, xdna2]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
             backends: "cpu"
-            runner: [rai300_400, Windows]
+            runner: [self-hosted, Windows]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
             backends: ""
-            runner: [rai300_400, Windows]
+            runner: [self-hosted, Windows]
           - name: stable-diffusion (stx-halo)
             script: server_sd.py
             extra_args: ""
             backends: "rocm"
-            runner: [stx-halo, Windows]
+            runner: [Windows, rocm, stx-halo]
     env:
       LEMONADE_CI_MODE: "True"
       LEMONADE_CACHE_DIR: ".\\ci-cache"
@@ -863,7 +846,7 @@ jobs:
 
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
-    runs-on: [rai300_400, Linux]
+    runs-on: ${{ matrix.runner }}
     needs: build-lemonade-deb
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
@@ -875,22 +858,27 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
             backends: "cpu rocm"
+            runner: [Linux, rocm]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
+            runner: [Linux, vulkan]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
             backends: "npu"
+            runner: [Linux, xdna2]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
             backends: ""
+            runner: [self-hosted, Linux]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1044,7 +1032,7 @@ jobs:
             echo "ERROR: Found web-app directory in archive"; FORBIDDEN=1
           fi
           if ls "$DIR"/lemonade-app* 2>/dev/null; then
-            echo "ERROR: Found electron app in archive"; FORBIDDEN=1
+            echo "ERROR: Found desktop app in archive"; FORBIDDEN=1
           fi
           if ls "$DIR"/lemonade-tray* 2>/dev/null; then
             echo "ERROR: Found tray app in archive"; FORBIDDEN=1
@@ -1638,6 +1626,163 @@ jobs:
         uses: ./.github/actions/capture-server-logs
         with:
           artifact-name: server-logs-apikey-windows-latest
+
+  # ========================================================================
+  # TEST ROCM STABLE CHANNEL - Verify stable channel on Windows hosted runner
+  # ========================================================================
+
+  test-rocm-stable-channel:
+    name: Test ROCm Stable Channel (Windows)
+    runs-on: windows-latest
+    needs:
+      - build-lemonade-server-installer
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup (Windows)
+        shell: powershell
+        run: |
+          $cwd = (Get-Item .).FullName
+          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+
+      - name: Install Lemonade Server (Windows)
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+
+      - name: Set paths (Windows)
+        shell: powershell
+        run: |
+          echo "VENV_PYTHON=.venv/Scripts/python.exe" >> $Env:GITHUB_ENV
+          echo "SERVER_BINARY=$Env:LEMONADE_INSTALL_PATH\bin\lemonade-server.exe" >> $Env:GITHUB_ENV
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Set ROCm channel to stable
+        shell: bash
+        run: |
+          set -e
+          echo "Setting rocm_channel to stable in config.json"
+          "$VENV_PYTHON" -c "
+          import json
+          import os
+          from pathlib import Path
+
+          cache_dir = Path.home() / '.cache' / 'lemonade'
+          config_file = cache_dir / 'config.json'
+
+          # Create cache dir if needed
+          cache_dir.mkdir(parents=True, exist_ok=True)
+
+          # Load or create config
+          if config_file.exists():
+              with open(config_file, 'r') as f:
+                  config = json.load(f)
+          else:
+              config = {}
+
+          # Set rocm_channel to stable
+          config['rocm_channel'] = 'stable'
+
+          # Save config
+          with open(config_file, 'w') as f:
+              json.dump(config, f, indent=2)
+
+          print(f'Config updated: rocm_channel = stable')
+          "
+
+      - name: Verify ROCm stable channel configuration
+        shell: bash
+        run: |
+          set -e
+          echo "Verifying rocm_channel setting..."
+          "$VENV_PYTHON" -c "
+          import json
+          from pathlib import Path
+
+          config_file = Path.home() / '.cache' / 'lemonade' / 'config.json'
+
+          if not config_file.exists():
+              print('ERROR: config.json not found')
+              exit(1)
+
+          with open(config_file, 'r') as f:
+              config = json.load(f)
+
+          channel = config.get('rocm_channel', 'NOT_SET')
+          print(f'rocm_channel = {channel}')
+
+          if channel != 'stable':
+              print(f'ERROR: Expected rocm_channel=stable, got {channel}')
+              exit(1)
+
+          print('SUCCESS: rocm_channel is set to stable')
+          "
+
+      - name: Test channel switching with lemonade CLI
+        shell: bash
+        run: |
+          set -e
+          echo "Setting rocm_channel to stable via lemonade CLI..."
+
+          # Use lemonade config set to change the channel
+          "$SERVER_BINARY" config set rocm_channel=stable
+
+          echo "Verifying config was updated..."
+          "$VENV_PYTHON" -c "
+          import json
+          from pathlib import Path
+
+          config_file = Path.home() / '.cache' / 'lemonade' / 'config.json'
+
+          if not config_file.exists():
+              print('ERROR: config.json not found')
+              exit(1)
+
+          with open(config_file, 'r') as f:
+              config = json.load(f)
+
+          channel = config.get('rocm_channel', 'NOT_SET')
+          print(f'rocm_channel = {channel}')
+
+          if channel != 'stable':
+              print(f'ERROR: Expected rocm_channel=stable, got {channel}')
+              exit(1)
+
+          print('SUCCESS: rocm_channel set to stable via CLI')
+          "
+
+      - name: Test recipes command shows rocm backend
+        shell: bash
+        run: |
+          set -e
+          echo "Testing recipes command..."
+          "$SERVER_BINARY" recipes | tee recipes_output.txt
+
+          # Check that rocm backend is listed (not rocm-stable or rocm-preview)
+          if grep -q "rocm-stable" recipes_output.txt || grep -q "rocm-preview" recipes_output.txt; then
+              echo "ERROR: Found rocm-stable or rocm-preview in recipes output (should only show 'rocm')"
+              cat recipes_output.txt
+              exit 1
+          fi
+
+          echo "SUCCESS: Recipes output looks correct"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-rocm-stable-channel
 
   # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release

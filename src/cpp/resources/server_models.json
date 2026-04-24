@@ -712,6 +712,33 @@
         ],
         "size": 3.1
     },
+    "Bonsai-8B-gguf": {
+        "checkpoint": "prism-ml/Bonsai-8B-gguf:Q1_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "llamacpp"
+        ],
+        "size": 1.2
+    },
+    "Bonsai-4B-gguf": {
+        "checkpoint": "prism-ml/Bonsai-4B-gguf:Q1_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "llamacpp"
+        ],
+        "size": 0.6
+    },
+    "Bonsai-1.7B-gguf": {
+        "checkpoint": "prism-ml/Bonsai-1.7B-gguf:Q1_0",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "llamacpp"
+        ],
+        "size": 0.25
+    },
     "Phi-4-mini-instruct-GGUF": {
         "checkpoint": "unsloth/Phi-4-mini-instruct-GGUF:Phi-4-mini-instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -877,8 +904,7 @@
         "suggested": true,
         "labels": [
             "vision",
-            "tool-calling",
-            "hot"
+            "tool-calling"
         ],
         "size": 19.7
     },
@@ -889,8 +915,7 @@
         "suggested": true,
         "labels": [
             "vision",
-            "tool-calling",
-            "hot"
+            "tool-calling"
         ],
         "size": 68.4
     },
@@ -904,6 +929,29 @@
             "tool-calling"
         ],
         "size": 16.7
+    },
+    "Qwen3.6-35B-A3B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.6-35B-A3B-GGUF:Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 22.4
+    },
+    "Qwen3.6-27B-GGUF": {
+        "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling"
+        ],
+        "size": 17.6
     },
     "Llama-4-Scout-17B-16E-Instruct-GGUF": {
         "checkpoint": "unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF:Q4_K_S",
@@ -1272,8 +1320,8 @@
         "image_defaults": {
             "steps": 4,
             "cfg_scale": 1,
-            "width": 1024,
-            "height": 1024
+            "width": 256,
+            "height": 256
         }
     },
     "Qwen-Image-GGUF": {
@@ -1343,34 +1391,23 @@
             "height": 1024
         }
     },
-    "Lemonade Ultra": {
+    "Ultra Collection": {
         "checkpoint": "",
-        "recipe": "experience",
-        "suggested": false,
+        "recipe": "collection",
+        "suggested": true,
         "composite_models": [
-            "gpt-oss-120b-mxfp-GGUF",
-            "Z-Image-Turbo",
+            "Qwen3.5-35B-A3B-GGUF",
+            "Flux-2-Klein-9B-GGUF",
             "Whisper-Large-v3-Turbo",
             "kokoro-v1"
         ]
     },
-    "Lemonade Medium": {
+    "Lite Collection": {
         "checkpoint": "",
-        "recipe": "experience",
-        "suggested": false,
+        "recipe": "collection",
+        "suggested": true,
         "composite_models": [
-            "gpt-oss-20b-mxfp4-GGUF",
-            "SDXL-Turbo",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
-    },
-    "Lemonade Lite": {
-        "checkpoint": "",
-        "recipe": "experience",
-        "suggested": false,
-        "composite_models": [
-            "Qwen3-4B-Instruct-2507-GGUF",
+            "Qwen3.5-4B-GGUF",
             "SD-Turbo",
             "Whisper-Tiny",
             "kokoro-v1"

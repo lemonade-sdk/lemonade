@@ -28,6 +28,14 @@ std::string get_resource_path(const std::string& relative_path);
 bool is_safe_executable_path(const std::string& path);
 
 /**
+ * Heuristic: does this string look like a filesystem path (vs. a keyword or
+ * version tag)? Returns true if it contains a path separator or is absolute.
+ * Used to disambiguate `*_bin` config values like "b8664" (version tag) from
+ * "/opt/llama" (path). Existence is NOT checked here.
+ */
+bool looks_like_path(const std::string& v);
+
+/**
  * Find the FLM executable (flm.exe on Windows, flm on Unix).
  * Uses SearchPathA on Windows (same API as CreateProcessA) to search PATH,
  * then falls back to the default installation directory.

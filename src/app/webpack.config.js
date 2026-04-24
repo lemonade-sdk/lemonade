@@ -4,7 +4,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 module.exports = (env, argv) => ({
   mode: argv.mode || 'development',
   entry: './src/renderer/index.tsx',
-  target: 'electron-renderer',
+  target: 'web',
   devtool: argv.mode === 'production' ? false : 'source-map',
   module: {
     rules: [
@@ -49,6 +49,16 @@ module.exports = (env, argv) => ({
   output: {
     filename: 'renderer.bundle.js',
     path: path.resolve(__dirname, 'dist/renderer'),
+  },
+  devServer: {
+    port: 9123,
+    hot: true,
+    // Serve the same static assets (styles.css, favicon) that the production
+    // build copies into dist/renderer via HtmlWebpackPlugin.
+    static: {
+      directory: __dirname,
+      publicPath: '/',
+    },
   },
   plugins: [
     new HtmlWebpackPlugin({

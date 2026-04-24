@@ -28,7 +28,13 @@ class DownloadTracker {
   /**
    * Start tracking a new download
    */
-  startDownload(modelName: string, abortController: AbortController, downloadType?: 'model' | 'backend'): string {
+  startDownload(
+    modelName: string,
+    abortController: AbortController,
+    downloadType?: 'model' | 'backend',
+    collectionComponents?: string[],
+    declaredTotalBytes?: number,
+  ): string {
     // Remove any existing downloads for this model (completed, error, cancelled, or paused)
     // This ensures only one entry per model is shown
     const existingDownloads = Array.from(this.activeDownloads.entries());
@@ -55,13 +61,15 @@ class DownloadTracker {
       fileIndex: 0,
       totalFiles: 0,
       bytesDownloaded: 0,
-      bytesTotal: 0,
+      bytesTotal: declaredTotalBytes ?? 0,
       percent: 0,
       status: 'downloading',
       startTime: Date.now(),
       bytesResumed: 0,
       abortController,
       downloadType,
+      collectionComponents,
+      declaredTotalBytes,
     };
 
     this.activeDownloads.set(downloadId, downloadItem);
@@ -111,23 +119,18 @@ class DownloadTracker {
 
     // Determine total download size:
     // 1. Server-reported total (covers all files) — best option
-    // 2. Local sum of known file sizes — only accurate once all files have been seen
-    // 3. File-count-based estimation — use known sizes to estimate unknown files
+    // 2. Declared size from the model registry — honest number, honors what the
+    //    bar shows elsewhere, no extrapolation artifacts
+    // 3. Local sum of known file sizes — only accurate once every file's total
+    //    has been observed
     let cumulativeBytesTotal: number;
     if (progress.total_download_size && progress.total_download_size > 0) {
       cumulativeBytesTotal = progress.total_download_size;
+    } else if (download.declaredTotalBytes && download.declaredTotalBytes > 0) {
+      cumulativeBytesTotal = download.declaredTotalBytes;
     } else {
       const knownSizes = Array.from(cumulative.fileSizes.values());
-      const knownTotal = knownSizes.reduce((sum, size) => sum + size, 0);
-      const knownCount = knownSizes.filter(s => s > 0).length;
-
-      if (knownCount > 0 && progress.total_files > knownCount) {
-        // Estimate total: extrapolate from known file sizes to all files
-        const avgFileSize = knownTotal / knownCount;
-        cumulativeBytesTotal = knownTotal + avgFileSize * (progress.total_files - knownCount);
-      } else {
-        cumulativeBytesTotal = knownTotal;
-      }
+      cumulativeBytesTotal = knownSizes.reduce((sum, size) => sum + size, 0);
     }
 
     // Sum all pre-existing bytes across files for accurate speed calculation
@@ -297,6 +300,18 @@ class DownloadTracker {
         detail: download,
       })
     );
+  }
+
+  /**
+   * Check whether a download for `modelName` is currently in-flight
+   * (downloading or paused — i.e. not finished/errored/cancelled).
+   */
+  isActive(modelName: string): boolean {
+    for (const d of this.activeDownloads.values()) {
+      if (d.modelName !== modelName) continue;
+      if (d.status === 'downloading' || d.status === 'paused') return true;
+    }
+    return false;
   }
 
   /**

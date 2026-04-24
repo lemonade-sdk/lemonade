@@ -96,6 +96,7 @@ struct CliConfig {
     int port = 13305;
     std::string api_key;
     std::string model;
+    std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
@@ -224,7 +225,11 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
     model_data["recipe"] = config.recipe;
 
     if (!config.checkpoints.empty()) {
-        model_data["checkpoints"] = config.checkpoints;
+        nlohmann::json checkpoints = nlohmann::json::object();
+        for (const auto& [type, checkpoint] : config.checkpoints) {
+            checkpoints[type] = lemon_cli::normalize_huggingface_checkpoint_arg(checkpoint);
+        }
+        model_data["checkpoints"] = std::move(checkpoints);
     }
 
     if (!config.labels.empty()) {
@@ -254,12 +259,14 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         return handle_manual_pull_command(client, config);
     }
 
+    std::string normalized_model = lemon_cli::normalize_huggingface_checkpoint_arg(config.model);
+
     // If the argument looks like a Hugging Face checkpoint id (contains '/'),
     // run the interactive HF flow that discovers variants and auto-fills the
     // pull request. Otherwise treat it as a registered model name and pull by
     // model_name only.
-    if (config.model.find('/') != std::string::npos) {
-        return lemon_cli::hf_pull_flow(client, config.model, false);
+    if (normalized_model.find('/') != std::string::npos) {
+        return lemon_cli::hf_pull_flow(client, normalized_model, false);
     }
 
     nlohmann::json model_data;
@@ -1012,7 +1019,10 @@ int main(int argc, char* argv[]) {
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
 
     // List options
-    list_cmd->add_flag("--downloaded", config.downloaded, "Save model options for future loads");
+    list_cmd->add_flag("--downloaded", config.downloaded, "Show only downloaded models");
+    list_cmd->add_option("name_filter", config.list_filter,
+        "Optional case-insensitive model-name filter; supports * wildcards")
+        ->type_name("NAME_FILTER");
 
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
@@ -1151,7 +1161,7 @@ int main(int argc, char* argv[]) {
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
-        return client.list_models(!config.downloaded);
+        return client.list_models(!config.downloaded, config.list_filter);
     } else if (pull_cmd->count() > 0) {
         if (config.model.empty()) {
             std::cerr << "Error: 'lemonade pull' requires a model name or Hugging Face checkpoint." << std::endl;

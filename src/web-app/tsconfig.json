@@ -5,7 +5,7 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "jsx": "react",
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -16,6 +16,6 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["src/**/*", "assets/**/*"],
+  "include": ["../app/src/**/*", "../app/assets/**/*", "tauri-stub.js"],
   "exclude": ["node_modules", "dist"]
 }

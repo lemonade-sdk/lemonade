@@ -1,3 +1,6 @@
+# Local dev helper script (not tracked)
+.tauri-build-helper.sh
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -170,6 +173,7 @@ cython_debug/
 CLAUDE.md
 CLAUDE.local.md
 .settings.local.json
+.claude/settings.local.json
 
 # Bruno/GitHub files
 .bruno/
