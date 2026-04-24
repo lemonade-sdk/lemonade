@@ -998,6 +998,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  const isImageOnlyAssistantMessage = (message: Message) => (
+    collectionMode &&
+    message.role === 'assistant' &&
+    Array.isArray(message.content) &&
+    message.content.length > 0 &&
+    message.content.every((item) => item.type === 'image_url')
+  );
+
   const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string) => (
     <>
       {thinking && (
@@ -1039,20 +1047,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               if (!url.startsWith('data:image/')) return null;
               if (role === 'assistant') {
                 return (
-                  <div key={index} className="image-generation-item">
-                    <div className="generated-images-row">
-                      <div className="generated-image-column">
-                        <div className="image-wrapper">
-                          <img
-                            src={url}
-                            alt="Generated"
-                            className="generated-image in-chat"
-                            onClick={() => setLightboxSrc(url)}
-                            title="Click to expand"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <div key={index} className="collection-chat-image">
+                    <img
+                      src={url}
+                      alt="Generated"
+                      className="generated-image in-chat"
+                      onClick={() => setLightboxSrc(url)}
+                      title="Click to expand"
+                    />
                   </div>
                 );
               }
@@ -1189,12 +1191,15 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
+          const isBubblelessImageMessage = isImageOnlyAssistantMessage(message);
           return (
             <div
               key={index}
               className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                 message.role === 'user' && !isBusy ? 'editable' : ''
-              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
+              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''} ${
+                isBubblelessImageMessage ? 'collection-image-message' : ''
+              }`}
             >
               {renderAudioButton(message.role, message.content, index)}
               {editingIndex === index ? (

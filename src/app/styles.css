@@ -3500,6 +3500,11 @@ input::-webkit-calendar-picker-indicator {
     padding: 4px 0;
 }
 
+.chat-message.collection-image-message {
+    max-width: none;
+    padding: 0;
+}
+
 .message-play-button-container {
     position: absolute;
     bottom: -8px;
@@ -6752,13 +6757,20 @@ input::-webkit-calendar-picker-indicator {
 /* Chat-embedded generated images stay compact so multi-image responses
    don't take over the scroll. Click opens the lightbox for full view. */
 .generated-image.in-chat {
-    max-height: 280px;
+    height: 256px;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
     cursor: zoom-in;
     transition: filter 0.15s ease;
 }
 
 .generated-image.in-chat:hover {
     filter: brightness(1.08);
+}
+
+.collection-chat-image {
+    line-height: 0;
 }
 
 .image-lightbox-overlay {

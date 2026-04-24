@@ -9,8 +9,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "prompt": { "type": "string", "description": "A detailed description of the image to generate" },
-            "size": { "type": "string", "description": "Image size (e.g. '512x512', '1024x1024')", "default": "512x512" }
+            "prompt": { "type": "string", "description": "A detailed description of the image to generate. Output size is fixed at 512x288." }
           },
           "required": ["prompt"]
         }
@@ -24,8 +23,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "prompt": { "type": "string", "description": "A description of the desired edit or modification to apply to the image" },
-            "size": { "type": "string", "description": "Output image size (e.g. '512x512', '1024x1024')", "default": "512x512" }
+            "prompt": { "type": "string", "description": "A description of the desired edit or modification to apply to the image. Output size is fixed at 512x288." }
           },
           "required": ["prompt"]
         }
