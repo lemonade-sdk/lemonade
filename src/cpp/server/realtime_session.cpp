@@ -402,6 +402,25 @@ void RealtimeSessionManager::transcribe_wav(
                 transcript = response["text"].get<std::string>();
             }
 
+            // Strip whisper.cpp "[BLANK_AUDIO]" markers that appear when
+            // transcribing silence (e.g. after the user clicks stop).
+            const std::string blank_marker = "[BLANK_AUDIO]";
+            size_t pos;
+            while ((pos = transcript.find(blank_marker)) != std::string::npos) {
+                transcript.erase(pos, blank_marker.size());
+            }
+
+            // Trim whitespace after stripping markers
+            auto start = transcript.find_first_not_of(" \t\n\r");
+            auto end = transcript.find_last_not_of(" \t\n\r");
+            transcript = (start == std::string::npos) ? "" : transcript.substr(start, end - start + 1);
+
+            if (transcript.empty()) {
+                LOG(DEBUG, "RealtimeSession") << "Skipping empty " << tag
+                          << " transcript (blank audio)" << std::endl;
+                return;
+            }
+
             LOG(DEBUG, "RealtimeSession") << "Sending " << tag << " transcript to client: \""
                       << transcript << "\"" << std::endl;
 
