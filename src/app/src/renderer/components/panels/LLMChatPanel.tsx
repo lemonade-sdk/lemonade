@@ -166,6 +166,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
+  const collectionAutoScrollDisabledRef = useRef(false);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -354,6 +355,17 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   // Auto-scroll
   useEffect(() => {
+    if (collectionAutoScrollDisabledRef.current) {
+      return () => {
+        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+        if (autoScrollResetRef.current !== null) window.clearTimeout(autoScrollResetRef.current);
+        if (autoScrollRafRef.current !== null) {
+          window.cancelAnimationFrame(autoScrollRafRef.current);
+          autoScrollRafRef.current = null;
+        }
+        pendingAutoScrollRef.current = false;
+      };
+    }
     if (!userScrolledAwayRef.current && isUserAtBottom) {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollToBottom();
@@ -423,6 +435,31 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  const disableCollectionAutoScrollAtImage = (messageIndex: number) => {
+    collectionAutoScrollDisabledRef.current = true;
+    userScrolledAwayRef.current = true;
+    setIsUserAtBottom(false);
+
+    if (autoScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+    if (autoScrollResetRef.current !== null) {
+      window.clearTimeout(autoScrollResetRef.current);
+      autoScrollResetRef.current = null;
+    }
+    pendingAutoScrollRef.current = false;
+    autoScrollInProgressRef.current = false;
+
+    window.requestAnimationFrame(() => {
+      const container = messagesContainerRef.current;
+      const messageEl = container?.querySelector<HTMLElement>(`.chat-message[data-message-index="${messageIndex}"]`);
+      const imageEl = messageEl?.querySelector<HTMLElement>('.collection-chat-image');
+      if (!container || !messageEl) return;
+      container.scrollTop = imageEl ? imageEl.offsetTop + messageEl.offsetTop : messageEl.offsetTop;
+    });
+  };
+
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
     messages: messageHistory,
@@ -456,6 +493,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
     const MAX_ITERATIONS = 5;
     const isNewModelLoad = currentLoadedModel !== chatModelName;
+    const assistantMessageIndex = messageHistory.length;
 
     // Pre-extract audio and image data from user messages
     const extractedAudio: Array<{ data: string; mime: string }> = [];
@@ -625,6 +663,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                 artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
               }
               resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+              disableCollectionAutoScrollAtImage(assistantMessageIndex);
             } else if (result.type === 'audio' && result.data) {
               artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
               resultContent = 'Audio generated successfully.';
@@ -834,6 +873,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    collectionAutoScrollDisabledRef.current = false;
 
     let messageContent: MessageContent;
     if (uploadedImages.length > 0 || uploadedAudio.length > 0) {
@@ -909,6 +949,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    collectionAutoScrollDisabledRef.current = false;
 
     const truncatedMessages = messages.slice(0, editingIndex);
 
@@ -1195,6 +1236,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           return (
             <div
               key={index}
+              data-message-index={index}
               className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                 message.role === 'user' && !isBusy ? 'editable' : ''
               } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''} ${
