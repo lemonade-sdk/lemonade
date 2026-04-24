@@ -17,6 +17,7 @@
 #include <thread>
 #include <chrono>
 #include <set>
+#include <tuple>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
@@ -632,8 +633,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
-    // Experience models are virtual bundles with no direct checkpoint to resolve
-    if (info.recipe == "experience") {
+    // Collections are virtual entries with no direct checkpoint to resolve
+    if (info.recipe == "collection") {
         return "";
     }
 
@@ -966,7 +967,7 @@ static void parse_composite_models(ModelInfo& info, const json& model_json) {
     }
 }
 
-// Check if all component models of an experience/composite model are downloaded.
+// Check if all component models of a collection model are downloaded.
 static bool check_composite_downloaded(const ModelInfo& info,
                                         const std::map<std::string, ModelInfo>& model_map) {
     if (info.composite_models.empty()) return false;
@@ -1107,9 +1108,9 @@ void ModelManager::build_cache() {
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
 
     int downloaded_count = 0;
-    // First pass: determine download status for non-experience models
+    // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "experience") {
+        if (info.recipe == "collection") {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
@@ -1158,10 +1159,10 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Second pass: determine download status for experience models
+    // Second pass: determine download status for collection models
     // (must happen after component models have their downloaded status set)
     for (auto& [name, info] : all_models) {
-        if (info.recipe != "experience") continue;
+        if (info.recipe != "collection") continue;
         info.downloaded = check_composite_downloaded(info, all_models);
         if (info.downloaded) {
             downloaded_count++;
@@ -1245,7 +1246,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "experience") {
+    if (info.recipe == "collection") {
         info.downloaded = check_composite_downloaded(info, models_cache_);
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
@@ -1322,6 +1323,23 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
+
+        // Recompute downloaded status for any collections that
+        // depend on this model, so the collection reflects component changes
+        // without requiring a full cache rebuild.
+        for (auto& [name, entry] : models_cache_) {
+            if (entry.recipe != "collection") continue;
+            if (std::find(entry.composite_models.begin(), entry.composite_models.end(),
+                          model_name) == entry.composite_models.end()) {
+                continue;
+            }
+            bool new_state = check_composite_downloaded(entry, models_cache_);
+            if (entry.downloaded != new_state) {
+                entry.downloaded = new_state;
+                LOG(INFO, "ModelManager") << "Collection '" << name
+                          << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
+            }
+        }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
     }
@@ -1356,11 +1374,14 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded models
+    // Filter and return only downloaded, non-collection models. Collections
+    // are Lemonade-specific (a virtual entry that loads multiple
+    // real models) and aren't meaningful to OpenAI-compatible clients —
+    // the desktop app fetches them explicitly via ?show_all=true.
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded) {
+        if (info.downloaded && info.recipe != "collection") {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;
@@ -1539,9 +1560,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Experience models are UI-level bundles that orchestrate component models.
+        // Collections are UI-level entries that orchestrate component models.
         // They should always be visible if present in the registry.
-        if (recipe == "experience") {
+        if (recipe == "collection") {
             filtered[name] = info;
             continue;
         }
@@ -1912,7 +1933,8 @@ void ModelManager::download_model(const std::string& model_name,
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
         if (!is_user_model_name(model_name)) {
-            throw std::runtime_error(
+            // See UnknownModelError contract in include/lemon/model_manager.h.
+            throw UnknownModelError(
                 "When registering a new model, the model name must include the "
                 "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +
                 model_name
@@ -1966,6 +1988,58 @@ void ModelManager::download_model(const std::string& model_name,
     if (colon_pos != std::string::npos) {
         repo_id = actual_checkpoint.substr(0, colon_pos);
         variant = actual_checkpoint.substr(colon_pos + 1);
+    }
+
+    // Collections don't have their own backend — download each component model instead
+    if (actual_recipe == "collection") {
+        auto info = get_model_info(model_name);
+        if (info.composite_models.empty()) {
+            throw std::runtime_error("Collection '" + model_name + "' has no composite_models defined");
+        }
+        LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
+                                  << " component(s) for collection: " << model_name << std::endl;
+
+        // Wrap the callback so recursive per-component downloads don't each
+        // emit a "complete" event — the SSE stream should only see one final
+        // completion after every component finishes.
+        //
+        // Capture progress_callback by value (not by reference) so `forward`
+        // owns a copy of the std::function. This keeps the callback usable
+        // even if `forward` is ever copied or outlives this stack frame;
+        // today it's only consumed synchronously below, but the defensive
+        // copy is free (std::function is copyable) and removes a latent
+        // dangling-reference hazard if the recursion pattern changes.
+        DownloadProgressCallback forward = nullptr;
+        if (progress_callback) {
+            forward = [progress_callback](const DownloadProgress& p) -> bool {
+                if (p.complete) return true;
+                return progress_callback(p);
+            };
+        }
+
+        for (const auto& component : info.composite_models) {
+            if (!model_exists(component)) {
+                LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
+                continue;
+            }
+            auto comp_info = get_model_info(component);
+            if (comp_info.downloaded) {
+                LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
+                continue;
+            }
+            LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
+            json comp_data = json::object();
+            download_model(component, comp_data, do_not_upgrade, forward);
+        }
+
+        // Emit a single completion event for the whole collection
+        if (progress_callback) {
+            DownloadProgress progress;
+            progress.complete = true;
+            progress.percent = 100;
+            (void)progress_callback(progress);
+        }
+        return;
     }
 
     // Check if this recipe is supported on the current system
@@ -2041,6 +2115,75 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     size_t total_download_size = 0;
     for (const auto& file_desc : manifest["files"]) {
         total_download_size += file_desc["size"].get<size_t>();
+    }
+
+    // Pre-flight disk space check: fail fast before downloading anything.
+    // Subtract bytes already on disk (completed files + partial downloads)
+    // so resumed downloads aren't falsely rejected. Group by target path first,
+    // then fold paths that share the same space info so shared filesystems are
+    // checked against the combined remaining download size.
+    {
+        std::map<std::string, size_t> bytes_needed_by_target_path;
+        for (const auto& file_desc : manifest["files"]) {
+            std::string filename = file_desc["name"].get<std::string>();
+            size_t file_size = file_desc["size"].get<size_t>();
+            // Per-file download_path for multi-repo models; fall back to top-level
+            std::string file_download_path = file_desc.value("download_path", download_path);
+            std::string output_path = file_download_path + "/" + filename;
+            std::string partial_path = output_path + ".partial";
+            fs::path output_path_fs = path_from_utf8(output_path);
+            fs::path partial_path_fs = path_from_utf8(partial_path);
+            size_t bytes_needed_for_file = file_size;
+            if (safe_exists(output_path_fs) && !safe_exists(partial_path_fs)) {
+                bytes_needed_for_file = 0;
+            } else if (safe_exists(partial_path_fs)) {
+                // Cap credit to manifest size — partial can't save more than the file costs
+                size_t partial_size = fs::file_size(partial_path_fs);
+                size_t bytes_already_on_disk = (std::min)(partial_size, file_size);
+                // Clamp to zero: manifest can contain size=0 entries while partials exist.
+                bytes_needed_for_file = (file_size > bytes_already_on_disk)
+                    ? file_size - bytes_already_on_disk
+                    : 0;
+            }
+
+            if (bytes_needed_for_file > 0) {
+                bytes_needed_by_target_path[file_download_path] += bytes_needed_for_file;
+            }
+        }
+
+        using SpaceSignature = std::tuple<uintmax_t, uintmax_t, uintmax_t>;
+        std::map<SpaceSignature, std::pair<size_t, std::string>> bytes_needed_by_filesystem;
+        for (const auto& [target_path, bytes_needed] : bytes_needed_by_target_path) {
+            std::error_code ec;
+            auto si = fs::space(path_from_utf8(target_path), ec);
+            if (ec) {
+                continue;
+            }
+
+            auto key = std::make_tuple(si.capacity, si.free, si.available);
+            auto& grouped_entry = bytes_needed_by_filesystem[key];
+            grouped_entry.first += bytes_needed;
+            if (grouped_entry.second.empty()) {
+                grouped_entry.second = target_path;
+            }
+        }
+
+        for (const auto& [space_signature, grouped_entry] : bytes_needed_by_filesystem) {
+            size_t bytes_needed = grouped_entry.first;
+            uintmax_t available = std::get<2>(space_signature);
+            const std::string& target_path = grouped_entry.second;
+            if (bytes_needed <= available) {
+                continue;
+            }
+
+            std::ostringstream oss;
+            oss << "Insufficient disk space: download requires "
+                << std::fixed << std::setprecision(1)
+                << (bytes_needed / (1024.0 * 1024.0 * 1024.0)) << " GB but only "
+                << (available / (1024.0 * 1024.0 * 1024.0)) << " GB is available on "
+                << target_path;
+            throw std::runtime_error(oss.str());
+        }
     }
 
     for (const auto& file_desc : manifest["files"]) {

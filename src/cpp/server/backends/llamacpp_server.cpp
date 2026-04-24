@@ -13,6 +13,10 @@
 #include <lemon/utils/aixlog.hpp>
 #include <cstdlib>
 #include <set>
+#ifdef __APPLE__
+#include <pwd.h>
+#include <unistd.h>
+#endif
 
 #ifdef _WIN32
     #include <windows.h>
@@ -424,6 +428,27 @@ void LlamaCppServer::load(const std::string& model_name,
     if (no_residency) {
         env_vars.push_back({"GGML_METAL_NO_RESIDENCY", no_residency});
         LOG(DEBUG, "LlamaCpp") << "Forwarding GGML_METAL_NO_RESIDENCY=" << no_residency << std::endl;
+    }
+
+    // Ensure HOME is set in the child. llama.cpp b8884+ (libllama-common's
+    // fs_get_cache_directory / hf_cache::migrate_old_cache_to_hf_cache)
+    // calls getenv("HOME") during CLI arg parsing and passes the result
+    // straight into std::string without a NULL check, segfaulting when
+    // HOME is unset. LaunchDaemons installed at /Library/LaunchDaemons/
+    // get a minimal env from launchd and do not inherit HOME, so llama-server
+    // crashes before the model ever loads. Terminal/sudo spawns preserve
+    // HOME and do not hit this.
+    //
+    // Upstream fix in flight: https://github.com/ggml-org/llama.cpp/pull/22263
+    // Once that PR merges and lemonade's pinned llama.cpp version (in
+    // src/cpp/resources/backend_versions.json) includes it, this HOME
+    // fallback can be deleted.
+    const char* home = std::getenv("HOME");
+    if (!home || home[0] == '\0') {
+        struct passwd* pw = getpwuid(getuid());
+        std::string fallback_home = (pw && pw->pw_dir) ? pw->pw_dir : "/var/root";
+        env_vars.push_back({"HOME", fallback_home});
+        LOG(DEBUG, "LlamaCpp") << "Parent HOME unset; setting child HOME=" << fallback_home << std::endl;
     }
 #endif
 
