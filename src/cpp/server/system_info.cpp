@@ -184,8 +184,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
-        {"amd_igpu", {"gfx1150", "gfx1151"}},
-        {"amd_dgpu", {"gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
 };
 
