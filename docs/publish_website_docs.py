@@ -57,7 +57,7 @@ def main():
         (r"\(\./lemonade-cli\.md\)", r"(./lemonade-cli.md)"),
         (r"\(\./server/configuration\.md\)", r"(./server/configuration.md)"),
         (r"\(\./server_models\.md\)", r"(https://lemonade-server.ai/models.html)"),
-        (r"\(\./server_spec\.md\)", r"(./server/server_spec.md)"),
+        (r"\(\.\./api/README\.md\)", r"(./api/README.md)"),
         (r"\(\./server_integration\.md\)", r"(./server/server_integration.md)"),
     ]
     for pattern, repl in replacements:
