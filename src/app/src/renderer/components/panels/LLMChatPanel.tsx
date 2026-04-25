@@ -166,7 +166,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
-  const collectionAutoScrollDisabledRef = useRef(false);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -355,17 +354,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   // Auto-scroll
   useEffect(() => {
-    if (collectionAutoScrollDisabledRef.current) {
-      return () => {
-        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-        if (autoScrollResetRef.current !== null) window.clearTimeout(autoScrollResetRef.current);
-        if (autoScrollRafRef.current !== null) {
-          window.cancelAnimationFrame(autoScrollRafRef.current);
-          autoScrollRafRef.current = null;
-        }
-        pendingAutoScrollRef.current = false;
-      };
-    }
     if (!userScrolledAwayRef.current && isUserAtBottom) {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollToBottom();
@@ -436,7 +424,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   };
 
   const disableCollectionAutoScrollAtImage = (messageIndex: number) => {
-    collectionAutoScrollDisabledRef.current = true;
     userScrolledAwayRef.current = true;
     setIsUserAtBottom(false);
 
@@ -454,9 +441,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     window.requestAnimationFrame(() => {
       const container = messagesContainerRef.current;
       const messageEl = container?.querySelector<HTMLElement>(`.chat-message[data-message-index="${messageIndex}"]`);
-      const imageEl = messageEl?.querySelector<HTMLElement>('.collection-chat-image');
       if (!container || !messageEl) return;
-      container.scrollTop = imageEl ? imageEl.offsetTop + messageEl.offsetTop : messageEl.offsetTop;
+      const target = messageEl.querySelector<HTMLElement>('.collection-chat-image') ?? messageEl;
+      container.scrollTop += target.getBoundingClientRect().top - container.getBoundingClientRect().top;
     });
   };
 
@@ -873,7 +860,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-    collectionAutoScrollDisabledRef.current = false;
 
     let messageContent: MessageContent;
     if (uploadedImages.length > 0 || uploadedAudio.length > 0) {
@@ -949,7 +935,6 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
-    collectionAutoScrollDisabledRef.current = false;
 
     const truncatedMessages = messages.slice(0, editingIndex);
 

@@ -38,7 +38,9 @@ export interface ToolExecutionResult {
   text?: string;
 }
 
-const COLLECTION_IMAGE_TOOL_SIZE = '512x288';
+const COLLECTION_IMAGE_WIDTH = 512;
+const COLLECTION_IMAGE_HEIGHT = 288;
+const COLLECTION_IMAGE_SIZE = `${COLLECTION_IMAGE_WIDTH}x${COLLECTION_IMAGE_HEIGHT}`;
 
 /**
  * Build tools, system prompt, and model map from a collection model's components.
@@ -138,7 +140,6 @@ async function executeImageTool(
   signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
   const isEdit = effectiveName === 'edit_image';
-  const requestedSize = COLLECTION_IMAGE_TOOL_SIZE;
 
   if (isEdit) {
     // /images/edits requires multipart/form-data
@@ -147,8 +148,7 @@ async function executeImageTool(
     formData.append('prompt', args.prompt || '');
     formData.append('response_format', 'b64_json');
     formData.append('n', '1');
-
-    formData.append('size', requestedSize);
+    formData.append('size', COLLECTION_IMAGE_SIZE);
 
     // Attach the most recent image as the source file
     const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
@@ -180,13 +180,9 @@ async function executeImageTool(
     prompt: args.prompt || '',
     response_format: 'b64_json',
     n: 1,
+    width: COLLECTION_IMAGE_WIDTH,
+    height: COLLECTION_IMAGE_HEIGHT,
   };
-
-  const [w, h] = requestedSize.split('x').map(Number);
-  if (w && h) {
-    body.width = w;
-    body.height = h;
-  }
 
   const response = await serverFetch('/images/generations', {
     method: 'POST',
