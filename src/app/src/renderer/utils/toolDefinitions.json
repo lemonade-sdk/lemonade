@@ -9,7 +9,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "prompt": { "type": "string", "description": "A detailed description of the image to generate. Output size is fixed at 512x288." }
+            "prompt": { "type": "string", "description": "A detailed description of the image to generate. Output size is fixed at {image_size}." }
           },
           "required": ["prompt"]
         }
@@ -23,7 +23,7 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "prompt": { "type": "string", "description": "A description of the desired edit or modification to apply to the image. Output size is fixed at 512x288." }
+            "prompt": { "type": "string", "description": "A description of the desired edit or modification to apply to the image. Output size is fixed at {image_size}." }
           },
           "required": ["prompt"]
         }

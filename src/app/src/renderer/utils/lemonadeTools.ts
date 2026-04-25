@@ -1,6 +1,7 @@
 import { serverFetch } from './serverConfig';
 import { ModelsData } from './modelData';
 import { getCollectionComponents, NON_LLM_LABELS } from './collectionModels';
+import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
 
 // Types
@@ -38,12 +39,6 @@ export interface ToolExecutionResult {
   text?: string;
 }
 
-// Fixed 16:9 size for collection-mode image tools so the result fits the chat
-// layout. Both /images/generations and /images/edits accept this `size` string
-// (see SDServer::resolve_size). Keep in sync with --collection-image-height in
-// styles.css and the size noted in toolDefinitions.json.
-const COLLECTION_IMAGE_SIZE = '512x288';
-
 /**
  * Build tools, system prompt, and model map from a collection model's components.
  * Tool definitions are loaded from toolDefinitions.json — the single source of truth.
@@ -63,6 +58,23 @@ export function buildLemonadeTools(
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};
 
+  const substituteParams = (params: Record<string, any>): Record<string, any> => {
+    const props = params?.properties as Record<string, any> | undefined;
+    if (!props) return params;
+    const newProps: Record<string, any> = {};
+    for (const [key, prop] of Object.entries(props)) {
+      newProps[key] = typeof prop?.description === 'string' && prop.description.includes('{image_size}')
+        ? { ...prop, description: prop.description.replaceAll('{image_size}', COLLECTION_IMAGE_SIZE) }
+        : prop;
+    }
+    return { ...params, properties: newProps };
+  };
+
+  const materialize = (def: ToolDefinitionEntry): LemonadeToolDef => ({
+    type: 'function',
+    function: { ...def.function, parameters: substituteParams(def.function.parameters) },
+  });
+
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
     const requiresLabels = def.requires_labels;
     const requiresLlmLabels = def.requires_llm_labels;
@@ -74,7 +86,7 @@ export function buildLemonadeTools(
         return labels.some(l => labelSet.has(l));
       });
       if (!match) continue;
-      tools.push({ type: 'function', function: def.function });
+      tools.push(materialize(def));
       models[def.function.name] = match;
       continue;
     }
@@ -83,7 +95,7 @@ export function buildLemonadeTools(
       const labelSet = new Set(requiresLlmLabels);
       const llmLabels = modelsData[llmModel]?.labels ?? [];
       if (!llmLabels.some(l => labelSet.has(l))) continue;
-      tools.push({ type: 'function', function: def.function });
+      tools.push(materialize(def));
       models[def.function.name] = llmModel;
     }
   }

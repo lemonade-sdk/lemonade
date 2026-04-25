@@ -22,8 +22,6 @@
     --logs-error: #ff4444;
     --logs-surface: rgba(255, 68, 68, 0.1);
 
-    --collection-image-height: 288px;
-
     --left-panel-surface: linear-gradient(180deg, var(--panel-bg-1) 0%, var(--panel-bg-2) 100%);
 
     --bg-alpha-01: rgba(255, 255, 255, 0.01);
