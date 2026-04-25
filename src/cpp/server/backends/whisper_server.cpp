@@ -504,7 +504,11 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
-    auto res = utils::HttpClient::post_multipart(url, fields, 300);
+    // Pass 0 so HttpClient falls back to its default timeout, which is kept in
+    // sync with `global_timeout` in config.json (see server.cpp). Hard-coding 300
+    // caused long-form audio (~35+ min on slower backends) to fail regardless of
+    // the user's configuration.
+    auto res = utils::HttpClient::post_multipart(url, fields, 0);
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
     LOG(DEBUG, "WhisperServer") << "Response body: " << res.body << std::endl;
@@ -591,7 +595,9 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
 
-    auto res = utils::HttpClient::post_multipart(url, fields, 300);
+    // See the note on the file-path variant above: 0 inherits the configured
+    // global timeout so long transcriptions aren't artificially capped at 300s.
+    auto res = utils::HttpClient::post_multipart(url, fields, 0);
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
 
