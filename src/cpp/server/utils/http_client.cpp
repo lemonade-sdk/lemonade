@@ -2,6 +2,7 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
 #include <curl/curl.h>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
@@ -35,6 +36,21 @@ struct ProgressData {
     ProgressCallback callback;
     bool cancelled = false;  // Set to true when callback returns false
 };
+
+static fs::path get_disk_space_probe_path(const fs::path& output_path) {
+    fs::path probe_path = output_path.parent_path();
+    if (!probe_path.empty()) {
+        return probe_path;
+    }
+
+    std::error_code ec;
+    fs::path current_path = fs::current_path(ec);
+    if (!ec && !current_path.empty()) {
+        return current_path;
+    }
+
+    return fs::path(".");
+}
 
 // CURL progress callback - returns non-zero to abort transfer
 static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
@@ -398,6 +414,8 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
     if (res != CURLE_OK) {
         bool retryable = false;
+        bool disk_full = false;
+        const fs::path disk_space_probe_path = get_disk_space_probe_path(output_path_fs);
         switch (res) {
             case CURLE_COULDNT_CONNECT:
             case CURLE_COULDNT_RESOLVE_HOST:
@@ -410,6 +428,17 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             case CURLE_SSL_CONNECT_ERROR:
                 retryable = true;
                 break;
+            case CURLE_WRITE_ERROR: {
+                // CURLE_WRITE_ERROR (23) typically means disk full.
+                // Check available disk space to confirm.
+                std::error_code ec;
+                auto si = fs::space(disk_space_probe_path, ec);
+                if (!ec && si.available < 1024 * 1024) {  // Less than 1 MB free
+                    disk_full = true;
+                }
+                retryable = false;
+                break;
+            }
             default:
                 retryable = false;
         }
@@ -419,9 +448,20 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             current_file_size = fs::file_size(output_path_fs);
         }
         result.can_resume = retryable && (current_file_size > 0);
+        result.disk_full = disk_full;
 
         std::ostringstream oss;
-        oss << "Download failed: " << result.curl_error << " (CURL code: " << result.curl_code << ")";
+        if (disk_full) {
+            oss << "Disk full: not enough space to complete download";
+            std::error_code ec;
+            auto si = fs::space(disk_space_probe_path, ec);
+            if (!ec) {
+                oss << " (" << std::fixed << std::setprecision(1)
+                    << (si.available / (1024.0 * 1024.0)) << " MB free)";
+            }
+        } else {
+            oss << "Download failed: " << result.curl_error << " (CURL code: " << result.curl_code << ")";
+        }
         if (result.bytes_downloaded > 0) {
             oss << "\n  Downloaded " << (result.bytes_downloaded / (1024.0 * 1024.0)) << " MB before failure";
         }
@@ -579,6 +619,12 @@ DownloadResult HttpClient::download_file(const std::string& url,
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {
             LOG(INFO, "Download") << " Cancelled by user" << std::endl;
+            return final_result;
+        }
+
+        // If disk is full, fail immediately — retrying will just waste bandwidth
+        if (final_result.disk_full) {
+            LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
             return final_result;
         }
 
