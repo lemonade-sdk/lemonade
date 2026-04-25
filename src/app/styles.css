@@ -22,6 +22,8 @@
     --logs-error: #ff4444;
     --logs-surface: rgba(255, 68, 68, 0.1);
 
+    --collection-image-height: 288px;
+
     --left-panel-surface: linear-gradient(180deg, var(--panel-bg-1) 0%, var(--panel-bg-2) 100%);
 
     --bg-alpha-01: rgba(255, 255, 255, 0.01);
@@ -6757,7 +6759,7 @@ input::-webkit-calendar-picker-indicator {
 /* Chat-embedded generated images stay compact so multi-image responses
    don't take over the scroll. Click opens the lightbox for full view. */
 .generated-image.in-chat {
-    height: 256px;
+    height: var(--collection-image-height);
     width: auto;
     max-width: 100%;
     object-fit: contain;

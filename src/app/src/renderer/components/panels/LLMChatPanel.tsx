@@ -423,9 +423,11 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
-  const disableCollectionAutoScrollAtImage = (messageIndex: number) => {
+  // Freeze auto-scroll and pin the viewport on the assistant's image. Called
+  // after the setMessages that renders the image so the RAF can find it in the
+  // DOM. handleScroll will sync isUserAtBottom on the resulting scroll event.
+  const anchorOnCollectionImage = (messageIndex: number) => {
     userScrolledAwayRef.current = true;
-    setIsUserAtBottom(false);
 
     if (autoScrollRafRef.current !== null) {
       window.cancelAnimationFrame(autoScrollRafRef.current);
@@ -627,6 +629,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         const toolModel = lemonadeTools.models[funcName];
 
         let resultContent: string;
+        let imageAddedThisCall = false;
         if (toolModel) {
           try {
             const context: ToolExecutionContext = {
@@ -650,7 +653,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                 artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
               }
               resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
-              disableCollectionAutoScrollAtImage(assistantMessageIndex);
+              imageAddedThisCall = true;
             } else if (result.type === 'audio' && result.data) {
               artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
               resultContent = 'Audio generated successfully.';
@@ -680,6 +683,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           };
           return newMessages;
         });
+
+        if (imageAddedThisCall) {
+          anchorOnCollectionImage(assistantMessageIndex);
+        }
       }
     }
 

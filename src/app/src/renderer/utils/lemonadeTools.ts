@@ -38,9 +38,11 @@ export interface ToolExecutionResult {
   text?: string;
 }
 
-const COLLECTION_IMAGE_WIDTH = 512;
-const COLLECTION_IMAGE_HEIGHT = 288;
-const COLLECTION_IMAGE_SIZE = `${COLLECTION_IMAGE_WIDTH}x${COLLECTION_IMAGE_HEIGHT}`;
+// Fixed 16:9 size for collection-mode image tools so the result fits the chat
+// layout. Both /images/generations and /images/edits accept this `size` string
+// (see SDServer::resolve_size). Keep in sync with --collection-image-height in
+// styles.css and the size noted in toolDefinitions.json.
+const COLLECTION_IMAGE_SIZE = '512x288';
 
 /**
  * Build tools, system prompt, and model map from a collection model's components.
@@ -180,8 +182,7 @@ async function executeImageTool(
     prompt: args.prompt || '',
     response_format: 'b64_json',
     n: 1,
-    width: COLLECTION_IMAGE_WIDTH,
-    height: COLLECTION_IMAGE_HEIGHT,
+    size: COLLECTION_IMAGE_SIZE,
   };
 
   const response = await serverFetch('/images/generations', {
