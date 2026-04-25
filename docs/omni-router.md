@@ -40,7 +40,7 @@ The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.j
 | `transcribe_audio` | `POST /v1/audio/transcriptions` | `audio` or `transcription` |
 | `analyze_image` | `POST /v1/chat/completions` | LLM with `vision` |
 
-Endpoint request/response shapes are documented in the [Server Spec](server/server_spec.md).
+Endpoint request/response shapes are documented in the [Endpoints Spec](api/README.md).
 
 ## Quick start
 
