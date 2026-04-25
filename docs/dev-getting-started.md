@@ -886,7 +886,7 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 
 ### Key Resources
 
-- **API Specification:** `docs/server/server_spec.md`
+- **API Specification:** `docs/api/`
 - **Model Registry:** `src/cpp/resources/server_models.json`
 - **Web UI Files:** `src/cpp/resources/static/`
 - **Backend Versions:** `src/cpp/resources/backend_versions.json`

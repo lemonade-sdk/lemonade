@@ -137,7 +137,7 @@ class EndpointTests(ServerTestBase):
 
         data = response.json()
 
-        # Check required fields per server_spec.md
+        # Check required fields per docs/api/lemonade.md
         self.assertIn("status", data)
         self.assertEqual(data["status"], "ok")
         self.assertIn("all_models_loaded", data)
@@ -168,7 +168,7 @@ class EndpointTests(ServerTestBase):
             "Models list should not be empty after pulling a model",
         )
 
-        # Verify model structure per server_spec.md
+        # Verify model structure per docs/api/openai.md
         model = data["data"][0]
         self.assertIn("id", model)
         self.assertIn("object", model)
@@ -217,7 +217,7 @@ class EndpointTests(ServerTestBase):
 
         self.assertEqual(model.id, test_model.id)
 
-        # Check extended fields per server_spec.md
+        # Check extended fields per docs/api/openai.md
         self.assertTrue(hasattr(model, "checkpoint") or "checkpoint" in str(model))
 
         print(f"[OK] Retrieved model: {model.id}")
@@ -531,7 +531,8 @@ class EndpointTests(ServerTestBase):
                 opts_before = m.get("recipe_options", {})
                 break
         self.assertNotEqual(
-            opts_before.get("ctx_size"), 2048,
+            opts_before.get("ctx_size"),
+            2048,
             "Precondition: model should not already have ctx_size=2048",
         )
 
@@ -559,7 +560,9 @@ class EndpointTests(ServerTestBase):
             "Option-change /load should reload with new options",
         )
 
-        print(f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})")
+        print(
+            f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})"
+        )
 
     def test_012c_load_noop_when_already_loaded_by_inference(self):
         """Regression test for #1603: /load after an inference-triggered
@@ -612,11 +615,10 @@ class EndpointTests(ServerTestBase):
         )
 
         # Model should still be loaded
-        health = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        ).json()
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
         loaded = [
-            m for m in health.get("all_models_loaded", [])
+            m
+            for m in health.get("all_models_loaded", [])
             if m["model_name"] == ENDPOINT_TEST_MODEL
         ]
         self.assertEqual(
@@ -775,7 +777,7 @@ class EndpointTests(ServerTestBase):
         data = response.json()
         self.assertIsInstance(data, dict)
 
-        # Check required top-level keys per server_spec.md
+        # Check required top-level keys per docs/api/lemonade.md
         required_keys = [
             "OS Version",
             "Processor",
@@ -800,7 +802,7 @@ class EndpointTests(ServerTestBase):
         self.assertIn("name", cpu)
         self.assertIn("available", cpu)
 
-        # Verify recipes structure per server_spec.md
+        # Verify recipes structure per docs/api/lemonade.md
         recipes = data["recipes"]
         self.assertIsInstance(recipes, dict)
 
@@ -949,7 +951,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
-        # Stats fields per server_spec.md (may not all be present if no inference done)
+        # Stats fields per docs/api/lemonade.md (may not all be present if no inference done)
         # Just verify it returns valid JSON
         self.assertIsInstance(data, dict)
 

@@ -103,7 +103,7 @@ This matches the existing CLI, tray, app, and test implementations in this repo.
 | `GET /v1/models` | List available models |
 | `GET /v1/health` | Server status and loaded models |
 
-See the [Server Spec](../server/server_spec.md) for full request/response details.
+See the [Endpoints Spec](../api/README.md) for full request/response details.
 
 ## Runtime Settings Management
 
