@@ -6755,9 +6755,9 @@ input::-webkit-calendar-picker-indicator {
 }
 
 /* Chat-embedded generated images stay compact so multi-image responses
-   don't take over the scroll. Click opens the lightbox for full view. */
+   don't take over the scroll. Click opens the lightbox for full view.
+   Height is set inline from COLLECTION_IMAGE_HEIGHT. */
 .generated-image.in-chat {
-    height: var(--collection-image-height);
     width: auto;
     max-width: 100%;
     object-fit: contain;
