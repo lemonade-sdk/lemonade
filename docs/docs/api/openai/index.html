@@ -1,0 +1,4536 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.">
+      
+      
+      
+        <link rel="canonical" href="https://lemonade-server.ai/api/openai/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../ollama/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>OpenAI-Compatible - Lemonade Server Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="lightmode" data-md-color-primary="amber" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#openai-compatible-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Lemonade Server Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              OpenAI-Compatible
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="lightmode" data-md-color-primary="amber" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="amber" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    Lemonade Server Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lemonade-sdk/lemonade" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lemonade-sdk/lemonade
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Downloading and Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../lemonade-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade CLI Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Application Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Application Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/ai-toolkit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Toolkit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/anythingLLM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AnythingLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/codeGPT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CodeGPT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/continue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/mindcraft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mindcraft
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/open-hands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenHands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/open-webui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open WebUI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/apps/wut/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wut
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../omni-router/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OmniRouter (tools for agents)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding local LLM servers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev-getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddable Lemonade
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Embeddable Lemonade
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../embeddable/building/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building from Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Spec
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Spec
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAI-Compatible
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAI-Compatible
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1chatcompletions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/chat/completions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/chat/completions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image-understanding-input-format-openai-compatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image understanding input format (OpenAI-compatible)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1completions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/completions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/completions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/embeddings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/embeddings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/responses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/responses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streaming-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming Events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1audiotranscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/transcriptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/audio/transcriptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ws-realtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WS /realtime
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WS /realtime">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-server-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client → Server Messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-client-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server → Client Messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-configure-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Configure Session
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-send-audio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Send Audio
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-transcription-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Transcription Result
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vad-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VAD Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integration-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesgenerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/generations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/generations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesedits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/edits
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/edits">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesvariations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/variations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/variations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesupscale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/upscale
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/upscale">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error responses
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1audiospeech" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/speech
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/audio/speech">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get-v1models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GET /v1/models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get-v1modelsmodel_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/models/{model_id}
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GET /v1/models/{model_id}">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-responses_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error responses
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ollama/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ollama-Compatible
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../anthropic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Anthropic-Compatible
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../llamacpp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llama.cpp-Specific
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lemonade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lemonade-Specific
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/multi-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Model Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/server_integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/custom-models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Model Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribution Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1chatcompletions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/chat/completions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/chat/completions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image-understanding-input-format-openai-compatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Image understanding input format (OpenAI-compatible)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1completions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/completions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/completions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/embeddings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/embeddings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/responses
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/responses">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#streaming-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming Events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1audiotranscriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/transcriptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/audio/transcriptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ws-realtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WS /realtime
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WS /realtime">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-server-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client → Server Messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-client-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server → Client Messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-configure-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Configure Session
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-send-audio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Send Audio
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-transcription-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: Transcription Result
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vad-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VAD Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integration-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesgenerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/generations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/generations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesedits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/edits
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/edits">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesvariations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/variations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/variations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1imagesupscale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/images/upscale
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/images/upscale">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error responses
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-v1audiospeech" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /v1/audio/speech
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="POST /v1/audio/speech">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get-v1models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GET /v1/models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get-v1modelsmodel_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /v1/models/{model_id}
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GET /v1/models/{model_id}">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parameters_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-request_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example request
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-format_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-responses_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error responses
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="openai-compatible-api">OpenAI-Compatible API</h1>
+<p>This spec defines Lemonade's implementation of the <a href="https://developers.openai.com/api/docs">OpenAI API</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+<th>Modality</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1chatcompletions"><code>/v1/chat/completions</code></a></td>
+<td>Chat Completions</td>
+<td>messages -&gt; completion</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1completions"><code>/v1/completions</code></a></td>
+<td>Text Completions</td>
+<td>prompt -&gt; completion</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1embeddings"><code>/v1/embeddings</code></a></td>
+<td>Embeddings</td>
+<td>text -&gt; vector representations</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1responses"><code>/v1/responses</code></a></td>
+<td>Responses API</td>
+<td>prompt/messages -&gt; event</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1audiotranscriptions"><code>/v1/audio/transcriptions</code></a></td>
+<td>Audio Transcription</td>
+<td>audio file -&gt; text</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1audiospeech"><code>/v1/audio/speech</code></a></td>
+<td>Text to speech</td>
+<td>text -&gt; audio</td>
+</tr>
+<tr>
+<td><code>WS</code></td>
+<td><a href="#ws-realtime"><code>/realtime</code></a></td>
+<td>Realtime Audio Transcription, OpenAI SDK compatible</td>
+<td>streaming audio -&gt; text</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1imagesgenerations"><code>/v1/images/generations</code></a></td>
+<td>Image Generation</td>
+<td>prompt -&gt; image</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1imagesedits"><code>/v1/images/edits</code></a></td>
+<td>Image Editing</td>
+<td>image + prompt -&gt; edited image</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1imagesvariations"><code>/v1/images/variations</code></a></td>
+<td>Image Variations</td>
+<td>image -&gt; varied image</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><a href="#post-v1imagesupscale"><code>/v1/images/upscale</code></a></td>
+<td>Image Upscaling</td>
+<td>image + ESRGAN model -&gt; upscaled image</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><a href="#get-v1models"><code>/v1/models</code></a></td>
+<td>List models available locally</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><a href="#get-v1modelsmodel_id"><code>/v1/models/{model_id}</code></a></td>
+<td>Retrieve a specific model by ID</td>
+<td>n/a</td>
+</tr>
+</tbody>
+</table>
+<h2 id="post-v1chatcompletions"><code>POST /v1/chat/completions</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-partially_available-green" /></sub></p>
+<p>Chat Completions API. You provide a list of messages and receive a completion. This API will also load the model if it is not already loaded.</p>
+<h3 id="parameters">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>messages</code></td>
+<td>Yes</td>
+<td>Array of messages in the conversation. Each message should have a <code>role</code> ("user" or "assistant") and <code>content</code> (the message text).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The model to use for the completion.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>stream</code></td>
+<td>No</td>
+<td>If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td>No</td>
+<td>Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>logprobs</code></td>
+<td>No</td>
+<td>Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td>No</td>
+<td>What sampling temperature to use.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>repeat_penalty</code></td>
+<td>No</td>
+<td>Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>top_k</code></td>
+<td>No</td>
+<td>Integer that controls the number of top tokens to consider during sampling.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>top_p</code></td>
+<td>No</td>
+<td>Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td>No</td>
+<td>A list of tools the model may call.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td>No</td>
+<td>An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with <code>max_completion_tokens</code>. This value is now deprecated by OpenAI in favor of <code>max_completion_tokens</code></td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>max_completion_tokens</code></td>
+<td>No</td>
+<td>An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with <code>max_tokens</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PowerShell</label><label for="__tabbed_1_2">Bash</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/chat/completions&quot;</span> <span class="p">`</span>
+  <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">&#39;{</span>
+<span class="s1">    &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
+<span class="s1">    &quot;messages&quot;: [</span>
+<span class="s1">      {</span>
+<span class="s1">        &quot;role&quot;: &quot;user&quot;,</span>
+<span class="s1">        &quot;content&quot;: &quot;What is the population of Paris?&quot;</span>
+<span class="s1">      }</span>
+<span class="s1">    ],</span>
+<span class="s1">    &quot;stream&quot;: false</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
+<span class="s1">        &quot;messages&quot;: [</span>
+<span class="s1">          {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the population of Paris?&quot;}</span>
+<span class="s1">        ],</span>
+<span class="s1">        &quot;stream&quot;: false</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="image-understanding-input-format-openai-compatible">Image understanding input format (OpenAI-compatible)</h3>
+<p>To send images to <code>chat/completions</code>, pass a <code>messages[*].content</code> array that mixes <code>text</code> and <code>image_url</code> items. The image can be provided as a base64 data URL (for example, from <code>FileReader.readAsDataURL(...)</code> in web apps).</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;Qwen2.5-VL-7B-Instruct&quot;,</span>
+<span class="s1">        &quot;messages&quot;: [</span>
+<span class="s1">          {</span>
+<span class="s1">            &quot;role&quot;: &quot;user&quot;,</span>
+<span class="s1">            &quot;content&quot;: [</span>
+<span class="s1">              {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;What is in this image?&quot;},</span>
+<span class="s1">              {&quot;type&quot;: &quot;image_url&quot;, &quot;image_url&quot;: {&quot;url&quot;: &quot;data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...&quot;}}</span>
+<span class="s1">            ]</span>
+<span class="s1">          }</span>
+<span class="s1">        ],</span>
+<span class="s1">        &quot;stream&quot;: false</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+<h3 id="response-format">Response format</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Non-streaming responses</label><label for="__tabbed_2_2">Streaming responses</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">  </span><span class="p">}]</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<p>For streaming responses, the API returns a stream of server-sent events (however, Open AI recommends using their streaming libraries for parsing streaming responses):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion.chunk&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;delta&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}]</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="post-v1completions"><code>POST /v1/completions</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Text Completions API. You provide a prompt and receive a completion. This API will also load the model if it is not already loaded.</p>
+<h3 id="parameters_1">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompt</code></td>
+<td>Yes</td>
+<td>The prompt to use for the completion.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The model to use for the completion.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>stream</code></td>
+<td>No</td>
+<td>If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td>No</td>
+<td>Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence. Can be a string or an array of strings.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>echo</code></td>
+<td>No</td>
+<td>Echo back the prompt in addition to the completion. Available on non-streaming mode.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>logprobs</code></td>
+<td>No</td>
+<td>Include log probabilities of the output tokens. If true, returns the log probability of each output token. Defaults to false. Only available when <code>stream=False</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td>No</td>
+<td>What sampling temperature to use.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>repeat_penalty</code></td>
+<td>No</td>
+<td>Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>top_k</code></td>
+<td>No</td>
+<td>Integer that controls the number of top tokens to consider during sampling.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>top_p</code></td>
+<td>No</td>
+<td>Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td>No</td>
+<td>An upper bound for the number of tokens that can be generated for a completion, including input tokens.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_1">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">PowerShell</label><label for="__tabbed_3_2">Bash</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/completions&quot;</span> <span class="p">`</span>
+  <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">&#39;{</span>
+<span class="s1">    &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
+<span class="s1">    &quot;prompt&quot;: &quot;What is the population of Paris?&quot;,</span>
+<span class="s1">    &quot;stream&quot;: false</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/completions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
+<span class="s1">        &quot;prompt&quot;: &quot;What is the population of Paris?&quot;,</span>
+<span class="s1">        &quot;stream&quot;: false</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="response-format_1">Response format</h3>
+<p>The following format is used for both streaming and non-streaming responses:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;text_completion&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">  </span><span class="p">}],</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="post-v1embeddings"><code>POST /v1/embeddings</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Embeddings API. You provide input text and receive vector representations (embeddings) that can be used for semantic search, clustering, and similarity comparisons. This API will also load the model if it is not already loaded.</p>
+<blockquote>
+<p><strong>Note:</strong> This endpoint is only available for models using the <code>llamacpp</code> or <code>flm</code> recipes. ONNX models (OGA recipes) do not support embeddings.</p>
+</blockquote>
+<h3 id="parameters_2">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input</code></td>
+<td>Yes</td>
+<td>The input text or array of texts to embed. Can be a string or an array of strings.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The model to use for generating embeddings.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>encoding_format</code></td>
+<td>No</td>
+<td>The format to return embeddings in. Supported values: <code>"float"</code> (default), <code>"base64"</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_2">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="4:2"><input checked="checked" id="__tabbed_4_1" name="__tabbed_4" type="radio" /><input id="__tabbed_4_2" name="__tabbed_4" type="radio" /><div class="tabbed-labels"><label for="__tabbed_4_1">PowerShell</label><label for="__tabbed_4_2">Bash</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/embeddings&quot;</span> <span class="p">`</span>
+  <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">&#39;{</span>
+<span class="s1">    &quot;model&quot;: &quot;nomic-embed-text-v1-GGUF&quot;,</span>
+<span class="s1">    &quot;input&quot;: [&quot;Hello, world!&quot;, &quot;How are you?&quot;],</span>
+<span class="s1">    &quot;encoding_format&quot;: &quot;float&quot;</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/embeddings<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;nomic-embed-text-v1-GGUF&quot;,</span>
+<span class="s1">        &quot;input&quot;: [&quot;Hello, world!&quot;, &quot;How are you?&quot;],</span>
+<span class="s1">        &quot;encoding_format&quot;: &quot;float&quot;</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="response-format_2">Response format</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;embedding&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;embedding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.0234</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.0567</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0891</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;embedding&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;embedding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.0456</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.0678</span><span class="p">,</span><span class="w"> </span><span class="mf">0.1234</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nomic-embed-text-v1-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;usage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;prompt_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;total_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><code>object</code> - Type of response object, always <code>"list"</code></li>
+<li><code>data</code> - Array of embedding objects</li>
+<li><code>object</code> - Type of embedding object, always <code>"embedding"</code></li>
+<li><code>index</code> - Index position of the input text in the request</li>
+<li><code>embedding</code> - Vector representation as an array of floats</li>
+<li><code>model</code> - Model identifier used to generate the embeddings</li>
+<li><code>usage</code> - Token usage statistics</li>
+<li><code>prompt_tokens</code> - Number of tokens in the input</li>
+<li><code>total_tokens</code> - Total tokens processed</li>
+</ul>
+<h2 id="post-v1responses"><code>POST /v1/responses</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-partially_available-green" /></sub></p>
+<p>Responses API. You provide an input and receive a response. This API will also load the model if it is not already loaded.</p>
+<h3 id="parameters_3">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input</code></td>
+<td>Yes</td>
+<td>A list of dictionaries or a string input for the model to respond to.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The model to use for the response.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>max_output_tokens</code></td>
+<td>No</td>
+<td>The maximum number of output tokens to generate.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td>No</td>
+<td>What sampling temperature to use.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>repeat_penalty</code></td>
+<td>No</td>
+<td>Number between 1.0 and 2.0. 1.0 means no penalty. Higher values discourage repetition.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>top_k</code></td>
+<td>No</td>
+<td>Integer that controls the number of top tokens to consider during sampling.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>top_p</code></td>
+<td>No</td>
+<td>Float between 0.0 and 1.0 that controls the cumulative probability of top tokens to consider during nucleus sampling.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>stream</code></td>
+<td>No</td>
+<td>If true, tokens will be sent as they are generated. If false, the response will be sent as a single message once complete. Defaults to false.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="streaming-events">Streaming Events</h3>
+<p>The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about. Our initial implementation only offers support to:</p>
+<ul>
+<li><code>response.created</code></li>
+<li><code>response.output_text.delta</code></li>
+<li><code>response.completed</code></li>
+</ul>
+<p>For a full list of event types, see the <a href="https://platform.openai.com/docs/api-reference/responses-streaming">API reference for streaming</a>.</p>
+<h3 id="example-request_3">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="5:2"><input checked="checked" id="__tabbed_5_1" name="__tabbed_5" type="radio" /><input id="__tabbed_5_2" name="__tabbed_5" type="radio" /><div class="tabbed-labels"><label for="__tabbed_5_1">PowerShell</label><label for="__tabbed_5_2">Bash</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/responses&quot;</span> <span class="p">`</span>
+  <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">&#39;{</span>
+<span class="s1">    &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
+<span class="s1">    &quot;input&quot;: &quot;What is the population of Paris?&quot;,</span>
+<span class="s1">    &quot;stream&quot;: false</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/responses<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
+<span class="s1">        &quot;input&quot;: &quot;What is the population of Paris?&quot;,</span>
+<span class="s1">        &quot;stream&quot;: false</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="response-format_3">Response format</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="6:2"><input checked="checked" id="__tabbed_6_1" name="__tabbed_6" type="radio" /><input id="__tabbed_6_2" name="__tabbed_6" type="radio" /><div class="tabbed-labels"><label for="__tabbed_6_1">Non-streaming responses</label><label for="__tabbed_6_2">Streaming Responses</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1746225832.0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;response&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">      </span><span class="nt">&quot;annotations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">      </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span>
+<span class="w">    </span><span class="p">}]</span>
+<span class="w">  </span><span class="p">}]</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<p>For streaming responses, the API returns a series of events. Refer to <a href="https://platform.openai.com/docs/guides/streaming-responses?api-mode=responses">OpenAI streaming guide</a> for details.</p>
+</div>
+</div>
+</div>
+<h2 id="post-v1audiotranscriptions"><code>POST /v1/audio/transcriptions</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-partial-yellow" /></sub></p>
+<p>Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.</p>
+<blockquote>
+<p><strong>Note:</strong> This endpoint uses <a href="https://github.com/ggerganov/whisper.cpp">whisper.cpp</a> as the backend. Whisper models are automatically downloaded when first used.</p>
+<p><strong>Limitations:</strong> Only <code>wav</code> audio format and <code>json</code> response format are currently supported.</p>
+</blockquote>
+<h3 id="parameters_4">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>file</code></td>
+<td>Yes</td>
+<td>The audio file to transcribe. Supported formats: wav.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The Whisper model to use for transcription (e.g., <code>Whisper-Tiny</code>, <code>Whisper-Base</code>, <code>Whisper-Small</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>language</code></td>
+<td>No</td>
+<td>The language of the audio (ISO 639-1 code, e.g., <code>en</code>, <code>es</code>, <code>fr</code>). If not specified, Whisper will auto-detect the language.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td>No</td>
+<td>The format of the response. Currently only <code>json</code> is supported.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_4">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="7:2"><input checked="checked" id="__tabbed_7_1" name="__tabbed_7" type="radio" /><input id="__tabbed_7_2" name="__tabbed_7" type="radio" /><div class="tabbed-labels"><label for="__tabbed_7_1">Windows</label><label for="__tabbed_7_2">Linux</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/audio/transcriptions<span class="w"> </span>^
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;file=@C:\path\to\audio.wav&quot;</span><span class="w"> </span>^
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Whisper-Tiny&quot;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/audio/transcriptions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;file=@/path/to/audio.wav&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Whisper-Tiny&quot;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="response-format_4">Response format</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello, this is a sample transcription of the audio file.&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><code>text</code> - The transcribed text from the audio file</li>
+</ul>
+<h2 id="ws-realtime"><code>WS /realtime</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-partial-yellow" /></sub></p>
+<p>Realtime Audio Transcription API via WebSocket (OpenAI SDK compatible). Stream audio from a microphone and receive transcriptions in real-time with Voice Activity Detection (VAD).</p>
+<blockquote>
+<p><strong>Limitations:</strong> Only 16kHz mono PCM16 audio format is supported. Uses the same Whisper models as the HTTP transcription endpoint.</p>
+</blockquote>
+<h3 id="connection">Connection</h3>
+<p>The WebSocket server runs on a dynamically assigned port. Discover the port via the <a href="../lemonade/#get-v1health"><code>/v1/health</code></a> endpoint (<code>websocket_port</code> field), then connect with the model name:</p>
+<div class="highlight"><pre><span></span><code>ws://localhost:&lt;websocket_port&gt;/realtime?model=Whisper-Tiny
+</code></pre></div>
+<p>Upon connection, the server sends a <code>session.created</code> message with a session ID.</p>
+<h3 id="client-server-messages">Client → Server Messages</h3>
+<table>
+<thead>
+<tr>
+<th>Message Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.update</code></td>
+<td>Configure the session (set model, VAD settings, or disable turn detection)</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.append</code></td>
+<td>Send audio data (base64-encoded PCM16)</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.commit</code></td>
+<td>Force transcription of buffered audio</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.clear</code></td>
+<td>Clear audio buffer without transcribing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="server-client-messages">Server → Client Messages</h3>
+<table>
+<thead>
+<tr>
+<th>Message Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>session.created</code></td>
+<td>Session established, contains session ID</td>
+</tr>
+<tr>
+<td><code>session.updated</code></td>
+<td>Session configuration updated</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.speech_started</code></td>
+<td>VAD detected speech start</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.speech_stopped</code></td>
+<td>VAD detected speech end, transcription triggered</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.committed</code></td>
+<td>Audio buffer committed for transcription</td>
+</tr>
+<tr>
+<td><code>input_audio_buffer.cleared</code></td>
+<td>Audio buffer cleared</td>
+</tr>
+<tr>
+<td><code>conversation.item.input_audio_transcription.delta</code></td>
+<td>Interim/partial transcription (replaceable)</td>
+</tr>
+<tr>
+<td><code>conversation.item.input_audio_transcription.completed</code></td>
+<td>Final transcription result</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>Error message</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-configure-session">Example: Configure Session</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="example-send-audio">Example: Send Audio</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;input_audio_buffer.append&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;audio&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64-encoded PCM16 audio&gt;&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Audio should be:
+- 16kHz sample rate
+- Mono (single channel)
+- 16-bit signed integer (PCM16)
+- Base64 encoded
+- Sent in chunks (~85ms recommended)</p>
+<h3 id="example-transcription-result">Example: Transcription Result</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;conversation.item.input_audio_transcription.completed&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;transcript&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello, this is a test transcription.&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="vad-configuration">VAD Configuration</h3>
+<p>VAD settings can be configured via <code>session.update</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;turn_detection&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;threshold&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;silence_duration_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">800</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;prefix_padding_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">250</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>threshold</code></td>
+<td>0.01</td>
+<td>RMS energy threshold for speech detection</td>
+</tr>
+<tr>
+<td><code>silence_duration_ms</code></td>
+<td>800</td>
+<td>Silence duration to trigger speech end</td>
+</tr>
+<tr>
+<td><code>prefix_padding_ms</code></td>
+<td>250</td>
+<td>Minimum speech duration before triggering</td>
+</tr>
+</tbody>
+</table>
+<p>Set <code>turn_detection</code> to <code>null</code> to disable server-side VAD and use explicit commits instead:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;turn_detection&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="code-examples">Code Examples</h3>
+<p>See the <a href="../../examples/"><code>examples/</code></a> directory for a complete, runnable example:</p>
+<ul>
+<li><strong><a href="../../examples/realtime_transcription.py"><code>realtime_transcription.py</code></a></strong> - Python CLI for microphone streaming</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># Stream from microphone</span>
+python<span class="w"> </span>examples/realtime_transcription.py<span class="w"> </span>--model<span class="w"> </span>Whisper-Tiny
+</code></pre></div>
+<h3 id="integration-notes">Integration Notes</h3>
+<ul>
+<li><strong>Audio Format</strong>: Server expects 16kHz mono PCM16. Higher sample rates must be downsampled client-side.</li>
+<li><strong>Chunk Size</strong>: Send audio in ~85-256ms chunks for optimal latency/efficiency.</li>
+<li><strong>VAD Behavior</strong>: Server automatically detects speech boundaries and triggers transcription on speech end.</li>
+<li><strong>Manual Commit</strong>: Set <code>turn_detection</code> to <code>null</code>, then use <code>input_audio_buffer.commit</code> to force transcription. In this mode the server buffers audio but does not emit VAD or interim transcription events.</li>
+<li><strong>Clear Buffer</strong>: Use <code>input_audio_buffer.clear</code> to discard audio without transcribing.</li>
+<li><strong>Chunking</strong>: We are still tuning the chunking to balance latency vs. accuracy.</li>
+</ul>
+<h2 id="post-v1imagesgenerations"><code>POST /v1/images/generations</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Image Generation API. You provide a text prompt and receive a generated image. This API uses <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> as the backend.</p>
+<blockquote>
+<p><strong>Note:</strong> Image generation uses Stable Diffusion models. Available models include <code>SD-Turbo</code> (fast, ~4 steps), <code>SDXL-Turbo</code>, <code>SD-1.5</code>, and <code>SDXL-Base-1.0</code>.</p>
+<p><strong>Performance:</strong> CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.</p>
+</blockquote>
+<h3 id="parameters_5">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompt</code></td>
+<td>Yes</td>
+<td>The text description of the image to generate.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The Stable Diffusion model to use (e.g., <code>SD-Turbo</code>, <code>SDXL-Turbo</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>No</td>
+<td>The size of the generated image. Format: <code>WIDTHxHEIGHT</code> (e.g., <code>512x512</code>, <code>256x256</code>). Default: <code>512x512</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td>No</td>
+<td>Number of images to generate. Currently only <code>1</code> is supported.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td>No</td>
+<td>Format of the response. Only <code>b64_json</code> (base64-encoded image) is supported.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>No</td>
+<td>Number of inference steps. SD-Turbo works well with 4 steps. Default varies by model.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>cfg_scale</code></td>
+<td>No</td>
+<td>Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td>No</td>
+<td>Random seed for reproducibility. If not specified, a random seed is used.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_5">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="8:1"><input checked="checked" id="__tabbed_8_1" name="__tabbed_8" type="radio" /><div class="tabbed-labels"><label for="__tabbed_8_1">Bash</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/generations<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;SD-Turbo&quot;,</span>
+<span class="s1">        &quot;prompt&quot;: &quot;A serene mountain landscape at sunset&quot;,</span>
+<span class="s1">        &quot;size&quot;: &quot;512x512&quot;,</span>
+<span class="s1">        &quot;steps&quot;: 4,</span>
+<span class="s1">        &quot;response_format&quot;: &quot;b64_json&quot;</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h2 id="post-v1imagesedits"><code>POST /v1/images/edits</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> as the backend.</p>
+<blockquote>
+<p><strong>Note:</strong> This endpoint accepts <code>multipart/form-data</code> requests (not JSON). Use editing-capable models such as <code>Flux-2-Klein-4B</code> or <code>SD-Turbo</code>.</p>
+<p><strong>Performance:</strong> CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.</p>
+</blockquote>
+<h3 id="parameters_6">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The Stable Diffusion model to use (e.g., <code>Flux-2-Klein-4B</code>, <code>SD-Turbo</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td>Yes</td>
+<td>The source image file to edit (PNG). Sent as a file in multipart/form-data.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td>Yes</td>
+<td>A text description of the desired edit.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>mask</code></td>
+<td>No</td>
+<td>An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>No</td>
+<td>The size of the output image. Format: <code>WIDTHxHEIGHT</code> (e.g., <code>512x512</code>). Default: <code>512x512</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td>No</td>
+<td>Number of images to generate. Allowed range: <code>1</code>–<code>10</code>. Default: <code>1</code>. Values outside this range are rejected with <code>400 Bad Request</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td>No</td>
+<td>Format of the response. Only <code>b64_json</code> (base64-encoded image) is supported.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>steps</code></td>
+<td>No</td>
+<td>Number of inference steps. Default varies by model.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>cfg_scale</code></td>
+<td>No</td>
+<td>Classifier-free guidance scale. Default varies by model.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>seed</code></td>
+<td>No</td>
+<td>Random seed for reproducibility.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td>No</td>
+<td>OpenAI API compatibility field. Accepted but not forwarded to the backend.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+<tr>
+<td><code>background</code></td>
+<td>No</td>
+<td>OpenAI API compatibility field. Accepted but not forwarded to the backend.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+<tr>
+<td><code>quality</code></td>
+<td>No</td>
+<td>OpenAI API compatibility field. Accepted but not forwarded to the backend.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+<tr>
+<td><code>input_fidelity</code></td>
+<td>No</td>
+<td>OpenAI API compatibility field. Accepted but not forwarded to the backend.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+<tr>
+<td><code>output_compression</code></td>
+<td>No</td>
+<td>OpenAI API compatibility field. Accepted; silently ignored by the backend.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_6">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="9:2"><input checked="checked" id="__tabbed_9_1" name="__tabbed_9" type="radio" /><input id="__tabbed_9_2" name="__tabbed_9" type="radio" /><div class="tabbed-labels"><label for="__tabbed_9_1">Bash</label><label for="__tabbed_9_2">Python (OpenAI client)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/edits<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Flux-2-Klein-4B&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;prompt=Add a red barn and mountains in the background, photorealistic&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;size=512x512&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;n=1&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;response_format=b64_json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;image=@/path/to/source_image.png&quot;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;not-needed&quot;</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;source_image.png&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">image_file</span><span class="p">:</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">images</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
+        <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Flux-2-Klein-4B&quot;</span><span class="p">,</span>
+        <span class="n">image</span><span class="o">=</span><span class="n">image_file</span><span class="p">,</span>
+        <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;Add a red barn and mountains in the background, photorealistic&quot;</span><span class="p">,</span>
+        <span class="n">size</span><span class="o">=</span><span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
+<span class="n">image_data</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">b64_json</span><span class="p">)</span>
+<span class="nb">open</span><span class="p">(</span><span class="s2">&quot;edited_image.png&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">image_data</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<hr />
+<h2 id="post-v1imagesvariations"><code>POST /v1/images/variations</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Image Variations API. You provide a source image and receive a variation of it. This API uses <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> as the backend.</p>
+<blockquote>
+<p><strong>Note:</strong> This endpoint accepts <code>multipart/form-data</code> requests (not JSON). Unlike <code>/images/edits</code>, a <code>prompt</code> parameter is not supported and will be ignored — the model generates a variation based solely on the input image.</p>
+<p><strong>Performance:</strong> CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.</p>
+</blockquote>
+<h3 id="parameters_7">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The Stable Diffusion model to use (e.g., <code>Flux-2-Klein-4B</code>, <code>SD-Turbo</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td>Yes</td>
+<td>The source image file (PNG). Sent as a file in multipart/form-data.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>No</td>
+<td>The size of the output image. Format: <code>WIDTHxHEIGHT</code> (e.g., <code>512x512</code>). Default: <code>512x512</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td>No</td>
+<td>Number of variations to generate. Integer between 1 and 10 inclusive. Default: <code>1</code>. Values outside this range result in a 400 Bad Request error.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td>No</td>
+<td>Format of the response. Only <code>b64_json</code> (base64-encoded image) is supported.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td>No</td>
+<td>OpenAI API compatibility field. Accepted but not forwarded to the backend.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/not_available-red" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_7">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="10:2"><input checked="checked" id="__tabbed_10_1" name="__tabbed_10" type="radio" /><input id="__tabbed_10_2" name="__tabbed_10" type="radio" /><div class="tabbed-labels"><label for="__tabbed_10_1">Bash</label><label for="__tabbed_10_2">Python (OpenAI client)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/variations<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Flux-2-Klein-4B&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;size=512x512&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;n=1&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;response_format=b64_json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;image=@/path/to/source_image.png&quot;</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;not-needed&quot;</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;source_image.png&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">image_file</span><span class="p">:</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">images</span><span class="o">.</span><span class="n">create_variation</span><span class="p">(</span>
+        <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Flux-2-Klein-4B&quot;</span><span class="p">,</span>
+        <span class="n">image</span><span class="o">=</span><span class="n">image_file</span><span class="p">,</span>
+        <span class="n">size</span><span class="o">=</span><span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
+        <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
+<span class="n">image_data</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">b64_json</span><span class="p">)</span>
+<span class="nb">open</span><span class="p">(</span><span class="s2">&quot;variation.png&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">image_data</span><span class="p">)</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<hr />
+<h2 id="post-v1imagesupscale"><code>POST /v1/images/upscale</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the <code>sd-cli</code> binary from <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> to perform super-resolution.</p>
+<blockquote>
+<p><strong>Note:</strong> Available upscale models are <code>RealESRGAN-x4plus</code> (general-purpose, 64 MB) and <code>RealESRGAN-x4plus-anime</code> (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).</p>
+<p><strong>Note:</strong> Unlike <code>/images/edits</code> and <code>/images/variations</code>, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.</p>
+</blockquote>
+<h3 id="parameters_8">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>image</code></td>
+<td>Yes</td>
+<td>Base64-encoded PNG image to upscale.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The ESRGAN model to use (e.g., <code>RealESRGAN-x4plus</code>, <code>RealESRGAN-x4plus-anime</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_8">Example request</h3>
+<p>A typical workflow is to generate an image first, then upscale it:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="11:3"><input checked="checked" id="__tabbed_11_1" name="__tabbed_11" type="radio" /><input id="__tabbed_11_2" name="__tabbed_11" type="radio" /><input id="__tabbed_11_3" name="__tabbed_11" type="radio" /><div class="tabbed-labels"><label for="__tabbed_11_1">Bash</label><label for="__tabbed_11_2">PowerShell</label><label for="__tabbed_11_3">Python (requests)</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="c1"># Step 1: Generate an image and save the base64 response</span>
+<span class="nv">RESPONSE</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/generations<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;SD-Turbo&quot;,</span>
+<span class="s1">        &quot;prompt&quot;: &quot;A serene mountain landscape at sunset&quot;,</span>
+<span class="s1">        &quot;size&quot;: &quot;512x512&quot;,</span>
+<span class="s1">        &quot;steps&quot;: 4,</span>
+<span class="s1">        &quot;response_format&quot;: &quot;b64_json&quot;</span>
+<span class="s1">      }&#39;</span><span class="k">)</span>
+
+<span class="c1"># Step 2: Build the upscale JSON payload and pipe it to curl via stdin</span>
+<span class="c1"># (base64 images are too large for command-line interpolation)</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$RESPONSE</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+<span class="s2">import sys, json</span>
+<span class="s2">b64 = json.load(sys.stdin)[&#39;data&#39;][0][&#39;b64_json&#39;]</span>
+<span class="s2">print(json.dumps({&#39;image&#39;: b64, &#39;model&#39;: &#39;RealESRGAN-x4plus&#39;}))</span>
+<span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/upscale<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span>@-
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="c"># Step 1: Generate an image</span>
+<span class="nv">$genResponse</span> <span class="p">=</span> <span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/images/generations&quot;</span> <span class="p">`</span>
+  <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">&#39;{</span>
+<span class="s1">    &quot;model&quot;: &quot;SD-Turbo&quot;,</span>
+<span class="s1">    &quot;prompt&quot;: &quot;A serene mountain landscape at sunset&quot;,</span>
+<span class="s1">    &quot;size&quot;: &quot;512x512&quot;,</span>
+<span class="s1">    &quot;steps&quot;: 4,</span>
+<span class="s1">    &quot;response_format&quot;: &quot;b64_json&quot;</span>
+<span class="s1">  }&#39;</span>
+
+<span class="c"># Step 2: Extract the base64 image</span>
+<span class="nv">$imageB64</span> <span class="p">=</span> <span class="p">(</span><span class="nv">$genResponse</span><span class="p">.</span><span class="n">Content</span> <span class="p">|</span> <span class="nb">ConvertFrom-Json</span><span class="p">).</span><span class="n">data</span><span class="p">[</span><span class="n">0</span><span class="p">].</span><span class="n">b64_json</span>
+
+<span class="c"># Step 3: Upscale the image with Real-ESRGAN</span>
+<span class="nv">$body</span> <span class="p">=</span> <span class="p">@{</span> <span class="n">image</span> <span class="p">=</span> <span class="nv">$imageB64</span><span class="p">;</span> <span class="n">model</span> <span class="p">=</span> <span class="s2">&quot;RealESRGAN-x4plus&quot;</span> <span class="p">}</span> <span class="p">|</span> <span class="nb">ConvertTo-Json</span>
+<span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/images/upscale&quot;</span> <span class="p">`</span>
+  <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="nv">$body</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
+
+<span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:13305/api/v1&quot;</span>
+
+<span class="c1"># Step 1: Generate an image</span>
+<span class="n">gen_response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/images/generations&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;SD-Turbo&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;prompt&quot;</span><span class="p">:</span> <span class="s2">&quot;A serene mountain landscape at sunset&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;size&quot;</span><span class="p">:</span> <span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="s2">&quot;response_format&quot;</span><span class="p">:</span> <span class="s2">&quot;b64_json&quot;</span><span class="p">,</span>
+<span class="p">})</span>
+<span class="n">image_b64</span> <span class="o">=</span> <span class="n">gen_response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">&quot;data&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;b64_json&quot;</span><span class="p">]</span>
+
+<span class="c1"># Step 2: Upscale the image with Real-ESRGAN (512x512 -&gt; 2048x2048)</span>
+<span class="n">upscale_response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/images/upscale&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">&quot;image&quot;</span><span class="p">:</span> <span class="n">image_b64</span><span class="p">,</span>
+    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;RealESRGAN-x4plus&quot;</span><span class="p">,</span>
+<span class="p">})</span>
+
+<span class="c1"># Step 3: Save the upscaled image to a file</span>
+<span class="n">upscaled_b64</span> <span class="o">=</span> <span class="n">upscale_response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">&quot;data&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;b64_json&quot;</span><span class="p">]</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;upscaled.png&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">upscaled_b64</span><span class="p">))</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="response-format_5">Response format</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;b64_json&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64-encoded upscaled PNG&gt;&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><code>created</code> - Unix timestamp of when the upscaled image was generated</li>
+<li><code>data</code> - Array containing the upscaled image</li>
+<li><code>b64_json</code> - Base64-encoded PNG of the upscaled image</li>
+</ul>
+<h3 id="error-responses">Error responses</h3>
+<table>
+<thead>
+<tr>
+<th>Status Code</th>
+<th>Condition</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>400</td>
+<td>Missing <code>image</code> field</td>
+<td><code>{"error": {"message": "Missing 'image' field (base64 encoded)", "type": "invalid_request_error"}}</code></td>
+</tr>
+<tr>
+<td>400</td>
+<td>Missing <code>model</code> field</td>
+<td><code>{"error": {"message": "Missing 'model' field", "type": "invalid_request_error"}}</code></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Unknown model name</td>
+<td><code>{"error": {"message": "Upscale model not found: bad-model", "type": "invalid_request_error"}}</code></td>
+</tr>
+<tr>
+<td>500</td>
+<td>Upscale failed</td>
+<td><code>{"error": {"message": "ESRGAN upscale failed", "type": "server_error"}}</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="post-v1audiospeech"><code>POST /v1/audio/speech</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Speech Generation API. You provide a text input and receive an audio file. This API uses <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> as the backend.</p>
+<blockquote>
+<p><strong>Note:</strong> The model to use is called <code>kokoro-v1</code>. No other model is supported at the moment.</p>
+<p><strong>Limitations:</strong> Only <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code> are supported. Streaming is supported in <code>audio</code> (<code>pcm</code>) mode.</p>
+</blockquote>
+<h3 id="parameters_9">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input</code></td>
+<td>Yes</td>
+<td>The text to speak.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Yes</td>
+<td>The model to use (e.g., <code>kokoro-v1</code>).</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>speed</code></td>
+<td>No</td>
+<td>Speaking speed. Default: <code>1.0</code>.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>voice</code></td>
+<td>No</td>
+<td>The voice to use. All OpenAI-defined voices can be used (<code>alloy</code>, <code>ash</code>, ...), as well as those defined by the kokoro model (<code>af_sky</code>, <code>am_echo</code>, ...). Default: <code>shimmer</code></td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>response_format</code></td>
+<td>No</td>
+<td>Format of the response. <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code> are supported. Default: <code>mp3</code></td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+<tr>
+<td><code>stream_format</code></td>
+<td>No</td>
+<td>If set, the response will be streamed. Only <code>audio</code> is supported, which will output <code>pcm</code> audio. Default: not set</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/partial-yellow" /></sub></td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_9">Example request</h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="12:1"><input checked="checked" id="__tabbed_12_1" name="__tabbed_12" type="radio" /><div class="tabbed-labels"><label for="__tabbed_12_1">Bash</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/audio/speech<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model&quot;: &quot;kokoro-v1&quot;,</span>
+<span class="s1">        &quot;input&quot;: &quot;Lemonade can speak!&quot;,</span>
+<span class="s1">        &quot;speed&quot;: 1.0,</span>
+<span class="s1">        &quot;steps&quot;: 4,</span>
+<span class="s1">        &quot;response_format&quot;: &quot;mp3&quot;</span>
+<span class="s1">      }&#39;</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="response-format_6">Response format</h3>
+<p>The generated audio file is returned as-is.</p>
+<h2 id="get-v1models"><code>GET /v1/models</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like <code>checkpoint</code>, <code>recipe</code>, <code>size</code>, <code>downloaded</code>, and <code>labels</code>.</p>
+<p>By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.</p>
+<h3 id="parameters_10">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>show_all</code></td>
+<td>No</td>
+<td>If set to <code>true</code>, returns all models from the catalog including those not yet downloaded. Defaults to <code>false</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_10">Example request</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Show only downloaded models (OpenAI-compatible)</span>
+curl<span class="w"> </span>http://localhost:13305/v1/models
+
+<span class="c1"># Show all models including not-yet-downloaded (extended usage)</span>
+curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<h3 id="response-format_7">Response format</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Gemma-3-4b-it-GGUF&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.61</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SD-Turbo&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stabilityai/sd-turbo:sd_turbo.safetensors&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sd-cpp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;image_defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;cfg_scale&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Field Descriptions:</strong></p>
+<ul>
+<li><code>object</code> - Type of response object, always <code>"list"</code></li>
+<li><code>data</code> - Array of model objects with the following fields:</li>
+<li><code>id</code> - Model identifier (used for loading and inference requests)</li>
+<li><code>created</code> - Unix timestamp of when the model entry was created</li>
+<li><code>object</code> - Type of object, always <code>"model"</code></li>
+<li><code>owned_by</code> - Owner of the model, always <code>"lemonade"</code></li>
+<li><code>checkpoint</code> - Full checkpoint identifier on Hugging Face</li>
+<li><code>recipe</code> - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
+<li><code>size</code> - Model size in GB (omitted for models without size information)</li>
+<li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
+<li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
+<li><code>labels</code> - Array of tags describing the model (e.g., <code>"hot"</code>, <code>"reasoning"</code>, <code>"vision"</code>, <code>"embeddings"</code>, <code>"reranking"</code>, <code>"coding"</code>, <code>"tool-calling"</code>, <code>"image"</code>)</li>
+<li><code>image_defaults</code> - (Image models only) Default generation parameters for the model:<ul>
+<li><code>steps</code> - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)</li>
+<li><code>cfg_scale</code> - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)</li>
+<li><code>width</code> - Default image width in pixels</li>
+<li><code>height</code> - Default image height in pixels</li>
+</ul>
+</li>
+</ul>
+<h2 id="get-v1modelsmodel_id"><code>GET /v1/models/{model_id}</code></h2>
+<p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
+<p>Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.</p>
+<h3 id="parameters_11">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model_id</code></td>
+<td>Yes</td>
+<td>The ID of the model to retrieve. Must match one of the model IDs from the <a href="https://lemonade-server.ai/models.html">models list</a>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-request_11">Example request</h3>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
+</code></pre></div>
+<h3 id="response-format_8">Response format</h3>
+<p>Returns a single model object with the same fields as described in the <a href="#get-v1models">models list endpoint</a> above.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="s2">&quot;recipe_options&quot;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;llamacpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;--no-mmap&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="error-responses_1">Error responses</h3>
+<p>If the model is not found, the endpoint returns a 404 error:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Model Qwen3-0.6B-GGUF has not been found&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;not_found&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../ollama/" class="md-footer__link md-footer__link--next" aria-label="Next: Ollama-Compatible">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Ollama-Compatible
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 AMD. All rights reserved.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.youtube.com/@AMDDevCentral" target="_blank" rel="noopener" title="www.youtube.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.498 6.186a3.02 3.02 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.02 3.02 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.02 3.02 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.02 3.02 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814M9.545 15.568V8.432L15.818 12z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/lemonade-sdk/lemonade" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/5xXzkMu8Zk" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.08.08 0 0 0-.079-.037A19.7 19.7 0 0 0 3.677 4.37a.1.1 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10 10 0 0 0 .372-.292.07.07 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.07.07 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.028 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.03M8.02 15.33c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../assets/carousel.js"></script>
+      
+    
+  </body>
+</html>

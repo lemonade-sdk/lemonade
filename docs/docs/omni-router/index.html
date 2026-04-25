@@ -10,31 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/embeddable/runtime/">
+        <link rel="canonical" href="https://lemonade-server.ai/omni-router/">
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../server/configuration/">
       
       
-        <link rel="next" href="../backends/">
+        <link rel="next" href="../server/concepts/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/favicon.ico">
+      <link rel="icon" href="../assets/favicon.ico">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Runtime - Lemonade Server Documentation</title>
+        <title>OmniRouter (tools for agents) - Lemonade Server Documentation</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,9 +53,9 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/extra.css">
+      <link rel="stylesheet" href="../assets/extra.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#embeddable-lemonade-runtime" class="md-skip">
+        <a href="#omnirouter" class="md-skip">
           Skip to content
         </a>
       
@@ -98,7 +98,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../assets/logo.png" alt="logo">
+  <img src="../assets/logo.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Runtime
+              OmniRouter (tools for agents)
             
           </span>
         </div>
@@ -233,7 +233,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../assets/logo.png" alt="logo">
+  <img src="../assets/logo.png" alt="logo">
 
     </a>
     Lemonade Server Documentation
@@ -260,7 +260,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/" class="md-nav__link">
+      <a href="../server/" class="md-nav__link">
         
   
   
@@ -287,7 +287,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
+      <a href="../faq/" class="md-nav__link">
         
   
   
@@ -314,7 +314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../lemonade-cli/" class="md-nav__link">
+      <a href="../lemonade-cli/" class="md-nav__link">
         
   
   
@@ -390,7 +390,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/ai-toolkit/" class="md-nav__link">
+      <a href="../server/apps/ai-toolkit/" class="md-nav__link">
         
   
   
@@ -418,7 +418,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/anythingLLM/" class="md-nav__link">
+      <a href="../server/apps/anythingLLM/" class="md-nav__link">
         
   
   
@@ -446,7 +446,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/codeGPT/" class="md-nav__link">
+      <a href="../server/apps/codeGPT/" class="md-nav__link">
         
   
   
@@ -474,7 +474,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/continue/" class="md-nav__link">
+      <a href="../server/apps/continue/" class="md-nav__link">
         
   
   
@@ -502,7 +502,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/claude-code/" class="md-nav__link">
+      <a href="../server/apps/claude-code/" class="md-nav__link">
         
   
   
@@ -530,7 +530,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/mindcraft/" class="md-nav__link">
+      <a href="../server/apps/mindcraft/" class="md-nav__link">
         
   
   
@@ -558,7 +558,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/open-hands/" class="md-nav__link">
+      <a href="../server/apps/open-hands/" class="md-nav__link">
         
   
   
@@ -586,7 +586,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/open-webui/" class="md-nav__link">
+      <a href="../server/apps/open-webui/" class="md-nav__link">
         
   
   
@@ -614,7 +614,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/apps/wut/" class="md-nav__link">
+      <a href="../server/apps/wut/" class="md-nav__link">
         
   
   
@@ -649,7 +649,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/configuration/" class="md-nav__link">
+      <a href="../server/configuration/" class="md-nav__link">
         
   
   
@@ -673,10 +673,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../omni-router/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OmniRouter (tools for agents)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -692,6 +719,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collections
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#available-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-your-own-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using your own agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -703,7 +805,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/concepts/" class="md-nav__link">
+      <a href="../server/concepts/" class="md-nav__link">
         
   
   
@@ -730,7 +832,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev-getting-started/" class="md-nav__link">
+      <a href="../dev-getting-started/" class="md-nav__link">
         
   
   
@@ -754,20 +856,20 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked>
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
         
           
           <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
@@ -788,7 +890,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_9">
             <span class="md-nav__icon md-icon"></span>
             
@@ -806,7 +908,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../embeddable/" class="md-nav__link">
         
   
   
@@ -831,37 +933,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Runtime
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../embeddable/runtime/" class="md-nav__link">
         
   
   
@@ -877,98 +952,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#launching" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Launching
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#authenticating-requests" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Authenticating Requests
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#runtime-model-and-backend-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Runtime Model and Backend Management
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#runtime-settings-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Runtime Settings Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Runtime Settings Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#get-internalconfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        GET /internal/config
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#post-internalset" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        POST /internal/set
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -981,7 +964,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../backends/" class="md-nav__link">
+      <a href="../embeddable/backends/" class="md-nav__link">
         
   
   
@@ -1009,7 +992,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../models/" class="md-nav__link">
+      <a href="../embeddable/models/" class="md-nav__link">
         
   
   
@@ -1037,7 +1020,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../building/" class="md-nav__link">
+      <a href="../embeddable/building/" class="md-nav__link">
         
   
   
@@ -1121,7 +1104,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/" class="md-nav__link">
+      <a href="../api/" class="md-nav__link">
         
   
   
@@ -1149,7 +1132,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/openai/" class="md-nav__link">
+      <a href="../api/openai/" class="md-nav__link">
         
   
   
@@ -1177,7 +1160,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/ollama/" class="md-nav__link">
+      <a href="../api/ollama/" class="md-nav__link">
         
   
   
@@ -1205,7 +1188,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/anthropic/" class="md-nav__link">
+      <a href="../api/anthropic/" class="md-nav__link">
         
   
   
@@ -1233,7 +1216,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/llamacpp/" class="md-nav__link">
+      <a href="../api/llamacpp/" class="md-nav__link">
         
   
   
@@ -1261,7 +1244,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api/lemonade/" class="md-nav__link">
+      <a href="../api/lemonade/" class="md-nav__link">
         
   
   
@@ -1296,7 +1279,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guide/multi-model/" class="md-nav__link">
+      <a href="../guide/multi-model/" class="md-nav__link">
         
   
   
@@ -1323,7 +1306,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/server_integration/" class="md-nav__link">
+      <a href="../server/server_integration/" class="md-nav__link">
         
   
   
@@ -1350,7 +1333,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../server/custom-models/" class="md-nav__link">
+      <a href="../server/custom-models/" class="md-nav__link">
         
   
   
@@ -1377,7 +1360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../contribute/" class="md-nav__link">
+      <a href="../contribute/" class="md-nav__link">
         
   
   
@@ -1424,10 +1407,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#launching" class="md-nav__link">
+  <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Launching
+        How it works
       
     </span>
   </a>
@@ -1435,10 +1418,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#authenticating-requests" class="md-nav__link">
+  <a href="#collections" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Authenticating Requests
+        Collections
       
     </span>
   </a>
@@ -1446,10 +1429,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#runtime-model-and-backend-management" class="md-nav__link">
+  <a href="#available-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Runtime Model and Backend Management
+        Available tools
       
     </span>
   </a>
@@ -1457,41 +1440,24 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#runtime-settings-management" class="md-nav__link">
+  <a href="#quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Runtime Settings Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Runtime Settings Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#get-internalconfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        GET /internal/config
+        Quick start
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#post-internalset" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#using-your-own-agent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        POST /internal/set
+        Using your own agent
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1515,288 +1481,103 @@
   
 
 
-<h1 id="embeddable-lemonade-runtime">Embeddable Lemonade: Runtime</h1>
-<p>This guide will show you how to operate Embeddable Lemonade in your app at runtime.</p>
-<p>Contents:</p>
-<ul>
-<li><a href="#launching">Launching</a></li>
-<li><a href="#authenticating-requests">Authenticating Requests</a></li>
-<li><a href="#runtime-model-and-backend-management">Runtime Model and Backend Management</a></li>
-<li><a href="#runtime-settings-management">Runtime Settings Management</a></li>
-<li><a href="#get-internalconfig"><code>GET /internal/config</code></a></li>
-<li><a href="#post-internalset"><code>POST /internal/set</code></a></li>
-</ul>
-<h2 id="launching">Launching</h2>
-<p>We recommend that your app launches <code>lemond</code> as a subprocess, using a command like this:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Windows (cmd.exe)</label><label for="__tabbed_1_2">Linux (bash)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>set LEMONADE_API_KEY=KEY &amp;&amp; lemond.exe ./ --port PORT
-</code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><span class="nv">LEMONADE_API_KEY</span><span class="o">=</span>KEY<span class="w"> </span>lemond<span class="w"> </span>./<span class="w"> </span>--port<span class="w"> </span>PORT
-</code></pre></div>
-</div>
-</div>
-</div>
-<p>Breaking this down:
-- <code>LEMONADE_API_KEY=KEY</code> sets an API key for <code>lemond</code> known only to your app. This locks out other apps, as well as users, from interfacing directly with <code>lemond</code>'s endpoints.
-- The positional <code>./</code> is the working directory for <code>lemond</code>, where it will look for <code>config.json</code>, <code>bin/</code>, etc.
-- <code>--port PORT</code> ensures that <code>lemond</code> launches on a specific port where your app will find it.</p>
-<h2 id="authenticating-requests">Authenticating Requests</h2>
-<p>If you launch <code>lemond</code> with <code>LEMONADE_API_KEY</code> set, your app must send that same key on every HTTP request to Lemonade endpoints. Do this by setting an <code>Authorization</code> header with a Bearer token:</p>
-<div class="highlight"><pre><span></span><code><span class="err">Authorization: Bearer KEY</span>
-</code></pre></div>
-<p>For example, with <code>curl</code>:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Windows (cmd.exe)</label><label for="__tabbed_2_2">Linux (bash)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl http://localhost:8000/v1/health ^
-  -H &quot;Authorization: Bearer KEY&quot;
-</code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/v1/health<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer KEY&quot;</span>
-</code></pre></div>
-</div>
-</div>
-</div>
-<p>For JSON <code>POST</code> requests:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">Windows (cmd.exe)</label><label for="__tabbed_3_2">Linux (bash)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/internal/set ^
-  -H &quot;Authorization: Bearer KEY&quot; ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;log_level\&quot;: \&quot;debug\&quot;}&quot;
-</code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/internal/set<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer KEY&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;log_level&quot;: &quot;debug&quot;}&#39;</span>
-</code></pre></div>
-</div>
-</div>
-</div>
-<p>In JavaScript:</p>
-<div class="highlight"><pre><span></span><code><span class="k">await</span><span class="w"> </span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;http://localhost:8000/v1/models&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="nx">headers</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nx">Authorization</span><span class="o">:</span><span class="w"> </span><span class="sb">`Bearer </span><span class="si">${</span><span class="nx">apiKey</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span>
-<span class="w">  </span><span class="p">},</span>
-<span class="p">});</span>
-</code></pre></div>
-<p>This matches the existing CLI, tray, app, and test implementations in this repo. If the header is missing or the key is wrong, <code>lemond</code> will reject the request with <code>401 Unauthorized</code>.</p>
-<h2 id="runtime-model-and-backend-management">Runtime Model and Backend Management</h2>
-<p><code>lemond</code> provides a full set of endpoints for managing models and backends at runtime.</p>
+<h1 id="omnirouter">OmniRouter</h1>
+<p>OmniRouter is Lemonade's approach to multimodal agentic workflows. Instead of building a proprietary agent runtime into Lemonade, we expose each modality as an <strong>OpenAI-compatible tool</strong> that any existing LLM agent (Continue, OpenHands, Claude Code, your own app) can call against Lemonade's endpoints.</p>
+<p>You bring the LLM loop. Lemonade brings the tools.</p>
+<h2 id="how-it-works">How it works</h2>
+<ol>
+<li>You describe the tools to your LLM in OpenAI tool-calling format.</li>
+<li>The LLM decides which tool to call and with what arguments.</li>
+<li>Your client code executes each <code>tool_call</code> against the corresponding Lemonade endpoint (<code>/v1/images/generations</code>, <code>/v1/audio/speech</code>, etc.) and feeds the result back as a <code>tool</code> message.</li>
+<li>The LLM continues, calling more tools or producing a final response.</li>
+</ol>
+<p>This is the standard OpenAI tool-calling loop. The tool schemas OmniRouter provides are plain JSON (no Lemonade-specific client library required), the endpoints they target are OpenAI-compatible, and the server returns standard response shapes.</p>
+<h2 id="collections">Collections</h2>
+<p>A <strong>Collection</strong> is a preconfigured bundle of models sized for a hardware tier. Selecting a collection in the Lemonade desktop app loads one LLM + one image model + one ASR + one TTS — all the pieces OmniRouter's tools need in a single click.</p>
 <table>
 <thead>
 <tr>
+<th>Collection</th>
+<th>LLM</th>
+<th>Image</th>
+<th>ASR</th>
+<th>TTS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ultra Collection</strong></td>
+<td>Qwen3.5-35B-A3B-GGUF</td>
+<td>Flux-2-Klein-9B-GGUF (gen + edit)</td>
+<td>Whisper-Large-v3-Turbo</td>
+<td>kokoro-v1</td>
+</tr>
+<tr>
+<td><strong>Lite Collection</strong></td>
+<td>Qwen3.5-4B-GGUF</td>
+<td>SD-Turbo (gen only)</td>
+<td>Whisper-Tiny</td>
+<td>kokoro-v1</td>
+</tr>
+</tbody>
+</table>
+<p>Collections are hidden from the default <code>/v1/models</code> listing so OpenAI-compatible clients don't see "Ultra Collection" as if it were a real model. They surface with <code>?show_all=true</code> and appear in the desktop app's model list.</p>
+<p>Use a Collection. Every part of this doc assumes one is loaded — the desktop app, <code>examples/lemonade_tools.py</code>, and the tools themselves were all validated against the Ultra and Lite Collections above.</p>
+<p>If you're the developer wiring OmniRouter into your own agent and you want to substitute models, you can, but you take on the compatibility work: any LLM you swap in must carry the <code>tool-calling</code> label, and each tool you want to call needs one downloaded model whose <code>labels</code> include the row's "Needs a model with label" entry from the tools table below. That's a developer-path discovery step, not a user configuration; the simple answer for everyone else is "install a Collection."</p>
+<h2 id="available-tools">Available tools</h2>
+<p>The canonical definitions live in <a href="../src/app/src/renderer/utils/toolDefinitions.json"><code>src/app/src/renderer/utils/toolDefinitions.json</code></a> — a single source of truth used by the desktop app and this documentation.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
 <th>Endpoint</th>
-<th>Description</th>
+<th>Needs a model with label</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>POST /v1/pull</code></td>
-<td>Download a model</td>
+<td><code>generate_image</code></td>
+<td><code>POST /v1/images/generations</code></td>
+<td><code>image</code></td>
 </tr>
 <tr>
-<td><code>POST /v1/delete</code></td>
-<td>Delete a downloaded model</td>
+<td><code>edit_image</code></td>
+<td><code>POST /v1/images/edits</code></td>
+<td><code>edit</code></td>
 </tr>
 <tr>
-<td><code>POST /v1/load</code></td>
-<td>Load a model into memory</td>
+<td><code>text_to_speech</code></td>
+<td><code>POST /v1/audio/speech</code></td>
+<td><code>tts</code> or <code>speech</code></td>
 </tr>
 <tr>
-<td><code>POST /v1/unload</code></td>
-<td>Unload a model from memory</td>
+<td><code>transcribe_audio</code></td>
+<td><code>POST /v1/audio/transcriptions</code></td>
+<td><code>audio</code> or <code>transcription</code></td>
 </tr>
 <tr>
-<td><code>POST /v1/install</code></td>
-<td>Install or update a backend</td>
-</tr>
-<tr>
-<td><code>POST /v1/uninstall</code></td>
-<td>Remove a backend</td>
-</tr>
-<tr>
-<td><code>GET /v1/models</code></td>
-<td>List available models</td>
-</tr>
-<tr>
-<td><code>GET /v1/health</code></td>
-<td>Server status and loaded models</td>
+<td><code>analyze_image</code></td>
+<td><code>POST /v1/chat/completions</code></td>
+<td>LLM with <code>vision</code></td>
 </tr>
 </tbody>
 </table>
-<p>See the <a href="../../api/">Endpoints Spec</a> for full request/response details.</p>
-<h2 id="runtime-settings-management">Runtime Settings Management</h2>
-<p>Your app can manage its <code>lemond</code> instance at runtime by using <code>/internal</code> endpoints.</p>
-<table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Path</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>POST</code></td>
-<td><code>/internal/set</code></td>
-<td>Unified config setter (see below)</td>
-</tr>
-<tr>
-<td><code>GET</code></td>
-<td><code>/internal/config</code></td>
-<td>Returns the full runtime config snapshot</td>
-</tr>
-</tbody>
-</table>
-<p>The settings defined in <code>config.json</code> can all be changed at runtime without restarting <code>lemond</code> with the <code>/internal/set</code> endpoint. See the <a href="../../server/configuration/">Configuration Guide</a> for details on all settings.</p>
-<blockquote>
-<p>Note: The <code>lemonade</code> CLI uses <code>/internal/set</code> and <code>/internal/config</code> internally for the <code>lemonade config</code> commands.</p>
-</blockquote>
-<h4 id="get-internalconfig"><code>GET /internal/config</code></h4>
-<p>Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.</p>
-<p><strong>Example:</strong></p>
-<div class="tabbed-set tabbed-alternate" data-tabs="4:2"><input checked="checked" id="__tabbed_4_1" name="__tabbed_4" type="radio" /><input id="__tabbed_4_2" name="__tabbed_4" type="radio" /><div class="tabbed-labels"><label for="__tabbed_4_1">Windows (cmd.exe)</label><label for="__tabbed_4_2">Linux (bash)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl http://localhost:8000/internal/config
+<p>Endpoint request/response shapes are documented in the <a href="../api/">Endpoints Spec</a>.</p>
+<h2 id="quick-start">Quick start</h2>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>openai
+python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span><span class="s2">&quot;Generate an image of a sunset&quot;</span>
+python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span><span class="s2">&quot;Say hello world out loud&quot;</span>
 </code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/internal/config
-</code></pre></div>
-</div>
-</div>
-</div>
-<h4 id="post-internalset"><code>POST /internal/set</code></h4>
-<p>Accepts a JSON object with one or more keys to update atomically. Returns <code>{"status":"success","updated":{...}}</code> on success, or <code>400</code> with an error message on validation failure.</p>
-<p><strong>Server-level keys</strong> (trigger immediate side effects):</p>
-<table>
-<thead>
-<tr>
-<th>Key</th>
-<th>Type</th>
-<th>Side Effect</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>port</code></td>
-<td>int (1–65535)</td>
-<td>HTTP rebind</td>
-</tr>
-<tr>
-<td><code>host</code></td>
-<td>string</td>
-<td>HTTP rebind</td>
-</tr>
-<tr>
-<td><code>log_level</code></td>
-<td>string (<code>trace</code>, <code>debug</code>, <code>info</code>, <code>warning</code>, <code>error</code>, <code>fatal</code>, <code>none</code>)</td>
-<td>Reconfigures log filter</td>
-</tr>
-<tr>
-<td><code>global_timeout</code></td>
-<td>int (positive)</td>
-<td>Updates default HTTP client timeout</td>
-</tr>
-<tr>
-<td><code>no_broadcast</code></td>
-<td>bool</td>
-<td>Stops or starts UDP beacon</td>
-</tr>
-<tr>
-<td><code>extra_models_dir</code></td>
-<td>string</td>
-<td>Updates model manager search path</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Deferred keys</strong> (affect the next model load or eviction decision, no immediate side effect):</p>
-<table>
-<thead>
-<tr>
-<th>Key</th>
-<th>Type</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>max_loaded_models</code></td>
-<td>int (-1 or positive)</td>
-</tr>
-<tr>
-<td><code>ctx_size</code></td>
-<td>int (positive)</td>
-</tr>
-<tr>
-<td><code>llamacpp_backend</code></td>
-<td>string</td>
-</tr>
-<tr>
-<td><code>llamacpp_args</code></td>
-<td>string</td>
-</tr>
-<tr>
-<td><code>sdcpp_backend</code></td>
-<td>string</td>
-</tr>
-<tr>
-<td><code>whispercpp_backend</code></td>
-<td>string</td>
-</tr>
-<tr>
-<td><code>whispercpp_args</code></td>
-<td>string</td>
-</tr>
-<tr>
-<td><code>steps</code></td>
-<td>int (positive)</td>
-</tr>
-<tr>
-<td><code>cfg_scale</code></td>
-<td>number</td>
-</tr>
-<tr>
-<td><code>width</code></td>
-<td>int (positive)</td>
-</tr>
-<tr>
-<td><code>height</code></td>
-<td>int (positive)</td>
-</tr>
-<tr>
-<td><code>flm_args</code></td>
-<td>string</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Example:</strong></p>
-<div class="tabbed-set tabbed-alternate" data-tabs="5:2"><input checked="checked" id="__tabbed_5_1" name="__tabbed_5" type="radio" /><input id="__tabbed_5_2" name="__tabbed_5" type="radio" /><div class="tabbed-labels"><label for="__tabbed_5_1">Windows (cmd.exe)</label><label for="__tabbed_5_2">Linux (bash)</label></div>
-<div class="tabbed-content">
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/internal/set ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;ctx_size\&quot;: 8192, \&quot;max_loaded_models\&quot;: 3, \&quot;log_level\&quot;: \&quot;debug\&quot;}&quot;
-</code></pre></div>
-</div>
-<div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/internal/set<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;ctx_size&quot;: 8192, &quot;max_loaded_models&quot;: 3, &quot;log_level&quot;: &quot;debug&quot;}&#39;</span>
-</code></pre></div>
-</div>
-</div>
-</div>
+<p><a href="../examples/lemonade_tools.py"><code>examples/lemonade_tools.py</code></a> shows the full agentic loop — tool definitions, LLM call with <code>tools=[...]</code>, executing each <code>tool_call</code>, and feeding the result back. Fewer than 150 lines of Python.</p>
+<h2 id="using-your-own-agent">Using your own agent</h2>
+<p>Integrate OmniRouter into an existing agent by following the pattern in <a href="../examples/lemonade_tools.py"><code>examples/lemonade_tools.py</code></a>:</p>
+<ol>
+<li>Point your OpenAI-compatible client at <code>http://localhost:13305/v1</code>.</li>
+<li>Copy the tool entries from <a href="../src/app/src/renderer/utils/toolDefinitions.json"><code>toolDefinitions.json</code></a> into your agent's tool list (or load the JSON directly).</li>
+<li>When your agent receives a <code>tool_call</code> for one of these tools, POST to the corresponding endpoint from the table above and feed the response back to the LLM as a <code>tool</code> message.</li>
+<li>If you want to pick models programmatically rather than rely on a Collection being loaded, query <code>GET /v1/models?show_all=true</code> and match the <code>labels</code> array against the "Needs a model with label" column above.</li>
+</ol>
+<p>The example script implements all four steps end-to-end against the <code>generate_image</code> and <code>text_to_speech</code> tools.</p>
 
 
 
@@ -1832,7 +1613,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+          <a href="../server/configuration/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Server Configuration">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1842,20 +1623,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Overview
+                Server Configuration
               </div>
             </div>
           </a>
         
         
           
-          <a href="../backends/" class="md-footer__link md-footer__link--next" aria-label="Next: Backends">
+          <a href="../server/concepts/" class="md-footer__link md-footer__link--next" aria-label="Next: Understanding local LLM servers">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Backends
+                Understanding local LLM servers
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -1934,12 +1715,12 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.footer", "navigation.tracking", "navigation.expand", "navigation.top", "content.code.annotate", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="../../assets/carousel.js"></script>
+        <script src="../assets/carousel.js"></script>
       
     
   </body>
