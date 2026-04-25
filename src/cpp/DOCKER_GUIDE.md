@@ -383,5 +383,17 @@ Server not starting: Check logs with:
 docker logs lemonade-server
 ```
 
+If you want to view the logs on the web UI, you need to expose the websocket port as well:
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -p 9000:9000 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
 - Model download fails: Ensure /root/.cache/huggingface volume is writable
 - Vulkan errors on CPU-only machine: The server will fallback to CPU backend automatically
