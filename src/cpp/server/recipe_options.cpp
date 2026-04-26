@@ -14,7 +14,7 @@ namespace lemon {
 using json = nlohmann::json;
 
 static const json DEFAULTS = {
-    {"ctx_size", 4096},
+    {"ctx_size", 131072},
     {"llamacpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
@@ -188,7 +188,7 @@ json RecipeOptions::get_option(const std::string& opt) const {
 #ifdef LEMONADE_CLI
 // CLI_OPTIONS used only by the lemonade CLI client for add_cli_options
 static const json CLI_OPTIONS = {
-    {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
+    {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context target for the model (legacy ctx_size option name)"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},

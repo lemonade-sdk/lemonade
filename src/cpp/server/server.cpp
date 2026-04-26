@@ -10,6 +10,7 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/runtime_config.h"
+#include "lemon/memory_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <iostream>
@@ -418,6 +419,10 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_system_stats(req, res);
+    });
+
+    register_post("system/ram_limit", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_ram_limit(req, res);
     });
 
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
@@ -2779,6 +2784,23 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                 {"model_name", model_name},
                 {"recipe", "collection"}
             };
+
+            auto loaded_models = router_->get_all_loaded_models();
+            response["all_models_loaded"] = loaded_models;
+            nlohmann::json context_warnings = nlohmann::json::array();
+            for (const auto& loaded_model : loaded_models) {
+                if (loaded_model.contains("context_warning")) {
+                    context_warnings.push_back({
+                        {"model_name", loaded_model.value("model_name", "")},
+                        {"context_warning", loaded_model["context_warning"]},
+                        {"loaded_ctx_size", loaded_model.value("loaded_ctx_size", 0)}
+                    });
+                }
+            }
+            if (!context_warnings.empty()) {
+                response["context_warnings"] = context_warnings;
+            }
+
             res.set_content(response.dump(), "application/json");
         } else {
             // Load model with optional per-model settings (declarative: no-op
@@ -2794,6 +2816,21 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                 {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe}
             };
+
+            auto loaded_models = router_->get_all_loaded_models();
+            response["all_models_loaded"] = loaded_models;
+            for (const auto& loaded_model : loaded_models) {
+                if (loaded_model.value("model_name", "") == model_name) {
+                    if (loaded_model.contains("loaded_ctx_size")) {
+                        response["loaded_ctx_size"] = loaded_model["loaded_ctx_size"];
+                    }
+                    if (loaded_model.contains("context_warning")) {
+                        response["context_warning"] = loaded_model["context_warning"];
+                    }
+                    break;
+                }
+            }
+
             res.set_content(response.dump(), "application/json");
         }
 
@@ -3522,6 +3559,57 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     res.set_content(stats.dump(), "application/json");
 }
 
+
+void Server::handle_ram_limit(const httplib::Request& req, httplib::Response& res) {
+    try {
+        if (!config_->allow_external_ram_limit_api()) {
+            res.status = 403;
+            nlohmann::json error = {{"error", {
+                {"message", "External RAM limit modification is disabled by configuration"},
+                {"type", "forbidden"},
+                {"code", "external_ram_limit_api_disabled"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        auto body = nlohmann::json::parse(req.body);
+        long long limit_mib = -1;
+        if (body.contains("ram_limit_mb") && body["ram_limit_mb"].is_number_integer()) {
+            limit_mib = body["ram_limit_mb"].get<long long>();
+        } else if (body.contains("ram_limit_mib") && body["ram_limit_mib"].is_number_integer()) {
+            limit_mib = body["ram_limit_mib"].get<long long>();
+        } else if (body.contains("ram_limit") && body["ram_limit"].is_number_integer()) {
+            limit_mib = body["ram_limit"].get<long long>();
+        } else {
+            res.status = 400;
+            nlohmann::json error = {{"error", "Request body must include integer ram_limit_mb (MiB), ram_limit_mib, or ram_limit"}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        auto result = config_->set({{"ram_limit", limit_mib}});
+        nlohmann::json response = result;
+        response["ram_limit"] = config_->ram_limit();
+        response["ram_limit_bytes"] = MemoryManager::ram_limit_mib_to_bytes(config_->ram_limit());
+        response["reconciliation"] = router_->reconcile_memory_limit();
+        res.set_content(response.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error&) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::invalid_argument& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_ram_limit: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
@@ -3776,6 +3864,16 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (key == "ram_limit") {
+            LOG(INFO, "Server") << "RAM limit changed to: " << config_->ram_limit() << " MiB" << std::endl;
+            if (router_) {
+                try {
+                    auto reconciliation = router_->reconcile_memory_limit();
+                    LOG(INFO, "Server") << "RAM limit reconciliation: " << reconciliation.dump() << std::endl;
+                } catch (const std::exception& e) {
+                    LOG(WARNING, "Server") << "RAM limit reconciliation failed: " << e.what() << std::endl;
+                }
+            }
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
             // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.

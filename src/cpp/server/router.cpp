@@ -8,11 +8,36 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
+#include "lemon/memory_manager.h"
 #include <iostream>
 #include <algorithm>
+#include <limits>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
+
+namespace {
+ModelMemoryEstimate make_initial_memory_estimate(const ModelInfo& model_info,
+                                                DeviceType device_type,
+                                                const RecipeOptions& effective_options,
+                                                long long ram_limit_mib) {
+    MemoryBackendClass memory_backend = MemoryBackendClass::CPU;
+    if (device_type & DEVICE_NPU) {
+        memory_backend = MemoryBackendClass::NPU;
+    } else if (device_type & DEVICE_GPU) {
+        memory_backend = MemoryBackendClass::GPU;
+    }
+
+    int ctx_size = 0;
+    auto ctx_option = effective_options.get_option("ctx_size");
+    if (ctx_option.is_number_integer()) {
+        ctx_size = ctx_option.get<int>();
+    }
+
+    return MemoryManager::estimate_non_llamacpp_memory(
+        model_info, memory_backend, ctx_size, ram_limit_mib);
+}
+} // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
     : config_(config), model_manager_(model_manager), backend_manager_(backend_manager) {
@@ -326,6 +351,8 @@ void Router::load_model(const std::string& model_name,
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_memory_estimate(make_initial_memory_estimate(
+            model_info, device_type, effective_options, config_->ram_limit()));
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup
@@ -334,12 +361,18 @@ void Router::load_model(const std::string& model_name,
         // Load the backend (this can take 30-60 seconds)
     LOG(DEBUG, "Router") << "Starting backend (this may take a moment)..." << std::endl;
         bool load_success = false;
+        bool non_retryable_load_error = false;
         std::string error_message;
 
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
         LOG(DEBUG, "Router") << "Backend started successfully" << std::endl;
+        } catch (const MemoryPreflightException& e) {
+            error_message = e.what();
+            non_retryable_load_error = true;
+            load_success = false;
+        LOG(ERROR, "Router") << "Backend memory preflight failed: " << error_message << std::endl;
         } catch (const std::exception& e) {
             error_message = e.what();
             load_success = false;
@@ -378,6 +411,11 @@ void Router::load_model(const std::string& model_name,
                 throw std::runtime_error(error_message);
             }
 
+            if (non_retryable_load_error) {
+            LOG(ERROR, "Router") << "Non-retryable memory preflight error, NOT evicting other models" << std::endl;
+                throw MemoryPreflightException(error_message);
+            }
+
             // Nuclear option: evict all models and retry
         LOG(WARNING, "Router") << "Load failed with non-file-not-found error, "
                       << "evicting all models and retrying..." << std::endl;
@@ -390,6 +428,8 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_memory_estimate(make_initial_memory_estimate(
+                model_info, device_type, effective_options, config_->ram_limit()));
             retry_server->update_access_time();
 
             lock.unlock();
@@ -426,6 +466,83 @@ void Router::load_model(const std::string& model_name,
 
         throw;
     }
+}
+
+
+uint64_t Router::get_total_estimated_memory_bytes() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    uint64_t total = 0;
+    for (const auto& server : loaded_servers_) {
+        uint64_t bytes = server->get_estimated_memory_bytes();
+        if (bytes > std::numeric_limits<uint64_t>::max() - total) {
+            return std::numeric_limits<uint64_t>::max();
+        }
+        total += bytes;
+    }
+    return total;
+}
+
+json Router::reconcile_memory_limit() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    long long ram_limit_mib = config_->ram_limit();
+    uint64_t limit_bytes = MemoryManager::ram_limit_mib_to_bytes(ram_limit_mib);
+    json unloaded = json::array();
+
+    auto total_estimated_locked = [this]() -> uint64_t {
+        uint64_t total = 0;
+        for (const auto& server : loaded_servers_) {
+            uint64_t bytes = server->get_estimated_memory_bytes();
+            if (bytes > std::numeric_limits<uint64_t>::max() - total) {
+                return std::numeric_limits<uint64_t>::max();
+            }
+            total += bytes;
+        }
+        return total;
+    };
+
+    uint64_t before = total_estimated_locked();
+    if (limit_bytes == 0) {
+        return {
+            {"status", "success"},
+            {"ram_limit", ram_limit_mib},
+            {"ram_limit_bytes", 0},
+            {"estimated_memory_before_bytes", before},
+            {"estimated_memory_after_bytes", before},
+            {"unloaded", unloaded}
+        };
+    }
+
+    while (!loaded_servers_.empty() && total_estimated_locked() > limit_bytes) {
+        WrappedServer* lru = nullptr;
+        for (const auto& server : loaded_servers_) {
+            if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
+                lru = server.get();
+            }
+        }
+        if (!lru) break;
+
+        json item = {
+            {"model_name", model_manager_->get_public_model_name(lru->get_model_name())},
+            {"estimated_memory_bytes", lru->get_estimated_memory_bytes()},
+            {"last_use", std::chrono::duration_cast<std::chrono::milliseconds>(
+                lru->get_last_access_time().time_since_epoch()).count()}
+        };
+        unloaded.push_back(item);
+        LOG(INFO, "Router") << "RAM limit exceeded; unloading LRU model "
+                            << lru->get_model_name() << std::endl;
+        evict_server(lru);
+    }
+
+    uint64_t after = total_estimated_locked();
+    return {
+        {"status", "success"},
+        {"ram_limit", ram_limit_mib},
+        {"ram_limit_bytes", limit_bytes},
+        {"estimated_memory_before_bytes", before},
+        {"estimated_memory_after_bytes", after},
+        {"unloaded", unloaded}
+    };
 }
 
 void Router::unload_model(const std::string& model_name) {
@@ -477,6 +594,15 @@ json Router::get_all_loaded_models() const {
         RecipeOptions recipe_options =  server->get_recipe_options();
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
+        ModelMemoryEstimate memory_estimate = server->get_memory_estimate();
+        if (memory_estimate.total_required_bytes() > 0) {
+            model_info["memory_estimate"] = memory_estimate.to_json();
+            model_info["estimated_memory_bytes"] = memory_estimate.total_required_bytes();
+            model_info["loaded_ctx_size"] = memory_estimate.final_context;
+            if (memory_estimate.restricted_context_warning) {
+                model_info["context_warning"] = memory_estimate.warning;
+            }
+        }
 
         // Convert timestamp to milliseconds since epoch
         auto time_point = server->get_last_access_time();

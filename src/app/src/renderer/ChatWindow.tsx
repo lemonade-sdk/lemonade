@@ -32,7 +32,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setUserHasSelectedModel,
   } = useModels();
   const inference = useInferenceState();
-  const { toasts, removeToast, showError } = useToast();
+  const { toasts, removeToast, showError, showWarning } = useToast();
 
   const [currentLoadedModel, setCurrentLoadedModel] = useState<string | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -271,7 +271,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     isPreFlight: inference.isPreFlight,
     isInferring: inference.isInferring,
     activeModality: inference.activeModality,
-    runPreFlight: inference.runPreFlight,
+    runPreFlight: (modality: any, options: any) => inference.runPreFlight(modality, { ...options, onWarning: showWarning }),
     reset: inference.reset,
     showError,
     appSettings,

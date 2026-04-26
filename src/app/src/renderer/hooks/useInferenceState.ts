@@ -9,6 +9,7 @@ interface RunPreFlightOptions {
   modelName: string;
   modelsData: ModelsData;
   onError: (msg: string) => void;
+  onWarning?: (msg: string) => void;
 }
 
 export function useInferenceState() {
@@ -28,7 +29,7 @@ export function useInferenceState() {
 
   const runPreFlight = useCallback(async (
     modality: Modality,
-    { modelName, modelsData, onError }: RunPreFlightOptions,
+    { modelName, modelsData, onError, onWarning }: RunPreFlightOptions,
   ): Promise<boolean> => {
     // Re-entry guard using synchronous ref
     if (phaseRef.current !== 'idle') return false;
@@ -39,6 +40,7 @@ export function useInferenceState() {
     try {
       await ensureModelReady(modelName, modelsData, {
         onModelLoading: () => {}, // Phase already set to pre_flight
+        onWarning,
       });
     } catch (error: any) {
       setPhaseSync('idle');

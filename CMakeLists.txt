@@ -561,6 +561,7 @@ set(SOURCES_CORE
     src/cpp/server/cli_parser.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/model_manager.cpp
+    src/cpp/server/memory_manager.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
     src/cpp/server/streaming_proxy.cpp
