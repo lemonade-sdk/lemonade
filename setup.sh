@@ -500,10 +500,14 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
                 install_cmd="sudo dnf install -y ${missing_packages[*]}"
             fi
         elif command_exists zypper; then
+            # --allow-downgrade + --force-resolution let zypper resolve the
+            # transient libsystemd0 / libsystemd0-mini version skew that
+            # Tumbleweed periodically ships, instead of bailing on the
+            # interactive solver prompt.
             if is_root; then
-                install_cmd="zypper install -y ${missing_packages[*]}"
+                install_cmd="zypper install -y --allow-downgrade --replacefiles --force-resolution ${missing_packages[*]}"
             else
-                install_cmd="sudo zypper install -y ${missing_packages[*]}"
+                install_cmd="sudo zypper install -y --allow-downgrade --replacefiles --force-resolution ${missing_packages[*]}"
             fi
         fi
     elif [ "$OS" = "macos" ]; then
@@ -548,7 +552,7 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
         elif command_exists dnf; then
             maybe_sudo dnf install -y ${missing_packages[@]}
         elif command_exists zypper; then
-            maybe_sudo zypper install -y ${missing_packages[@]}
+            maybe_sudo zypper install -y --allow-downgrade --replacefiles --force-resolution ${missing_packages[@]}
         fi
     elif [ "$OS" = "macos" ]; then
         brew install ${missing_packages[@]}
