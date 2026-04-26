@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <iostream>
@@ -137,6 +138,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     model_manager_->set_extra_models_dir(config_->extra_models_dir());
 
     backend_manager_ = std::make_unique<BackendManager>();
+    BackendManager::set_global(backend_manager_.get());
 
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
@@ -483,7 +485,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
         json filtered_models = json::object();
         for (const auto& [model_name, info] : models_map) {
             filtered_models[model_name] = {
-                {"model_name", info.model_name},
+                {"model_name", model_name},
                 {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
@@ -570,10 +572,10 @@ void Server::setup_static_files(httplib::Server &web_server) {
             std::string html((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             file.close();
 
-            // Inject mock API for web compatibility with Electron app code
+            // Inject mock window.api for web compatibility with the shared Tauri app renderer
             std::string mock_api = R"(
 <script>
-// Mock Electron API for web compatibility
+// Mock window.api for web compatibility (the Tauri shim is skipped in pure-web mode)
 window.api = {
     isWebApp: true,  // Explicit flag to indicate web mode
     platform: navigator.platform || 'web',
@@ -615,108 +617,7 @@ window.api = {
         const settings = await window.api.getSettings();
         return settings.apiKey?.value || '';
     },
-    fetchWithApiKey: async (url) => {
-        try {
-            let apiKey = await window.api.getServerAPIKey();
-            const options = {};
-            if(apiKey != null && apiKey != '') {
-                options.headers = {
-                Authorization: `Bearer ${apiKey}`,
-                }
-            }
-            return await fetch(url, options);
-        } catch (e) {
-            console.error('fetchWithApiKey error:', e);
-            throw e;
-        }
-    },
-    getVersion: async () => {
-        try {
-            const response = await window.api.fetchWithApiKey('/api/v1/health');
-            if (response.ok) {
-                const data = await response.json();
-                return data.version || 'Unknown';
-            } else {
-                console.error('Health response not OK:', response.status, response.statusText);
-            }
-        } catch (e) {
-            console.error('Failed to fetch version:', e);
-        }
-        return 'Unknown';
-    },
-    restartApp: () => window.location.reload(),
-    getSystemStats: async () => {
-        try {
-            const response = await window.api.fetchWithApiKey('/api/v1/system-stats');
-            if (response.ok) {
-                return await response.json();
-            }
-        } catch (e) {
-            console.warn('Failed to fetch system stats:', e);
-        }
-        return { cpu_percent: null, memory_gb: 0, gpu_percent: null, vram_gb: null };
-    },
-    getSystemInfo: async () => {
-        try {
-            const response = await window.api.fetchWithApiKey('/api/v1/system-info');
-            if (response.ok) {
-                const data = await response.json();
-                let maxGttGb = 0;
-                let maxVramGb = 0;
-
-                const considerAmdGpu = (gpu) => {
-                    if (gpu && typeof gpu.virtual_mem_gb === 'number' && isFinite(gpu.virtual_mem_gb)) {
-                        maxGttGb = Math.max(maxGttGb, gpu.virtual_mem_gb);
-                    }
-                    if (gpu && typeof gpu.vram_gb === 'number' && isFinite(gpu.vram_gb)) {
-                        maxVramGb = Math.max(maxVramGb, gpu.vram_gb);
-                    }
-                };
-
-                if (data.devices?.amd_igpu) {
-                    considerAmdGpu(data.devices.amd_igpu);
-                }
-                if (Array.isArray(data.devices?.amd_dgpu)) {
-                    data.devices.amd_dgpu.forEach(considerAmdGpu);
-                }
-
-                // Transform server response to match the About window format
-                const systemInfo = {
-                    system: 'Unknown',
-                    os: data['OS Version'] || 'Unknown',
-                    cpu: data['Processor'] || 'Unknown',
-                    gpus: [],
-                    gtt_gb: maxGttGb > 0 ? `${maxGttGb} GB` : undefined,
-                    vram_gb: maxVramGb > 0 ? `${maxVramGb} GB` : undefined,
-                };
-
-                // Extract GPU information from devices
-                if (data.devices) {
-                    if (data.devices.amd_igpu?.name) {
-                        systemInfo.gpus.push(data.devices.amd_igpu.name);
-                    }
-                    if (data.devices.nvidia_igpu?.name) {
-                        systemInfo.gpus.push(data.devices.nvidia_igpu.name);
-                    }
-                    if (Array.isArray(data.devices.amd_dgpu)) {
-                        data.devices.amd_dgpu.forEach(gpu => {
-                            if (gpu.name) systemInfo.gpus.push(gpu.name);
-                        });
-                    }
-                    if (Array.isArray(data.devices.nvidia_dgpu)) {
-                        data.devices.nvidia_dgpu.forEach(gpu => {
-                            if (gpu.name) systemInfo.gpus.push(gpu.name);
-                        });
-                    }
-                }
-
-                return systemInfo;
-            }
-        } catch (e) {
-            console.warn('Failed to fetch system info:', e);
-        }
-        return { system: 'Unknown', os: 'Unknown', cpu: 'Unknown', gpus: [], gtt_gb: undefined, vram_gb: undefined };
-    }
+    restartApp: () => window.location.reload()
 };
 </script>
 )";
@@ -2524,18 +2425,56 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::vector<std::pair<std::string, std::string>> env_vars;
         std::filesystem::path cli_dir = cli_exe.parent_path();
+
+        std::string resolved_backend = backend;
+        if (backend == "rocm") {
+            std::string channel = "preview";
+            if (config_) {
+                channel = config_->rocm_channel();
+            }
+            resolved_backend = "rocm-" + channel;
+        }
 #ifndef _WIN32
         std::string lib_path = cli_dir.string();
+
+        if (resolved_backend == "rocm-stable") {
+            std::string runtime_dir = lemon::backends::BackendUtils::get_install_directory(
+                "rocm-stable-runtime", ""
+            );
+            if (std::filesystem::exists(runtime_dir)) {
+                lib_path = runtime_dir + ":" + lib_path;
+            }
+        } else if (resolved_backend == "rocm-preview") {
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+                if (!therock_lib.empty()) {
+                    lib_path = therock_lib + ":" + lib_path;
+                }
+            }
+        }
+
         const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
         if (existing_ld_path && strlen(existing_ld_path) > 0) {
             lib_path = lib_path + ":" + std::string(existing_ld_path);
         }
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
 #else
-        if (backend == "rocm") {
+        if (resolved_backend == "rocm-stable" || resolved_backend == "rocm-preview") {
             std::string new_path = cli_dir.string();
+
+            if (resolved_backend == "rocm-preview") {
+                std::string rocm_arch = SystemInfo::get_rocm_arch();
+                if (!rocm_arch.empty()) {
+                    std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+                    if (!therock_bin.empty()) {
+                        new_path = therock_bin + ";" + new_path;
+                    }
+                }
+            }
+
             const char* existing_path = std::getenv("PATH");
-            if (existing_path) new_path += ";" + std::string(existing_path);
+            if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
             env_vars.push_back({"PATH", new_path});
         }
 #endif
@@ -2721,6 +2660,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             res.set_content(response.dump(), "application/json");
         }
 
+    } catch (const lemon::UnknownModelError& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 500;
@@ -2789,12 +2733,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
 
-        if (router_->is_model_loaded(model_name)) {
-            router_->unload_model(model_name);
-            LOG(INFO, "Server") << "Reloading model: " << model_name;
-        } else {
-            LOG(INFO, "Server") << "Loading model: " << model_name;
-        }
+        LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
@@ -2811,17 +2750,52 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Load model with optional per-model settings
-        router_->load_model(model_name, info, options, true);
+        // Experience models: load each component model instead
+        if (info.recipe == "collection" && !info.composite_models.empty()) {
+            LOG(INFO, "Server") << "Loading collection components for: " << model_name << std::endl;
+            for (const auto& component : info.composite_models) {
+                if (!model_manager_->model_exists(component)) {
+                    LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
+                    continue;
+                }
+                if (router_->is_model_loaded(component)) {
+                    LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
+                    continue;
+                }
+                auto comp_info = model_manager_->get_model_info(component);
+                if (!comp_info.downloaded) {
+                    LOG(INFO, "Server") << "Downloading component: " << component << std::endl;
+                    model_manager_->download_registered_model(comp_info);
+                    comp_info = model_manager_->get_model_info(component);
+                }
+                LOG(INFO, "Server") << "Loading component: " << component << std::endl;
+                RecipeOptions comp_options = RecipeOptions(comp_info.recipe, request_json);
+                router_->load_model(component, comp_info, comp_options, true,
+                                    /*allow_reload_on_option_change=*/true);
+            }
 
-        // Return success response
-        nlohmann::json response = {
-            {"status", "success"},
-            {"model_name", model_name},
-            {"checkpoint", info.checkpoint()},
-            {"recipe", info.recipe}
-        };
-        res.set_content(response.dump(), "application/json");
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"recipe", "collection"}
+            };
+            res.set_content(response.dump(), "application/json");
+        } else {
+            // Load model with optional per-model settings (declarative: no-op
+            // if already loaded with matching options, reload only if options
+            // differ)
+            router_->load_model(model_name, info, options, true,
+                                /*allow_reload_on_option_change=*/true);
+
+            // Return success response
+            nlohmann::json response = {
+                {"status", "success"},
+                {"model_name", model_name},
+                {"checkpoint", info.checkpoint()},
+                {"recipe", info.recipe}
+            };
+            res.set_content(response.dump(), "application/json");
+        }
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
@@ -2996,8 +2970,8 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
         auto body = nlohmann::json::parse(req.body);
 
         // Delegate to RuntimeConfig — accepts all known recipe option keys
-        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
-            apply_config_side_effects(keys);
+        auto result = config_->set(body, [this](const json& applied) {
+            apply_config_side_effects(applied);
         });
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
@@ -3172,6 +3146,11 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Enrich with release_url, download_filename, version from BackendManager config
     if (system_info.contains("recipes")) {
         enrich_recipes(system_info["recipes"]);
+    }
+
+    // Surface runtime config flags that affect client-side install/download UX.
+    if (auto* cfg = RuntimeConfig::global()) {
+        system_info["no_fetch_executables"] = cfg->no_fetch_executables();
     }
 
     res.set_content(system_info.dump(), "application/json");
@@ -3425,6 +3404,7 @@ double Server::get_npu_utilization() {
             std::string state;
             if (power_file >> state) {
                 if (state != "D0") {
+                    close(fd);
                     return 0.0;
                 }
             }
@@ -3548,8 +3528,8 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
 
         // Translate {"level":"debug"} -> config_->set({"log_level":"debug"})
         json changes = {{"log_level", request_json["level"]}};
-        config_->set(changes, [this](const std::vector<std::string>& keys) {
-            apply_config_side_effects(keys);
+        config_->set(changes, [this](const json& applied) {
+            apply_config_side_effects(applied);
         });
 
         // Return same response format for backward compatibility
@@ -3598,8 +3578,8 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
     try {
         auto body = nlohmann::json::parse(req.body);
 
-        auto result = config_->set(body, [this](const std::vector<std::string>& keys) {
-            apply_config_side_effects(keys);
+        auto result = config_->set(body, [this](const json& applied) {
+            apply_config_side_effects(applied);
         });
 
         // Persist changes to config.json
@@ -3640,8 +3620,93 @@ void Server::handle_config_get(const httplib::Request& /*req*/, httplib::Respons
     }
 }
 
-void Server::apply_config_side_effects(const std::vector<std::string>& changed_keys) {
-    for (const auto& key : changed_keys) {
+void Server::handle_bin_change(const std::string& section,
+                                const std::string& bin_key,
+                                const std::string& new_value) {
+    std::string recipe = RuntimeConfig::config_section_to_recipe(section);
+
+    // bin_key is "<backend>_bin" — strip the suffix to get the backend name
+    // expected by install_backend / find_external_backend_binary.
+    std::string backend = bin_key.substr(0, bin_key.size() - 4);
+
+    // The "server_bin" key (as in ryzenai.server_bin) is not consumed by the
+    // current install flow — find_external_backend_binary uses recipe-based
+    // section lookup and there is no recipe whose section equals "ryzenai".
+    // Skip the hot-swap rather than attempt an install that won't help.
+    if (backend == "server") {
+        LOG(WARNING, "Server") << section << "." << bin_key
+                               << " is not consumed by the install flow; "
+                                  "no hot-swap performed." << std::endl;
+        return;
+    }
+
+    LOG(INFO, "Server") << "*_bin config changed: " << section << "." << bin_key
+                        << " = '" << new_value << "' — hot-swapping "
+                        << recipe << ":" << backend << std::endl;
+
+    // Snapshot loaded models on this (recipe, backend). A model whose options
+    // do not pin a backend (mb empty) is treated as potentially affected since
+    // it could resolve to the changed backend on next load.
+    struct Saved {
+        std::string name;
+        RecipeOptions opts;
+    };
+    std::vector<Saved> previously_loaded;
+    auto loaded = router_->get_all_loaded_models();
+    std::string backend_option_key = recipe + "_backend";
+    for (const auto& m : loaded) {
+        if (m.value("recipe", "") != recipe) continue;
+        std::string mb;
+        if (m.contains("recipe_options") && m["recipe_options"].contains(backend_option_key)) {
+            mb = m["recipe_options"].value(backend_option_key, "");
+        }
+        if (!mb.empty() && mb != backend) continue;
+        std::string name = m.value("model_name", "");
+        if (name.empty()) continue;
+        previously_loaded.push_back({name, router_->get_model_recipe_options(name)});
+    }
+
+    for (const auto& s : previously_loaded) {
+        LOG(INFO, "Server") << "Unloading " << s.name
+                            << " before installing new " << recipe << ":" << backend
+                            << " binary" << std::endl;
+        try {
+            router_->unload_model(s.name);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Failed to unload " << s.name << ": " << e.what() << std::endl;
+        }
+    }
+
+    // Install the new binary. install_from_github bails early when the user's
+    // value resolves to a path (find_external_backend_binary returns it). When
+    // version.txt mismatches the resolved version, the install dir is wiped
+    // and re-downloaded.
+    try {
+        backend_manager_->install_backend(recipe, backend);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "install_backend(" << recipe << ":" << backend
+                               << ") failed after *_bin change: " << e.what() << std::endl;
+    }
+
+    // Best-effort reload of previously-loaded models on the new binary.
+    for (const auto& s : previously_loaded) {
+        try {
+            auto info = model_manager_->get_model_info(s.name);
+            router_->load_model(s.name, info, s.opts, true);
+            LOG(INFO, "Server") << "Reloaded " << s.name << " on new "
+                                << recipe << ":" << backend << " binary" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Failed to reload " << s.name
+                                   << " after *_bin hot-swap: " << e.what() << std::endl;
+        }
+    }
+
+    SystemInfoCache::invalidate_recipes();
+    model_manager_->invalidate_models_cache();
+}
+
+void Server::apply_config_side_effects(const json& applied_changes) {
+    for (auto& [key, value] : applied_changes.items()) {
         if (key == "port") {
             int new_port = config_->port();
             int current_port = port_.load();
@@ -3711,6 +3776,16 @@ void Server::apply_config_side_effects(const std::vector<std::string>& changed_k
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (value.is_object()) {
+            // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
+            // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.
+            for (auto& [sub_key, sub_value] : value.items()) {
+                if (sub_key.size() >= 4
+                    && sub_key.compare(sub_key.size() - 4, 4, "_bin") == 0) {
+                    handle_bin_change(key, sub_key,
+                                      sub_value.is_string() ? sub_value.get<std::string>() : "");
+                }
+            }
         }
     }
 }
@@ -3773,6 +3848,10 @@ void Server::stream_download_operation(
                     sink.write(event.c_str(), event.size());
                 }
 
+            } catch (const lemon::UnknownModelError& e) {
+                nlohmann::json error_data = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+                std::string event = "event: error\ndata: " + error_data.dump() + "\n\n";
+                sink.write(event.c_str(), event.size());
             } catch (const std::exception& e) {
                 std::string error_msg = e.what();
                 if (error_msg != "Download cancelled") {

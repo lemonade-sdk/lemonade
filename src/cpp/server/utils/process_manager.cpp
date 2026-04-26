@@ -39,6 +39,10 @@
 #ifdef __linux__
 #include <sys/prctl.h>  // PR_SET_PDEATHSIG — kill child when parent dies
 #endif
+#ifdef __APPLE__
+#include <spawn.h>      // posix_spawn — fork-safe child creation on macOS
+extern char** environ;
+#endif
 #ifdef HAVE_LIBCAP
 #include <sys/capability.h>
 #endif
@@ -259,9 +263,30 @@ ProcessHandle ProcessManager::start_process(
     HANDLE stdout_write = nullptr;
     HANDLE stderr_read = nullptr;
     HANDLE stderr_write = nullptr;
+    HANDLE nul_input = nullptr;
+
+    bool use_filtered_output = (inherit_output && filter_health_logs);
+
+    if (inherit_output && !filter_health_logs) {
+        const HANDLE std_in = GetStdHandle(STD_INPUT_HANDLE);
+        const HANDLE std_out = GetStdHandle(STD_OUTPUT_HANDLE);
+        const HANDLE std_err = GetStdHandle(STD_ERROR_HANDLE);
+
+        const bool invalid_stdio =
+            (std_in == nullptr || std_in == INVALID_HANDLE_VALUE) ||
+            (std_out == nullptr || std_out == INVALID_HANDLE_VALUE) ||
+            (std_err == nullptr || std_err == INVALID_HANDLE_VALUE);
+
+        if (invalid_stdio) {
+            use_filtered_output = true;
+            LOG(WARNING, "ProcessManager")
+                << "Parent std handles are unavailable; enabling filtered output capture"
+                << std::endl;
+        }
+    }
 
     // If inherit_output is true, either use pipes with filtering or direct inheritance
-    if (inherit_output && filter_health_logs) {
+    if (inherit_output && use_filtered_output) {
         // Create pipes for stdout and stderr to filter output
         SECURITY_ATTRIBUTES sa;
         sa.nLength = sizeof(SECURITY_ATTRIBUTES);
@@ -283,6 +308,15 @@ ProcessHandle ProcessManager::start_process(
 
         si.dwFlags = STARTF_USESTDHANDLES;
         si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        if (si.hStdInput == nullptr || si.hStdInput == INVALID_HANDLE_VALUE) {
+            nul_input = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (nul_input != INVALID_HANDLE_VALUE) {
+                SetHandleInformation(nul_input, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+                si.hStdInput = nul_input;
+            } else {
+                si.hStdInput = nullptr;
+            }
+        }
         si.hStdOutput = stdout_write;
         si.hStdError = stderr_write;
 
@@ -319,7 +353,7 @@ ProcessHandle ProcessManager::start_process(
         nullptr,
         nullptr,
         TRUE,  // Inherit handles
-        (inherit_output && !filter_health_logs) ? 0 : CREATE_NO_WINDOW,
+        (inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW,
         environment_block.empty() ? nullptr : environment_block.data(),
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
@@ -352,7 +386,12 @@ ProcessHandle ProcessManager::start_process(
         std::string full_error = "Failed to start process '" + executable +
                                 "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
         LOG(ERROR, "ProcessManager") << full_error << std::endl;
+        if (nul_input && nul_input != INVALID_HANDLE_VALUE) CloseHandle(nul_input);
         throw std::runtime_error(full_error);
+    }
+
+    if (nul_input && nul_input != INVALID_HANDLE_VALUE) {
+        CloseHandle(nul_input);
     }
 
     // Close write ends of pipes in parent process
@@ -360,7 +399,7 @@ ProcessHandle ProcessManager::start_process(
     if (stderr_write) CloseHandle(stderr_write);
 
     // Start filter threads if needed
-    if (inherit_output && filter_health_logs) {
+    if (inherit_output && use_filtered_output) {
         CreateThread(nullptr, 0, output_filter_thread, stdout_read, 0, nullptr);
         CreateThread(nullptr, 0, output_filter_thread, stderr_read, 0, nullptr);
     }
@@ -397,6 +436,106 @@ ProcessHandle ProcessManager::start_process(
         }
     }
 
+#if defined(__APPLE__)
+    // macOS: use posix_spawn instead of fork()+execvp().
+    //
+    // Apple has long documented that fork() is unsafe when the parent process
+    // has initialized higher-level frameworks (CoreFoundation / Security /
+    // Metal / XPC / libdispatch). The child inherits Mach-port rights and
+    // XPC-bootstrap handles that cannot be cleanly reset, and execvp() does
+    // not scrub that process-level state. The result is silent corruption
+    // of services reached via XPC — most visibly MTLCompilerService, which
+    // llama-server's ggml-metal probe depends on in builds from b8884+.
+    // posix_spawn is Apple's supported path for clean child creation.
+    posix_spawn_file_actions_t file_actions;
+    posix_spawn_file_actions_init(&file_actions);
+
+    if (inherit_output && filter_health_logs) {
+        posix_spawn_file_actions_addclose(&file_actions, stdout_pipe[0]);
+        posix_spawn_file_actions_addclose(&file_actions, stderr_pipe[0]);
+        posix_spawn_file_actions_adddup2(&file_actions, stdout_pipe[1], STDOUT_FILENO);
+        posix_spawn_file_actions_adddup2(&file_actions, stderr_pipe[1], STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&file_actions, stdout_pipe[1]);
+        posix_spawn_file_actions_addclose(&file_actions, stderr_pipe[1]);
+    } else if (!inherit_output) {
+        posix_spawn_file_actions_addopen(&file_actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+        posix_spawn_file_actions_adddup2(&file_actions, STDOUT_FILENO, STDERR_FILENO);
+    }
+
+    if (!working_dir.empty()) {
+        // `addchdir_np` is deprecated on macOS 26+ in favor of the portable
+        // `addchdir`, but `addchdir` is not declared by older SDKs we still
+        // build against. Keep the Darwin-specific call and suppress the
+        // deprecation warning until the minimum SDK is macOS 26.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        posix_spawn_file_actions_addchdir_np(&file_actions, working_dir.c_str());
+#pragma clang diagnostic pop
+    }
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    // CLOEXEC_DEFAULT (Apple extension): every FD in the parent is closed in
+    // the child unless explicitly re-added via file_actions. This plugs FD
+    // leaks of listening sockets, log files, and kqueue handles.
+    // SETSIGDEF + full sigset: reset any SIG_IGN the parent installed
+    // (notably SIGPIPE) so the child starts with default dispositions.
+    sigset_t default_signals;
+    sigfillset(&default_signals);
+    posix_spawnattr_setsigdefault(&attr, &default_signals);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF);
+
+    // Build envp: parent environ minus any keys we override, plus env_vars.
+    std::vector<std::string> env_strings;
+    for (char** e = environ; e && *e; ++e) {
+        bool override_existing = false;
+        for (const auto& env_pair : env_vars) {
+            std::string prefix = env_pair.first + "=";
+            if (std::strncmp(*e, prefix.c_str(), prefix.size()) == 0) {
+                override_existing = true;
+                break;
+            }
+        }
+        if (!override_existing) {
+            env_strings.emplace_back(*e);
+        }
+    }
+    for (const auto& env_pair : env_vars) {
+        env_strings.emplace_back(env_pair.first + "=" + env_pair.second);
+    }
+    std::vector<char*> envp;
+    envp.reserve(env_strings.size() + 1);
+    for (auto& s : env_strings) {
+        envp.push_back(&s[0]);
+    }
+    envp.push_back(nullptr);
+
+    std::vector<char*> argv_ptrs;
+    argv_ptrs.reserve(args.size() + 2);
+    argv_ptrs.push_back(const_cast<char*>(executable.c_str()));
+    for (const auto& arg : args) {
+        argv_ptrs.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv_ptrs.push_back(nullptr);
+
+    pid_t pid = 0;
+    int spawn_rc = posix_spawnp(&pid, executable.c_str(), &file_actions, &attr,
+                                argv_ptrs.data(), envp.data());
+
+    posix_spawn_file_actions_destroy(&file_actions);
+    posix_spawnattr_destroy(&attr);
+
+    if (spawn_rc != 0) {
+        if (inherit_output && filter_health_logs) {
+            close(stdout_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[0]);
+            close(stderr_pipe[1]);
+        }
+        throw std::runtime_error(
+            std::string("posix_spawn failed: ") + strerror(spawn_rc));
+    }
+#else
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -460,6 +599,7 @@ ProcessHandle ProcessManager::start_process(
         std::cerr << "Failed to execute: " << executable << std::endl;
         _exit(1);
     }
+#endif
 
     // Parent process
     handle.pid = pid;

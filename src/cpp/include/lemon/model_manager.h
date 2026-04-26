@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <string>
 #include <map>
 #include <vector>
@@ -12,6 +13,23 @@
 namespace lemon {
 
 using json = nlohmann::json;
+
+// Thrown by ModelManager::download_model when a pull request names a model
+// that (a) is not registered, (b) is not in the filtered-out registry, and
+// (c) lacks the `user.` prefix that would make it a new-model registration
+// attempt.
+//
+// CONTRACT: the /pull HTTP handler catches this type and attaches
+// {"code": kUnknownModelErrorCode, ...} to the error response. The lemonade
+// CLI keys off that code to replace the message with a friendlier one that
+// points at `lemonade list` and `lemonade pull CHECKPOINT`. The CLI inlines
+// the "unknown_model" literal to avoid pulling this server header into the
+// CLI; update cli/lemonade_client.cpp in lockstep if this constant changes.
+class UnknownModelError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+constexpr const char* kUnknownModelErrorCode = "unknown_model";
 
 // Progress information for download operations
 struct DownloadProgress {
@@ -112,6 +130,12 @@ public:
     // Get model info by name
     ModelInfo get_model_info(const std::string& model_name);
 
+    // Resolve a public model reference to its canonical internal name.
+    std::string resolve_model_name(const std::string& model_name);
+
+    // Get the public name exposed by Lemonade APIs for a canonical model name.
+    std::string get_public_model_name(const std::string& model_name);
+
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
 
@@ -186,8 +210,12 @@ private:
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
     mutable std::map<std::string, ModelInfo> models_cache_;
+    mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
+    mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
     mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
     mutable bool cache_valid_ = false;
+
+    void rebuild_public_model_aliases_locked();
 };
 
 } // namespace lemon

@@ -11,7 +11,7 @@ interface Devices {
   amd_igpu: GPUDevice;
   cpu: CPUInfo;
   npu: NPUInfo;
-  nvidia_dgpu: GPUDevice[];
+  nvidia_gpu: GPUDevice[];
 }
 
 interface Device {
@@ -48,7 +48,7 @@ export interface Recipe {
 
 export interface BackendInfo {
   devices: string[];
-  state: 'unsupported' | 'installable' | 'update_required' | 'action_required' | 'installed';
+  state: 'unsupported' | 'installable' | 'update_required' | 'action_required' | 'installed' | 'update_available';
   message: string;
   action: string;
   can_uninstall?: boolean;

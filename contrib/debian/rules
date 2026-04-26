@@ -13,10 +13,3 @@ override_dh_auto_test:
 
 override_dh_install:
 	dh_install
-	# On Ubuntu, prefer system llama.cpp by default
-ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu 2>/dev/null && echo yes))
-	jq '.llamacpp.prefer_system = true' debian/lemonade-server/usr/share/lemonade/defaults.json \
-		> debian/lemonade-server/usr/share/lemonade/defaults.json.tmp && \
-		mv debian/lemonade-server/usr/share/lemonade/defaults.json.tmp \
-		debian/lemonade-server/usr/share/lemonade/defaults.json
-endif

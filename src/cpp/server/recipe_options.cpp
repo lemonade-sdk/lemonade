@@ -1,6 +1,9 @@
 #include <lemon/recipe_options.h>
+#ifndef LEMONADE_CLI
 #include <lemon/system_info.h>
+#endif
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <map>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
@@ -67,6 +70,7 @@ static bool is_empty_option(json option) {
            (option.is_string() && (option == "" || option == "auto"));
 }
 
+#ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
     // Generic handling for any *_backend option
     // Pattern: {recipe}_backend -> get supported backends for {recipe}
@@ -83,6 +87,7 @@ static bool try_get_backend_options(const std::string& opt_name, SystemInfo::Sup
 
     return is_backend_option;
 }
+#endif
 
 std::vector<std::string> RecipeOptions::to_cli_options(const json& raw_options) {
     std::vector<std::string> cli;

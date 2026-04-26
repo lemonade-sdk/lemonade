@@ -216,7 +216,7 @@ function renderModelCard(model, options = {}) {
   const { name, details } = model;
   const labels = Array.isArray(details.labels) ? details.labels : [];
   const tableRows = buildModelTableRows(name, details);
-  const pullCommand = `lemonade-server pull ${name}`;
+  const pullCommand = `lemonade pull ${name}`;
 
   const badgeMarkup = [
     ...labels.map((label) => `<span class="badge">${escapeHtml(label)}</span>`)

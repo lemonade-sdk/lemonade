@@ -33,7 +33,7 @@ namespace lemon_tray {
 
 // Known systemd unit names for lemonade server (native or snap)
 static const char* kSystemdUnitNames[] = {
-    "lemonade-server.service",
+    "lemond.service",
     "snap.lemonade-server.daemon.service"
 };
 

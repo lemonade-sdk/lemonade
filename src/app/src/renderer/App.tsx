@@ -23,6 +23,7 @@ const LAYOUT_CONSTANTS = {
 
 // Inner component that can use SystemProvider context
 const AppContent: React.FC = () => {
+  const [theme, setTheme] = useState(DEFAULT_LAYOUT_SETTINGS.theme);
   const [isChatVisible, setIsChatVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isChatVisible);
   const [isModelManagerVisible, setIsModelManagerVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
   const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('models');
@@ -46,6 +47,7 @@ const AppContent: React.FC = () => {
         if (window?.api?.getSettings) {
           const settings = await window.api.getSettings();
           if (settings.layout) {
+            setTheme(settings.layout.theme ?? DEFAULT_LAYOUT_SETTINGS.theme);
             setIsChatVisible(settings.layout.isChatVisible ?? DEFAULT_LAYOUT_SETTINGS.isChatVisible);
             setIsModelManagerVisible(settings.layout.isModelManagerVisible ?? DEFAULT_LAYOUT_SETTINGS.isModelManagerVisible);
             const savedView = settings.layout.leftPanelView;
@@ -82,6 +84,7 @@ const AppContent: React.FC = () => {
         await window.api.saveSettings({
           ...currentSettings,
           layout: {
+            theme,
             isChatVisible,
             isModelManagerVisible,
             leftPanelView,
@@ -95,7 +98,7 @@ const AppContent: React.FC = () => {
     } catch (error) {
       console.error('Failed to save layout settings:', error);
     }
-  }, [layoutLoaded, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
+  }, [layoutLoaded, theme, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
 
   // Debounced save effect
   useEffect(() => {
@@ -135,30 +138,25 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  // Handle lemonade:// protocol navigation from main process.
+  // Must await tauriReady because window.api is installed asynchronously
+  // and isn't available on the first render.
   useEffect(() => {
-    const handleExperienceModeChanged = (event: Event) => {
-      const customEvent = event as CustomEvent<{ active?: boolean }>;
-      if (customEvent.detail?.active) {
-        setIsModelManagerVisible(false);
-      }
-    };
-    window.addEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
-    return () => {
-      window.removeEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
-    };
-  }, []);
-
-  // Handle lemonade:// protocol navigation from main process
-  useEffect(() => {
-    if (!window?.api?.onNavigate) return;
-    const unsubscribe = window.api.onNavigate((data: { view?: string; model?: string }) => {
-      if (data.view === 'logs') {
-        setIsLogsVisible(true);
-      }
-    });
-    // Tell main process that IPC listeners are active — safe to deliver pending nav
-    window?.api?.signalReady?.();
-    return unsubscribe;
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+    (async () => {
+      const { tauriReady } = await import('./tauriShim');
+      await tauriReady;
+      if (cancelled || !window?.api?.onNavigate) return;
+      const unsub = window.api.onNavigate((data: { view?: string; model?: string }) => {
+        if (data.view === 'logs') {
+          setIsLogsVisible(true);
+        }
+      });
+      if (typeof unsub === 'function') unsubscribe = unsub;
+      window?.api?.signalReady?.();
+    })();
+    return () => { cancelled = true; unsubscribe?.(); };
   }, []);
 
   useEffect(() => {
@@ -267,7 +265,16 @@ const AppContent: React.FC = () => {
     logsHeight,
   ]);
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
+    // preventDefault stops the WebKit-based webview (Tauri) from starting a
+    // drag-text-selection on the divider, which would swallow our mousemove
+    // events and break the resize. Chromium ignored this implicitly; WebKit
+    // does not.
+    e.preventDefault();
     isDraggingRef.current = 'left';
     startXRef.current = e.clientX;
     startWidthRef.current = modelManagerWidth;
@@ -276,6 +283,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleRightDividerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
     isDraggingRef.current = 'right';
     startXRef.current = e.clientX;
     startWidthRef.current = chatWidth;
@@ -288,8 +296,10 @@ const AppContent: React.FC = () => {
   }, []);
 
   return (
-    <ModelsProvider>
+    <>
       <TitleBar
+        theme={theme}
+        setTheme={setTheme}
         isChatVisible={isChatVisible}
         onToggleChat={() => setIsChatVisible(!isChatVisible)}
         isModelManagerVisible={isModelManagerVisible}
@@ -312,7 +322,7 @@ const AppContent: React.FC = () => {
           onViewChange={setLeftPanelView}
         />
         {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
-          <ResizableDivider onMouseDown={handleLeftDividerMouseDown}/>
+          <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />
         )}
         {isLogsVisible && (
           <div className="main-content-container">
@@ -325,7 +335,7 @@ const AppContent: React.FC = () => {
         {isChatVisible && (
           <>
             {isLogsVisible && (
-              <ResizableDivider onMouseDown={handleRightDividerMouseDown}/>
+              <ResizableDivider onMouseDown={handleRightDividerMouseDown} />
             )}
             {externalContentUrl ? (
               <div className="chat-window" style={isLogsVisible ? { width: `${chatWidth}px` } : undefined}>
@@ -349,15 +359,46 @@ const AppContent: React.FC = () => {
         )}
       </div>
       <StatusBar />
-    </ModelsProvider>
+      <WindowResizeHandles />
+    </>
   );
 };
 
-// Wrapper component that provides SystemProvider
+// Frameless windows on webkit2gtk (Tauri on Linux) get no resize handles from
+// the OS. We paint 8 invisible regions on each edge and corner of the window;
+// each one captures mousedown and asks Tauri to start a resize drag. Skipped
+// in web mode and when window controls are unavailable for any other reason.
+const WindowResizeHandles: React.FC = () => {
+  if (typeof window === 'undefined' || !window.api?.startResizeDragging || window.api?.isWebApp) {
+    return null;
+  }
+  const start = (direction: string) => (e: React.MouseEvent) => {
+    // Only the primary button initiates a resize.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    window.api.startResizeDragging!(direction as never);
+  };
+  return (
+    <div className="window-resize-handles" aria-hidden="true">
+      <div className="resize-handle resize-handle-top" onMouseDown={start('Top')} />
+      <div className="resize-handle resize-handle-right" onMouseDown={start('Right')} />
+      <div className="resize-handle resize-handle-bottom" onMouseDown={start('Bottom')} />
+      <div className="resize-handle resize-handle-left" onMouseDown={start('Left')} />
+      <div className="resize-handle resize-handle-top-left" onMouseDown={start('TopLeft')} />
+      <div className="resize-handle resize-handle-top-right" onMouseDown={start('TopRight')} />
+      <div className="resize-handle resize-handle-bottom-left" onMouseDown={start('BottomLeft')} />
+      <div className="resize-handle resize-handle-bottom-right" onMouseDown={start('BottomRight')} />
+    </div>
+  );
+};
+
+// Providers Wrapper
 const App: React.FC = () => {
   return (
     <SystemProvider>
-      <AppContent />
+      <ModelsProvider>
+        <AppContent />
+      </ModelsProvider>
     </SystemProvider>
   );
 };

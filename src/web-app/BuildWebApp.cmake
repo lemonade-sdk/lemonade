@@ -1,5 +1,15 @@
 # Cross-platform script to build the web app
-# Usage: cmake -DWEB_APP_SOURCE_DIR=... -DWEB_APP_BUILD_SOURCE_DIR=... -DWEB_APP_BUILD_DIR=... -DNPM_EXECUTABLE=... -DWEB_APP_STAMP=... -DUSE_SYSTEM_NODEJS_MODULES=ON -P BuildWebApp.cmake
+# Usage: cmake -DAPP_SOURCE_DIR=... -DWEB_APP_SOURCE_DIR=... -DWEB_APP_BUILD_STAGING_DIR=... -DWEB_APP_BUILD_DIR=... -DNPM_EXECUTABLE=... -DWEB_APP_STAMP=... -DUSE_SYSTEM_NODEJS_MODULES=ON -P BuildWebApp.cmake
+#
+# Staging layout:
+#   ${WEB_APP_BUILD_STAGING_DIR}/
+#     app/        ← copy of src/app/ (the shared React renderer source)
+#     web-app/    ← copy of src/web-app/ (this build's package.json + webpack config)
+#
+# Webpack runs from staging/web-app/ and resolves the shared sources via
+# `../app/src/...`. We deliberately do NOT use OS symlinks for the shared
+# source — those break Windows checkouts unless `core.symlinks=true` and
+# developer mode are both enabled.
 
 option(USE_SYSTEM_NODEJS_MODULES "Use system nodejs modules and fonts" ON)
 string(TOUPPER "${USE_SYSTEM_NODEJS_MODULES}" USE_SYSTEM_NODEJS_MODULES_UPPER)
@@ -10,36 +20,50 @@ endif()
 
 message(STATUS "Building Web app...")
 
-# Copy source files to build directory, following symlinks
-message(STATUS "Copying Web app sources from ${WEB_APP_SOURCE_DIR} to ${WEB_APP_BUILD_SOURCE_DIR}")
+# Staging paths: app/ and web-app/ as siblings inside WEB_APP_BUILD_STAGING_DIR
+set(STAGED_APP_DIR "${WEB_APP_BUILD_STAGING_DIR}/app")
+set(STAGED_WEB_APP_DIR "${WEB_APP_BUILD_STAGING_DIR}/web-app")
 
-# Remove destination if it exists to ensure clean copy
-if(EXISTS "${WEB_APP_BUILD_SOURCE_DIR}")
-    file(REMOVE_RECURSE "${WEB_APP_BUILD_SOURCE_DIR}")
+# Remove staging dir if it exists to ensure a clean copy
+if(EXISTS "${WEB_APP_BUILD_STAGING_DIR}")
+    file(REMOVE_RECURSE "${WEB_APP_BUILD_STAGING_DIR}")
 endif()
+file(MAKE_DIRECTORY "${WEB_APP_BUILD_STAGING_DIR}")
 
-# Use platform-specific copy command with symlink following
-if(WIN32)
-    # Windows: robocopy with /E (recurse empty dirs) /NFL (no file list) /NDL (no directory list)
-    # robocopy returns 0-3 for success, 4-7 for warnings, 8+ for errors
-    execute_process(
-        COMMAND robocopy "${WEB_APP_SOURCE_DIR}" "${WEB_APP_BUILD_SOURCE_DIR}" /E /NFL /NDL
-        RESULT_VARIABLE COPY_RESULT
-    )
-    # Check for actual errors (exit codes 8 and higher indicate errors)
-    if(COPY_RESULT GREATER 7)
-        message(FATAL_ERROR "Failed to copy Web app sources (robocopy exit code ${COPY_RESULT})")
+# Copy a directory cross-platform, dereferencing any symlinks the source tree
+# happens to contain (e.g. src/app/assets/favicon.ico is a symlink into the
+# docs site to dedupe the icon). robocopy follows symlinks by default; cp -L
+# is the equivalent on Unix.
+function(_stage_dir SRC DST)
+    if(WIN32)
+        # robocopy returns 0-7 on success/warnings, 8+ on actual errors
+        execute_process(
+            COMMAND robocopy "${SRC}" "${DST}" /E /NFL /NDL
+            RESULT_VARIABLE COPY_RESULT
+        )
+        if(COPY_RESULT GREATER 7)
+            message(FATAL_ERROR "Failed to stage ${SRC} → ${DST} (robocopy exit code ${COPY_RESULT})")
+        endif()
+    else()
+        execute_process(
+            COMMAND cp -rL "${SRC}" "${DST}"
+            RESULT_VARIABLE COPY_RESULT
+        )
+        if(NOT COPY_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to stage ${SRC} → ${DST} (exit code ${COPY_RESULT})")
+        endif()
     endif()
-else()
-    # Unix/Linux: cp with -rL (recursive, dereference symlinks)
-    execute_process(
-        COMMAND cp -rL "${WEB_APP_SOURCE_DIR}" "${WEB_APP_BUILD_SOURCE_DIR}"
-        RESULT_VARIABLE COPY_RESULT
-    )
-    if(NOT COPY_RESULT EQUAL 0)
-        message(FATAL_ERROR "Failed to copy Web app sources (exit code ${COPY_RESULT})")
-    endif()
-endif()
+endfunction()
+
+message(STATUS "Staging shared app sources from ${APP_SOURCE_DIR} to ${STAGED_APP_DIR}")
+_stage_dir("${APP_SOURCE_DIR}" "${STAGED_APP_DIR}")
+
+message(STATUS "Staging web-app sources from ${WEB_APP_SOURCE_DIR} to ${STAGED_WEB_APP_DIR}")
+_stage_dir("${WEB_APP_SOURCE_DIR}" "${STAGED_WEB_APP_DIR}")
+
+# Backward-compatible alias used by the rest of this script: webpack runs in
+# the staged web-app directory, which now sits at staging/web-app/.
+set(WEB_APP_BUILD_SOURCE_DIR "${STAGED_WEB_APP_DIR}")
 
 # System nodejs modules and KaTeX fonts integration
 if(USE_SYSTEM_NODEJS_MODULES_ENABLED)

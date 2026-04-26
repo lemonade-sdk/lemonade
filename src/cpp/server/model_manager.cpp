@@ -17,6 +17,7 @@
 #include <thread>
 #include <chrono>
 #include <set>
+#include <tuple>
 #include <unordered_set>
 #include <iomanip>
 #include <lemon/utils/aixlog.hpp>
@@ -75,6 +76,25 @@ static bool starts_with_ignore_case(const std::string& str, const std::string& p
 
 static bool contains_ignore_case(const std::string& str, const std::string& substr) {
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
+}
+
+static constexpr const char USER_MODEL_PREFIX[] = "user.";
+static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
+static constexpr const char* APPEAR_BUILTIN_LABEL = "appear-builtin";
+
+static bool has_label(const ModelInfo& info, const std::string& label) {
+    return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
+}
+
+static bool is_user_model_name(const std::string& model_name) {
+    return model_name.rfind(USER_MODEL_PREFIX, 0) == 0;
+}
+
+static std::string strip_user_model_prefix(const std::string& model_name) {
+    if (is_user_model_name(model_name)) {
+        return model_name.substr(USER_MODEL_PREFIX_LEN);
+    }
+    return model_name;
 }
 
 static std::string repo_id_to_cache_dir_name(const std::string& repo_id) {
@@ -613,8 +633,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
-    // Experience models are virtual bundles with no direct checkpoint to resolve
-    if (info.recipe == "experience") {
+    // Collections are virtual entries with no direct checkpoint to resolve
+    if (info.recipe == "collection") {
         return "";
     }
 
@@ -903,7 +923,15 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
 
     // Return copy of cache (all models, including their download status)
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return models_cache_;
+    std::map<std::string, ModelInfo> public_models;
+    for (const auto& [name, info] : models_cache_) {
+        auto it = canonical_public_names_.find(name);
+        const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
+        ModelInfo public_info = info;
+        public_info.model_name = public_name;
+        public_models[public_name] = std::move(public_info);
+    }
+    return public_models;
 }
 
 static void load_checkpoints(ModelInfo& info, json& model_json) {
@@ -939,7 +967,7 @@ static void parse_composite_models(ModelInfo& info, const json& model_json) {
     }
 }
 
-// Check if all component models of an experience/composite model are downloaded.
+// Check if all component models of a collection model are downloaded.
 static bool check_composite_downloaded(const ModelInfo& info,
                                         const std::map<std::string, ModelInfo>& model_map) {
     if (info.composite_models.empty()) return false;
@@ -1080,9 +1108,9 @@ void ModelManager::build_cache() {
     std::unordered_set<std::string> flm_set(flm_models.begin(), flm_models.end());
 
     int downloaded_count = 0;
-    // First pass: determine download status for non-experience models
+    // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "experience") {
+        if (info.recipe == "collection") {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
@@ -1131,10 +1159,10 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Second pass: determine download status for experience models
+    // Second pass: determine download status for collection models
     // (must happen after component models have their downloaded status set)
     for (auto& [name, info] : all_models) {
-        if (info.recipe != "experience") continue;
+        if (info.recipe != "collection") continue;
         info.downloaded = check_composite_downloaded(info, all_models);
         if (info.downloaded) {
             downloaded_count++;
@@ -1144,6 +1172,8 @@ void ModelManager::build_cache() {
     for (auto& [name, info] : all_models) {
         models_cache_[name] = info;
     }
+
+    rebuild_public_model_aliases_locked();
 
     cache_valid_ = true;
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
@@ -1159,9 +1189,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
 
     // Parse model name to get JSON key
     std::string json_key = model_name;
-    bool is_user_model = model_name.substr(0, 5) == "user.";
+    bool is_user_model = is_user_model_name(model_name);
     if (is_user_model) {
-        json_key = model_name.substr(5);
+        json_key = strip_user_model_prefix(model_name);
     }
 
     // Find in JSON
@@ -1216,7 +1246,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "experience") {
+    if (info.recipe == "collection") {
         info.downloaded = check_composite_downloaded(info, models_cache_);
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
@@ -1252,6 +1282,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     models_cache_[model_name] = info;
+    rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
 }
 
@@ -1292,6 +1323,23 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
+
+        // Recompute downloaded status for any collections that
+        // depend on this model, so the collection reflects component changes
+        // without requiring a full cache rebuild.
+        for (auto& [name, entry] : models_cache_) {
+            if (entry.recipe != "collection") continue;
+            if (std::find(entry.composite_models.begin(), entry.composite_models.end(),
+                          model_name) == entry.composite_models.end()) {
+                continue;
+            }
+            bool new_state = check_composite_downloaded(entry, models_cache_);
+            if (entry.downloaded != new_state) {
+                entry.downloaded = new_state;
+                LOG(INFO, "ModelManager") << "Collection '" << name
+                          << "' downloaded=" << new_state << " (dependent on " << model_name << ")" << std::endl;
+            }
+        }
     } else {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in cache" << std::endl;
     }
@@ -1308,9 +1356,10 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
     if (it != models_cache_.end()) {
         // User models and local uploads should be removed entirely from cache
         // (they're not in server_models.json, so keeping them makes no sense)
-        bool is_user_model = model_name.substr(0, 5) == "user.";
+        bool is_user_model = is_user_model_name(model_name);
         if (is_user_model || it->second.source == "local_upload") {
             models_cache_.erase(model_name);
+            rebuild_public_model_aliases_locked();
             LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
             // Registered model - just mark as not downloaded
@@ -1325,12 +1374,19 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded models
+    // Filter and return only downloaded, non-collection models. Collections
+    // are Lemonade-specific (a virtual entry that loads multiple
+    // real models) and aren't meaningful to OpenAI-compatible clients —
+    // the desktop app fetches them explicitly via ?show_all=true.
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded) {
-            downloaded[name] = info;
+        if (info.downloaded && info.recipe != "collection") {
+            auto it = canonical_public_names_.find(name);
+            const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
+            ModelInfo public_info = info;
+            public_info.model_name = public_name;
+            downloaded[public_name] = std::move(public_info);
         }
     }
     return downloaded;
@@ -1504,9 +1560,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         bool filter_out = false;
         std::string filter_reason;
 
-        // Experience models are UI-level bundles that orchestrate component models.
+        // Collections are UI-level entries that orchestrate component models.
         // They should always be visible if present in the registry.
-        if (recipe == "experience") {
+        if (recipe == "collection") {
             filtered[name] = info;
             continue;
         }
@@ -1572,8 +1628,8 @@ void ModelManager::register_user_model(const std::string& model_name,
                                       const std::string& source) {
     // Remove "user." prefix if present
     std::string clean_name = model_name;
-    if (clean_name.substr(0, 5) == "user.") {
-        clean_name = clean_name.substr(5);
+    if (is_user_model_name(clean_name)) {
+        clean_name = strip_user_model_prefix(clean_name);
     }
 
     // Filter only known, user-definable model props
@@ -1851,7 +1907,7 @@ void ModelManager::download_model(const std::string& model_name,
     // If checkpoint or recipe are provided, this is a model registration
     // and the model name must have the "user." prefix
     if (!actual_checkpoint.empty() || !actual_recipe.empty()) {
-        if (model_name.substr(0, 5) != "user.") {
+        if (!is_user_model_name(model_name)) {
             throw std::runtime_error(
                 "When providing 'checkpoint' or 'recipe', the model name must include the "
                 "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " +
@@ -1876,8 +1932,9 @@ void ModelManager::download_model(const std::string& model_name,
 
         // Model not in registry - this must be a user model registration
         // Validate it has the "user." prefix
-        if (model_name.substr(0, 5) != "user.") {
-            throw std::runtime_error(
+        if (!is_user_model_name(model_name)) {
+            // See UnknownModelError contract in include/lemon/model_manager.h.
+            throw UnknownModelError(
                 "When registering a new model, the model name must include the "
                 "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +
                 model_name
@@ -1933,6 +1990,58 @@ void ModelManager::download_model(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
+    // Collections don't have their own backend — download each component model instead
+    if (actual_recipe == "collection") {
+        auto info = get_model_info(model_name);
+        if (info.composite_models.empty()) {
+            throw std::runtime_error("Collection '" + model_name + "' has no composite_models defined");
+        }
+        LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
+                                  << " component(s) for collection: " << model_name << std::endl;
+
+        // Wrap the callback so recursive per-component downloads don't each
+        // emit a "complete" event — the SSE stream should only see one final
+        // completion after every component finishes.
+        //
+        // Capture progress_callback by value (not by reference) so `forward`
+        // owns a copy of the std::function. This keeps the callback usable
+        // even if `forward` is ever copied or outlives this stack frame;
+        // today it's only consumed synchronously below, but the defensive
+        // copy is free (std::function is copyable) and removes a latent
+        // dangling-reference hazard if the recursion pattern changes.
+        DownloadProgressCallback forward = nullptr;
+        if (progress_callback) {
+            forward = [progress_callback](const DownloadProgress& p) -> bool {
+                if (p.complete) return true;
+                return progress_callback(p);
+            };
+        }
+
+        for (const auto& component : info.composite_models) {
+            if (!model_exists(component)) {
+                LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
+                continue;
+            }
+            auto comp_info = get_model_info(component);
+            if (comp_info.downloaded) {
+                LOG(INFO, "ModelManager") << "Component already downloaded: " << component << std::endl;
+                continue;
+            }
+            LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
+            json comp_data = json::object();
+            download_model(component, comp_data, do_not_upgrade, forward);
+        }
+
+        // Emit a single completion event for the whole collection
+        if (progress_callback) {
+            DownloadProgress progress;
+            progress.complete = true;
+            progress.percent = 100;
+            (void)progress_callback(progress);
+        }
+        return;
+    }
+
     // Check if this recipe is supported on the current system
     bool disable_filtering = false;
     if (auto* cfg = RuntimeConfig::global()) {
@@ -1971,7 +2080,7 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Register user models to user_models.json
-    if (model_name.substr(0, 5) == "user." && !model_registered) {
+    if (is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
     }
 
@@ -2006,6 +2115,75 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     size_t total_download_size = 0;
     for (const auto& file_desc : manifest["files"]) {
         total_download_size += file_desc["size"].get<size_t>();
+    }
+
+    // Pre-flight disk space check: fail fast before downloading anything.
+    // Subtract bytes already on disk (completed files + partial downloads)
+    // so resumed downloads aren't falsely rejected. Group by target path first,
+    // then fold paths that share the same space info so shared filesystems are
+    // checked against the combined remaining download size.
+    {
+        std::map<std::string, size_t> bytes_needed_by_target_path;
+        for (const auto& file_desc : manifest["files"]) {
+            std::string filename = file_desc["name"].get<std::string>();
+            size_t file_size = file_desc["size"].get<size_t>();
+            // Per-file download_path for multi-repo models; fall back to top-level
+            std::string file_download_path = file_desc.value("download_path", download_path);
+            std::string output_path = file_download_path + "/" + filename;
+            std::string partial_path = output_path + ".partial";
+            fs::path output_path_fs = path_from_utf8(output_path);
+            fs::path partial_path_fs = path_from_utf8(partial_path);
+            size_t bytes_needed_for_file = file_size;
+            if (safe_exists(output_path_fs) && !safe_exists(partial_path_fs)) {
+                bytes_needed_for_file = 0;
+            } else if (safe_exists(partial_path_fs)) {
+                // Cap credit to manifest size — partial can't save more than the file costs
+                size_t partial_size = fs::file_size(partial_path_fs);
+                size_t bytes_already_on_disk = (std::min)(partial_size, file_size);
+                // Clamp to zero: manifest can contain size=0 entries while partials exist.
+                bytes_needed_for_file = (file_size > bytes_already_on_disk)
+                    ? file_size - bytes_already_on_disk
+                    : 0;
+            }
+
+            if (bytes_needed_for_file > 0) {
+                bytes_needed_by_target_path[file_download_path] += bytes_needed_for_file;
+            }
+        }
+
+        using SpaceSignature = std::tuple<uintmax_t, uintmax_t, uintmax_t>;
+        std::map<SpaceSignature, std::pair<size_t, std::string>> bytes_needed_by_filesystem;
+        for (const auto& [target_path, bytes_needed] : bytes_needed_by_target_path) {
+            std::error_code ec;
+            auto si = fs::space(path_from_utf8(target_path), ec);
+            if (ec) {
+                continue;
+            }
+
+            auto key = std::make_tuple(si.capacity, si.free, si.available);
+            auto& grouped_entry = bytes_needed_by_filesystem[key];
+            grouped_entry.first += bytes_needed;
+            if (grouped_entry.second.empty()) {
+                grouped_entry.second = target_path;
+            }
+        }
+
+        for (const auto& [space_signature, grouped_entry] : bytes_needed_by_filesystem) {
+            size_t bytes_needed = grouped_entry.first;
+            uintmax_t available = std::get<2>(space_signature);
+            const std::string& target_path = grouped_entry.second;
+            if (bytes_needed <= available) {
+                continue;
+            }
+
+            std::ostringstream oss;
+            oss << "Insufficient disk space: download requires "
+                << std::fixed << std::setprecision(1)
+                << (bytes_needed / (1024.0 * 1024.0 * 1024.0)) << " GB but only "
+                << (available / (1024.0 * 1024.0 * 1024.0)) << " GB is available on "
+                << target_path;
+            throw std::runtime_error(oss.str());
+        }
     }
 
     for (const auto& file_desc : manifest["files"]) {
@@ -2868,14 +3046,15 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
 }
 
 void ModelManager::delete_model(const std::string& model_name) {
-    auto info = get_model_info(model_name);
+    std::string canonical_model_name = resolve_model_name(model_name);
+    auto info = get_model_info(canonical_model_name);
 
-    LOG(INFO, "ModelManager") << "Deleting model: " << model_name << std::endl;
+    LOG(INFO, "ModelManager") << "Deleting model: " << canonical_model_name << std::endl;
     LOG(INFO, "ModelManager") << "Checkpoint: " << info.checkpoint() << std::endl;
     LOG(INFO, "ModelManager") << "Recipe: " << info.recipe << std::endl;
 
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
-    if (model_name.substr(0, 6) == "extra.") {
+    if (canonical_model_name.substr(0, 6) == "extra.") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
     }
@@ -2889,13 +3068,12 @@ void ModelManager::delete_model(const std::string& model_name) {
             throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
         }
 
-        // Find flm executable
-        std::string flm_path;
-#ifdef _WIN32
-        flm_path = "flm";
-#else
-        flm_path = "flm";
-#endif
+        // Find flm executable — on Windows flm.exe lives under the lemonade
+        // cache dir, not on PATH, so we must resolve the full path.
+        std::string flm_path = find_flm_binary();
+        if (flm_path.empty()) {
+            throw std::runtime_error("FLM executable not found");
+        }
 
         // Prepare arguments for 'flm remove' command
         std::vector<std::string> args = {"remove", info.checkpoint()};
@@ -2916,7 +3094,7 @@ void ModelManager::delete_model(const std::string& model_name) {
                 int exit_code = utils::ProcessManager::get_exit_code(handle);
                 if (exit_code != 0) {
                     LOG(ERROR, "ModelManager") << "FLM remove failed with exit code: " << exit_code << std::endl;
-                    throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
+                    throw std::runtime_error("Failed to delete FLM model " + canonical_model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
                 }
                 break;
             }
@@ -2926,30 +3104,43 @@ void ModelManager::delete_model(const std::string& model_name) {
         // Check if process is still running (timeout)
         if (utils::ProcessManager::is_running(handle)) {
             LOG(ERROR, "ModelManager") << "FLM remove timed out" << std::endl;
-            throw std::runtime_error("Failed to delete FLM model " + model_name + ": FLM remove timed out");
+            throw std::runtime_error("Failed to delete FLM model " + canonical_model_name + ": FLM remove timed out");
         }
 
-        LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << model_name << std::endl;
+        LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << canonical_model_name << std::endl;
 
         // Remove from user models if it's a user model
-        if (model_name.substr(0, 5) == "user.") {
-            std::string clean_name = model_name.substr(5);
+        if (is_user_model_name(canonical_model_name)) {
             json updated_user_models = user_models_;
-            updated_user_models.erase(clean_name);
+            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
             user_models_ = updated_user_models;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
         // Remove from cache after successful deletion
-        remove_model_from_cache(model_name);
+        remove_model_from_cache(canonical_model_name);
 
         return;
     }
 
     // Use resolved_path to find the model directory to delete
     if (info.resolved_path().empty()) {
-        throw std::runtime_error("Model has no resolved_path, cannot determine files to delete");
+        // Model exists in registry but has no downloaded files
+        // Just remove from user_models.json and cache
+        LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
+
+        if (is_user_model_name(canonical_model_name)) {
+            json updated_user_models = user_models_;
+            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
+            save_user_models(updated_user_models);
+            user_models_ = updated_user_models;
+            LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
+        }
+
+        remove_model_from_cache(canonical_model_name);
+        LOG(INFO, "ModelManager") << "Successfully removed model from registry: " << canonical_model_name << std::endl;
+        return;
     }
 
     // Find the models--* directory from resolved_path
@@ -2977,14 +3168,14 @@ void ModelManager::delete_model(const std::string& model_name) {
     std::string main_repo = checkpoint_to_repo_id(info.checkpoint("main"));
 
     // Check if the main repo is shared with another model
-    bool main_shared = is_repo_shared(main_repo, model_name, models_cache_);
+    bool main_shared = is_repo_shared(main_repo, canonical_model_name, models_cache_);
 
     if (!main_shared) {
         // No other model uses this repo — safe to delete the entire directory
         if (fs::exists(model_cache_path_fs)) {
             LOG(INFO, "ModelManager") << "Removing directory..." << std::endl;
             fs::remove_all(model_cache_path_fs);
-            LOG(INFO, "ModelManager") << "✓ Deleted model files: " << model_name << std::endl;
+            LOG(INFO, "ModelManager") << "✓ Deleted model files: " << canonical_model_name << std::endl;
         } else {
             LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
         }
@@ -3002,7 +3193,7 @@ void ModelManager::delete_model(const std::string& model_name) {
                 cleanup_empty_parents(file_path, model_cache_path_fs);
             }
         }
-        LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << model_name << std::endl;
+        LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
     }
 
     // Clean up non-main checkpoint files in their own repo dirs (multi-repo models)
@@ -3013,7 +3204,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         std::string cp_repo = checkpoint_to_repo_id(checkpoint);
         if (cp_repo.empty() || cp_repo == main_repo) continue;
 
-        if (is_repo_shared(cp_repo, model_name, models_cache_)) {
+        if (is_repo_shared(cp_repo, canonical_model_name, models_cache_)) {
             LOG(INFO, "ModelManager") << "Keeping shared repo " << cp_repo
                         << " (used by other models)" << std::endl;
             continue;
@@ -3029,17 +3220,16 @@ void ModelManager::delete_model(const std::string& model_name) {
     }
 
     // Remove from user models if it's a user model
-    if (model_name.substr(0, 5) == "user.") {
-        std::string clean_name = model_name.substr(5);
+    if (is_user_model_name(canonical_model_name)) {
         json updated_user_models = user_models_;
-        updated_user_models.erase(clean_name);
+        updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
         save_user_models(updated_user_models);
         user_models_ = updated_user_models;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
 
     // Remove from cache after successful deletion
-    remove_model_from_cache(model_name);
+    remove_model_from_cache(canonical_model_name);
 }
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
@@ -3122,12 +3312,30 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
 
     // O(1) lookup in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = models_cache_.find(model_name);
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
         return it->second;
     }
 
     throw std::runtime_error("Model not found: " + model_name);
+}
+
+std::string ModelManager::resolve_model_name(const std::string& model_name) {
+    build_cache();
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto it = public_model_aliases_.find(model_name);
+    return it != public_model_aliases_.end() ? it->second : model_name;
+}
+
+std::string ModelManager::get_public_model_name(const std::string& model_name) {
+    build_cache();
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto it = canonical_public_names_.find(model_name);
+    return it != canonical_public_names_.end() ? it->second : model_name;
 }
 
 bool ModelManager::model_exists(const std::string& model_name) {
@@ -3136,30 +3344,49 @@ bool ModelManager::model_exists(const std::string& model_name) {
 
     // O(1) lookup in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return models_cache_.find(model_name) != models_cache_.end();
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    return models_cache_.find(canonical_name) != models_cache_.end();
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
-    // Check raw server_models_ JSON (before filtering)
     if (server_models_.contains(model_name)) {
         return true;
     }
-    // Also check user models
-    if (user_models_.contains(model_name)) {
-        return true;
+    if (is_user_model_name(model_name)) {
+        return user_models_.contains(strip_user_model_prefix(model_name));
     }
+
+    std::string canonical_name = resolve_model_name(model_name);
+    if (is_user_model_name(canonical_name)) {
+        return user_models_.contains(strip_user_model_prefix(canonical_name));
+    }
+
+    // Check raw server_models_ JSON (before filtering)
     return false;
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
     ModelInfo info;
+    std::string registry_name = model_name;
+
+    if (!server_models_.contains(registry_name)) {
+        if (is_user_model_name(registry_name)) {
+            registry_name = strip_user_model_prefix(registry_name);
+        } else {
+            std::string canonical_name = resolve_model_name(model_name);
+            if (is_user_model_name(canonical_name)) {
+                registry_name = strip_user_model_prefix(canonical_name);
+            }
+        }
+    }
 
     // Check server models first
     json* model_json = nullptr;
-    if (server_models_.contains(model_name)) {
-        model_json = &server_models_[model_name];
-    } else if (user_models_.contains(model_name)) {
-        model_json = &user_models_[model_name];
+    if (server_models_.contains(registry_name)) {
+        model_json = &server_models_[registry_name];
+    } else if (user_models_.contains(registry_name)) {
+        model_json = &user_models_[registry_name];
     }
 
     if (!model_json) {
@@ -3167,7 +3394,8 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     }
 
     // Parse model info from JSON
-    info.model_name = model_name;
+    info.model_name = is_user_model_name(model_name) ? model_name
+        : (user_models_.contains(registry_name) ? std::string(USER_MODEL_PREFIX) + registry_name : registry_name);
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
@@ -3203,13 +3431,44 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
     // This is populated by filter_models_by_backend() during cache building
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-    auto it = filtered_out_models_.find(model_name);
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    auto it = filtered_out_models_.find(canonical_name);
     if (it != filtered_out_models_.end()) {
         return it->second;
     }
 
     // Model wasn't filtered out (either it's available or doesn't exist)
     return "";
+}
+
+// Must be called with models_cache_mutex_ held.
+void ModelManager::rebuild_public_model_aliases_locked() {
+    public_model_aliases_.clear();
+    canonical_public_names_.clear();
+
+    for (const auto& [name, info] : models_cache_) {
+        if (!is_user_model_name(name) || !has_label(info, APPEAR_BUILTIN_LABEL)) {
+            continue;
+        }
+
+        std::string bare_name = strip_user_model_prefix(name);
+        if (server_models_.contains(bare_name) || models_cache_.find(bare_name) != models_cache_.end()) {
+            LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
+                      << "' for '" << name << "' because it collides with an existing model" << std::endl;
+            continue;
+        }
+
+        auto existing = public_model_aliases_.find(bare_name);
+        if (existing != public_model_aliases_.end() && existing->second != name) {
+            LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
+                      << "' for '" << name << "' because it collides with '" << existing->second << "'" << std::endl;
+            continue;
+        }
+
+        public_model_aliases_[bare_name] = name;
+        canonical_public_names_[name] = bare_name;
+    }
 }
 
 } // namespace lemon
