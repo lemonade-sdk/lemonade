@@ -20,7 +20,11 @@ Usage:
     python server_endpoints.py
 """
 
+import glob
+import json
+import os
 import platform
+import shutil
 import time
 import uuid
 import requests
@@ -41,6 +45,7 @@ from utils.test_models import (
     USER_MODEL_NAME,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_VAE_CHECKPOINT,
+    get_hf_cache_dir,
 )
 
 
@@ -1395,6 +1400,510 @@ class EndpointTests(ServerTestBase):
             found_url, "Expected at least one backend with release_url in system-info"
         )
         print("[OK] system-info contains release_url for backends")
+
+
+    def _get_snapshot_hash_from_refs(self, repo_cache_dir):
+        """Read the current snapshot hash from refs/main (authoritative)."""
+        refs_path = os.path.join(repo_cache_dir, "refs", "main")
+        if os.path.isfile(refs_path):
+            with open(refs_path) as f:
+                return f.read().strip()
+        return None
+
+    def test_030_pull_resumes_orphaned_snapshot(self):
+        """Test that pull resumes from an orphaned snapshot after a commit hash change.
+
+        Simulates the scenario where a download was interrupted and then
+        the upstream repo received new commits, changing the commit hash.
+        The orphan-resume logic should relocate salvageable files from the
+        old snapshot into the current one and then complete the download
+        via a fresh manifest built from the current HF API response.
+        """
+        # Ensure the test model is downloaded so we have real files to work with
+        self._ensure_model_pulled()
+
+        hf_cache = get_hf_cache_dir()
+        repo_cache_dir = os.path.join(hf_cache, "models--unsloth--gemma-3-270m-it-GGUF")
+        snapshots_dir = os.path.join(repo_cache_dir, "snapshots")
+
+        if not os.path.isdir(snapshots_dir):
+            self.skipTest("HF cache snapshots directory not found")
+
+        # Use refs/main as the authoritative snapshot hash
+        current_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+        if not current_hash:
+            self.skipTest("refs/main not found — cannot determine current snapshot")
+
+        current_snapshot = os.path.join(snapshots_dir, current_hash)
+        if not os.path.isdir(current_snapshot):
+            self.skipTest(f"Snapshot directory for {current_hash} not found")
+
+        # Collect real files in the snapshot (skip manifests and directories)
+        real_files = []
+        for root, _dirs, files in os.walk(current_snapshot):
+            for f in files:
+                if f.startswith("."):
+                    continue
+                rel = os.path.relpath(os.path.join(root, f), current_snapshot)
+                size = os.path.getsize(os.path.join(root, f))
+                real_files.append((rel, size))
+
+        if not real_files:
+            self.skipTest("No files found in snapshot")
+
+        # Create a fake "old" orphaned snapshot with a manifest and some files
+        fake_old_hash = "a" * 40
+        old_snapshot = os.path.join(snapshots_dir, fake_old_hash)
+        os.makedirs(old_snapshot, exist_ok=True)
+
+        try:
+            # Build a manifest matching the real file set
+            manifest = {
+                "repo_id": "unsloth/gemma-3-270m-it-GGUF",
+                "commit_hash": fake_old_hash,
+                "download_path": old_snapshot,
+                "files_count": len(real_files),
+                "files": [],
+            }
+            for rel_path, size in real_files:
+                manifest["files"].append(
+                    {
+                        "name": rel_path,
+                        "url": f"https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/main/{rel_path}",
+                        "size": size,
+                        "download_path": old_snapshot,
+                    }
+                )
+
+            # Copy first file as complete, rest as .partial stubs
+            first_file = real_files[0]
+            src = os.path.join(current_snapshot, first_file[0])
+            dst = os.path.join(old_snapshot, first_file[0])
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+
+            for rel_path, _size in real_files[1:]:
+                partial_dst = os.path.join(old_snapshot, rel_path + ".partial")
+                os.makedirs(os.path.dirname(partial_dst), exist_ok=True)
+                # Write a small stub so the orphan scanner finds it
+                with open(partial_dst, "wb") as pf:
+                    pf.write(b"\x00" * 1024)
+
+            # Write the manifest
+            manifest_path = os.path.join(old_snapshot, ".download_manifest.json")
+            with open(manifest_path, "w") as mf:
+                json.dump(manifest, mf)
+
+            # Delete the real snapshot so the download path sees the
+            # orphaned snapshot as the only one with progress.
+            # Do NOT call /delete — that wipes the entire models--org--repo
+            # directory, destroying the seeded orphan. Instead, just remove
+            # the current snapshot and re-pull. The pull endpoint always runs
+            # download_from_huggingface (do_not_upgrade defaults to false).
+            shutil.rmtree(current_snapshot)
+
+            # Pull again — should find the orphaned snapshot and resume
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Pull after orphan resume failed: {response.text[:500]}",
+            )
+
+            data = response.json()
+            self.assertEqual(data.get("status"), "success")
+
+            # Verify model appears in downloaded list
+            models_response = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            )
+            models_data = models_response.json()
+            model_ids = [m["id"] for m in models_data["data"]]
+            self.assertIn(
+                ENDPOINT_TEST_MODEL,
+                model_ids,
+                "Model should be downloaded after orphan-resume pull",
+            )
+
+            # Verify the orphaned snapshot was cleaned up (relocated or removed)
+            self.assertFalse(
+                os.path.isdir(old_snapshot),
+                "Orphaned snapshot should have been relocated or removed",
+            )
+
+            # Verify files exist in some snapshot under refs/main hash
+            new_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+            self.assertIsNotNone(new_hash, "refs/main should exist after pull")
+            assert new_hash is not None  # for type narrowing
+            new_snapshot = os.path.join(snapshots_dir, new_hash)
+            self.assertTrue(
+                os.path.isdir(new_snapshot),
+                f"Snapshot directory for {new_hash} should exist after pull",
+            )
+            for rel_path, _size in real_files:
+                self.assertTrue(
+                    os.path.isfile(os.path.join(new_snapshot, rel_path)),
+                    f"Expected {rel_path} in new snapshot after orphan resume",
+                )
+
+            print("[OK] Pull resumed from orphaned snapshot successfully")
+        finally:
+            # Clean up the fake snapshot if it still exists
+            if os.path.isdir(old_snapshot):
+                shutil.rmtree(old_snapshot, ignore_errors=True)
+
+    def test_031_pull_resumes_orphaned_snapshot_multi_repo(self):
+        """Test orphan-resume with a multi-repo model (per-file download_path).
+
+        Uses the user-model pull path (multiple checkpoints across repos)
+        to verify that the orphan-resume logic correctly handles per-repo
+        download_path entries. Non-main repo files should survive the
+        relocation because they live in their own cache directories.
+        """
+        if platform.system() == "Darwin":
+            self.skipTest("sd-cpp multi-repo pull tests skipped on macOS")
+
+        model_name = f"user.OrphanResume-Multi-{uuid.uuid4().hex[:8]}"
+        recipe = "sd-cpp"
+        recipe_backend = f"{recipe}_backend"
+
+        hf_cache = get_hf_cache_dir()
+        main_repo_id = USER_MODEL_MAIN_CHECKPOINT.split(":")[0]
+        main_repo_dir = os.path.join(
+            hf_cache, "models--" + main_repo_id.replace("/", "--")
+        )
+        fake_old_hash = "b" * 40
+        snapshots_dir = os.path.join(main_repo_dir, "snapshots")
+
+        try:
+            # Pull the multi-repo model to get real on-disk state
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "checkpoints": {
+                        "main": USER_MODEL_MAIN_CHECKPOINT,
+                        "text_encoder": USER_MODEL_TE_CHECKPOINT,
+                        "vae": USER_MODEL_VAE_CHECKPOINT,
+                    },
+                    "recipe": recipe,
+                    "recipe_options": {recipe_backend: "cpu"},
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, "Initial multi-repo pull failed")
+
+            current_hash = self._get_snapshot_hash_from_refs(main_repo_dir)
+            if not current_hash:
+                self.skipTest("refs/main not found for multi-repo model")
+
+            current_snapshot = os.path.join(snapshots_dir, current_hash)
+            if not os.path.isdir(current_snapshot):
+                self.skipTest(f"Main repo snapshot {current_hash} not found")
+
+            # Collect main-repo files
+            main_files = []
+            for root, _dirs, files in os.walk(current_snapshot):
+                for f in files:
+                    if f.startswith("."):
+                        continue
+                    rel = os.path.relpath(os.path.join(root, f), current_snapshot)
+                    size = os.path.getsize(os.path.join(root, f))
+                    main_files.append((rel, size))
+
+            if not main_files:
+                self.skipTest("No main-repo files found")
+
+            # Build orphaned snapshot with manifest containing per-file download_path
+            old_snapshot = os.path.join(snapshots_dir, fake_old_hash)
+            os.makedirs(old_snapshot, exist_ok=True)
+
+            te_repo_id = USER_MODEL_TE_CHECKPOINT.split(":")[0]
+            te_repo_dir = os.path.join(
+                hf_cache, "models--" + te_repo_id.replace("/", "--")
+            )
+            te_hash = self._get_snapshot_hash_from_refs(te_repo_dir) or "main"
+            te_snapshot = os.path.join(te_repo_dir, "snapshots", te_hash)
+
+            manifest = {
+                "repo_id": main_repo_id,
+                "commit_hash": fake_old_hash,
+                "download_path": old_snapshot,
+                "files_count": len(main_files) + 1,
+                "files": [],
+            }
+
+            # Add main-repo files with old_snapshot as download_path
+            for rel_path, size in main_files:
+                manifest["files"].append(
+                    {
+                        "name": rel_path,
+                        "url": f"https://huggingface.co/{main_repo_id}/resolve/main/{rel_path}",
+                        "size": size,
+                        "download_path": old_snapshot,
+                    }
+                )
+
+            # Add a text_encoder file with its own repo download_path
+            te_variant = USER_MODEL_TE_CHECKPOINT.split(":")[1]
+            manifest["files"].append(
+                {
+                    "name": te_variant,
+                    "url": f"https://huggingface.co/{te_repo_id}/resolve/main/{te_variant}",
+                    "size": 0,
+                    "download_path": te_snapshot,
+                }
+            )
+
+            # Copy one main file as complete, create partials for rest
+            src = os.path.join(current_snapshot, main_files[0][0])
+            dst = os.path.join(old_snapshot, main_files[0][0])
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+
+            for rel_path, _size in main_files[1:]:
+                partial_dst = os.path.join(old_snapshot, rel_path + ".partial")
+                os.makedirs(os.path.dirname(partial_dst), exist_ok=True)
+                with open(partial_dst, "wb") as pf:
+                    pf.write(b"\x00" * 1024)
+
+            manifest_path = os.path.join(old_snapshot, ".download_manifest.json")
+            with open(manifest_path, "w") as mf:
+                json.dump(manifest, mf)
+
+            # Remove the real snapshot but do NOT call /delete — that would
+            # wipe the entire models--org--repo directory (including the
+            # seeded orphan). Re-pull always runs download_from_huggingface.
+            shutil.rmtree(current_snapshot)
+
+            # Re-pull — orphan resume should relocate main-repo files,
+            # then fresh manifest handles re-download
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": model_name,
+                    "checkpoints": {
+                        "main": USER_MODEL_MAIN_CHECKPOINT,
+                        "text_encoder": USER_MODEL_TE_CHECKPOINT,
+                        "vae": USER_MODEL_VAE_CHECKPOINT,
+                    },
+                    "recipe": recipe,
+                    "recipe_options": {recipe_backend: "cpu"},
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Multi-repo orphan resume pull failed: {response.text[:500]}",
+            )
+
+            # Verify model downloaded
+            models_response = requests.get(
+                f"{self.base_url}/models/{model_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+
+            # Verify orphaned snapshot cleaned up
+            self.assertFalse(
+                os.path.isdir(old_snapshot),
+                "Orphaned snapshot should have been relocated or removed",
+            )
+
+            # Verify text_encoder repo is still intact (non-main repo
+            # files should not have been disturbed by orphan relocation)
+            te_file = os.path.join(te_snapshot, te_variant)
+            self.assertTrue(
+                os.path.exists(te_file) or glob.glob(
+                    os.path.join(te_repo_dir, "snapshots", "*", te_variant)
+                ),
+                "Text encoder file should still exist in its own repo cache",
+            )
+
+            print("[OK] Multi-repo orphan resume pull succeeded")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            if os.path.isdir(os.path.join(snapshots_dir, fake_old_hash)):
+                shutil.rmtree(
+                    os.path.join(snapshots_dir, fake_old_hash), ignore_errors=True
+                )
+
+
+    def test_032_pull_orphan_collision_with_existing_snapshot(self):
+        """Test orphan relocation when the current-hash snapshot already exists.
+
+        Seeds both an orphaned snapshot (fake old hash) and a partial
+        current-hash snapshot, then pulls. The merge policy should:
+        - Keep a complete file in the current snapshot over an orphan copy
+        - Keep the larger .partial when both snapshots have one
+        - Move orphan files that don't exist in the current snapshot
+        """
+        self._ensure_model_pulled()
+
+        hf_cache = get_hf_cache_dir()
+        repo_cache_dir = os.path.join(hf_cache, "models--unsloth--gemma-3-270m-it-GGUF")
+        snapshots_dir = os.path.join(repo_cache_dir, "snapshots")
+
+        if not os.path.isdir(snapshots_dir):
+            self.skipTest("HF cache snapshots directory not found")
+
+        current_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+        if not current_hash:
+            self.skipTest("refs/main not found")
+
+        current_snapshot = os.path.join(snapshots_dir, current_hash)
+        if not os.path.isdir(current_snapshot):
+            self.skipTest(f"Snapshot directory for {current_hash} not found")
+
+        # Collect real files
+        real_files = []
+        for root, _dirs, files in os.walk(current_snapshot):
+            for f in files:
+                if f.startswith("."):
+                    continue
+                rel = os.path.relpath(os.path.join(root, f), current_snapshot)
+                size = os.path.getsize(os.path.join(root, f))
+                real_files.append((rel, size))
+
+        if len(real_files) < 2:
+            self.skipTest("Need at least 2 files for collision test")
+
+        fake_old_hash = "c" * 40
+        old_snapshot = os.path.join(snapshots_dir, fake_old_hash)
+
+        # Save copies of the current snapshot files so we can restore
+        backup_dir = os.path.join(snapshots_dir, "_test_backup")
+
+        try:
+            # Back up the current snapshot
+            shutil.copytree(current_snapshot, backup_dir)
+
+            # --- Set up the collision scenario ---
+            # Current snapshot: keep file[0] as complete, remove file[1]
+            # Orphan snapshot:  has file[0] as smaller .partial, file[1] as complete
+
+            # Remove file[1] from current snapshot (orphan has it)
+            file1_current = os.path.join(current_snapshot, real_files[1][0])
+            if os.path.exists(file1_current):
+                os.remove(file1_current)
+            # Create a small .partial for file[1] in current snapshot
+            partial1_current = file1_current + ".partial"
+            os.makedirs(os.path.dirname(partial1_current), exist_ok=True)
+            with open(partial1_current, "wb") as pf:
+                pf.write(b"\x00" * 512)
+
+            # Create the orphan snapshot
+            os.makedirs(old_snapshot, exist_ok=True)
+
+            # Orphan file[0]: a .partial that is smaller than current's complete file
+            orphan_partial0 = os.path.join(old_snapshot, real_files[0][0] + ".partial")
+            os.makedirs(os.path.dirname(orphan_partial0), exist_ok=True)
+            with open(orphan_partial0, "wb") as pf:
+                pf.write(b"\x00" * 256)
+
+            # Orphan file[1]: larger .partial than current's small .partial
+            orphan_partial1 = os.path.join(old_snapshot, real_files[1][0] + ".partial")
+            os.makedirs(os.path.dirname(orphan_partial1), exist_ok=True)
+            with open(orphan_partial1, "wb") as pf:
+                pf.write(b"\x00" * 4096)
+
+            # Write orphan manifest
+            manifest = {
+                "repo_id": "unsloth/gemma-3-270m-it-GGUF",
+                "commit_hash": fake_old_hash,
+                "download_path": old_snapshot,
+                "files_count": len(real_files),
+                "files": [],
+            }
+            for rel_path, size in real_files:
+                manifest["files"].append(
+                    {
+                        "name": rel_path,
+                        "url": f"https://huggingface.co/unsloth/gemma-3-270m-it-GGUF/resolve/main/{rel_path}",
+                        "size": size,
+                        "download_path": old_snapshot,
+                    }
+                )
+            manifest_path = os.path.join(old_snapshot, ".download_manifest.json")
+            with open(manifest_path, "w") as mf:
+                json.dump(manifest, mf)
+
+            # Record current snapshot state before pull
+            file0_size_before = os.path.getsize(
+                os.path.join(current_snapshot, real_files[0][0])
+            )
+
+            # Do NOT call /delete — that wipes the entire models--org--repo
+            # directory (including both snapshots). The pull endpoint always
+            # runs download_from_huggingface, which will detect the orphan
+            # and exercise the collision merge path since the current-hash
+            # snapshot already exists on disk.
+
+            # Pull — triggers orphan detection + collision merge + fresh download
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"Pull with collision failed: {response.text[:500]}",
+            )
+
+            # Verify orphan cleaned up
+            self.assertFalse(
+                os.path.isdir(old_snapshot),
+                "Orphaned snapshot should have been removed after merge",
+            )
+
+            # Verify file[0] in current snapshot was NOT overwritten by the
+            # orphan's smaller partial (merge policy: keep complete over partial)
+            new_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+            assert new_hash is not None
+            final_snapshot = os.path.join(snapshots_dir, new_hash)
+            file0_final = os.path.join(final_snapshot, real_files[0][0])
+            self.assertTrue(os.path.isfile(file0_final), "file[0] should exist")
+            self.assertEqual(
+                os.path.getsize(file0_final),
+                file0_size_before,
+                "Complete file should not have been replaced by orphan's smaller partial",
+            )
+
+            # Verify all files present after the fresh manifest download
+            for rel_path, _size in real_files:
+                self.assertTrue(
+                    os.path.isfile(os.path.join(final_snapshot, rel_path)),
+                    f"Expected {rel_path} in final snapshot after collision merge + download",
+                )
+
+            print("[OK] Orphan collision merge handled correctly")
+        finally:
+            # Restore from backup if needed
+            if os.path.isdir(backup_dir):
+                new_hash = self._get_snapshot_hash_from_refs(repo_cache_dir)
+                if new_hash:
+                    target = os.path.join(snapshots_dir, new_hash)
+                    if os.path.isdir(target):
+                        shutil.rmtree(target, ignore_errors=True)
+                    shutil.copytree(backup_dir, target)
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            if os.path.isdir(old_snapshot):
+                shutil.rmtree(old_snapshot, ignore_errors=True)
 
 
 if __name__ == "__main__":
