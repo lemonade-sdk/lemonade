@@ -65,7 +65,6 @@ nav:
   - FAQ Guide: faq.md
   - Lemonade CLI Guide: lemonade-cli.md
   - Application Guides:
-      - AI Dev Gallery: server/apps/ai-dev-gallery.md
       - AI Toolkit: server/apps/ai-toolkit.md
       - AnythingLLM: server/apps/anythingLLM.md
       - CodeGPT: server/apps/codeGPT.md
@@ -85,7 +84,14 @@ nav:
       - Backends: embeddable/backends.md
       - Models: embeddable/models.md
       - Building from Source: embeddable/building.md
-  - Server Spec: server/server_spec.md
+  - API Spec:
+      - Overview: api/README.md
+      - OpenAI-Compatible: api/openai.md
+      - Ollama-Compatible: api/ollama.md
+      - Anthropic-Compatible: api/anthropic.md
+      - llama.cpp-Specific: api/llamacpp.md
+      - Lemonade-Specific: api/lemonade.md
+  - Multi-Model Support: guide/multi-model.md
   - Integration Guide: server/server_integration.md
   - Custom Model Configuration: server/custom-models.md
   - Contribution Guide: contribute.md
@@ -94,6 +100,7 @@ not_in_nav: |
   /index.md
   /self_hosted_runners.md
   /eval/finetuned_model_export.md
+  /server/server_spec.md
 
 exclude_docs: |
   code.md

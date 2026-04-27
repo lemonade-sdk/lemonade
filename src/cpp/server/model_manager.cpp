@@ -811,8 +811,11 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
             }
         }
 
-        // No match found - return first file as fallback
-        return all_gguf_files[0];
+        // No match found for the requested GGUF variant. Do not fall back to
+        // another quantization in the same Hugging Face repo; otherwise a
+        // custom download with a different quant can make a built-in model
+        // appear downloaded and allow deleting the wrong file.
+        return "";
     }
 
     // Everything else

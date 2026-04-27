@@ -15,7 +15,7 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 We have found that most LLMs work well with this application.
 
-However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see [server_spec.md](../server_spec.md) for details).
+However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see the [Endpoints Spec](../../api/README.md) for details).
 
 
 ## Setup
