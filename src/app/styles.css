@@ -3445,6 +3445,7 @@ input::-webkit-calendar-picker-indicator {
 
 .chat-messages {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 15px;
     display: flex;
