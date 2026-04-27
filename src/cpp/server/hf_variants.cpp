@@ -1,4 +1,5 @@
 #include "lemon/hf_variants.h"
+#include "lemon/model_types.h"
 
 #include <algorithm>
 #include <cctype>
@@ -287,9 +288,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
     std::vector<std::string> labels;
     if (!vset.mmproj_files.empty()) labels.push_back("vision");
     {
-        std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) labels.push_back("embeddings");
-        if (id_lower.find("rerank") != std::string::npos) labels.push_back("reranking");
+        // Model name is not yet chosen at this point; infer from checkpoint only.
+        auto inferred = infer_labels_from_name("", checkpoint);
+        labels.insert(labels.end(), inferred.begin(), inferred.end());
     }
 
     nlohmann::json out;
