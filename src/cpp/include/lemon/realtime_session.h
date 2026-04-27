@@ -44,6 +44,7 @@ struct RealtimeSession {
 
     // Timestamps for audio tracking
     int64_t audio_start_ms = 0;  // Start of current speech segment
+    std::atomic<bool> vad_speech_window_open{false};
 
     // Interim transcription state
     int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription

@@ -9,6 +9,7 @@ export interface TranscriptionCallbacks {
   onTranscription: (text: string, isFinal: boolean) => void;
   onSpeechEvent: (event: 'started' | 'stopped') => void;
   onError?: (error: string) => void;
+  onAudioBufferCleared?: () => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
 }
@@ -61,6 +62,9 @@ export class TranscriptionWebSocket {
             break;
           case 'input_audio_buffer.speech_stopped':
             callbacks.onSpeechEvent('stopped');
+            break;
+          case 'input_audio_buffer.cleared':
+            callbacks.onAudioBufferCleared?.();
             break;
           case 'conversation.item.input_audio_transcription.delta':
             // Interim result - replaces previous interim text
