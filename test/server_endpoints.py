@@ -80,6 +80,39 @@ class EndpointTests(ServerTestBase):
         """Set up each test."""
         super().setUp()
 
+    def _get_model_info(self, model_name):
+        response = requests.get(
+            f"{self.base_url}/models/{model_name}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
+    def _delete_model_if_present(self, model_name):
+        response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": model_name},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertIn(response.status_code, [200, 422])
+
+    def _pull_temp_llamacpp_alias(self, model_name, recipe_options=None):
+        base_model = self._get_model_info(ENDPOINT_TEST_MODEL)
+        payload = {
+            "model_name": model_name,
+            "checkpoint": base_model["checkpoint"],
+            "recipe": base_model["recipe"],
+        }
+        if recipe_options is not None:
+            payload["recipe_options"] = recipe_options
+
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
         valid_endpoints = [
@@ -626,6 +659,173 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] /load after auto-load was a no-op ({elapsed:.3f}s)")
+
+    def test_012d_autoload_uses_saved_options(self):
+        """Test that inference-triggered auto-load recalls saved per-model options."""
+        custom_ctx_size = 3584
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "ctx_size": custom_ctx_size,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        inference_response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(inference_response.status_code, 200)
+
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded = next(
+            (
+                m
+                for m in health.get("all_models_loaded", [])
+                if m["model_name"] == ENDPOINT_TEST_MODEL
+            ),
+            None,
+        )
+        self.assertIsNotNone(loaded, f"Model {ENDPOINT_TEST_MODEL} should be loaded")
+        self.assertEqual(
+            loaded.get("recipe_options", {}).get("ctx_size"),
+            custom_ctx_size,
+            "Auto-load should recall saved ctx_size from recipe_options.json",
+        )
+
+        print(f"[OK] Auto-load recalled saved ctx_size={custom_ctx_size}")
+
+    def test_012e_user_alias_autoload_preserves_baked_llamacpp_args(self):
+        """Test that save_options preserves existing user alias llama.cpp args."""
+        model_name = f"user.Load-Merge-Regression-{uuid.uuid4().hex[:8]}"
+        baked_args = "--repeat-penalty 1.0 --top-k 20"
+        custom_ctx_size = 3072
+
+        try:
+            self._pull_temp_llamacpp_alias(
+                model_name,
+                recipe_options={"llamacpp_args": baked_args},
+            )
+
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": model_name,
+                    "ctx_size": custom_ctx_size,
+                    "save_options": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            inference_response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 5,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(inference_response.status_code, 200)
+
+            model_data = self._get_model_info(model_name)
+            recipe_options = model_data.get("recipe_options", {})
+            self.assertEqual(recipe_options.get("ctx_size"), custom_ctx_size)
+            self.assertEqual(recipe_options.get("llamacpp_args"), baked_args)
+
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded = next(
+                (
+                    m
+                    for m in health.get("all_models_loaded", [])
+                    if m["model_name"] == model_name
+                ),
+                None,
+            )
+            self.assertIsNotNone(loaded, f"Model {model_name} should be loaded")
+            self.assertEqual(
+                loaded.get("recipe_options", {}).get("ctx_size"),
+                custom_ctx_size,
+            )
+            self.assertEqual(
+                loaded.get("recipe_options", {}).get("llamacpp_args"),
+                baked_args,
+            )
+
+            print(
+                f"[OK] User alias auto-load preserved ctx_size={custom_ctx_size} "
+                f"and baked llamacpp_args"
+            )
+        finally:
+            self._delete_model_if_present(model_name)
+
+    def test_012f_user_model_delete_clears_saved_options(self):
+        """Test deleting a user model removes its persisted recipe options."""
+        model_name = f"user.Delete-Recreate-Regression-{uuid.uuid4().hex[:8]}"
+        custom_ctx_size = 3328
+
+        try:
+            self._pull_temp_llamacpp_alias(model_name)
+
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": model_name,
+                    "ctx_size": custom_ctx_size,
+                    "save_options": True,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
+
+            model_data = self._get_model_info(model_name)
+            self.assertEqual(
+                model_data.get("recipe_options", {}).get("ctx_size"),
+                custom_ctx_size,
+            )
+
+            delete_response = requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(delete_response.status_code, 200)
+
+            self._pull_temp_llamacpp_alias(model_name)
+
+            recreated_model_data = self._get_model_info(model_name)
+            self.assertNotIn(
+                "ctx_size",
+                recreated_model_data.get("recipe_options", {}),
+                "Recreated user model should not inherit deleted saved ctx_size",
+            )
+
+            print("[OK] Deleting a user model cleared its saved recipe options")
+        finally:
+            self._delete_model_if_present(model_name)
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""

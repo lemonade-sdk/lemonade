@@ -166,6 +166,10 @@ public:
     // Set extra models directory for GGUF discovery
     void set_extra_models_dir(const std::string& dir);
 
+    // Resolve current per-model recipe options using model defaults plus persisted overrides.
+    RecipeOptions get_effective_recipe_options(const ModelInfo& info,
+                                              bool refresh_saved_from_disk = false);
+
     void save_model_options(const ModelInfo& info);
 
 private:
@@ -201,11 +205,16 @@ private:
 
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
+    json get_saved_recipe_options_snapshot(bool refresh_saved_from_disk);
+    RecipeOptions resolve_effective_recipe_options(const ModelInfo& info,
+                                                   const json& saved_recipe_options) const;
+    void delete_saved_model_options(const std::string& model_name);
 
     json server_models_;
     json user_models_;
     json recipe_options_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
+    mutable std::mutex recipe_options_mutex_;
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

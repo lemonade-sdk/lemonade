@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import platform
 import subprocess
@@ -21,7 +22,13 @@ import unittest
 
 import requests
 
-from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_lemond_binary
+from utils.test_models import (
+    ENDPOINT_TEST_MODEL,
+    PORT,
+    TIMEOUT_DEFAULT,
+    TIMEOUT_MODEL_OPERATION,
+    get_default_lemond_binary,
+)
 from utils.server_base import wait_for_server
 
 BASE = f"http://localhost:{PORT}"
@@ -489,6 +496,87 @@ class TestWrongGgufVariantNotDownloaded(unittest.TestCase):
             "Tiny-Test-Model-GGUF",
             model_ids,
             "Model with wrong .gguf should not appear in downloaded list",
+        )
+
+
+class TestRecipeOptionsReloadFromDisk(unittest.TestCase):
+    """Persisted recipe_options.json edits should take effect without restart."""
+
+    proc = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.proc, cls.cache_dir = start_server()
+        wait_for_server(port=PORT)
+
+        pull_response = requests.post(
+            f"{BASE}/v1/pull",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        if pull_response.status_code != 200:
+            raise RuntimeError(
+                f"Failed to pull {ENDPOINT_TEST_MODEL}: {pull_response.status_code}"
+            )
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            stop_server(cls.proc)
+
+    def test_load_uses_updated_recipe_options_file_without_restart(self):
+        original_ctx = 2048
+        updated_ctx = 3072
+
+        save_response = requests.post(
+            f"{BASE}/v1/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "ctx_size": original_ctx,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(save_response.status_code, 200)
+
+        recipe_options_path = os.path.join(self.cache_dir, "recipe_options.json")
+        with open(recipe_options_path, encoding="utf-8") as f:
+            recipe_options = json.load(f)
+
+        self.assertIn(ENDPOINT_TEST_MODEL, recipe_options)
+        recipe_options[ENDPOINT_TEST_MODEL]["ctx_size"] = updated_ctx
+
+        with open(recipe_options_path, "w", encoding="utf-8") as f:
+            json.dump(recipe_options, f, indent=2)
+
+        unload_response = requests.post(
+            f"{BASE}/v1/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(unload_response.status_code, 200)
+
+        load_response = requests.post(
+            f"{BASE}/v1/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        health = requests.get(HEALTH, timeout=TIMEOUT_DEFAULT).json()
+        loaded = next(
+            (
+                m
+                for m in health.get("all_models_loaded", [])
+                if m["model_name"] == ENDPOINT_TEST_MODEL
+            ),
+            None,
+        )
+        self.assertIsNotNone(loaded, f"{ENDPOINT_TEST_MODEL} should be loaded")
+        self.assertEqual(
+            loaded.get("recipe_options", {}).get("ctx_size"),
+            updated_ctx,
+            "Load should honor updated recipe_options.json without restart",
         )
 
 
