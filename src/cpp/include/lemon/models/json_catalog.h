@@ -18,8 +18,11 @@ namespace models {
 std::string describe_illegal_labels(const std::string& model_name, const std::string& reason);
 
 // The one label set registration and routing validation derive a type from. When
-// `illegal` is set, the returned labels are meaningless.
+// `illegal` is set, the returned labels are meaningless. `model_name` and the
+// definition's checkpoint feed label inference when the definition names no
+// deployment mode explicitly (see infer_labels_from_name()).
 std::set<std::string> normalized_definition_labels(const nlohmann::json& model_data,
+                                                  const std::string& model_name,
                                                   std::string* illegal = nullptr);
 
 using json = nlohmann::json;
