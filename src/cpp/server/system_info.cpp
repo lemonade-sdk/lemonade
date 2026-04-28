@@ -1421,8 +1421,8 @@ static std::string identify_npu_arch_linux() {
     return "";
 }
 
-// Check if kernel has CWSR fix for Strix Halo.
-// The fix exports cwsr_size/ctl_stack_size properties in sysfs.
+// Check if kernel has CWSR fix for Strix Halo by looking for cwsr_size/ctl_stack_size in sysfs
+// The kernel fix exports these properties; older kernels don't have them
 bool needs_gfx1151_cwsr_fix() {
     std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
 
