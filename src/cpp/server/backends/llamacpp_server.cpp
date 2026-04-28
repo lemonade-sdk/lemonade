@@ -281,7 +281,9 @@ void LlamaCppServer::load(const std::string& model_name,
     push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
-    push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
+    push_arg(args, reserved_flags, "--jinja",
+             std::vector<std::string>{"--no-jinja"});
+    push_arg(args, reserved_flags, "--metrics");
 
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
