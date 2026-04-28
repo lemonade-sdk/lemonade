@@ -33,14 +33,18 @@
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.78
     },
     "DeepSeek-R1-Distill-Qwen-7B-CPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.78
     },
     "AMD-OLMo-1B-SFT-DPO-Hybrid": {
@@ -664,7 +668,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-	        "hot",
+            "hot",
             "tool-calling",
             "vision",
             "llamacpp"
@@ -677,9 +681,9 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-	        "hot",
+            "hot",
             "tool-calling",
-	        "vision",
+            "vision",
             "llamacpp"
         ],
         "size": 18.3
@@ -1438,5 +1442,46 @@
             "image"
         ],
         "size": 0.017
+    },
+    "Qwen3.5-0.8B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-0.8B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "experimental"
+        ],
+        "size": 1.6
+    },
+    "Qwen3.5-2B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-2B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "experimental"
+        ],
+        "size": 4.0
+    },
+    "Qwen3.5-4B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-4B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "hot",
+            "experimental"
+        ],
+        "size": 8.2
+    },
+    "Qwen3.5-9B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-9B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "experimental"
+        ],
+        "size": 18.6
     }
 }
