@@ -207,9 +207,6 @@ function renderDownload() {
 
     if (distro === 'ubuntu') {
       // Ubuntu: Show structured server + frontend installation
-      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
-      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
-
       if (downloadArea) {
         downloadArea.style.display = 'none';
       }
@@ -230,10 +227,7 @@ function renderDownload() {
             <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
             <pre><code class="language-bash" id="lmn-install-desktop-block"></code></pre>
 
-            <div class="lmn-install-method-header">Option 3: AppImage (portable desktop app, no installation required)</div>
-            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
-
-            <div class="lmn-install-method-header">Option 4: Snap (fully sandboxed desktop app)</div>
+            <div class="lmn-install-method-header">Option 3: Snap (fully sandboxed desktop app)</div>
             <pre><code class="language-bash" id="lmn-install-snap-app-block"></code></pre>
           `;
         }
@@ -265,26 +259,13 @@ function renderDownload() {
             serverSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyServerSnapLine(event)">📋</button></div>`;
           }
 
-          // Render AppImage commands if App + Server selected
+          // Render desktop + snap commands if App + Server selected
           if (type === 'app') {
             const desktopPre = document.getElementById('lmn-install-desktop-block');
             if (desktopPre) {
               const desktopCmd = 'sudo apt install lemonade-desktop';
               const safeLine = desktopCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               desktopPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDesktopLine(event)">📋</button></div>`;
-            }
-
-            const appImagePre = document.getElementById('lmn-install-appimage-block');
-            if (appImagePre) {
-              const appImageCommands = [
-                `wget ${appImageUrl}`,
-                `chmod +x ${appImageFile}`,
-                `./${appImageFile}`
-              ];
-              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
-                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
-              }).join('');
             }
 
             // Render app snap command
@@ -323,9 +304,7 @@ function renderDownload() {
     } else if (distro === 'fedora') {
       // Fedora: Show structured server + frontend installation
       const rpmFile = `lemonade-server-${version}.x86_64.rpm`;
-      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${rpmFile}`;
-      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 
       if (downloadArea) {
         downloadArea.style.display = 'none';
@@ -340,12 +319,8 @@ function renderDownload() {
         let frontendSection = '';
         if (type === 'app') {
           frontendSection = `
-            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
-            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
-            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
-
-            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
-            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
+            <div class="lmn-install-section-title">Step 2: Open the web app</div>
+            <div class="lmn-note">Once lemonade-server is running, the web app is automatically available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>. Just open your browser and navigate there.</div>
           `;
         }
 
@@ -364,22 +339,6 @@ function renderDownload() {
               const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
             }).join('');
-          }
-
-          // Render AppImage commands if App + Server selected
-          if (type === 'app') {
-            const appImagePre = document.getElementById('lmn-install-appimage-block');
-            if (appImagePre) {
-              const appImageCommands = [
-                `wget ${appImageUrl}`,
-                `chmod +x ${appImageFile}`,
-                `./${appImageFile}`
-              ];
-              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
-                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
-              }).join('');
-            }
           }
         }, 0);
       }
@@ -457,20 +416,6 @@ function renderDownload() {
     cmdDiv.innerHTML = notes;
   }
 }
-
-window.lmnCopyAppImageLine = function(e, idx) {
-  e.stopPropagation();
-  const pre = document.getElementById('lmn-install-appimage-block');
-  if (!pre) return;
-  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
-  if (lines[idx] !== undefined) {
-    navigator.clipboard.writeText(lines[idx]);
-    const btn = e.currentTarget;
-    const old = btn.textContent;
-    btn.textContent = '✔';
-    setTimeout(() => { btn.textContent = old; }, 900);
-  }
-};
 
 window.lmnCopyServerSnapLine = function(e) {
   e.stopPropagation();
