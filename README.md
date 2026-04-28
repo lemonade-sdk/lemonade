@@ -133,7 +133,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="7"><strong>Text generation</strong></td>
+      <td rowspan="8"><strong>Text generation</strong></td>
       <td rowspan="5"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
       <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU</td>
@@ -170,6 +170,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
       <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>vllm</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>Speech-to-text</strong></td>
@@ -253,7 +259,7 @@ lemonade backends
 
 | Under Development          | Under Consideration         | Recently Completed      |
 |---------------------------|-----------------------------|------------------------|
-| Native multi-modal tool calling | vLLM support           | Port app to Tauri      |
+| Native multi-modal tool calling |                              | Port app to Tauri      |
 | More whisper.cpp backends |                              | Embeddable binary release |
 | More SD.cpp backends      |                              | Image generation       |
 | MLX support               |                              | Speech-to-text         |
