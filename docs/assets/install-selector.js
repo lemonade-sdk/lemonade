@@ -270,13 +270,13 @@ function renderDownload() {
 
         installCmdDiv.innerHTML = `
           <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
-          <div class="lmn-install-method-header">From the AUR:</div>
+          <div class="lmn-install-method-header">From the <a href="https://aur.archlinux.org/packages/lemonade-server" target="_blank">AUR</a>:</div>
           <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
           <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
           <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
           <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
 
-          <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
+          <div class="lmn-install-method-header">Option 2: <a href="https://aur.archlinux.org/packages/lemonade-desktop" target="_blank">Lemonade Desktop</a> package (web app launcher)</div>
           <pre><code class="language-bash" id="lmn-install-desktop-block"></code></pre>
         `;
 
