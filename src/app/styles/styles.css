@@ -2374,11 +2374,15 @@ footer {
     padding-bottom: 2px;
 }
 
+.backend-row-item .model-item-content {
+    align-items: flex-start;
+}
+
 .backend-row-main {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 1px;
+    gap: 2px;
     width: 100%;
     min-width: 0;
     overflow: hidden;
@@ -2387,8 +2391,7 @@ footer {
 
 .backend-row-head {
     display: flex;
-    align-items: baseline;
-    gap: 9px;
+    align-items: center;
     width: 100%;
     min-width: 0;
     overflow: hidden;
@@ -2403,6 +2406,26 @@ footer {
     white-space: nowrap;
     min-width: max-content;
     flex-shrink: 0;
+}
+
+.backend-row-detail {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 18px;
+    padding-left: 14px;
+}
+
+.backend-row-detail .model-actions {
+    transition: opacity 0.12s ease;
+}
+
+.backend-actions-hidden {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .backend-inline-meta {
@@ -3190,6 +3213,11 @@ input::-webkit-calendar-picker-indicator {
     align-self: flex-start;
     color: var(--text-tertiary);
     padding: 4px 0;
+}
+
+.chat-message.collection-image-message {
+    max-width: none;
+    padding: 0;
 }
 
 .message-play-button-container {
@@ -6443,15 +6471,22 @@ input::-webkit-calendar-picker-indicator {
 }
 
 /* Chat-embedded generated images stay compact so multi-image responses
-   don't take over the scroll. Click opens the lightbox for full view. */
+   don't take over the scroll. Click opens the lightbox for full view.
+   Height is set inline from COLLECTION_IMAGE_HEIGHT. */
 .generated-image.in-chat {
-    max-height: 280px;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
     cursor: zoom-in;
     transition: filter 0.15s ease;
 }
 
 .generated-image.in-chat:hover {
     filter: brightness(1.08);
+}
+
+.collection-chat-image {
+    line-height: 0;
 }
 
 .image-lightbox-overlay {
