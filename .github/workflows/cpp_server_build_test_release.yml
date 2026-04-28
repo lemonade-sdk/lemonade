@@ -587,6 +587,109 @@ jobs:
           chmod +x "$APPIMAGE_FILE"
           "$APPIMAGE_FILE" --appimage-help | head -5
 
+      - name: Smoketest AppImage
+        shell: bash
+        run: |
+          set -e
+
+          APPIMAGE_FILE="build/app-appimage/lemonade-app-${LEMONADE_VERSION}-x86_64.AppImage"
+          DIAG_DIR="$PWD/smoketest-diag"
+          mkdir -p "$DIAG_DIR"
+
+          # Headless display + libfuse2 to run the AppImage; imagemagick +
+          # x11-utils for the post-launch screenshot check.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              xvfb libfuse2 imagemagick x11-utils
+
+          # Drive Xvfb directly (rather than xvfb-run) so we keep the real
+          # AppImage PID — xvfb-run wraps its child and can mask crashes of
+          # forked GUI subprocesses.
+          Xvfb :99 -screen 0 1280x720x24 >"$DIAG_DIR/xvfb.log" 2>&1 &
+          XVFB_PID=$!
+          export DISPLAY=:99
+          for i in 1 2 3 4 5; do
+              if xdpyinfo -display :99 >/dev/null 2>&1; then break; fi
+              sleep 1
+          done
+
+          echo "Launching AppImage..."
+          "$APPIMAGE_FILE" >"$DIAG_DIR/appimage.log" 2>&1 &
+          APP_PID=$!
+          echo "AppImage PID: $APP_PID"
+
+          fail() {
+              echo "SMOKETEST FAIL: $1"
+              echo "--- AppImage stdout/stderr ---"
+              cat "$DIAG_DIR/appimage.log" 2>/dev/null || true
+              kill $APP_PID 2>/dev/null || true
+              kill $XVFB_PID 2>/dev/null || true
+              exit 1
+          }
+
+          # Wait `target` total seconds since launch; bail if the process
+          # disappears in the meantime.
+          ELAPSED=0
+          wait_alive() {
+              local target=$1
+              while [ $ELAPSED -lt $target ]; do
+                  if ! kill -0 $APP_PID 2>/dev/null; then
+                      fail "AppImage process exited after ${ELAPSED}s"
+                  fi
+                  sleep 1
+                  ELAPSED=$((ELAPSED + 1))
+              done
+          }
+
+          # Give the UI 15s to fully render, then capture a screenshot.
+          wait_alive 15
+          echo "Capturing screenshot..."
+          import -display :99 -window root "$DIAG_DIR/shot.png" \
+              || fail "failed to capture screenshot"
+
+          # Continue watching to a 30s total uptime.
+          wait_alive 30
+          echo "AppImage stayed up for 30 seconds"
+
+          # Scan stderr for known-fatal renderer markers. A Tauri/WebKit
+          # subprocess can abort (EGL failure, GPU process crash) without
+          # taking down the main process, leaving a black window and a
+          # passing PID check. The grep below catches those cases.
+          if grep -E 'EGL_BAD|Aborting\.\.\.' "$DIAG_DIR/appimage.log"; then
+              fail "log contains fatal renderer marker (see grep output above)"
+          fi
+
+          # Backstop: if the renderer silently produced nothing, the root
+          # window screenshot is solid black (stddev ~= 0). A working app —
+          # even with the default Xvfb black background filling the rest of
+          # the screen — has UI text/icons that lift stddev above ~0.01.
+          STDDEV=$(identify -format '%[fx:standard_deviation]' "$DIAG_DIR/shot.png")
+          echo "Screenshot stddev: $STDDEV"
+          if awk "BEGIN{exit !($STDDEV < 0.005)}"; then
+              fail "screenshot is essentially uniform (stddev=$STDDEV) — likely black window"
+          fi
+
+          echo "--- AppImage stdout/stderr (head) ---"
+          head -100 "$DIAG_DIR/appimage.log" || true
+
+          # Clean shutdown.
+          kill -TERM $APP_PID 2>/dev/null || true
+          for i in 1 2 3 4 5; do
+              if ! kill -0 $APP_PID 2>/dev/null; then break; fi
+              sleep 1
+          done
+          kill -KILL $APP_PID 2>/dev/null || true
+          kill $XVFB_PID 2>/dev/null || true
+          echo "Smoketest complete"
+
+      - name: Upload AppImage smoketest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-appimage-smoketest-diagnostics
+          path: smoketest-diag/
+          retention-days: 7
+
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v7
         with:
