@@ -20,7 +20,10 @@ Usage:
     python server_endpoints.py
 """
 
+import json
+import os
 import platform
+import re
 import time
 import uuid
 import requests
@@ -954,6 +957,12 @@ class EndpointTests(ServerTestBase):
         # Stats fields per docs/api/lemonade.md (may not all be present if no inference done)
         # Just verify it returns valid JSON
         self.assertIsInstance(data, dict)
+        self.assertIn("lifetime", data)
+        self.assertIsInstance(data["lifetime"], dict)
+        self.assertIn("input_tokens", data["lifetime"])
+        self.assertIn("output_tokens", data["lifetime"])
+        self.assertIn("by_day", data["lifetime"])
+        self.assertIn("by_hour", data["lifetime"])
 
         print(f"[OK] /stats endpoint returned: {list(data.keys())}")
 
@@ -1395,6 +1404,206 @@ class EndpointTests(ServerTestBase):
             found_url, "Expected at least one backend with release_url in system-info"
         )
         print("[OK] system-info contains release_url for backends")
+
+    def test_030_stats_schema(self):
+        """Pin the /stats (and on-disk) schema so a backwards-incompatible
+        change to the persisted token usage format is caught in CI.
+
+        This is intentionally structural: it verifies field names, types,
+        bucket key formats, and that /stats matches the persisted JSON.
+        The exact counter values are not asserted (they belong to
+        test_021_stats_endpoint), only that counter fields exist and are
+        non-negative integers.
+        """
+        _DAY_KEY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        _HOUR_KEY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:00:00$")
+        _TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+
+        def _assert_bucket(bucket, where):
+            self.assertIsInstance(bucket, dict, f"{where}: not a dict")
+            for field in ("requests", "input_tokens", "output_tokens"):
+                self.assertIn(field, bucket, f"{where}: missing '{field}'")
+                self.assertIsInstance(bucket[field], int, f"{where}.{field}: not int")
+                self.assertGreaterEqual(bucket[field], 0, f"{where}.{field}: negative")
+
+        def _assert_bucket_map(bucket_map, key_re, where):
+            self.assertIsInstance(bucket_map, dict, f"{where}: not a dict")
+            for key, value in bucket_map.items():
+                self.assertRegex(key, key_re, f"{where}: bad key {key!r}")
+                _assert_bucket(value, f"{where}[{key!r}]")
+
+        def _assert_model_stats_map(stats_map, where):
+            self.assertIsInstance(stats_map, dict, f"{where}: not a dict")
+            for key, value in stats_map.items():
+                self.assertIsInstance(key, str, f"{where}: key not str")
+                _assert_bucket(value, f"{where}[{key!r}]")
+                self.assertIn("by_day", value, f"{where}[{key!r}]: missing by_day")
+                self.assertIn("by_hour", value, f"{where}[{key!r}]: missing by_hour")
+                _assert_bucket_map(
+                    value["by_day"], _DAY_KEY_RE, f"{where}[{key!r}].by_day"
+                )
+                _assert_bucket_map(
+                    value["by_hour"], _HOUR_KEY_RE, f"{where}[{key!r}].by_hour"
+                )
+
+        def _assert_lifetime(lifetime, where):
+            self.assertIsInstance(lifetime, dict, f"{where}: not a dict")
+
+            # Counter fields (top-level lifetime totals)
+            for field in ("requests", "input_tokens", "output_tokens"):
+                self.assertIn(field, lifetime, f"{where}: missing '{field}'")
+                self.assertIsInstance(lifetime[field], int, f"{where}.{field}: not int")
+                self.assertGreaterEqual(
+                    lifetime[field], 0, f"{where}.{field}: negative"
+                )
+
+            # Timestamp fields
+            for field in ("started_at", "updated_at"):
+                self.assertIn(field, lifetime, f"{where}: missing '{field}'")
+                self.assertRegex(
+                    lifetime[field], _TS_RE, f"{where}.{field}: bad format"
+                )
+
+            # Four bucket maps
+            self.assertIn("by_day", lifetime, f"{where}: missing by_day")
+            self.assertIn("by_hour", lifetime, f"{where}: missing by_hour")
+            self.assertIn("by_model", lifetime, f"{where}: missing by_model")
+            self.assertIn(
+                "by_device_type", lifetime, f"{where}: missing by_device_type"
+            )
+            _assert_bucket_map(lifetime["by_day"], _DAY_KEY_RE, f"{where}.by_day")
+            _assert_bucket_map(lifetime["by_hour"], _HOUR_KEY_RE, f"{where}.by_hour")
+            _assert_model_stats_map(lifetime["by_model"], f"{where}.by_model")
+            _assert_model_stats_map(
+                lifetime["by_device_type"], f"{where}.by_device_type"
+            )
+
+        # Load a model and drive one request so stats actually populate.
+        # Without a request, by_model/by_device_type are empty and we can't
+        # catch schema drift in their shape.
+        requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        inference_succeeded = False
+        try:
+            client = self.get_openai_client()
+            client.chat.completions.create(
+                model=ENDPOINT_TEST_MODEL,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_completion_tokens=5,
+            )
+            inference_succeeded = True
+        except Exception:
+            pass  # Schema must be valid even if inference itself fails.
+
+        response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        # Top-level /stats response: current-request telemetry + lifetime.
+        for field in (
+            "input_tokens",
+            "output_tokens",
+            "prompt_tokens",
+            "time_to_first_token",
+            "tokens_per_second",
+        ):
+            self.assertIn(field, data, f"/stats: missing '{field}'")
+        self.assertIsInstance(data["input_tokens"], int)
+        self.assertIsInstance(data["output_tokens"], int)
+        self.assertIsInstance(data["prompt_tokens"], int)
+        self.assertIsInstance(data["time_to_first_token"], (int, float))
+        self.assertIsInstance(data["tokens_per_second"], (int, float))
+
+        self.assertIn("lifetime", data, "/stats: missing 'lifetime'")
+        lifetime = data["lifetime"]
+
+        # Fields unique to the API projection (not persisted to disk).
+        self.assertIn("bucket_timezone", lifetime)
+        self.assertEqual(lifetime["bucket_timezone"], "server_local_time")
+        self.assertIn("persistence_path", lifetime)
+        self.assertIsInstance(lifetime["persistence_path"], str)
+        self.assertTrue(
+            lifetime["persistence_path"].endswith("token_usage_stats.json"),
+            f"persistence_path should end with token_usage_stats.json, "
+            f"got: {lifetime['persistence_path']}",
+        )
+
+        _assert_lifetime(lifetime, "/stats.lifetime")
+
+        # If inference ran, request counters must be non-zero. This catches a
+        # regression where record_usage_locked early-exits and requests stays 0.
+        if inference_succeeded:
+            self.assertGreaterEqual(
+                lifetime["requests"],
+                1,
+                "lifetime.requests should be >= 1 after a successful completion",
+            )
+            self.assertGreaterEqual(
+                sum(b["requests"] for b in lifetime["by_day"].values()),
+                1,
+                "sum of by_day[*].requests should be >= 1 after a successful completion",
+            )
+
+        # After a request, at least one day/hour bucket must exist so we
+        # actually exercise the bucket schema above (catches e.g. a rename
+        # of 'input_tokens' to 'prompt_tokens' inside a bucket).
+        self.assertGreater(
+            len(lifetime["by_day"]),
+            0,
+            "Expected at least one by_day bucket after a completion",
+        )
+        self.assertGreater(
+            len(lifetime["by_hour"]),
+            0,
+            "Expected at least one by_hour bucket after a completion",
+        )
+
+        # Verify the persisted on-disk file matches the same schema. This
+        # is what makes the test a *storage* schema check, not just an API
+        # shape check -- a breaking change to load_usage_stats /
+        # persist_usage_stats_locked will surface here.
+        persistence_path = lifetime["persistence_path"]
+        if os.path.exists(persistence_path):
+            with open(persistence_path, "r", encoding="utf-8") as f:
+                persisted = json.load(f)
+            # Persisted form is the lifetime stats MINUS the API-only fields.
+            for api_only in ("bucket_timezone", "persistence_path"):
+                self.assertNotIn(
+                    api_only,
+                    persisted,
+                    f"on-disk file should not contain API-only field " f"'{api_only}'",
+                )
+            self.assertEqual(
+                persisted.get("schema_version"),
+                1,
+                "on-disk file must contain schema_version == 1",
+            )
+            _assert_lifetime(
+                {
+                    **persisted,
+                    "bucket_timezone": "server_local_time",
+                    "persistence_path": persistence_path,
+                },
+                "on-disk token_usage_stats.json",
+            )
+            print(f"[OK] on-disk stats file schema OK: {persistence_path}")
+        else:
+            # Binary runs as a different user, or cache dir is isolated
+            # from the test process. Not a failure; skip the on-disk check.
+            print(
+                f"[SKIP] on-disk file not readable from test process: "
+                f"{persistence_path}"
+            )
+
+        print(
+            f"[OK] /stats schema: {len(lifetime['by_day'])} day bucket(s), "
+            f"{len(lifetime['by_hour'])} hour bucket(s), "
+            f"{len(lifetime['by_model'])} model(s), "
+            f"{len(lifetime['by_device_type'])} device type(s)"
+        )
 
 
 if __name__ == "__main__":
