@@ -49,10 +49,6 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
-    {"steps", "--steps"},
-    {"cfg_scale", "--cfg-scale"},
-    {"width", "--width"},
-    {"height", "--height"},
     {"flm_args", "--flm-args"},
     {"vllm_backend", "--vllm"},
     {"vllm_args", "--vllm-args"}
