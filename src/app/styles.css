@@ -2682,11 +2682,15 @@ footer {
     padding-bottom: 2px;
 }
 
+.backend-row-item .model-item-content {
+    align-items: flex-start;
+}
+
 .backend-row-main {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 1px;
+    gap: 2px;
     width: 100%;
     min-width: 0;
     overflow: hidden;
@@ -2695,8 +2699,7 @@ footer {
 
 .backend-row-head {
     display: flex;
-    align-items: baseline;
-    gap: 9px;
+    align-items: center;
     width: 100%;
     min-width: 0;
     overflow: hidden;
@@ -2711,6 +2714,26 @@ footer {
     white-space: nowrap;
     min-width: max-content;
     flex-shrink: 0;
+}
+
+.backend-row-detail {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 18px;
+    padding-left: 14px;
+}
+
+.backend-row-detail .model-actions {
+    transition: opacity 0.12s ease;
+}
+
+.backend-actions-hidden {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .backend-inline-meta {
