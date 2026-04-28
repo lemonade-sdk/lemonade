@@ -1448,8 +1448,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning",
-            "vllm"
+            "reasoning"
         ],
         "size": 1.6
     },
@@ -1458,8 +1457,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning",
-            "vllm"
+            "reasoning"
         ],
         "size": 4.0
     },
@@ -1469,7 +1467,6 @@
         "suggested": true,
         "labels": [
             "reasoning",
-            "vllm",
             "hot"
         ],
         "size": 8.2
@@ -1479,8 +1476,7 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning",
-            "vllm"
+            "reasoning"
         ],
         "size": 18.6
     }
