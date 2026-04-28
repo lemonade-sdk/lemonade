@@ -597,10 +597,18 @@ jobs:
           mkdir -p "$DIAG_DIR"
 
           # Headless display + libfuse2 to run the AppImage; imagemagick +
-          # x11-utils for the post-launch screenshot check.
+          # x11-utils for the post-launch screenshot check; mesa-libgl-dri
+          # so llvmpipe is present for software OpenGL.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              xvfb libfuse2 imagemagick x11-utils
+              xvfb libfuse2 imagemagick x11-utils libgl1-mesa-dri
+
+          # Force Mesa's llvmpipe software renderer. Xvfb has no GPU and no
+          # DRI3, so without this WebKit's compositor falls back to a path
+          # that paints nothing — yielding a black window even when the app
+          # itself is healthy. llvmpipe gives WebKit a real (slow) GL stack.
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
 
           # Drive Xvfb directly (rather than xvfb-run) so we keep the real
           # AppImage PID — xvfb-run wraps its child and can mask crashes of
