@@ -75,6 +75,7 @@ nav:
       - Open WebUI: server/apps/open-webui.md
       - Wut: server/apps/wut.md
   - Server Configuration: server/configuration.md
+  - llama.cpp Backend: llamacpp.md
   - OmniRouter (tools for agents): omni-router.md
   - Understanding local LLM servers: server/concepts.md
   - Developer Getting Started: dev-getting-started.md
