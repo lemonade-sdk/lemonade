@@ -10,7 +10,7 @@ import StatusBar from './StatusBar';
 import { ModelsProvider } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
-import '../../styles.css';
+import '../../styles/index.css';
 
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
