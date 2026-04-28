@@ -19,13 +19,13 @@ It is built with **Tauri v2**, which embeds the operating system's native webvie
 
 ## Deployment Topology
 
-The Tauri desktop app is a **thin client** for a separately-running `lemond` server. A single `lemond` can be driven by multiple clients at once, including clients running on other machines — the Linux AppImage in particular is shipped as a remote client that points at a `lemond` elsewhere on the network.
+The Tauri desktop app is a **thin client** for a separately-running `lemond` server. A single `lemond` can be driven by multiple clients at once, including clients running on other machines.
 
 Consequences that callers of this code need to know about:
 
 - **Per-client local state.** All user-tunable state (inference params, layout sizes, zoom, base URL, API key) lives in `~/.cache/lemonade/app_settings.json` on the client, owned by the Rust host (`src-tauri/src/settings.rs`). It is **never** stored or proxied through `lemond`, because two clients against the same server must be able to hold different preferences.
 - **The desktop app does not manage `lemond`'s lifecycle.** The server is started independently — on Windows by `LemonadeServer.exe` (auto-started via the startup folder, tray icon always visible), on Linux/macOS by the user or a service. The Tauri app is opened on demand and must not add itself to autostart, spawn `lemond` as a subprocess, or assume `lemond` is on the same machine.
-- **Discovery is best-effort local + explicit remote.** `beacon.rs` listens for a UDP broadcast emitted by a local `lemond` to auto-populate the base URL. For remote-server use (AppImage or any hand-configured setup), the user sets `baseURL` + `apiKey` in settings and the client talks to that endpoint directly.
+- **Discovery is best-effort local + explicit remote.** `beacon.rs` listens for a UDP broadcast emitted by a local `lemond` to auto-populate the base URL. For remote-server use, the user sets `baseURL` + `apiKey` in settings and the client talks to that endpoint directly.
 
 ## Code Structure
 
@@ -110,7 +110,7 @@ npm run dev
 # Production build (single binary, no OS bundles)
 npm run build -- --no-bundle
 
-# Production build with platform bundles (macOS .app, Linux AppImage, Windows MSI/NSIS)
+# Production build with platform bundles (macOS .app, Linux .deb/.rpm, Windows MSI/NSIS)
 npm run build
 ```
 
