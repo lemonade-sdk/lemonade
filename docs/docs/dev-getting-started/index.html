@@ -868,17 +868,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#building-an-appimage-linux-only" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building an AppImage (Linux Only)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#platform-specific-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2002,17 +1991,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#building-an-appimage-linux-only" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building an AppImage (Linux Only)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#platform-specific-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2638,26 +2616,6 @@ This is dramatically faster (&lt;1s per renderer change) and is the right loop f
 - <strong>Linux installed</strong>: <code>/opt/share/lemonade-server/app/lemonade-app</code>
 - <strong>Linux development</strong>: <code>../app/lemonade-app</code> (from build/)</p>
 <p>If not found, the "Open app" menu option is hidden but everything else works.</p>
-<h3 id="building-an-appimage-linux-only">Building an AppImage (Linux Only)</h3>
-<p>AppImage builds are opt-in. Enable the option at configure time and then build:</p>
-<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>-DBUILD_APPIMAGE<span class="o">=</span>ON
-cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>appimage
-</code></pre></div>
-<p>Alternatively, if you've already configured without the flag, you can still trigger a one-off build using the manual target:</p>
-<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>appimage
-</code></pre></div>
-<p>This will:
-1. Run <code>npm ci</code> in <code>src/app/</code> to install webpack and the Tauri CLI
-2. Set the package.json version to match the CMake project version
-3. Webpack the React renderer with production optimizations
-4. Invoke <code>cargo tauri build --bundles appimage</code> to compile the Rust host and bundle the AppImage
-5. Stage the artifact at <code>build/app-appimage/lemonade-app-&lt;version&gt;-x86_64.AppImage</code></p>
-<p>The generated AppImage will be located in:
-- <code>build/app-appimage/lemonade-app-&lt;version&gt;-&lt;arch&gt;.AppImage</code></p>
-<p>The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:</p>
-<div class="highlight"><pre><span></span><code>chmod<span class="w"> </span>+x<span class="w"> </span>build/app-appimage/lemonade-app-*.AppImage
-./build/app-appimage/lemonade-app-*.AppImage
-</code></pre></div>
 <h3 id="platform-specific-notes">Platform-Specific Notes</h3>
 <p><strong>Windows:</strong>
 - The build uses static linking to minimize DLL dependencies
