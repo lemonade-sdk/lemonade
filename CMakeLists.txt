@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.2.0)
+project(lemon_cpp VERSION 10.3.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -957,7 +957,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         CONFIGURE_DEPENDS
         "${APP_SOURCE_DIR}/src/*"
         "${APP_SOURCE_DIR}/assets/*"
-        "${APP_SOURCE_DIR}/styles.css"
+        "${APP_SOURCE_DIR}/styles/*"
         "${WEB_APP_SOURCE_DIR}/*.json"
         "${WEB_APP_SOURCE_DIR}/*.js"
         "${WEB_APP_SOURCE_DIR}/*.ts"
