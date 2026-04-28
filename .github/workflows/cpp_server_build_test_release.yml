@@ -597,11 +597,14 @@ jobs:
           mkdir -p "$DIAG_DIR"
 
           # Headless display + libfuse2 to run the AppImage; imagemagick +
-          # x11-utils for the post-launch screenshot check; mesa-libgl-dri
-          # so llvmpipe is present for software OpenGL.
+          # x11-utils for the post-launch screenshot check; libgl1-mesa-dri
+          # so llvmpipe is present for software OpenGL; openbox as a minimal
+          # window manager — without one, GTK windows on Xvfb can stay
+          # unmapped and the screenshot stays the Xvfb default black even
+          # for a fully working app.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              xvfb libfuse2 imagemagick x11-utils libgl1-mesa-dri
+              xvfb libfuse2 imagemagick x11-utils libgl1-mesa-dri openbox
 
           # Force Mesa's llvmpipe software renderer. Xvfb has no GPU and no
           # DRI3, so without this WebKit's compositor falls back to a path
@@ -621,6 +624,11 @@ jobs:
               sleep 1
           done
 
+          # Minimal WM so windows actually map and become visible.
+          openbox --sm-disable >"$DIAG_DIR/openbox.log" 2>&1 &
+          OPENBOX_PID=$!
+          sleep 1
+
           echo "Launching AppImage..."
           "$APPIMAGE_FILE" >"$DIAG_DIR/appimage.log" 2>&1 &
           APP_PID=$!
@@ -630,7 +638,10 @@ jobs:
               echo "SMOKETEST FAIL: $1"
               echo "--- AppImage stdout/stderr ---"
               cat "$DIAG_DIR/appimage.log" 2>/dev/null || true
+              echo "--- X window tree ---"
+              cat "$DIAG_DIR/windows.txt" 2>/dev/null || true
               kill $APP_PID 2>/dev/null || true
+              kill $OPENBOX_PID 2>/dev/null || true
               kill $XVFB_PID 2>/dev/null || true
               exit 1
           }
@@ -651,6 +662,8 @@ jobs:
 
           # Give the UI 15s to fully render, then capture a screenshot.
           wait_alive 15
+          echo "Capturing X window tree..."
+          xwininfo -display :99 -root -tree >"$DIAG_DIR/windows.txt" 2>&1 || true
           echo "Capturing screenshot..."
           import -display :99 -window root "$DIAG_DIR/shot.png" \
               || fail "failed to capture screenshot"
@@ -687,6 +700,7 @@ jobs:
               sleep 1
           done
           kill -KILL $APP_PID 2>/dev/null || true
+          kill $OPENBOX_PID 2>/dev/null || true
           kill $XVFB_PID 2>/dev/null || true
           echo "Smoketest complete"
 
