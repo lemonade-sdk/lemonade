@@ -302,32 +302,44 @@ uint64_t parse_meminfo_kb(const std::string& key) {
     return 0;
 }
 
-bool has_available_discrete_gpu_memory() {
+uint64_t gib_to_bytes(double gib) {
+    if (gib <= 0.0) {
+        return 0;
+    }
+    long double bytes = static_cast<long double>(gib) * static_cast<long double>(GiB);
+    if (bytes >= static_cast<long double>(std::numeric_limits<uint64_t>::max())) {
+        return std::numeric_limits<uint64_t>::max();
+    }
+    return static_cast<uint64_t>(bytes);
+}
+
+uint64_t detected_discrete_gpu_memory_bytes() {
 #ifdef __APPLE__
     // Apple Metal devices normally use unified memory from the system pool.
-    return false;
+    return 0;
 #else
     try {
         auto system_info = create_system_info();
-        auto has_vram = [](const GPUInfo& gpu) {
-            return gpu.available && gpu.vram_gb >= 1.0;
+        uint64_t max_vram = 0;
+        auto consider = [&max_vram](const GPUInfo& gpu) {
+            if (!gpu.available || gpu.vram_gb < 1.0) {
+                return;
+            }
+            max_vram = std::max(max_vram, gib_to_bytes(gpu.vram_gb));
         };
 
         for (const auto& gpu : system_info->get_amd_dgpu_devices()) {
-            if (has_vram(gpu)) return true;
+            consider(gpu);
         }
         for (const auto& gpu : system_info->get_nvidia_gpu_devices()) {
-            if (has_vram(gpu)) return true;
+            consider(gpu);
         }
+        return max_vram;
     } catch (const std::exception&) {
         // If detection fails, prefer the safer unified-memory assumption.
     }
-    return false;
+    return 0;
 #endif
-}
-
-bool gpu_uses_separate_device_memory() {
-    return has_available_discrete_gpu_memory();
 }
 
 uint64_t host_base_bytes_for_discrete_gpu(uint64_t weight_bytes, uint64_t base_required_bytes) {
@@ -342,6 +354,7 @@ uint64_t host_base_bytes_for_discrete_gpu(uint64_t weight_bytes, uint64_t base_r
 void apply_memory_domain_budget(ModelMemoryEstimate& estimate, MemoryBackendClass backend) {
     estimate.host_base_required_bytes = estimate.base_required_bytes;
     estimate.device_base_required_bytes = 0;
+    estimate.device_total_bytes = 0;
     estimate.host_kv_cache_bytes_per_token = estimate.kv_cache_bytes_per_token;
     estimate.separate_device_memory = false;
 
@@ -354,11 +367,13 @@ void apply_memory_domain_budget(ModelMemoryEstimate& estimate, MemoryBackendClas
         // large VRAM pool, so ram_limit and hard preflight must apply here.
         estimate.memory_domain = "system_ram_npu";
         break;
-    case MemoryBackendClass::GPU:
-        if (gpu_uses_separate_device_memory()) {
+    case MemoryBackendClass::GPU: {
+        const uint64_t device_total = detected_discrete_gpu_memory_bytes();
+        if (device_total > 0) {
             estimate.separate_device_memory = true;
             estimate.memory_domain = "discrete_gpu_device_memory";
             estimate.device_base_required_bytes = estimate.base_required_bytes;
+            estimate.device_total_bytes = device_total;
             estimate.host_base_required_bytes = host_base_bytes_for_discrete_gpu(
                 estimate.weight_bytes, estimate.base_required_bytes);
             // The GPU backend asks llama.cpp to fit context/KV against device
@@ -368,6 +383,7 @@ void apply_memory_domain_budget(ModelMemoryEstimate& estimate, MemoryBackendClas
             estimate.memory_domain = "unified_gpu_memory";
         }
         break;
+    }
     }
 }
 
@@ -384,6 +400,50 @@ uint64_t host_kv_bytes_per_token_or_fallback(const ModelMemoryEstimate& estimate
     return estimate.host_kv_cache_bytes_per_token > 0
         ? estimate.host_kv_cache_bytes_per_token
         : estimate.kv_cache_bytes_per_token;
+}
+
+void apply_base_preflight_check(ModelMemoryEstimate& estimate, int64_t ram_limit_mib) {
+    SystemMemoryProbe probe = MemoryManager::probe_system_memory(ram_limit_mib);
+    std::vector<std::string> errors;
+
+    const uint64_t host_required = host_base_required_or_fallback(estimate);
+    if (probe.effective_available_bytes > 0 &&
+        host_required > probe.effective_available_bytes) {
+        std::ostringstream oss;
+        oss << "Insufficient system RAM to load base model footprint. Required "
+            << MemoryManager::format_bytes(host_required)
+            << ", available/allowed "
+            << MemoryManager::format_bytes(probe.effective_available_bytes) << ".";
+        errors.push_back(oss.str());
+    }
+
+    if (estimate.separate_device_memory &&
+        estimate.device_total_bytes > 0 &&
+        estimate.device_base_required_bytes > estimate.device_total_bytes) {
+        std::ostringstream oss;
+        oss << "Insufficient discrete GPU memory to load base model footprint. Required "
+            << MemoryManager::format_bytes(estimate.device_base_required_bytes)
+            << ", detected total GPU memory "
+            << MemoryManager::format_bytes(estimate.device_total_bytes) << ".";
+        errors.push_back(oss.str());
+    }
+
+    if (!errors.empty()) {
+        estimate.hard_error = true;
+        std::ostringstream oss;
+        for (size_t i = 0; i < errors.size(); ++i) {
+            if (i > 0) oss << " ";
+            oss << errors[i];
+        }
+        if (estimate.separate_device_memory) {
+            oss << " Host estimate "
+                << MemoryManager::format_bytes(host_required)
+                << ", device estimate "
+                << MemoryManager::format_bytes(estimate.device_base_required_bytes)
+                << ".";
+        }
+        estimate.warning = oss.str();
+    }
 }
 
 } // namespace
@@ -409,6 +469,7 @@ json ModelMemoryEstimate::to_json() const {
         {"base_required_bytes", base_required_bytes},
         {"host_base_required_bytes", host_base_required_bytes},
         {"device_base_required_bytes", device_base_required_bytes},
+        {"device_total_bytes", device_total_bytes},
         {"kv_cache_bytes_per_token", kv_cache_bytes_per_token},
         {"host_kv_cache_bytes_per_token", host_kv_cache_bytes_per_token},
         {"separate_device_memory", separate_device_memory},
@@ -418,7 +479,10 @@ json ModelMemoryEstimate::to_json() const {
         {"probe_context", probe_context},
         {"final_context", final_context},
         {"dynamic_context", dynamic_context},
-        {"restricted_context_warning", restricted_context_warning}
+        {"hard_error", hard_error},
+        {"restricted_context_warning", restricted_context_warning},
+        {"user_context_override", user_context_override},
+        {"model_context_limit_is_trustworthy", model_context_limit_is_trustworthy}
     };
     if (!warning.empty()) result["warning"] = warning;
     if (!detail.empty()) result["detail"] = detail;
@@ -484,7 +548,12 @@ SystemMemoryProbe MemoryManager::probe_system_memory(int64_t ram_limit_mib) {
 #endif
 
     probe.effective_available_bytes = probe.available_bytes;
-    if (probe.ram_limit_bytes > 0 && probe.ram_limit_bytes < probe.effective_available_bytes) {
+    if (probe.available_bytes == 0 && probe.ram_limit_bytes > 0) {
+        // If the OS probe failed but the user provided a deterministic runtime
+        // limit, use that limit rather than turning the preflight into an
+        // unconditional false-positive failure.
+        probe.effective_available_bytes = probe.ram_limit_bytes;
+    } else if (probe.ram_limit_bytes > 0 && probe.ram_limit_bytes < probe.effective_available_bytes) {
         probe.effective_available_bytes = probe.ram_limit_bytes;
     }
     return probe;
@@ -552,23 +621,11 @@ ModelMemoryEstimate MemoryManager::estimate_llamacpp_memory(
         ctx = static_cast<uint64_t>(std::numeric_limits<int>::max());
     }
     estimate.model_max_context = static_cast<int>(ctx);
+    estimate.model_context_limit_is_trustworthy = ctx > 0;
 
     apply_memory_domain_budget(estimate, backend);
 
-    SystemMemoryProbe probe = probe_system_memory(ram_limit_mib);
-    const uint64_t host_required = host_base_required_or_fallback(estimate);
-    if (host_required > probe.effective_available_bytes) {
-        estimate.hard_error = true;
-        std::ostringstream oss;
-        oss << "Insufficient system RAM to load base model footprint. Required "
-            << format_bytes(host_required) << ", available/allowed "
-            << format_bytes(probe.effective_available_bytes) << ".";
-        if (estimate.separate_device_memory) {
-            oss << " Estimated separate device-memory footprint is "
-                << format_bytes(estimate.device_base_required_bytes) << ".";
-        }
-        estimate.warning = oss.str();
-    }
+    apply_base_preflight_check(estimate, ram_limit_mib);
 
     return estimate;
 }
@@ -593,20 +650,7 @@ ModelMemoryEstimate MemoryManager::estimate_non_llamacpp_memory(
     estimate.kv_cache_bytes_per_token = 0;
     apply_memory_domain_budget(estimate, backend);
 
-    SystemMemoryProbe probe = probe_system_memory(ram_limit_mib);
-    const uint64_t host_required = host_base_required_or_fallback(estimate);
-    if (host_required > probe.effective_available_bytes) {
-        estimate.hard_error = true;
-        std::ostringstream oss;
-        oss << "Insufficient system RAM to load base model footprint. Required "
-            << format_bytes(host_required) << ", available/allowed "
-            << format_bytes(probe.effective_available_bytes) << ".";
-        if (estimate.separate_device_memory) {
-            oss << " Estimated separate device-memory footprint is "
-                << format_bytes(estimate.device_base_required_bytes) << ".";
-        }
-        estimate.warning = oss.str();
-    }
+    apply_base_preflight_check(estimate, ram_limit_mib);
 
     return estimate;
 }

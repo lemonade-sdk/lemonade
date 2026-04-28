@@ -36,8 +36,12 @@ struct ModelMemoryEstimate {
     // This is the value used for hard preflight checks and ram_limit eviction.
     uint64_t host_base_required_bytes = 0;
     // Estimated base footprint that is expected to live in a separate device
-    // memory domain such as dGPU VRAM. Informational only for now.
+    // memory domain such as dGPU VRAM.
     uint64_t device_base_required_bytes = 0;
+    // Best-effort detected total memory of the selected separate device-memory
+    // domain. 0 means unknown/not applicable. This is used only for deterministic
+    // base-model rejections such as a 30 GiB model on an 8 GiB dGPU.
+    uint64_t device_total_bytes = 0;
     uint64_t kv_cache_bytes_per_token = 0;
     // KV/cache bytes per token that count against host/system RAM. This equals
     // kv_cache_bytes_per_token for CPU/APU/unified-memory/NPU paths and is 0
@@ -52,6 +56,8 @@ struct ModelMemoryEstimate {
     bool dynamic_context = false;
     bool hard_error = false;
     bool restricted_context_warning = false;
+    bool user_context_override = false;
+    bool model_context_limit_is_trustworthy = false;
     std::string warning;
     std::string detail;
 
