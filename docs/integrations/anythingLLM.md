@@ -46,7 +46,7 @@ During onboarding or from the "LLM" submenu on the settings sidebar you can set 
 From this page, you can also search and select from all available Lemonade models based on your hardware and preferences. You can also configure the context size as well as managed the models that are available to you through Lemonade without ever needing to leave the AnythingLLM app.
 
 
-> AnythingLLM also supports running Lemonade models for your Embedder to run on your optimized hardware! 
+> AnythingLLM also supports running Lemonade models for your Embedder to run on your optimized hardware!
 
 ## Sending chats to Lemonade
 
