@@ -24,11 +24,23 @@ CLIParser::CLIParser()
 
     app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
         ->type_name("HOST");
+
+    app_.add_option("--context-target", config_.context_target,
+                    "Target context length for LLM backends (tokens; overrides config.json)")
+        ->type_name("TOKENS");
+
+    app_.add_option("--ram-limit", config_.ram_limit,
+                    "Runtime memory limit in MiB for base preflight and eviction; -1 disables the limit (overrides config.json)")
+        ->type_name("MIB");
+
+    app_.add_flag("--allow-external-ram-limit-api", config_.allow_external_ram_limit_api,
+                  "Allow the guarded /system/ram_limit API to modify the runtime RAM limit");
 }
 
 int CLIParser::parse(int argc, char** argv) {
     try {
         app_.parse(argc, argv);
+        config_.allow_external_ram_limit_api_set = app_.count("--allow-external-ram-limit-api") > 0;
         should_continue_ = true;
         exit_code_ = 0;
         return 0;  // Success, continue

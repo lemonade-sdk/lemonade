@@ -5,14 +5,20 @@
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
+#include "lemon/memory_manager.h"
 #include <iostream>
 #include <filesystem>
 #include <lemon/utils/aixlog.hpp>
 #include <cstdlib>
+#include <cstdint>
 #include <set>
+#include <sstream>
+#include <algorithm>
+#include <limits>
 #ifdef __APPLE__
 #include <pwd.h>
 #include <unistd.h>
@@ -39,6 +45,35 @@ static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
 static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
+
+
+struct LoadedContextInfo {
+    int ctx_size = 0;
+    bool from_props = false;
+};
+
+static LoadedContextInfo read_loaded_context_size_from_props(const std::string& base_url) {
+    try {
+        auto response = utils::HttpClient::get(base_url + "/props");
+        if (response.status_code != 200 || response.body.empty()) {
+            return {};
+        }
+
+        auto props = nlohmann::json::parse(response.body);
+        if (props.contains("default_generation_settings") &&
+            props["default_generation_settings"].is_object() &&
+            props["default_generation_settings"].contains("n_ctx")) {
+            int n_ctx = props["default_generation_settings"]["n_ctx"].get<int>();
+            if (n_ctx > 0) {
+                return {n_ctx, true};
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "LlamaCpp") << "Could not query /props for actual context size: "
+                               << e.what() << std::endl;
+    }
+    return {};
+}
 
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
@@ -94,6 +129,186 @@ static void push_overridable_arg(std::vector<std::string>& args,
         args.push_back(key);
         args.push_back(value);
     }
+}
+
+static int expected_context_without_resource_restriction(const ModelMemoryEstimate& estimate,
+                                                         int fallback_context) {
+    int expected = estimate.target_context > 0 ? estimate.target_context : fallback_context;
+
+    // Default behavior is conservative: use 128k, or less if the model has a
+    // trustworthy smaller context limit. Explicit user overrides are allowed to
+    // go above model metadata/fallback values and are then left to llama.cpp fit.
+    if (!estimate.user_context_override &&
+        estimate.model_context_limit_is_trustworthy &&
+        estimate.model_max_context > 0) {
+        expected = std::min(expected, estimate.model_max_context);
+    }
+
+    if (expected > 0) {
+        expected = std::max(expected, MemoryManager::kProbeContext);
+    }
+    return expected;
+}
+
+static void append_context_warning(ModelMemoryEstimate& estimate, const std::string& warning);
+
+static bool should_warn_above_model_support(const ModelMemoryEstimate& estimate,
+                                            int loaded_context,
+                                            bool loaded_context_is_authoritative) {
+    return loaded_context_is_authoritative &&
+           estimate.user_context_override &&
+           estimate.model_context_limit_is_trustworthy &&
+           estimate.model_max_context > 0 &&
+           estimate.target_context > estimate.model_max_context &&
+           loaded_context > estimate.model_max_context;
+}
+
+static void apply_above_model_support_warning(ModelMemoryEstimate& estimate,
+                                              int loaded_context,
+                                              bool loaded_context_is_authoritative) {
+    if (!should_warn_above_model_support(estimate, loaded_context, loaded_context_is_authoritative)) {
+        return;
+    }
+
+    const std::string warning = "Chosen context ("
+        + std::to_string(loaded_context)
+        + ") exceeds model support ("
+        + std::to_string(estimate.model_max_context)
+        + "). Continuing due to user override.";
+    append_context_warning(estimate, warning);
+    LOG(WARNING, "LlamaCpp") << warning << std::endl;
+}
+
+static void append_context_warning(ModelMemoryEstimate& estimate, const std::string& warning) {
+    estimate.restricted_context_warning = true;
+    if (!estimate.warning.empty()) {
+        estimate.warning += " ";
+    }
+    estimate.warning += warning;
+}
+
+static bool should_warn_restricted_context(const ModelMemoryEstimate& estimate,
+                                           int loaded_context,
+                                           bool loaded_context_is_authoritative) {
+    if (!loaded_context_is_authoritative || loaded_context <= 0) {
+        return false;
+    }
+
+    if (estimate.user_context_override &&
+        estimate.target_context > 0 &&
+        estimate.target_context <= MemoryManager::kRestrictedContextWarningThreshold) {
+        // The user explicitly requested a small context. Do not present that as
+        // a resource-shortage warning.
+        return false;
+    }
+
+    if (estimate.model_context_limit_is_trustworthy &&
+        estimate.model_max_context > 0 &&
+        estimate.model_max_context < MemoryManager::kRestrictedContextWarningThreshold) {
+        // The model itself is known to support only a small context.
+        return false;
+    }
+
+    const int expected = expected_context_without_resource_restriction(estimate, loaded_context);
+    if (expected <= 0 || loaded_context >= expected) {
+        // The user or the model metadata intentionally requested/allowed this
+        // size. Do not present that as a resource-shortage warning.
+        return false;
+    }
+
+    return loaded_context < MemoryManager::kRestrictedContextWarningThreshold;
+}
+
+static void apply_restricted_context_warning(ModelMemoryEstimate& estimate,
+                                             int loaded_context,
+                                             bool loaded_context_is_authoritative) {
+    if (!should_warn_restricted_context(estimate, loaded_context, loaded_context_is_authoritative)) {
+        return;
+    }
+
+    const int expected = expected_context_without_resource_restriction(estimate, loaded_context);
+    const std::string warning =
+        "Context size severely restricted due to resource limitations. Model loaded with "
+        + std::to_string(loaded_context)
+        + " context (expected up to "
+        + std::to_string(expected)
+        + ").";
+    append_context_warning(estimate, warning);
+    LOG(WARNING, "LlamaCpp") << warning << std::endl;
+}
+
+static int clamp_fit_target_mib(uint64_t target_mib) {
+    if (target_mib > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        return std::numeric_limits<int>::max();
+    }
+    return static_cast<int>(target_mib);
+}
+
+static int calculate_ram_limit_fit_target_mib(const SystemMemoryProbe& probe,
+                                              long long runtime_ram_limit_mib) {
+    if (runtime_ram_limit_mib < 0 || probe.available_bytes == 0) {
+        return 0;
+    }
+
+    const uint64_t available_mib = probe.available_bytes / (1024ULL * 1024ULL);
+    const uint64_t limit_mib = static_cast<uint64_t>(runtime_ram_limit_mib);
+    if (available_mib <= limit_mib) {
+        return 0;
+    }
+
+    return clamp_fit_target_mib(available_mib - limit_mib);
+}
+
+static int calculate_unified_gpu_fit_target_mib(const SystemMemoryProbe& probe) {
+    if (probe.total_bytes == 0 || probe.available_bytes == 0) {
+        return 0;
+    }
+
+    // llama.cpp's default --fit reserve is 1024 MiB. On unified/iGPU memory
+    // the driver and OS need additional breathing room beyond the device-memory
+    // projection, so ask llama.cpp to leave another 15% of total system RAM free.
+    // Do not request a margin larger than the currently available memory, though:
+    // that can turn an otherwise valid minimum-context load into a guaranteed
+    // startup failure before llama.cpp has a chance to fit.
+    const uint64_t total_mib = probe.total_bytes / (1024ULL * 1024ULL);
+    const uint64_t available_mib = probe.available_bytes / (1024ULL * 1024ULL);
+    uint64_t reserve_mib = 1024ULL + ((total_mib * 15ULL + 99ULL) / 100ULL);
+    if (reserve_mib >= available_mib) {
+        if (available_mib <= 1536ULL) {
+            return 0;
+        }
+        reserve_mib = available_mib - 512ULL;
+    }
+    return clamp_fit_target_mib(reserve_mib);
+}
+
+static int calculate_llamacpp_fit_target_mib(const SystemMemoryProbe& probe,
+                                             const ModelMemoryEstimate& estimate,
+                                             long long runtime_ram_limit_mib,
+                                             std::string& reason) {
+    // Keep llama.cpp in charge of dynamic context fitting. Lemonade only
+    // translates policy constraints into llama.cpp's free-memory target. A
+    // Lemonade RAM limit constrains host/system RAM, not separate dGPU VRAM;
+    // for dGPU runs the host side is covered by the base preflight, eviction,
+    // and --cache-ram 0 below.
+    const bool ram_limit_can_drive_fit_target = !estimate.separate_device_memory;
+    const int ram_limit_target = ram_limit_can_drive_fit_target
+        ? calculate_ram_limit_fit_target_mib(probe, runtime_ram_limit_mib)
+        : 0;
+    int target = ram_limit_target;
+    reason = ram_limit_target > 0 ? "ram-limit" : "";
+
+    if (estimate.memory_domain == "unified_gpu_memory") {
+        const int unified_target = calculate_unified_gpu_fit_target_mib(probe);
+        if (unified_target > target) {
+            target = unified_target;
+            reason = ram_limit_target > 0
+                ? "strictest-of-ram-limit-and-unified-gpu-15pct-reserve"
+                : "unified-gpu-15pct-reserve";
+        }
+    }
+
+    return target;
 }
 
 static std::string resolve_llamacpp_backend(const std::string& backend) {
@@ -257,9 +472,6 @@ void LlamaCppServer::load(const std::string& model_name,
     // Get mmproj path for vision models
     std::string mmproj_path = model_info.resolved_path("mmproj");
 
-    // Choose port
-    port_ = choose_port();
-
     // Get executable path
     std::string executable = BackendUtils::get_backend_binary_path(SPEC, llamacpp_backend);
 
@@ -274,82 +486,105 @@ void LlamaCppServer::load(const std::string& model_name,
         ctx_size = EMBEDDING_CTX_SIZE;
     }
 
-    // Build command arguments while tracking reserved flags
-    std::vector<std::string> args;
-    std::set<std::string> reserved_flags;
+    MemoryBackendClass memory_backend = use_gpu ? MemoryBackendClass::GPU : MemoryBackendClass::CPU;
+    long long runtime_ram_limit = -1;
+    if (auto* cfg = RuntimeConfig::global()) {
+        runtime_ram_limit = cfg->ram_limit();
+    }
 
-    push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
-    push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
-    push_arg(args, reserved_flags, "--port", std::to_string(port_));
-    push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
+    ModelMemoryEstimate memory_estimate;
+    SystemMemoryProbe before_probe;
+    bool dynamic_context = false;
+    bool dynamic_fit_via_llamacpp = false;
+    int llama_fit_target_mib = 0;
+    std::string llama_fit_target_reason;
+    std::string gguf_architecture;
 
-    LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
-            << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
+    if (!supports_embeddings && !supports_reranking) {
+        if (auto* cfg = RuntimeConfig::global()) {
+            int context_target = ctx_size;
+            if (context_target > 0) {
+                dynamic_context = true;
+                before_probe = MemoryManager::probe_system_memory(runtime_ram_limit);
+                memory_estimate = MemoryManager::estimate_llamacpp_memory(
+                    model_info, gguf_path, memory_backend, context_target, runtime_ram_limit);
 
-    // Add mmproj file if present (for vision models)
-    if (!mmproj_path.empty()) {
-        push_arg(args, reserved_flags, "--mmproj", mmproj_path);
-        if (!use_gpu) {
-            LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
-            push_arg(args, reserved_flags, "--no-mmproj-offload");
+                if (memory_estimate.hard_error) {
+                    throw MemoryPreflightException(memory_estimate.warning);
+                }
+
+                memory_estimate.user_context_override = context_target != MemoryManager::kDefaultContextTarget;
+
+                // Default target is 128k or less if a trustworthy model limit is
+                // known. Explicit user overrides are not capped here; llama.cpp
+                // --fit may still reduce them to what RAM actually permits.
+                if (!memory_estimate.user_context_override &&
+                    memory_estimate.model_context_limit_is_trustworthy &&
+                    memory_estimate.model_max_context > 0) {
+                    ctx_size = std::min(ctx_size, memory_estimate.model_max_context);
+                }
+                ctx_size = std::max(ctx_size, MemoryManager::kProbeContext);
+
+                const bool strict_ram_limit = runtime_ram_limit >= 0;
+                llama_fit_target_mib = calculate_llamacpp_fit_target_mib(
+                    before_probe, memory_estimate, runtime_ram_limit, llama_fit_target_reason);
+
+                gguf_architecture = MemoryManager::get_llamacpp_architecture(gguf_path);
+                dynamic_fit_via_llamacpp = true;
+                if (gguf_architecture.empty()) {
+                    LOG(WARNING, "LlamaCpp")
+                        << "GGUF architecture metadata unavailable; using llama.cpp --fit with "
+                        << "the model metadata context instead of Lemonade's context override."
+                        << std::endl;
+                }
+
+                std::ostringstream context_log;
+                context_log
+                    << "Dynamic context sizing enabled: context_target=" << context_target
+                    << ", effective_target=" << ctx_size
+                    << ", model_max_ctx=" << memory_estimate.model_max_context
+                    << ", available/allowed=" << MemoryManager::format_bytes(before_probe.effective_available_bytes)
+                    << ", minimum_startup_required=" << MemoryManager::format_bytes(memory_estimate.minimum_startup_required_bytes)
+                    << ", minimum_startup_required_mib=" << (memory_estimate.minimum_startup_required_bytes / (1024ULL * 1024ULL))
+                    << ", base_required=" << MemoryManager::format_bytes(memory_estimate.base_required_bytes)
+                    << ", host_base_required=" << MemoryManager::format_bytes(memory_estimate.host_base_required_bytes)
+                    << ", device_base_required=" << MemoryManager::format_bytes(memory_estimate.device_base_required_bytes)
+                    << ", device_total=" << MemoryManager::format_bytes(memory_estimate.device_total_bytes)
+                    << ", memory_domain=" << memory_estimate.memory_domain
+                    << ", kv_per_token=" << memory_estimate.kv_cache_bytes_per_token
+                    << " bytes"
+                    << ", host_kv_per_token=" << memory_estimate.host_kv_cache_bytes_per_token
+                    << " bytes"
+                    << ", llama_fit=" << (dynamic_fit_via_llamacpp ? "enabled" : "unavailable")
+                    << ", ram_limit_mode="
+                    << (strict_ram_limit
+                        ? (memory_estimate.separate_device_memory ? "host-preflight-and-eviction" : "llamacpp-fit-target")
+                        : "not-set");
+                if (llama_fit_target_mib > 0) {
+                    context_log << ", llama_fit_target_mib=" << llama_fit_target_mib;
+                    if (!llama_fit_target_reason.empty()) {
+                        context_log << " (" << llama_fit_target_reason << ")";
+                    }
+                }
+                LOG(INFO, "LlamaCpp") << context_log.str() << std::endl;
+
+                if (llama_fit_target_mib > 0) {
+                    if (strict_ram_limit) {
+                        LOG(INFO, "LlamaCpp")
+                            << "RAM limit is handled by passing an adjusted --fit-target to llama.cpp; "
+                            << "Lemonade no longer pre-caps the context for ram_limit mode."
+                            << std::endl;
+                    }
+                    if (llama_fit_target_reason.find("unified-gpu") != std::string::npos) {
+                        LOG(INFO, "LlamaCpp")
+                            << "Unified GPU memory fit target active: leaving llama.cpp default 1 GiB plus 15% "
+                            << "of system RAM free for stability."
+                            << std::endl;
+                    }
+                }
+            }
         }
     }
-    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
-
-    // Enable context shift for vulkan/rocm (not supported on Metal)
-    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend)) {
-        push_overridable_arg(args, llamacpp_args, "--context-shift");
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
-    } else {
-        // For Metal, just use keep without context-shift
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
-    }
-
-    // Use legacy reasoning formatting
-    push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
-
-    // Disable llamacpp webui by default
-    push_overridable_arg(args, llamacpp_args, "--no-webui");
-
-    // Disable mmap on iGPU
-    if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, llamacpp_args, "--no-mmap");
-    }
-
-    // Add embeddings support if the model supports it
-    if (supports_embeddings) {
-        LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
-        push_arg(args, reserved_flags, "--embeddings");
-    }
-    push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
-
-    // Add reranking support if the model supports it
-    if (supports_reranking) {
-        LOG(INFO, "LlamaCpp") << "Model supports reranking, adding --reranking flag" << std::endl;
-        push_arg(args, reserved_flags, "--reranking");
-    }
-    push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
-
-    // Configure GPU layers
-    std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
-    LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
-    push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
-
-    // Validate and append custom arguments
-    if (!llamacpp_args.empty()) {
-        std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(
-                "Invalid custom llama-server arguments:\n" + validation_error
-            );
-        }
-
-        LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
-    }
-
-    LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -452,18 +687,183 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 #endif
 
-    // Start process (inherit output if debug logging enabled, filter health check spam)
-    // Keep llama-server output visible at info log level.
-    bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_llama_output, true, env_vars);
+    auto build_args = [&](int selected_ctx_size) {
+        std::vector<std::string> args;
+        std::set<std::string> reserved_flags;
 
-    // Wait for server to be ready
-    if (!wait_for_ready("/health")) {
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
-        throw std::runtime_error("llama-server failed to start");
+        push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
+
+        // With llama.cpp --fit, --ctx-size must remain 0 so the context is
+        // treated as fit-adjustable. An explicit --ctx-size <N> is interpreted
+        // as a user-fixed context and llama_params_fit() will not reduce it,
+        // which can OOM for very large user overrides.
+        //
+        // To still tell llama.cpp the desired starting context, override the
+        // model metadata context_length to selected_ctx_size and let
+        // --ctx-size 0 use that metadata value as the fit starting point.
+        const bool use_fit_adjustable_context = dynamic_context && dynamic_fit_via_llamacpp;
+        int llama_ctx_arg = use_fit_adjustable_context ? 0 : selected_ctx_size;
+        push_arg(args, reserved_flags, "--ctx-size", std::to_string(llama_ctx_arg), std::vector<std::string>{"-c"});
+
+        if (use_fit_adjustable_context) {
+            push_arg(args, reserved_flags, "--fit", "on", std::vector<std::string>{"-fit"});
+            push_arg(args, reserved_flags, "--fit-ctx", std::to_string(MemoryManager::kProbeContext), std::vector<std::string>{"-fitc"});
+            if (llama_fit_target_mib > 0) {
+                push_arg(args, reserved_flags, "--fit-target", std::to_string(llama_fit_target_mib),
+                         std::vector<std::string>{"-fitt"});
+            }
+            if (!gguf_architecture.empty()) {
+                push_arg(args, reserved_flags, "--override-kv",
+                         gguf_architecture + ".context_length=int:" + std::to_string(selected_ctx_size));
+                LOG(DEBUG, "LlamaCpp")
+                    << "Using fit-adjustable context: --ctx-size 0 with --override-kv "
+                    << gguf_architecture << ".context_length=int:" << selected_ctx_size
+                    << std::endl;
+            }
+        }
+
+        push_arg(args, reserved_flags, "--port", std::to_string(port_));
+        push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
+
+        LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
+                << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
+
+        // Add mmproj file if present (for vision models)
+        if (!mmproj_path.empty()) {
+            push_arg(args, reserved_flags, "--mmproj", mmproj_path);
+            if (!use_gpu) {
+                LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
+                push_arg(args, reserved_flags, "--no-mmproj-offload");
+            }
+        }
+        push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
+
+        // Enable context shift for vulkan/rocm (not supported on Metal)
+        if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend)) {
+            push_overridable_arg(args, llamacpp_args, "--context-shift");
+            push_overridable_arg(args, llamacpp_args, "--keep", "16");
+        } else {
+            // For Metal, just use keep without context-shift
+            push_overridable_arg(args, llamacpp_args, "--keep", "16");
+        }
+
+        // Use legacy reasoning formatting
+        push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
+
+        // llama-server has an idle prompt cache that can reserve/use a large
+        // amount of host RAM. Keep the upstream default for normal runs, but
+        // disable it when the user explicitly configured a Lemonade RAM limit.
+        if (runtime_ram_limit >= 0) {
+            push_overridable_arg(args, llamacpp_args, "--cache-ram", "0");
+        }
+
+        // Disable llamacpp webui by default
+        push_overridable_arg(args, llamacpp_args, "--no-webui");
+
+        // Disable mmap on iGPU
+        if (SystemInfo::get_has_igpu()) {
+            push_overridable_arg(args, llamacpp_args, "--no-mmap");
+        }
+
+        // Add embeddings support if the model supports it
+        if (supports_embeddings) {
+            LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
+            push_arg(args, reserved_flags, "--embeddings");
+        }
+        push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
+
+        // Add reranking support if the model supports it
+        if (supports_reranking) {
+            LOG(INFO, "LlamaCpp") << "Model supports reranking, adding --reranking flag" << std::endl;
+            push_arg(args, reserved_flags, "--reranking");
+        }
+        push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
+
+        // Configure GPU layers
+        std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
+        LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
+        push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
+
+        // Validate and append custom arguments
+        if (!llamacpp_args.empty()) {
+            std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
+            if (!validation_error.empty()) {
+                throw std::invalid_argument(
+                    "Invalid custom llama-server arguments:\n" + validation_error
+                );
+            }
+
+            LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
+            std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);
+            args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+        }
+
+        return args;
+    };
+
+    auto start_with_ctx = [&](int selected_ctx_size) -> LoadedContextInfo {
+
+        std::vector<std::string> args = build_args(selected_ctx_size);
+        LOG(INFO, "LlamaCpp") << "Starting llama-server with ctx_size="
+                              << selected_ctx_size
+                              << (dynamic_context && dynamic_fit_via_llamacpp ? " (llama.cpp fit enabled)" : "")
+                              << "..." << std::endl;
+
+        // Start process (inherit output if debug logging enabled, filter health check spam)
+        // Keep llama-server output visible at info log level.
+        bool inherit_llama_output = (log_level_ == "info") || is_debug();
+        process_handle_ = ProcessManager::start_process(executable, args, "", inherit_llama_output, true, env_vars);
+
+        // Wait for server to be ready
+        if (!wait_for_ready("/health")) {
+            ProcessManager::stop_process(process_handle_);
+            process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
+            throw std::runtime_error(
+                "llama-server failed to start. The base model plus minimum context probably does not fit in the available/allowed memory.");
+        }
+
+        LoadedContextInfo actual_ctx = read_loaded_context_size_from_props(get_base_url());
+        if (!actual_ctx.from_props || actual_ctx.ctx_size <= 0) {
+            actual_ctx = {selected_ctx_size, false};
+            LOG(DEBUG, "LlamaCpp")
+                << "Could not read authoritative loaded context from /props; "
+                << "using requested context for bookkeeping only. Context warnings suppressed."
+                << std::endl;
+        }
+
+        return actual_ctx;
+    };
+
+    if (dynamic_context) {
+        port_ = choose_port();
+        LoadedContextInfo actual_ctx = start_with_ctx(ctx_size);
+
+        memory_estimate.final_context = actual_ctx.ctx_size;
+        memory_estimate.dynamic_context = true;
+        apply_above_model_support_warning(memory_estimate, actual_ctx.ctx_size, actual_ctx.from_props);
+        apply_restricted_context_warning(memory_estimate, actual_ctx.ctx_size, actual_ctx.from_props);
+
+        LOG(INFO, "LlamaCpp") << "Dynamic context fit selected ctx_size=" << actual_ctx.ctx_size
+                              << " (requested=" << ctx_size
+                              << ", model_max_ctx=" << memory_estimate.model_max_context
+                              << ", target=" << memory_estimate.target_context
+                              << ", authoritative=" << (actual_ctx.from_props ? "true" : "false") << ")" << std::endl;
+    } else {
+        memory_estimate = MemoryManager::estimate_llamacpp_memory(
+            model_info, gguf_path, memory_backend, ctx_size, runtime_ram_limit);
+        memory_estimate.dynamic_context = false;
+        if (memory_estimate.hard_error) {
+            throw MemoryPreflightException(memory_estimate.warning);
+        }
+        port_ = choose_port();
+        LoadedContextInfo actual_ctx = start_with_ctx(ctx_size);
+        memory_estimate.final_context = actual_ctx.ctx_size;
+        memory_estimate.user_context_override = ctx_size != MemoryManager::kDefaultContextTarget;
+        apply_above_model_support_warning(memory_estimate, actual_ctx.ctx_size, actual_ctx.from_props);
+        apply_restricted_context_warning(memory_estimate, actual_ctx.ctx_size, actual_ctx.from_props);
     }
 
+    set_memory_estimate(memory_estimate);
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << port_ << std::endl;
 }
 

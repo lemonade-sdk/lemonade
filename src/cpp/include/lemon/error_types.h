@@ -20,6 +20,7 @@ namespace ErrorType {
     constexpr const char* PROCESS_ERROR = "process_error";
     constexpr const char* FILE_ERROR = "file_error";
     constexpr const char* INTERNAL_ERROR = "internal_error";
+    constexpr const char* MEMORY_PRECHECK_ERROR = "memory_precheck_error";
 }
 
 // Base exception class for all Lemon errors
@@ -93,6 +94,12 @@ public:
     UnsupportedOperationException(const std::string& operation, const std::string& backend = "")
         : LemonException(operation + " not supported" + (backend.empty() ? "" : " by " + backend),
                         ErrorType::UNSUPPORTED_OPERATION) {}
+};
+
+class MemoryPreflightException : public LemonException {
+public:
+    explicit MemoryPreflightException(const std::string& message)
+        : LemonException(message, ErrorType::MEMORY_PRECHECK_ERROR) {}
 };
 
 // Helper class for consistent error responses

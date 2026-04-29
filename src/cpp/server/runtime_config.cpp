@@ -172,6 +172,21 @@ int RuntimeConfig::ctx_size() const {
     return config_["ctx_size"].get<int>();
 }
 
+int RuntimeConfig::context_target() const {
+    std::shared_lock lock(mutex_);
+    return config_["context_target"].get<int>();
+}
+
+long long RuntimeConfig::ram_limit() const {
+    std::shared_lock lock(mutex_);
+    return config_["ram_limit"].get<long long>();
+}
+
+bool RuntimeConfig::allow_external_ram_limit_api() const {
+    std::shared_lock lock(mutex_);
+    return config_["allow_external_ram_limit_api"].get<bool>();
+}
+
 bool RuntimeConfig::offline() const {
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
@@ -279,7 +294,13 @@ json RuntimeConfig::recipe_options() const {
         if (flm.contains("args")) result["flm_args"] = flm["args"];
     }
 
-    if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];
+    // context_target is the public default. The recipe/API field remains ctx_size
+    // for backward compatibility and per-model overrides.
+    if (config_.contains("context_target")) {
+        result["ctx_size"] = config_["context_target"];
+    } else if (config_.contains("ctx_size")) {
+        result["ctx_size"] = config_["ctx_size"];
+    }
 
     return result;
 }
@@ -356,6 +377,23 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (value.get<int>() <= 0) {
             throw std::invalid_argument("'ctx_size' must be positive");
         }
+    } else if (key == "context_target") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'context_target' must be an integer");
+        }
+        if (value.get<int>() < 1024) {
+            throw std::invalid_argument("'context_target' must be >= 1024");
+        }
+    } else if (key == "ram_limit") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'ram_limit' must be an integer MiB value");
+        }
+        long long limit = value.get<long long>();
+        if (limit < -1 || limit == 0) {
+            throw std::invalid_argument("'ram_limit' must be -1 (unlimited) or a positive MiB value");
+        }
+    } else if (key == "allow_external_ram_limit_api") {
+        throw std::invalid_argument("'allow_external_ram_limit_api' cannot be changed at runtime; set it in config.json or with a lemond startup CLI flag");
     } else if (key == "config_version") {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'config_version' must be an integer");

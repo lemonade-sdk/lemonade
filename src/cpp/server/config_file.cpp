@@ -162,6 +162,8 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_NO_BROADCAST",            "no_broadcast",             nullptr},
     {"LEMONADE_EXTRA_MODELS_DIR",        "extra_models_dir",         nullptr},
     {"LEMONADE_CTX_SIZE",                "ctx_size",                 nullptr},
+    {"LEMONADE_CONTEXT_TARGET",          "context_target",           nullptr},
+    {"LEMONADE_RAM_LIMIT",               "ram_limit",                nullptr},
     {"LEMONADE_OFFLINE",                 "offline",                  nullptr},
     {"LEMONADE_NO_FETCH_EXECUTABLES",     "no_fetch_executables",     nullptr},
     {"LEMONADE_DISABLE_MODEL_FILTERING", "disable_model_filtering",  nullptr},
