@@ -176,6 +176,7 @@ interface ModelManagerProps {
   width?: number;
   currentView: LeftPanelView;
   onViewChange: (view: LeftPanelView) => void;
+  onOpenCustomWorkflow?: () => void;
 }
 
 interface ModelJSON {
@@ -194,7 +195,7 @@ interface ModelJSON {
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 
-const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange, onOpenCustomWorkflow }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
@@ -1382,7 +1383,18 @@ const [searchQuery, setSearchQuery] = useState('');
             </div>
 
             {shouldShowCategory(category) && (
-              <div className="model-list">
+              <>
+                {category === 'collection' && (
+                  <button
+                    type="button"
+                    className="custom-workflow-omni-button"
+                    title="Create or edit an OmniRouter workflow from downloaded models"
+                    onClick={handleOpenCustomWorkflow}
+                  >
+                    + Create custom workflow
+                  </button>
+                )}
+                <div className="model-list">
                 {organizationMode === 'recipe' && !hasModels && renderBackendSetupBanner(category)}
                 <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
                                    onCancel={() => {
@@ -1401,6 +1413,7 @@ const [searchQuery, setSearchQuery] = useState('');
                   return renderModelItem(item.name, item.info, item.name);
                 })}
               </div>
+              </>
             )}
           </div>
         );
@@ -1415,6 +1428,16 @@ const [searchQuery, setSearchQuery] = useState('');
       onViewChange(view);
       onContentVisibilityChange(true);
     }
+  };
+
+
+  const handleOpenCustomWorkflow = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (onOpenCustomWorkflow) {
+      onOpenCustomWorkflow();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('openCustomWorkflow'));
   };
 
   return (

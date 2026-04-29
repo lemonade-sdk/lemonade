@@ -1,6 +1,7 @@
 import { serverFetch } from './serverConfig';
 import { ModelsData } from './modelData';
-import { getCollectionComponents, NON_LLM_LABELS } from './collectionModels';
+import { hasAnyModelLabel, isChatPlannerCandidate } from './modelLabels';
+import { getCollectionComponents } from './collectionModels';
 import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
 
@@ -49,11 +50,9 @@ export function buildLemonadeTools(
 ): LemonadeToolsResult {
   const info = modelsData[collectionName];
   const components = getCollectionComponents(info);
-
-  const llmModel = components.find(c => {
-    const labels = modelsData[c]?.labels ?? [];
-    return !labels.some(l => NON_LLM_LABELS.has(l));
-  }) || components[0] || '';
+  const customWorkflowComponents = info?.workflow_source === 'custom'
+    ? info.workflow_components
+    : undefined;
 
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};
@@ -75,16 +74,52 @@ export function buildLemonadeTools(
     function: { ...def.function, parameters: substituteParams(def.function.parameters) },
   });
 
+  const componentHasAnyLabel = (component: string, requiredLabels: string[]): boolean => {
+    return hasAnyModelLabel(modelsData[component], requiredLabels);
+  };
+
+  const findComponentWithAnyLabel = (requiredLabels: string[], llmOnly = false): string | undefined => {
+    return components.find(c => {
+      if (!componentHasAnyLabel(c, requiredLabels)) return false;
+      if (!llmOnly) return true;
+      return isChatPlannerCandidate(modelsData[c]);
+    });
+  };
+
+  const getCustomWorkflowToolModel = (def: ToolDefinitionEntry): string | undefined => {
+    if (!customWorkflowComponents) return undefined;
+
+    const explicitToolModels: Record<string, string | undefined> = {
+      generate_image: customWorkflowComponents.image,
+      edit_image: customWorkflowComponents.edit ?? customWorkflowComponents.image,
+      text_to_speech: customWorkflowComponents.speech,
+      transcribe_audio: customWorkflowComponents.transcription,
+      analyze_image: customWorkflowComponents.vision ?? customWorkflowComponents.llm,
+    };
+
+    const candidate = explicitToolModels[def.function.name];
+    if (!candidate || !components.includes(candidate)) return undefined;
+
+    const requiredLabels = def.requires_labels ?? def.requires_llm_labels;
+    if (requiredLabels && !componentHasAnyLabel(candidate, requiredLabels)) return undefined;
+
+    return candidate;
+  };
+
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
+    if (customWorkflowComponents) {
+      const match = getCustomWorkflowToolModel(def);
+      if (!match) continue;
+      tools.push(materialize(def));
+      models[def.function.name] = match;
+      continue;
+    }
+
     const requiresLabels = def.requires_labels;
     const requiresLlmLabels = def.requires_llm_labels;
 
     if (requiresLabels) {
-      const labelSet = new Set(requiresLabels);
-      const match = components.find(c => {
-        const labels = modelsData[c]?.labels ?? [];
-        return labels.some(l => labelSet.has(l));
-      });
+      const match = findComponentWithAnyLabel(requiresLabels);
       if (!match) continue;
       tools.push(materialize(def));
       models[def.function.name] = match;
@@ -92,11 +127,10 @@ export function buildLemonadeTools(
     }
 
     if (requiresLlmLabels) {
-      const labelSet = new Set(requiresLlmLabels);
-      const llmLabels = modelsData[llmModel]?.labels ?? [];
-      if (!llmLabels.some(l => labelSet.has(l))) continue;
+      const match = findComponentWithAnyLabel(requiresLlmLabels, true);
+      if (!match) continue;
       tools.push(materialize(def));
-      models[def.function.name] = llmModel;
+      models[def.function.name] = match;
     }
   }
 

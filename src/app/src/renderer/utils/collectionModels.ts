@@ -1,6 +1,7 @@
-import { ModelInfo, ModelsData } from './modelData';
+import type { ModelInfo, ModelsData } from './modelData';
+import { isChatPlannerCandidate } from './modelLabels';
 
-export const NON_LLM_LABELS = new Set(['image', 'speech', 'tts', 'audio', 'transcription', 'embeddings', 'embedding', 'reranking']);
+export { NON_LLM_LABELS, NON_CHAT_PLANNER_LABELS, isChatPlannerCandidate } from './modelLabels';
 
 export const getCollectionComponents = (info?: ModelInfo): string[] => {
   if (!info || !Array.isArray(info.composite_models)) {
@@ -63,15 +64,19 @@ export const getCollectionImageModel = (selectedModel: string, modelsData: Model
 export const getCollectionPrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
   const components = getCollectionComponents(info);
+  const customWorkflowLLM = info?.workflow_source === 'custom'
+    ? info.workflow_components?.llm
+    : undefined;
+
+  if (customWorkflowLLM && (components.length === 0 || components.includes(customWorkflowLLM))) {
+    return customWorkflowLLM;
+  }
+
   if (components.length === 0) {
     return selectedModel;
   }
 
-  const explicitLLM = components.find((component) => {
-    const componentInfo = modelsData[component];
-    const labels = componentInfo?.labels ?? [];
-    return !labels.some((label) => NON_LLM_LABELS.has(label));
-  });
+  const explicitLLM = components.find((component) => isChatPlannerCandidate(modelsData[component]));
 
   return explicitLLM || components[0];
 };

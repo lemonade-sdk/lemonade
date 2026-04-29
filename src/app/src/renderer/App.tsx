@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft } from './components/Icons';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
@@ -7,9 +8,12 @@ import LogsWindow from './LogsWindow';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
-import { ModelsProvider } from './hooks/useModels';
+import { ModelsProvider, useModels } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
+import CustomWorkflowPanel from './components/CustomWorkflowPanel';
+import { ToastContainer, useToast } from './Toast';
+import { CustomWorkflowDraft, deleteCustomWorkflow, saveCustomWorkflow } from './utils/customWorkflows';
 import '../../styles/index.css';
 
 const LAYOUT_CONSTANTS = {
@@ -34,6 +38,9 @@ const AppContent: React.FC = () => {
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
+  const [showCustomWorkflowForm, setShowCustomWorkflowForm] = useState(false);
+  const { selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
+  const { toasts, removeToast, showError } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -269,6 +276,43 @@ const AppContent: React.FC = () => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+
+  useEffect(() => {
+    const handleOpenCustomWorkflow = () => setShowCustomWorkflowForm(true);
+    window.addEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
+    document.addEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
+    return () => {
+      window.removeEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
+      document.removeEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
+    };
+  }, []);
+
+  const handleSaveCustomWorkflow = async (workflow: CustomWorkflowDraft) => {
+    try {
+      const saved = saveCustomWorkflow(workflow);
+      setShowCustomWorkflowForm(false);
+      await refreshModels();
+      setSelectedModel(saved.id);
+      setUserHasSelectedModel(true);
+    } catch (error) {
+      showError(`Failed to save workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteCustomWorkflow = async (workflowId: string) => {
+    try {
+      deleteCustomWorkflow(workflowId);
+      setShowCustomWorkflowForm(false);
+      await refreshModels();
+      if (selectedModel === workflowId) {
+        setSelectedModel('');
+        setUserHasSelectedModel(false);
+      }
+    } catch (error) {
+      showError(`Failed to delete workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
     // preventDefault stops the WebKit-based webview (Tauri) from starting a
     // drag-text-selection on the divider, which would swallow our mousemove
@@ -297,6 +341,7 @@ const AppContent: React.FC = () => {
 
   return (
     <>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <TitleBar
         theme={theme}
         setTheme={setTheme}
@@ -320,6 +365,7 @@ const AppContent: React.FC = () => {
           width={isModelManagerVisible ? modelManagerWidth : LAYOUT_CONSTANTS.experienceRailWidth}
           currentView={leftPanelView}
           onViewChange={setLeftPanelView}
+          onOpenCustomWorkflow={() => setShowCustomWorkflowForm(true)}
         />
         {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
           <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />
@@ -358,6 +404,18 @@ const AppContent: React.FC = () => {
           </>
         )}
       </div>
+      {showCustomWorkflowForm && createPortal(
+        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setShowCustomWorkflowForm(false); } }}>
+          <div className="settings-modal custom-workflow-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <CustomWorkflowPanel
+              onClose={() => setShowCustomWorkflowForm(false)}
+              onSave={handleSaveCustomWorkflow}
+              onDelete={handleDeleteCustomWorkflow}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
       <StatusBar />
       <WindowResizeHandles />
     </>
