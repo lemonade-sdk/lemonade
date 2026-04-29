@@ -1,7 +1,9 @@
 import { ModelInfo, ModelsData } from './modelData';
 import { isCollectionRecipe } from './recipeNames';
+import type { ModelInfo, ModelsData } from './modelData';
+import { isChatPlannerCandidate } from './modelLabels';
 
-export const NON_LLM_LABELS = new Set(['image', 'tts', 'transcription', 'embeddings', 'embedding', 'reranking']);
+export { NON_LLM_LABELS, NON_CHAT_PLANNER_LABELS, isChatPlannerCandidate } from './modelLabels';
 
 export const getCollectionComponents = (info?: ModelInfo): string[] => {
   const components = info?.components;
@@ -65,15 +67,19 @@ export const getCollectionImageModel = (selectedModel: string, modelsData: Model
 export const getCollectionPrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
   const components = getCollectionComponents(info);
+  const customCollectionLLM = info?.collection_source === 'custom'
+    ? info.collection_components?.llm
+    : undefined;
+
+  if (customCollectionLLM && (components.length === 0 || components.includes(customCollectionLLM))) {
+    return customCollectionLLM;
+  }
+
   if (components.length === 0) {
     return selectedModel;
   }
 
-  const explicitLLM = components.find((component) => {
-    const componentInfo = modelsData[component];
-    const labels = componentInfo?.labels ?? [];
-    return !labels.some((label) => NON_LLM_LABELS.has(label));
-  });
+  const explicitLLM = components.find((component) => isChatPlannerCandidate(modelsData[component]));
 
   return explicitLLM || components[0];
 };

@@ -1,0 +1,161 @@
+.custom-workflow-modal {
+    width: min(720px, calc(100vw - 40px));
+    max-height: calc(100vh - 64px);
+}
+
+.custom-workflow-content {
+    gap: 14px;
+}
+
+.workflow-intro {
+    padding: 10px 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.workflow-role-list {
+    display: grid;
+    gap: 12px;
+}
+
+.workflow-role-row {
+    padding: 10px 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--bg-primary);
+}
+
+.workflow-role-row .form-label {
+    margin-bottom: 6px;
+}
+
+.workflow-model-select {
+    width: 100%;
+}
+
+.workflow-role-help,
+.workflow-role-empty {
+    margin-top: 6px;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--text-tertiary);
+}
+
+.workflow-role-empty {
+    color: var(--warning-color, #facc15);
+}
+
+.model-selector-option.workflow-option::before {
+    content: 'Omni';
+    display: inline-flex;
+    margin-right: 6px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    border: 1px solid rgba(250, 204, 21, 0.4);
+    color: #facc15;
+    font-size: 0.58rem;
+    line-height: 1.25;
+    vertical-align: middle;
+}
+
+.workflow-warning {
+    border: 1px solid rgba(250, 204, 21, 0.28);
+    background: rgba(250, 204, 21, 0.08);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+
+.custom-workflow-omni-button {
+    margin: 6px 0 8px 28px;
+    padding: 6px 9px;
+    border: 1px dashed var(--border-secondary);
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    line-height: 1.2;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.custom-workflow-omni-button:hover {
+    border-color: rgba(250, 204, 21, 0.65);
+    color: var(--text-primary);
+    background: var(--bg-alpha-06);
+}
+
+.workflow-policy-note,
+.workflow-info {
+    border: 1px solid var(--border-secondary);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
+.workflow-policy-note strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.workflow-existing-section {
+  border-bottom: 1px solid var(--border-tertiary);
+  padding-bottom: 12px;
+}
+
+.workflow-existing-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.workflow-new-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.custom-workflow-footer {
+  gap: 8px;
+}
+
+.workflow-delete-button {
+  margin-right: auto;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.18);
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.workflow-delete-button:hover {
+  background: rgba(127, 29, 29, 0.3);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+
+.workflow-backup-section {
+  border-bottom: 1px solid var(--border-tertiary);
+  padding-bottom: 12px;
+}
+
+.workflow-io-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.workflow-import-input {
+  display: none;
+}

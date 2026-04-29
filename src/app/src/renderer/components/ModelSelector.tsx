@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
+import { isCustomCollectionId } from '../utils/customCollections';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
   disabled: boolean;
 }
+
+type SelectorModel = { id: string; info?: ReturnType<typeof useModels>['downloadedModels'][number]['info'] };
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
   const {
@@ -29,14 +32,23 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     return model.info.suggested === true;
   });
 
-  const allModels = isDefaultModelPending
+  const allModels: SelectorModel[] = isDefaultModelPending
     ? [{ id: DEFAULT_MODEL_ID }]
     : visibleDownloadedModels;
 
+  const renderModelLabel = (id: string, info?: SelectorModel['info']) => {
+    if (isCollectionModel(info)) {
+      return info?.collection_name ?? getModelDisplayName(id);
+    }
+
+    return getModelDisplayName(id);
+  };
+
   const dropdownModels = searchQuery.trim()
-    ? allModels.filter(m => {
-        const q = searchQuery.toLowerCase();
-        return m.id.toLowerCase().includes(q) || getModelDisplayName(m.id).toLowerCase().includes(q);
+    ? allModels.filter((model) => {
+        const query = searchQuery.toLowerCase();
+        return model.id.toLowerCase().includes(query) ||
+          renderModelLabel(model.id, model.info).toLowerCase().includes(query);
       })
     : allModels;
 
@@ -63,6 +75,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     setIsOpen(false);
   };
 
+  const selectedModelInfo = allModels.find((model) => model.id === selectedModel)?.info;
+
   return (
     <div
       ref={containerRef}
@@ -74,7 +88,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
         disabled={disabled}
         title={selectedModel}
       >
-        <span className="model-selector-label">{getModelDisplayName(selectedModel)}</span>
+        <span className="model-selector-label">{renderModelLabel(selectedModel, selectedModelInfo)}</span>
         <svg className="model-selector-chevron" width="10" height="10" viewBox="0 0 10 10">
           <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
@@ -86,11 +100,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}`}
+                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${isCustomCollectionId(model.id) ? ' collection-option' : ''}`}
                 onClick={() => handleSelect(model.id)}
                 title={model.id}
               >
-                {getModelDisplayName(model.id)}
+                {renderModelLabel(model.id, model.info)}
               </div>
             )) : (
               <div className="model-selector-empty">No models match</div>

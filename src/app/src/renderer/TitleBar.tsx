@@ -163,6 +163,18 @@ const TitleBar: React.FC<TitleBarProps> = ({
                       </div>
                     </div>
                   </div>
+                  <div className="menu-option has-submenu">
+                    <span>New Collection</span>
+                    <span className="submenu-arrow">›</span>
+                    <div className="menu-submenu">
+                      <div className="menu-option new-model-submenu-option" title="Create a collection from downloaded models" onClick={() => { window.dispatchEvent(new CustomEvent('openCustomCollection')); setActiveMenu(null); }}>
+                        <span>Manually</span>
+                      </div>
+                      <div className="menu-option new-model-submenu-option" title="Import a collection JSON file" onClick={() => { window.dispatchEvent(new CustomEvent('openCustomCollectionFromJSON')); setActiveMenu(null); }}>
+                        <span>From JSON</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
