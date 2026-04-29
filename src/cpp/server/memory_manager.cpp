@@ -410,7 +410,7 @@ void apply_base_preflight_check(ModelMemoryEstimate& estimate, int64_t ram_limit
     if (probe.effective_available_bytes > 0 &&
         host_required > probe.effective_available_bytes) {
         std::ostringstream oss;
-        oss << "Insufficient system RAM to load base model footprint. Required "
+        oss << "Insufficient system RAM to load minimum startup footprint. Required "
             << MemoryManager::format_bytes(host_required)
             << ", available/allowed "
             << MemoryManager::format_bytes(probe.effective_available_bytes) << ".";
@@ -421,7 +421,7 @@ void apply_base_preflight_check(ModelMemoryEstimate& estimate, int64_t ram_limit
         estimate.device_total_bytes > 0 &&
         estimate.device_base_required_bytes > estimate.device_total_bytes) {
         std::ostringstream oss;
-        oss << "Insufficient discrete GPU memory to load base model footprint. Required "
+        oss << "Insufficient discrete GPU memory to load minimum startup footprint. Required "
             << MemoryManager::format_bytes(estimate.device_base_required_bytes)
             << ", detected total GPU memory "
             << MemoryManager::format_bytes(estimate.device_total_bytes) << ".";
@@ -451,21 +451,30 @@ void apply_base_preflight_check(ModelMemoryEstimate& estimate, int64_t ram_limit
 uint64_t ModelMemoryEstimate::total_required_bytes() const {
     uint64_t host_base = host_base_required_bytes > 0
         ? host_base_required_bytes
-        : base_required_bytes;
+        : (minimum_startup_required_bytes > 0
+            ? minimum_startup_required_bytes
+            : base_required_bytes);
     uint64_t host_kv = separate_device_memory
         ? host_kv_cache_bytes_per_token
         : (host_kv_cache_bytes_per_token > 0
             ? host_kv_cache_bytes_per_token
             : kv_cache_bytes_per_token);
+
+    // minimum_startup_required_bytes already includes a small probe context so
+    // preflight has realistic warmup room without hiding the whole requested or
+    // default context in the base margin. Only add context above that probe.
+    const int extra_context = std::max(0, final_context - probe_context);
     return saturating_add(host_base,
                           saturating_mul(host_kv,
-                                         static_cast<uint64_t>(std::max(0, final_context))));
+                                         static_cast<uint64_t>(extra_context)));
 }
 
 json ModelMemoryEstimate::to_json() const {
     json result = {
         {"weight_bytes", weight_bytes},
         {"overhead_bytes", overhead_bytes},
+        {"minimum_startup_required_bytes", minimum_startup_required_bytes},
+        {"minimum_startup_required_mib", minimum_startup_required_bytes / MiB},
         {"base_required_bytes", base_required_bytes},
         {"host_base_required_bytes", host_base_required_bytes},
         {"device_base_required_bytes", device_base_required_bytes},
@@ -582,15 +591,21 @@ uint64_t MemoryManager::get_weight_size_bytes(const ModelInfo& model_info,
 
 uint64_t MemoryManager::backend_overhead_bytes(uint64_t weight_bytes,
                                                MemoryBackendClass backend) {
+    // Startup overhead is deliberately a bounded margin, not a hidden context
+    // budget. llama.cpp owns context fitting; this margin only covers runtime
+    // buffers such as CPU_REPACK, scheduler/compute warmup, driver bookkeeping,
+    // and multimodal sidecar overhead. Keep the scaled part capped so small
+    // models such as Gemma/Qwen do not get an entire 128k context hidden inside
+    // the startup estimate.
     switch (backend) {
     case MemoryBackendClass::CPU:
-        return saturating_add(256ULL * MiB, weight_bytes / 16);  // ~6.25%
+        return saturating_add(512ULL * MiB, std::min(weight_bytes / 8ULL, 2048ULL * MiB));
     case MemoryBackendClass::GPU:
-        return saturating_add(768ULL * MiB, weight_bytes / 8);   // ~12.5%
+        return saturating_add(768ULL * MiB, std::min(weight_bytes / 10ULL, 1536ULL * MiB));
     case MemoryBackendClass::NPU:
-        return saturating_add(1024ULL * MiB, weight_bytes / 7);  // ~14.3%
+        return saturating_add(1024ULL * MiB, std::min(weight_bytes / 8ULL, 2048ULL * MiB));
     }
-    return 512ULL * MiB;
+    return 768ULL * MiB;
 }
 
 ModelMemoryEstimate MemoryManager::estimate_llamacpp_memory(
@@ -606,7 +621,6 @@ ModelMemoryEstimate MemoryManager::estimate_llamacpp_memory(
     estimate.probe_context = kProbeContext;
     estimate.weight_bytes = get_weight_size_bytes(model_info, gguf_path);
     estimate.overhead_bytes = backend_overhead_bytes(estimate.weight_bytes, backend);
-    estimate.base_required_bytes = saturating_add(estimate.weight_bytes, estimate.overhead_bytes);
 
     GgufMetadata meta;
     try {
@@ -616,6 +630,14 @@ ModelMemoryEstimate MemoryManager::estimate_llamacpp_memory(
     }
 
     estimate.kv_cache_bytes_per_token = estimate_kv_cache_bytes_per_token(meta);
+    const uint64_t probe_kv_bytes = saturating_mul(
+        estimate.kv_cache_bytes_per_token,
+        static_cast<uint64_t>(std::max(0, estimate.probe_context)));
+    estimate.minimum_startup_required_bytes = saturating_add(
+        saturating_add(estimate.weight_bytes, estimate.overhead_bytes),
+        probe_kv_bytes);
+    estimate.base_required_bytes = estimate.minimum_startup_required_bytes;
+
     uint64_t ctx = get_u64(meta, "context_length", 0);
     if (ctx > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
         ctx = static_cast<uint64_t>(std::numeric_limits<int>::max());
@@ -646,7 +668,8 @@ ModelMemoryEstimate MemoryManager::estimate_non_llamacpp_memory(
     estimate.final_context = context_target > 0 ? context_target : 0;
     estimate.weight_bytes = get_weight_size_bytes(model_info, model_info.resolved_path());
     estimate.overhead_bytes = backend_overhead_bytes(estimate.weight_bytes, backend);
-    estimate.base_required_bytes = saturating_add(estimate.weight_bytes, estimate.overhead_bytes);
+    estimate.minimum_startup_required_bytes = saturating_add(estimate.weight_bytes, estimate.overhead_bytes);
+    estimate.base_required_bytes = estimate.minimum_startup_required_bytes;
     estimate.kv_cache_bytes_per_token = 0;
     apply_memory_domain_budget(estimate, backend);
 

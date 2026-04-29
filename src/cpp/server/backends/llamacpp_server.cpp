@@ -544,6 +544,8 @@ void LlamaCppServer::load(const std::string& model_name,
                     << ", effective_target=" << ctx_size
                     << ", model_max_ctx=" << memory_estimate.model_max_context
                     << ", available/allowed=" << MemoryManager::format_bytes(before_probe.effective_available_bytes)
+                    << ", minimum_startup_required=" << MemoryManager::format_bytes(memory_estimate.minimum_startup_required_bytes)
+                    << ", minimum_startup_required_mib=" << (memory_estimate.minimum_startup_required_bytes / (1024ULL * 1024ULL))
                     << ", base_required=" << MemoryManager::format_bytes(memory_estimate.base_required_bytes)
                     << ", host_base_required=" << MemoryManager::format_bytes(memory_estimate.host_base_required_bytes)
                     << ", device_base_required=" << MemoryManager::format_bytes(memory_estimate.device_base_required_bytes)

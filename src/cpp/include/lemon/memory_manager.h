@@ -27,15 +27,19 @@ struct SystemMemoryProbe {
 struct ModelMemoryEstimate {
     uint64_t weight_bytes = 0;
     uint64_t overhead_bytes = 0;
-    // Estimated total base model footprint in the primary execution domain.
-    // For CPU/APU/unified-memory backends this is system RAM. For discrete GPU
-    // backends this is primarily device memory and must not be compared 1:1 to
-    // system RAM.
+    // Conservative minimum startup footprint before llama.cpp dynamic context
+    // fitting. This intentionally includes model buffers, repack/runtime
+    // overhead, multimodal sidecars, compute warmup, and only a small probe
+    // context. It must be large enough to reject impossible loads without
+    // hiding a full default/128k context inside the margin.
+    uint64_t minimum_startup_required_bytes = 0;
+    // Legacy alias for the startup footprint in the primary execution domain.
+    // Kept for API compatibility with existing callers/log consumers.
     uint64_t base_required_bytes = 0;
-    // Estimated base footprint that counts against host/system RAM limits.
+    // Estimated startup footprint that counts against host/system RAM limits.
     // This is the value used for hard preflight checks and ram_limit eviction.
     uint64_t host_base_required_bytes = 0;
-    // Estimated base footprint that is expected to live in a separate device
+    // Estimated startup footprint that is expected to live in a separate device
     // memory domain such as dGPU VRAM.
     uint64_t device_base_required_bytes = 0;
     // Best-effort detected total memory of the selected separate device-memory
