@@ -68,6 +68,18 @@ public:
     virtual json image_variations(const json& request) = 0;
 };
 
+// Optional slots capability (llama.cpp server slots information)
+class ISlotsServer : public virtual ICapability {
+public:
+    virtual ~ISlotsServer() = default;
+
+    // Get server slot information
+    virtual json get_slots() = 0;
+
+    // Perform action on specific slot (with slot ID)
+    virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
+};
+
 // Helper to check if a server supports a capability
 template<typename T>
 bool supports_capability(ICapability* server) {

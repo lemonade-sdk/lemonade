@@ -7,6 +7,10 @@ This page documents Lemonade's llama.cpp-specific compatibility surface.
 | Method | Endpoint | Description | Modality |
 |--------|----------|-------------|----------|
 | `POST` | [`/v1/reranking`](#post-v1reranking) | Reranking | query + documents -> relevance-scored documents |
+| `GET` | [`/v1/slots`](#get-v1slots) | Returns the current slots processing state | slots state |
+| `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsidactionsave) | Save the prompt cache of the specified slot to a file | prompt cache |
+| `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsidactionrestore) | Restore the prompt cache of the specified slot from a file | prompt cache |
+| `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsidactionerase) | Erase the prompt cache of the specified slot | prompt cache |
 
 ## `POST /v1/reranking`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -100,3 +104,19 @@ Reranking API for llama.cpp-compatible reranker models. You provide a query and 
   - `total_tokens` - Total tokens processed
 
 > **Note:** Results are returned in input order. To rank documents by relevance, sort `results` by `relevance_score` in descending order on the client side.
+
+## `GET /v1/slots`
+
+TODO
+
+## `POST /v1/slots/{id}?action=save`
+
+TODO
+
+## `POST /v1/slots/{id}?action=restore`
+
+TODO
+
+## `POST /v1/slots/{id}?action=erase`
+
+TODO
