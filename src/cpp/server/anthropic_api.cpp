@@ -465,20 +465,24 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
             const auto& message = choice["message"];
 
             // Handle reasoning_content (thinking models like Qwen3).
-            // Map to an Anthropic "thinking" content block so Claude Code
-            // can display the model's chain-of-thought.
+            // Merge into the text response so it appears as normal output.
+            // Claude Code does not support "thinking" blocks from non-Anthropic
+            // models, so folding into text is the only reliable path.
             if (message.contains("reasoning_content") && message["reasoning_content"].is_string()) {
                 std::string thinking_text = message["reasoning_content"].get<std::string>();
                 if (!thinking_text.empty()) {
-                    content_blocks.push_back({
-                        {"type", "thinking"},
-                        {"thinking", thinking_text}
-                    });
+                    response_text = thinking_text;
                 }
             }
 
             if (message.contains("content") && message["content"].is_string()) {
-                response_text = message["content"].get<std::string>();
+                std::string content_text = message["content"].get<std::string>();
+                if (!content_text.empty()) {
+                    if (!response_text.empty()) {
+                        response_text += "\n\n";
+                    }
+                    response_text += content_text;
+                }
             } else if (message.contains("content") && message["content"].is_array()) {
                 std::vector<std::string> text_blocks;
                 for (const auto& block : message["content"]) {
@@ -576,13 +580,8 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
     std::string sse_buffer;
 
     bool sent_message_start = false;
-    bool sent_thinking_content_start = false;
-    bool sent_thinking_content_stop = false;
     bool sent_text_content_start = false;
     bool sent_text_content_stop = false;
-    int next_block_index = 0;
-    int thinking_block_index = -1;
-    int text_block_index = -1;
     std::vector<bool> started_tool_blocks;
     std::vector<bool> stopped_tool_blocks;
     std::vector<std::string> tool_ids;
@@ -597,13 +596,8 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
     adapter_sink.write = [&client_sink,
                           &sse_buffer,
                           &sent_message_start,
-                          &sent_thinking_content_start,
-                          &sent_thinking_content_stop,
                           &sent_text_content_start,
                           &sent_text_content_stop,
-                          &next_block_index,
-                          &thinking_block_index,
-                          &text_block_index,
                           &started_tool_blocks,
                           &stopped_tool_blocks,
                           &tool_ids,
@@ -674,53 +668,15 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                         const auto& delta = choice["delta"];
 
                         // Handle reasoning_content (thinking models like Qwen3).
+                        // Stream as regular text since Claude Code does not
+                        // support "thinking" blocks from non-Anthropic models.
                         if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
-                            std::string thinking_text = delta["reasoning_content"].get<std::string>();
-                            if (!thinking_text.empty()) {
-                                if (!sent_thinking_content_start) {
-                                    thinking_block_index = next_block_index++;
-                                    json thinking_start = {
-                                        {"type", "content_block_start"},
-                                        {"index", thinking_block_index},
-                                        {"content_block", {{"type", "thinking"}, {"thinking", ""}}}
-                                    };
-                                    if (!write_sse_event(client_sink, "content_block_start", thinking_start)) {
-                                        return false;
-                                    }
-                                    sent_thinking_content_start = true;
-                                }
-
-                                json thinking_delta = {
-                                    {"type", "content_block_delta"},
-                                    {"index", thinking_block_index},
-                                    {"delta", {{"type", "thinking_delta"}, {"thinking", thinking_text}}}
-                                };
-                                if (!write_sse_event(client_sink, "content_block_delta", thinking_delta)) {
-                                    return false;
-                                }
-                            }
-                        }
-
-                        if (delta.contains("content") && delta["content"].is_string()) {
-                            std::string delta_text = delta["content"].get<std::string>();
+                            std::string delta_text = delta["reasoning_content"].get<std::string>();
                             if (!delta_text.empty()) {
-                                // Close thinking block before starting text block.
-                                if (sent_thinking_content_start && !sent_thinking_content_stop) {
-                                    json thinking_stop = {
-                                        {"type", "content_block_stop"},
-                                        {"index", thinking_block_index}
-                                    };
-                                    if (!write_sse_event(client_sink, "content_block_stop", thinking_stop)) {
-                                        return false;
-                                    }
-                                    sent_thinking_content_stop = true;
-                                }
-
                                 if (!sent_text_content_start) {
-                                    text_block_index = next_block_index++;
                                     json content_start = {
                                         {"type", "content_block_start"},
-                                        {"index", text_block_index},
+                                        {"index", 0},
                                         {"content_block", {{"type", "text"}, {"text", ""}}}
                                     };
                                     if (!write_sse_event(client_sink, "content_block_start", content_start)) {
@@ -731,7 +687,33 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
                                 json content_delta = {
                                     {"type", "content_block_delta"},
-                                    {"index", text_block_index},
+                                    {"index", 0},
+                                    {"delta", {{"type", "text_delta"}, {"text", delta_text}}}
+                                };
+                                if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
+                                    return false;
+                                }
+                            }
+                        }
+
+                        if (delta.contains("content") && delta["content"].is_string()) {
+                            std::string delta_text = delta["content"].get<std::string>();
+                            if (!delta_text.empty()) {
+                                if (!sent_text_content_start) {
+                                    json content_start = {
+                                        {"type", "content_block_start"},
+                                        {"index", 0},
+                                        {"content_block", {{"type", "text"}, {"text", ""}}}
+                                    };
+                                    if (!write_sse_event(client_sink, "content_block_start", content_start)) {
+                                        return false;
+                                    }
+                                    sent_text_content_start = true;
+                                }
+
+                                json content_delta = {
+                                    {"type", "content_block_delta"},
+                                    {"index", 0},
                                     {"delta", {{"type", "text_delta"}, {"text", delta_text}}}
                                 };
                                 if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
@@ -771,18 +753,6 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                                 }
 
                                 if (!started_tool_blocks[idx]) {
-                                    // Close open thinking/text blocks before tool blocks.
-                                    if (sent_thinking_content_start && !sent_thinking_content_stop) {
-                                        json thinking_stop = {
-                                            {"type", "content_block_stop"},
-                                            {"index", thinking_block_index}
-                                        };
-                                        if (!write_sse_event(client_sink, "content_block_stop", thinking_stop)) {
-                                            return false;
-                                        }
-                                        sent_thinking_content_stop = true;
-                                    }
-
                                     if (tool_ids[idx].empty()) {
                                         tool_ids[idx] = generate_anthropic_message_id();
                                     }
@@ -790,10 +760,9 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                                         tool_names[idx] = "unknown_tool";
                                     }
 
-                                    int tool_block_idx = next_block_index++;
                                     json tool_block_start = {
                                         {"type", "content_block_start"},
-                                        {"index", tool_block_idx},
+                                        {"index", static_cast<int>(idx) + 1},
                                         {"content_block", {
                                             {"type", "tool_use"},
                                             {"id", tool_ids[idx]},
@@ -812,10 +781,9 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                                     if (fn.contains("arguments") && fn["arguments"].is_string()) {
                                         std::string args_delta = fn["arguments"].get<std::string>();
                                         if (!args_delta.empty()) {
-                                            int tool_anthropic_idx = next_block_index - 1;
                                             json tool_input_delta = {
                                                 {"type", "content_block_delta"},
-                                                {"index", tool_anthropic_idx},
+                                                {"index", static_cast<int>(idx) + 1},
                                                 {"delta", {
                                                     {"type", "input_json_delta"},
                                                     {"partial_json", args_delta}
@@ -844,13 +812,8 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
     adapter_sink.done = [&client_sink,
                          &sent_message_start,
-                         &sent_thinking_content_start,
-                         &sent_thinking_content_stop,
                          &sent_text_content_start,
                          &sent_text_content_stop,
-                         &next_block_index,
-                         &thinking_block_index,
-                         &text_block_index,
                          &started_tool_blocks,
                          &stopped_tool_blocks,
                          &stop_reason,
@@ -877,24 +840,10 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
             sent_message_start = true;
         }
 
-        // Close any open thinking block.
-        if (sent_thinking_content_start && !sent_thinking_content_stop) {
-            json thinking_stop = {
-                {"type", "content_block_stop"},
-                {"index", thinking_block_index}
-            };
-            if (!write_sse_event(client_sink, "content_block_thinking_stop", thinking_stop)) {
-                client_sink.done();
-                return;
-            }
-            sent_thinking_content_stop = true;
-        }
-
         if (!sent_text_content_start && started_tool_blocks.empty()) {
-            text_block_index = next_block_index++;
             json content_start = {
                 {"type", "content_block_start"},
-                {"index", text_block_index},
+                {"index", 0},
                 {"content_block", {{"type", "text"}, {"text", ""}}}
             };
             if (!write_sse_event(client_sink, "content_block_start", content_start)) {
@@ -907,7 +856,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
         if (sent_text_content_start && !sent_text_content_stop) {
             json content_stop = {
                 {"type", "content_block_stop"},
-                {"index", text_block_index}
+                {"index", 0}
             };
             if (!write_sse_event(client_sink, "content_block_stop", content_stop)) {
                 client_sink.done();
@@ -920,7 +869,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
             if (started_tool_blocks[idx] && !stopped_tool_blocks[idx]) {
                 json tool_stop = {
                     {"type", "content_block_stop"},
-                    {"index", next_block_index - static_cast<int>(started_tool_blocks.size()) + static_cast<int>(idx)}
+                    {"index", static_cast<int>(idx) + 1}
                 };
                 if (!write_sse_event(client_sink, "content_block_stop", tool_stop)) {
                     client_sink.done();
