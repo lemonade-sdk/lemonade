@@ -457,7 +457,16 @@ ProcessHandle ProcessManager::start_process(
         posix_spawn_file_actions_adddup2(&file_actions, stderr_pipe[1], STDERR_FILENO);
         posix_spawn_file_actions_addclose(&file_actions, stdout_pipe[1]);
         posix_spawn_file_actions_addclose(&file_actions, stderr_pipe[1]);
-    } else if (!inherit_output) {
+    } else if (inherit_output) {
+        // POSIX_SPAWN_CLOEXEC_DEFAULT closes every FD not mentioned in
+        // file_actions.  When we want the child to inherit the parent's
+        // terminal (interactive agents like claude), we must explicitly
+        // preserve the standard streams.  dup2(fd, fd) is the portable
+        // way to mark an FD as "keep open" across posix_spawn.
+        posix_spawn_file_actions_adddup2(&file_actions, STDIN_FILENO, STDIN_FILENO);
+        posix_spawn_file_actions_adddup2(&file_actions, STDOUT_FILENO, STDOUT_FILENO);
+        posix_spawn_file_actions_adddup2(&file_actions, STDERR_FILENO, STDERR_FILENO);
+    } else {
         posix_spawn_file_actions_addopen(&file_actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
         posix_spawn_file_actions_adddup2(&file_actions, STDOUT_FILENO, STDERR_FILENO);
     }

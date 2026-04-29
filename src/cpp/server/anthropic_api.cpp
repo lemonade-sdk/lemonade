@@ -456,6 +456,12 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
     std::string stop_reason = "end_turn";
     std::string response_id = openai_response.value("id", generate_anthropic_message_id());
 
+    // Surface backend errors as visible text instead of silently dropping them.
+    if (openai_response.contains("error") && openai_response["error"].is_object()) {
+        std::string err_msg = openai_response["error"].value("message", "Unknown backend error");
+        response_text = "[Backend error: " + err_msg + "]";
+    }
+
     if (openai_response.contains("choices") && openai_response["choices"].is_array() &&
         !openai_response["choices"].empty()) {
         const auto& choice = openai_response["choices"][0];
@@ -463,8 +469,26 @@ json OllamaApi::convert_openai_chat_to_anthropic(const json& openai_response,
 
         if (choice.contains("message") && choice["message"].is_object()) {
             const auto& message = choice["message"];
+
+            // Handle reasoning_content (thinking models like Qwen3).
+            // Merge into the text response so it appears as normal output.
+            // Claude Code does not support "thinking" blocks from non-Anthropic
+            // models, so folding into text is the only reliable path.
+            if (message.contains("reasoning_content") && message["reasoning_content"].is_string()) {
+                std::string thinking_text = message["reasoning_content"].get<std::string>();
+                if (!thinking_text.empty()) {
+                    response_text = thinking_text;
+                }
+            }
+
             if (message.contains("content") && message["content"].is_string()) {
-                response_text = message["content"].get<std::string>();
+                std::string content_text = message["content"].get<std::string>();
+                if (!content_text.empty()) {
+                    if (!response_text.empty()) {
+                        response_text += "\n\n";
+                    }
+                    response_text += content_text;
+                }
             } else if (message.contains("content") && message["content"].is_array()) {
                 std::vector<std::string> text_blocks;
                 for (const auto& block : message["content"]) {
@@ -600,7 +624,68 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                 line.pop_back();
             }
 
-            if (line.empty() || line.find("data: ") != 0) {
+            if (line.empty()) {
+                continue;
+            }
+
+            // Detect raw JSON error responses from backend (not SSE-wrapped).
+            // When llama-server returns e.g. {"error":{"message":"Compute error."}},
+            // it arrives as bare JSON without a "data: " prefix.
+            if (line[0] == '{' && line.find("\"error\"") != std::string::npos) {
+                try {
+                    auto err_json = json::parse(line);
+                    if (err_json.contains("error") && err_json["error"].is_object()) {
+                        std::string err_msg = err_json["error"].value("message", "Unknown backend error");
+
+                        if (!sent_message_start) {
+                            json message_start = {
+                                {"type", "message_start"},
+                                {"message", {
+                                    {"id", message_id},
+                                    {"type", "message"},
+                                    {"role", "assistant"},
+                                    {"model", model},
+                                    {"content", json::array()},
+                                    {"stop_reason", nullptr},
+                                    {"stop_sequence", nullptr},
+                                    {"usage", {{"input_tokens", 0}, {"output_tokens", 0}}}
+                                }}
+                            };
+                            if (!write_sse_event(client_sink, "message_start", message_start)) {
+                                return false;
+                            }
+                            sent_message_start = true;
+                        }
+
+                        // Emit error as visible text so the client can display it
+                        if (!sent_text_content_start) {
+                            json content_start = {
+                                {"type", "content_block_start"},
+                                {"index", 0},
+                                {"content_block", {{"type", "text"}, {"text", ""}}}
+                            };
+                            if (!write_sse_event(client_sink, "content_block_start", content_start)) {
+                                return false;
+                            }
+                            sent_text_content_start = true;
+                        }
+
+                        json content_delta = {
+                            {"type", "content_block_delta"},
+                            {"index", 0},
+                            {"delta", {{"type", "text_delta"}, {"text", "[Backend error: " + err_msg + "]"}}}
+                        };
+                        if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
+                            return false;
+                        }
+                        continue;
+                    }
+                } catch (...) {
+                    // Not valid JSON, fall through
+                }
+            }
+
+            if (line.find("data: ") != 0) {
                 continue;
             }
 
@@ -648,6 +733,36 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
                     if (choice.contains("delta") && choice["delta"].is_object()) {
                         const auto& delta = choice["delta"];
+
+                        // Handle reasoning_content (thinking models like Qwen3).
+                        // Stream as regular text since Claude Code does not
+                        // support "thinking" blocks from non-Anthropic models.
+                        if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+                            std::string delta_text = delta["reasoning_content"].get<std::string>();
+                            if (!delta_text.empty()) {
+                                if (!sent_text_content_start) {
+                                    json content_start = {
+                                        {"type", "content_block_start"},
+                                        {"index", 0},
+                                        {"content_block", {{"type", "text"}, {"text", ""}}}
+                                    };
+                                    if (!write_sse_event(client_sink, "content_block_start", content_start)) {
+                                        return false;
+                                    }
+                                    sent_text_content_start = true;
+                                }
+
+                                json content_delta = {
+                                    {"type", "content_block_delta"},
+                                    {"index", 0},
+                                    {"delta", {{"type", "text_delta"}, {"text", delta_text}}}
+                                };
+                                if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
+                                    return false;
+                                }
+                            }
+                        }
+
                         if (delta.contains("content") && delta["content"].is_string()) {
                             std::string delta_text = delta["content"].get<std::string>();
                             if (!delta_text.empty()) {
