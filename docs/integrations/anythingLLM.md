@@ -27,7 +27,7 @@ Docker and Desktop are two different ways to run AnythingLLM. Both are powerful 
 
 ### Prerequisites
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../guide/install/README.md) and using the installer .exe.
 2. Install and set up AnythingLLM from their [Documentation](https://docs.anythingllm.com/installation-docker/quickstart) or [Desktop Installer](https://anythingllm.com/desktop).
 
 

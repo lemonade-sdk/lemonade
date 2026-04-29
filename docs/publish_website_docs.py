@@ -58,7 +58,7 @@ def main():
         (r"\(\./server/configuration\.md\)", r"(./server/configuration.md)"),
         (r"\(\./server_models\.md\)", r"(https://lemonade-server.ai/models.html)"),
         (r"\(\.\./api/README\.md\)", r"(./api/README.md)"),
-        (r"\(\./server_integration\.md\)", r"(./server/server_integration.md)"),
+        # (r"\(\./server_integration\.md\)", r"(./server/server_spec.md)")  # server_integration.md was deleted
     ]
     for pattern, repl in replacements:
         content = re.sub(pattern, repl, content)

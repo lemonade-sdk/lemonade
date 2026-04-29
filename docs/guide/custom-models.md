@@ -12,7 +12,7 @@ This guide explains how to manually register custom models in Lemonade Server us
 > ```
 > The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](../api/lemonade.md#get-v1pullvariants) endpoint under the hood.
 >
-> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../lemonade-cli.md#options-for-pull):
+> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](./cli.md#options-for-pull):
 > ```bash
 > lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
 > ```
@@ -215,6 +215,5 @@ For full details, see the [load endpoint documentation](../api/lemonade.md#post-
 
 ## See Also
 
-- [CLI pull command](../lemonade-cli.md#options-for-pull) — register and download models from the command line
+- [CLI pull command](./cli.md#options-for-pull) — register and download models from the command line
 - [`/api/v1/pull` endpoint](../api/lemonade.md#post-v1pull) — register and download models via API
-- [Server Integration Guide](./server_integration.md#installing-additional-models) — overview of model management options

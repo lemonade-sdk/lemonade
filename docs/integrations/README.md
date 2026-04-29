@@ -8,4 +8,4 @@ For a complete list of compatible apps with links to guides, videos, and more, v
 
 ## Contributing
 
-If you've connected Lemonade to a new application and would like to contribute a guide, see our [contribution guide](../../contribute.md) or email us at [lemonade@amd.com](mailto:lemonade@amd.com).
+If you've connected Lemonade to a new application and would like to contribute a guide, see our [contribution guide](../dev/contribute.md) or email us at [lemonade@amd.com](mailto:lemonade@amd.com).

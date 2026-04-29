@@ -2,7 +2,7 @@
 
 This guide shows how to build the embeddable `lemond` and `lemonade` binaries from source.
 
-For general prerequisites, toolchain setup, and broader development workflows, see [Lemonade Development](../dev-getting-started.md).
+For general prerequisites, toolchain setup, and broader development workflows, see [Lemonade Development](../dev/getting-started.md).
 
 Contents:
 
