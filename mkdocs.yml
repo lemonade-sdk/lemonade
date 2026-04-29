@@ -17,7 +17,7 @@ site_name: Lemonade Server Documentation
 site_url: https://lemonade-server.ai/
 site_description: Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.
 
-edit_uri: server/README.md
+edit_uri: README.md
 
 repo_name: lemonade-sdk/lemonade
 repo_url: https://github.com/lemonade-sdk/lemonade
@@ -60,31 +60,30 @@ theme:
 # Add the list of markdown files to be included in the documentation
 # The order of the files in the list will determine the order they appear in the documentation
 nav:
-  - Downloading and Getting Started: server/README.md
-
-  - FAQ Guide: faq.md
-  - Lemonade CLI Guide: lemonade-cli.md
-  - Application Guides:
-      - AI Toolkit: server/apps/ai-toolkit.md
-      - AnythingLLM: server/apps/anythingLLM.md
-      - CodeGPT: server/apps/codeGPT.md
-      - Continue: server/apps/continue.md
-      - Claude Code: server/apps/claude-code.md
-      - Mindcraft: server/apps/mindcraft.md
-      - OpenHands: server/apps/open-hands.md
-      - Open WebUI: server/apps/open-webui.md
-      - Wut: server/apps/wut.md
-  - Server Configuration: server/configuration.md
-  - llama.cpp Backend: llamacpp.md
-  - OmniRouter (tools for agents): omni-router.md
-  - Understanding local LLM servers: server/concepts.md
-  - Developer Getting Started: dev-getting-started.md
-  - Embeddable Lemonade:
-      - Overview: embeddable/README.md
-      - Runtime: embeddable/runtime.md
-      - Backends: embeddable/backends.md
-      - Models: embeddable/models.md
-      - Building from Source: embeddable/building.md
+  - Welcome: README.md
+  - Guide:
+    - Getting Started: guide/README.md
+    - Install:
+      - Supported Platforms: guide/install/README.md
+      - Ubuntu: guide/install/ubuntu.md
+      - Arch: guide/install/arch.md
+      - Fedora: guide/install/fedora.md
+      - Docker: guide/install/docker.md
+    - CLI: guide/cli.md
+    - Configuration: guide/configuration.md
+    - Custom Models: guide/custom-models.md
+    - Running Many Models: guide/multi-model.md
+    - llama.cpp: guide/llamacpp.md
+    - Local Server Concepts: guide/concepts.md
+    - FAQ: guide/faq.md
+  - Development:
+    - Overview: dev/README.md
+    - Contribute: dev/contribute.md
+    - C++: dev/getting-started.md
+    - Desktop App: dev/app.md
+    - Web UI: dev/web-ui.md
+    - OmniRouter (tools for agents): dev/omni-router.md
+    - Infrastructure: dev/self-hosted-runners.md
   - API Spec:
       - Overview: api/README.md
       - OpenAI-Compatible: api/openai.md
@@ -92,27 +91,17 @@ nav:
       - Anthropic-Compatible: api/anthropic.md
       - llama.cpp-Specific: api/llamacpp.md
       - Lemonade-Specific: api/lemonade.md
-  - Multi-Model Support: guide/multi-model.md
-  - Integration Guide: server/server_integration.md
-  - Custom Model Configuration: server/custom-models.md
-  - Contribution Guide: contribute.md
+  - Embeddable Lemonade:
+      - Overview: embeddable/README.md
+      - Runtime: embeddable/runtime.md
+      - Backends: embeddable/backends.md
+      - Models: embeddable/models.md
+      - Building from Source: embeddable/building.md
 
 not_in_nav: |
   /index.md
-  /self_hosted_runners.md
-  /eval/finetuned_model_export.md
+  /integrations/*.md
   /server/server_spec.md
-
-exclude_docs: |
-  code.md
-  versioning.md
-  eval/README.md
-  eval/humaneval_accuracy.md
-  eval/mmlu_accuracy.md
-  eval/perplexity.md
-  eval/quark.md
-  eval/ort_genai_igpu.md
-  eval/lm-eval.md
 
 # The following adds icons on the bottom of the page
 extra:
