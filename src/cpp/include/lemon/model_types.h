@@ -96,7 +96,9 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "reranking") {
             return ModelType::RERANKING;
         }
-        if (label == "audio") {
+        if (label == "audio" ||
+            label == "transcription" ||
+            label == "realtime-transcription") {
             return ModelType::AUDIO;
         }
         if (label == "image") {
