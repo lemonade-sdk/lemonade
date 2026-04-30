@@ -12,7 +12,7 @@ For package details, see [lemonade-server on the AUR](https://aur.archlinux.org/
 
 === "Web UI"
 
-    Alwaus available at [http://localhost:13305](http://localhost:13305).
+    Always available at [http://localhost:13305](http://localhost:13305).
 
     The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.
 

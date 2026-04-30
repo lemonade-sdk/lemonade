@@ -36,7 +36,7 @@ def main():
         print(f"[ERROR] {src} not found!")
         sys.exit(1)
 
-    # Read the source README, making necessary replacements
+    # Read the source README
     with open(src, "r", encoding="utf-8") as f:
         readme_content = f.read()
 
@@ -44,28 +44,6 @@ def main():
     with open(dst, "w", encoding="utf-8") as f:
         f.write(readme_content)
     print(f"[INFO] Copied {src} to {dst}.")
-
-    # Read the just-written index.md and perform additional link fixes for website publishing
-    print(f"[INFO] Fixing links in {dst}...")
-    with open(dst, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # List of (pattern, replacement) tuples for fixing internal documentation links
-    replacements = [
-        (r"\(\./apps/README\.md\)", r"(./server/apps/README.md)"),
-        (r"\(\./concepts\.md\)", r"(./server/concepts.md)"),
-        (r"\(\./lemonade-cli\.md\)", r"(./lemonade-cli.md)"),
-        (r"\(\./server/configuration\.md\)", r"(./server/configuration.md)"),
-        (r"\(\./server_models\.md\)", r"(https://lemonade-server.ai/models.html)"),
-        (r"\(\.\./api/README\.md\)", r"(./api/README.md)"),
-        # (r"\(\./server_integration\.md\)", r"(./server/server_spec.md)")  # server_integration.md was deleted
-    ]
-    for pattern, repl in replacements:
-        content = re.sub(pattern, repl, content)
-
-    # Write the fully processed content back to index.md
-    with open(dst, "w", encoding="utf-8") as f:
-        f.write(content)
 
     # Remove existing docs/docs if it exists
     if os.path.exists("docs/docs"):

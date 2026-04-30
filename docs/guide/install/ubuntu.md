@@ -23,7 +23,7 @@ To build from source, see the [development](../../dev/README.md) guide.
 
 === "Web UI"
 
-    Alwaus available at [http://localhost:13305](http://localhost:13305).
+    Always available at [http://localhost:13305](http://localhost:13305).
 
     The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.
 
