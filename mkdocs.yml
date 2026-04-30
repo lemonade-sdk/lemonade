@@ -59,7 +59,7 @@ theme:
 # Add the list of markdown files to be included in the documentation
 # The order of the files in the list will determine the order they appear in the documentation
 nav:
-  - Welcome: README.md
+  - Welcome: index.md
   - User Guide:
     - Getting Started: guide/README.md
     - Install:
@@ -86,11 +86,11 @@ nav:
     - Infrastructure: dev/self-hosted-runners.md
   - API Spec:
       - Overview: api/README.md
-      - OpenAI-Compatible: api/openai.md
-      - Ollama-Compatible: api/ollama.md
-      - Anthropic-Compatible: api/anthropic.md
-      - llama.cpp-Specific: api/llamacpp.md
-      - Lemonade-Specific: api/lemonade.md
+      - OpenAI Compatible: api/openai.md
+      - Ollama Compatible: api/ollama.md
+      - Anthropic Compatible: api/anthropic.md
+      - llama.cpp Specific: api/llamacpp.md
+      - Lemonade Specific: api/lemonade.md
   - Embeddable Lemonade:
       - Overview: embeddable/README.md
       - Runtime: embeddable/runtime.md
