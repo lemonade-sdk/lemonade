@@ -17,7 +17,7 @@ def _get_venv_executable(name):
     """Get an executable path from the venv based on the current Python interpreter."""
     python_dir = os.path.dirname(sys.executable)
     if platform.system() == "Windows":
-        return os.path.join(python_dir, f"{name}.exe")
+        return os.path.join(python_dir, "Scripts", f"{name}.exe")
     else:
         return os.path.join(python_dir, name)
 
@@ -28,12 +28,12 @@ def main():
     print("[INFO] Current working directory:", os.getcwd())
 
     # Define source and destination file paths
-    src = "docs/server/README.md"
+    src = "docs/README.md"
     dst = "docs/index.md"
 
     # Check if the source README exists; exit with error if not
     if not os.path.exists(src):
-        print("[ERROR] docs/server/README.md not found!")
+        print(f"[ERROR] {src} not found!")
         sys.exit(1)
 
     # Read the source README, making necessary replacements
@@ -43,10 +43,10 @@ def main():
     # Write the content to the destination index.md
     with open(dst, "w", encoding="utf-8") as f:
         f.write(readme_content)
-    print("[INFO] Copied docs/server/README.md to docs/index.md.")
+    print(f"[INFO] Copied {src} to {dst}.")
 
     # Read the just-written index.md and perform additional link fixes for website publishing
-    print("[INFO] Fixing links in docs/index.md...")
+    print(f"[INFO] Fixing links in {dst}...")
     with open(dst, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -75,6 +75,7 @@ def main():
     # Build the documentation using mkdocs
     print("[INFO] Building documentation with mkdocs...")
     mkdocs_exe = _get_venv_executable("mkdocs")
+    print(f"[INFO] mkdocs path: {mkdocs_exe}")
     subprocess.run([mkdocs_exe, "build", "--clean"], check=True)
 
     # Move the generated site/ directory to docs/docs/, replacing it if it already exists
