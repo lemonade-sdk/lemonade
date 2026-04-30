@@ -218,6 +218,51 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     const auto& variants = variants_response["variants"];
     std::string recipe = variants_response.value("recipe", std::string("llamacpp"));
 
+    // Lemonade Model branch: a `lemonade.json` manifest at the repo root
+    // declares a collection. Skip variant selection and pull by embedding
+    // the manifest in the /pull body — the server registers the collection
+    // (and any inline components) and recurses into the existing
+    // recipe="collection" download path.
+    if (recipe == "collection") {
+        if (!variant.empty()) {
+            std::cerr << "warning: variant '" << variant
+                      << "' ignored for Lemonade Model checkpoints" << std::endl;
+        }
+        if (!variants_response.contains("lemonade_manifest") ||
+            !variants_response["lemonade_manifest"].is_object()) {
+            std::cerr << "Error: variants response is missing `lemonade_manifest`."
+                      << std::endl;
+            return 1;
+        }
+
+        std::string suggested_name = variants_response.value("suggested_name", checkpoint);
+        const json& manifest = variants_response["lemonade_manifest"];
+
+        std::cout << "Pulling Lemonade Model from " << checkpoint << std::endl;
+        if (manifest.contains("name") && manifest["name"].is_string()) {
+            std::cout << "  " << manifest["name"].get<std::string>() << std::endl;
+        }
+        if (manifest.contains("components") && manifest["components"].is_array()) {
+            std::cout << "  Components ("
+                      << manifest["components"].size() << "):" << std::endl;
+            for (const auto& c : manifest["components"]) {
+                if (c.is_string()) {
+                    std::cout << "    - " << c.get<std::string>() << std::endl;
+                } else if (c.is_object()) {
+                    std::cout << "    - "
+                              << c.value("name", std::string("(unnamed)"))
+                              << " [" << c.value("recipe", std::string("?"))
+                              << "]" << std::endl;
+                }
+            }
+        }
+
+        json pull_body;
+        pull_body["model_name"] = "user." + suggested_name;
+        pull_body["lemonade_manifest"] = manifest;
+        return client.pull_model(pull_body);
+    }
+
     // Non-llamacpp recipes (currently: ONNX RyzenAI) ship as a single
     // installable unit — no per-variant menu, no `:variant` checkpoint
     // suffix, no `-VARIANT` model name tail.

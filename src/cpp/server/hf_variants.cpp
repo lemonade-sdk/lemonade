@@ -232,13 +232,11 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         }
     }
 
-    // Detect repo kind: GGUF (existing path) vs ONNX RyzenAI vs unknown.
-    // ONNX RyzenAI repos contain `.onnx` files plus a `genai_config.json`
-    // (the OGA runtime config). They are pulled as a single unit — no
-    // sub-variant selection — and use the `ryzenai-llm` recipe.
+    // Detect repo kind: Lemonade Model (collection) vs GGUF vs ONNX RyzenAI.
     bool has_gguf = false;
     bool has_onnx = false;
     bool has_genai_config = false;
+    bool has_lemonade_manifest = false;
     uint64_t total_repo_size = 0;
     for (const auto& f : repo_files) {
         std::string lf = to_lower(f);
@@ -248,6 +246,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
             (lf.size() > 18 && ends_with(lf, "/genai_config.json"))) {
             has_genai_config = true;
         }
+        if (lf == "lemonade.json") has_lemonade_manifest = true;
     }
     for (const auto& kv : file_sizes) total_repo_size += kv.second;
 
@@ -256,6 +255,54 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
     {
         size_t slash = checkpoint.find_last_of('/');
         if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
+    }
+
+    // Lemonade Model branch: a `lemonade.json` at the repo root declares a
+    // collection. Fetch and forward the manifest so the CLI can pull it via
+    // POST /pull with `lemonade_manifest`. ModelManager re-validates the
+    // schema on registration; we only do shape checks here so the user gets
+    // a fast, friendly error if the manifest is obviously wrong.
+    if (has_lemonade_manifest) {
+        std::string manifest_url =
+            "https://huggingface.co/" + checkpoint + "/resolve/main/lemonade.json";
+        auto manifest_response = HttpClient::get(manifest_url, headers);
+        if (manifest_response.status_code != 200) {
+            throw std::runtime_error(
+                "Failed to fetch lemonade.json from " + checkpoint +
+                " (status: " + std::to_string(manifest_response.status_code) + ")");
+        }
+        auto manifest = JsonUtils::parse(manifest_response.body);
+        if (!manifest.is_object()) {
+            throw std::runtime_error("lemonade.json must be a JSON object");
+        }
+        if (manifest.value("recipe", "") != "collection") {
+            throw std::runtime_error(
+                "lemonade.json in " + checkpoint +
+                " must declare `recipe: \"collection\"`");
+        }
+        if (!manifest.contains("components") || !manifest["components"].is_array()) {
+            throw std::runtime_error(
+                "lemonade.json in " + checkpoint +
+                " must include a `components` array");
+        }
+
+        nlohmann::json vj;
+        vj["name"] = "default";
+        vj["primary_file"] = "lemonade.json";
+        vj["files"] = nlohmann::json::array({"lemonade.json"});
+        vj["sharded"] = false;
+        vj["size_bytes"] = manifest_response.body.size();
+
+        nlohmann::json out;
+        out["checkpoint"] = checkpoint;
+        out["recipe"] = "collection";
+        out["repo_kind"] = "lemonade-collection";
+        out["suggested_name"] = suggested_name;
+        out["suggested_labels"] = nlohmann::json::array();
+        out["mmproj_files"] = nlohmann::json::array();
+        out["variants"] = nlohmann::json::array({vj});
+        out["lemonade_manifest"] = manifest;
+        return out;
     }
 
     // ONNX RyzenAI branch: synthesize a 1-element variant set.
