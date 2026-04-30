@@ -705,7 +705,7 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 #   --help, -h               Show help
 ```
 
-All other server settings are managed via `lemonade config set` (see [Server Configuration](../guide/configuration.md)).
+All other server settings are managed via `lemonade config set` (see [Server Configuration](../guide/configuration/README.md)).
 
 ### lemonade CLI Client
 

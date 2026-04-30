@@ -280,6 +280,6 @@ lemonade config set host=0.0.0.0
 
 ## Next Steps
 
-The [Server Specification](../server/server_spec.md) provides more information about how to integrate Lemonade Server into an application.
+The [Server Specification](../../api/README.md) provides more information about how to integrate Lemonade Server into an application.
 
 <!--Copyright (c) 2025 AMD-->

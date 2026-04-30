@@ -72,7 +72,7 @@
        - llamacpp: `%LOCALAPPDATA%\llama.cpp` (e.g., `C:\Users\You\AppData\Local\llama.cpp`)
    - **Linux:** `~/.cache/llama.cpp`
 
-   Set `extra_models_dir` (see [Server Configuration](./configuration.md)):
+   Set `extra_models_dir` (see [Server Configuration](./configuration/README.md)):
 
    ```bash
    lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
@@ -218,7 +218,7 @@
 
    Lemonade supports running the server on one machine while using the app from another machine on the same network.
 
-   For detailed instructions and security considerations, see [Remote Server Connection](./configuration.md#remote-server-connection).
+   For detailed instructions and security considerations, see [Remote Server Connection](./configuration/README.md#remote-server-connection).
 
 ## Customization
 
@@ -226,7 +226,7 @@
 
    Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
 
-   👉 [Custom Backend Binaries](./configuration.md)
+   👉 [Custom Backend Binaries](./configuration/README.md)
 
 ## TTS
 

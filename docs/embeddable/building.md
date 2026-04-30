@@ -12,7 +12,7 @@ Contents:
 
 ## Default Embeddable Build
 
-The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](../../.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
+The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
 
 === "Windows (cmd.exe)"
 

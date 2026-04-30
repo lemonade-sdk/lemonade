@@ -190,11 +190,11 @@ For example, if you wanted to add [OmniCoder-9B](https://huggingface.co/Tesslate
 }
 ```
 
-You can learn more in the [Custom Models](../guide/custom-models.md) guide, including how to enable your users to register their own custom models at runtime.
+You can learn more in the [Custom Models](../guide/configuration/custom-models.md) guide, including how to enable your users to register their own custom models at runtime.
 
 ### Per-Model Load Options
 
-You may want to customize how specific models will load on your user's system. You can do this with the `recipe_options.json` file. Learn more in the [Custom Models](../guide/custom-models.md) guide.
+You may want to customize how specific models will load on your user's system. You can do this with the `recipe_options.json` file. Learn more in the [Custom Models](../guide/configuration/custom-models.md) guide.
 
 ## Bundling Models
 

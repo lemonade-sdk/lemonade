@@ -171,4 +171,4 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ./lemonade config set llamacpp.vulkan_bin /path/to/bins
     ```
 
-See the `*_bin` settings in the [Configuration Guide](../guide/configuration.md) for the full set of customization options.
+See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.

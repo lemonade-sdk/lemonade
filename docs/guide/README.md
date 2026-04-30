@@ -32,7 +32,7 @@ The `lemonade` CLI provides full control over the Lemonade service from your ter
 
 ### Configuration
 
-Almost every aspect of Lemonade can be customized. Learn more in the [configuration](./configuration.md) guide.
+Almost every aspect of Lemonade can be customized. Learn more in the [configuration](./configuration/README.md) guide.
 
 ### Need Help?
 
