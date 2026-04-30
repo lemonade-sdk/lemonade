@@ -61,6 +61,11 @@ WrappedServer* Router::get_most_recent_server() const {
 int Router::count_servers_by_type(ModelType type) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
+        // Cloud servers consume no local memory and stay loaded for free, so
+        // they are excluded from the slot accounting that drives LRU eviction.
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
         if (server->get_model_type() == type) {
             count++;
         }
@@ -72,6 +77,12 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
+        // Cloud servers are not eviction candidates; they have no memory cost
+        // and reloading them is essentially free, but evicting them throws
+        // away the cached api key/upstream-id binding for no benefit.
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
         if (server->get_model_type() == type) {
             if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
                 lru = server.get();
@@ -314,9 +325,12 @@ void Router::load_model(const std::string& model_name,
         }
 
         // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
-        // Skip eviction if unlimited (-1)
+        // Skip eviction if unlimited (-1). Cloud-recipe loads also skip the
+        // check entirely: they consume no local resources, so they have no
+        // business kicking a warm local model out of memory.
+        bool is_cloud_load = (model_info.recipe == "cloud");
         int current_count = count_servers_by_type(model_type);
-        if (max_models != -1 && current_count >= max_models) {
+        if (!is_cloud_load && max_models != -1 && current_count >= max_models) {
             WrappedServer* lru = find_lru_server_by_type(model_type);
             if (lru) {
             LOG(INFO, "Router") << "Slot limit reached for type "
