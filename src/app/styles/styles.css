@@ -7433,3 +7433,139 @@ input::-webkit-calendar-picker-indicator {
     color: var(--text-secondary);
     margin-top: 4px;
 }
+
+/* ---- "Run on" picker (Spotify Connect-style chat target switcher) ----
+ *
+ * Hidden when no LAN peers are detected (RemoteDeviceSelector returns null in
+ * that case). When visible, lives in .chat-header-actions next to .new-chat-button.
+ * Color-coded dot: gray = local, green = remote (matches Spotify's
+ * "now playing on X" affordance). */
+.run-on-picker {
+    position: relative;
+    display: inline-flex;
+}
+
+.run-on-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+    background: transparent;
+    border: 1px solid var(--border-secondary);
+    border-radius: 14px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    max-width: 160px;
+}
+
+.run-on-pill:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    border-color: var(--border-4);
+    color: var(--text-aaa);
+}
+
+.run-on-pill:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.run-on-pill.remote {
+    color: var(--text-aaa);
+    border-color: rgba(80, 200, 120, 0.4);
+}
+
+.run-on-pill.remote:hover:not(:disabled) {
+    border-color: rgba(80, 200, 120, 0.7);
+}
+
+.run-on-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 110px;
+}
+
+.run-on-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.run-on-dot.local {
+    background: var(--text-secondary);
+}
+
+.run-on-dot.remote {
+    background: #1ed760; /* Spotify-green; intentionally a literal so the */
+    box-shadow: 0 0 4px rgba(30, 215, 96, 0.6); /* indicator pops on dark themes */
+}
+
+.run-on-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    padding: 4px 0;
+    min-width: 220px;
+    z-index: 50;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.run-on-menu-header {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+}
+
+.run-on-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.run-on-menu-item:hover {
+    background: var(--bg-alpha-1);
+}
+
+.run-on-menu-item.selected {
+    background: var(--bg-alpha-1);
+}
+
+.run-on-menu-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.run-on-menu-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.run-on-menu-sub {
+    font-size: 11px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

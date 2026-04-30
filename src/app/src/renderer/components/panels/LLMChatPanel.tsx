@@ -5,7 +5,7 @@ import {
   AppSettings,
   buildChatRequestOverrides,
 } from '../../utils/appSettings';
-import { serverFetch } from '../../utils/serverConfig';
+import { chatFetch, isRemoteChatTarget } from '../../utils/serverConfig';
 import { useModels } from '../../hooks/useModels';
 import { useSystem } from '../../hooks/useSystem';
 import { Modality } from '../../hooks/useInferenceState';
@@ -19,6 +19,7 @@ import ModelSelector from '../ModelSelector';
 import ImagePreviewList from '../ImagePreviewList';
 import AudioPreviewList from '../AudioPreviewList';
 import EmptyState from '../EmptyState';
+import RemoteDeviceSelector from '../RemoteDeviceSelector';
 import ImageLightbox from '../ImageLightbox';
 import StreamingAudio from '../StreamingAudio';
 import TypingIndicator from '../TypingIndicator';
@@ -108,6 +109,7 @@ interface LLMChatPanelProps {
   isInferring: boolean;
   activeModality: Modality | null;
   runPreFlight: (modality: Modality, options: { modelName: string; modelsData: ModelsData; onError: (msg: string) => void }) => Promise<boolean>;
+  markInferring: (modality: Modality) => boolean;
   reset: () => void;
   showError: (msg: string) => void;
   appSettings: AppSettings | null;
@@ -122,7 +124,7 @@ interface LLMChatPanelProps {
 
 const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality,
-  runPreFlight, reset, showError, appSettings,
+  runPreFlight, markInferring, reset, showError, appSettings,
   isVision, isAudioChat = false, collectionMode = false, currentLoadedModel, setCurrentLoadedModel,
   onNewChat, onUnloadCollection,
 }) => {
@@ -466,6 +468,72 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     ...buildChatRequestOverrides(appSettings),
   });
 
+  /**
+   * Pre-flight when chat is targeting a peer Lemonade server. The local
+   * `runPreFlight` path goes through `ensureModelReady`, which talks to the
+   * local server's /load, /install, and /pull endpoints — none of those make
+   * sense against a peer (we don't want to install a backend on someone
+   * else's machine). For remote targets we simply POST /load and let the
+   * peer's server handle the rest. If the peer doesn't have the model the
+   * caller surfaces the error in the assistant bubble.
+   */
+  const runRemotePreFlight = async (): Promise<boolean> => {
+    // Take the inference lock so the rest of the panel (typing indicator,
+    // disabled inputs, etc.) behaves the same as the local-pre-flight path.
+    // Returning false here means we're already busy — caller bails out.
+    if (!markInferring('llm')) return false;
+    try {
+      const response = await chatFetch('/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: chatModelName }),
+      });
+      if (!response.ok) {
+        // Try to parse the body so we can distinguish the
+        // awaiting_authorization case (host owner needs to click Allow in
+        // their tray) from generic load failures. The /v1 server emits the
+        // structured `error` field documented in
+        // src/cpp/server/server.cpp::check_remote_authorization.
+        let parsedBody: any = null;
+        let message = `Remote /load returned status ${response.status}`;
+        try {
+          parsedBody = await response.json();
+          message = parsedBody?.detail
+                  || parsedBody?.error?.message
+                  || parsedBody?.message
+                  || message;
+        } catch {
+          // Body wasn't JSON; keep the generic status message.
+        }
+        reset();
+        if (parsedBody?.error === 'awaiting_authorization') {
+          // First-contact friendly path: don't make this look like a
+          // failure. The host owner has been notified; the user just needs
+          // to wait for the click and try again.
+          showError(
+            `Waiting for the host of this device to authorize you. ` +
+            `A prompt has been sent to their system tray — please ask them ` +
+            `to click "Allow", then send your message again.`
+          );
+        } else if (parsedBody?.error === 'authorization_denied') {
+          showError(
+            `The host of this device has denied access. ` +
+            `Ask them to revoke the deny in their Lemonade tray menu.`
+          );
+        } else {
+          showError(`Failed to load '${chatModelName}' on remote device: ${message}`);
+        }
+        return false;
+      }
+      setCurrentLoadedModel(chatModelName);
+      return true;
+    } catch (err: any) {
+      reset();
+      showError(`Failed to reach remote device: ${err?.message || err}`);
+      return false;
+    }
+  };
+
   /** Build an error message enriched with backend action help text when available. */
   const buildErrorMessage = (error: any): string => {
     const errorMessage = error.message || 'Failed to get response from the model.';
@@ -596,7 +664,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         ...buildChatRequestOverrides(appSettings),
       };
 
-      const response = await serverFetch('/chat/completions', {
+      const response = await chatFetch('/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -790,7 +858,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
     const requestBody = buildChatRequestBody(messageHistory);
 
-    const response = await serverFetch('/chat/completions', {
+    const response = await chatFetch('/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
@@ -864,13 +932,15 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     // because the state update hasn't flushed yet.
     if (!textToSend.trim() && uploadedImages.length === 0 && uploadedAudio.length === 0) return;
 
-    const ready = await runPreFlight('llm', {
-      modelName: chatModelName,
-      modelsData,
-      onError: (msg) => {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Error preparing model: ${msg}` }]);
-      },
-    });
+    const ready = isRemoteChatTarget()
+      ? await runRemotePreFlight()
+      : await runPreFlight('llm', {
+          modelName: chatModelName,
+          modelsData,
+          onError: (msg) => {
+            setMessages(prev => [...prev, { role: 'assistant', content: `Error preparing model: ${msg}` }]);
+          },
+        });
     if (!ready) return;
 
     if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -942,11 +1012,13 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const submitEdit = async () => {
     if ((!editingValue.trim() && editingImages.length === 0 && editingAudio.length === 0) || editingIndex === null || isBusy) return;
 
-    const ready = await runPreFlight('llm', {
-      modelName: chatModelName,
-      modelsData,
-      onError: showError,
-    });
+    const ready = isRemoteChatTarget()
+      ? await runRemotePreFlight()
+      : await runPreFlight('llm', {
+          modelName: chatModelName,
+          modelsData,
+          onError: showError,
+        });
     if (!ready) return;
 
     if (abortControllerRef.current) abortControllerRef.current.abort();
@@ -1207,6 +1279,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       <div className="chat-header">
         <h3>LLM Chat</h3>
         <div className="chat-header-actions">
+          <RemoteDeviceSelector disabled={isBusy} />
           {collectionMode && onUnloadCollection && (
             <button
               className="model-action-btn unload-btn active-model-eject-button collection-unload-icon-button"

@@ -157,6 +157,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         admin_api_key_ = api_key_;
     }
 
+    // Cross-machine authorization gate. Persists allow/deny decisions in the
+    // cache directory so they survive restarts; loopback requests bypass it
+    // entirely (see check_remote_authorization).
+    auth_manager_ = std::make_unique<AuthorizationManager>(cache_dir_);
+
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -199,6 +204,98 @@ void Server::log_request(const httplib::Request& req) {
         req.path != "/live") {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
+}
+
+// Returns true for HTTP methods/paths that consume host compute resources and
+// therefore require the host owner's approval when the source IP is non-local.
+// Read-only paths (health, models list, system info, etc.) are intentionally
+// open so peer discovery and capability negotiation work without prompting.
+static bool is_resource_consuming_path(const httplib::Request& req) {
+    if (req.method == "OPTIONS" || req.method == "GET") return false;
+    // Cheap inline test rather than a full route table — false positives here
+    // (e.g. POST /v1/internal/foo) are still safe; they just route through
+    // the gate too. The list below covers every endpoint that triggers
+    // backend inference, model loading, or downloads.
+    static constexpr const char* kGatedSuffixes[] = {
+        "/chat/completions",
+        "/completions",
+        "/responses",
+        "/embeddings",
+        "/reranking",
+        "/load",
+        "/unload",
+        "/pull",
+        "/install",
+        "/uninstall",
+        "/audio/transcriptions",
+        "/audio/speech",
+        "/images/generations",
+        "/images/edits",
+        "/images/variations",
+        "/messages",  // Anthropic-compatible
+        "/api/chat",  // Ollama-compatible
+        "/api/generate",
+        "/api/embed",
+        "/api/embeddings",
+    };
+    const std::string& p = req.path;
+    for (const char* suffix : kGatedSuffixes) {
+        size_t suffix_len = std::strlen(suffix);
+        if (p.size() >= suffix_len &&
+            p.compare(p.size() - suffix_len, suffix_len, suffix) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool is_loopback_addr(const std::string& addr) {
+    return addr == "127.0.0.1" || addr == "::1" || addr == "::ffff:127.0.0.1";
+}
+
+httplib::Server::HandlerResponse Server::check_remote_authorization(const httplib::Request& req, httplib::Response& res) {
+    if (is_loopback_addr(req.remote_addr)) return httplib::Server::HandlerResponse::Unhandled;
+    if (!is_resource_consuming_path(req)) return httplib::Server::HandlerResponse::Unhandled;
+    if (!auth_manager_) return httplib::Server::HandlerResponse::Unhandled;
+
+    // Hostname comes from a custom header set by the asking client. It's only
+    // a display label — IP is the security primitive — so missing or
+    // attacker-controlled hostnames don't change the access decision.
+    std::string hostname;
+    auto it = req.headers.find("X-Lemonade-Client-Hostname");
+    if (it != req.headers.end()) hostname = it->second;
+
+    if (auth_manager_->is_allowed(req.remote_addr)) {
+        return httplib::Server::HandlerResponse::Unhandled;
+    }
+    if (auth_manager_->is_denied(req.remote_addr)) {
+        LOG(WARNING, "Server") << "[Auth] Rejecting request from denied peer "
+                               << req.remote_addr << " (" << hostname << ") "
+                               << req.path << std::endl;
+        res.status = 403;
+        nlohmann::json body = {
+            {"error", "authorization_denied"},
+            {"message", "This device has explicitly denied access. Ask the host owner to revoke the deny in their Lemonade tray menu."},
+        };
+        res.set_content(body.dump(), "application/json");
+        return httplib::Server::HandlerResponse::Handled;
+    }
+
+    auto first_seen = auth_manager_->register_pending(req.remote_addr, hostname);
+    LOG(INFO, "Server") << "[Auth] Awaiting host approval for "
+                        << (hostname.empty() ? req.remote_addr : (hostname + " (" + req.remote_addr + ")"))
+                        << " requesting " << req.path << std::endl;
+
+    res.status = 403;
+    nlohmann::json body = {
+        {"error", "awaiting_authorization"},
+        {"message", "Lemonade on the host machine is asking the owner to approve this request. Look for the prompt in their system tray, then try again."},
+        {"client_ip", req.remote_addr},
+        {"client_hostname", hostname},
+        {"first_seen", first_seen},
+    };
+    res.set_content(body.dump(), "application/json");
+    return httplib::Server::HandlerResponse::Handled;
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
@@ -256,7 +353,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
-        return authenticate_request(req, res);
+        // API-key authentication runs first so a wrong/missing key short-circuits
+        // before the cross-machine gate ever looks at the source IP.
+        auto auth_result = authenticate_request(req, res);
+        if (auth_result == httplib::Server::HandlerResponse::Handled) return auth_result;
+        return check_remote_authorization(req, res);
     });
 
     web_server.Get("/live", [this](const httplib::Request& req, httplib::Response& res) {
@@ -444,6 +545,20 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_cleanup_cache(req, res);
     });
 
+    // Cross-machine authorization administration. Loopback-only via the
+    // existing /internal/* gate in authenticate_request, so the tray (which
+    // runs on the same machine as lemond) can manage decisions without an
+    // admin key prompt.
+    web_server.Get("/internal/auth/pending", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_auth_pending(req, res);
+    });
+    web_server.Get("/internal/auth/decisions", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_auth_decisions(req, res);
+    });
+    web_server.Post("/internal/auth/decide", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_auth_decide(req, res);
+    });
+
     // Test endpoint to verify POST works
     web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << "TEST POST endpoint hit!" << std::endl;
@@ -579,6 +694,10 @@ void Server::setup_static_files(httplib::Server &web_server) {
 window.api = {
     isWebApp: true,  // Explicit flag to indicate web mode
     platform: navigator.platform || 'web',
+    // The browser cannot reach the OS hostname for security reasons; pass
+    // an empty string so the host's authorization prompt falls back to
+    // showing the source IP.
+    localHostname: '',
     minimizeWindow: () => {},
     maximizeWindow: () => {},
     closeWindow: () => {},
@@ -617,6 +736,12 @@ window.api = {
         const settings = await window.api.getSettings();
         return settings.apiKey?.value || '';
     },
+    // LAN device discovery is Tauri-only (browsers cannot bind UDP). The
+    // shared renderer treats an empty list as "no peers" and hides the
+    // "Run on" picker, so the web app sees the same default-local behavior
+    // it always had.
+    listRemoteDevices: async () => [],
+    onRemoteDevicesUpdated: () => () => {},
     restartApp: () => window.location.reload()
 };
 </script>
@@ -3572,6 +3697,63 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
         stop();
         std::exit(0);
     }).detach();
+}
+
+void Server::handle_auth_pending(const httplib::Request& /*req*/, httplib::Response& res) {
+    if (!auth_manager_) {
+        res.status = 503;
+        res.set_content("{\"error\": \"authorization manager not available\"}", "application/json");
+        return;
+    }
+    res.set_content(auth_manager_->pending_to_json().dump(), "application/json");
+}
+
+void Server::handle_auth_decisions(const httplib::Request& /*req*/, httplib::Response& res) {
+    if (!auth_manager_) {
+        res.status = 503;
+        res.set_content("{\"error\": \"authorization manager not available\"}", "application/json");
+        return;
+    }
+    res.set_content(auth_manager_->decisions_to_json().dump(), "application/json");
+}
+
+void Server::handle_auth_decide(const httplib::Request& req, httplib::Response& res) {
+    if (!auth_manager_) {
+        res.status = 503;
+        res.set_content("{\"error\": \"authorization manager not available\"}", "application/json");
+        return;
+    }
+    try {
+        auto body = nlohmann::json::parse(req.body);
+        std::string ip = body.value("ip", "");
+        std::string hostname = body.value("hostname", "");
+        std::string decision = body.value("decision", "");
+        if (ip.empty() || decision.empty()) {
+            res.status = 400;
+            res.set_content("{\"error\": \"ip and decision are required\"}", "application/json");
+            return;
+        }
+        if (decision == "allow") {
+            auth_manager_->allow(ip, hostname);
+            LOG(INFO, "Server") << "[Auth] User approved " << ip << " (" << hostname << ")" << std::endl;
+        } else if (decision == "deny") {
+            auth_manager_->deny(ip, hostname);
+            LOG(INFO, "Server") << "[Auth] User denied " << ip << " (" << hostname << ")" << std::endl;
+        } else if (decision == "revoke") {
+            bool removed = auth_manager_->revoke(ip);
+            LOG(INFO, "Server") << "[Auth] User revoked " << ip
+                                << (removed ? " (removed)" : " (no prior decision)") << std::endl;
+        } else {
+            res.status = 400;
+            res.set_content("{\"error\": \"decision must be 'allow', 'deny', or 'revoke'\"}", "application/json");
+            return;
+        }
+        res.set_content("{\"status\": \"ok\"}", "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        nlohmann::json err = {{"error", "invalid request body"}, {"detail", e.what()}};
+        res.set_content(err.dump(), "application/json");
+    }
 }
 
 void Server::handle_config_set(const httplib::Request& req, httplib::Response& res) {

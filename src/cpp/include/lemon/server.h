@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <httplib.h>
+#include "authorization_manager.h"
 #include "runtime_config.h"
 #include "router.h"
 #include "model_manager.h"
@@ -43,6 +44,19 @@ private:
     void setup_http_logger(httplib::Server &web_server);
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);
+
+    // Cross-machine authorization gate. Returns Handled (with res populated)
+    // when the request originates from a non-loopback IP that is either
+    // explicitly denied or has not yet been approved by the host's owner.
+    // The asking client is expected to retry after the user clicks Allow in
+    // the system tray. Always Unhandled for loopback or read-only paths.
+    httplib::Server::HandlerResponse check_remote_authorization(const httplib::Request& req, httplib::Response& res);
+
+    // Internal auth admin endpoints (loopback-only — they piggyback on the
+    // existing /internal/* loopback gate in authenticate_request).
+    void handle_auth_pending(const httplib::Request& req, httplib::Response& res);
+    void handle_auth_decisions(const httplib::Request& req, httplib::Response& res);
+    void handle_auth_decide(const httplib::Request& req, httplib::Response& res);
 
     // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
     void setup_http_servers();
@@ -157,6 +171,7 @@ private:
     std::string api_key_;
     std::string admin_api_key_;
     NetworkBeacon udp_beacon_;
+    std::unique_ptr<AuthorizationManager> auth_manager_;
 
     // CPU usage tracking
 #if defined(__linux__) || defined(_WIN32)

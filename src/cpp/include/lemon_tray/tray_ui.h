@@ -40,6 +40,36 @@ struct LoadedModelInfo {
     }
 };
 
+// Mirror of AuthorizationManager's pending entries fetched via the
+// /internal/auth/pending endpoint. Used to render the "Pending Approvals"
+// submenu and to fire a native notification on first sighting of each
+// requester.
+struct PendingAuthInfo {
+    std::string ip;
+    std::string hostname;
+    int64_t first_seen;
+    int64_t last_seen;
+
+    bool operator==(const PendingAuthInfo& other) const {
+        return ip == other.ip && hostname == other.hostname &&
+               first_seen == other.first_seen;
+    }
+};
+
+// Mirror of AuthorizationManager::AuthEntry for the "Authorized Devices"
+// submenu. `decision` is "allow" or "deny".
+struct AuthDecisionInfo {
+    std::string ip;
+    std::string hostname;
+    std::string decision;
+    int64_t decided_at;
+
+    bool operator==(const AuthDecisionInfo& other) const {
+        return ip == other.ip && hostname == other.hostname &&
+               decision == other.decision;
+    }
+};
+
 class TrayUI {
 public:
     TrayUI(int port, const std::string& host, bool silent = false);
@@ -59,13 +89,26 @@ private:
     std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();
     void fetch_runtime_config();
+    std::vector<PendingAuthInfo> fetch_pending_authorizations();
+    std::vector<AuthDecisionInfo> fetch_auth_decisions();
 
     // Menu
     void build_menu();
     void refresh_menu();
     Menu create_menu(const std::vector<LoadedModelInfo>& loaded_models,
-                     const std::vector<ModelInfo>& available_models);
+                     const std::vector<ModelInfo>& available_models,
+                     const std::vector<PendingAuthInfo>& pending_auth,
+                     const std::vector<AuthDecisionInfo>& auth_decisions);
     bool menu_needs_refresh();
+    // Notify the host owner about new auth requests we haven't already shown.
+    // `previous_pending` is the snapshot from the prior tick, used so we only
+    // toast on transitions (new IP, not every poll).
+    void notify_new_pending(const std::vector<PendingAuthInfo>& current,
+                            const std::vector<PendingAuthInfo>& previous);
+    // POST /internal/auth/decide
+    void on_auth_decide(const std::string& ip,
+                        const std::string& hostname,
+                        const std::string& decision);
 
     // Menu actions
     void on_load_model(const std::string& model_name);
@@ -110,6 +153,8 @@ private:
     bool last_menu_server_reachable_ = false;
     std::vector<LoadedModelInfo> last_menu_loaded_models_;
     std::vector<ModelInfo> last_menu_available_models_;
+    std::vector<PendingAuthInfo> last_menu_pending_auth_;
+    std::vector<AuthDecisionInfo> last_menu_auth_decisions_;
 
     // Recipe options (for context size tracking)
     nlohmann::json recipe_options_;
