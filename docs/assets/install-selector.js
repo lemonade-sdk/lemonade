@@ -87,13 +87,12 @@ window.lmnSet = function(field, value) {
 };
 
 window.lmnRender = function() {
-  const { os, type, fw, dev } = lmnState;
+  const { os, fw, dev } = lmnState;
 
   // Update active states and disabled states
   const cells = {
     os: ['win', 'linux', 'macos', 'docker'],
     distro: ['win', 'macos', 'ubuntu', 'arch', 'fedora', 'debian'],
-    type: ['app', 'server'],
     fw: ['oga', 'llama', 'flm'],
     dev: ['npu', 'gpu', 'cpu']
   };
@@ -138,10 +137,9 @@ window.lmnRender = function() {
 };
 
 function renderDownload() {
-  const { os, distro, type } = lmnState;
+  const { os, distro } = lmnState;
   const osDistro = document.getElementById('lmn-install-distro');
   const downloadArea = document.getElementById('lmn-download-area');
-  const installType = document.getElementById('lmn-install-type');
   const cmdDiv = document.getElementById('lmn-command');
   const installCmdDiv = document.getElementById('lmn-install-commands');
   const version = window.lmnLatestVersion || 'VERSION';
@@ -149,7 +147,6 @@ function renderDownload() {
   // Handle macOS (beta)
   if (os === 'macos') {
     if (osDistro) osDistro.style.display = 'none';
-    if (installType) installType.style.display = 'none';
 
     const pkgFile = `Lemonade-${version}-Darwin.pkg`;
     const link = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${pkgFile}`;
@@ -176,17 +173,10 @@ function renderDownload() {
 
   if (os === 'win') {
     if (osDistro) osDistro.style.display = 'none';
-    if (installType) installType.style.display = 'table-row';
 
     // Windows: Show download button
-    let link, buttonText;
-    if (type === 'app') {
-      link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi';
-      buttonText = 'Download Lemonade Installer (.msi)';
-    } else {
-      link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade-server-minimal.msi';
-      buttonText = 'Download Lemonade Minimal Installer (.msi)';
-    }
+    const link = 'https://github.com/lemonade-sdk/lemonade/releases/latest/download/lemonade.msi';
+    const buttonText = 'Download Lemonade Installer (.msi)';
 
     if (downloadArea) {
       downloadArea.style.display = 'block';
@@ -203,13 +193,9 @@ function renderDownload() {
 
   if (os === 'linux') {
     if (osDistro) osDistro.style.display = 'table-row';
-    if (installType) installType.style.display = 'table-row';
 
     if (distro === 'ubuntu') {
       // Ubuntu: Show structured server + frontend installation
-      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
-      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
-
       if (downloadArea) {
         downloadArea.style.display = 'none';
       }
@@ -220,31 +206,21 @@ function renderDownload() {
           'sudo apt install lemonade-server'
         ];
 
-        let frontendSection = '';
-        if (type === 'app') {
-          frontendSection = `
-            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
-            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
-            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
-
-            <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
-            <pre><code class="language-bash" id="lmn-install-desktop-block"></code></pre>
-
-            <div class="lmn-install-method-header">Option 3: AppImage (portable desktop app, no installation required)</div>
-            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
-
-            <div class="lmn-install-method-header">Option 4: Snap (fully sandboxed desktop app)</div>
-            <pre><code class="language-bash" id="lmn-install-snap-app-block"></code></pre>
-          `;
-        }
-
         installCmdDiv.innerHTML = `
           <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
           <div class="lmn-install-method-header">Via stable PPA (recommended):</div>
           <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
           <div class="lmn-install-method-header">Or via Snap:</div>
           <pre><code class="language-bash" id="lmn-install-snap-server-block"></code></pre>
-          ${frontendSection}
+          <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
+          <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
+          <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
+
+          <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
+          <pre><code class="language-bash" id="lmn-install-desktop-block"></code></pre>
+
+          <div class="lmn-install-method-header">Option 3: Snap (fully sandboxed desktop app)</div>
+          <pre><code class="language-bash" id="lmn-install-snap-app-block"></code></pre>
         `;
 
         setTimeout(() => {
@@ -265,67 +241,70 @@ function renderDownload() {
             serverSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyServerSnapLine(event)">📋</button></div>`;
           }
 
-          // Render AppImage commands if App + Server selected
-          if (type === 'app') {
-            const desktopPre = document.getElementById('lmn-install-desktop-block');
-            if (desktopPre) {
-              const desktopCmd = 'sudo apt install lemonade-desktop';
-              const safeLine = desktopCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              desktopPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDesktopLine(event)">📋</button></div>`;
-            }
+          // Render desktop and app snap commands
+          const desktopPre = document.getElementById('lmn-install-desktop-block');
+          if (desktopPre) {
+            const desktopCmd = 'sudo apt install lemonade-desktop';
+            const safeLine = desktopCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            desktopPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDesktopLine(event)">📋</button></div>`;
+          }
 
-            const appImagePre = document.getElementById('lmn-install-appimage-block');
-            if (appImagePre) {
-              const appImageCommands = [
-                `wget ${appImageUrl}`,
-                `chmod +x ${appImageFile}`,
-                `./${appImageFile}`
-              ];
-              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
-                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
-              }).join('');
-            }
-
-            // Render app snap command
-            const appSnapPre = document.getElementById('lmn-install-snap-app-block');
-            if (appSnapPre) {
-              const appSnapCmd = 'sudo snap install lemonade';
-              const safeLine = appSnapCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              appSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppSnapLine(event)">📋</button></div>`;
-            }
+          const appSnapPre = document.getElementById('lmn-install-snap-app-block');
+          if (appSnapPre) {
+            const appSnapCmd = 'sudo snap install lemonade';
+            const safeLine = appSnapCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            appSnapPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppSnapLine(event)">📋</button></div>`;
           }
         }, 0);
       }
     } else if (distro === 'arch') {
-      // Arch Linux: Show download button
-      let link, buttonText;
-      if (type === 'app') {
-        link = 'https://aur.archlinux.org/packages/lemonade-desktop';
-        buttonText = 'Download Lemonade Desktop (AUR)';
-      } else {
-        link = 'https://aur.archlinux.org/packages/lemonade-server';
-        buttonText = 'Download Lemonade Server (AUR)';
-      }
-
+      // Arch Linux: Show structured server + frontend installation via AUR
       if (downloadArea) {
-        downloadArea.style.display = 'block';
-        const linkEl = document.getElementById('lmn-link');
-        if (linkEl) {
-          linkEl.href = link;
-          linkEl.target = '_blank';
-          linkEl.textContent = buttonText;
-        }
+        downloadArea.style.display = 'none';
       }
       if (installCmdDiv) {
-        installCmdDiv.style.display = 'none';
+        installCmdDiv.style.display = 'block';
+        const aurServerCommands = [
+          'yay -S lemonade-server'
+        ];
+
+        installCmdDiv.innerHTML = `
+          <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
+          <div class="lmn-install-method-header">From the AUR:</div>
+          <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
+          <div class="lmn-note lmn-source-note">For package details, see <a href="https://aur.archlinux.org/packages/lemonade-server" target="_blank">lemonade-server on the AUR</a>.</div>
+          <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
+          <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
+          <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
+
+          <div class="lmn-install-method-header">Option 2: Lemonade Desktop package (web app launcher)</div>
+          <pre><code class="language-bash" id="lmn-install-desktop-block"></code></pre>
+          <div class="lmn-note lmn-source-note">For package details, see <a href="https://aur.archlinux.org/packages/lemonade-desktop" target="_blank">lemonade-desktop on the AUR</a>.</div>
+        `;
+
+        setTimeout(() => {
+          // Render AUR server commands
+          const pre = document.getElementById('lmn-install-pre-block');
+          if (pre) {
+            pre.innerHTML = aurServerCommands.map((line, idx) => {
+              const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
+            }).join('');
+          }
+
+          // Render AUR desktop command
+          const desktopPre = document.getElementById('lmn-install-desktop-block');
+          if (desktopPre) {
+            const desktopCmd = 'yay -S lemonade-desktop';
+            const safeLine = desktopCmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            desktopPre.innerHTML = `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDesktopLine(event)">📋</button></div>`;
+          }
+        }, 0);
       }
     } else if (distro === 'fedora') {
       // Fedora: Show structured server + frontend installation
       const rpmFile = `lemonade-server-${version}.x86_64.rpm`;
-      const appImageFile = `lemonade-app-${version}-x86_64.AppImage`;
       const downloadUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${rpmFile}`;
-      const appImageUrl = `https://github.com/lemonade-sdk/lemonade/releases/latest/download/${appImageFile}`;
 
       if (downloadArea) {
         downloadArea.style.display = 'none';
@@ -337,23 +316,12 @@ function renderDownload() {
           `sudo dnf install ./${rpmFile}`
         ];
 
-        let frontendSection = '';
-        if (type === 'app') {
-          frontendSection = `
-            <div class="lmn-install-section-title">Step 2: Choose your frontend</div>
-            <div class="lmn-install-method-header">Option 1: Web App (default, available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>)</div>
-            <div class="lmn-note">The web app is automatically available once lemonade-server is running. Just open your browser and navigate to the URL above.</div>
-
-            <div class="lmn-install-method-header">Option 2: AppImage (portable desktop app, no installation required)</div>
-            <pre><code class="language-bash" id="lmn-install-appimage-block"></code></pre>
-          `;
-        }
-
         installCmdDiv.innerHTML = `
           <div class="lmn-install-section-title">Step 1: Install lemonade-server</div>
           <div class="lmn-install-method-header">Via RPM package:</div>
           <pre><code class="language-bash" id="lmn-install-pre-block"></code></pre>
-          ${frontendSection}
+          <div class="lmn-install-section-title">Step 2: Open the web app</div>
+          <div class="lmn-note">Once lemonade-server is running, the web app is automatically available at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a>. Just open your browser and navigate there.</div>
         `;
 
         setTimeout(() => {
@@ -364,22 +332,6 @@ function renderDownload() {
               const safeLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
               return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyInstallLine(event, ${idx})">📋</button></div>`;
             }).join('');
-          }
-
-          // Render AppImage commands if App + Server selected
-          if (type === 'app') {
-            const appImagePre = document.getElementById('lmn-install-appimage-block');
-            if (appImagePre) {
-              const appImageCommands = [
-                `wget ${appImageUrl}`,
-                `chmod +x ${appImageFile}`,
-                `./${appImageFile}`
-              ];
-              appImagePre.innerHTML = appImageCommands.map((cmd, idx) => {
-                const safeLine = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyAppImageLine(event, ${idx})">📋</button></div>`;
-              }).join('');
-            }
           }
         }, 0);
       }
@@ -395,8 +347,6 @@ function renderDownload() {
 
   if (os === 'docker') {
     if (osDistro) osDistro.style.display = 'none';
-
-    if (installType) installType.style.display = 'none';
 
     if (downloadArea) {
       downloadArea.style.display = 'none';
@@ -447,30 +397,12 @@ function renderDownload() {
     notes += `<div class="lmn-note">Lemonade is tested on Ubuntu 24.04 LTS but should also work on other versions.</div>`;
   }
 
-  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">Developer Guide</a>`;
-  if (type === 'app') {
-    notes += ` and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App README</a>`;
-  }
-  notes += `.</div>`;
+  notes += `<div class="lmn-note lmn-source-note">To build from source, see the <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md" target="_blank">Developer Guide</a> and <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/README.md" target="_blank">App README</a>.</div>`;
 
   if (cmdDiv) {
     cmdDiv.innerHTML = notes;
   }
 }
-
-window.lmnCopyAppImageLine = function(e, idx) {
-  e.stopPropagation();
-  const pre = document.getElementById('lmn-install-appimage-block');
-  if (!pre) return;
-  const lines = Array.from(pre.querySelectorAll('.lmn-command-line span')).map(span => span.textContent);
-  if (lines[idx] !== undefined) {
-    navigator.clipboard.writeText(lines[idx]);
-    const btn = e.currentTarget;
-    const old = btn.textContent;
-    btn.textContent = '✔';
-    setTimeout(() => { btn.textContent = old; }, 900);
-  }
-};
 
 window.lmnCopyServerSnapLine = function(e) {
   e.stopPropagation();
@@ -556,6 +488,7 @@ function renderQuickStart() {
   }
 
   let commands = ['lemonade-server -h'];
+  let dockerROCmCommand = '';
 
   if (fw === 'oga') {
     if (dev === 'npu') {
@@ -613,9 +546,19 @@ function renderQuickStart() {
   -p 13305:13305 \\
   -v lemonade-cache:/root/.cache/huggingface \\
   -v lemonade-llama:/opt/lemonade/llama \\
-  -e LEMONADE_LLAMACPP_BACKEND=vulkan \\
+  -e LEMONADE_LLAMACPP=vulkan \\
   ghcr.io/lemonade-sdk/lemonade-server:latest`);
-      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP_BACKEND environment variable: <code>LEMONADE_LLAMACPP_BACKEND=vulkan</code></div>`;
+      dockerROCmCommand = `docker run -d \\
+  --name lemonade-server \\
+  -p 13305:13305 \\
+  -v lemonade-cache:/root/.cache/huggingface \\
+  -v lemonade-llama:/opt/lemonade/llama \\
+  -e LEMONADE_LLAMACPP=rocm \\
+  --device=/dev/kfd \\
+  --device=/dev/dri \\
+  --group-add video \\
+  ghcr.io/lemonade-sdk/lemonade-server:latest`;
+      notes = `<div class="lmn-note"><strong>Tip:</strong> To use ROCm instead of Vulkan, replace <code>-e LEMONADE_LLAMACPP=vulkan</code> with <code>-e LEMONADE_LLAMACPP=rocm</code> and add the ROCm device flags. The full ROCm command:<pre id="lmn-rocm-pre-block"></pre></div>`;
     }
 
     if (fw === 'llama' && dev === 'cpu') {
@@ -624,9 +567,9 @@ function renderQuickStart() {
   -p 13305:13305 \\
   -v lemonade-cache:/root/.cache/huggingface \\
   -v lemonade-llama:/opt/lemonade/llama \\
-  -e LEMONADE_LLAMACPP_BACKEND=cpu \\
+  -e LEMONADE_LLAMACPP=cpu \\
   ghcr.io/lemonade-sdk/lemonade-server:latest`);
-      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP_BACKEND environment variable: <code>LEMONADE_LLAMACPP_BACKEND=cpu</code></div>`;
+      notes = `<div class="lmn-note"><strong>Tip:</strong> To select a specific backend, update the LEMONADE_LLAMACPP environment variable: <code>LEMONADE_LLAMACPP=cpu</code></div>`;
     }
   }
 
@@ -642,8 +585,27 @@ function renderQuickStart() {
         return `<div class="lmn-command-line"><span>${safeLine}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyLine(event, ${idx})">📋</button></div>`;
       }).join('');
     }
+    const rocmPre = document.getElementById('lmn-rocm-pre-block');
+    if (rocmPre && dockerROCmCommand) {
+      const safe = dockerROCmCommand.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      rocmPre.innerHTML = `<div class="lmn-command-line"><span>${safe}</span><button class="lmn-copy-btn" title="Copy" onclick="lmnCopyDockerRocmLine(event)">📋</button></div>`;
+    }
   }, 0);
 }
+
+window.lmnCopyDockerRocmLine = function(e) {
+  e.stopPropagation();
+  const pre = document.getElementById('lmn-rocm-pre-block');
+  if (!pre) return;
+  const span = pre.querySelector('.lmn-command-line span');
+  if (span) {
+    navigator.clipboard.writeText(span.textContent);
+    const btn = e.currentTarget;
+    const old = btn.textContent;
+    btn.textContent = '✔';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+};
 
 window.lmnCopyLine = function(e, idx) {
   e.stopPropagation();
@@ -720,11 +682,6 @@ window.lmnInit = function() {
             <td id="distro-arch">Arch Linux</td>
             <td id="distro-fedora">Fedora 43</td>
             <td id="distro-debian">Debian Trixie+</td>
-          </tr>
-          <tr id="lmn-install-type">
-            <td class="lmn-label">Installation Type</td>
-            <td id="type-app" colspan="2" class="lmn-active">App + Server</td>
-            <td id="type-server" colspan="2">Server Only</td>
           </tr>
         </table>
         <div id="lmn-download-area" class="lmn-download-section">

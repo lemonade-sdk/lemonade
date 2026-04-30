@@ -21,6 +21,7 @@ Usage:
 """
 
 import platform
+import time
 import uuid
 import requests
 from openai import NotFoundError
@@ -136,7 +137,7 @@ class EndpointTests(ServerTestBase):
 
         data = response.json()
 
-        # Check required fields per server_spec.md
+        # Check required fields per docs/api/lemonade.md
         self.assertIn("status", data)
         self.assertEqual(data["status"], "ok")
         self.assertIn("all_models_loaded", data)
@@ -167,7 +168,7 @@ class EndpointTests(ServerTestBase):
             "Models list should not be empty after pulling a model",
         )
 
-        # Verify model structure per server_spec.md
+        # Verify model structure per docs/api/openai.md
         model = data["data"][0]
         self.assertIn("id", model)
         self.assertIn("object", model)
@@ -216,7 +217,7 @@ class EndpointTests(ServerTestBase):
 
         self.assertEqual(model.id, test_model.id)
 
-        # Check extended fields per server_spec.md
+        # Check extended fields per docs/api/openai.md
         self.assertTrue(hasattr(model, "checkpoint") or "checkpoint" in str(model))
 
         print(f"[OK] Retrieved model: {model.id}")
@@ -359,7 +360,7 @@ class EndpointTests(ServerTestBase):
 
     def test_010_load_model_with_options(self):
         """Test loading a model with custom options (ctx_size, llamacpp_backend, llamacpp_args)."""
-        # Load with custom options (load always loads even if already loaded)
+        # Load with custom options (reloads only if options differ from current)
         custom_ctx_size = 2048
         response = requests.post(
             f"{self.base_url}/load",
@@ -397,7 +398,6 @@ class EndpointTests(ServerTestBase):
 
     def test_011_load_model_save_options(self):
         """Test save_options=true saves settings to recipe_options.json."""
-        # Load with save_options=true (load always loads even if already loaded)
         custom_ctx_size = 4096
         response = requests.post(
             f"{self.base_url}/load",
@@ -471,6 +471,161 @@ class EndpointTests(ServerTestBase):
                     )
                     print(f"[OK] Load used saved ctx_size={custom_ctx_size}")
                 break
+
+    def test_012a_load_idempotent_same_options(self):
+        """Test that /load is idempotent: loading an already-loaded model with
+        the same options is a no-op (no eviction or reload).
+
+        Uses wall-clock time as the proof signal: a no-op /load returns in
+        milliseconds, while even a tiny model reload takes several seconds.
+        (backend_url is not a stable identity — WrappedServer::choose_port
+        can pick the same port after a restart.)"""
+        # Ensure model is loaded (this may take seconds for the initial load)
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Second /load with the same options — should be a no-op
+        t0 = time.monotonic()
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        elapsed = time.monotonic() - t0
+        self.assertEqual(response.status_code, 200)
+
+        # A no-op returns in <1s; a real reload takes several seconds
+        self.assertLess(
+            elapsed,
+            2.0,
+            f"Idempotent /load took {elapsed:.1f}s — expected <2s for a no-op",
+        )
+        print(f"[OK] Idempotent /load with same options was a no-op ({elapsed:.3f}s)")
+
+    def test_012b_load_reloads_on_option_change(self):
+        """Test that /load evicts and reloads when options differ."""
+        # Ensure model is loaded with default options (no ctx_size override)
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Verify no ctx_size in loaded options
+        health_before = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        opts_before = {}
+        for m in health_before.get("all_models_loaded", []):
+            if m["model_name"] == ENDPOINT_TEST_MODEL:
+                opts_before = m.get("recipe_options", {})
+                break
+        self.assertNotEqual(
+            opts_before.get("ctx_size"),
+            2048,
+            "Precondition: model should not already have ctx_size=2048",
+        )
+
+        # Load again with different options
+        custom_ctx = 2048
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "ctx_size": custom_ctx},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Verify the new options are applied (proves a reload occurred)
+        health_after = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        opts_after = {}
+        for m in health_after.get("all_models_loaded", []):
+            if m["model_name"] == ENDPOINT_TEST_MODEL:
+                opts_after = m.get("recipe_options", {})
+                break
+        self.assertEqual(
+            opts_after.get("ctx_size"),
+            custom_ctx,
+            "Option-change /load should reload with new options",
+        )
+
+        print(
+            f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})"
+        )
+
+    def test_012c_load_noop_when_already_loaded_by_inference(self):
+        """Regression test for #1603: /load after an inference-triggered
+        auto-load should no-op, not evict and reload the model.
+
+        The old code did is_model_loaded() → unload → load as separate
+        mutex acquisitions in handle_load, so a /load arriving after
+        auto-load completed would always evict and reload (~90s for large
+        models). The fix makes this decision atomic inside load_mutex_.
+
+        We make this deterministic by loading via inference first (wait
+        for completion), then calling /load. Wall-clock time proves
+        whether a reload occurred: a no-op returns in milliseconds, a
+        reload takes seconds even for a tiny model."""
+        # Ensure clean slate
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        # Load the model via inference (triggers auto_load_model_if_needed)
+        inference_response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(inference_response.status_code, 200)
+
+        # Now /load the same model — should no-op, not evict+reload
+        t0 = time.monotonic()
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        elapsed = time.monotonic() - t0
+        self.assertEqual(load_response.status_code, 200)
+
+        # A no-op returns in <1s; the old evict+reload took seconds
+        self.assertLess(
+            elapsed,
+            2.0,
+            f"/load after auto-load took {elapsed:.1f}s — expected <2s "
+            f"(old code would evict and reload)",
+        )
+
+        # Model should still be loaded
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded = [
+            m
+            for m in health.get("all_models_loaded", [])
+            if m["model_name"] == ENDPOINT_TEST_MODEL
+        ]
+        self.assertEqual(
+            len(loaded), 1, "Model should appear exactly once in loaded list"
+        )
+
+        print(f"[OK] /load after auto-load was a no-op ({elapsed:.3f}s)")
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
@@ -622,7 +777,7 @@ class EndpointTests(ServerTestBase):
         data = response.json()
         self.assertIsInstance(data, dict)
 
-        # Check required top-level keys per server_spec.md
+        # Check required top-level keys per docs/api/lemonade.md
         required_keys = [
             "OS Version",
             "Processor",
@@ -638,7 +793,7 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(devices, dict)
 
         # Check required device types
-        required_devices = ["cpu", "amd_igpu", "amd_dgpu", "amd_npu"]
+        required_devices = ["cpu", "amd_gpu", "amd_npu"]
         for device in required_devices:
             self.assertIn(device, devices, f"Missing device type: {device}")
 
@@ -647,7 +802,7 @@ class EndpointTests(ServerTestBase):
         self.assertIn("name", cpu)
         self.assertIn("available", cpu)
 
-        # Verify recipes structure per server_spec.md
+        # Verify recipes structure per docs/api/lemonade.md
         recipes = data["recipes"]
         self.assertIsInstance(recipes, dict)
 
@@ -796,7 +951,7 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
-        # Stats fields per server_spec.md (may not all be present if no inference done)
+        # Stats fields per docs/api/lemonade.md (may not all be present if no inference done)
         # Just verify it returns valid JSON
         self.assertIsInstance(data, dict)
 

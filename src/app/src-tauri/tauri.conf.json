@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "deb", "rpm", "msi", "nsis"],
     "category": "DeveloperTool",
     "shortDescription": "Local LLM server with GPU and NPU acceleration",
     "longDescription": "Lemonade helps users run local LLMs with the highest performance by configuring state-of-the-art inference engines for their NPUs and GPUs.",
@@ -58,9 +58,6 @@
     "linux": {
       "deb": {
         "depends": []
-      },
-      "appimage": {
-        "bundleMediaFramework": false
       }
     }
   },

@@ -350,6 +350,7 @@ export const getServerHost = () => serverConfig.getServerHost();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
+export const getWebSocketProtocol = () => new URL(serverConfig.getServerBaseUrl()).protocol === 'https:' ? 'wss' : 'ws';
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);

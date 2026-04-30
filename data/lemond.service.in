@@ -14,6 +14,7 @@ WorkingDirectory=@CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/lemonade
 #   LEMONADE_ADMIN_API_KEY   — API-key specific to internal routes
 EnvironmentFile=-/etc/lemonade/conf.d/*.conf
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
 KillSignal=SIGINT

@@ -60,7 +60,7 @@ public:
     virtual CPUInfo get_cpu_device() = 0;
     virtual GPUInfo get_amd_igpu_device() = 0;
     virtual std::vector<GPUInfo> get_amd_dgpu_devices() = 0;
-    virtual std::vector<GPUInfo> get_nvidia_dgpu_devices() = 0;
+    virtual std::vector<GPUInfo> get_nvidia_gpu_devices() = 0;
     virtual NPUInfo get_npu_device() = 0;
 
     // Common methods (can be overridden for detailed platform info)
@@ -122,7 +122,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Windows-specific fields
@@ -145,6 +145,13 @@ private:
     std::string get_driver_version(const std::string& device_name);
     double get_gpu_vram_dxdiag(const std::string& gpu_name);
     double get_gpu_vram_wmi(uint64_t adapter_ram);
+    double get_nvidia_vram_smi();
+
+    // dxdiag lists every GPU in one invocation, so we run it once and
+    // serve subsequent lookups from memory.
+    bool dxdiag_cache_loaded_ = false;
+    std::vector<std::pair<std::string, double>> dxdiag_vram_cache_;  // (card_name_lower, vram_gb)
+    void load_dxdiag_cache();
 };
 
 // Linux implementation
@@ -153,7 +160,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Linux-specific fields
@@ -183,7 +190,7 @@ public:
     CPUInfo get_cpu_device() override;
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
-    std::vector<GPUInfo> get_nvidia_dgpu_devices() override;
+    std::vector<GPUInfo> get_nvidia_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add macOS-specific fields
@@ -209,7 +216,7 @@ bool needs_gfx1151_cwsr_fix();
 
 // FLM status (derived from system-info cache)
 struct FlmStatus {
-    std::string state;     // "unsupported","installable","update_required","action_required","installed"
+    std::string state;     // "unsupported","installable","update_required","action_required","installed","update_available"
     std::string version;
     std::string message;
     std::string action;

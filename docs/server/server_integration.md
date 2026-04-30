@@ -66,7 +66,7 @@ If you want to install models on behalf of your users, the following tools are a
 
 - LLMs that are already available in lemonade:
   - Run `lemonade list`.
-  - Use the [models endpoint](./server_spec.md#get-apiv1models).
+  - Use the [models endpoint](../api/openai.md#get-v1models).
   - [A human-readable list of supported models](https://lemonade-server.ai/models.html). Do not modify this file in an existing install (see `user_models.json` below).
   - [A JSON file that defines the list of built-in models](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json).
   - `lemonade pull MODEL` on the command line interface.
@@ -74,7 +74,7 @@ If you want to install models on behalf of your users, the following tools are a
 - Adding new LLMs:
 
   - The `user_models.json` file is similar to `server_models.json` (see above), but contains a user-specific registry that persists across lemonade updates. For a full template and field reference, see the [Custom Model Configuration Guide](./custom-models.md).
-  - [The `pull` endpoint in the server](./server_spec.md#post-apiv1pull) automates the process of registering models into `user_models.json` and downloading them.
+  - [The `pull` endpoint in the server](../api/lemonade.md#post-v1pull) automates the process of registering models into `user_models.json` and downloading them.
   - The `lemonade pull` CLI command can also register and download new models, see [Options for pull](../lemonade-cli.md#options-for-pull).
 
 

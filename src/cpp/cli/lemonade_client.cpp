@@ -1,7 +1,9 @@
 #include "lemon_cli/lemonade_client.h"
 #include <httplib.h>
 #include <iostream>
+#include <algorithm>
 #include <iomanip>
+#include <regex>
 #include <sstream>
 #include <nlohmann/json.hpp>
 
@@ -12,6 +14,40 @@ using json = nlohmann::json;
 static const int DEFAULT_CONNECTION_TIMEOUT_MS = 30000;
 static const int DEFAULT_READ_TIMEOUT_MS = 30000;
 static const int LONG_TIMEOUT_MS = 86400000;
+
+static std::regex build_name_filter_regex(const std::string& name_filter) {
+    std::string regex_pattern;
+    regex_pattern.reserve(name_filter.size() * 2);
+
+    for (char ch : name_filter) {
+        switch (ch) {
+            case '*':
+                regex_pattern += ".*";
+                break;
+            case '\\':
+            case '^':
+            case '$':
+            case '.':
+            case '|':
+            case '?':
+            case '+':
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+                regex_pattern += '\\';
+                regex_pattern += ch;
+                break;
+            default:
+                regex_pattern += ch;
+                break;
+        }
+    }
+
+    return std::regex(regex_pattern, std::regex_constants::ECMAScript | std::regex_constants::icase);
+}
 
 HttpError::HttpError(int status, std::string body, const std::string& message)
     : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
@@ -297,9 +333,17 @@ std::vector<ModelInfo> LemonadeClient::get_models(bool show_all) const {
     return models;
 }
 
-int LemonadeClient::list_models(bool show_all) const {
+int LemonadeClient::list_models(bool show_all, const std::string& name_filter) const {
     try {
         std::vector<ModelInfo> models = get_models(show_all);
+
+        if (!name_filter.empty()) {
+            const std::regex filter_regex = build_name_filter_regex(name_filter);
+            models.erase(
+                std::remove_if(models.begin(), models.end(),
+                    [&](const ModelInfo& m) { return !std::regex_search(m.id, filter_regex); }),
+                models.end());
+        }
 
         if (models.empty()) {
             std::cout << "No models available" << std::endl;
@@ -470,8 +514,11 @@ int LemonadeClient::pull_model(const json& model_data) {
             } else if (event_type == "error") {
                 try {
                     auto error_json = json::parse(event_data);
-                    if (error_json.contains("error")) {
+                    if (error_json.contains("error") && error_json["error"].is_string()) {
                         state.error_message = error_json["error"].get<std::string>();
+                    }
+                    if (error_json.contains("code") && error_json["code"].is_string()) {
+                        state.error_code = error_json["code"].get<std::string>();
                     }
                 } catch (...) {
                     state.error_message = event_data;
@@ -482,6 +529,15 @@ int LemonadeClient::pull_model(const json& model_data) {
         }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
 
         if (!state.success) {
+            // Wire-protocol constant; server-side definition and contract live in
+            // include/lemon/model_manager.h (kUnknownModelErrorCode). Keep in sync.
+            if (state.error_code == "unknown_model") {
+                state.error_message =
+                    "No built-in model with the name '" + model_name + "' is registered.\n\n"
+                    "If you meant a built-in model, run `lemonade list` to see available models.\n"
+                    "If you meant to add a custom model from Hugging Face, run `lemonade pull CHECKPOINT`.";
+            }
+
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
             }

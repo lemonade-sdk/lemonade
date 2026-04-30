@@ -111,6 +111,22 @@ def get_hot_llamacpp_models(base_url):
     return hot_models
 
 
+def set_rocm_channel(base_url, channel):
+    """Configure the ROCm channel in lemond via the params API."""
+    print(f"Setting rocm_channel={channel} via /params", flush=True)
+    response, body = request_json(
+        "POST",
+        f"{base_url}/params",
+        timeout=TIMEOUT_DEFAULT,
+        json={"rocm_channel": channel},
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to set rocm_channel: HTTP {response.status_code} - {body}"
+        )
+    print(f"Params response: {body}", flush=True)
+
+
 def install_backend(base_url, backend):
     """Install or update the requested llama.cpp backend through the API."""
     print(f"Installing llamacpp backend via /install: {backend}", flush=True)
@@ -238,8 +254,20 @@ def main():
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["vulkan", "rocm", "cpu", "metal"],
-        help="Backend to test (vulkan, rocm, cpu, metal)",
+        choices=[
+            "vulkan",
+            "rocm",
+            "cpu",
+            "metal",
+            "system",
+        ],
+        help="Backend to test (vulkan, rocm, cpu, metal, system)",
+    )
+    parser.add_argument(
+        "--channel",
+        default=None,
+        choices=["stable", "preview", "nightly"],
+        help="Channel for backends that support multiple releases (e.g. rocm)",
     )
     parser.add_argument(
         "--port",
@@ -269,10 +297,16 @@ def main():
     )
     args = parser.parse_args()
 
+    # Label used for output filenames and artifact names
+    label = f"{args.backend}-{args.channel}" if args.channel else args.backend
+
     base_url = f"http://localhost:{args.port}/api/v1"
-    output_path = args.output or f"llamacpp_validation_{args.backend}.json"
+    output_path = args.output or f"llamacpp_validation_{label}.json"
 
     require_running_server(base_url, args.port)
+
+    if args.channel:
+        set_rocm_channel(base_url, args.channel)
 
     print("Unloading all models for clean state...", flush=True)
     try:

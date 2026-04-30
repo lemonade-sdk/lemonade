@@ -1,4 +1,4 @@
-import { getAPIKey, getServerHost, serverFetch } from './serverConfig';
+import { getAPIKey, getServerHost, getWebSocketProtocol, serverFetch } from './serverConfig';
 
 export interface LogEntry {
   seq: number;
@@ -42,8 +42,8 @@ export async function connectLogStream(
   }
 
   const wsUrl = query.size > 0
-    ? `ws://${getServerHost()}:${wsPort}/logs/stream?${query.toString()}`
-    : `ws://${getServerHost()}:${wsPort}/logs/stream`;
+    ? `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/logs/stream?${query.toString()}`
+    : `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/logs/stream`;
   const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {

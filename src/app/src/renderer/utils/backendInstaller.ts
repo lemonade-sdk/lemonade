@@ -3,7 +3,7 @@ import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
-import { getExperienceComponents, isExperienceModel } from './experienceModels';
+import { getCollectionComponents, isCollectionModel } from './collectionModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -238,7 +238,9 @@ export async function ensureBackendForRecipe(
     throw new Error(`Default backend '${defaultBackend}' not found for recipe ${recipe}.`);
   }
 
-  if (backendInfo.state === 'installed') return;
+  // `update_available` is a soft signal: the backend is fully usable, GitHub
+  // just has a newer tag. Don't block model flows on it.
+  if (backendInfo.state === 'installed' || backendInfo.state === 'update_available') return;
 
   if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
     const action = backendInfo.action || '';
@@ -315,6 +317,10 @@ export async function pullModel(
   options?: {
     registrationData?: ModelRegistrationData;
     showInDownloadManager?: boolean;
+    collectionComponents?: string[];
+    /** Declared model size in GB from the registry, used as the download
+     *  total when the server can't emit a cumulative size (e.g. FLM pull). */
+    declaredSizeGB?: number;
   }
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;
@@ -322,7 +328,16 @@ export async function pullModel(
 
   let downloadId: string | undefined;
   if (showInDownloadManager) {
-    downloadId = downloadTracker.startDownload(modelName, abortController, 'model');
+    const declaredTotalBytes = options?.declaredSizeGB
+      ? Math.round(options.declaredSizeGB * 1024 * 1024 * 1024)
+      : undefined;
+    downloadId = downloadTracker.startDownload(
+      modelName,
+      abortController,
+      'model',
+      options?.collectionComponents,
+      declaredTotalBytes,
+    );
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
   }
 
@@ -522,14 +537,14 @@ async function ensureModelReadyInternal(
   visited: Set<string>,
 ): Promise<void> {
   if (visited.has(modelName)) {
-    throw new Error(`Circular experience model dependency detected for "${modelName}".`);
+    throw new Error(`Circular collection model dependency detected for "${modelName}".`);
   }
   visited.add(modelName);
   try {
     const modelInfo = modelsData[modelName];
-    if (isExperienceModel(modelInfo)) {
+    if (isCollectionModel(modelInfo)) {
       options?.onModelLoading?.();
-      const components = getExperienceComponents(modelInfo);
+      const components = getCollectionComponents(modelInfo);
       for (const component of components) {
         if (!modelsData[component]) {
           throw new Error(`Experience model "${modelName}" references missing component "${component}".`);
@@ -611,7 +626,7 @@ async function ensureModelReadyInternal(
 
     // Step 5: Pull model if not downloaded (shows in Download Manager)
     if (!isDownloaded) {
-      await pullModel(modelName);
+      await pullModel(modelName, { declaredSizeGB: modelsData[modelName]?.size });
     }
 
     // Step 6: Load model into memory (merge loadBody if provided)

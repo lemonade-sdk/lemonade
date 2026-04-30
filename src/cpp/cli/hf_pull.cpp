@@ -61,12 +61,22 @@ void trim(std::string& s) {
 // of them) or a free-text variant name (e.g. "UD-IQ2_M" or a full filename),
 // which is passed straight through to /v1/pull. Returns the chosen variant
 // name in `out`. Returns false on EOF or empty input.
-bool prompt_variant(const std::vector<std::string>& labels,
-                    const std::vector<std::string>& names,
-                    std::string& out) {
+constexpr size_t kShortVariantMenuLimit = 5;
+
+bool prompt_variant_menu(const std::vector<std::string>& labels,
+                         const std::vector<std::string>& names,
+                         std::string& out,
+                         bool show_all) {
+    const size_t visible_count =
+        show_all ? labels.size() : std::min(labels.size(), kShortVariantMenuLimit);
+
     std::cout << "Select a variant:" << std::endl;
-    for (size_t i = 0; i < labels.size(); ++i) {
+    for (size_t i = 0; i < visible_count; ++i) {
         std::cout << "  " << (i + 1) << ") " << labels[i] << std::endl;
+    }
+    if (!show_all && labels.size() > visible_count) {
+        std::cout << "  " << (visible_count + 1) << ") Browse all "
+                  << labels.size() << " variants" << std::endl;
     }
     std::cout << "Enter number, or type any variant name: " << std::flush;
 
@@ -78,12 +88,15 @@ bool prompt_variant(const std::vector<std::string>& labels,
         return false;
     }
 
-    // Try to parse as a number first.
     size_t parsed_chars = 0;
     try {
         int selected = std::stoi(input, &parsed_chars);
         if (parsed_chars == input.size()) {
-            if (selected < 1 || static_cast<size_t>(selected) > names.size()) {
+            if (!show_all && labels.size() > visible_count &&
+                selected == static_cast<int>(visible_count + 1)) {
+                return prompt_variant_menu(labels, names, out, true);
+            }
+            if (selected < 1 || static_cast<size_t>(selected) > visible_count) {
                 std::cerr << "Error: selection out of range." << std::endl;
                 return false;
             }
@@ -96,6 +109,12 @@ bool prompt_variant(const std::vector<std::string>& labels,
 
     out = input;
     return true;
+}
+
+bool prompt_variant(const std::vector<std::string>& labels,
+                    const std::vector<std::string>& names,
+                    std::string& out) {
+    return prompt_variant_menu(labels, names, out, false);
 }
 
 bool prompt_model_name(const std::string& default_name, std::string& out) {
@@ -118,6 +137,14 @@ std::string normalize_user_model_name(std::string name) {
         return name;
     }
     return prefix + name;
+}
+
+std::string strip_huggingface_url_prefix(const std::string& arg) {
+    static const std::string prefix = "https://huggingface.co/";
+    if (arg.rfind(prefix, 0) == 0) {
+        return arg.substr(prefix.size());
+    }
+    return arg;
 }
 
 void split_checkpoint_variant(const std::string& arg,
@@ -145,12 +172,17 @@ std::string format_variant_label(const json& v) {
 
 }  // namespace
 
+std::string normalize_huggingface_checkpoint_arg(const std::string& arg) {
+    return strip_huggingface_url_prefix(arg);
+}
+
 int hf_pull_flow(lemonade::LemonadeClient& client,
                  const std::string& model_arg,
                  bool assume_yes) {
     std::string checkpoint;
     std::string variant;
-    split_checkpoint_variant(model_arg, checkpoint, variant);
+    std::string normalized_model_arg = normalize_huggingface_checkpoint_arg(model_arg);
+    split_checkpoint_variant(normalized_model_arg, checkpoint, variant);
 
     if (checkpoint.find('/') == std::string::npos) {
         std::cerr << "Error: '" << model_arg

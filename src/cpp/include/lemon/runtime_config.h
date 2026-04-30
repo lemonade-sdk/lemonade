@@ -10,8 +10,9 @@ namespace lemon {
 using json = nlohmann::json;
 
 // Callback invoked after config changes are applied (outside the lock).
-// Receives the set of keys that changed.
-using ConfigSideEffectCallback = std::function<void(const std::vector<std::string>& changed_keys)>;
+// Receives a nested JSON object containing only the entries that actually
+// changed (mirrors the input shape, e.g. {"port": 9000, "llamacpp": {"vulkan_bin": "latest"}}).
+using ConfigSideEffectCallback = std::function<void(const json& applied_changes)>;
 
 class RuntimeConfig {
 public:
@@ -33,8 +34,10 @@ public:
 
     // Feature flags
     bool offline() const;
+    bool no_fetch_executables() const;
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
+    std::string rocm_channel() const;
 
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
@@ -50,7 +53,7 @@ public:
 
     // --- Unified setter ---
     // Validates and applies changes, then calls side_effect_cb (outside lock)
-    // with the list of keys that actually changed.
+    // with a nested JSON of entries that actually changed.
     // Accepts nested JSON: {"llamacpp": {"backend": "vulkan"}} merges into
     // the llamacpp section rather than replacing it.
     // Returns JSON: {"status":"success","updated":{...}} or throws on validation error.
@@ -82,8 +85,13 @@ public:
     static void validate_backend_choice(const std::string& config_section,
                                         const std::string& value);
 
-    /// Validate that a *_bin config value is "builtin" or an existing file path.
-    /// Throws std::invalid_argument if the path does not exist.
+    /// Validate a *_bin config value. Accepts:
+    ///   - "" or "builtin" — use the lemonade-pinned version
+    ///   - "latest"        — resolve to most-recent upstream release at lemond start
+    ///   - "b8664" / "v1.8.2" / etc. — a specific upstream release tag (verbatim)
+    ///   - "/path/to/bin"  — an existing pre-downloaded binary directory
+    /// Throws std::invalid_argument when the value looks like a path but the
+    /// path does not exist.
     static void validate_bin_path(const std::string& config_section,
                                   const std::string& key,
                                   const std::string& value);
@@ -96,8 +104,10 @@ private:
     void validate_backend(const std::string& backend, const std::string& key,
                           const json& value) const;
 
-    // Collect changed keys (including nested paths like "llamacpp") into changed_keys.
-    void apply_changes(const json& changes, std::vector<std::string>& changed_keys);
+    // Apply changes and emit the subset that actually differed from the previous
+    // state into `applied_diff`. Mirrors the shape of `changes` (nested for
+    // backend sections).
+    void apply_changes(const json& changes, json& applied_diff);
 
     mutable std::shared_mutex mutex_;
 

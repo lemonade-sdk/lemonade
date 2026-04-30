@@ -1,10 +1,13 @@
 #include <iostream>
 #include <csignal>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
 #include <lemon/server.h>
+#include <lemon/system_info.h>
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
@@ -15,8 +18,9 @@
 
 using namespace lemon;
 
-// Global flag for signal handling
+// Global flags for signal handling
 static std::atomic<bool> g_shutdown_requested(false);
+static std::atomic<bool> g_reload_requested(false);
 static Server* g_server_instance = nullptr;
 
 // Signal handler for Ctrl+C, SIGTERM, and SIGHUP
@@ -36,9 +40,9 @@ void signal_handler(int signal) {
         _exit(0);
 #ifdef SIGHUP
     } else if (signal == SIGHUP) {
-        // Ignore SIGHUP to prevent termination when parent process exits
-        // This allows the server to continue running as a daemon
-        return;
+        // Set the reload flag; a background thread will call invalidate_recipes().
+        // Calling mutex-based code directly from a signal handler is not async-signal-safe.
+        g_reload_requested = true;
 #endif
     }
 }
@@ -107,6 +111,23 @@ int main(int argc, char** argv) {
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
+#ifdef SIGHUP
+        std::signal(SIGHUP, signal_handler);
+
+        // Background thread: watches g_reload_requested and calls invalidate_recipes().
+        // Mutex-based code (like invalidate_recipes) must not be called directly from
+        // a signal handler, so we use this thread to do the actual work safely.
+        std::thread([]() {
+            while (!g_shutdown_requested.load()) {
+                if (g_reload_requested.exchange(false)) {
+                    LOG(INFO) << "SIGHUP received - rescanning hardware and recipes..." << std::endl;
+                    SystemInfoCache::invalidate_recipes();
+                    LOG(INFO) << "Hardware rescan complete" << std::endl;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+        }).detach();
+#endif
 
         server.run();
         g_server_instance = nullptr;

@@ -56,6 +56,7 @@ void RealtimeSessionManager::apply_turn_detection_config(
         session->turn_detection_enabled = false;
         session->turn_detection_config = nullptr;
         session->vad.reset();
+        session->vad_speech_window_open = false;
         session->last_interim_transcription_ms = 0;
         return;
     }
@@ -213,6 +214,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
         case SimpleVAD::Event::SpeechStart: {
             LOG(DEBUG, "RealtimeSession") << "VAD: SpeechStart detected" << std::endl;
             session->audio_start_ms = session->vad.speech_start_ms();
+            session->vad_speech_window_open = true;
             session->last_interim_transcription_ms = 0;  // Reset interim tracking for new utterance
 
             if (session->send_message) {
@@ -238,6 +240,7 @@ void RealtimeSessionManager::process_vad(std::shared_ptr<RealtimeSession> sessio
             }
 
             // Trigger final transcription (clears buffer)
+            session->vad_speech_window_open = false;
             transcribe_and_send(session);
             break;
         }
@@ -307,7 +310,30 @@ void RealtimeSessionManager::transcribe_interim(std::shared_ptr<RealtimeSession>
 
 void RealtimeSessionManager::commit_audio(const std::string& session_id) {
     auto session = get_session(session_id);
-    if (!session || session->audio_buffer.empty()) {
+    if (!session) {
+        return;
+    }
+
+    if (session->turn_detection_enabled.load() && !session->vad_speech_window_open.load()) {
+        if (!session->audio_buffer.empty()) {
+            LOG(DEBUG, "RealtimeSession")
+                << "Ignoring commit with no active VAD speech window; clearing buffered audio"
+                << std::endl;
+        }
+        session->audio_buffer.clear();
+        session->vad.reset();
+        session->last_interim_transcription_ms = 0;
+
+        if (session->send_message) {
+            json msg = {
+                {"type", "input_audio_buffer.cleared"}
+            };
+            session->send_message(msg);
+        }
+        return;
+    }
+
+    if (session->audio_buffer.empty()) {
         return;
     }
 
@@ -320,6 +346,7 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
     }
 
     // Trigger transcription
+    session->vad_speech_window_open = false;
     transcribe_and_send(session);
 }
 
@@ -331,6 +358,7 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
 
     session->audio_buffer.clear();
     session->vad.reset();
+    session->vad_speech_window_open = false;
 
     if (session->send_message) {
         json msg = {
@@ -350,6 +378,7 @@ void RealtimeSessionManager::transcribe_and_send(std::shared_ptr<RealtimeSession
     std::string model = session->model;
     session->audio_buffer.clear();
     session->vad.reset();
+    session->vad_speech_window_open = false;
     session->last_interim_transcription_ms = 0;  // Reset for next utterance
 
     // Dispatch transcription to worker thread so it doesn't block the WebSocket callback

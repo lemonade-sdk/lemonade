@@ -56,7 +56,7 @@ At the time of this writing:
 
 ### Installing Backends at Install-Time or Runtime
 
-You can install backends either during your app's installer or first-run flow, or later while the app is running. In both cases, start by calling [`GET /v1/system-info`](../server/server_spec.md#get-apiv1system-info) on the target machine. The response tells you which backends are supported on that specific system.
+You can install backends either during your app's installer or first-run flow, or later while the app is running. In both cases, start by calling [`GET /v1/system-info`](../api/lemonade.md#get-v1system-info) on the target machine. The response tells you which backends are supported on that specific system.
 
 This is useful when the correct backend depends on the user's hardware. For example, you can prefer `llamacpp:rocm` when ROCm is supported, and fall back to `llamacpp:vulkan` otherwise.
 
@@ -143,7 +143,7 @@ Otherwise, install Vulkan:
       }'
     ```
 
-See the [Server Spec](../server/server_spec.md) for endpoint details.
+See the [Endpoints Spec](../api/README.md) for endpoint details.
 
 ## Bring Your Own Backends
 

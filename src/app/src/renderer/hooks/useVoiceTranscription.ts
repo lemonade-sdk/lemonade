@@ -13,7 +13,6 @@ interface UseVoiceTranscriptionOptions {
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   runPreFlight: (modality: Modality, options: { modelName: string; modelsData: ModelsData; onError: (msg: string) => void }) => Promise<boolean>;
   reset: () => void;
-  onAutoSubmit?: (text: string) => void;
   onError: (msg: string) => void;
 }
 
@@ -33,8 +32,13 @@ async function fetchLoadedAudioModel(modelsData: ModelsData): Promise<string | n
     const res = await serverFetch('/health');
     if (!res.ok) return null;
     const health = await res.json();
-    const allLoaded: { model_name: string }[] = health.all_models_loaded || [];
-    const loaded = allLoaded.find((m) => modelsData[m.model_name]?.labels?.includes('audio'));
+    const allLoaded: { model_name: string; type?: string }[] = health.all_models_loaded || [];
+    // Must be *loaded as audio* — omni models (e.g. gemma4) carry the "audio"
+    // label statically but may be currently loaded as an LLM; using one of
+    // those for transcription hangs the realtime session.
+    const loaded = allLoaded.find(
+      (m) => m.type === 'audio' && modelsData[m.model_name]?.labels?.includes('audio'),
+    );
     return loaded?.model_name ?? null;
   } catch {
     return null;
@@ -47,7 +51,6 @@ export function useVoiceTranscription({
   textareaRef,
   runPreFlight,
   reset,
-  onAutoSubmit,
   onError,
 }: UseVoiceTranscriptionOptions): UseVoiceTranscriptionResult {
   const { modelsData } = useModels();
@@ -68,18 +71,12 @@ export function useVoiceTranscription({
   const isRecordingRef = useRef(false);
   const finalsRef = useRef('');
   const baseTextRef = useRef('');
-  const pendingAutoSubmitRef = useRef(false);
 
   // Always-current refs for values used inside WS callbacks
   const inputValueRef = useRef(inputValue);
-  const stopRecordingRef = useRef<() => void>(() => {});
-  const resetRef = useRef(reset);
-  const onAutoSubmitRef = useRef(onAutoSubmit);
   const setInputValueRef = useRef(setInputValue);
 
   inputValueRef.current = inputValue;
-  resetRef.current = reset;
-  onAutoSubmitRef.current = onAutoSubmit;
   setInputValueRef.current = setInputValue;
 
   const handleAudioChunk = useCallback((base64: string) => {
@@ -89,8 +86,6 @@ export function useVoiceTranscription({
   const { startRecording, stopRecording, error: micError } =
     useAudioCapture(handleAudioChunk);
 
-  stopRecordingRef.current = stopRecording;
-
   useEffect(() => { if (micError) onError(micError); }, [micError, onError]);
 
   useEffect(() => () => {
@@ -99,19 +94,15 @@ export function useVoiceTranscription({
     wsToCloseRef.current?.close();
   }, []);
 
-  // VAD path: server already transcribed — discard any remaining buffer and
-  // close immediately. Do NOT commit, which would trigger a second transcription
-  // on the residual (silent) audio and produce [BLANK_AUDIO].
-  const discardWs = useCallback(() => {
-    if (wsClientRef.current) {
-      wsClientRef.current.clearAudio();
-      wsClientRef.current.close();
-      wsClientRef.current = null;
+  const closeCommittedWs = useCallback(() => {
+    if (wsToCloseRef.current) {
+      wsToCloseRef.current.close();
+      wsToCloseRef.current = null;
     }
   }, []);
 
-  // Manual-stop path: commit buffered audio so the server transcribes it, then
-  // keep the socket alive until the 'completed' response arrives.
+  // Manual-stop path: ask the server to finish any active VAD speech window,
+  // then keep the socket alive until the server replies with completed/cleared.
   const closeWs = useCallback(() => {
     if (wsClientRef.current) {
       wsClientRef.current.commitAudio();
@@ -120,18 +111,9 @@ export function useVoiceTranscription({
     }
   }, []);
 
-  const doAutoStop = useCallback((transcribedValue: string) => {
-    isRecordingRef.current = false;
-    stopRecordingRef.current();
-    discardWs();
-    finalsRef.current = '';
-    baseTextRef.current = '';
-    setIsRecording(false);
-    resetRef.current();
-    onAutoSubmitRef.current?.(transcribedValue);
-  }, [discardWs]);
-
   // Stable callback given to the WS at connect time; uses refs so it never goes stale.
+  // Finals from server VAD segments accumulate into the textarea while recording;
+  // the user submits with Send, not automatically.
   const handleTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isFinal && !isRecordingRef.current) return;
     const trimmed = text.trim();
@@ -152,21 +134,12 @@ export function useVoiceTranscription({
     setInputValueRef.current(newValue);
     if (textareaRef?.current) adjustTextareaHeight(textareaRef.current);
 
-    if (!isFinal) return;
-
-    if (isRecordingRef.current) {
-      // VAD-triggered end of speech — auto stop and submit
-      doAutoStop(newValue.trim());
-    } else if (pendingAutoSubmitRef.current) {
-      // Manual stop already happened; 'completed' arrived — close socket and submit.
-      pendingAutoSubmitRef.current = false;
-      finalsRef.current = '';
-      baseTextRef.current = '';
-      wsToCloseRef.current?.close();
-      wsToCloseRef.current = null;
-      onAutoSubmitRef.current?.(newValue.trim());
+    // After manual stop, close the socket once the server finishes or discards
+    // the pending buffer.
+    if (isFinal && !isRecordingRef.current && wsToCloseRef.current) {
+      closeCommittedWs();
     }
-  }, [textareaRef, doAutoStop]);
+  }, [textareaRef, closeCommittedWs]);
 
   const start = useCallback(async () => {
     if (!activeModel) {
@@ -190,6 +163,7 @@ export function useVoiceTranscription({
       wsClientRef.current = await TranscriptionWebSocket.connect(modelToUse, {
         onTranscription: handleTranscription,
         onSpeechEvent: () => {},
+        onAudioBufferCleared: closeCommittedWs,
         onError: (err) => onError(err),
       });
       await new Promise(r => setTimeout(r, 500));
@@ -204,15 +178,15 @@ export function useVoiceTranscription({
     }
   }, [activeModel, modelsData, inputValue, handleTranscription, startRecording, runPreFlight, reset, onError]);
 
-  // Manual stop — mic stops immediately; wait for completed before submitting
+  // Manual stop — mic stops immediately; commit buffered audio so the server
+  // emits a final 'completed' for whatever's in the buffer, then let it settle
+  // into the textarea. Do not auto-submit; the user presses Send.
   const stop = useCallback(() => {
     stopRecording();
     isRecordingRef.current = false;
     closeWs();
     setIsRecording(false);
     reset();
-
-    pendingAutoSubmitRef.current = true;
   }, [stopRecording, reset, closeWs]);
 
   return {  activeModel, isRecording, start, stop };
