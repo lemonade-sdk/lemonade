@@ -1,0 +1,14 @@
+{
+  "name": "Test Inline Collection",
+  "recipe": "collection",
+  "components": [
+    {
+      "name": "Test-Inline-LLM-GGUF",
+      "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Qwen3-0.6B-Q4_K_M.gguf",
+      "recipe": "llamacpp",
+      "labels": ["tool-calling"],
+      "size": 0.4
+    },
+    "kokoro-v1"
+  ]
+}

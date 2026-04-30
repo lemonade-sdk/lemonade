@@ -491,8 +491,8 @@ json SDServer::image_generations(const json& request) {
     // sd-server's /v1/images/generations reads size only from top-level
     // `size: "WxH"` -- separate `width`/`height` fields are silently dropped.
     // Collapse them here so both client styles work, and fill in image_defaults
-    // when nothing is specified (important for OmniRouter tool calls, which
-    // pass only the prompt).
+    // when nothing is specified (important for Lemonade Model tool calls,
+    // which pass only the prompt).
     std::string size = resolve_size(sd_request);
     sd_request.erase("width");
     sd_request.erase("height");

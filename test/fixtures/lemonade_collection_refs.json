@@ -1,0 +1,11 @@
+{
+  "name": "Test Refs Collection",
+  "recipe": "collection",
+  "suggested": true,
+  "components": [
+    "Qwen3.5-35B-A3B-GGUF",
+    "Flux-2-Klein-9B-GGUF",
+    "Whisper-Large-v3-Turbo",
+    "kokoro-v1"
+  ]
+}
