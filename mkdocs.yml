@@ -35,7 +35,6 @@ theme:
   features:
     - navigation.footer
     - navigation.tracking
-    - navigation.expand
     - navigation.top
     - content.code.annotate
     - content.code.copy
@@ -61,7 +60,7 @@ theme:
 # The order of the files in the list will determine the order they appear in the documentation
 nav:
   - Welcome: README.md
-  - Guide:
+  - User Guide:
     - Getting Started: guide/README.md
     - Install:
       - Supported Platforms: guide/install/README.md
@@ -69,12 +68,13 @@ nav:
       - Arch: guide/install/arch.md
       - Fedora: guide/install/fedora.md
       - Docker: guide/install/docker.md
-    - CLI: guide/cli.md
-    - Configuration: guide/configuration.md
-    - Custom Models: guide/custom-models.md
-    - Running Many Models: guide/multi-model.md
-    - llama.cpp: guide/llamacpp.md
     - Local Server Concepts: guide/concepts.md
+    - CLI: guide/cli.md
+    - Configuration:
+      - Service: guide/configuration/README.md
+      - Custom Models: guide/configuration/custom-models.md
+      - Running Many Models: guide/configuration/multi-model.md
+      - llama.cpp: guide/configuration/llamacpp.md
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md
