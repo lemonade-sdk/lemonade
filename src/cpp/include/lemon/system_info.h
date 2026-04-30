@@ -102,6 +102,7 @@ public:
 
     // Device support detection
     static std::string get_rocm_arch();
+    static std::string get_cuda_arch();
 
     // Detect if the device is an iGPU
     static bool get_has_igpu();
@@ -210,6 +211,10 @@ std::unique_ptr<SystemInfo> create_system_info();
 // Helper to identify ROCm architecture from GPU name
 // Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
 std::string identify_rocm_arch_from_name(const std::string& device_name);
+
+// Helper to identify CUDA Compute Capability from a marketing GPU name
+// Returns an sm_XX token (e.g., "sm_75", "sm_86", "sm_120") or empty string if not recognized
+std::string identify_cuda_arch_from_name(const std::string& device_name);
 
 // Check if kernel has CWSR fix for Strix Halo
 bool needs_gfx1151_cwsr_fix();

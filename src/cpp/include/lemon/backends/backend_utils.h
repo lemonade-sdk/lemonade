@@ -56,6 +56,14 @@ namespace lemon::backends {
         */
         static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name);
 
+        /**
+        * Extract 7z files (uses bsdtar/libarchive on Windows 11 22H2+ and Linux)
+        * @param archive_path Path to the .7z file
+        * @param dest_dir Destination directory to extract to
+        * @return true if extraction was successful, false otherwise
+        */
+        static bool extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name);
+
 
         /**
         * Detect if archive is tar or zip

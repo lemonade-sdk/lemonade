@@ -30,6 +30,16 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
   - **Nightly**: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)
 - **Installation**: Varies by channel (see below)
 
+### CUDA
+- **Platform**: Windows, Linux
+- **Hardware**: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)
+- **Use Case**: NVIDIA GPU-optimized inference
+- **Performance**: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs
+- **Source**: Per-architecture builds from [Phqen1x/llamacpp-cuda](https://github.com/Phqen1x/llamacpp-cuda)
+- **Binaries**: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)
+- **Runtime**: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)
+- **Notes**: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system `tar`.
+
 ### Metal
 - **Platform**: macOS only
 - **Hardware**: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support
@@ -123,8 +133,9 @@ lemonade backend install llamacpp:rocm
 
 ### Decision Tree
 
-1. **Do you have an NVIDIA or Intel GPU?**
-   - Use **Vulkan**
+1. **Do you have an NVIDIA GPU (Turing or newer)?**
+   - Try **CUDA** first for best performance
+   - Fall back to **Vulkan** if you encounter issues
 
 2. **Do you have an AMD GPU?**
    - **For Radeon RX 6000/7000 or Ryzen AI iGPU**:
@@ -133,10 +144,13 @@ lemonade backend install llamacpp:rocm
    - **For older AMD GPUs (RX 5000 and earlier)**:
      - Use **Vulkan** (ROCm not supported)
 
-3. **Do you have Apple Silicon?**
+3. **Do you have an Intel GPU or older NVIDIA GPU?**
+   - Use **Vulkan**
+
+4. **Do you have Apple Silicon?**
    - Use **Metal**
 
-4. **No GPU or unsupported GPU?**
+5. **No GPU or unsupported GPU?**
    - Use **CPU**
 
 ### ROCm Channel Selection
@@ -160,13 +174,15 @@ lemonade backend install llamacpp:rocm
 ## Platform Specifics
 
 ### Linux
-- All backends supported (CPU, Vulkan, ROCm, System)
+- All backends supported (CPU, Vulkan, ROCm, CUDA, System)
 - ROCm requires compatible AMD GPU (see above)
+- CUDA requires compatible NVIDIA GPU (see above)
 - System backend requires manual llama-server installation
 
 ### Windows
-- Supported: CPU, Vulkan, ROCm
+- Supported: CPU, Vulkan, ROCm, CUDA
 - ROCm requires compatible AMD GPU
+- CUDA requires compatible NVIDIA GPU and Windows 11 22H2+ (for bundled bsdtar that extracts .7z assets)
 - No system backend support
 
 ### macOS

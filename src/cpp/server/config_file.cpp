@@ -172,6 +172,7 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_LLAMACPP_PREFER_SYSTEM",  "llamacpp",  "prefer_system"},
     {"LEMONADE_LLAMACPP_ROCM_BIN",       "llamacpp",  "rocm_bin"},
     {"LEMONADE_LLAMACPP_VULKAN_BIN",     "llamacpp",  "vulkan_bin"},
+    {"LEMONADE_LLAMACPP_CUDA_BIN",       "llamacpp",  "cuda_bin"},
     {"LEMONADE_LLAMACPP_CPU_BIN",        "llamacpp",  "cpu_bin"},
     // whispercpp
     {"LEMONADE_WHISPERCPP",              "whispercpp", "backend"},

@@ -133,8 +133,8 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="7"><strong>Text generation</strong></td>
-      <td rowspan="5"><code>llamacpp</code></td>
+      <td rowspan="8"><strong>Text generation</strong></td>
+      <td rowspan="6"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
       <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU</td>
       <td>Windows, Linux</td>
@@ -142,6 +142,11 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td><code>rocm</code></td>
       <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -244,6 +249,49 @@ lemonade backends
       <td><b>gfx110X</b> (RDNA3)</td>
       <td>Windows, Ubuntu</td>
       <td>Radeon PRO W7900/W7800/W7700/V710, RX 7900 XTX/XT/GRE, RX 7800 XT, RX 7700 XT</td>
+    </tr>
+  </tbody>
+</table>
+</details>
+
+<details>
+<summary><small><i>** See supported NVIDIA CUDA platforms</i></small></summary>
+
+<br>
+
+<table>
+  <thead>
+    <tr>
+      <th>Compute Capability</th>
+      <th>Architecture</th>
+      <th>GPU Models</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>sm_75</b></td>
+      <td>Turing</td>
+      <td>RTX 20-series, GTX 16-series, T4</td>
+    </tr>
+    <tr>
+      <td><b>sm_80</b> / <b>sm_86</b></td>
+      <td>Ampere</td>
+      <td>RTX 30-series, A100, A40</td>
+    </tr>
+    <tr>
+      <td><b>sm_89</b></td>
+      <td>Ada Lovelace</td>
+      <td>RTX 40-series, L40, L4</td>
+    </tr>
+    <tr>
+      <td><b>sm_90</b></td>
+      <td>Hopper</td>
+      <td>H100, H200</td>
+    </tr>
+    <tr>
+      <td><b>sm_100</b> / <b>sm_120</b></td>
+      <td>Blackwell</td>
+      <td>RTX 50-series, B100, B200</td>
     </tr>
   </tbody>
 </table>

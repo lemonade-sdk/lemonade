@@ -6,6 +6,7 @@
     "rocm-stable": "b8653",
     "rocm-preview": "b8705",
     "rocm-nightly": "b1238",
+    "cuda": "b1007",
     "metal": "b8884",
     "cpu": "b8766"
   },

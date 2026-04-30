@@ -72,6 +72,21 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
 
+// CUDA Compute Capability targets that the Phqen1x/llamacpp-cuda release pipeline
+// publishes binaries for. Each entry is a literal `sm_XX` token that appears in the
+// release asset filename (e.g. llama-windows-cuda-sm_86-x64.7z).
+// Empty string means "no CUDA binary for this compute capability" — skip for
+// get_cuda_arch / install filenames.
+const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
+    "sm_75",   // Turing       (RTX 20, GTX 16, T4, Quadro RTX)
+    "sm_80",   // Ampere DC    (A100)
+    "sm_86",   // Ampere       (RTX 30, A40, A6000, A4000)
+    "sm_89",   // Ada Lovelace (RTX 40, L40, L4)
+    "sm_90",   // Hopper       (H100, H200)
+    "sm_100",  // Blackwell DC (B100, B200)
+    "sm_120",  // Blackwell    (RTX 50)
+};
+
 // ROCm architecture mapping - maps specific gfx architectures to their family (download target).
 // Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
@@ -139,6 +154,9 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"llamacpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
+    {"llamacpp", "cuda", {"windows", "linux"}, {
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+    }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
@@ -200,6 +218,15 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
+
+    // NVIDIA GPU compute capabilities (CUDA)
+    {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
+    {"sm_80",  "NVIDIA A100 (Ampere)"},
+    {"sm_86",  "GeForce RTX 30 / A40 / A6000 (Ampere)"},
+    {"sm_89",  "GeForce RTX 40 / L40 / L4 (Ada Lovelace)"},
+    {"sm_90",  "NVIDIA H100 / H200 (Hopper)"},
+    {"sm_100", "NVIDIA B100 / B200 (Blackwell)"},
+    {"sm_120", "GeForce RTX 50 series (Blackwell)"},
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
@@ -285,6 +312,7 @@ static std::string get_current_os() {
 
 // Forward declarations for helper functions
 std::string identify_rocm_arch_from_name(const std::string& device_name);
+std::string identify_cuda_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
 static std::string read_version_file(const fs::path& version_file);
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
@@ -561,6 +589,9 @@ json SystemInfo::get_device_dict() {
                 {"name", gpu.name},
                 {"available", gpu.available}
             };
+            if (gpu.available && !gpu.name.empty()) {
+                gpu_json["family"] = identify_cuda_arch_from_name(gpu.name);
+            }
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
             }
@@ -707,6 +738,24 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "amd_gpu",
+                        name,
+                        family,
+                        true
+                    });
+                }
+            }
+        }
+    }
+
+    // NVIDIA GPUs
+    if (devices.contains("nvidia_gpu") && devices["nvidia_gpu"].is_array()) {
+        for (const auto& gpu : devices["nvidia_gpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
+                if (!name.empty()) {
+                    detected_devices.push_back({
+                        "nvidia_gpu",
                         name,
                         family,
                         true
@@ -894,8 +943,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     ? wrong_family[0]
                     : missing_devices[0];
 
-                // For AMD GPUs, include the detected family in the message
-                if (device_type == "amd_gpu") {
+                // For AMD/NVIDIA GPUs, include the detected family in the message
+                if (device_type == "amd_gpu" || device_type == "nvidia_gpu") {
                     // Find the detected GPU family for this device type
                     std::string detected_family;
                     for (const auto& detected : detected_devices) {
@@ -1232,6 +1281,132 @@ std::string SystemInfo::get_system_llamacpp_version() {
     return "unknown";
 }
 
+// Map a CUDA Compute Capability "MAJOR.MINOR" string (as reported by nvidia-smi
+// --query-gpu=compute_cap) to the sm_XX token used in llamacpp-cuda release filenames.
+// Returns empty if the value cannot be parsed.
+static std::string compute_cap_to_sm(const std::string& compute_cap) {
+    size_t dot = compute_cap.find('.');
+    if (dot == std::string::npos) return "";
+    std::string major = compute_cap.substr(0, dot);
+    std::string minor = compute_cap.substr(dot + 1);
+    if (major.empty() || minor.empty()) return "";
+    // major*10 + minor, e.g. "8.6" -> "sm_86", "12.0" -> "sm_120"
+    try {
+        int m = std::stoi(major);
+        int n = std::stoi(minor);
+        return "sm_" + std::to_string(m * 10 + n);
+    } catch (...) {
+        return "";
+    }
+}
+
+// Helper to identify CUDA Compute Capability from a marketing GPU name.
+// Returns an sm_XX token (e.g. "sm_86") when the model can be inferred, or an empty
+// string otherwise. This is the fallback path used when nvidia-smi compute_cap is
+// not available; it intentionally only covers GPUs the llamacpp-cuda backend ships
+// binaries for (CUDA_SUPPORTED_ARCHS).
+std::string identify_cuda_arch_from_name(const std::string& device_name) {
+    std::string device_lower = device_name;
+    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
+
+    if (device_lower.find("nvidia") == std::string::npos &&
+        device_lower.find("geforce") == std::string::npos &&
+        device_lower.find("rtx") == std::string::npos &&
+        device_lower.find("gtx") == std::string::npos &&
+        device_lower.find("quadro") == std::string::npos &&
+        device_lower.find("tesla") == std::string::npos &&
+        device_lower.find("titan") == std::string::npos) {
+        // Allow bare datacenter SKUs ("a100", "h100", etc.) below.
+        if (device_lower.find("a100") == std::string::npos &&
+            device_lower.find("a40")  == std::string::npos &&
+            device_lower.find("a30")  == std::string::npos &&
+            device_lower.find("a10")  == std::string::npos &&
+            device_lower.find("h100") == std::string::npos &&
+            device_lower.find("h200") == std::string::npos &&
+            device_lower.find("b100") == std::string::npos &&
+            device_lower.find("b200") == std::string::npos &&
+            device_lower.find("l40")  == std::string::npos &&
+            device_lower.find("l4")   == std::string::npos) {
+            return "";
+        }
+    }
+
+    // Blackwell datacenter (sm_100): B100, B200
+    if (device_lower.find("b100") != std::string::npos ||
+        device_lower.find("b200") != std::string::npos) {
+        return "sm_100";
+    }
+
+    // Hopper (sm_90): H100, H200
+    if (device_lower.find("h100") != std::string::npos ||
+        device_lower.find("h200") != std::string::npos) {
+        return "sm_90";
+    }
+
+    // Ampere datacenter (sm_80): A100
+    if (device_lower.find("a100") != std::string::npos) {
+        return "sm_80";
+    }
+
+    // Blackwell consumer (sm_120): RTX 50 series (5090/5080/5070/5060/...)
+    if (device_lower.find("rtx 50") != std::string::npos ||
+        device_lower.find("rtx50")  != std::string::npos ||
+        device_lower.find("5090")   != std::string::npos ||
+        device_lower.find("5080")   != std::string::npos ||
+        device_lower.find("5070")   != std::string::npos ||
+        device_lower.find("5060")   != std::string::npos) {
+        return "sm_120";
+    }
+
+    // Ada Lovelace (sm_89): RTX 40 series, L40, L4
+    if (device_lower.find("rtx 40") != std::string::npos ||
+        device_lower.find("rtx40")  != std::string::npos ||
+        device_lower.find("4090")   != std::string::npos ||
+        device_lower.find("4080")   != std::string::npos ||
+        device_lower.find("4070")   != std::string::npos ||
+        device_lower.find("4060")   != std::string::npos ||
+        device_lower.find("l40")    != std::string::npos ||
+        device_lower.find("l4")     != std::string::npos) {
+        return "sm_89";
+    }
+
+    // Ampere consumer / pro (sm_86): RTX 30 series, A40, A6000, A4000, A2000, A30, A10
+    if (device_lower.find("rtx 30") != std::string::npos ||
+        device_lower.find("rtx30")  != std::string::npos ||
+        device_lower.find("3090")   != std::string::npos ||
+        device_lower.find("3080")   != std::string::npos ||
+        device_lower.find("3070")   != std::string::npos ||
+        device_lower.find("3060")   != std::string::npos ||
+        device_lower.find("3050")   != std::string::npos ||
+        device_lower.find("a40")    != std::string::npos ||
+        device_lower.find("a30")    != std::string::npos ||
+        device_lower.find("a10")    != std::string::npos ||
+        device_lower.find("a6000")  != std::string::npos ||
+        device_lower.find("a5000")  != std::string::npos ||
+        device_lower.find("a4000")  != std::string::npos ||
+        device_lower.find("a2000")  != std::string::npos) {
+        return "sm_86";
+    }
+
+    // Turing (sm_75): RTX 20 series, GTX 16 series, T4, Quadro RTX
+    if (device_lower.find("rtx 20") != std::string::npos ||
+        device_lower.find("rtx20")  != std::string::npos ||
+        device_lower.find("2080")   != std::string::npos ||
+        device_lower.find("2070")   != std::string::npos ||
+        device_lower.find("2060")   != std::string::npos ||
+        device_lower.find("gtx 16") != std::string::npos ||
+        device_lower.find("gtx16")  != std::string::npos ||
+        device_lower.find("1660")   != std::string::npos ||
+        device_lower.find("1650")   != std::string::npos ||
+        device_lower.find("titan rtx") != std::string::npos ||
+        device_lower.find("quadro rtx") != std::string::npos ||
+        device_lower.find(" t4")    != std::string::npos) {
+        return "sm_75";
+    }
+
+    return "";
+}
+
 // Helper to identify ROCm architecture from GPU name.
 // Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
 // If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
@@ -1526,6 +1701,49 @@ std::string SystemInfo::get_rocm_arch() {
     }
 
     return "";  // No supported architecture found
+}
+
+std::string SystemInfo::get_cuda_arch() {
+    // Returns the CUDA Compute Capability (sm_XX) for the best available NVIDIA GPU
+    // on this system, or an empty string if no compatible GPU is found. Mirrors
+    // get_rocm_arch(): reads the cached system_info, then either uses the
+    // compute_cap reported by nvidia-smi (preferred) or falls back to
+    // identify_cuda_arch_from_name() against the marketing name.
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        if (!system_info.contains("devices")) {
+            return "";
+        }
+
+        const auto& devices = system_info["devices"];
+
+        if (devices.contains("nvidia_gpu") && devices["nvidia_gpu"].is_array()) {
+            for (const auto& gpu : devices["nvidia_gpu"]) {
+                if (!gpu.value("available", false)) continue;
+
+                // Prefer the cached family (set during device detection from
+                // nvidia-smi compute_cap), falling back to the marketing name
+                // for older drivers that do not expose compute_cap.
+                std::string family = gpu.value("family", "");
+                if (!family.empty() && CUDA_SUPPORTED_ARCHS.count(family)) {
+                    return family;
+                }
+
+                std::string name = gpu.value("name", "");
+                if (!name.empty()) {
+                    std::string arch = identify_cuda_arch_from_name(name);
+                    if (!arch.empty() && CUDA_SUPPORTED_ARCHS.count(arch)) {
+                        return arch;
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        // Detection failed
+    }
+
+    return "";
 }
 
 bool SystemInfo::get_has_igpu() {
