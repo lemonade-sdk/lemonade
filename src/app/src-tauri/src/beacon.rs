@@ -93,9 +93,9 @@ fn devices_lock() -> std::sync::MutexGuard<'static, Option<HashMap<String, Remot
     REMOTE_DEVICES.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-fn ensure_devices_init(
-    map: &mut std::sync::MutexGuard<'static, Option<HashMap<String, RemoteDeviceEntry>>>,
-) -> &mut HashMap<String, RemoteDeviceEntry> {
+fn ensure_devices_init<'a>(
+    map: &'a mut std::sync::MutexGuard<'static, Option<HashMap<String, RemoteDeviceEntry>>>,
+) -> &'a mut HashMap<String, RemoteDeviceEntry> {
     if map.is_none() {
         **map = Some(HashMap::new());
     }
