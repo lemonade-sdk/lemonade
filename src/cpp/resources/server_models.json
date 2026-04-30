@@ -1438,5 +1438,37 @@
             "image"
         ],
         "size": 0.017
+    },
+    "Llama-3.1-70B-Instruct-Cloud": {
+        "checkpoint": "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "recipe": "cloud",
+        "cloud_provider": "fireworks",
+        "suggested": true,
+        "labels": ["tool-calling"],
+        "size": 0.0
+    },
+    "Llama-3.1-405B-Instruct-Cloud": {
+        "checkpoint": "accounts/fireworks/models/llama-v3p1-405b-instruct",
+        "recipe": "cloud",
+        "cloud_provider": "fireworks",
+        "suggested": false,
+        "labels": ["tool-calling"],
+        "size": 0.0
+    },
+    "Qwen3-235B-Cloud": {
+        "checkpoint": "accounts/fireworks/models/qwen3-235b-a22b",
+        "recipe": "cloud",
+        "cloud_provider": "fireworks",
+        "suggested": true,
+        "labels": ["tool-calling", "reasoning"],
+        "size": 0.0
+    },
+    "DeepSeek-V3-Cloud": {
+        "checkpoint": "accounts/fireworks/models/deepseek-v3",
+        "recipe": "cloud",
+        "cloud_provider": "fireworks",
+        "suggested": true,
+        "labels": ["tool-calling"],
+        "size": 0.0
     }
 }

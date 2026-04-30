@@ -46,6 +46,17 @@ public:
     int backend_int(const std::string& backend, const std::string& key) const;
     double backend_double(const std::string& backend, const std::string& key) const;
 
+    // Cloud offload settings (nested under "cloud_offload")
+    bool cloud_offload_enabled() const;
+    /// API key for the named cloud provider, with env-var fallback. The env
+    /// var is LEMONADE_<UPPERCASE_PROVIDER>_API_KEY (e.g.
+    /// LEMONADE_FIREWORKS_API_KEY), which takes precedence over the value in
+    /// config.json so users can keep secrets out of config files.
+    std::string cloud_provider_api_key(const std::string& provider) const;
+    /// Base URL for the provider's OpenAI-compatible API. Empty falls back to
+    /// the built-in default for that provider in CloudServer.
+    std::string cloud_provider_base_url(const std::string& provider) const;
+
     /// Returns recipe options in the flat format that RecipeOptions/backends expect.
     /// Maps nested config to flat keys: llamacpp.backend -> llamacpp_backend,
     /// sdcpp.steps -> steps, etc.

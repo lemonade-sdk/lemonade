@@ -3,6 +3,7 @@
 #include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
@@ -241,6 +242,53 @@ double RuntimeConfig::backend_double(const std::string& backend,
     return 0.0;
 }
 
+bool RuntimeConfig::cloud_offload_enabled() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("cloud_offload") && config_["cloud_offload"].is_object() &&
+        config_["cloud_offload"].contains("enabled") &&
+        config_["cloud_offload"]["enabled"].is_boolean()) {
+        return config_["cloud_offload"]["enabled"].get<bool>();
+    }
+    return false;
+}
+
+std::string RuntimeConfig::cloud_provider_api_key(const std::string& provider) const {
+    // Env var takes precedence so users can keep secrets out of config.json.
+    std::string upper = provider;
+    std::transform(upper.begin(), upper.end(), upper.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    std::string env_name = "LEMONADE_" + upper + "_API_KEY";
+    if (const char* env_val = std::getenv(env_name.c_str()); env_val && *env_val) {
+        return env_val;
+    }
+
+    std::shared_lock lock(mutex_);
+    if (config_.contains("cloud_offload") && config_["cloud_offload"].is_object() &&
+        config_["cloud_offload"].contains("providers") &&
+        config_["cloud_offload"]["providers"].is_object() &&
+        config_["cloud_offload"]["providers"].contains(provider) &&
+        config_["cloud_offload"]["providers"][provider].is_object() &&
+        config_["cloud_offload"]["providers"][provider].contains("api_key") &&
+        config_["cloud_offload"]["providers"][provider]["api_key"].is_string()) {
+        return config_["cloud_offload"]["providers"][provider]["api_key"].get<std::string>();
+    }
+    return "";
+}
+
+std::string RuntimeConfig::cloud_provider_base_url(const std::string& provider) const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("cloud_offload") && config_["cloud_offload"].is_object() &&
+        config_["cloud_offload"].contains("providers") &&
+        config_["cloud_offload"]["providers"].is_object() &&
+        config_["cloud_offload"]["providers"].contains(provider) &&
+        config_["cloud_offload"]["providers"][provider].is_object() &&
+        config_["cloud_offload"]["providers"][provider].contains("base_url") &&
+        config_["cloud_offload"]["providers"][provider]["base_url"].is_string()) {
+        return config_["cloud_offload"]["providers"][provider]["base_url"].get<std::string>();
+    }
+    return "";
+}
+
 json RuntimeConfig::recipe_options() const {
     std::shared_lock lock(mutex_);
     json result = json::object();
@@ -378,6 +426,39 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         // Validate each sub-key
         for (auto& [sub_key, sub_value] : value.items()) {
             validate_backend(key, sub_key, sub_value);
+        }
+    } else if (key == "cloud_offload") {
+        if (!value.is_object()) {
+            throw std::invalid_argument("'cloud_offload' must be an object");
+        }
+        for (auto& [sub_key, sub_value] : value.items()) {
+            if (sub_key == "enabled") {
+                if (!sub_value.is_boolean()) {
+                    throw std::invalid_argument("'cloud_offload.enabled' must be a boolean");
+                }
+            } else if (sub_key == "providers") {
+                if (!sub_value.is_object()) {
+                    throw std::invalid_argument("'cloud_offload.providers' must be an object");
+                }
+                for (auto& [provider, provider_cfg] : sub_value.items()) {
+                    if (!provider_cfg.is_object()) {
+                        throw std::invalid_argument(
+                            "'cloud_offload.providers." + provider + "' must be an object");
+                    }
+                    for (auto& [pkey, pval] : provider_cfg.items()) {
+                        if (pkey != "api_key" && pkey != "base_url") {
+                            throw std::invalid_argument(
+                                "Unknown key: 'cloud_offload.providers." + provider + "." + pkey + "'");
+                        }
+                        if (!pval.is_string()) {
+                            throw std::invalid_argument(
+                                "'cloud_offload.providers." + provider + "." + pkey + "' must be a string");
+                        }
+                    }
+                }
+            } else {
+                throw std::invalid_argument("Unknown key: 'cloud_offload." + sub_key + "'");
+            }
         }
     } else {
         throw std::invalid_argument("Unknown config key: '" + key + "'");
