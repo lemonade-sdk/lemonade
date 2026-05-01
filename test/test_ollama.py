@@ -123,6 +123,11 @@ class OllamaTests(ServerTestBase):
         self.assertIn("details", data)
         self.assertIn("modelfile", data)
         self.assertIn("model_info", data)
+        self.assertIn("capabilities", data)
+        self.assertIn("completion", data["capabilities"])
+        self.assertIn("num_ctx", data["parameters"])
+        self.assertIn("llamacpp.context_length", data["model_info"])
+        self.assertGreater(data["model_info"]["llamacpp.context_length"], 0)
 
     def test_005_show_not_found(self):
         """Test /api/show returns 404 for non-existent model."""
