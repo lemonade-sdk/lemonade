@@ -57,7 +57,7 @@
   },
   "kokoro": {
     "cpu": "b16",
-    "metal": "b16"
+    "metal": "b17"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }
