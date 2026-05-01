@@ -1,0 +1,13 @@
+#!/bin/bash
+
+GRAFANA_URL="http://10.0.0.15:3000"
+GRAFANA_USER="sbates@raithlin.com"
+GRAFANA_PASSWORD='$~M:eZATcGlNl`2Qh8=h'
+
+jq '. + {"overwrite": true}' \
+  prometheus/grafana/grafana-dashboard.json | \
+  curl -X POST \
+    "${GRAFANA_URL}/api/dashboards/db" \
+    -H "Content-Type: application/json" \
+    -u "$GRAFANA_USER:$GRAFANA_PASSWORD" \
+    -d @-
