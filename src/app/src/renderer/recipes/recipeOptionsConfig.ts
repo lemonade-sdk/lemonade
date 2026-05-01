@@ -124,16 +124,19 @@ export type OptionDef = NumericOptionDef | StringOptionDef | BooleanOptionDef;
 // Option Definitions - All possible options and their properties
 // =============================================================================
 
+// Context Target is stored/sent as legacy API field ctx_size for backward compatibility.
+export const DEFAULT_CONTEXT_TARGET = 131072;
+
 export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
-  // LLM context size option (shared by llamacpp, flm, ryzenai-llm)
+  // LLM context target option (stored as legacy ctx_size for API compatibility)
   ctxSize: {
     type: 'numeric',
-    default: 4096,
-    min: 0,
+    default: DEFAULT_CONTEXT_TARGET,
+    min: 1024,
     max: 99999999,
     step: 1,
-    label: 'Context Size',
-    description: 'Context size for the model',
+    label: 'Context Target',
+    description: 'Target context for this model. Backends may load a smaller context when resources are constrained. Stored as legacy ctx_size for compatibility.',
   },
 
   // LlamaCpp-specific options

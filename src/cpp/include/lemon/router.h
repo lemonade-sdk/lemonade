@@ -5,6 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "wrapped_server.h"
@@ -86,6 +87,10 @@ public:
 
     // Get telemetry data
     json get_stats() const;
+
+    // Enforce runtime ram_limit using the same LRU unload policy as model slots.
+    json reconcile_memory_limit();
+    uint64_t get_total_estimated_memory_bytes() const;
 
     // Update telemetry data (for non-streaming requests)
     void update_telemetry(int input_tokens, int output_tokens,

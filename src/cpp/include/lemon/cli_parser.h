@@ -9,6 +9,10 @@ struct ServerConfig {
     std::string cache_dir;     // Positional arg: lemonade cache dir (optional, platform default)
     int port = -1;             // -1 = not specified on CLI, use config.json value
     std::string host;          // Empty = not specified on CLI, use config.json value
+    int context_target = -1;   // -1 = not specified on CLI
+    long long ram_limit = -2;  // -2 = not specified, -1 = unlimited, otherwise MiB
+    bool allow_external_ram_limit_api = false;
+    bool allow_external_ram_limit_api_set = false;
 };
 
 class CLIParser {

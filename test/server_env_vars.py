@@ -419,7 +419,7 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(self.snapshot["max_loaded_models"], 1)
 
     def test_default_ctx_size(self):
-        self.assertEqual(self.snapshot["ctx_size"], 4096)
+        self.assertEqual(self.snapshot["ctx_size"], 131072)
 
     def test_default_extra_models_dir(self):
         self.assertEqual(self.snapshot["extra_models_dir"], "")

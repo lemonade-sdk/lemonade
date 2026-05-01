@@ -901,6 +901,7 @@ const [searchQuery, setSearchQuery] = useState('');
           }
           await ensureModelReady(component, modelsData, {
             onModelLoading: () => {},
+            onWarning: showWarning,
             skipHealthCheck: false,
           });
         }
@@ -918,6 +919,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
       await ensureModelReady(modelName, modelsData, {
         onModelLoading: () => {}, // already set loading above
+        onWarning: showWarning,
         skipHealthCheck: !!options, // Force re-load when options are provided (Load Options modal)
         loadBody,
       });

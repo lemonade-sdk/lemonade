@@ -2,6 +2,8 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
+#include "lemon/runtime_config.h"
+#include "lemon/memory_manager.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
@@ -14,6 +16,8 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
+#include <limits>
+#include <cmath>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -30,6 +34,83 @@ namespace backends {
 // URL to direct users to for driver updates
 static const std::string DRIVER_INSTALL_URL = "https://lemonade-server.ai/driver_install.html";
 
+namespace {
+constexpr uint64_t kKiB = 1024ULL;
+constexpr uint64_t kGiB = 1024ULL * 1024ULL * kKiB;
+
+uint64_t saturating_add_local(uint64_t a, uint64_t b) {
+    if (std::numeric_limits<uint64_t>::max() - a < b) {
+        return std::numeric_limits<uint64_t>::max();
+    }
+    return a + b;
+}
+
+uint64_t model_weight_bytes_from_info(const ModelInfo& model_info) {
+    if (model_info.size > 0.0) {
+        return static_cast<uint64_t>(std::ceil(model_info.size * static_cast<double>(kGiB)));
+    }
+    return 0;
+}
+
+uint64_t estimate_flm_npu_context_guard_bytes_per_token(const ModelInfo& model_info) {
+    // FLM does not expose a llama.cpp-style memory fit/preflight API today.
+    // Do not use this as a hard estimator. It is only a soft guardrail for the
+    // first ctx-len attempt. FLM process success/failure remains the final
+    // signal. Keep the values modest to avoid falsely restricting models
+    // that FLM can load successfully at the requested context target.
+    const uint64_t weight = model_weight_bytes_from_info(model_info);
+    if (weight == 0) return 16ULL * kKiB;
+    if (weight <= 2ULL * kGiB) return 8ULL * kKiB;
+    if (weight <= 4ULL * kGiB) return 12ULL * kKiB;
+    if (weight <= 8ULL * kGiB) return 16ULL * kKiB;
+    return 24ULL * kKiB;
+}
+
+int round_context_down_to_step(uint64_t tokens) {
+    if (tokens <= static_cast<uint64_t>(MemoryManager::kProbeContext)) {
+        return MemoryManager::kProbeContext;
+    }
+    tokens = (tokens / 1024ULL) * 1024ULL;
+    if (tokens > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        return std::numeric_limits<int>::max();
+    }
+    return static_cast<int>(tokens);
+}
+
+int calculate_flm_npu_preflight_context(const ModelMemoryEstimate& estimate,
+                                        int requested_context,
+                                        int64_t ram_limit_mib) {
+    const int requested = std::max(MemoryManager::kProbeContext, requested_context);
+    const uint64_t per_token = std::max<uint64_t>(estimate.kv_cache_bytes_per_token, 1);
+    const SystemMemoryProbe probe = MemoryManager::probe_system_memory(ram_limit_mib);
+
+    if (probe.ram_limit_bytes == 0 || probe.ram_limit_bytes >= probe.available_bytes) {
+        return requested;
+    }
+
+    // FLM currently has no dry-run/fit API. Use a single optimistic preflight
+    // cap so we do not start high and walk down through repeated unloads. The
+    // process itself remains the final authority: if the cap is still too high,
+    // the normal start failure path can try a smaller context once.
+    const uint64_t base_floor = saturating_add_local(
+        estimate.weight_bytes, 256ULL * 1024ULL * 1024ULL);
+    const uint64_t tolerance = std::min<uint64_t>(
+        512ULL * 1024ULL * 1024ULL,
+        std::max<uint64_t>(128ULL * 1024ULL * 1024ULL, probe.ram_limit_bytes / 10ULL));
+    const uint64_t allowed = saturating_add_local(probe.ram_limit_bytes, tolerance);
+    if (base_floor >= allowed) {
+        return MemoryManager::kProbeContext;
+    }
+
+    const uint64_t context_budget = allowed - base_floor;
+    uint64_t max_context_by_budget = context_budget / per_token;
+    if (max_context_by_budget >= static_cast<uint64_t>(requested)) {
+        return requested;
+    }
+
+    return std::min(requested, round_context_down_to_step(max_context_by_budget));
+}
+} // namespace
 
 InstallParams FastFlowLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
@@ -157,9 +238,12 @@ void FastFlowLMServer::load(const std::string& model_name,
     int ctx_size = options.get_option("ctx_size");
     std::string flm_args = options.get_option("flm_args");
 
-    std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size;
+    std::cout << "[FastFlowLM] Options";
+    if (model_type_ == ModelType::LLM) {
+        std::cout << ": context_target=" << ctx_size;
+    }
     if (!flm_args.empty()) {
-        std::cout << ", flm_args=\"" << flm_args << "\"";
+        std::cout << (model_type_ == ModelType::LLM ? ", " : ": ") << "flm_args=\"" << flm_args << "\"";
     }
     std::cout << std::endl;
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
@@ -184,67 +268,173 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Choose a port
     port_ = choose_port();
 
-    // Construct flm serve command based on model type
-    // Bind to localhost only for security
-    std::vector<std::string> args;
-    if (model_type_ == ModelType::AUDIO) {
-        // ASR mode: flm serve --asr 1
-        args = {
-            "serve",
-            "--asr", "1",
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
-        };
-    } else if (model_type_ == ModelType::EMBEDDING) {
-        // Embedding mode: flm serve --embed 1
-        args = {
-            "serve",
-            "--embed", "1",
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
-        };
-    } else {
-        // LLM mode (default): flm serve <checkpoint> --ctx-len N
-        args = {
-            "serve",
-            model_info.checkpoint(),
-            "--ctx-len", std::to_string(ctx_size),
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1",
-            "--quiet"
-        };
+    long long runtime_ram_limit = -1;
+    if (auto* cfg = RuntimeConfig::global()) {
+        runtime_ram_limit = cfg->ram_limit();
     }
 
-    // Parse and append custom flm_args if provided
-    if (!flm_args.empty()) {
-        std::istringstream iss(flm_args);
-        std::string token;
-        while (iss >> token) {
-            args.push_back(token);
+    ModelMemoryEstimate memory_estimate;
+    int requested_ctx_size = ctx_size;
+    int first_ctx_attempt = ctx_size;
+    if (model_type_ == ModelType::LLM) {
+        memory_estimate = MemoryManager::estimate_non_llamacpp_memory(
+            model_info, MemoryBackendClass::NPU, requested_ctx_size, runtime_ram_limit);
+        memory_estimate.kv_cache_bytes_per_token = estimate_flm_npu_context_guard_bytes_per_token(model_info);
+        const auto initial_probe = MemoryManager::probe_system_memory(runtime_ram_limit);
+        const uint64_t minimal_base_floor = saturating_add_local(memory_estimate.weight_bytes, 512ULL * 1024ULL * 1024ULL);
+        if (memory_estimate.weight_bytes > 0 && minimal_base_floor > initial_probe.effective_available_bytes) {
+            std::ostringstream oss;
+            oss << "Insufficient memory to load base FLM/NPU model. Required at least "
+                << MemoryManager::format_bytes(minimal_base_floor)
+                << ", available/allowed "
+                << MemoryManager::format_bytes(initial_probe.effective_available_bytes) << ".";
+            throw std::runtime_error(oss.str());
+        }
+        if (memory_estimate.hard_error) {
+            LOG(WARNING, "FastFlowLM")
+                << "Base memory estimate exceeds available memory ("
+                << memory_estimate.warning
+                << "). Continuing with preflighted FLM start to avoid false negatives."
+                << std::endl;
+        }
+        first_ctx_attempt = calculate_flm_npu_preflight_context(
+            memory_estimate, requested_ctx_size, runtime_ram_limit);
+        const auto probe = MemoryManager::probe_system_memory(runtime_ram_limit);
+        LOG(INFO, "FastFlowLM") << "Context target=" << requested_ctx_size
+                                 << ", preflight_ctx=" << first_ctx_attempt
+                                 << ", available/allowed="
+                                 << MemoryManager::format_bytes(probe.effective_available_bytes)
+                                 << ", base_required="
+                                 << MemoryManager::format_bytes(memory_estimate.base_required_bytes)
+                                 << ", context_budget_per_token="
+                                 << MemoryManager::format_bytes(memory_estimate.kv_cache_bytes_per_token)
+                                 << std::endl;
+        if (first_ctx_attempt < requested_ctx_size) {
+            LOG(WARNING, "FastFlowLM")
+                << "Context target preflight reduced NPU start context from "
+                << requested_ctx_size << " to " << first_ctx_attempt
+                << " to avoid a likely out-of-memory load."
+                << std::endl;
         }
     }
 
-    LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;
-    LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
-    for (const auto& arg : args) {
-        LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
+    auto build_args = [&](int selected_ctx_size) {
+        // Construct flm serve command based on model type.
+        // Bind to localhost only for security.
+        std::vector<std::string> args;
+        if (model_type_ == ModelType::AUDIO) {
+            // ASR mode: flm serve --asr 1
+            args = {
+                "serve",
+                "--asr", "1",
+                "--port", std::to_string(port_),
+                "--host", "127.0.0.1",
+                "--quiet"
+            };
+        } else if (model_type_ == ModelType::EMBEDDING) {
+            // Embedding mode: flm serve --embed 1
+            args = {
+                "serve",
+                "--embed", "1",
+                "--port", std::to_string(port_),
+                "--host", "127.0.0.1",
+                "--quiet"
+            };
+        } else {
+            // LLM mode (default): flm serve <checkpoint> --ctx-len N.
+            // FLM does not expose a llama.cpp-style fit mode today, so Lemonade
+            // preflights a conservative ctx-len before starting the process.
+            args = {
+                "serve",
+                model_info.checkpoint(),
+                "--ctx-len", std::to_string(selected_ctx_size),
+                "--port", std::to_string(port_),
+                "--host", "127.0.0.1",
+                "--quiet"
+            };
+        }
+
+        // Parse and append custom flm_args if provided.
+        if (!flm_args.empty()) {
+            std::istringstream iss(flm_args);
+            std::string token;
+            while (iss >> token) {
+                args.push_back(token);
+            }
+        }
+        return args;
+    };
+
+    auto start_with_ctx = [&](int selected_ctx_size) -> bool {
+        std::vector<std::string> args = build_args(selected_ctx_size);
+        LOG(INFO, "FastFlowLM") << "Starting flm-server"
+                                 << (model_type_ == ModelType::LLM ? std::string(" with context target=") + std::to_string(selected_ctx_size) : std::string())
+                                 << "..." << std::endl;
+        LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
+        for (const auto& arg : args) {
+            LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
+        }
+        LOG(INFO, "ProcessManager") << std::endl;
+
+        process_handle_ = utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true);
+        LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
+
+        // Do not kill FLM while it is still starting based on transient
+        // MemAvailable readings. The preflight above chooses a bounded first
+        // ctx-len; after that, FLM process success/failure is the reliable
+        // signal. This avoids false watchdog aborts and expensive retry loops.
+        bool ready = wait_for_ready();
+        if (!ready) {
+            utils::ProcessManager::stop_process(process_handle_);
+            process_handle_ = {nullptr, 0};
+            return false;
+        }
+
+
+        return true;
+    };
+
+    int loaded_ctx_size = first_ctx_attempt;
+    bool ready = false;
+    if (model_type_ == ModelType::LLM) {
+        std::vector<int> attempts;
+        auto add_attempt = [&](int value) {
+            if (value > 0 && std::find(attempts.begin(), attempts.end(), value) == attempts.end()) {
+                attempts.push_back(value);
+            }
+        };
+        add_attempt(first_ctx_attempt);
+        if (first_ctx_attempt > 32768) add_attempt(32768);
+        if (first_ctx_attempt > 8192) add_attempt(8192);
+        if (first_ctx_attempt > MemoryManager::kProbeContext) add_attempt(MemoryManager::kProbeContext);
+
+        for (int attempt_ctx : attempts) {
+            loaded_ctx_size = attempt_ctx;
+            ready = start_with_ctx(attempt_ctx);
+            if (ready) break;
+            LOG(WARNING, "FastFlowLM") << "Failed to start with context target=" << attempt_ctx
+                                        << "; trying a smaller context if available" << std::endl;
+        }
+    } else {
+        ready = start_with_ctx(ctx_size);
     }
-    LOG(INFO, "ProcessManager") << std::endl;
 
-    process_handle_ = utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true);
-    LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
-
-    // Wait for flm-server to be ready
-    bool ready = wait_for_ready();
     if (!ready) {
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
         throw std::runtime_error("flm-server failed to start");
     }
 
     is_loaded_ = true;
+    if (model_type_ == ModelType::LLM) {
+        memory_estimate.final_context = loaded_ctx_size;
+        if (loaded_ctx_size < requested_ctx_size) {
+            memory_estimate.restricted_context_warning = true;
+            memory_estimate.warning = "Context target reduced due to FLM/NPU resource limits. Model loaded with "
+                + std::to_string(loaded_ctx_size) + " context (target was " + std::to_string(requested_ctx_size) + ").";
+            LOG(WARNING, "FastFlowLM") << memory_estimate.warning << std::endl;
+        }
+        set_memory_estimate(memory_estimate);
+    }
+
     LOG(INFO, "FastFlowLM") << "Model loaded on port " << port_ << std::endl;
 }
 

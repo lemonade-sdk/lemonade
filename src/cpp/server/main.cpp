@@ -78,6 +78,18 @@ int main(int argc, char** argv) {
             config_json["host"] = cli_config.host;
             cli_overrides = true;
         }
+        if (cli_config.context_target != -1) {
+            config_json["context_target"] = cli_config.context_target;
+            cli_overrides = true;
+        }
+        if (cli_config.ram_limit != -2) {
+            config_json["ram_limit"] = cli_config.ram_limit;
+            cli_overrides = true;
+        }
+        if (cli_config.allow_external_ram_limit_api_set) {
+            config_json["allow_external_ram_limit_api"] = cli_config.allow_external_ram_limit_api;
+            cli_overrides = true;
+        }
         auto config = std::make_shared<RuntimeConfig>(config_json);
         RuntimeConfig::set_global(config.get());
 
@@ -92,6 +104,17 @@ int main(int argc, char** argv) {
             if (!cli_config.host.empty()) {
                 LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
             }
+            if (cli_config.context_target != -1) {
+                LOG(INFO) << "Persisted context_target=" << cli_config.context_target << " to config.json" << std::endl;
+            }
+            if (cli_config.ram_limit != -2) {
+                LOG(INFO) << "Persisted ram_limit=" << cli_config.ram_limit << " MiB to config.json" << std::endl;
+            }
+            if (cli_config.allow_external_ram_limit_api_set) {
+                LOG(INFO) << "Persisted allow_external_ram_limit_api="
+                          << (cli_config.allow_external_ram_limit_api ? "true" : "false")
+                          << " to config.json" << std::endl;
+            }
         }
 
         utils::set_models_dir(config->models_dir());
@@ -102,6 +125,8 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        LOG(INFO) << "  Context target: " << config->context_target() << std::endl;
+        LOG(INFO) << "  RAM limit: " << config->ram_limit() << " MiB" << std::endl;
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }

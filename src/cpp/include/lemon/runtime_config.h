@@ -31,6 +31,9 @@ public:
     int max_loaded_models() const;
     std::string models_dir() const;
     int ctx_size() const;
+    int context_target() const;
+    long long ram_limit() const;  // MiB; -1 means unlimited
+    bool allow_external_ram_limit_api() const;
 
     // Feature flags
     bool offline() const;

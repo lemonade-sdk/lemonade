@@ -13,6 +13,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "recipe_options.h"
+#include "memory_manager.h"
 
 namespace lemon {
 
@@ -112,6 +113,13 @@ public:
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
 
+    void set_memory_estimate(const ModelMemoryEstimate& estimate) { memory_estimate_ = estimate; }
+    ModelMemoryEstimate get_memory_estimate() const { return memory_estimate_; }
+    uint64_t get_estimated_memory_bytes() const { return memory_estimate_.total_required_bytes(); }
+    int get_loaded_ctx_size() const { return memory_estimate_.final_context; }
+    bool has_restricted_context_warning() const { return memory_estimate_.restricted_context_warning; }
+    std::string get_context_warning() const { return memory_estimate_.warning; }
+
     // Load a model and start the server
     virtual void load(const std::string& model_name,
                      const ModelInfo& model_info,
@@ -194,6 +202,7 @@ protected:
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
+    ModelMemoryEstimate memory_estimate_;
 
     // Busy state tracking (for safe eviction)
     mutable std::mutex busy_mutex_;

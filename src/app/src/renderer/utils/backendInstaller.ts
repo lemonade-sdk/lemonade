@@ -5,6 +5,29 @@ import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
 import { getCollectionComponents, isCollectionModel } from './collectionModels';
 
+
+function extractContextWarning(loadData: any, modelName: string): string | null {
+  if (!loadData || typeof loadData !== 'object') return null;
+
+  if (typeof loadData.context_warning === 'string' && loadData.context_warning.trim()) {
+    return loadData.context_warning;
+  }
+
+  const loadedModels = Array.isArray(loadData.all_models_loaded) ? loadData.all_models_loaded : [];
+  const matchingModel = loadedModels.find((m: any) => m?.model_name === modelName);
+  if (typeof matchingModel?.context_warning === 'string' && matchingModel.context_warning.trim()) {
+    return matchingModel.context_warning;
+  }
+
+  const warnings = Array.isArray(loadData.context_warnings) ? loadData.context_warnings : [];
+  const matchingWarning = warnings.find((w: any) => !w?.model_name || w.model_name === modelName);
+  if (typeof matchingWarning?.context_warning === 'string' && matchingWarning.context_warning.trim()) {
+    return matchingWarning.context_warning;
+  }
+
+  return null;
+}
+
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
 
@@ -519,6 +542,7 @@ export async function ensureModelReady(
   modelsData: ModelsData,
   options?: {
     onModelLoading?: () => void;
+    onWarning?: (message: string) => void;
     skipHealthCheck?: boolean;
     loadBody?: Record<string, unknown>;
   },
@@ -531,6 +555,7 @@ async function ensureModelReadyInternal(
   modelsData: ModelsData,
   options: {
     onModelLoading?: () => void;
+    onWarning?: (message: string) => void;
     skipHealthCheck?: boolean;
     loadBody?: Record<string, unknown>;
   } | undefined,
@@ -551,6 +576,7 @@ async function ensureModelReadyInternal(
         }
         await ensureModelReadyInternal(component, modelsData, {
           onModelLoading: options?.onModelLoading,
+          onWarning: options?.onWarning,
           skipHealthCheck: options?.skipHealthCheck,
         }, visited);
       }
@@ -568,6 +594,10 @@ async function ensureModelReadyInternal(
             (m: any) => m.model_name === modelName
           );
           if (isLoaded) {
+            const contextWarning = extractContextWarning(healthData, modelName);
+            if (contextWarning) {
+              options?.onWarning?.(contextWarning);
+            }
             return; // Model is already loaded — fast path
           }
         }
@@ -638,11 +668,17 @@ async function ensureModelReadyInternal(
         body: JSON.stringify(loadPayload),
       });
 
+      const loadData = await loadResponse.json().catch(() => ({}));
+
       if (!loadResponse.ok) {
-        const errorData = await loadResponse.json().catch(() => ({}));
-        const errorMsg = (typeof errorData.error === 'string' ? errorData.error : errorData.error?.message) || `Failed to load model: ${loadResponse.statusText}`;
+        const errorMsg = (typeof loadData.error === 'string' ? loadData.error : loadData.error?.message) || `Failed to load model: ${loadResponse.statusText}`;
 
         throw new Error(errorMsg);
+      }
+
+      const contextWarning = extractContextWarning(loadData, modelName);
+      if (contextWarning) {
+        options?.onWarning?.(contextWarning);
       }
     };
 

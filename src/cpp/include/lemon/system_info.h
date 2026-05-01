@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include <nlohmann/json.hpp>
 
 namespace lemon {
