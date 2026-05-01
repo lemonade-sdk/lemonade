@@ -350,8 +350,17 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_slots(req, res);
     });
 
-    // Slots action endpoints with slot ID (POST /api/v1/slots/{id}?action=*)
+    // Slots action endpoints (need to register for both versions with regex, with and without /api prefix)
+    web_server.Post(R"(/api/v0/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
+    });
     web_server.Post(R"(/api/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
+    });
+    web_server.Post(R"(/v0/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
+    });
+    web_server.Post(R"(/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots_by_id(req, res);
     });
 
