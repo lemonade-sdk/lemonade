@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
-import { isCustomCollectionId } from '../utils/customCollections';
+import { CUSTOM_COLLECTION_PREFIX } from '../utils/customCollections';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
@@ -100,7 +100,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${isCustomCollectionId(model.id) ? ' collection-option' : ''}`}
+                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${model.id.startsWith(CUSTOM_COLLECTION_PREFIX) ? ' collection-option' : ''}`}
                 onClick={() => handleSelect(model.id)}
                 title={model.id}
               >

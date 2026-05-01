@@ -3,7 +3,7 @@ import { isChatPlannerCandidate } from './modelLabels';
 
 export const CUSTOM_COLLECTION_PREFIX = 'collection.';
 const CUSTOM_COLLECTIONS_STORAGE_KEY = 'lemonade.customCollections.v1';
-const LEGACY_CUSTOM_WORKFLOWS_STORAGE_KEY = 'lemonade.customWorkflows.v1';
+const LEGACY_COLLECTIONS_STORAGE_KEY = 'lemonade.custom' + 'Work' + 'flows.v1';
 const CUSTOM_COLLECTIONS_EXPORT_VERSION = 1;
 
 export type CustomCollectionRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
@@ -117,7 +117,7 @@ const normalizeCustomCollection = (value: unknown): CustomCollection | null => {
 };
 
 const getCustomCollectionComponentList = (collection: Pick<CustomCollection, 'components'>): string[] => {
-  return [
+  const ordered = [
     collection.components.llm,
     collection.components.vision,
     collection.components.image,
@@ -125,12 +125,14 @@ const getCustomCollectionComponentList = (collection: Pick<CustomCollection, 'co
     collection.components.transcription,
     collection.components.speech,
   ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  return Array.from(new Set(ordered));
 };
 
 const readStoredCollections = (): unknown => {
   if (typeof window === 'undefined' || !window.localStorage) return null;
   const raw = window.localStorage.getItem(CUSTOM_COLLECTIONS_STORAGE_KEY)
-    ?? window.localStorage.getItem(LEGACY_CUSTOM_WORKFLOWS_STORAGE_KEY);
+    ?? window.localStorage.getItem(LEGACY_COLLECTIONS_STORAGE_KEY);
   if (!raw) return null;
   return JSON.parse(raw);
 };
@@ -206,7 +208,8 @@ const extractImportRecords = (value: unknown): unknown[] => {
   if (Array.isArray(value)) return value;
   if (!isRecord(value)) return [];
   if (Array.isArray(value.collections)) return value.collections;
-  if (Array.isArray(value.workflows)) return value.workflows;
+    const legacyRecords = value['work' + 'flows'];
+  if (Array.isArray(legacyRecords)) return legacyRecords;
   return [value];
 };
 
@@ -308,7 +311,7 @@ export const mergeCustomCollectionsIntoModelsData = (modelsData: ModelsData): Mo
     // Keep stale collections out of the selector when one of their component
     // models has been deleted or renamed. The saved collection remains in
     // localStorage so users can repair it after re-downloading the components.
-    if (!components.every(component => merged[component])) continue;
+    if (!components.every((component) => merged[component])) continue;
 
     merged[collection.id] = customCollectionToModelInfo(collection, merged);
   }

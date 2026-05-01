@@ -78,14 +78,6 @@ export function buildLemonadeTools(
     return hasAnyModelLabel(modelsData[component], requiredLabels);
   };
 
-  const findComponentWithAnyLabel = (requiredLabels: string[], llmOnly = false): string | undefined => {
-    return components.find(c => {
-      if (!componentHasAnyLabel(c, requiredLabels)) return false;
-      if (!llmOnly) return true;
-      return isChatPlannerCandidate(modelsData[c]);
-    });
-  };
-
   const getCustomCollectionToolModel = (def: ToolDefinitionEntry): string | undefined => {
     if (!customCollectionComponents) return undefined;
 
@@ -107,6 +99,9 @@ export function buildLemonadeTools(
   };
 
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
+    const requiresLabels = def.requires_labels;
+    const requiresLlmLabels = def.requires_llm_labels;
+
     if (customCollectionComponents) {
       const match = getCustomCollectionToolModel(def);
       if (!match) continue;
@@ -115,11 +110,8 @@ export function buildLemonadeTools(
       continue;
     }
 
-    const requiresLabels = def.requires_labels;
-    const requiresLlmLabels = def.requires_llm_labels;
-
     if (requiresLabels) {
-      const match = findComponentWithAnyLabel(requiresLabels);
+      const match = components.find((component) => componentHasAnyLabel(component, requiresLabels));
       if (!match) continue;
       tools.push(materialize(def));
       models[def.function.name] = match;
@@ -127,7 +119,9 @@ export function buildLemonadeTools(
     }
 
     if (requiresLlmLabels) {
-      const match = findComponentWithAnyLabel(requiresLlmLabels, true);
+      const match = components.find((component) =>
+        componentHasAnyLabel(component, requiresLlmLabels) && isChatPlannerCandidate(modelsData[component]),
+      );
       if (!match) continue;
       tools.push(materialize(def));
       models[def.function.name] = match;
