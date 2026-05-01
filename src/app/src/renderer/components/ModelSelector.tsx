@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
-import { CUSTOM_WORKFLOW_PREFIX } from '../utils/customWorkflows';
+import { CUSTOM_COLLECTION_PREFIX } from '../utils/customCollections';
 
 interface ModelSelectorProps {
   disabled: boolean;
@@ -36,8 +36,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     : visibleDownloadedModels;
 
   const modelDisplayLabel = (id: string, info?: SelectorModel['info']) => {
-    if (!id.startsWith(CUSTOM_WORKFLOW_PREFIX)) return id;
-    return info?.workflow_name ?? id;
+    if (!id.startsWith(CUSTOM_COLLECTION_PREFIX)) return id;
+    return info?.collection_name ?? id;
   };
 
   const dropdownModels = searchQuery.trim()
@@ -96,7 +96,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${model.id.startsWith(CUSTOM_WORKFLOW_PREFIX) ? ' workflow-option' : ''}`}
+                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${model.id.startsWith(CUSTOM_COLLECTION_PREFIX) ? ' collection-option' : ''}`}
                 onClick={() => handleSelect(model.id)}
                 title={model.id}
               >

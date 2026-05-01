@@ -50,8 +50,8 @@ export function buildLemonadeTools(
 ): LemonadeToolsResult {
   const info = modelsData[collectionName];
   const components = getCollectionComponents(info);
-  const customWorkflowComponents = info?.workflow_source === 'custom'
-    ? info.workflow_components
+  const customCollectionComponents = info?.collection_source === 'custom'
+    ? info.collection_components
     : undefined;
 
   const tools: LemonadeToolDef[] = [];
@@ -86,15 +86,15 @@ export function buildLemonadeTools(
     });
   };
 
-  const getCustomWorkflowToolModel = (def: ToolDefinitionEntry): string | undefined => {
-    if (!customWorkflowComponents) return undefined;
+  const getCustomCollectionToolModel = (def: ToolDefinitionEntry): string | undefined => {
+    if (!customCollectionComponents) return undefined;
 
     const explicitToolModels: Record<string, string | undefined> = {
-      generate_image: customWorkflowComponents.image,
-      edit_image: customWorkflowComponents.edit ?? customWorkflowComponents.image,
-      text_to_speech: customWorkflowComponents.speech,
-      transcribe_audio: customWorkflowComponents.transcription,
-      analyze_image: customWorkflowComponents.vision ?? customWorkflowComponents.llm,
+      generate_image: customCollectionComponents.image,
+      edit_image: customCollectionComponents.edit ?? customCollectionComponents.image,
+      text_to_speech: customCollectionComponents.speech,
+      transcribe_audio: customCollectionComponents.transcription,
+      analyze_image: customCollectionComponents.vision ?? customCollectionComponents.llm,
     };
 
     const candidate = explicitToolModels[def.function.name];
@@ -107,8 +107,8 @@ export function buildLemonadeTools(
   };
 
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
-    if (customWorkflowComponents) {
-      const match = getCustomWorkflowToolModel(def);
+    if (customCollectionComponents) {
+      const match = getCustomCollectionToolModel(def);
       if (!match) continue;
       tools.push(materialize(def));
       models[def.function.name] = match;

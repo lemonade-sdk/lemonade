@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
-import { ModelInfo } from './utils/modelData';
+import { ModelInfo, USER_MODEL_PREFIX } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
@@ -19,6 +19,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
+import { isCustomCollectionId } from './utils/customCollections';
 
 interface ModelFamily {
   displayName: string;
@@ -97,6 +98,18 @@ type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo }
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
 
+const isUserDefinedModelName = (modelName: string): boolean => {
+  return modelName.startsWith(USER_MODEL_PREFIX) || isCustomCollectionId(modelName);
+};
+
+const getModelListItemSortName = (item: ModelListItem): string => {
+  return item.type === 'family' ? item.family.displayName : item.name;
+};
+
+const getModelListItemSortRank = (item: ModelListItem): number => {
+  return item.type === 'model' && isUserDefinedModelName(item.name) ? 1 : 0;
+};
+
 // Types for Hugging Face API responses
 interface HFModelInfo {
   id: string;
@@ -162,9 +175,9 @@ function buildModelList(
   // Merge and sort alphabetically by display name
   const allItems = [...familyItems, ...individualItems];
   allItems.sort((a, b) => {
-    const nameA = a.type === 'family' ? a.family.displayName : a.name;
-    const nameB = b.type === 'family' ? b.family.displayName : b.name;
-    return nameA.localeCompare(nameB);
+    const rankDiff = getModelListItemSortRank(a) - getModelListItemSortRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return getModelListItemSortName(a).localeCompare(getModelListItemSortName(b));
   });
 
   return allItems;
@@ -176,7 +189,6 @@ interface ModelManagerProps {
   width?: number;
   currentView: LeftPanelView;
   onViewChange: (view: LeftPanelView) => void;
-  onOpenCustomWorkflow?: () => void;
 }
 
 interface ModelJSON {
@@ -195,7 +207,7 @@ interface ModelJSON {
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 
-const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange, onOpenCustomWorkflow }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
@@ -1139,6 +1151,27 @@ const [searchQuery, setSearchQuery] = useState('');
     </button>
   );
 
+  const renderCustomCollectionOptionsButton = (modelName: string) => (
+    <button
+      className="model-action-btn load-btn"
+      onClick={(e) => {
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('editCustomCollection', { detail: { collectionId: modelName } }));
+      }}
+      title="Collection options"
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+           xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
+          strokeLinejoin="round"/>
+        <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
+                strokeWidth="1.2"/>
+      </svg>
+    </button>
+  );
+
   const renderDeleteButton = (modelName: string) => (
     <button
       className="model-action-btn delete-btn"
@@ -1188,6 +1221,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
+            {isCustomCollectionId(modelName) && renderCustomCollectionOptionsButton(modelName)}
             {!isCollection && renderDeleteButton(modelName)}
             {!isCollection && renderLoadOptionsButton(modelName)}
           </>
@@ -1205,6 +1239,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
+            {isCustomCollectionId(modelName) && renderCustomCollectionOptionsButton(modelName)}
             {!isCollection && renderDeleteButton(modelName)}
             {!isCollection && renderLoadOptionsButton(modelName)}
           </>
@@ -1384,16 +1419,6 @@ const [searchQuery, setSearchQuery] = useState('');
 
             {shouldShowCategory(category) && (
               <>
-                {category === 'collection' && (
-                  <button
-                    type="button"
-                    className="custom-workflow-omni-button"
-                    title="Create or edit an OmniRouter workflow from downloaded models"
-                    onClick={handleOpenCustomWorkflow}
-                  >
-                    + Create custom workflow
-                  </button>
-                )}
                 <div className="model-list">
                 {organizationMode === 'recipe' && !hasModels && renderBackendSetupBanner(category)}
                 <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
@@ -1430,15 +1455,6 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   };
 
-
-  const handleOpenCustomWorkflow = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    if (onOpenCustomWorkflow) {
-      onOpenCustomWorkflow();
-      return;
-    }
-    window.dispatchEvent(new CustomEvent('openCustomWorkflow'));
-  };
 
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>

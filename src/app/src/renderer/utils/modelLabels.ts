@@ -20,7 +20,7 @@ export const NON_LLM_LABELS = new Set([
 /**
  * Labels that identify concrete non-chat components. "audio" and "vision" are
  * intentionally allowed here: a multimodal chat LLM may support those inputs
- * while still being the correct planner for a collection or custom workflow.
+ * while still being the correct planner for a collection or custom collection.
  */
 export const NON_CHAT_PLANNER_LABELS = new Set([
   'image',

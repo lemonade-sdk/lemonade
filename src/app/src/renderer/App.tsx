@@ -11,9 +11,16 @@ import StatusBar from './StatusBar';
 import { ModelsProvider, useModels } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
-import CustomWorkflowPanel from './components/CustomWorkflowPanel';
+import CustomCollectionPanel from './components/CustomCollectionPanel';
 import { ToastContainer, useToast } from './Toast';
-import { CustomWorkflowDraft, deleteCustomWorkflow, saveCustomWorkflow } from './utils/customWorkflows';
+import {
+  CustomCollectionDraft,
+  buildCustomCollectionsExportPayload,
+  deleteCustomCollection,
+  importCustomCollections,
+  loadCustomCollections,
+  saveCustomCollection,
+} from './utils/customCollections';
 import '../../styles/index.css';
 
 const LAYOUT_CONSTANTS = {
@@ -38,9 +45,10 @@ const AppContent: React.FC = () => {
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
-  const [showCustomWorkflowForm, setShowCustomWorkflowForm] = useState(false);
+  const [customCollectionModal, setCustomCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
+  const importCollectionFileRef = useRef<HTMLInputElement>(null);
   const { selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
-  const { toasts, removeToast, showError } = useToast();
+  const { toasts, removeToast, showError, showSuccess } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -278,39 +286,100 @@ const AppContent: React.FC = () => {
 
 
   useEffect(() => {
-    const handleOpenCustomWorkflow = () => setShowCustomWorkflowForm(true);
-    window.addEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
-    document.addEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
+    const handleOpenCustomCollection = () => setCustomCollectionModal({ mode: 'create' });
+    const handleImportCustomCollection = () => importCollectionFileRef.current?.click();
+    const handleEditCustomCollection = (event: Event) => {
+      const collectionId = (event as CustomEvent<{ collectionId?: string }>).detail?.collectionId;
+      if (collectionId) {
+        setCustomCollectionModal({ mode: 'edit', collectionId });
+      }
+    };
+
+    window.addEventListener('openCustomCollection', handleOpenCustomCollection);
+    window.addEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+    window.addEventListener('editCustomCollection', handleEditCustomCollection);
+    document.addEventListener('openCustomCollection', handleOpenCustomCollection);
+    document.addEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+    document.addEventListener('editCustomCollection', handleEditCustomCollection);
+
     return () => {
-      window.removeEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
-      document.removeEventListener('openCustomWorkflow', handleOpenCustomWorkflow);
+      window.removeEventListener('openCustomCollection', handleOpenCustomCollection);
+      window.removeEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+      window.removeEventListener('editCustomCollection', handleEditCustomCollection);
+      document.removeEventListener('openCustomCollection', handleOpenCustomCollection);
+      document.removeEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+      document.removeEventListener('editCustomCollection', handleEditCustomCollection);
     };
   }, []);
 
-  const handleSaveCustomWorkflow = async (workflow: CustomWorkflowDraft) => {
+  const handleSaveCustomCollection = async (collection: CustomCollectionDraft) => {
     try {
-      const saved = saveCustomWorkflow(workflow);
-      setShowCustomWorkflowForm(false);
+      const saved = saveCustomCollection(collection);
+      setCustomCollectionModal(null);
       await refreshModels();
       setSelectedModel(saved.id);
       setUserHasSelectedModel(true);
     } catch (error) {
-      showError(`Failed to save workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError('Failed to save collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
-  const handleDeleteCustomWorkflow = async (workflowId: string) => {
+  const handleDeleteCustomCollection = async (collectionId: string) => {
     try {
-      deleteCustomWorkflow(workflowId);
-      setShowCustomWorkflowForm(false);
+      deleteCustomCollection(collectionId);
+      setCustomCollectionModal(null);
       await refreshModels();
-      if (selectedModel === workflowId) {
+      if (selectedModel === collectionId) {
         setSelectedModel('');
         setUserHasSelectedModel(false);
       }
     } catch (error) {
-      showError(`Failed to delete workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError('Failed to delete collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
+  };
+
+  const handleExportCustomCollection = (collectionId: string) => {
+    const collection = loadCustomCollections().find((item) => item.id === collectionId);
+    if (!collection) {
+      showError('Failed to export collection: collection not found.');
+      return;
+    }
+
+    const payload = {
+      version: buildCustomCollectionsExportPayload().version,
+      exportedAt: new Date().toISOString(),
+      collections: [collection],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = collection.id + '.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleImportCustomCollectionFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+      try {
+        const parsed = JSON.parse(String(loadEvent.target?.result ?? ''));
+        const result = importCustomCollections(parsed);
+        await refreshModels();
+        const skipped = result.skipped > 0 ? '; skipped ' + result.skipped + ' invalid entr' + (result.skipped === 1 ? 'y' : 'ies') : '';
+        showSuccess('Imported ' + result.imported + ' custom collection' + (result.imported === 1 ? '' : 's') + skipped + '.');
+      } catch (importError) {
+        showError(importError instanceof Error ? importError.message : 'Failed to import custom collections.');
+      }
+    };
+    reader.onerror = () => showError('Failed to read the selected file.');
+    reader.readAsText(file);
   };
 
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
@@ -365,7 +434,6 @@ const AppContent: React.FC = () => {
           width={isModelManagerVisible ? modelManagerWidth : LAYOUT_CONSTANTS.experienceRailWidth}
           currentView={leftPanelView}
           onViewChange={setLeftPanelView}
-          onOpenCustomWorkflow={() => setShowCustomWorkflowForm(true)}
         />
         {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
           <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />
@@ -404,13 +472,23 @@ const AppContent: React.FC = () => {
           </>
         )}
       </div>
-      {showCustomWorkflowForm && createPortal(
-        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setShowCustomWorkflowForm(false); } }}>
-          <div className="settings-modal custom-workflow-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
-            <CustomWorkflowPanel
-              onClose={() => setShowCustomWorkflowForm(false)}
-              onSave={handleSaveCustomWorkflow}
-              onDelete={handleDeleteCustomWorkflow}
+      <input
+        ref={importCollectionFileRef}
+        type="file"
+        accept=".json,application/json"
+        className="collection-import-input"
+        onChange={handleImportCustomCollectionFile}
+      />
+      {customCollectionModal && createPortal(
+        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setCustomCollectionModal(null); } }}>
+          <div className="settings-modal custom-collection-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <CustomCollectionPanel
+              mode={customCollectionModal.mode}
+              collectionId={customCollectionModal.collectionId}
+              onClose={() => setCustomCollectionModal(null)}
+              onSave={handleSaveCustomCollection}
+              onDelete={handleDeleteCustomCollection}
+              onExport={handleExportCustomCollection}
             />
           </div>
         </div>,

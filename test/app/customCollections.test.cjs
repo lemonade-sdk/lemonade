@@ -1,5 +1,5 @@
 for (const key of Object.keys(process.env)) {
-  if (key.startsWith("npm_") || key === "INIT_CWD") {
+  if (key.startsWith('npm_') || key === 'INIT_CWD') {
     delete process.env[key];
   }
 }
@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 
-const appRoot = path.resolve(__dirname, '..');
+const appRoot = path.resolve(__dirname, '..', '..', 'src', 'app');
 const originalTsLoader = require.extensions['.ts'];
 
 require.extensions['.ts'] = function loadTypeScript(module, filename) {
@@ -26,8 +26,8 @@ require.extensions['.ts'] = function loadTypeScript(module, filename) {
   module._compile(output, filename);
 };
 
-const workflowUtilsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'customWorkflows.ts');
-const workflowUtils = require(workflowUtilsPath);
+const collectionUtilsPath = path.join(appRoot, 'src', 'renderer', 'utils', 'customCollections.ts');
+const collectionUtils = require(collectionUtilsPath);
 
 if (originalTsLoader) {
   require.extensions['.ts'] = originalTsLoader;
@@ -104,27 +104,27 @@ function defineTest(name, fn) {
   tests.push({ name, fn });
 }
 
-defineTest('save, edit, delete, and export custom workflows', () => {
-  const first = workflowUtils.saveCustomWorkflow({
-    name: 'My Workflow',
+defineTest('save, edit, delete, and export custom collections', () => {
+  const first = collectionUtils.saveCustomCollection({
+    name: 'My Collection',
     components: { llm: 'llm-a', image: 'image-a' },
   });
 
-  assert.equal(first.id, 'workflow.my-workflow');
-  assert.equal(first.name, 'My Workflow');
+  assert.equal(first.id, 'collection.my-collection');
+  assert.equal(first.name, 'My Collection');
   assert.equal(first.components.llm, 'llm-a');
   assert.match(first.createdAt, /^\d{4}-\d{2}-\d{2}T/);
 
-  const duplicate = workflowUtils.saveCustomWorkflow({
-    name: 'My Workflow',
+  const duplicate = collectionUtils.saveCustomCollection({
+    name: 'My Collection',
     components: { llm: 'llm-b' },
   });
 
-  assert.equal(duplicate.id, 'workflow.my-workflow-2');
+  assert.equal(duplicate.id, 'collection.my-collection-2');
 
-  const edited = workflowUtils.saveCustomWorkflow({
+  const edited = collectionUtils.saveCustomCollection({
     id: first.id,
-    name: 'Renamed Workflow',
+    name: 'Renamed Collection',
     components: { llm: 'llm-a', speech: 'tts-a' },
   });
 
@@ -132,54 +132,54 @@ defineTest('save, edit, delete, and export custom workflows', () => {
   assert.equal(edited.createdAt, first.createdAt);
   assert.equal(edited.components.speech, 'tts-a');
 
-  const exported = workflowUtils.buildCustomWorkflowsExportPayload();
+  const exported = collectionUtils.buildCustomCollectionsExportPayload();
   assert.equal(exported.version, 1);
-  assert.equal(exported.workflows.length, 2);
-  assert.deepEqual(exported.workflows.map((workflow) => workflow.id), [
-    'workflow.my-workflow-2',
-    'workflow.my-workflow',
+  assert.equal(exported.collections.length, 2);
+  assert.deepEqual(exported.collections.map((collection) => collection.id), [
+    'collection.my-collection-2',
+    'collection.my-collection',
   ]);
 
-  workflowUtils.deleteCustomWorkflow(first.id);
+  collectionUtils.deleteCustomCollection(first.id);
 
-  assert.deepEqual(workflowUtils.loadCustomWorkflows().map((workflow) => workflow.id), [
-    'workflow.my-workflow-2',
+  assert.deepEqual(collectionUtils.loadCustomCollections().map((collection) => collection.id), [
+    'collection.my-collection-2',
   ]);
-  assert.ok(dispatchedEvents.every((eventType) => eventType === 'customWorkflowsUpdated'));
+  assert.ok(dispatchedEvents.every((eventType) => eventType === 'customCollectionsUpdated'));
 });
 
 defineTest('import accepts payloads, skips invalid entries, and avoids generated ID collisions', () => {
-  workflowUtils.saveCustomWorkflow({
-    name: 'Imported Workflow',
+  collectionUtils.saveCustomCollection({
+    name: 'Imported Collection',
     components: { llm: 'existing-llm' },
   });
 
-  const result = workflowUtils.importCustomWorkflows({
+  const result = collectionUtils.importCustomCollections({
     version: 1,
-    workflows: [
-      { name: 'Imported Workflow', components: { llm: 'new-llm' } },
-      { id: 'workflow.explicit', name: 'Explicit Workflow', components: { llm: 'explicit-llm' } },
-      { name: 'Invalid Workflow', components: { image: 'missing-llm' } },
+    collections: [
+      { name: 'Imported Collection', components: { llm: 'new-llm' } },
+      { id: 'collection.explicit', name: 'Explicit Collection', components: { llm: 'explicit-llm' } },
+      { name: 'Invalid Collection', components: { image: 'missing-llm' } },
     ],
   });
 
   assert.equal(result.imported, 2);
   assert.equal(result.skipped, 1);
 
-  const workflows = workflowUtils.loadCustomWorkflows();
-  assert.deepEqual(workflows.map((workflow) => workflow.id), [
-    'workflow.explicit',
-    'workflow.imported-workflow',
-    'workflow.imported-workflow-2',
+  const collections = collectionUtils.loadCustomCollections();
+  assert.deepEqual(collections.map((collection) => collection.id), [
+    'collection.explicit',
+    'collection.imported-collection',
+    'collection.imported-collection-2',
   ]);
 
-  const generatedImport = workflows.find((workflow) => workflow.id === 'workflow.imported-workflow-2');
+  const generatedImport = collections.find((collection) => collection.id === 'collection.imported-collection-2');
   assert.equal(generatedImport.components.llm, 'new-llm');
 });
 
-defineTest('mergeCustomWorkflowsIntoModelsData creates synthetic collection models and hides stale workflows', () => {
-  workflowUtils.saveCustomWorkflow({
-    name: 'Usable Workflow',
+defineTest('mergeCustomCollectionsIntoModelsData creates synthetic collection models and hides stale collections', () => {
+  collectionUtils.saveCustomCollection({
+    name: 'Usable Collection',
     components: {
       llm: 'chat-llm',
       vision: 'vision-llm',
@@ -187,28 +187,28 @@ defineTest('mergeCustomWorkflowsIntoModelsData creates synthetic collection mode
       speech: 'speech-model',
     },
   });
-  workflowUtils.saveCustomWorkflow({
-    name: 'Stale Workflow',
+  collectionUtils.saveCustomCollection({
+    name: 'Stale Collection',
     components: { llm: 'chat-llm', image: 'missing-image-model' },
   });
 
-  const merged = workflowUtils.mergeCustomWorkflowsIntoModelsData({
+  const merged = collectionUtils.mergeCustomCollectionsIntoModelsData({
     'chat-llm': model(['tool-calling']),
     'vision-llm': model(['vision']),
     'image-model': model(['image']),
     'speech-model': model(['tts']),
   });
 
-  const workflow = merged['workflow.usable-workflow'];
-  assert.equal(workflow.recipe, 'collection');
-  assert.equal(workflow.source, 'custom-workflow');
-  assert.equal(workflow.workflow_name, 'Usable Workflow');
-  assert.deepEqual(workflow.composite_models, ['chat-llm', 'vision-llm', 'image-model', 'speech-model']);
-  assert.ok(workflow.labels.includes('workflow'));
-  assert.ok(workflow.labels.includes('vision'));
-  assert.ok(workflow.labels.includes('image'));
-  assert.ok(workflow.labels.includes('speech'));
-  assert.equal(merged['workflow.stale-workflow'], undefined);
+  const collection = merged['collection.usable-collection'];
+  assert.equal(collection.recipe, 'collection');
+  assert.equal(collection.source, 'custom-collection');
+  assert.equal(collection.collection_name, 'Usable Collection');
+  assert.deepEqual(collection.composite_models, ['chat-llm', 'vision-llm', 'image-model', 'speech-model']);
+  assert.ok(collection.labels.includes('collection'));
+  assert.ok(collection.labels.includes('vision'));
+  assert.ok(collection.labels.includes('image'));
+  assert.ok(collection.labels.includes('speech'));
+  assert.equal(merged['collection.stale-collection'], undefined);
 });
 
 defineTest('role options include only downloaded compatible concrete models', () => {
@@ -221,23 +221,23 @@ defineTest('role options include only downloaded compatible concrete models', ()
     'tts-model': model(['speech']),
     'not-downloaded-image': model(['image'], false),
     'collection-model': model([], true, 'collection'),
-    'workflow.fake': model(['workflow']),
+    'collection.fake': model(['collection']),
   };
 
-  assert.deepEqual(workflowUtils.getWorkflowRoleOptions(modelsData, 'llm').map((entry) => entry.id), [
+  assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'llm').map((entry) => entry.id), [
     'plain-chat',
     'vision-chat',
   ]);
-  assert.deepEqual(workflowUtils.getWorkflowRoleOptions(modelsData, 'image').map((entry) => entry.id), [
+  assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'image').map((entry) => entry.id), [
     'image-model',
   ]);
-  assert.deepEqual(workflowUtils.getWorkflowRoleOptions(modelsData, 'edit').map((entry) => entry.id), [
+  assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'edit').map((entry) => entry.id), [
     'edit-model',
   ]);
-  assert.deepEqual(workflowUtils.getWorkflowRoleOptions(modelsData, 'transcription').map((entry) => entry.id), [
+  assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'transcription').map((entry) => entry.id), [
     'asr-model',
   ]);
-  assert.deepEqual(workflowUtils.getWorkflowRoleOptions(modelsData, 'speech').map((entry) => entry.id), [
+  assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'speech').map((entry) => entry.id), [
     'tts-model',
   ]);
 });
@@ -259,7 +259,7 @@ for (const { name, fn } of tests) {
 }
 
 if (process.exitCode !== 1) {
-  console.log(`All custom workflow tests passed (${passed}/${tests.length}).`);
+  console.log(`All custom collection tests passed (${passed}/${tests.length}).`);
 }
 
 process.exit(process.exitCode || 0);

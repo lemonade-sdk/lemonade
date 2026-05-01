@@ -83,7 +83,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return info?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
-  // A multimodal chat model accepts audio directly. Collection/workflow models
+  // A multimodal chat model accepts audio directly. Collection models
   // can also expose a separate ASR component, so enable the audio controls when
   // a selected collection has any audio/transcription-capable component.
   const isAudioChat = useMemo(() => {

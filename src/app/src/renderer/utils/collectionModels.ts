@@ -64,12 +64,12 @@ export const getCollectionImageModel = (selectedModel: string, modelsData: Model
 export const getCollectionPrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
   const components = getCollectionComponents(info);
-  const customWorkflowLLM = info?.workflow_source === 'custom'
-    ? info.workflow_components?.llm
+  const customCollectionLLM = info?.collection_source === 'custom'
+    ? info.collection_components?.llm
     : undefined;
 
-  if (customWorkflowLLM && (components.length === 0 || components.includes(customWorkflowLLM))) {
-    return customWorkflowLLM;
+  if (customCollectionLLM && (components.length === 0 || components.includes(customCollectionLLM))) {
+    return customCollectionLLM;
   }
 
   if (components.length === 0) {
