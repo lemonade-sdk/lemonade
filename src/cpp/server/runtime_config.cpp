@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -80,13 +81,29 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
 void RuntimeConfig::validate_bin_path(const std::string& config_section,
                                        const std::string& key,
                                        const std::string& value) {
-    if (value.empty() || value == "builtin") return;
+    // Reserved keywords:
+    //   ""        — alias for "builtin"
+    //   "builtin" — use the version pinned by lemonade in backend_versions.json
+    //   "latest"  — resolve to the most-recent upstream release at lemond start
+    if (value.empty() || value == "builtin" || value == "latest") return;
 
-    if (!fs::exists(value)) {
-        throw std::invalid_argument(
-            "'" + config_section + "." + key + "' path does not exist: " + value
-            + ". Set to \"builtin\" to use the default binary.");
+    // Absolute-path values are treated as user-supplied binary directories and
+    // must exist. Relative-looking values intentionally fall through to the
+    // version-tag branch so backend pins are not interpreted relative to
+    // lemond's launch directory.
+    if (utils::looks_like_path(value)) {
+        if (!fs::exists(value)) {
+            throw std::invalid_argument(
+                "'" + config_section + "." + key + "' path does not exist: " + value
+                + ". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
+                  " or a path to a pre-downloaded binary.");
+        }
+        return;
     }
+
+    // Anything else is treated as an upstream release tag (e.g. "b8664",
+    // "v1.8.2") and accepted verbatim. The download step surfaces a clear
+    // error if the tag does not exist on GitHub.
 }
 
 RuntimeConfig::RuntimeConfig(const json& config)
@@ -160,6 +177,11 @@ bool RuntimeConfig::offline() const {
     return config_["offline"].get<bool>();
 }
 
+bool RuntimeConfig::no_fetch_executables() const {
+    std::shared_lock lock(mutex_);
+    return config_["no_fetch_executables"].get<bool>();
+}
+
 bool RuntimeConfig::disable_model_filtering() const {
     std::shared_lock lock(mutex_);
     return config_["disable_model_filtering"].get<bool>();
@@ -168,6 +190,11 @@ bool RuntimeConfig::disable_model_filtering() const {
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
     return config_["enable_dgpu_gtt"].get<bool>();
+}
+
+std::string RuntimeConfig::rocm_channel() const {
+    std::shared_lock lock(mutex_);
+    return config_["rocm_channel"].get<std::string>();
 }
 
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
@@ -301,6 +328,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'" + key + "' must be a string");
         }
     } else if (key == "no_broadcast" || key == "offline" ||
+               key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + key + "' must be a boolean");
@@ -334,6 +362,14 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<int>() < 1) {
             throw std::invalid_argument("'config_version' must be >= 1");
+        }
+    } else if (key == "rocm_channel") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rocm_channel' must be a string");
+        }
+        std::string channel = value.get<std::string>();
+        if (channel != "preview" && channel != "stable" && channel != "nightly") {
+            throw std::invalid_argument("'rocm_channel' must be either 'preview', 'stable', or 'nightly'");
         }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
@@ -393,31 +429,29 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
     }
 }
 
-void RuntimeConfig::apply_changes(const json& changes, std::vector<std::string>& changed_keys) {
+void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
     for (auto& [key, value] : changes.items()) {
         if (value.is_object() && is_backend_name(key)) {
-            // Merge nested backend changes
+            // Merge nested backend changes; record per-sub-key diffs.
             if (!config_.contains(key)) {
                 config_[key] = json::object();
             }
             for (auto& [sub_key, sub_value] : value.items()) {
                 if (!config_[key].contains(sub_key) || config_[key][sub_key] != sub_value) {
                     config_[key][sub_key] = sub_value;
-                    changed_keys.push_back(key);  // Track that this backend section changed
+                    if (!applied_diff.contains(key)) {
+                        applied_diff[key] = json::object();
+                    }
+                    applied_diff[key][sub_key] = sub_value;
                 }
             }
         } else {
             if (!config_.contains(key) || config_[key] != value) {
                 config_[key] = value;
-                changed_keys.push_back(key);
+                applied_diff[key] = value;
             }
         }
     }
-
-    // Deduplicate changed_keys
-    std::sort(changed_keys.begin(), changed_keys.end());
-    changed_keys.erase(std::unique(changed_keys.begin(), changed_keys.end()),
-                       changed_keys.end());
 }
 
 json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effect_cb) {
@@ -430,12 +464,12 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
         validate(key, value);
     }
 
-    std::vector<std::string> changed_keys;
+    json applied_diff = json::object();
     json updated = json::object();
 
     {
         std::unique_lock lock(mutex_);
-        apply_changes(changes, changed_keys);
+        apply_changes(changes, applied_diff);
 
         // Build updated response
         for (auto& [key, value] : changes.items()) {
@@ -444,8 +478,8 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
     } // Lock released
 
     // Execute side effects outside the lock
-    if (side_effect_cb && !changed_keys.empty()) {
-        side_effect_cb(changed_keys);
+    if (side_effect_cb && !applied_diff.empty()) {
+        side_effect_cb(applied_diff);
     }
 
     return {{"status", "success"}, {"updated", updated}};

@@ -5,6 +5,7 @@ const STATUS_INDICATOR_CLASS: Record<BackendInfo['state'], string> = {
   installed: 'available',
   installable: 'not-downloaded',
   update_required: 'update-required',
+  update_available: 'update-available',
   action_required: 'update-required',
   unsupported: 'unsupported',
 };
@@ -84,10 +85,50 @@ const BackendRow: React.FC<BackendRowProps> = ({
 }) => {
   const showActions = hoverActions ? isHovered : true;
   const message = statusMessage ?? info.message;
-  const canInstall = info.state === 'installable' || info.state === 'update_required';
+  const isUpdate = info.state === 'update_required' || info.state === 'update_available';
+  const canInstall = info.state === 'installable' || isUpdate;
   const hasAction = canInstall || info.state === 'action_required';
-  const canUninstall = info.state === 'installed' && info.can_uninstall !== false && backendName !== 'system';
-  const isUpdate = info.state === 'update_required';
+  const isInstalledLike = info.state === 'installed' || info.state === 'update_available';
+  const canUninstall = isInstalledLike && info.can_uninstall !== false && backendName !== 'system';
+  const hasAvailableActions = Boolean(
+    (canInstall && onInstall) ||
+    (canUninstall && onUninstall) ||
+    (hasAction && info.action && onCopyAction)
+  );
+  const actions = hasAvailableActions ? (
+    <span
+      className={`model-actions ${hoverActions && !showActions ? 'backend-actions-hidden' : ''} ${hoverActions ? '' : 'backend-setup-actions'}`}
+    >
+      {canInstall && onInstall && (
+        <button
+          className={`model-action-btn ${isUpdate ? 'update-btn' : 'download-btn'}`}
+          title={isUpdate ? 'Update backend' : 'Install backend'}
+          disabled={isInstalling}
+          onClick={() => onInstall(recipeName, backendName)}
+        >
+          {isInstalling ? '…' : <DownloadIcon />}
+        </button>
+      )}
+      {canUninstall && onUninstall && (
+        <button
+          className="model-action-btn delete-btn"
+          title="Uninstall backend"
+          onClick={() => onUninstall(recipeName, backendName)}
+        >
+          <UninstallIcon />
+        </button>
+      )}
+      {hasAction && info.action && onCopyAction && (
+        <button
+          className="model-action-btn"
+          title={info.action}
+          onClick={() => onCopyAction(recipeName, backendName, info.action)}
+        >
+          {info.state === 'action_required' ? <HelpIcon /> : <CopyIcon />}
+        </button>
+      )}
+    </span>
+  ) : null;
 
   return (
     <div
@@ -102,62 +143,37 @@ const BackendRow: React.FC<BackendRowProps> = ({
               <span className={`model-status-indicator ${STATUS_INDICATOR_CLASS[info.state]}`}>●</span>
               {backendName}
             </span>
-            {backendName !== 'system' && (
-              <div className="backend-inline-meta">
-                {onOpenReleaseUrl && info.release_url ? (
-                  <button
-                    className="backend-version-link"
-                    onClick={() => onOpenReleaseUrl(info.release_url!)}
-                    title="Open backend release page"
-                  >
-                    {info.version || 'Not installed'}
-                  </button>
-                ) : (
-                  <span className="backend-version">{info.version || info.state}</span>
-                )}
-                {sizeLabel && (
-                  <>
-                    <span className="backend-meta-separator">•</span>
-                    <span className="backend-size">{sizeLabel}</span>
-                  </>
-                )}
-              </div>
-            )}
           </div>
+          {(backendName !== 'system' || actions) && (
+            <div className="backend-row-detail">
+              {backendName !== 'system' ? (
+                <div className="backend-inline-meta">
+                  {onOpenReleaseUrl && info.release_url ? (
+                    <button
+                      className="backend-version-link"
+                      onClick={() => onOpenReleaseUrl(info.release_url!)}
+                      title="Open backend release page"
+                    >
+                      {info.version || 'Not installed'}
+                    </button>
+                  ) : (
+                    <span className="backend-version">{info.version || info.state}</span>
+                  )}
+                  {sizeLabel && (
+                    <>
+                      <span className="backend-meta-separator">•</span>
+                      <span className="backend-size">{sizeLabel}</span>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <span />
+              )}
+              {actions}
+            </div>
+          )}
           {message && <div className="backend-status-message">{message}</div>}
         </div>
-        {showActions && (
-          <span className={`model-actions ${hoverActions ? '' : 'backend-setup-actions'}`}>
-            {canInstall && onInstall && (
-              <button
-                className={`model-action-btn ${isUpdate ? 'update-btn' : 'download-btn'}`}
-                title={isUpdate ? 'Update backend' : 'Install backend'}
-                disabled={isInstalling}
-                onClick={() => onInstall(recipeName, backendName)}
-              >
-                {isInstalling ? '…' : <DownloadIcon />}
-              </button>
-            )}
-            {canUninstall && onUninstall && (
-              <button
-                className="model-action-btn delete-btn"
-                title="Uninstall backend"
-                onClick={() => onUninstall(recipeName, backendName)}
-              >
-                <UninstallIcon />
-              </button>
-            )}
-            {hasAction && info.action && onCopyAction && (
-              <button
-                className="model-action-btn"
-                title={info.action}
-                onClick={() => onCopyAction(recipeName, backendName, info.action)}
-              >
-                {info.state === 'action_required' ? <HelpIcon /> : <CopyIcon />}
-              </button>
-            )}
-          </span>
-        )}
       </div>
     </div>
   );

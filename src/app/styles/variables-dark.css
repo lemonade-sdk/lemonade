@@ -1,0 +1,180 @@
+:root {
+    --title-surface: #000000;
+    --header-bg-color: #000000;
+    --header-text: var(--text-quaternary);
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #111111;
+    --bg-quaternary: #2a2a2a;
+    --bg-hover: #f0f0f0;
+
+    --success-color: #4CAF50;
+    --success-border: #4CAF50;
+    --warning-color: #ffb74d;
+    --info-color: #2196F3;
+    --action-color: #FF9800;
+    --error-background-color: rgba(244, 67, 54, 0.1);
+    --error-border: rgba(244, 67, 54, 0.3);
+    --error-color: #f44336;
+    --error-hover:#dc2626;
+
+    --status-connecting: rgba(255, 165, 0, 0.1);
+    --on-status-connecting: #ffa500;
+
+    --status-connected: rgba(0, 255, 0, 0.1);
+    --on-status-connected: #00ff00;
+
+    --status-error: rgba(255, 68, 68, 0.1);
+    --on-status-error: #ff4444;
+
+    --status-disconnected: rgba(136, 136, 136, 0.1);
+    --on-status-disconnected: var(--text-secondary);
+
+    --logs-error: #ff4444;
+    --logs-surface: rgba(255, 68, 68, 0.1);
+
+    --resizable-divider-border: none;
+
+    --left-panel-surface: linear-gradient(180deg, var(--panel-bg-1) 0%, var(--panel-bg-2) 100%);
+
+    --bg-alpha-01: rgba(255, 255, 255, 0.01);
+    --bg-alpha-02: rgba(255, 255, 255, 0.02);
+    --bg-alpha-03: rgba(255, 255, 255, 0.03);
+    --bg-alpha-04: rgba(255, 255, 255, 0.04);
+    --bg-alpha-05: rgba(255, 255, 255, 0.05);
+    --bg-alpha-06: rgba(255, 255, 255, 0.06);
+    --bg-alpha-07: rgba(255, 255, 255, 0.07);
+    --bg-alpha-08: rgba(255, 255, 255, 0.08);
+    --bg-alpha-1: rgba(255, 255, 255, 0.1);
+    --bg-alpha-2: rgba(255, 255, 255, 0.2);
+    --bg-alpha-3: rgba(255, 255, 255, 0.3);
+    --bg-alpha-4: rgba(255, 255, 255, 0.4);
+    --bg-alpha-5: rgba(255, 255, 255, 0.5);
+    --bg-alpha-6: rgba(255, 255, 255, 0.6);
+    --bg-alpha-7: rgba(255, 255, 255, 0.7);
+    --bg-alpha-8: rgba(255, 255, 255, 0.8);
+    --bg-alpha-9: rgba(255, 255, 255, 0.9);
+    --bg-secondary-alpha-2: rgba(0, 0, 0, 0.2);
+    --bg-secondary-alpha-3: rgba(0, 0, 0, 0.3);
+    --bg-secondary-alpha-5: rgba(0, 0, 0, 0.5);
+    --bg-secondary-alpha-7: rgba(0, 0, 0, 0.7);
+    --bg-secondary-alpha-8: rgba(0, 0, 0, 0.8);
+    --bg-secondary-alpha-9: rgba(0, 0, 0, 0.9);
+
+    --bg-slider: #333333;
+    --thinking-toggle: transparent;
+    --marketplace-surface: radial-gradient(ellipse at 50% 0%, rgba(50, 50, 50, 0.3) 0%, transparent 60%);
+    --marketplace-badge-surface: linear-gradient(135deg, rgba(255, 200, 50, 0.15) 0%, rgba(255, 150, 50, 0.1) 100%);
+    --marketplace-offline-surface: radial-gradient(ellipse at 50% 0%, rgba(50, 50, 50, 0.3) 0%, transparent 60%);
+    --backend-manager-surface: radial-gradient(110% 65% at 50% 0%, rgba(252, 204, 21, 0.02) 0%, rgba(252, 204, 21, 0) 60%),
+    linear-gradient(180deg, rgba(10, 10, 13, 0.84) 0%, rgba(7, 7, 10, 0.9) 100%);
+
+    --settings-bg: var(--bg-secondary);
+    --form-input: var(--bg-secondary);
+
+    --label-reasoning: #6495ED;
+    --label-coding: #48BB78;
+    --label-vision: #9F7AEA;
+    --label-hot: #F56565;
+    --label-embeddings: #ED8936;
+    --label-reranking: #D69E2E;
+    --label-tool-calling: #38B2AC;
+    --label-custom: #FAD02C;
+
+    --markdown-code: #ff6b6b;
+    --markdown-link: #4a9eff;
+    --markdown-hljs-quote: #7c7c7c;
+    --markdown-hljs-type: #c792ea;
+    --markdown-hljs-selector: #f78c6c;
+    --markdown-hljs-template-variable: #c3e88d;
+    --markdown-hljs-variable: #82aaff;
+    --markdown-hljs-title: #82aaff;
+    --markdown-hljs-property: #c792ea;
+    --markdown-hljs-link: #f07178;
+    --markdown-hljs-bullet: #89ddff;
+    --markdown-hljs-meta: #ffcb6b;
+    --markdown-hljs-tag: #f07178;
+    --markdown-hljs-name: #f07178;
+    --markdown-hljs-section: #82aaff;
+    --markdown-hljs-addition: rgba(0, 255, 0, 0.15);
+    --markdown-hljs-deletion: rgba(255, 0, 0, 0.15);
+
+    --toast-success-border: rgba(34, 197, 94, 0.4);
+    --toast-success-surface: linear-gradient(135deg, #1a1a1a 0%, #151f17 100%);
+    --toast-success-text: #22c55e;
+    --toast-info-border: rgba(59, 130, 246, 0.4);
+    --toast-info-surface: linear-gradient(135deg, #1a1a1a 0%, #151a1f 100%);
+    --toast-info-text: #3b82f6;
+    --toast-warning-border: rgba(234, 179, 8, 0.4);
+    --toast-warning-surface: linear-gradient(135deg, #1a1a1a 0%, #1f1d15 100%);
+    --toast-warning-text: #eab308;
+    --toast-error-border: rgba(239, 68, 68, 0.4);
+    --toast-error-surface: linear-gradient(135deg, #1a1a1a 0%, #1f1517 100%);
+    --toast-error-text: #ef4444;
+
+    --border-alpha-04: rgba(255, 255, 255, 0.04);
+    --border-alpha-05: rgba(255, 255, 255, 0.05);
+    --border-alpha-06: rgba(255, 255, 255, 0.06);
+    --border-alpha-07: rgba(255, 255, 255, 0.07);
+    --border-alpha-08: rgba(255, 255, 255, 0.08);
+    --border-alpha-09: rgba(255, 255, 255, 0.09);
+    --border-alpha-1: rgba(255, 255, 255, 0.1);
+    --border-alpha-2: rgba(255, 255, 255, 0.2);
+    --border-alpha-15: rgba(255, 255, 255, 0.15);
+
+    --border-primary: #333333;
+    --border-secondary: #2a2a2a;
+    --border-tertiary: #1a1a1a;
+    --border-2: #222222;
+    --color-2: #222222;
+    --border-4: #444444;
+    --color-4: #444444;
+    --border-5: #555555;
+    --color-5: #555555;
+    --border-6: #666666;
+    --border-8: #888888;
+    --color-6: #666666;
+    --color-7: #777777;
+    --color-9: #999999;
+    --color-25: #252525;
+    --border-25: #252525;
+    --text-primary: #ffffff;
+    --text-secondary: #888888;
+    --text-tertiary: #cccccc;
+    --text-quaternary: #666666;
+    --text-code: #e0e0e0;
+    --text-aaa: #aaaaaa;
+    --text-link: #75abd7;
+    --text-link-hover: #96c5e9;
+
+    --border-marketplace: #2a2a2a;
+
+    --model-available: var(--text-primary);
+    --model-unavailable: #666666;
+
+    --model-manager-bg: #0a0a0a;
+
+    --btn-primary: var(--bg-alpha-08);
+    --btn-primary--hover: var(--bg-alpha-2);
+    --btn-color: #000000;
+    --btn-bg-primary: #ffffff;
+    --btn-bg-secondary: #2a2a2a;
+    --btn-bg-hover: #3a3a3a;
+    --btn-border: none;
+    --panel-bg-1: #090909;
+    --panel-bg-2: #070707;
+    --chat-send-btn: var(--btn-bg-primary);
+    --chat-bg-1: rgba(10, 10, 10, 0);
+    --chat-bg-2: rgba(8, 8, 8, 0.72);
+    --chat-bg-3: #000000;
+    --icon-hover: #f2f2f2;
+    --icon-alt: #b9b9b9;
+    --scrollbar-color: #555 #252525;
+
+    --title-btn-hover: #e81123;
+    --title-btn-active: #c50e1f;
+
+    --mic-btn-background: rgba(244, 67, 54, 0.15);
+    --mic-btn-border: #f44336;
+    --mic-btn-color: #f44336;
+}

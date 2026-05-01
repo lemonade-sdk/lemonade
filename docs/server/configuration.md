@@ -31,8 +31,10 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "models_dir": "auto",
   "ctx_size": 4096,
   "offline": false,
+  "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
+  "rocm_channel": "preview",
   "llamacpp": {
     "backend": "auto",
     "args": "",
@@ -84,8 +86,10 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
 | `ctx_size` | int | 4096 | Default context size for LLM models |
 | `offline` | bool | false | Skip model downloads |
+| `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
+| `rocm_channel` | string | "preview" | ROCm backend channel: "preview" (default), "stable", or "nightly". See [llama.cpp Backend](../llamacpp.md) for details |
 
 ### Backend Configuration
 
@@ -97,14 +101,14 @@ Backend-specific settings are nested under their backend name:
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to llama-server |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
-| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **whispercpp** — Audio transcription:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to whisper-server |
-| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **sdcpp** — Image generation:
 | Key | Default | Description |
@@ -115,7 +119,7 @@ Backend-specific settings are nested under their backend name:
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |
 | `width` | 512 | Image width in pixels |
 | `height` | 512 | Image height in pixels |
-| `*_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **flm** — FastFlowLM NPU inference:
 | Key | Default | Description |
@@ -125,12 +129,64 @@ Backend-specific settings are nested under their backend name:
 **ryzenai** — RyzenAI NPU inference:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `server_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `server_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **kokoro** — Text-to-speech:
 | Key | Default | Description |
 |-----|---------|-------------|
-| `cpu_bin` | "builtin" | Path to custom binary, or "builtin" for bundled |
+| `cpu_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
+
+### Backend binary selection
+
+Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm_bin`) accepts the same set of values:
+
+| Value | Meaning |
+|---|---|
+| `"builtin"` *(default)* | Use the version of the upstream backend that lemonade pins in its release. Recommended for most users — these versions are tested with this lemonade build. |
+| `""` | Same as `"builtin"`. |
+| `"latest"` | Resolve to the most-recent upstream GitHub release on first install or first status query for that backend, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
+| `"b8664"` / `"v1.8.2"` / etc. | A specific upstream release tag. Lemonade downloads that exact version from GitHub. |
+| `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
+
+> Note: the `latest` setting is experimental.
+
+Examples:
+
+```bash
+# Track upstream llama.cpp Vulkan releases (auto-resolve at lemond start)
+lemonade config set llamacpp.vulkan_bin=latest
+
+# Pin to a specific llama.cpp build
+lemonade config set llamacpp.vulkan_bin=b8664
+
+# Use your own llama.cpp build
+lemonade config set llamacpp.vulkan_bin=/home/me/llama.cpp/build/bin
+
+# Revert to the version lemonade ships
+lemonade config set llamacpp.vulkan_bin=builtin
+```
+
+#### Behavior when `*_bin` changes
+
+Changing a `*_bin` value applies live: lemonade unloads any model currently using that backend, downloads the new binary if needed, and reloads the model on the new binary. No `lemond` restart is required.
+
+#### `latest` re-resolution
+
+`"latest"` is resolved once per `lemond` process. The first install or status query for a `latest`-pinned backend hits the GitHub API; the resolved tag is then cached in memory for the rest of the process lifetime. Subsequent installs and status queries (including manual `lemonade backends install`) reuse the cached tag and do not re-query GitHub. **Restart `lemond` to pick up a newer upstream release.**
+
+#### Upgrade signals in `lemonade backends`
+
+The `lemonade backends` listing surfaces two upgrade signals for backends pinned to `"latest"`:
+
+- **`update_available`** — A newer upstream release exists than what's installed. The backend keeps running on the installed version; the listed `action` is the install command to apply the upgrade when you're ready.
+- **`update_required`** — The installed version is *older* than the version lemonade ships in this release. This forces an upgrade prompt because running below the lemonade-shipped baseline is not supported.
+
+Backends pinned to a specific tag (e.g. `b8664`) do not get either signal — they're treated as an explicit user choice.
+
+#### Interactions with other config
+
+- `offline: true` blocks the GitHub call for `"latest"`. If a previously-installed `version.txt` exists in the install directory, lemonade reuses that version with a warning. Otherwise the install fails.
+- `no_fetch_executables: true` blocks all downloads, including resolving and installing `"latest"` and any version-tag pin. Existing installs continue to work.
 
 ## Editing Configuration
 

@@ -156,44 +156,21 @@ The tray app searches for the Tauri app in these locations:
 
 If not found, the "Open app" menu option is hidden but everything else works.
 
-### Building an AppImage (Linux Only)
-
-AppImage builds are opt-in. Enable the option at configure time and then build:
-
-```bash
-cmake --preset default -DBUILD_APPIMAGE=ON
-cmake --build --preset default --target appimage
-```
-
-Alternatively, if you've already configured without the flag, you can still trigger a one-off build using the manual target:
-
-```bash
-cmake --build --preset default --target appimage
-```
-
-This will:
-1. Run `npm ci` in `src/app/` to install webpack and the Tauri CLI
-2. Set the package.json version to match the CMake project version
-3. Webpack the React renderer with production optimizations
-4. Invoke `cargo tauri build --bundles appimage` to compile the Rust host and bundle the AppImage
-5. Stage the artifact at `build/app-appimage/lemonade-app-<version>-x86_64.AppImage`
-
-The generated AppImage will be located in:
-- `build/app-appimage/lemonade-app-<version>-<arch>.AppImage`
-
-The AppImage is a self-contained executable that includes all dependencies and can be run on any Linux distribution without installation. Simply make it executable and run it:
-
-```bash
-chmod +x build/app-appimage/lemonade-app-*.AppImage
-./build/app-appimage/lemonade-app-*.AppImage
-```
-
 ### Platform-Specific Notes
 
 **Windows:**
 - The build uses static linking to minimize DLL dependencies
 - All dependencies are built from source (no external DLL requirements)
 - Security features enabled: Control Flow Guard, ASLR, DEP
+- **Troubleshooting:** If `npm run dev` or `cargo` commands fail with "program not found", ensure `%USERPROFILE%\.cargo\bin` is in your PATH. Add it permanently from PowerShell with a duplicate-safe update, then restart your IDE or terminal:
+  ```powershell
+  $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+  $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+  if (($userPath -split ";") -notcontains $cargoBin) {
+      [System.Environment]::SetEnvironmentVariable("PATH", "$cargoBin;$userPath", "User")
+  }
+  ```
+- **Troubleshooting:** If Rust/Tauri fails with `link.exe` or `msvcrt.lib` errors, launch from a Visual Studio Developer shell and confirm `where link` lists the Visual Studio linker before Git's `link.exe`.
 
 **Linux:**
 - `lemond` is always headless on Linux (GTK-free, daemon-friendly); use `lemond` to start the server directly
@@ -877,7 +854,7 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 
 ### Key Resources
 
-- **API Specification:** `docs/server/server_spec.md`
+- **API Specification:** `docs/api/`
 - **Model Registry:** `src/cpp/resources/server_models.json`
 - **Web UI Files:** `src/cpp/resources/static/`
 - **Backend Versions:** `src/cpp/resources/backend_versions.json`

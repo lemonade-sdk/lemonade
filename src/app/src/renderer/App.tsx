@@ -10,7 +10,7 @@ import StatusBar from './StatusBar';
 import { ModelsProvider } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
-import '../../styles.css';
+import '../../styles/index.css';
 
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
@@ -135,19 +135,6 @@ const AppContent: React.FC = () => {
       window.removeEventListener('download:started' as any, handleDownloadStart);
       window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
       window.removeEventListener('open-external-content' as any, handleOpenExternalContent);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleExperienceModeChanged = (event: Event) => {
-      const customEvent = event as CustomEvent<{ active?: boolean }>;
-      if (customEvent.detail?.active) {
-        setIsModelManagerVisible(false);
-      }
-    };
-    window.addEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
-    return () => {
-      window.removeEventListener('experienceModeChanged' as any, handleExperienceModeChanged);
     };
   }, []);
 

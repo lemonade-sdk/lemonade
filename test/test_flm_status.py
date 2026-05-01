@@ -120,14 +120,15 @@ NPU_HARDWARE = {
             "available": True,
             "family": "x86_64",
         },
-        "amd_igpu": {
-            "name": "AMD Radeon 890M",
-            "vram_gb": 8.0,
-            "available": True,
-            "family": "gfx1150",
-        },
-        "amd_dgpu": [],
-        "nvidia_dgpu": [],
+        "amd_gpu": [
+            {
+                "name": "AMD Radeon 890M",
+                "vram_gb": 8.0,
+                "available": True,
+                "family": "gfx1150",
+            }
+        ],
+        "nvidia_gpu": [],
         "amd_npu": {
             "name": "AMD Ryzen AI 9 HX 370",
             "available": True,
@@ -154,9 +155,8 @@ NO_NPU_HARDWARE = {
             "available": True,
             "family": "x86_64",
         },
-        "amd_igpu": {"name": "None", "available": False, "family": ""},
-        "amd_dgpu": [],
-        "nvidia_dgpu": [],
+        "amd_gpu": [],
+        "nvidia_gpu": [],
         "amd_npu": {"name": "None", "available": False, "family": ""},
     },
 }
@@ -366,7 +366,7 @@ class FlmStatusTests(unittest.TestCase):
             )
 
             wait_for_server()
-            yield
+            yield process
 
         finally:
             if process:
@@ -937,6 +937,59 @@ class FlmStatusTests(unittest.TestCase):
                 body = r.json()
                 self.assertEqual(body.get("status"), "success")
                 print(f"  [OK] installed install: already installed, 200")
+
+
+    @unittest.skipUnless(IS_X86_64, "FLM tests require x86_64")
+    @unittest.skipIf(IS_WINDOWS, "SIGHUP not available on Windows")
+    def test_sighup_rescan(self):
+        """SIGHUP triggers hardware rescan: FLM becomes detected after being added to PATH.
+
+        Verifies the issue requirement: after 'systemctl reload lemond.service' (SIGHUP),
+        lemond re-evaluates which backends are available without requiring a full restart.
+        """
+        dummy_dir = tempfile.mkdtemp(prefix="lemonade_sighup_test_")
+        try:
+            # Start server with NPU hardware but empty dummy dir (no FLM binary yet)
+            with self._server(NPU_HARDWARE, flm_dir=dummy_dir) as proc:
+                # Before SIGHUP: FLM binary not found -> state=installable
+                data = self._get_system_info()
+                npu = self._get_flm_npu(data)
+                self.assertEqual(
+                    npu["state"],
+                    "installable",
+                    f"Expected installable before SIGHUP, got: {npu}",
+                )
+                print(f"  [OK] before SIGHUP: FLM state={npu['state']}")
+
+                # Add a working mock FLM to the dummy dir (already in server's PATH)
+                create_mock_flm_script(
+                    dummy_dir,
+                    version=REQUIRED_FLM_VERSION.lstrip("v"),
+                    validate_ready=True,
+                )
+
+                # Send SIGHUP to trigger hardware rescan
+                os.kill(proc.pid, signal.SIGHUP)
+
+                # Poll until the state updates (background thread + next system-info call)
+                deadline = time.time() + 10
+                npu_after = None
+                while time.time() < deadline:
+                    time.sleep(0.5)
+                    data = self._get_system_info()
+                    npu_after = self._get_flm_npu(data)
+                    if npu_after["state"] == "installed":
+                        break
+
+                self.assertIsNotNone(npu_after)
+                self.assertEqual(
+                    npu_after["state"],
+                    "installed",
+                    f"Expected installed after SIGHUP, got: {npu_after}",
+                )
+                print(f"  [OK] after SIGHUP: FLM state={npu_after['state']}")
+        finally:
+            shutil.rmtree(dummy_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

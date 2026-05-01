@@ -2,13 +2,14 @@
  * WebSocket client for realtime transcription.
  * Uses a raw WebSocket with OpenAI Realtime API message format.
  */
-import { getAPIKey, getServerHost, serverFetch } from './serverConfig';
+import { getAPIKey, getServerHost, getWebSocketProtocol, serverFetch } from './serverConfig';
 
 export interface TranscriptionCallbacks {
   /** Called with transcription text. isFinal=false for interim results that replace previous interim. */
   onTranscription: (text: string, isFinal: boolean) => void;
   onSpeechEvent: (event: 'started' | 'stopped') => void;
   onError?: (error: string) => void;
+  onAudioBufferCleared?: () => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
 }
@@ -28,7 +29,7 @@ export class TranscriptionWebSocket {
     if (apiKey) {
       query.set('api_key', apiKey);
     }
-    const wsUrl = `ws://${getServerHost()}:${wsPort}/realtime?${query.toString()}`;
+    const wsUrl = `${getWebSocketProtocol()}://${getServerHost()}:${wsPort}/realtime?${query.toString()}`;
 
     console.log('[WebSocket] Connecting to:', wsUrl);
 
@@ -61,6 +62,9 @@ export class TranscriptionWebSocket {
             break;
           case 'input_audio_buffer.speech_stopped':
             callbacks.onSpeechEvent('stopped');
+            break;
+          case 'input_audio_buffer.cleared':
+            callbacks.onAudioBufferCleared?.();
             break;
           case 'conversation.item.input_audio_transcription.delta':
             // Interim result - replaces previous interim text
