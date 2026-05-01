@@ -1,0 +1,85 @@
+.custom-collection-modal {
+    width: min(620px, calc(100vw - 40px));
+    max-width: 620px;
+    max-height: calc(100vh - 64px);
+}
+
+.custom-collection-modal .settings-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.custom-collection-content {
+    gap: 18px;
+}
+
+.collection-role-list {
+    display: grid;
+    gap: 12px;
+}
+
+.collection-role-row {
+    margin: 0;
+}
+
+.collection-model-select {
+    width: 100%;
+}
+
+.collection-role-empty {
+    margin-top: 2px;
+    color: var(--text-tertiary);
+    font-size: 0.68rem;
+    line-height: 1.35;
+}
+
+.collection-warning {
+    padding: 10px 12px;
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    line-height: 1.45;
+}
+
+.custom-collection-footer {
+    gap: 8px;
+}
+
+.collection-delete-button {
+    margin-right: auto;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid var(--border-primary);
+    color: #ff6b6b;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.collection-delete-button:hover {
+    background: rgba(255, 107, 107, 0.1);
+    border-color: rgba(255, 107, 107, 0.45);
+}
+
+.collection-import-input {
+    display: none;
+}
+
+.model-selector-option.collection-option::before {
+    content: 'Omni';
+    font-size: 0.56rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 999px;
+    padding: 1px 5px;
+    margin-right: 6px;
+    flex-shrink: 0;
+}

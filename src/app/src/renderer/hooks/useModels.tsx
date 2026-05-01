@@ -129,10 +129,12 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     window.addEventListener('modelsUpdated', handleRefresh);
     window.addEventListener('backendsUpdated', handleRefresh);
+    window.addEventListener('customCollectionsUpdated', handleRefresh);
 
     return () => {
       window.removeEventListener('modelsUpdated', handleRefresh);
       window.removeEventListener('backendsUpdated', handleRefresh);
+      window.removeEventListener('customCollectionsUpdated', handleRefresh);
     };
   }, [refresh]);
 

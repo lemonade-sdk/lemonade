@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft } from './components/Icons';
 import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
@@ -7,9 +8,19 @@ import LogsWindow from './LogsWindow';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
-import { ModelsProvider } from './hooks/useModels';
+import { ModelsProvider, useModels } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
+import CustomCollectionPanel from './components/CustomCollectionPanel';
+import { ToastContainer, useToast } from './Toast';
+import {
+  CustomCollectionDraft,
+  buildCustomCollectionsExportPayload,
+  deleteCustomCollection,
+  importCustomCollections,
+  loadCustomCollections,
+  saveCustomCollection,
+} from './utils/customCollections';
 import '../../styles/index.css';
 
 const LAYOUT_CONSTANTS = {
@@ -34,6 +45,10 @@ const AppContent: React.FC = () => {
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
   const [logsHeight, setLogsHeight] = useState(DEFAULT_LAYOUT_SETTINGS.logsHeight);
   const [layoutLoaded, setLayoutLoaded] = useState(false);
+  const [customCollectionModal, setCustomCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
+  const importCollectionFileRef = useRef<HTMLInputElement>(null);
+  const { selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
+  const { toasts, removeToast, showError, showSuccess } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -269,6 +284,104 @@ const AppContent: React.FC = () => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+
+  useEffect(() => {
+    const handleOpenCustomCollection = () => setCustomCollectionModal({ mode: 'create' });
+    const handleImportCustomCollection = () => importCollectionFileRef.current?.click();
+    const handleEditCustomCollection = (event: Event) => {
+      const collectionId = (event as CustomEvent<{ collectionId?: string }>).detail?.collectionId;
+      if (collectionId) {
+        setCustomCollectionModal({ mode: 'edit', collectionId });
+      }
+    };
+
+    window.addEventListener('openCustomCollection', handleOpenCustomCollection);
+    window.addEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+    window.addEventListener('editCustomCollection', handleEditCustomCollection);
+    document.addEventListener('openCustomCollection', handleOpenCustomCollection);
+    document.addEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+    document.addEventListener('editCustomCollection', handleEditCustomCollection);
+
+    return () => {
+      window.removeEventListener('openCustomCollection', handleOpenCustomCollection);
+      window.removeEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+      window.removeEventListener('editCustomCollection', handleEditCustomCollection);
+      document.removeEventListener('openCustomCollection', handleOpenCustomCollection);
+      document.removeEventListener('openCustomCollectionFromJSON', handleImportCustomCollection);
+      document.removeEventListener('editCustomCollection', handleEditCustomCollection);
+    };
+  }, []);
+
+  const handleSaveCustomCollection = async (collection: CustomCollectionDraft) => {
+    try {
+      const saved = saveCustomCollection(collection);
+      setCustomCollectionModal(null);
+      await refreshModels();
+      setSelectedModel(saved.id);
+      setUserHasSelectedModel(true);
+    } catch (error) {
+      showError('Failed to save collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  const handleDeleteCustomCollection = async (collectionId: string) => {
+    try {
+      deleteCustomCollection(collectionId);
+      setCustomCollectionModal(null);
+      await refreshModels();
+      if (selectedModel === collectionId) {
+        setSelectedModel('');
+        setUserHasSelectedModel(false);
+      }
+    } catch (error) {
+      showError('Failed to delete collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  const handleExportCustomCollection = (collectionId: string) => {
+    const collection = loadCustomCollections().find((item) => item.id === collectionId);
+    if (!collection) {
+      showError('Failed to export collection: collection not found.');
+      return;
+    }
+
+    const payload = {
+      version: buildCustomCollectionsExportPayload().version,
+      exportedAt: new Date().toISOString(),
+      collections: [collection],
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = collection.id + '.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleImportCustomCollectionFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+      try {
+        const parsed = JSON.parse(String(loadEvent.target?.result ?? ''));
+        const result = importCustomCollections(parsed);
+        await refreshModels();
+        const skipped = result.skipped > 0 ? '; skipped ' + result.skipped + ' invalid entr' + (result.skipped === 1 ? 'y' : 'ies') : '';
+        showSuccess('Imported ' + result.imported + ' custom collection' + (result.imported === 1 ? '' : 's') + skipped + '.');
+      } catch (importError) {
+        showError(importError instanceof Error ? importError.message : 'Failed to import custom collections.');
+      }
+    };
+    reader.onerror = () => showError('Failed to read the selected file.');
+    reader.readAsText(file);
+  };
+
   const handleLeftDividerMouseDown = (e: React.MouseEvent) => {
     // preventDefault stops the WebKit-based webview (Tauri) from starting a
     // drag-text-selection on the divider, which would swallow our mousemove
@@ -297,6 +410,7 @@ const AppContent: React.FC = () => {
 
   return (
     <>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
       <TitleBar
         theme={theme}
         setTheme={setTheme}
@@ -358,6 +472,28 @@ const AppContent: React.FC = () => {
           </>
         )}
       </div>
+      <input
+        ref={importCollectionFileRef}
+        type="file"
+        accept=".json,application/json"
+        className="collection-import-input"
+        onChange={handleImportCustomCollectionFile}
+      />
+      {customCollectionModal && createPortal(
+        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) { setCustomCollectionModal(null); } }}>
+          <div className="settings-modal custom-collection-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <CustomCollectionPanel
+              mode={customCollectionModal.mode}
+              collectionId={customCollectionModal.collectionId}
+              onClose={() => setCustomCollectionModal(null)}
+              onSave={handleSaveCustomCollection}
+              onDelete={handleDeleteCustomCollection}
+              onExport={handleExportCustomCollection}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
       <StatusBar />
       <WindowResizeHandles />
     </>

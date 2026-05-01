@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isCollectionModel, getCollectionPrimaryChatModel, getCollectionComponents } from './utils/collectionModels';
+import { isCollectionModel, getCollectionComponents } from './utils/collectionModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -30,6 +30,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setSelectedModel,
     userHasSelectedModel,
     setUserHasSelectedModel,
+    refresh,
   } = useModels();
   const inference = useInferenceState();
   const { toasts, removeToast, showError } = useToast();
@@ -76,22 +77,31 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return false;
     const info = modelsData[selectedModel];
     if (isCollectionModel(info)) {
-      const chatModel = getCollectionPrimaryChatModel(selectedModel, modelsData);
-      return modelsData[chatModel]?.labels?.includes('vision') || false;
+      const components = getCollectionComponents(info);
+      return components.some(component => modelsData[component]?.labels?.includes('vision'));
     }
     return info?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
-  // A multimodal chat model that accepts audio *as input* to a chat turn —
-  // distinct from a pure ASR (Whisper) model which is also labeled "audio" but
-  // should only appear in the Transcription panel. We require the model to
-  // also carry a chat-indicator label so we don't surface an audio-attach
-  // button on a Whisper model.
+  // A multimodal chat model accepts audio directly. Collection models
+  // can also expose a separate ASR component, so enable the audio controls when
+  // a selected collection has any audio/transcription-capable component.
   const isAudioChat = useMemo(() => {
     if (!selectedModel) return false;
-    const labels = modelsData[selectedModel]?.labels || [];
-    if (!labels.includes('audio')) return false;
-    return labels.some(l => l === 'vision' || l === 'reasoning' || l === 'tool-calling' || l === 'tools');
+    const info = modelsData[selectedModel];
+    const hasChatIndicator = (labels: string[]) =>
+      labels.some(l => l === 'vision' || l === 'reasoning' || l === 'tool-calling' || l === 'tools');
+
+    if (isCollectionModel(info)) {
+      return getCollectionComponents(info).some(component => {
+        const labels = modelsData[component]?.labels || [];
+        return labels.includes('transcription') || labels.includes('audio') ||
+          (labels.includes('audio') && hasChatIndicator(labels));
+      });
+    }
+
+    const labels = info?.labels || [];
+    return labels.includes('audio') && hasChatIndicator(labels);
   }, [selectedModel, modelsData]);
 
   const isCollectionSelected = useMemo(() => {
