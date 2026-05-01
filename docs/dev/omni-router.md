@@ -1,6 +1,6 @@
 # OmniRouter
 
-OmniRouter is Lemonade's approach to multimodal agentic workflows. Instead of building a proprietary agent runtime into Lemonade, each supported modality is exposed as an **OpenAI-compatible tool** that an existing LLM agent can call against Lemonade's endpoints.
+OmniRouter is Lemonade's approach to multimodal agentic workflows. Instead of building a proprietary agent runtime into Lemonade, each supported modality is exposed as an **OpenAI-compatible tool** that an existing LLM agent (Continue, OpenHands, Claude Code, your own app) can call against Lemonade's endpoints.
 
 You bring the LLM loop. Lemonade brings the local tools.
 
