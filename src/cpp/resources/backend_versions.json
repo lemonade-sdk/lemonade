@@ -20,7 +20,7 @@
     "cpu": "master-569-ab6afe8",
     "rocm-stable": "master-569-ab6afe8",
     "rocm-preview": "master-569-ab6afe8",
-    "metal": "master-569-ab6afe8"
+    "metal": "master-593-7f65f2a"
   },
   "therock": {
     "version": "7.12.0",
