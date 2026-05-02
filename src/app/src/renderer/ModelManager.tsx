@@ -1156,6 +1156,11 @@ const [searchQuery, setSearchQuery] = useState('');
     const info = modelsData[modelName];
     const isEsrgan = info?.labels?.includes('esrgan');
     const isCollection = isCollectionModel(info);
+    // Cloud-recipe rows have no local artifact (Delete is meaningless and
+    // dynamic discovery would re-add anyway) and no per-model knobs the
+    // ModelOptionsModal can edit (provider config lives in the Backends
+    // panel). Show Load / Unload only.
+    const isCloud = info?.recipe === 'cloud';
     return (
       <>
         {!isDownloaded && (
@@ -1187,8 +1192,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {!isCollection && renderDeleteButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {!isCollection && !isCloud && renderDeleteButton(modelName)}
+            {!isCollection && !isCloud && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1204,8 +1209,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {!isCollection && renderDeleteButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {!isCollection && !isCloud && renderDeleteButton(modelName)}
+            {!isCollection && !isCloud && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
