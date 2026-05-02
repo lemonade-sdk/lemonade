@@ -144,10 +144,15 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
           style={{ cursor: 'pointer' }}
         >
           <span className="category-label-wrap">
-            <ChevronRight
-              size={14}
-              style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
-            />
+            <span
+              style={{
+                display: 'inline-flex',
+                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 0.15s',
+              }}
+            >
+              <ChevronRight size={14} />
+            </span>
             <span className="category-label">Cloud Providers</span>
             <span className="category-count">({filteredProviders.length})</span>
           </span>
