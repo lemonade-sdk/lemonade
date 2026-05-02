@@ -1,0 +1,12 @@
+{
+  "name": "Bad Collection",
+  "recipe": "collection",
+  "components": [
+    {
+      "name": "Bad-Recipe-Component",
+      "checkpoint": "someuser/anything",
+      "recipe": "exec-arbitrary",
+      "labels": []
+    }
+  ]
+}

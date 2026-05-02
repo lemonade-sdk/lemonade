@@ -1,5 +1,5 @@
 export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
-  'collection': 'OmniRouter',
+  'collection': 'Lemonade Model',
   'flm': 'FastFlowLM NPU',
   'llamacpp': 'Llama.cpp GPU',
   'ryzenai-llm': 'Ryzen AI LLM',

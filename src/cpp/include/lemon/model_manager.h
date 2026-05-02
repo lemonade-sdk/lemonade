@@ -110,6 +110,18 @@ public:
                             const json& model_data,
                             const std::string& source = "");
 
+    // Register a Lemonade Model (collection) from a manifest. The manifest
+    // schema is documented in docs/lemonade-models.md. Components in the
+    // manifest are either (a) string references to entries already in
+    // server_models.json (curated wins on name conflicts) or (b) inline
+    // objects with full metadata, which are persisted to user_models.json
+    // as user models. The collection itself is persisted with
+    // recipe="collection" and the resolved component names. This call is
+    // pure registration — it never triggers component downloads.
+    void register_collection_from_manifest(const std::string& model_name,
+                                           const json& manifest,
+                                           const std::string& source = "");
+
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,

@@ -1,5 +1,5 @@
 """
-OmniRouter tool calling: agentic loop example.
+Lemonade Models tool calling: agentic loop example.
 
 Demonstrates how to use Lemonade's multimodal endpoints as tools in an
 LLM agentic loop. The LLM decides which tool to call; this script

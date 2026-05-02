@@ -504,7 +504,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
-      'collection': 'OmniRouter',
+      'collection': 'Lemonade Model',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',

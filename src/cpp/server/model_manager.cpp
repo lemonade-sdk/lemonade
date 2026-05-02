@@ -1687,6 +1687,143 @@ void ModelManager::register_user_model(const std::string& model_name,
     add_model_to_cache("user." + clean_name);
 }
 
+namespace {
+// Recipes a manifest is allowed to declare for inline component entries.
+// Whitelisted to prevent a malicious or malformed manifest from registering
+// a component under an arbitrary recipe string.
+const std::set<std::string>& allowed_inline_collection_recipes() {
+    static const std::set<std::string> kAllowed = {
+        "llamacpp", "sd-cpp", "whispercpp", "kokoro", "flm", "ryzenai-llm"
+    };
+    return kAllowed;
+}
+}  // namespace
+
+void ModelManager::register_collection_from_manifest(const std::string& model_name,
+                                                     const json& manifest,
+                                                     const std::string& source) {
+    if (!is_user_model_name(model_name)) {
+        throw std::runtime_error(
+            "Lemonade Models registered from a manifest must use the `user.` "
+            "prefix. Received: " + model_name);
+    }
+
+    if (!manifest.is_object()) {
+        throw std::runtime_error("Lemonade Model manifest must be a JSON object");
+    }
+
+    std::string manifest_recipe = manifest.value("recipe", "");
+    if (manifest_recipe != "collection") {
+        throw std::runtime_error(
+            "Lemonade Model manifest must declare `recipe: \"collection\"`. "
+            "Received: \"" + manifest_recipe + "\"");
+    }
+
+    if (!manifest.contains("components") || !manifest["components"].is_array()) {
+        throw std::runtime_error(
+            "Lemonade Model manifest must include a `components` array");
+    }
+
+    const auto& components = manifest["components"];
+    if (components.empty()) {
+        throw std::runtime_error("Lemonade Model manifest `components` is empty");
+    }
+
+    // Resolve each component into a registry name. String entries reference
+    // existing registry models; object entries are registered inline as user
+    // models (curated wins on name conflicts).
+    std::vector<std::string> resolved_component_names;
+    resolved_component_names.reserve(components.size());
+
+    for (const auto& component : components) {
+        if (component.is_string()) {
+            std::string ref = component.get<std::string>();
+            if (ref.empty()) {
+                throw std::runtime_error("Component reference is empty");
+            }
+            if (!model_exists(ref) && !model_exists_unfiltered(ref)) {
+                throw std::runtime_error(
+                    "Component '" + ref + "' is not in the model registry. "
+                    "Either include it as an inline component object or pre-register it.");
+            }
+            resolved_component_names.push_back(ref);
+            continue;
+        }
+
+        if (!component.is_object()) {
+            throw std::runtime_error(
+                "Component entries must be either a string (registry name) or "
+                "an object with inline metadata");
+        }
+
+        std::string comp_name = component.value("name", "");
+        if (comp_name.empty()) {
+            throw std::runtime_error("Inline component is missing required field `name`");
+        }
+
+        std::string comp_recipe = component.value("recipe", "");
+        if (comp_recipe.empty()) {
+            throw std::runtime_error(
+                "Inline component '" + comp_name + "' is missing required field `recipe`");
+        }
+        if (allowed_inline_collection_recipes().count(comp_recipe) == 0) {
+            throw std::runtime_error(
+                "Inline component '" + comp_name + "' declares disallowed recipe '" +
+                comp_recipe + "'. Allowed recipes: llamacpp, sd-cpp, whispercpp, "
+                "kokoro, flm, ryzenai-llm.");
+        }
+        if (!component.contains("checkpoint") && !component.contains("checkpoints")) {
+            throw std::runtime_error(
+                "Inline component '" + comp_name +
+                "' must include `checkpoint` or `checkpoints`");
+        }
+
+        // Curated-wins: if a registry entry of the same name exists, keep it
+        // and skip the inline metadata. This prevents a manifest from
+        // overriding the recipe/labels of a Lemonade-curated model.
+        if (model_exists(comp_name) || model_exists_unfiltered(comp_name)) {
+            LOG(INFO, "ModelManager")
+                << "Inline component '" << comp_name
+                << "' shadowed by curated registry entry; using curated metadata."
+                << std::endl;
+            resolved_component_names.push_back(comp_name);
+            continue;
+        }
+
+        // Register the inline component as a user model. register_user_model
+        // strips a leading `user.` if present.
+        std::string user_comp_name = std::string(USER_MODEL_PREFIX) + comp_name;
+        register_user_model(user_comp_name, component, "lemonade-collection");
+        resolved_component_names.push_back(user_comp_name);
+    }
+
+    // Build the collection entry.
+    std::string clean_name = strip_user_model_prefix(model_name);
+
+    json collection_entry;
+    collection_entry["recipe"] = "collection";
+    collection_entry["checkpoint"] = "";
+    collection_entry["composite_models"] = resolved_component_names;
+    collection_entry["suggested"] = manifest.value("suggested", true);
+    if (!source.empty()) {
+        collection_entry["source"] = source;
+    }
+    if (manifest.contains("display_name") && manifest["display_name"].is_string()) {
+        collection_entry["display_name"] = manifest["display_name"];
+    }
+
+    json updated_user_models = user_models_;
+    updated_user_models[clean_name] = collection_entry;
+    save_user_models(updated_user_models);
+    user_models_ = updated_user_models;
+
+    add_model_to_cache(model_name);
+
+    LOG(INFO, "ModelManager")
+        << "Registered Lemonade Model '" << model_name << "' with "
+        << resolved_component_names.size() << " components" << std::endl;
+}
+
 // Find the FLM executable: install dir on Windows, system PATH on Linux.
 // Returns empty string if not found.
 static std::string find_flm_binary() {
@@ -1892,6 +2029,35 @@ void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
+    // Lemonade Model (collection) registration via manifest. The manifest
+    // can either be embedded in the pull body (`lemonade_manifest`) for
+    // local/test paths, or fetched from an HF repo's `lemonade.json`
+    // (handled by the variants flow before reaching this function).
+    // Registration writes the collection (and any inline components) to
+    // user_models.json; downloading the components reuses the existing
+    // recipe="collection" recursion further down.
+    if (model_data.contains("lemonade_manifest") && model_data["lemonade_manifest"].is_object()) {
+        register_collection_from_manifest(
+            model_name, model_data["lemonade_manifest"], "lemonade-collection");
+
+        if (model_data.value("register_only", false)) {
+            return;
+        }
+
+        // Re-enter download_model with a stripped body so the existing
+        // collection branch picks up the registered entry and recurses
+        // into component downloads. Manifest fields are dropped to avoid
+        // re-registering, and recipe is set so do_not_upgrade and the
+        // collection-recipe branch below behave as expected.
+        json reentered = json::object();
+        if (model_data.contains("recipe_options")) {
+            reentered["recipe_options"] = model_data["recipe_options"];
+        }
+        reentered["recipe"] = "collection";
+        download_model(model_name, reentered, do_not_upgrade, progress_callback);
+        return;
+    }
+
     std::string actual_checkpoint;
 
     if (model_data.contains("checkpoints")) {
