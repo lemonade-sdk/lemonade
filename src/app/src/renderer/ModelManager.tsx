@@ -1251,7 +1251,9 @@ const [searchQuery, setSearchQuery] = useState('');
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
             <span className="model-name" title={nameTooltip}>{displayName ?? modelName}</span>
-            <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
+            {modelInfo.recipe !== 'cloud' && (
+              <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
+            )}
             {renderActionButtons(modelName, isHovered)}
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (

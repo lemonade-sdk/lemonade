@@ -395,6 +395,17 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         std::string upstream_id = m["id"].get<std::string>();
         ModelType type = infer_type(upstream_id);
 
+        // Image models are intentionally filtered out: providers do not
+        // standardize on OpenAI's /v1/images/generations shape (Fireworks
+        // uses /v1/workflows/<model>/text_to_image returning raw bytes
+        // with a guidance_scale field; OpenAI uses size/n/quality;
+        // Stability uses yet another). Until a per-provider image
+        // adapter exists, surfacing these models would just give the
+        // user a working "load" followed by a broken "generate".
+        if (type == ModelType::IMAGE) {
+            continue;
+        }
+
         ModelInfo info;
         // Public name = "<provider>/<cleaned_upstream_id>". The cleanup
         // rules in build_public_name() are content-pattern based and apply
