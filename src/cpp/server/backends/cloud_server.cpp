@@ -353,7 +353,11 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         info.checkpoints["main"] = upstream_id;
         info.recipe = "cloud";
         info.cloud_provider = provider;
-        info.suggested = false;
+        // Discovered models are "suggested" because the user explicitly
+        // configured this provider — they wouldn't have a working API key
+        // otherwise. Without this, the Model Manager UI's default
+        // suggested-only filter hides every cloud model.
+        info.suggested = true;
         info.downloaded = true;  // Cloud models have no local artifacts.
         info.size = 0.0;
         info.type = type;
