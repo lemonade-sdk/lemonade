@@ -3,6 +3,7 @@
 #include <string>
 #include <shared_mutex>
 #include <functional>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace lemon {
@@ -53,9 +54,15 @@ public:
     /// LEMONADE_FIREWORKS_API_KEY), which takes precedence over the value in
     /// config.json so users can keep secrets out of config files.
     std::string cloud_provider_api_key(const std::string& provider) const;
-    /// Base URL for the provider's OpenAI-compatible API. Empty falls back to
-    /// the built-in default for that provider in CloudServer.
+    /// Base URL for the provider's OpenAI-compatible API. CloudServer requires
+    /// this to be set in config.json — there are no built-in defaults so any
+    /// OpenAI-compatible provider works without code changes.
     std::string cloud_provider_base_url(const std::string& provider) const;
+    /// Names of every provider configured under cloud_offload.providers.
+    /// ModelManager iterates this list at cache-build time to discover
+    /// models from each. Returns empty vector if cloud_offload is missing
+    /// or has no providers.
+    std::vector<std::string> cloud_provider_names() const;
 
     /// Returns recipe options in the flat format that RecipeOptions/backends expect.
     /// Maps nested config to flat keys: llamacpp.backend -> llamacpp_backend,

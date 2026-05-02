@@ -275,6 +275,19 @@ std::string RuntimeConfig::cloud_provider_api_key(const std::string& provider) c
     return "";
 }
 
+std::vector<std::string> RuntimeConfig::cloud_provider_names() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> names;
+    if (config_.contains("cloud_offload") && config_["cloud_offload"].is_object() &&
+        config_["cloud_offload"].contains("providers") &&
+        config_["cloud_offload"]["providers"].is_object()) {
+        for (auto& [name, _cfg] : config_["cloud_offload"]["providers"].items()) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
 std::string RuntimeConfig::cloud_provider_base_url(const std::string& provider) const {
     std::shared_lock lock(mutex_);
     if (config_.contains("cloud_offload") && config_["cloud_offload"].is_object() &&

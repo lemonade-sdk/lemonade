@@ -7,6 +7,7 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_utils.h>
+#include <lemon/backends/cloud_server.h>
 #include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
@@ -1102,6 +1103,26 @@ void ModelManager::build_cache() {
         for (const auto& info : flm_available) {
             // Use emplace to only add if key doesn't exist (respect precedence)
             all_models.emplace(info.model_name, info);
+        }
+    }
+
+    // Step 1.7: Discover cloud-offload models from each configured provider.
+    // Mirrors the FLM pattern: hit the provider's /v1/models endpoint and
+    // merge results in. Precedence keeps any matching server_models or
+    // user_models entry intact. Failures are logged inside discover_models
+    // and never abort the cache build. Provider names come from config —
+    // any OpenAI-compatible provider works without code changes as long as
+    // the user supplies base_url + api_key.
+    auto* runtime_cfg = lemon::RuntimeConfig::global();
+    if (runtime_cfg && runtime_cfg->cloud_offload_enabled()) {
+        for (const auto& provider : runtime_cfg->cloud_provider_names()) {
+            std::string api_key = runtime_cfg->cloud_provider_api_key(provider);
+            if (api_key.empty()) continue;
+            std::string base_url = runtime_cfg->cloud_provider_base_url(provider);
+            auto cloud_models = backends::CloudServer::discover_models(provider, api_key, base_url);
+            for (const auto& info : cloud_models) {
+                all_models.emplace(info.model_name, info);
+            }
         }
     }
 

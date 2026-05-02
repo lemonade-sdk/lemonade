@@ -51,11 +51,6 @@
   },
   "cloud_offload": {
     "enabled": false,
-    "providers": {
-      "fireworks": {
-        "api_key": "",
-        "base_url": ""
-      }
-    }
+    "providers": {}
   }
 }

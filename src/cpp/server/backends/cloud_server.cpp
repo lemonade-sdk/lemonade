@@ -1,8 +1,9 @@
 #include "lemon/backends/cloud_server.h"
+#include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
-#include "lemon/error_types.h"
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -13,21 +14,44 @@ namespace backends {
 
 namespace {
 
-// Default OpenAI-compatible base URL for each provider. Used when the user
-// has not set cloud_offload.providers.<provider>.base_url in config.json.
-std::string default_base_url(const std::string& provider) {
-    if (provider == "fireworks") {
-        return "https://api.fireworks.ai/inference/v1";
+bool id_contains(const std::string& id, const std::string& needle) {
+    return id.find(needle) != std::string::npos;
+}
+
+// Infer model type from a model id. Providers don't return a structured
+// type field on /v1/models, so we match well-known substrings. Anything
+// that doesn't match a more specific bucket falls through to LLM.
+ModelType infer_type(const std::string& id) {
+    if (id_contains(id, "flux") || id_contains(id, "stable-diffusion") ||
+        id_contains(id, "sdxl") || id_contains(id, "sd-")) {
+        return ModelType::IMAGE;
     }
-    return "";
+    if (id_contains(id, "whisper")) {
+        return ModelType::AUDIO;
+    }
+    if (id_contains(id, "rerank")) {
+        return ModelType::RERANKING;
+    }
+    if (id_contains(id, "embed") || id_contains(id, "bge-") || id_contains(id, "nomic-")) {
+        return ModelType::EMBEDDING;
+    }
+    return ModelType::LLM;
+}
+
+std::vector<std::string> infer_labels(ModelType type) {
+    std::vector<std::string> labels{"cloud"};
+    if (type == ModelType::IMAGE) labels.push_back("image");
+    return labels;
 }
 
 } // namespace
 
-CloudServer::CloudServer(const std::string& log_level,
+CloudServer::CloudServer(const std::string& provider,
+                         const std::string& log_level,
                          ModelManager* model_manager,
                          BackendManager* backend_manager)
-    : WrappedServer("cloud", log_level, model_manager, backend_manager) {}
+    : WrappedServer("cloud", log_level, model_manager, backend_manager),
+      provider_(provider) {}
 
 CloudServer::~CloudServer() {
     unload();
@@ -51,7 +75,6 @@ void CloudServer::load(const std::string& model_name,
             "(provider's upstream model id)");
     }
 
-    provider_ = model_info.cloud_provider;
     upstream_model_ = model_info.checkpoint();
 
     auto* cfg = RuntimeConfig::global();
@@ -63,25 +86,20 @@ void CloudServer::load(const std::string& model_name,
 
     api_key_ = cfg->cloud_provider_api_key(provider_);
     if (api_key_.empty()) {
+        std::string upper = provider_;
+        for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         throw std::runtime_error(
             "No API key configured for cloud provider '" + provider_ + "'. Set "
-            "the LEMONADE_" + [&]{
-                std::string upper = provider_;
-                for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                return upper;
-            }() + "_API_KEY environment variable, or "
+            "the LEMONADE_" + upper + "_API_KEY environment variable, or "
             "cloud_offload.providers." + provider_ + ".api_key in config.json.");
     }
 
     base_url_ = cfg->cloud_provider_base_url(provider_);
     if (base_url_.empty()) {
-        base_url_ = default_base_url(provider_);
-    }
-    if (base_url_.empty()) {
         throw std::runtime_error(
-            "Unknown cloud provider '" + provider_ + "'. No default base URL "
-            "is built in; set cloud_offload.providers." + provider_ + ".base_url "
-            "in config.json.");
+            "No base_url configured for cloud provider '" + provider_ + "'. Set "
+            "cloud_offload.providers." + provider_ + ".base_url in config.json "
+            "(e.g., \"https://api.fireworks.ai/inference/v1\" for Fireworks).");
     }
 
     LOG(INFO, "Cloud") << "Cloud provider: " << provider_
@@ -102,7 +120,7 @@ json CloudServer::rewrite_model_field(const json& request) const {
     json modified = request;
     modified["model"] = upstream_model_;
     // Map OpenAI's max_completion_tokens to max_tokens for providers that
-    // haven't migrated yet (Fireworks accepts both, but be safe).
+    // haven't migrated yet (most accept both, but be safe).
     if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
         modified["max_tokens"] = modified["max_completion_tokens"];
     }
@@ -267,6 +285,87 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             // Sink may already be closed.
         }
     }
+}
+
+std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
+                                                     const std::string& api_key,
+                                                     const std::string& base_url) {
+    std::vector<ModelInfo> models;
+    if (api_key.empty()) {
+        return models;
+    }
+    if (base_url.empty()) {
+        LOG(WARNING, "Cloud") << "Skipping discovery for provider '" << provider
+                              << "': no base_url configured" << std::endl;
+        return models;
+    }
+
+    std::string url = base_url + "/models";
+    std::map<std::string, std::string> headers = {
+        {"Authorization", "Bearer " + api_key}
+    };
+
+    utils::HttpResponse response;
+    try {
+        response = utils::HttpClient::get(url, headers);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Cloud") << "Model discovery failed for provider '" << provider
+                              << "': " << e.what() << std::endl;
+        return models;
+    }
+
+    if (response.status_code != 200) {
+        LOG(WARNING, "Cloud") << "GET " << url << " returned HTTP "
+                              << response.status_code
+                              << " — no models discovered for provider '" << provider
+                              << "'. Body: " << response.body.substr(0, 200) << std::endl;
+        return models;
+    }
+
+    json body;
+    try {
+        body = json::parse(response.body);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Cloud") << "Failed to parse /v1/models response from provider '"
+                              << provider << "': " << e.what() << std::endl;
+        return models;
+    }
+
+    if (!body.contains("data") || !body["data"].is_array()) {
+        LOG(WARNING, "Cloud") << "/v1/models response from provider '" << provider
+                              << "' missing 'data' array" << std::endl;
+        return models;
+    }
+
+    for (const auto& m : body["data"]) {
+        if (!m.is_object() || !m.contains("id") || !m["id"].is_string()) {
+            continue;
+        }
+        std::string upstream_id = m["id"].get<std::string>();
+        ModelType type = infer_type(upstream_id);
+
+        ModelInfo info;
+        // Public name format: "<provider>/<upstream_id_verbatim>". Verbose
+        // for providers that namespace their ids (e.g.,
+        // "fireworks/accounts/fireworks/models/deepseek-v4-pro"), but
+        // unambiguous, reversible, and provider-agnostic.
+        info.model_name = provider + "/" + upstream_id;
+        info.checkpoints["main"] = upstream_id;
+        info.recipe = "cloud";
+        info.cloud_provider = provider;
+        info.suggested = false;
+        info.downloaded = true;  // Cloud models have no local artifacts.
+        info.size = 0.0;
+        info.type = type;
+        info.device = DEVICE_NONE;
+        info.labels = infer_labels(type);
+        models.push_back(std::move(info));
+    }
+
+    LOG(INFO, "Cloud") << "Discovered " << models.size()
+                       << " model(s) from provider '" << provider
+                       << "' via " << url << std::endl;
+    return models;
 }
 
 } // namespace backends
