@@ -44,6 +44,57 @@ std::vector<std::string> infer_labels(ModelType type) {
     return labels;
 }
 
+// Build the user-facing model name from a provider's upstream id, applying
+// two universal cleanup rules (no provider-specific code):
+//
+//   1. Collapse "accounts/<x>/models/<y>" -> "<x>/<y>". This is a
+//      content-pattern match (the GCP-style resource-path convention used
+//      by Fireworks). Any provider that adopts the same shape benefits
+//      automatically; providers using flat ids ("gpt-4o") or other
+//      namespaces ("meta-llama/Llama-3.3-70B-Instruct-Turbo") pass through
+//      untouched.
+//
+//   2. If the cleaned id leads with "<provider>/", strip it before adding
+//      the wrapping "<provider>/" prefix — otherwise Fireworks's first-
+//      party models ("fireworks/...") would render as
+//      "fireworks/fireworks/...".
+//
+// Examples:
+//   provider="fireworks", id="accounts/fireworks/models/deepseek-v4-pro"
+//     -> "fireworks/deepseek-v4-pro"
+//   provider="fireworks", id="accounts/trilogy/models/cogsci-..."
+//     -> "fireworks/trilogy/cogsci-..."
+//   provider="openai",    id="gpt-4o"
+//     -> "openai/gpt-4o"
+//   provider="together",  id="meta-llama/Llama-3.3-70B-Instruct-Turbo"
+//     -> "together/meta-llama/Llama-3.3-70B-Instruct-Turbo"
+std::string build_public_name(const std::string& provider, const std::string& upstream_id) {
+    std::string cleaned = upstream_id;
+
+    // Rule 1: strip the leading "accounts/<x>/models/" wrapper if present.
+    const std::string accounts_prefix = "accounts/";
+    if (cleaned.rfind(accounts_prefix, 0) == 0) {
+        std::string after_accounts = cleaned.substr(accounts_prefix.size());
+        auto slash = after_accounts.find('/');
+        if (slash != std::string::npos) {
+            std::string account = after_accounts.substr(0, slash);
+            std::string after_account = after_accounts.substr(slash + 1);
+            const std::string models_prefix = "models/";
+            if (after_account.rfind(models_prefix, 0) == 0) {
+                cleaned = account + "/" + after_account.substr(models_prefix.size());
+            }
+        }
+    }
+
+    // Rule 2: dedup the leading provider segment so we don't double it up.
+    std::string lead_dedup = provider + "/";
+    if (cleaned.rfind(lead_dedup, 0) == 0) {
+        cleaned = cleaned.substr(lead_dedup.size());
+    }
+
+    return provider + "/" + cleaned;
+}
+
 } // namespace
 
 CloudServer::CloudServer(const std::string& provider,
@@ -345,11 +396,11 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         ModelType type = infer_type(upstream_id);
 
         ModelInfo info;
-        // Public name format: "<provider>/<upstream_id_verbatim>". Verbose
-        // for providers that namespace their ids (e.g.,
-        // "fireworks/accounts/fireworks/models/deepseek-v4-pro"), but
-        // unambiguous, reversible, and provider-agnostic.
-        info.model_name = provider + "/" + upstream_id;
+        // Public name = "<provider>/<cleaned_upstream_id>". The cleanup
+        // rules in build_public_name() are content-pattern based and apply
+        // universally to any provider — see the function comment for the
+        // examples and rationale.
+        info.model_name = build_public_name(provider, upstream_id);
         info.checkpoints["main"] = upstream_id;
         info.recipe = "cloud";
         info.cloud_provider = provider;
