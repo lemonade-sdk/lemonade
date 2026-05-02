@@ -12,7 +12,7 @@ We found the `Qwen-1.5-7B-Chat-Hybrid` model to be the most effective for this t
 
 ### Prerequisites
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../guide/install/README.md) and using the installer .exe.
 1. Obtain a copy of [Minecraft](https://www.minecraft.net/en-us) from Microsoft. 1.20.4 of the JAVA Edition is required for this. You can obtain that version [by following these instructions](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-20-4).
 1. Install [Node.js](https://nodejs.org/en/download) (at least v14).
 

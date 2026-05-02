@@ -114,7 +114,7 @@ Your app can manage its `lemond` instance at runtime by using `/internal` endpoi
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
 
-The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../server/configuration.md) for details on all settings.
+The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../guide/configuration/README.md) for details on all settings.
 
 > Note: The `lemonade` CLI uses `/internal/set` and `/internal/config` internally for the `lemonade config` commands.
 

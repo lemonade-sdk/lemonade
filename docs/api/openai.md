@@ -530,9 +530,9 @@ Set `turn_detection` to `null` to disable server-side VAD and use explicit commi
 
 ### Code Examples
 
-See the [`examples/`](../../examples/) directory for a complete, runnable example:
+A complete, runnable example:
 
-- **[`realtime_transcription.py`](../../examples/realtime_transcription.py)** - Python CLI for microphone streaming
+- **[`realtime_transcription.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/realtime_transcription.py)** - Python CLI for microphone streaming
 
 ```bash
 # Stream from microphone

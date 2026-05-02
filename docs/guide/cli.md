@@ -585,4 +585,4 @@ lemonade scan --duration 5
 
 ## Next Steps
 
-The [Lemonade Server API documentation](./api/README.md) provides more information about the endpoints that the CLI interacts with. For details on model formats and recipes, see the [custom model guide](./server/custom-models.md).
+The [Lemonade Server API documentation](../api/README.md) provides more information about the endpoints that the CLI interacts with. For details on model formats and recipes, see the [custom model guide](./configuration/custom-models.md).

@@ -249,7 +249,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 When loading a model, settings are applied in this priority order:
 1. Values explicitly passed in the `load` request (highest priority)
 2. Per-model values configurable in `recipe_options.json` (see below for details)
-3. Values from environment variables or server startup arguments (see [Server Configuration](../server/configuration.md))
+3. Values from environment variables or server startup arguments (see [Server Configuration](../guide/configuration/README.md))
 4. Default hardcoded values in `lemond` (lowest priority)
 
 ### Per-model options
@@ -476,7 +476,7 @@ curl http://localhost:13305/v1/health
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
-- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../server/configuration.md)):
+- `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models

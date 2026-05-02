@@ -15,14 +15,14 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 
 We have found that most LLMs work well with this application.
 
-However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see the [Endpoints Spec](../../api/README.md) for details).
+However, the `Inference Parameters` option is not fully supported, as Lemonade Server currently does not accept those as inputs (see the [Endpoints Spec](../api/README.md) for details).
 
 
 ## Setup
 
 ### Prerequisites
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../guide/install/README.md) and using the installer .exe.
 
 ### Install AI Toolkit for VS Code
 

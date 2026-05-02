@@ -24,13 +24,13 @@ A **Collection** is a preconfigured bundle of models sized for a hardware tier. 
 
 Collections are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "Ultra Collection" as if it were a real model. They surface with `?show_all=true` and appear in the desktop app's model list.
 
-Use a Collection. Every part of this doc assumes one is loaded — the desktop app, `examples/lemonade_tools.py`, and the tools themselves were all validated against the Ultra and Lite Collections above.
+Use a Collection. Every part of this doc assumes one is loaded — the desktop app, [`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py), and the tools themselves were all validated against the Ultra and Lite Collections above.
 
 If you're the developer wiring OmniRouter into your own agent and you want to substitute models, you can, but you take on the compatibility work: any LLM you swap in must carry the `tool-calling` label, and each tool you want to call needs one downloaded model whose `labels` include the row's "Needs a model with label" entry from the tools table below. That's a developer-path discovery step, not a user configuration; the simple answer for everyone else is "install a Collection."
 
 ## Available tools
 
-The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.json`](../src/app/src/renderer/utils/toolDefinitions.json) — a single source of truth used by the desktop app and this documentation.
+The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/toolDefinitions.json) — a single source of truth used by the desktop app and this documentation.
 
 | Tool | Endpoint | Needs a model with label |
 |------|----------|-------------------------|
@@ -40,7 +40,7 @@ The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.j
 | `transcribe_audio` | `POST /v1/audio/transcriptions` | `audio` or `transcription` |
 | `analyze_image` | `POST /v1/chat/completions` | LLM with `vision` |
 
-Endpoint request/response shapes are documented in the [Endpoints Spec](api/README.md).
+Endpoint request/response shapes are documented in the [Endpoints Spec](../api/README.md).
 
 ## Quick start
 
@@ -50,14 +50,14 @@ python examples/lemonade_tools.py "Generate an image of a sunset"
 python examples/lemonade_tools.py "Say hello world out loud"
 ```
 
-[`examples/lemonade_tools.py`](../examples/lemonade_tools.py) shows the full agentic loop — tool definitions, LLM call with `tools=[...]`, executing each `tool_call`, and feeding the result back. Fewer than 150 lines of Python.
+[`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py) shows the full agentic loop — tool definitions, LLM call with `tools=[...]`, executing each `tool_call`, and feeding the result back. Fewer than 150 lines of Python.
 
 ## Using your own agent
 
-Integrate OmniRouter into an existing agent by following the pattern in [`examples/lemonade_tools.py`](../examples/lemonade_tools.py):
+Integrate OmniRouter into an existing agent by following the pattern in [`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py):
 
 1. Point your OpenAI-compatible client at `http://localhost:13305/v1`.
-2. Copy the tool entries from [`toolDefinitions.json`](../src/app/src/renderer/utils/toolDefinitions.json) into your agent's tool list (or load the JSON directly).
+2. Copy the tool entries from [`src/app/src/renderer/utils/toolDefinitions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/toolDefinitions.json) into your agent's tool list (or load the JSON directly).
 3. When your agent receives a `tool_call` for one of these tools, POST to the corresponding endpoint from the table above and feed the response back to the LLM as a `tool` message.
 4. If you want to pick models programmatically rather than rely on a Collection being loaded, query `GET /v1/models?show_all=true` and match the `labels` array against the "Needs a model with label" column above.
 
