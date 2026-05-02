@@ -42,14 +42,10 @@ InstallParams KokoroServer::get_install_params(const std::string& backend, const
         params.filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
         params.filename = "kokoros-linux-x86_64.tar.gz";
-#else
-        throw std::runtime_error("CPU kokoros not supported on this platform - use 'metal' on macOS");
 #endif
     } else if (backend == "metal") {
 #if defined(__APPLE__)
         params.filename = "kokoros-darwin-arm64-metal.tar.gz";
-#else
-        throw std::runtime_error("Metal kokoros only supported on macOS");
 #endif
     } else {
         throw std::runtime_error("[KokoroServer] Unknown kokoros backend: " + backend);

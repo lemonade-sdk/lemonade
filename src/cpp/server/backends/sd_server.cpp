@@ -103,8 +103,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
         params.filename = "sd-" + short_version + "-bin-Darwin-arm64-metal.zip";
-#else
-        throw std::runtime_error("Metal sd.cpp only supported on macOS");
 #endif
     } else if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
@@ -140,7 +138,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
 #else
-        throw std::runtime_error("CPU sd.cpp not supported on this platform - use 'metal' on macOS");
+        throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
 #endif
     }
 

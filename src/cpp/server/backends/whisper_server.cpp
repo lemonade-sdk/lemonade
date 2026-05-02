@@ -70,7 +70,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
 #else
-        throw std::runtime_error("CPU whisper.cpp not supported on this platform - use 'metal' on macOS");
+        throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
     } else if (backend == "vulkan") {
 #if defined(__linux__)
@@ -81,11 +81,7 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #endif
     } else if (backend == "metal") {
         params.repo = "lemonade-sdk/whisper.cpp-builds";
-#if defined(__APPLE__)
         params.filename = "whisper-" + version + "-darwin-metal-arm64.tar.gz";
-#else
-        throw std::runtime_error("Metal whisper.cpp only supported on macOS");
-#endif
     } else {
         throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
     }

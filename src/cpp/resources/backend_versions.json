@@ -17,9 +17,9 @@
     "metal": "v1.8.2"
   },
   "sd-cpp": {
-    "cpu": "master-569-ab6afe8",
-    "rocm-stable": "master-569-ab6afe8",
-    "rocm-preview": "master-569-ab6afe8",
+    "cpu": "master-593-7f65f2a",
+    "rocm-stable": "master-593-7f65f2a",
+    "rocm-preview": "master-593-7f65f2a",
     "metal": "master-593-7f65f2a"
   },
   "therock": {
@@ -56,7 +56,7 @@
     "npu": "v0.9.39"
   },
   "kokoro": {
-    "cpu": "b16",
+    "cpu": "b17",
     "metal": "b17"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
