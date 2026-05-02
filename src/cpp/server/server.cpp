@@ -3513,6 +3513,7 @@ double Server::get_npu_utilization() {
             std::string state;
             if (power_file >> state) {
                 if (state != "D0") {
+                    close(fd);
                     return 0.0;
                 }
             }

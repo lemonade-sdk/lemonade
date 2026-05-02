@@ -11,8 +11,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:nobundle": "tauri build --no-bundle",
-    "build:mac": "tauri build --bundles app",
-    "build:appimage": "tauri build --bundles appimage"
+    "build:mac": "tauri build --bundles app"
   },
   "keywords": [
     "tauri",

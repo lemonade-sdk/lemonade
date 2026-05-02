@@ -103,9 +103,6 @@ cmake --build --preset default --target package-macos
 # 7. Linux .deb / .rpm
 cd build && cpack            # .deb
 cd build && cpack -G RPM     # .rpm
-
-# 8. Linux AppImage (Tauri-bundled)
-cmake --build --preset default --target appimage
 ```
 
 CMake presets: `default` (Ninja, Release), `windows` (VS 2022), `vs18` (VS 2026), `debug` (Ninja, Debug).
@@ -191,7 +188,7 @@ These MUST be maintained in all changes:
 8. **Thread safety** — Router serves concurrent HTTP requests. Shared state must be properly guarded.
 9. **Ollama compatibility** — Changes to model listing or management must not break `/api/*` Ollama endpoints.
 10. **API key passthrough** — When `LEMONADE_API_KEY` is set, all API routes must enforce authentication.
-11. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. The Linux AppImage specifically is shipped as a remote client that points at a `lemond` running elsewhere. Per-client state (settings, layout, zoom, base URL, API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint.
+11. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. Per-client state (settings, layout, zoom, base URL, API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint.
 12. **Web-app dependencies constrained by Debian native packaging** — `src/web-app/package.json` is kept separate from `src/app/package.json` because the native Debian package (`lemonade-server` .deb) must build using only npm modules available in Debian's `/usr/share/nodejs` (see `USE_SYSTEM_NODEJS_MODULES` in `src/web-app/webpack.config.js`). The old Electron app depended on packages Debian does not ship. Do NOT consolidate the two `package.json` files — the split is required for reproducible distro packaging.
 13. **Desktop app is on-demand; `lemond` runs independently** — On Windows, `LemonadeServer.exe` (which embeds `lemond` + tray icon) is the always-on process, auto-started via the Windows startup folder. The Tauri desktop app (`lemonade-app.exe`) is opened on demand when the user wants the UI and must not be added to startup. The desktop app must not embed or manage `lemond`'s lifecycle — it discovers the already-running server (UDP beacon for local, explicit base URL for remote) and speaks to it over HTTP.
 

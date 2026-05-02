@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.2.0)
+project(lemon_cpp VERSION 10.3.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -883,7 +883,7 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E echo "    cd src/app && npm run dev"
         COMMAND ${CMAKE_COMMAND} -E echo "============================================================"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
+        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci --ignore-scripts
         COMMAND ${CMAKE_COMMAND} -E echo "Compiling Rust host and bundling renderer..."
         COMMAND ${TAURI_BUILD_COMMAND}
         COMMAND ${CMAKE_COMMAND} -E echo "Staging Tauri build output into ${TAURI_APP_UNPACKED_DIR}..."
@@ -956,7 +956,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         CONFIGURE_DEPENDS
         "${APP_SOURCE_DIR}/src/*"
         "${APP_SOURCE_DIR}/assets/*"
-        "${APP_SOURCE_DIR}/styles.css"
+        "${APP_SOURCE_DIR}/styles/*"
         "${WEB_APP_SOURCE_DIR}/*.json"
         "${WEB_APP_SOURCE_DIR}/*.js"
         "${WEB_APP_SOURCE_DIR}/*.ts"
@@ -1543,59 +1543,6 @@ if(UNIX AND NOT APPLE)
     # RPM specific variables defined within
     include(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/CPackRPM.cmake)
     include(CPack)
-
-    # ============================================================
-    # AppImage Build Target (Linux only)
-    # ============================================================
-    option(BUILD_APPIMAGE "Build the AppImage automatically" OFF)
-
-    if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
-        set(APPIMAGE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/app-appimage")
-        set(APPIMAGE_EXPECTED_NAME "lemonade-app-${PROJECT_VERSION}-x86_64.AppImage")
-        set(APPIMAGE_TAURI_OUTPUT_DIR "${TAURI_APP_CARGO_TARGET}/bundle/appimage")
-
-        # Set PROJECT_VERSION in package.json before building. tauri.conf.json's
-        # `"version": "../package.json"` then inherits it, so the AppImage
-        # artifact name ends up as lemonade-app_<PROJECT_VERSION>_amd64.AppImage.
-        set(TAURI_VERSION_CMD
-            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} version ${PROJECT_VERSION} --no-git-tag-version --allow-same-version)
-        set(TAURI_APPIMAGE_BUILD_CMD
-            ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} run build:appimage)
-
-        set(APPIMAGE_COMMANDS
-            COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri AppImage build..."
-            COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
-            COMMAND ${CMAKE_COMMAND} -E echo "Setting Tauri app version to ${PROJECT_VERSION}..."
-            COMMAND ${TAURI_VERSION_CMD}
-            COMMAND ${CMAKE_COMMAND} -E echo "Building Tauri AppImage..."
-            COMMAND ${TAURI_APPIMAGE_BUILD_CMD}
-            COMMAND ${CMAKE_COMMAND} -E echo "Staging AppImage to ${APPIMAGE_BUILD_DIR}/${APPIMAGE_EXPECTED_NAME}..."
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${APPIMAGE_BUILD_DIR}"
-            # Tauri names the bundle lemonade-app_<version>_amd64.AppImage.
-            # Rename it to match the CI-expected format.
-            COMMAND bash -c "cp \"${APPIMAGE_TAURI_OUTPUT_DIR}/lemonade-app_${PROJECT_VERSION}_amd64.AppImage\" \"${APPIMAGE_BUILD_DIR}/${APPIMAGE_EXPECTED_NAME}\""
-            COMMAND ${CMAKE_COMMAND} -E echo "AppImage build complete: ${APPIMAGE_BUILD_DIR}/${APPIMAGE_EXPECTED_NAME}"
-        )
-
-        if(BUILD_APPIMAGE)
-            add_custom_target(appimage ALL
-                ${APPIMAGE_COMMANDS}
-                COMMENT "Building Tauri app as AppImage"
-                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-            )
-            message(STATUS "AppImage will be built automatically (disable with -DBUILD_APPIMAGE=OFF)")
-        else()
-            add_custom_target(appimage
-                ${APPIMAGE_COMMANDS}
-                COMMENT "Building Tauri app as AppImage"
-                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-            )
-            message(STATUS "AppImage automatic build disabled (enable with -DBUILD_APPIMAGE=ON)")
-            message(STATUS "AppImage can be built manually with: cmake --build . --target appimage")
-        endif()
-    else()
-        message(STATUS "Node.js, npm, or Cargo not found - AppImage build target disabled")
-    endif()
 endif()
 
 # ============================================================
