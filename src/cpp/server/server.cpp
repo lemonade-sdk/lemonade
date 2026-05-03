@@ -144,6 +144,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
 
+    download_queue_ = std::make_unique<DownloadQueue>(model_manager_.get(), cache_dir_);
+
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
@@ -380,6 +382,39 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull_variants(req, res);
+    });
+
+    // Download queue endpoints.
+    // Register /stream routes before bare /{id} routes to avoid prefix ambiguity.
+    auto register_get_regex = [this, &web_server](const std::string& pattern,
+        std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        web_server.Get("/api/v0/" + pattern, handler);
+        web_server.Get("/api/v1/" + pattern, handler);
+        web_server.Get("/v0/" + pattern, handler);
+        web_server.Get("/v1/" + pattern, handler);
+    };
+    auto register_delete_regex = [this, &web_server](const std::string& pattern,
+        std::function<void(const httplib::Request&, httplib::Response&)> handler) {
+        web_server.Delete("/api/v0/" + pattern, handler);
+        web_server.Delete("/api/v1/" + pattern, handler);
+        web_server.Delete("/v0/" + pattern, handler);
+        web_server.Delete("/v1/" + pattern, handler);
+    };
+
+    register_get_regex(R"(downloads/([^/]+)/stream)",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            handle_download_stream(req, res);
+        });
+    register_get_regex(R"(downloads/([^/]+))",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            handle_download_status(req, res);
+        });
+    register_delete_regex(R"(downloads/([^/]+))",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            handle_download_cancel(req, res);
+        });
+    register_get("downloads", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_downloads_list(req, res);
     });
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1007,6 +1042,12 @@ void Server::stop() {
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();
+
+        if (download_queue_) {
+            LOG(INFO, "Server") << "Shutting down download queue..." << std::endl;
+            download_queue_->shutdown();
+        }
+
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
@@ -2598,11 +2639,9 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             request_json["model"].get<std::string>() :
             request_json["model_name"].get<std::string>();
 
-        // Extract optional parameters
         std::string checkpoint = request_json.value("checkpoint", "");
         std::string recipe = request_json.value("recipe", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
-        bool stream = request_json.value("stream", false);
 
         LOG(INFO, "Server") << "Pulling model: " << model_name << std::endl;
         if (!checkpoint.empty()) {
@@ -2624,7 +2663,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
-        // Local import mode: CLI has already copied files to HF cache, just resolve and register
+        // Local import: synchronous (local filesystem only, no network I/O)
         bool local_import = request_json.value("local_import", false);
         if (local_import) {
             std::string hf_cache = model_manager_->get_hf_cache_dir();
@@ -2634,9 +2673,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
             LOG(INFO, "Server") << "Local import mode - resolving files in: " << dest_path << std::endl;
 
-            resolve_and_register_local_model(
-                dest_path, model_name, request_json, hf_cache
-            );
+            resolve_and_register_local_model(dest_path, model_name, request_json, hf_cache);
 
             nlohmann::json response = {
                 {"status", "success"},
@@ -2647,18 +2684,16 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             return;
         }
 
-        if (stream) {
-            // SSE streaming mode - send progress events via shared helper
-            stream_download_operation(res, [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
-                model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
-            });
-        } else {
-            // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, request_json, do_not_upgrade);
-
-            nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
-            res.set_content(response.dump(), "application/json");
-        }
+        // Enqueue background download. Returns immediately with a job ID.
+        // Use GET /downloads/{job_id}/stream for live SSE progress updates.
+        std::string job_id = download_queue_->enqueue(model_name, request_json, do_not_upgrade);
+        res.status = 202;
+        nlohmann::json response = {
+            {"job_id", job_id},
+            {"status", "queued"},
+            {"model_name", model_name}
+        };
+        res.set_content(response.dump(), "application/json");
 
     } catch (const lemon::UnknownModelError& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
@@ -2705,6 +2740,50 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     }
+}
+
+// ============================================================================
+// Download queue endpoint handlers
+// ============================================================================
+
+void Server::handle_downloads_list(const httplib::Request& /*req*/, httplib::Response& res) {
+    nlohmann::json response = {{"jobs", download_queue_->list_jobs_json()}};
+    res.set_content(response.dump(), "application/json");
+}
+
+void Server::handle_download_status(const httplib::Request& req, httplib::Response& res) {
+    std::string id = req.matches[1];
+    nlohmann::json job = download_queue_->get_job_json(id);
+    if (job.is_null()) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Download job not found\"}", "application/json");
+        return;
+    }
+    res.set_content(job.dump(), "application/json");
+}
+
+void Server::handle_download_cancel(const httplib::Request& req, httplib::Response& res) {
+    std::string id = req.matches[1];
+    switch (download_queue_->cancel(id)) {
+        case CancelResult::NotFound:
+            res.status = 404;
+            res.set_content("{\"error\": \"Download job not found\"}", "application/json");
+            break;
+        case CancelResult::AlreadyTerminal:
+            res.status = 409;
+            res.set_content("{\"error\": \"Job is already in a terminal state\"}", "application/json");
+            break;
+        case CancelResult::Ok:
+            res.set_content(
+                nlohmann::json{{"id", id}, {"status", "cancelling"}}.dump(),
+                "application/json");
+            break;
+    }
+}
+
+void Server::handle_download_stream(const httplib::Request& req, httplib::Response& res) {
+    std::string id = req.matches[1];
+    download_queue_->stream_job(id, res);
 }
 
 void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
