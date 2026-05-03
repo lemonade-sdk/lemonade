@@ -539,6 +539,55 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                     applied_diff[key][sub_key] = sub_value;
                 }
             }
+        } else if (key == "cloud_offload" && value.is_object()) {
+            // Deep-merge cloud_offload so a partial patch (e.g. {"enabled": false}
+            // from the UI toggle, or a single new provider from the Add modal)
+            // does not replace the whole object and erase the rest. The merge
+            // descends one extra level into providers so per-provider patches
+            // ({"providers": {"fireworks": {"api_key": "…"}}}) preserve other
+            // providers and other keys on the same provider.
+            if (!config_.contains(key)) {
+                config_[key] = json::object();
+            }
+            for (auto& [sub_key, sub_value] : value.items()) {
+                if (sub_key == "providers" && sub_value.is_object()) {
+                    if (!config_[key].contains("providers") ||
+                        !config_[key]["providers"].is_object()) {
+                        config_[key]["providers"] = json::object();
+                    }
+                    for (auto& [provider, provider_cfg] : sub_value.items()) {
+                        if (!provider_cfg.is_object()) continue;
+                        if (!config_[key]["providers"].contains(provider) ||
+                            !config_[key]["providers"][provider].is_object()) {
+                            config_[key]["providers"][provider] = json::object();
+                        }
+                        for (auto& [pkey, pval] : provider_cfg.items()) {
+                            auto& dst = config_[key]["providers"][provider];
+                            if (!dst.contains(pkey) || dst[pkey] != pval) {
+                                dst[pkey] = pval;
+                                if (!applied_diff.contains(key)) {
+                                    applied_diff[key] = json::object();
+                                }
+                                if (!applied_diff[key].contains("providers")) {
+                                    applied_diff[key]["providers"] = json::object();
+                                }
+                                if (!applied_diff[key]["providers"].contains(provider)) {
+                                    applied_diff[key]["providers"][provider] = json::object();
+                                }
+                                applied_diff[key]["providers"][provider][pkey] = pval;
+                            }
+                        }
+                    }
+                } else {
+                    if (!config_[key].contains(sub_key) || config_[key][sub_key] != sub_value) {
+                        config_[key][sub_key] = sub_value;
+                        if (!applied_diff.contains(key)) {
+                            applied_diff[key] = json::object();
+                        }
+                        applied_diff[key][sub_key] = sub_value;
+                    }
+                }
+            }
         } else {
             if (!config_.contains(key) || config_[key] != value) {
                 config_[key] = value;

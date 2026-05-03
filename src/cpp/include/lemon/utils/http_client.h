@@ -66,9 +66,10 @@ public:
         return default_timeout_seconds_;
     }
 
-    // Simple GET request
+    // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
-                           const std::map<std::string, std::string>& headers = {});
+                           const std::map<std::string, std::string>& headers = {},
+                           long timeout_seconds = 0);
 
     // Simple POST request
     static HttpResponse post(const std::string& url,

@@ -15,17 +15,22 @@ namespace backends {
  * name and base URL come from `cloud_offload.providers.<provider>` in
  * config.json, with no provider-specific code paths.
  *
- * Wire format: OpenAI v1 — chat/completions, completions, embeddings, models.
- * Bearer auth. Streaming via SSE. Providers that diverge from this shape
- * (notably Anthropic) need a sibling backend class — they are not handled
- * here.
+ * Scope: chat-only (chat/completions and completions on OpenAI v1). Other
+ * modalities — embeddings, audio, reranking, image — are intentionally not
+ * served. discover_models() filters its result to LLM ids so the router
+ * never sees a cloud model it cannot dispatch. Adding a modality means
+ * adding both the capability interface here and the registry filter there.
+ *
+ * Wire format: OpenAI v1 — chat/completions, completions, models. Bearer
+ * auth. Streaming via SSE. Providers that diverge from this shape (notably
+ * Anthropic) need a sibling backend class — they are not handled here.
  *
  * Selection: recipe="cloud" + the per-model "cloud_provider" field. The
  * Router constructs CloudServer for cloud recipes; ModelManager calls
  * CloudServer::discover_models() at cache-build time, once per provider in
  * config, to populate the available-models list dynamically.
  */
-class CloudServer : public WrappedServer, public IEmbeddingsServer {
+class CloudServer : public WrappedServer {
 public:
     CloudServer(const std::string& provider,
                 const std::string& log_level,
@@ -44,8 +49,6 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
-
-    json embeddings(const json& request) override;
 
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,

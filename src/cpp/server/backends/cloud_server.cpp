@@ -38,10 +38,8 @@ ModelType infer_type(const std::string& id) {
     return ModelType::LLM;
 }
 
-std::vector<std::string> infer_labels(ModelType type) {
-    std::vector<std::string> labels{"cloud"};
-    if (type == ModelType::IMAGE) labels.push_back("image");
-    return labels;
+std::vector<std::string> chat_labels() {
+    return {"cloud"};
 }
 
 // Build the user-facing model name from a provider's upstream id, applying
@@ -152,6 +150,12 @@ void CloudServer::load(const std::string& model_name,
             "cloud_offload.providers." + provider_ + ".base_url in config.json "
             "(e.g., \"https://api.fireworks.ai/inference/v1\" for Fireworks).");
     }
+    // Strip a trailing slash so that path concatenation ("base + /chat/...")
+    // doesn't yield "//chat/...". Some providers (notably nginx-fronted ones)
+    // 404 on the doubled slash.
+    while (!base_url_.empty() && base_url_.back() == '/') {
+        base_url_.pop_back();
+    }
 
     LOG(INFO, "Cloud") << "Cloud provider: " << provider_
                        << ", upstream model: " << upstream_model_
@@ -229,10 +233,6 @@ json CloudServer::completion(const json& request) {
     return post_with_auth("/completions", rewrite_model_field(request));
 }
 
-json CloudServer::embeddings(const json& request) {
-    return post_with_auth("/embeddings", rewrite_model_field(request));
-}
-
 json CloudServer::responses(const json& /*request*/) {
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "cloud (" + provider_ + ")")
@@ -244,8 +244,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             httplib::DataSink& sink,
                                             bool sse,
                                             long timeout_seconds) {
+    auto sse_error = [](const std::string& message, const std::string& type,
+                        const json& extra = json::object()) {
+        json err = {{"error", {{"message", message}, {"type", type}}}};
+        for (auto& [k, v] : extra.items()) {
+            err["error"][k] = v;
+        }
+        return "data: " + err.dump() + "\n\n";
+    };
+
     if (!loaded_) {
-        std::string error_msg = "data: {\"error\":{\"message\":\"Cloud model not loaded\",\"type\":\"model_not_loaded\"}}\n\n";
+        std::string error_msg = sse_error("Cloud model not loaded", "model_not_loaded");
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         return;
@@ -279,32 +288,41 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     try {
         if (sse) {
-            std::string telemetry_buffer;
+            // Buffer the body until the status code is known: providers return
+            // 200 with SSE events on success, but JSON (not SSE) with 4xx/5xx
+            // on auth/quota/format errors. Forwarding chunks straight through
+            // and then appending an SSE error on top would produce garbled
+            // output to the client. Hold the bytes; only flush them on 200.
+            std::string body_buffer;
             bool has_done_marker = false;
             auto result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
-                [&sink, &telemetry_buffer, &has_done_marker](const char* data, size_t length) {
-                    telemetry_buffer.append(data, length);
+                [&body_buffer, &has_done_marker](const char* data, size_t length) {
+                    body_buffer.append(data, length);
                     if (std::string(data, length).find("[DONE]") != std::string::npos) {
                         has_done_marker = true;
                     }
-                    return sink.write(data, length);
+                    return true;
                 },
                 headers,
                 timeout_seconds
             );
 
             if (result.status_code != 200) {
-                LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code << std::endl;
-                std::string error_msg = "data: {\"error\":{\"message\":\"cloud (" + provider_ +
-                    ") request failed\",\"type\":\"backend_error\",\"status_code\":" +
-                    std::to_string(result.status_code) + "}}\n\n";
+                LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code
+                                    << ", body: " << body_buffer.substr(0, 200) << std::endl;
+                json extra = {{"status_code", result.status_code}};
+                std::string error_msg = sse_error(
+                    "cloud (" + provider_ + ") request failed", "backend_error", extra);
                 sink.write(error_msg.c_str(), error_msg.size());
                 sink.done();
                 return;
             }
 
+            if (!body_buffer.empty()) {
+                sink.write(body_buffer.data(), body_buffer.size());
+            }
             if (!has_done_marker) {
                 const char* done_marker = "data: [DONE]\n\n";
                 sink.write(done_marker, std::strlen(done_marker));
@@ -328,8 +346,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     } catch (const std::exception& e) {
         LOG(ERROR, "Cloud") << "Streaming request failed: " << e.what() << std::endl;
         try {
-            std::string error_msg = "data: {\"error\":{\"message\":\"" + std::string(e.what()) +
-                                    "\",\"type\":\"streaming_error\"}}\n\n";
+            std::string error_msg = sse_error(e.what(), "streaming_error");
             sink.write(error_msg.c_str(), error_msg.size());
             sink.done();
         } catch (...) {
@@ -351,14 +368,24 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    std::string url = base_url + "/models";
+    // Mirror the trailing-slash normalization done in load() so a config
+    // entry like "https://.../v1/" doesn't produce "/v1//models".
+    std::string normalized_base = base_url;
+    while (!normalized_base.empty() && normalized_base.back() == '/') {
+        normalized_base.pop_back();
+    }
+    std::string url = normalized_base + "/models";
     std::map<std::string, std::string> headers = {
         {"Authorization", "Bearer " + api_key}
     };
 
     utils::HttpResponse response;
     try {
-        response = utils::HttpClient::get(url, headers);
+        // Short timeout: this runs synchronously inside cache build, once per
+        // configured provider. The 300 s default would block model listing
+        // for minutes if a provider's API is unreachable. 15 s is plenty for
+        // a /v1/models response under normal conditions.
+        response = utils::HttpClient::get(url, headers, /*timeout_seconds=*/15);
     } catch (const std::exception& e) {
         LOG(WARNING, "Cloud") << "Model discovery failed for provider '" << provider
                               << "': " << e.what() << std::endl;
@@ -393,16 +420,14 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
             continue;
         }
         std::string upstream_id = m["id"].get<std::string>();
-        ModelType type = infer_type(upstream_id);
 
-        // Image models are intentionally filtered out: providers do not
-        // standardize on OpenAI's /v1/images/generations shape (Fireworks
-        // uses /v1/workflows/<model>/text_to_image returning raw bytes
-        // with a guidance_scale field; OpenAI uses size/n/quality;
-        // Stability uses yet another). Until a per-provider image
-        // adapter exists, surfacing these models would just give the
-        // user a working "load" followed by a broken "generate".
-        if (type == ModelType::IMAGE) {
+        // Chat-only by design. CloudServer implements chat_completion /
+        // completion against OpenAI v1; embeddings, audio, reranking, and
+        // image use diverging wire formats across providers and belong in
+        // sibling backends. infer_type() classifies upstream ids by name
+        // pattern; anything that is not LLM is dropped here so the router
+        // never sees a cloud model it cannot dispatch.
+        if (infer_type(upstream_id) != ModelType::LLM) {
             continue;
         }
 
@@ -422,9 +447,9 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         info.suggested = true;
         info.downloaded = true;  // Cloud models have no local artifacts.
         info.size = 0.0;
-        info.type = type;
+        info.type = ModelType::LLM;
         info.device = DEVICE_NONE;
-        info.labels = infer_labels(type);
+        info.labels = chat_labels();
         models.push_back(std::move(info));
     }
 

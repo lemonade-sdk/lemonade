@@ -74,7 +74,8 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 }
 
 HttpResponse HttpClient::get(const std::string& url,
-                             const std::map<std::string, std::string>& headers) {
+                             const std::map<std::string, std::string>& headers,
+                             long timeout_seconds) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -87,7 +88,8 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
