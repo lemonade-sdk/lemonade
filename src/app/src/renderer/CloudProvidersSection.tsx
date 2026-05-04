@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight } from './components/Icons';
 import { serverConfig, getServerBaseUrl } from './utils/serverConfig';
 import CloudProviderModal, { CloudProviderInitialValues } from './CloudProviderModal';
 
@@ -23,10 +22,8 @@ const isPlainObject = (x: unknown): x is Record<string, unknown> =>
 const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
   searchQuery, showError, showSuccess
 }) => {
-  const [enabled, setEnabled] = useState<boolean>(false);
   const [providers, setProviders] = useState<CloudProviderState[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(true);
   const [modal, setModal] = useState<
     | { mode: 'add' }
     | { mode: 'edit'; initialValues: CloudProviderInitialValues }
@@ -55,7 +52,6 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
             cloudOffload = body['cloud_offload'];
           }
         }
-        const enabledFlag = cloudOffload['enabled'] === true;
         const providersObj = isPlainObject(cloudOffload['providers'])
           ? (cloudOffload['providers'] as Record<string, unknown>)
           : {};
@@ -84,16 +80,17 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
           return {
             name,
             baseUrl,
-            // Server may also have an env var supplying the key — we can't see
-            // env vars from here, so "hasApiKey" only reflects the config.json
-            // value. The Edit modal makes this clear.
+            // The server may also pull the key from a LEMONADE_<NAME>_API_KEY
+            // env var, which we can't see from here — so hasApiKey only
+            // reflects config.json. If discovery still returned models for
+            // this provider, the env-var path is working; we surface that as
+            // a healthy state below.
             hasApiKey: apiKey.length > 0,
             modelCount: counts[name] ?? 0,
           };
         });
         rows.sort((a, b) => a.name.localeCompare(b.name));
 
-        setEnabled(enabledFlag);
         setProviders(rows);
       } catch (e) {
         console.error('Failed to load cloud providers:', e);
@@ -105,64 +102,30 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
     return () => { cancelled = true; };
   }, [refreshNonce]);
 
-  const handleToggleEnabled = useCallback(async (next: boolean) => {
-    const prev = enabled;
-    setEnabled(next);
-    try {
-      // GET /internal/config reads the snapshot; the matching write endpoint
-      // is POST /internal/set, not POST /internal/config (which 404s).
-      const url = `${getServerBaseUrl()}/internal/set`;
-      const resp = await serverConfig.fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cloud_offload: { enabled: next } }),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      showSuccess(next ? 'Cloud offload enabled.' : 'Cloud offload disabled.');
-      triggerRefresh();
-    } catch (e: any) {
-      setEnabled(prev);
-      showError(`Failed to toggle cloud offload: ${e?.message || e}`);
-    }
-  }, [enabled, showError, showSuccess, triggerRefresh]);
-
   const query = searchQuery.trim().toLowerCase();
   const filteredProviders = query
     ? providers.filter((p) => `${p.name} ${p.baseUrl}`.toLowerCase().includes(query))
     : providers;
 
-  // When searching, hide the section entirely if it has no matches and the
-  // user isn't searching for the word "cloud" itself.
-  if (query && filteredProviders.length === 0 && !'cloud'.includes(query) && !'cloud providers'.includes(query)) {
+  // Hide the section entirely when a search has no matches and the user is
+  // not searching the section name itself.
+  if (query && filteredProviders.length === 0 && !'cloud'.includes(query)) {
     return null;
   }
 
   return (
     <>
       <div className="model-category">
-        <div
-          className="model-category-header"
-          onClick={() => setIsExpanded((v) => !v)}
-          style={{ cursor: 'pointer' }}
-        >
-          <span
-            className="category-label-wrap"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: '6px' }}
-          >
-            <span
-              style={{
-                display: 'inline-flex',
-                transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 0.15s',
-              }}
-            >
-              <ChevronRight size={14} />
-            </span>
-            <span className="category-label">Cloud Providers</span>
+        {/* Header matches the local recipe rows: static (no chevron, no
+            collapse), label + count on the left, "+ Add" pill on the right. */}
+        <div className="model-category-header static" style={{ justifyContent: 'space-between' }}>
+          <span>
+            <span className="category-label">Cloud</span>
+            <span className="category-count">({filteredProviders.length})</span>
           </span>
           <button
             className="settings-reset-button"
-            style={{ fontSize: '11px', padding: '2px 8px', whiteSpace: 'nowrap', marginLeft: '8px' }}
+            style={{ fontSize: '0.65rem', padding: '1px 8px', whiteSpace: 'nowrap' }}
             title="Add a new cloud provider"
             onClick={(e) => { e.stopPropagation(); setModal({ mode: 'add' }); }}
           >
@@ -170,100 +133,83 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
           </button>
         </div>
 
-        {isExpanded && (
-          <div className="model-list">
-            {/* Master toggle. Sized to match local backend rows: the label
-                uses .backend-name (0.74rem), helper text uses
-                .backend-status-message (0.62rem). */}
-            <div
-              className="backend-row-item"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px' }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px' }}>
-                  <span className="backend-name">Cloud offload</span>
-                  <span className="category-count">({filteredProviders.length})</span>
-                </span>
-                <div className="backend-status-message" style={{ marginLeft: 0, whiteSpace: 'normal' }}>
-                  When off, configured providers are hidden and no remote requests are made.
-                </div>
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  className="settings-checkbox"
-                  checked={enabled}
-                  disabled={isLoading}
-                  onChange={(e) => handleToggleEnabled(e.target.checked)}
-                />
-                <span style={{ fontSize: '0.7rem' }}>{enabled ? 'Enabled' : 'Disabled'}</span>
-              </label>
+        <div className="model-list">
+          {isLoading ? (
+            <div className="backend-row-item" style={{ padding: '4px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
+              Loading…
             </div>
+          ) : filteredProviders.length === 0 ? (
+            <div className="backend-row-item" style={{ padding: '4px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
+              {query
+                ? 'No providers match your search.'
+                : 'No providers configured. Click "+ Add" to connect Fireworks, OpenAI, Together, OpenRouter, or any OpenAI-compatible endpoint.'}
+            </div>
+          ) : (
+            filteredProviders.map((p) => {
+              // Auth state is derived in priority order: config key > env-var-
+              // implied (no config key but discovery returned models) > none.
+              // The env-var case is detected at runtime — we can't read env
+              // vars from the renderer, so a working count is the proof.
+              const envKeyLikely = !p.hasApiKey && (p.modelCount ?? 0) > 0;
+              const ok = p.hasApiKey || envKeyLikely;
+              const dotClass = ok ? 'loaded' : 'update-required';
+              const dotTitle = p.hasApiKey
+                ? 'API key set in config.json'
+                : envKeyLikely
+                  ? `Auth working — likely via the LEMONADE_${p.name.toUpperCase()}_API_KEY env var`
+                  : `No API key found. Set one in this UI or use the LEMONADE_${p.name.toUpperCase()}_API_KEY env var.`;
 
-            {isLoading ? (
-              <div className="backend-row-item" style={{ padding: '6px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
-                Loading…
-              </div>
-            ) : filteredProviders.length === 0 ? (
-              <div className="backend-row-item" style={{ padding: '6px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
-                {query
-                  ? 'No providers match your search.'
-                  : 'No providers configured. Click "+ Add" to connect Fireworks, OpenAI, Together, OpenRouter, or any OpenAI-compatible endpoint.'}
-              </div>
-            ) : (
-              filteredProviders.map((p) => {
-                // The api_key may also come from a LEMONADE_<NAME>_API_KEY env
-                // var, which we can't see from here. If discovery returned
-                // models, auth is working regardless of what's in config.
-                const envKeyLikely = !p.hasApiKey && (p.modelCount ?? 0) > 0;
-                const status: { label: string; bg: string; fg: string; title: string } = p.hasApiKey
-                  ? { label: '✓ Key set',  bg: 'rgba(34,197,94,0.18)', fg: '#22c55e', title: 'API key set in config.json' }
-                  : envKeyLikely
-                    ? { label: '✓ Env key',  bg: 'rgba(34,197,94,0.18)', fg: '#22c55e', title: `Auth working — likely via the LEMONADE_${p.name.toUpperCase()}_API_KEY env var` }
-                    : { label: '⚠ No key',  bg: 'rgba(234,179,8,0.18)', fg: '#ca8a04', title: `No API key found. Set one in this UI or use the LEMONADE_${p.name.toUpperCase()}_API_KEY env var.` };
-                return (
-                  <div key={p.name} className="backend-row-item" style={{ padding: '4px 12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <span className="backend-name">{p.name}</span>
-                      <button
-                        className="settings-reset-button"
-                        style={{ fontSize: '0.7rem', padding: '2px 10px' }}
-                        onClick={() => setModal({
-                          mode: 'edit',
-                          initialValues: { name: p.name, baseUrl: p.baseUrl, hasApiKey: p.hasApiKey },
-                        })}
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap', paddingLeft: '14px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.62rem',
-                          padding: '1px 8px',
-                          borderRadius: '10px',
-                          background: status.bg,
-                          color: status.fg,
-                        }}
-                        title={status.title}
-                      >
-                        {status.label}
-                      </span>
-                      {enabled && (
-                        <span style={{ fontSize: '0.62rem', opacity: 0.7 }}>
-                          {p.modelCount ?? 0} model{p.modelCount === 1 ? '' : 's'}
+              return (
+                <div
+                  key={p.name}
+                  className="model-item backend-row-item"
+                  style={{ padding: '2px 12px' }}
+                >
+                  <div className="model-item-content">
+                    <div className="model-info-left backend-row-main">
+                      <div className="backend-row-head">
+                        <span className="model-name backend-name">
+                          <span
+                            className={`model-status-indicator ${dotClass}`}
+                            title={dotTitle}
+                          >●</span>
+                          {p.name}
                         </span>
-                      )}
-                    </div>
-                    <div className="backend-status-message" style={{ wordBreak: 'break-all', whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip' }}>
-                      {p.baseUrl || <em>(no base URL)</em>}
+                      </div>
+                      <div className="backend-row-detail">
+                        <div className="backend-inline-meta">
+                          <span className="backend-version">
+                            {p.modelCount ?? 0} model{p.modelCount === 1 ? '' : 's'}
+                          </span>
+                          {p.baseUrl && (
+                            <>
+                              <span className="backend-meta-separator">•</span>
+                              <span className="backend-size" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {p.baseUrl}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <div className="model-actions">
+                          <button
+                            className="settings-reset-button"
+                            style={{ fontSize: '0.65rem', padding: '1px 8px' }}
+                            onClick={() => setModal({
+                              mode: 'edit',
+                              initialValues: { name: p.name, baseUrl: p.baseUrl, hasApiKey: p.hasApiKey },
+                            })}
+                          >
+                            Edit
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
       {modal && createPortal(
