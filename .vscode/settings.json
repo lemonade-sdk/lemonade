@@ -123,4 +123,13 @@
         "valarray": "cpp",
         "variant": "cpp"
     },
+    "spellright.language": [
+        "en"
+    ],
+    "spellright.documentTypes": [
+        "python",
+        "markdown",
+        "latex",
+        "plaintext"
+    ],
 }
