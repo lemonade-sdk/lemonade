@@ -7,7 +7,7 @@
 namespace lemon {
 namespace backends {
 
-class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer {
+class LlamaCppServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ISlotsServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -44,6 +44,10 @@ public:
 
     // IRerankingServer implementation
     json reranking(const json& request) override;
+
+    // ISlotsServer implementation
+    json get_slots() override;
+    json slots_action(int slot_id, const std::string& action, const json& request_body) override;
 };
 
 } // namespace backends
