@@ -3776,6 +3776,17 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
             model_manager_->invalidate_models_cache();
+        } else if (key == "cloud_offload") {
+            // The cached model list is built once and reused. Without this
+            // invalidation, saving a new api_key, base_url, or provider
+            // entry updates RuntimeConfig but ModelManager never reruns
+            // CloudServer::discover_models, so the new cloud entries never
+            // appear in /v1/models. Toggling enabled has the same problem
+            // in reverse — the previously discovered models stay listed
+            // until the next external invalidation. Invalidating here makes
+            // the next /v1/models call rebuild against the fresh config.
+            LOG(INFO, "Server") << "cloud_offload changed; invalidating models cache" << std::endl;
+            model_manager_->invalidate_models_cache();
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
             // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.

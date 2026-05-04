@@ -31,10 +31,14 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
   const [name, setName] = useState(initialValues?.name ?? '');
   const [baseUrl, setBaseUrl] = useState(initialValues?.baseUrl ?? '');
   const [apiKey, setApiKey] = useState('');
-  // When editing, the existing key is masked and not pre-filled. The user
-  // toggles "Replace key" to type a new one. Leaving it blank keeps the
-  // current key intact.
-  const [replaceKey, setReplaceKey] = useState(mode === 'add');
+  // When editing an existing entry that already has a key in config.json,
+  // the field is masked and the user must click "Replace" to opt into
+  // overwriting it. In every other case — add mode, or edit mode with no
+  // saved key (e.g. the key was previously coming from a LEMONADE_*_API_KEY
+  // env var) — the input field is shown directly and any value the user
+  // types should be persisted, so replaceKey starts true. Without this, the
+  // typed key was silently dropped on save.
+  const [replaceKey, setReplaceKey] = useState(mode === 'add' || !initialValues?.hasApiKey);
   const [revealKey, setRevealKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
