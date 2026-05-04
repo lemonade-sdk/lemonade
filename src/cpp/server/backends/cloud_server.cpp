@@ -18,27 +18,26 @@ bool id_contains(const std::string& id, const std::string& needle) {
     return id.find(needle) != std::string::npos;
 }
 
-// Infer model type from a model id. Providers don't return a structured
-// type field on /v1/models, so we deny-list non-chat substrings; anything
-// that does not match falls through to LLM. Caller in discover_models()
-// keeps only LLM and drops the rest, since CloudServer is chat-only.
-//
-// The patterns cover the major providers we care about:
-//   - Fireworks/Together/OpenRouter: flux, stable-diffusion, sdxl, sd-,
-//     bge-, nomic-, rerank, whisper, embed
-//   - OpenAI: dall-e-*, gpt-image-*, chatgpt-image-*, sora-* (image/video);
-//     tts-*, *-tts, *-transcribe, gpt-realtime-*, gpt-audio-* (audio);
-//     omni-moderation-* / text-moderation-* (classifiers); text-embedding-*
+// Pattern-based fallback for /v1/models entries that don't publish any
+// capability metadata (notably OpenAI, whose response is just
+// {id, object, owned_by, created}). The patterns cover the model
+// families we currently know about:
+//   - Image/video: flux, stable-diffusion, sdxl, sd-, dall-e, gpt-image,
+//                  chatgpt-image, sora
+//   - Audio:       whisper, tts, *-transcribe, gpt-realtime, gpt-audio
+//   - Reranking:   rerank
+//   - Embeddings:  embed, bge-, nomic-
+//   - Classifiers: moderation
+// Anything else falls through to LLM. New providers that publish
+// capability metadata (see is_chat_model below) bypass this entirely
+// and don't need new patterns.
 ModelType infer_type(const std::string& id) {
-    // Image / video generation — no common /v1/images shape across providers.
     if (id_contains(id, "flux") || id_contains(id, "stable-diffusion") ||
         id_contains(id, "sdxl") || id_contains(id, "sd-") ||
         id_contains(id, "dall-e") || id_contains(id, "gpt-image") ||
         id_contains(id, "chatgpt-image") || id_contains(id, "sora")) {
         return ModelType::IMAGE;
     }
-    // Audio: ASR (whisper, *-transcribe), TTS (tts, *-tts), and the realtime
-    // voice / audio-in-out variants that don't speak plain text chat.
     if (id_contains(id, "whisper") || id_contains(id, "tts") ||
         id_contains(id, "transcribe") || id_contains(id, "realtime") ||
         id_contains(id, "audio")) {
@@ -47,12 +46,77 @@ ModelType infer_type(const std::string& id) {
     if (id_contains(id, "rerank")) {
         return ModelType::RERANKING;
     }
-    // Embeddings and safety classifiers — both non-chat for filter purposes.
     if (id_contains(id, "embed") || id_contains(id, "bge-") ||
         id_contains(id, "nomic-") || id_contains(id, "moderation")) {
         return ModelType::EMBEDDING;
     }
     return ModelType::LLM;
+}
+
+// Decide whether a /v1/models entry should be surfaced as a chat model.
+//
+// Strategy: trust provider-supplied capability metadata when it exists,
+// fall back to id pattern matching only when there is none. This keeps
+// the substring list bounded — adding a new provider that publishes
+// capabilities does not require adding new patterns.
+//
+// Signals checked, in priority order:
+//   1. supports_chat: bool       — Fireworks
+//   2. capabilities: [string]    — generic ("chat", "chat.completions",
+//                                  "embeddings", "image_generation", ...)
+//   3. architecture.modality     — OpenRouter ("text->text",
+//                                  "text+image->text", "text->image", ...)
+//                                  Anything that produces text via chat is
+//                                  considered chat-capable.
+//   4. infer_type(id) == LLM     — fallback for bare responses (OpenAI).
+bool is_chat_model(const json& m) {
+    if (!m.is_object() || !m.contains("id") || !m["id"].is_string()) {
+        return false;
+    }
+
+    // Output-shape veto: providers sometimes flag non-text generators with
+    // supports_chat=true because they accept chat-shaped requests (Fireworks
+    // does this for FLUMINA image-editing models — chat-shape input, image
+    // output). Reject those before trusting supports_chat.
+    if (m.contains("kind") && m["kind"].is_string()) {
+        const std::string kind = m["kind"].get<std::string>();
+        if (kind == "FLUMINA_BASE_MODEL" ||
+            kind.find("IMAGE") != std::string::npos ||
+            kind.find("AUDIO") != std::string::npos ||
+            kind.find("VIDEO") != std::string::npos ||
+            kind.find("EMBED") != std::string::npos) {
+            return false;
+        }
+    }
+
+    if (m.contains("supports_chat") && m["supports_chat"].is_boolean()) {
+        return m["supports_chat"].get<bool>();
+    }
+
+    if (m.contains("capabilities") && m["capabilities"].is_array()) {
+        for (const auto& cap : m["capabilities"]) {
+            if (!cap.is_string()) continue;
+            std::string s = cap.get<std::string>();
+            if (s == "chat" || s == "chat.completions" || s == "completion") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if (m.contains("architecture") && m["architecture"].is_object()) {
+        const auto& arch = m["architecture"];
+        if (arch.contains("modality") && arch["modality"].is_string()) {
+            const std::string mod = arch["modality"].get<std::string>();
+            // OpenRouter encodes modality as "<inputs>-><outputs>", e.g.
+            // "text->text", "text+image->text", "text->image". Anything
+            // that emits text from a chat-style call is fine; image/audio/
+            // embedding outputs are not.
+            return mod.find("->text") != std::string::npos;
+        }
+    }
+
+    return infer_type(m["id"].get<std::string>()) == ModelType::LLM;
 }
 
 std::vector<std::string> chat_labels() {
@@ -433,20 +497,18 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
     }
 
     for (const auto& m : body["data"]) {
-        if (!m.is_object() || !m.contains("id") || !m["id"].is_string()) {
-            continue;
-        }
-        std::string upstream_id = m["id"].get<std::string>();
-
         // Chat-only by design. CloudServer implements chat_completion /
         // completion against OpenAI v1; embeddings, audio, reranking, and
         // image use diverging wire formats across providers and belong in
-        // sibling backends. infer_type() classifies upstream ids by name
-        // pattern; anything that is not LLM is dropped here so the router
-        // never sees a cloud model it cannot dispatch.
-        if (infer_type(upstream_id) != ModelType::LLM) {
+        // sibling backends. is_chat_model() trusts provider-supplied
+        // capability metadata first (supports_chat, capabilities,
+        // architecture.modality) and falls back to id pattern matching for
+        // bare responses, so the router never sees a cloud model it cannot
+        // dispatch.
+        if (!is_chat_model(m)) {
             continue;
         }
+        std::string upstream_id = m["id"].get<std::string>();
 
         ModelInfo info;
         // Public name = "<provider>/<cleaned_upstream_id>". The cleanup
