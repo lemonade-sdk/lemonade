@@ -169,6 +169,9 @@ cython_debug/
 
 .aider*
 
+# VS Code files
+./vscode/settings.json
+
 # Claude files
 CLAUDE.md
 CLAUDE.local.md
