@@ -15,7 +15,7 @@ This guide covers everything you need to build, test, and contribute to Lemonade
   - [Windows Installer (WiX/MSI)](#windows-installer-wixmsi)
   - [Linux .deb Package (Debian/Ubuntu)](#linux-deb-package-debianubuntu)
   - [Linux .rpm Package (Fedora, RHEL etc)](#linux-rpm-package-fedora-rhel-etc)
-  - [Developer IDE & IDE Build Steps](#developer-ide--ide-build-steps)
+- [Developer IDE and Build Steps](#developer-ide-and-build-steps)
 - [Code Structure](#code-structure)
 - [Architecture Overview](#architecture-overview)
   - [Overview](#overview)
@@ -24,8 +24,8 @@ This guide covers everything you need to build, test, and contribute to Lemonade
   - [Dependencies](#dependencies)
 - [Usage](#usage)
   - [lemond (Server Only)](#lemond-server-only)
-  - [lemonade-server.exe (Console CLI Client)](#lemonade-serverexe-console-cli-client)
-  - [lemonade-tray (GUI Tray Application)](#lemonade-tray-gui-tray-application---windows-and-linux)
+  - [lemonade CLI Client](#lemonade-cli-client)
+  - [GUI Tray Application](#gui-tray-application)
   - [Logging and Console Output](#logging-and-console-output)
 - [Testing](#testing)
   - [Basic Functionality Tests](#basic-functionality-tests)
@@ -223,10 +223,6 @@ Creates `lemonade-server-minimal.msi` which:
 - `lemonade-server-minimal.msi` - Server only (~3 MB)
 - `lemonade.msi` - Full installer with Tauri desktop app (~10 MB)
 
-**Installation:**
-
-For detailed installation instructions including silent install, custom directories, and all-users installation, see the [Server Integration Guide](../../docs/server/server_integration.md#windows-installation).
-
 ### Linux .deb Package (Debian/Ubuntu)
 
 **Prerequisites:**
@@ -390,9 +386,9 @@ The notarization process will:
 
 **Note**: The package is signed with hardened runtime entitlements during the build process for security.
 
-### Developer IDE & IDE Build Steps
+## Developer IDE and Build Steps
 
-#### Visual Studio Code Setup Guide
+### Visual Studio Code Setup Guide
 1. Clone the repository into a blank folder locally on your computer.
 2. Open the folder in visual studio code.
 3. Install Dev Containers extension in Visual Studio Code by using
@@ -403,14 +399,14 @@ The notarization process will:
 ```>Dev Containers: Open Workspace in Container``` or ```>Dev Containers: Open Folder in Container``` which you can do in the command bar in the IDE and it should reopen the visual studio code project.
 7. It will launch a docker and start building a new docker and then the project will open in visual studio code.
 
-#### Build & Compile Options
+### Build & Compile Options
 
 1. Assuming your VSCode IDE is open and the dev container is working.
 2. Go to the CMake plugin you may select the "Folder" that is where you currently want to build.
 3. Once done with that you may select which building toolkit you are using under Configure and then begin configure.
 4. Under Build, Test, Debug and/or Launch you may select whatever configuration you want to build, test, debug and/or launch.
 
-#### Debug / Runtime / Console arguments
+### Debug / Runtime / Console arguments
 1. You may find arguments which are passed through to the application you are debugging in .vscode/settings.json which will look like the following:
 ```
 "cmake.debugConfig": {
@@ -422,7 +418,7 @@ The notarization process will:
 2. If you want to debug lemond you may pass --llamacpp cpu for cpu based tests.
 3. For `lemonade` you may pass a subcommand (e.g., `run MODEL`) as arguments.
 
-##### The hard way - commands only.
+#### The hard way - commands only.
 1. Now if you want to do it the hard way below are the commands in which you can run in the command dropdown in which you can see if you use the following keyboard shortcuts. cmd + p / control + p
 ```
 
@@ -709,9 +705,9 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 #   --help, -h               Show help
 ```
 
-All other server settings are managed via `lemonade config set` (see [Server Configuration](./server/configuration.md)).
+All other server settings are managed via `lemonade config set` (see [Server Configuration](../guide/configuration/README.md)).
 
-### lemonade (CLI Client)
+### lemonade CLI Client
 
 The `lemonade` executable is the command-line interface for terminal users:
 - Command-line interface for model management and server interaction
@@ -741,7 +737,7 @@ The `lemonade` executable is the command-line interface for terminal users:
 ./lemonade backends
 ```
 
-### LemonadeServer.exe / lemonade-tray (GUI Tray Application)
+### GUI Tray Application
 
 The tray application provides a system tray icon for desktop users:
 - Double-click from Start Menu, application launcher, or Desktop to start server

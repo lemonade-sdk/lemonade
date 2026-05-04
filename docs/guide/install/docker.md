@@ -1,4 +1,4 @@
-# Running Lemonade C++ in Docker
+# Running Lemonade in Docker
 
 ## Quick Start with Docker
 

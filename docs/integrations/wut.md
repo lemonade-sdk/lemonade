@@ -18,7 +18,7 @@ It is not especially convenient to use `wut` with Windows until the developers r
 
 #### Install Lemonade Server
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../guide/install/README.md) and using the installer .exe.
 
 #### Installing Windows Subsystem for Linux (WSL)
 

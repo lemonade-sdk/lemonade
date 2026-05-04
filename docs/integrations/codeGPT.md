@@ -14,7 +14,7 @@ However, we do not recommend using this model for analyzing large codebases at o
 
 ### Prerequisites
 
-1. Install Lemonade Server by following the [Lemonade Server Instructions](../README.md) and using the installer .exe.
+1. Install Lemonade Server by following the [Lemonade Server Instructions](../guide/install/README.md) and using the installer .exe.
 
 ### Install CodeGPT in VS Code
 

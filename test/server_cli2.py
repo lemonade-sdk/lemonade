@@ -1715,7 +1715,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         )
 
         docs_path = os.path.join(
-            os.path.dirname(__file__), "..", "docs", "lemonade-cli.md"
+            os.path.dirname(__file__), "..", "docs", "guide", "cli.md"
         )
         with open(docs_path, "r", encoding="utf-8") as f:
             docs_text = f.read()
