@@ -454,9 +454,12 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                     throw std::invalid_argument("'cloud_offload.providers' must be an object");
                 }
                 for (auto& [provider, provider_cfg] : sub_value.items()) {
+                    // null is the deletion sentinel — apply_changes() removes
+                    // the provider from config_. Skip the per-key validation.
+                    if (provider_cfg.is_null()) continue;
                     if (!provider_cfg.is_object()) {
                         throw std::invalid_argument(
-                            "'cloud_offload.providers." + provider + "' must be an object");
+                            "'cloud_offload.providers." + provider + "' must be an object or null");
                     }
                     for (auto& [pkey, pval] : provider_cfg.items()) {
                         if (pkey != "api_key" && pkey != "base_url") {
@@ -556,6 +559,23 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                         config_[key]["providers"] = json::object();
                     }
                     for (auto& [provider, provider_cfg] : sub_value.items()) {
+                        // Deletion sentinel: a null value erases the provider
+                        // from config_ (and therefore from disk on the next
+                        // save). The Remove button in the cloud-provider modal
+                        // sends this. Validate() already vets the shape.
+                        if (provider_cfg.is_null()) {
+                            if (config_[key]["providers"].contains(provider)) {
+                                config_[key]["providers"].erase(provider);
+                                if (!applied_diff.contains(key)) {
+                                    applied_diff[key] = json::object();
+                                }
+                                if (!applied_diff[key].contains("providers")) {
+                                    applied_diff[key]["providers"] = json::object();
+                                }
+                                applied_diff[key]["providers"][provider] = nullptr;
+                            }
+                            continue;
+                        }
                         if (!provider_cfg.is_object()) continue;
                         if (!config_[key]["providers"].contains(provider) ||
                             !config_[key]["providers"][provider].is_object()) {

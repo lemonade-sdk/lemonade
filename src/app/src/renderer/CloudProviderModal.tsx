@@ -21,10 +21,8 @@ interface CloudProviderModalProps {
 const BASE_URL_PRESETS: Array<{ name: string; baseUrl: string; label: string }> = [
   { name: 'fireworks',  baseUrl: 'https://api.fireworks.ai/inference/v1', label: 'Fireworks AI' },
   { name: 'openai',     baseUrl: 'https://api.openai.com/v1',              label: 'OpenAI' },
-  { name: 'groq',       baseUrl: 'https://api.groq.com/openai/v1',         label: 'Groq' },
   { name: 'together',   baseUrl: 'https://api.together.xyz/v1',            label: 'Together AI' },
   { name: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',           label: 'OpenRouter' },
-  { name: 'deepinfra',  baseUrl: 'https://api.deepinfra.com/v1/openai',    label: 'DeepInfra' },
 ];
 
 const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
@@ -52,6 +50,45 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
     if (mode !== 'add') return;
     if (!name.trim()) setName(preset.name);
     setBaseUrl(preset.baseUrl);
+  };
+
+  const handleRemove = async () => {
+    if (mode !== 'edit' || !initialValues?.name) return;
+    const target = initialValues.name;
+    if (!window.confirm(`Remove provider "${target}"? This deletes its entry from config.json.`)) {
+      return;
+    }
+    setError(null);
+    setIsSaving(true);
+    try {
+      // null on a provider key is the deletion sentinel handled by
+      // RuntimeConfig::apply_changes — it erases the entry on disk.
+      const url = `${getServerBaseUrl()}/internal/set`;
+      const response = await serverConfig.fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cloud_offload: { providers: { [target]: null } },
+        }),
+      });
+      if (!response.ok) {
+        let msg = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          if (body?.error) msg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+        } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      showSuccess(`Removed provider '${target}'.`);
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      setError(msg);
+      showError(`Failed to remove provider: ${msg}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSave = async () => {
@@ -93,7 +130,8 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
 
     setIsSaving(true);
     try {
-      const url = `${getServerBaseUrl()}/internal/config`;
+      // POST goes to /internal/set; /internal/config is read-only (GET).
+      const url = `${getServerBaseUrl()}/internal/set`;
       const response = await serverConfig.fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -246,6 +284,17 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
       </div>
 
       <div className="settings-footer">
+        {mode === 'edit' && initialValues?.name && (
+          <button
+            className="settings-reset-button"
+            style={{ marginRight: 'auto', color: '#ef4444' }}
+            onClick={handleRemove}
+            disabled={isSaving}
+            title="Remove this provider from config.json"
+          >
+            Remove
+          </button>
+        )}
         <button className="settings-reset-button" onClick={onClose} disabled={isSaving}>
           Cancel
         </button>

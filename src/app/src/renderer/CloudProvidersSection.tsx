@@ -109,7 +109,9 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
     const prev = enabled;
     setEnabled(next);
     try {
-      const url = `${getServerBaseUrl()}/internal/config`;
+      // GET /internal/config reads the snapshot; the matching write endpoint
+      // is POST /internal/set, not POST /internal/config (which 404s).
+      const url = `${getServerBaseUrl()}/internal/set`;
       const resp = await serverConfig.fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,18 +170,20 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
 
         {isExpanded && (
           <div className="model-list">
-            {/* Master toggle */}
+            {/* Master toggle. Sized to match local backend rows: the label
+                uses .backend-name (0.74rem), helper text uses
+                .backend-status-message (0.62rem). */}
             <div
               className="backend-row-item"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px' }}
             >
-              <div>
-                <div style={{ fontWeight: 500 }}>Cloud offload</div>
-                <div style={{ fontSize: '12px', opacity: 0.7 }}>
+              <div style={{ minWidth: 0 }}>
+                <span className="backend-name">Cloud offload</span>
+                <div className="backend-status-message" style={{ marginLeft: 0, whiteSpace: 'normal' }}>
                   When off, configured providers are hidden and no remote requests are made.
                 </div>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   className="settings-checkbox"
@@ -187,19 +191,19 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
                   disabled={isLoading}
                   onChange={(e) => handleToggleEnabled(e.target.checked)}
                 />
-                <span style={{ fontSize: '12px' }}>{enabled ? 'Enabled' : 'Disabled'}</span>
+                <span style={{ fontSize: '0.7rem' }}>{enabled ? 'Enabled' : 'Disabled'}</span>
               </label>
             </div>
 
             {isLoading ? (
-              <div className="backend-row-item" style={{ padding: '12px', opacity: 0.7 }}>
+              <div className="backend-row-item" style={{ padding: '6px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
                 Loading…
               </div>
             ) : filteredProviders.length === 0 ? (
-              <div className="backend-row-item" style={{ padding: '12px', opacity: 0.7 }}>
+              <div className="backend-row-item" style={{ padding: '6px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
                 {query
                   ? 'No providers match your search.'
-                  : 'No providers configured. Click "Add provider" to connect Fireworks, OpenAI, Together, Groq, OpenRouter, or any OpenAI-compatible endpoint.'}
+                  : 'No providers configured. Click "+ Add" to connect Fireworks, OpenAI, Together, OpenRouter, or any OpenAI-compatible endpoint.'}
               </div>
             ) : (
               filteredProviders.map((p) => {
@@ -213,12 +217,12 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
                     ? { label: '✓ Env key',  bg: 'rgba(34,197,94,0.18)', fg: '#22c55e', title: `Auth working — likely via the LEMONADE_${p.name.toUpperCase()}_API_KEY env var` }
                     : { label: '⚠ No key',  bg: 'rgba(234,179,8,0.18)', fg: '#ca8a04', title: `No API key found. Set one in this UI or use the LEMONADE_${p.name.toUpperCase()}_API_KEY env var.` };
                 return (
-                  <div key={p.name} className="backend-row-item" style={{ padding: '8px 12px' }}>
+                  <div key={p.name} className="backend-row-item" style={{ padding: '4px 12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                      <span style={{ fontWeight: 500 }}>{p.name}</span>
+                      <span className="backend-name">{p.name}</span>
                       <button
                         className="settings-reset-button"
-                        style={{ fontSize: '12px', padding: '2px 10px' }}
+                        style={{ fontSize: '0.7rem', padding: '2px 10px' }}
                         onClick={() => setModal({
                           mode: 'edit',
                           initialValues: { name: p.name, baseUrl: p.baseUrl, hasApiKey: p.hasApiKey },
@@ -227,10 +231,10 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
                         Edit
                       </button>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap', paddingLeft: '14px' }}>
                       <span
                         style={{
-                          fontSize: '11px',
+                          fontSize: '0.62rem',
                           padding: '1px 8px',
                           borderRadius: '10px',
                           background: status.bg,
@@ -241,12 +245,12 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
                         {status.label}
                       </span>
                       {enabled && (
-                        <span style={{ fontSize: '11px', opacity: 0.7 }}>
+                        <span style={{ fontSize: '0.62rem', opacity: 0.7 }}>
                           {p.modelCount ?? 0} model{p.modelCount === 1 ? '' : 's'}
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: '11px', opacity: 0.6, marginTop: '4px', wordBreak: 'break-all' }}>
+                    <div className="backend-status-message" style={{ wordBreak: 'break-all', whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip' }}>
                       {p.baseUrl || <em>(no base URL)</em>}
                     </div>
                   </div>
