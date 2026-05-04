@@ -145,7 +145,10 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
           onClick={() => setIsExpanded((v) => !v)}
           style={{ cursor: 'pointer' }}
         >
-          <span className="category-label-wrap">
+          <span
+            className="category-label-wrap"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: '6px' }}
+          >
             <span
               style={{
                 display: 'inline-flex',
@@ -156,11 +159,10 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
               <ChevronRight size={14} />
             </span>
             <span className="category-label">Cloud Providers</span>
-            <span className="category-count">({filteredProviders.length})</span>
           </span>
           <button
             className="settings-reset-button"
-            style={{ fontSize: '11px', padding: '2px 8px', whiteSpace: 'nowrap' }}
+            style={{ fontSize: '11px', padding: '2px 8px', whiteSpace: 'nowrap', marginLeft: '8px' }}
             title="Add a new cloud provider"
             onClick={(e) => { e.stopPropagation(); setModal({ mode: 'add' }); }}
           >
@@ -178,7 +180,10 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px' }}
             >
               <div style={{ minWidth: 0 }}>
-                <span className="backend-name">Cloud offload</span>
+                <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px' }}>
+                  <span className="backend-name">Cloud offload</span>
+                  <span className="category-count">({filteredProviders.length})</span>
+                </span>
                 <div className="backend-status-message" style={{ marginLeft: 0, whiteSpace: 'normal' }}>
                   When off, configured providers are hidden and no remote requests are made.
                 </div>

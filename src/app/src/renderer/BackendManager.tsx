@@ -176,15 +176,14 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
   if (visibleGroups.length === 0) {
     return (
       <>
-        {cloudSection}
         <div className="left-panel-empty-state">No local backends match your current filter.</div>
+        {cloudSection}
       </>
     );
   }
 
   return (
     <>
-      {cloudSection}
       {visibleGroups.map(([recipeName, backends]) => (
         <div key={recipeName} className="model-category">
           <div className="model-category-header static">
@@ -207,6 +206,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
           </div>
         </div>
       ))}
+      {cloudSection}
     </>
   );
 };
