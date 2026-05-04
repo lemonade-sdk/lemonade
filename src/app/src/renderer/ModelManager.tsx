@@ -536,6 +536,23 @@ const [searchQuery, setSearchQuery] = useState('');
     return expandedCategories.has(category);
   };
 
+  // Proper-cased display names for known cloud providers. The provider
+  // name in config is constrained to lowercase (so we have a single
+  // canonical id used for env-var lookup, model prefix, etc.); this map
+  // is the one place we restore camel/acronym casing for the UI.
+  const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+    'openai':     'OpenAI',
+    'fireworks':  'Fireworks',
+    'together':   'Together',
+    'openrouter': 'OpenRouter',
+    'groq':       'Groq',
+    'deepinfra':  'DeepInfra',
+    'mistral':    'Mistral',
+    'mistralai':  'MistralAI',
+    'anthropic':  'Anthropic',
+    'cohere':     'Cohere',
+  };
+
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
       // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks Cloud")
@@ -543,7 +560,9 @@ const [searchQuery, setSearchQuery] = useState('');
       // RECIPE_DISPLAY_NAMES, so format them here.
       if (key.endsWith('-cloud') && key !== 'cloud') {
         const provider = key.slice(0, -'-cloud'.length);
-        return `${provider.charAt(0).toUpperCase()}${provider.slice(1)} Cloud`;
+        const display = PROVIDER_DISPLAY_NAMES[provider]
+          ?? `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
+        return `${display} Cloud`;
       }
       return RECIPE_DISPLAY_NAMES[key] || key;
     } else {

@@ -19,20 +19,37 @@ bool id_contains(const std::string& id, const std::string& needle) {
 }
 
 // Infer model type from a model id. Providers don't return a structured
-// type field on /v1/models, so we match well-known substrings. Anything
-// that doesn't match a more specific bucket falls through to LLM.
+// type field on /v1/models, so we deny-list non-chat substrings; anything
+// that does not match falls through to LLM. Caller in discover_models()
+// keeps only LLM and drops the rest, since CloudServer is chat-only.
+//
+// The patterns cover the major providers we care about:
+//   - Fireworks/Together/OpenRouter: flux, stable-diffusion, sdxl, sd-,
+//     bge-, nomic-, rerank, whisper, embed
+//   - OpenAI: dall-e-*, gpt-image-*, chatgpt-image-*, sora-* (image/video);
+//     tts-*, *-tts, *-transcribe, gpt-realtime-*, gpt-audio-* (audio);
+//     omni-moderation-* / text-moderation-* (classifiers); text-embedding-*
 ModelType infer_type(const std::string& id) {
+    // Image / video generation — no common /v1/images shape across providers.
     if (id_contains(id, "flux") || id_contains(id, "stable-diffusion") ||
-        id_contains(id, "sdxl") || id_contains(id, "sd-")) {
+        id_contains(id, "sdxl") || id_contains(id, "sd-") ||
+        id_contains(id, "dall-e") || id_contains(id, "gpt-image") ||
+        id_contains(id, "chatgpt-image") || id_contains(id, "sora")) {
         return ModelType::IMAGE;
     }
-    if (id_contains(id, "whisper")) {
+    // Audio: ASR (whisper, *-transcribe), TTS (tts, *-tts), and the realtime
+    // voice / audio-in-out variants that don't speak plain text chat.
+    if (id_contains(id, "whisper") || id_contains(id, "tts") ||
+        id_contains(id, "transcribe") || id_contains(id, "realtime") ||
+        id_contains(id, "audio")) {
         return ModelType::AUDIO;
     }
     if (id_contains(id, "rerank")) {
         return ModelType::RERANKING;
     }
-    if (id_contains(id, "embed") || id_contains(id, "bge-") || id_contains(id, "nomic-")) {
+    // Embeddings and safety classifiers — both non-chat for filter purposes.
+    if (id_contains(id, "embed") || id_contains(id, "bge-") ||
+        id_contains(id, "nomic-") || id_contains(id, "moderation")) {
         return ModelType::EMBEDDING;
     }
     return ModelType::LLM;
