@@ -1277,6 +1277,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe_options", info.recipe_options.to_json()},
     };
 
+    // Surface the cloud provider on cloud entries so the Model Manager can
+    // bucket each provider into its own sub-heading. Omitted on local models
+    // so the field doesn't pollute every entry — and skipped for the Ollama
+    // serialization path (handle_ollama_show / tags) which builds its own
+    // payload.
+    if (!info.cloud_provider.empty()) {
+        model_json["cloud_provider"] = info.cloud_provider;
+    }
+
     // Add size if available
     if (info.size > 0.0) {
         model_json["size"] = info.size;

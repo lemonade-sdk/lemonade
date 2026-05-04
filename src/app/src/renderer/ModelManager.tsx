@@ -362,16 +362,30 @@ const [searchQuery, setSearchQuery] = useState('');
     return filtered;
   };
 
+  // Cloud models all share recipe='cloud', but each configured provider
+  // should get its own bucket so adding a second provider produces a
+  // second sub-heading rather than mixing into one. The bucket key for
+  // a cloud model is `<provider>-cloud` (e.g. "fireworks-cloud"); falls
+  // back to plain "cloud" if cloud_provider isn't on the entry yet.
+  const recipeBucketKey = (info: ModelInfo): string => {
+    const recipe = info.recipe || 'other';
+    if (recipe !== 'cloud') return recipe;
+    const provider = (info as { cloud_provider?: unknown }).cloud_provider;
+    return typeof provider === 'string' && provider.length > 0
+      ? `${provider}-cloud`
+      : 'cloud';
+  };
+
   const groupModelsByRecipe = () => {
     const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
     const filteredModels = getFilteredModels();
 
     filteredModels.forEach(model => {
-      const recipe = model.info.recipe || 'other';
-      if (!grouped[recipe]) {
-        grouped[recipe] = [];
+      const bucket = recipeBucketKey(model.info);
+      if (!grouped[bucket]) {
+        grouped[bucket] = [];
       }
-      grouped[recipe].push(model);
+      grouped[bucket].push(model);
     });
 
     // Inject empty categories for supported recipes that have no models
@@ -524,6 +538,13 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
+      // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks Cloud")
+      // are synthesised in recipeBucketKey and won't be in
+      // RECIPE_DISPLAY_NAMES, so format them here.
+      if (key.endsWith('-cloud') && key !== 'cloud') {
+        const provider = key.slice(0, -'-cloud'.length);
+        return `${provider.charAt(0).toUpperCase()}${provider.slice(1)} Cloud`;
+      }
       return RECIPE_DISPLAY_NAMES[key] || key;
     } else {
       return getCategoryLabel(key);
