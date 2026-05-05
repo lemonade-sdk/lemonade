@@ -246,13 +246,16 @@ void LlamaCppServer::load(const std::string& model_name,
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(SPEC.recipe, llamacpp_backend);
 
-    // Use pre-resolved GGUF path
+    // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
+    // sources the weights itself via -hf; those models may not have local files.
     std::string gguf_path = model_info.resolved_path();
-    if (gguf_path.empty()) {
+    if (gguf_path.empty() && !model_info.hf_load) {
         throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint());
     }
 
-    LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
+    if (!gguf_path.empty()) {
+        LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
+    }
 
     // Get mmproj path for vision models
     std::string mmproj_path = model_info.resolved_path("mmproj");
@@ -278,7 +281,16 @@ void LlamaCppServer::load(const std::string& model_name,
     std::vector<std::string> args;
     std::set<std::string> reserved_flags;
 
-    push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
+    // hf_load delegates model+mmproj resolution to llama-server's -hf flag. This
+    // is required for models like Qwen2.5-Omni where the manual -m + --mmproj
+    // path rejects audio content parts in /v1/chat/completions — the -hf path
+    // drives the dual-clip (vision+audio) context correctly.
+    if (model_info.hf_load) {
+        push_arg(args, reserved_flags, "-hf", model_info.checkpoint(),
+                 std::vector<std::string>{"--hf-repo", "-mr", "--hf-file", "-mf"});
+    } else {
+        push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
+    }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
@@ -286,8 +298,9 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
-    // Add mmproj file if present (for vision models)
-    if (!mmproj_path.empty()) {
+    // Add mmproj file if present (for vision models). Skip when hf_load is set —
+    // llama-server resolves the mmproj companion itself from the HF repo.
+    if (!mmproj_path.empty() && !model_info.hf_load) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         if (!use_gpu) {
             LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
