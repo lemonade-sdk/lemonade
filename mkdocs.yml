@@ -1,17 +1,18 @@
-# This is the configuration file for MkDocs, a static site generator that uses Markdown files to create documentation sites.
-# The configuration file is written in YAML format and contains various settings for the site.
-
-# To install the MkDocs dependencies, run the following command in the terminal:
-# pip install -r docs/assets/mkdocs_requirements.txt
-
-# To build the site, run the following command in the terminal:
-# mkdocs build
-
-# To serve the site locally, run the following command in the terminal:
-# mkdocs serve
-
-# To deploy the site to GitHub Pages, run the following command in the terminal:
-# mkdocs gh-deploy  <-- this should be updated when we have CI setup with what the real instructions are.
+# Configuration for the Lemonade Server documentation site.
+#
+# The site is built with Zensical (the successor to MkDocs Material). Zensical
+# reads mkdocs.yml natively, so the filename and most of the Material schema
+# carry over from the previous MkDocs Material setup. See zensical.org for
+# documentation and upgrades.
+#
+# To install dependencies:
+#   pip install -r docs/assets/docs_requirements.txt
+#
+# To build (and stage to docs/docs/, the lemonade-server.ai layout):
+#   python docs/publish_website_docs.py
+#
+# To serve locally during authoring:
+#   zensical serve
 
 site_name: Lemonade Server Documentation
 site_url: https://lemonade-server.ai/
@@ -23,14 +24,14 @@ repo_name: lemonade-sdk/lemonade
 repo_url: https://github.com/lemonade-sdk/lemonade
 
 plugins:
-  - monorepo
   - search
 
 theme:
   name: material
-  logo: assets/logo.png  # If we want to use a custom logo instead of an icon
-  icon:
-    repo: fontawesome/brands/github # This is the icon for the repo link in the header
+  custom_dir: docs/overrides
+  # Match the homepage's brand mark: small favicon glyph + "Lemonade" wordmark
+  # (the wordmark is injected via .md-logo::after in zest-theme.css).
+  logo: assets/favicon.ico
   favicon: assets/favicon.ico
   features:
     - navigation.footer
@@ -38,26 +39,20 @@ theme:
     - navigation.top
     - content.code.annotate
     - content.code.copy
+  # Fonts are loaded by docs/overrides/main.html's `fonts` block (Plus Jakarta
+  # Sans + Manrope + Material Symbols), not via theme.font, to avoid double
+  # @import requests and keep parity with the homepage's font setup.
   palette:
-
-    # Light mode settings
-    - scheme: lightmode
-      primary: amber
+    - scheme: zest-light
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-
-    # Dark mode settings
-    - scheme: slate
-      primary: amber
-      accent: amber
+    - scheme: zest-dark
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
-  nav_style: dark
 
-# Add the list of markdown files to be included in the documentation
-# The order of the files in the list will determine the order they appear in the documentation
+# Sidebar / nav structure
 nav:
   - Welcome: index.md
   - User Guide:
@@ -98,12 +93,7 @@ nav:
       - Models: embeddable/models.md
       - Building from Source: embeddable/building.md
 
-not_in_nav: |
-  /index.md
-  /integrations/*.md
-  /server/server_spec.md
-
-# The following adds icons on the bottom of the page
+# Footer social links
 extra:
   homepage: https://lemonade-server.ai
   social:
@@ -114,13 +104,14 @@ extra:
     - icon: simple/discord
       link: https://discord.gg/5xXzkMu8Zk
 
-copyright: Copyright &copy; 2025 AMD. All rights reserved.
+copyright: "© 2026 AMD. Licensed under Apache 2.0."
 
-# The custom CSS for colors and more
+# website-styles.css owns design tokens; zest-theme.css maps them to Zensical.
 extra_css:
-  - assets/extra.css
+  - assets/website-styles.css
+  - assets/zest-theme.css
 
-# The custom JavaScript for the carousel for the videos
+# carousel.js handles YouTube embeds inside docs pages.
 extra_javascript:
   - assets/carousel.js
 

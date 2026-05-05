@@ -1,4 +1,4 @@
-// Simple YouTube video carousel for MkDocs Material
+// Simple YouTube video carousel for the Lemonade docs (Zensical-built)
 
 document.addEventListener('DOMContentLoaded', function () {
   var carousel = document.getElementById('yt-carousel');

@@ -1,0 +1,78 @@
+{#-
+  Lemonade docs footer override.
+
+  Same structure as Zensical's stock footer (prev/next nav + meta strip
+  with copyright + social) with one fix: Zensical doesn't populate
+  page.next_page on the home page (page.url == ""), so the prev/next nav
+  vanishes there. We fall back to walking nav.items depth-first; once we
+  pass the home item (url == "index.md") we take the next leaf as
+  next_page. The home page in mkdocs.yml is `Welcome: index.md`.
+
+  Visual styling lives in docs/assets/zest-theme.css.
+-#}
+{%- set next_page = page.next_page -%}
+{%- if not next_page and page.url == "" and nav and nav.items -%}
+  {%- set ns = namespace(found=none, after_home=false) -%}
+  {%- for item in nav.items recursive -%}
+    {%- if ns.found -%}{# already found, skip #}
+    {%- elif item.children -%}{{- loop(item.children) -}}
+    {%- elif not (item.url is defined and item.url) -%}{# section header, skip #}
+    {%- elif ns.after_home -%}{%- set ns.found = item -%}
+    {%- elif item.url == "index.md" -%}{%- set ns.after_home = true -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if ns.found -%}{%- set next_page = ns.found -%}{%- endif -%}
+{%- endif -%}
+<footer class="md-footer">
+  {% if "navigation.footer" in features %}
+    {% if page.previous_page or next_page %}
+      {% if page.meta and page.meta.hide %}
+        {% set hidden = "hidden" if "footer" in page.meta.hide %}
+      {% endif %}
+      <nav class="md-footer__inner md-grid" aria-label="{{ lang.t('footer') }}" {{ hidden }}>
+        {% if page.previous_page %}
+          {% set direction = lang.t("footer.previous") %}
+          <a href="{{ page.previous_page.url | url }}" class="md-footer__link md-footer__link--prev" aria-label="{{ direction }}: {{ page.previous_page.title | e }}">
+            <div class="md-footer__button md-icon">
+              {% set icon = config.theme.icon.previous or "material/arrow-left" %}
+              {% include ".icons/" ~ icon ~ ".svg" %}
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                {{ direction }}
+              </span>
+              <div class="md-ellipsis">
+                {{ page.previous_page.title }}
+              </div>
+            </div>
+          </a>
+        {% endif %}
+        {% if next_page %}
+          {% set direction = lang.t("footer.next") %}
+          <a href="{{ next_page.url | url }}" class="md-footer__link md-footer__link--next" aria-label="{{ direction }}: {{ next_page.title | e }}">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                {{ direction }}
+              </span>
+              <div class="md-ellipsis">
+                {{ next_page.title }}
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              {% set icon = config.theme.icon.next or "material/arrow-right" %}
+              {% include ".icons/" ~ icon ~ ".svg" %}
+            </div>
+          </a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% endif %}
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      {% include "partials/copyright.html" %}
+      {% if config.extra.social %}
+        {% include "partials/social.html" %}
+      {% endif %}
+    </div>
+  </div>
+</footer>
