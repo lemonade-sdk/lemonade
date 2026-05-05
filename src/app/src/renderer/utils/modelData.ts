@@ -184,6 +184,13 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.vision = model.vision;
       }
 
+      // cloud_provider distinguishes per-provider buckets in the Model
+      // Manager grouping (recipe="cloud" alone collapses all providers
+      // into a single sub-heading).
+      if (typeof model.cloud_provider === 'string' && model.cloud_provider) {
+        modelInfo.cloud_provider = model.cloud_provider;
+      }
+
       // Parse image_defaults if present (for sd-cpp models)
       if (model.image_defaults && typeof model.image_defaults === 'object') {
         modelInfo.image_defaults = {

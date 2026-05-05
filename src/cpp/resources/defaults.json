@@ -48,5 +48,9 @@
   },
   "kokoro": {
     "cpu_bin": "builtin"
+  },
+  "cloud_offload": {
+    "enabled": false,
+    "providers": {}
   }
 }

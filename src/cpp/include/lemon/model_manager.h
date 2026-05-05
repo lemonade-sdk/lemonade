@@ -86,6 +86,10 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
+    // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
+    // (e.g., "fireworks"). Empty for non-cloud recipes.
+    std::string cloud_provider;
+
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }

@@ -7,6 +7,7 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_utils.h>
+#include <lemon/backends/cloud_server.h>
 #include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
@@ -638,6 +639,12 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return "";
     }
 
+    // Cloud-offloaded models have no local artifacts; checkpoint is the
+    // upstream provider's model id, used directly when forwarding requests.
+    if (info.recipe == "cloud") {
+        return "";
+    }
+
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
         return checkpoint;
@@ -1008,6 +1015,7 @@ void ModelManager::build_cache() {
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1047,6 +1055,7 @@ void ModelManager::build_cache() {
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1099,6 +1108,26 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Step 1.7: Discover cloud-offload models from each configured provider.
+    // Mirrors the FLM pattern: hit the provider's /v1/models endpoint and
+    // merge results in. Precedence keeps any matching server_models or
+    // user_models entry intact. Failures are logged inside discover_models
+    // and never abort the cache build. Provider names come from config —
+    // any OpenAI-compatible provider works without code changes as long as
+    // the user supplies base_url + api_key.
+    auto* runtime_cfg = lemon::RuntimeConfig::global();
+    if (runtime_cfg && runtime_cfg->cloud_offload_enabled()) {
+        for (const auto& provider : runtime_cfg->cloud_provider_names()) {
+            std::string api_key = runtime_cfg->cloud_provider_api_key(provider);
+            if (api_key.empty()) continue;
+            std::string base_url = runtime_cfg->cloud_provider_base_url(provider);
+            auto cloud_models = backends::CloudServer::discover_models(provider, api_key, base_url);
+            for (const auto& info : cloud_models) {
+                all_models.emplace(info.model_name, info);
+            }
+        }
+    }
+
     // Populate recipe options
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
@@ -1119,6 +1148,8 @@ void ModelManager::build_cache() {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
+        } else if (info.recipe == "cloud") {
+            info.downloaded = true;  // Cloud-offloaded models have no local artifacts
         } else {
             // Check if model file/dir exists
             bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
@@ -1220,6 +1251,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     load_checkpoints(info, *model_json);
     parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.cloud_provider = JsonUtils::get_or_default<std::string>(*model_json, "cloud_provider", "");
 
     parse_image_defaults(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
@@ -1257,6 +1289,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
+    } else if (info.recipe == "cloud") {
+        info.downloaded = true;  // Cloud-offloaded models have no local artifacts
     } else {
         bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
 
@@ -1475,10 +1509,12 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
     bool enable_dgpu_gtt = false;
+    bool cloud_offload_enabled = false;
     auto* cfg = lemon::RuntimeConfig::global();
     if (cfg) {
         disable_filtering = cfg->disable_model_filtering();
         enable_dgpu_gtt = cfg->enable_dgpu_gtt();
+        cloud_offload_enabled = cfg->cloud_offload_enabled();
     }
 
     if (disable_filtering) {
@@ -1570,6 +1606,23 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         // They should always be visible if present in the registry.
         if (recipe == "collection") {
             filtered[name] = info;
+            continue;
+        }
+
+        // Cloud-offloaded models bypass local backend/RAM checks (the model
+        // executes on a remote provider). They are gated on cloud_offload
+        // being explicitly enabled in config.json so a fresh install never
+        // silently advertises remote endpoints.
+        if (recipe == "cloud") {
+            if (cloud_offload_enabled) {
+                filtered[name] = info;
+            } else {
+                filtered_count++;
+                filtered_out_models_[name] =
+                    "Cloud offload is disabled. Set 'cloud_offload.enabled' to "
+                    "true in config.json (and configure a provider API key) to "
+                    "enable cloud-offloaded models.";
+            }
             continue;
         }
 
@@ -1880,6 +1933,12 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    // Cloud models have no local artifacts; "downloading" is a no-op.
+    if (info.recipe == "cloud") {
+        update_model_in_cache(info.model_name, true);
+        return;
+    }
+
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);

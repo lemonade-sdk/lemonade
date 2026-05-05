@@ -1296,6 +1296,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe_options", info.recipe_options.to_json()},
     };
 
+    // Surface the cloud provider on cloud entries so the Model Manager can
+    // bucket each provider into its own sub-heading. Omitted on local models
+    // so the field doesn't pollute every entry — and skipped for the Ollama
+    // serialization path (handle_ollama_show / tags) which builds its own
+    // payload.
+    if (!info.cloud_provider.empty()) {
+        model_json["cloud_provider"] = info.cloud_provider;
+    }
+
     // Add size if available
     if (info.size > 0.0) {
         model_json["size"] = info.size;
@@ -3884,6 +3893,17 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             std::string dir = config_->models_dir();
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
+            model_manager_->invalidate_models_cache();
+        } else if (key == "cloud_offload") {
+            // The cached model list is built once and reused. Without this
+            // invalidation, saving a new api_key, base_url, or provider
+            // entry updates RuntimeConfig but ModelManager never reruns
+            // CloudServer::discover_models, so the new cloud entries never
+            // appear in /v1/models. Toggling enabled has the same problem
+            // in reverse — the previously discovered models stay listed
+            // until the next external invalidation. Invalidating here makes
+            // the next /v1/models call rebuild against the fresh config.
+            LOG(INFO, "Server") << "cloud_offload changed; invalidating models cache" << std::endl;
             model_manager_->invalidate_models_cache();
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).

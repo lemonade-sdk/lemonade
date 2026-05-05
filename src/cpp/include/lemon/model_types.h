@@ -125,6 +125,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;  // Kokoros runs on CPU
     } else if (recipe == "collection") {
         return DEVICE_NONE;  // Experience recipes orchestrate multiple component models
+    } else if (recipe == "cloud") {
+        return DEVICE_NONE;  // Cloud-offloaded models execute on a remote provider
     }
     return DEVICE_NONE;
 }
