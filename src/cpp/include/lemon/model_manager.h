@@ -106,6 +106,9 @@ public:
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
 
+    // Get saved per-model recipe options from recipe_options.json
+    nlohmann::json get_saved_recipe_options(const std::string& model_name) const;
+
     // Filter models by available backends
     std::map<std::string, ModelInfo> filter_models_by_backend(
         const std::map<std::string, ModelInfo>& models);
