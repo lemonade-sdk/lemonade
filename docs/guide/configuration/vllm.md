@@ -1,35 +1,27 @@
 # vLLM Backend Options
 
-Lemonade integrates [vLLM](https://github.com/vllm-project/vllm) as an experimental backend for AMD ROCm GPUs on Linux. vLLM's paged-attention KV-cache and continuous batching deliver much higher aggregate throughput than llama.cpp under concurrent load, at the cost of a heavier runtime footprint.
+Lemonade integrates [vLLM](https://github.com/vllm-project/vllm) as an experimental backend for AMD ROCm GPUs on Linux. vLLM brings three things to Lemonade that the existing backends can't:
 
-> **Status: experimental.** All vLLM models in the registry carry the `experimental` label and are surfaced only when the experimental opt-in is enabled. The backend is currently validated only on **gfx1151 (Strix Halo / Radeon 8060S)**. Other AMD targets (`gfx1150`, `gfx110X`, `gfx120X`) have prebuilt wheels but have not been exercised end-to-end.
+1. **Day-0 model support.** vLLM is typically the first inference engine to support new transformer architectures, often within hours of a model's release on Hugging Face. Because vLLM loads models directly from Hugging Face checkpoints (no per-architecture porting, no quantized GGUF conversion), most newly released models work without any code changes in Lemonade.
+2. **True omni-modal support.** vLLM has first-class support for vision-language models, audio inputs, embeddings, and reranking in addition to text generation — all from a single engine, sharing the same model registry and serving stack.
+3. **Improved concurrency and multi-GPU support.** vLLM's paged-attention KV cache, continuous batching, and chunked prefill deliver significantly higher aggregate throughput under concurrent load than llama.cpp. vLLM also natively supports tensor and pipeline parallelism across multiple GPUs.
+
+> **Status: experimental.** All vLLM models in the registry carry the `experimental` label and are surfaced only when the experimental opt-in is enabled. The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet.
 
 ## Available Backend
 
 ### ROCm
 - **Platform**: Linux only
-- **Hardware**: AMD Ryzen AI MAX+ (Strix Halo, gfx1151) — validated. Prebuilt wheels also exist for `gfx1150` (Strix Point), `gfx110X` (RDNA3), and `gfx120X` (RDNA4) but are untested.
-- **Wheel**: `vllm-0.20.1+rocm721` from [wheels.vllm.ai/rocm/](https://wheels.vllm.ai/rocm/), packaged as a self-contained tarball by [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm).
-- **Bundle contents**: relocatable CPython 3.12, PyTorch 2.10.0+rocm7.12.0, ROCm 7.12.0 user-space libs, Triton, vLLM. No system Python / PyTorch / ROCm install required on the host.
+- **Hardware**: validated on gfx1151 (Strix Halo) and gfx1150 (Strix Point); prebuilt wheels also exist for gfx110X (RDNA3) and gfx120X (RDNA4)
+- **Bundle**: a self-contained tarball from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm) with a relocatable Python interpreter, PyTorch (ROCm), the ROCm user-space libs, Triton, and vLLM. No system Python / PyTorch / ROCm install is required on the host.
 
 ## Prerequisites
 
-### Kernel
-The kernel must export the CWSR (Context Wave Save/Restore) sysfs properties. Without them, ROCm dispatches on gfx1151 trigger `GCVM_L2_PROTECTION_FAULT` and the backend hangs. Mainline 6.18.4+ has the fix; some vendor kernels backport it. Lemonade blocks install of `vllm:rocm` on systems missing the fix and points users at [Kernel Update Required](https://lemonade-server.ai/gfx1151_linux.html).
-
-Quick check:
-```bash
-uname -r
-grep -E "cwsr_size|ctl_stack_size" /sys/class/kfd/kfd/topology/nodes/*/properties
-```
-
-### `amdgpu-dkms` collision
-The default Radeon repo (`amdgpu/30.30`) ships `amdgpu-dkms 6.16.13`, which overrides the kernel's built-in driver with a broken version. Either switch to `amdgpu/31.20` or uninstall `amdgpu-dkms` entirely — vLLM bundles its own ROCm user-space, so the DKMS package is not needed for inference. See [Kernel Update Required](https://lemonade-server.ai/gfx1151_linux.html) for the exact commands.
+vLLM on AMD ROCm requires a kernel that exports the CWSR sysfs properties and an `amdgpu` setup that doesn't shadow the built-in driver. Both are covered with verification commands and fixes on the [Kernel Update Required](https://lemonade-server.ai/gfx1151_linux.html) page — that's the canonical reference; the same prerequisites apply to `llamacpp:rocm` and `sd-cpp:rocm-*`. Lemonade blocks install of `vllm:rocm` on systems missing the kernel fix and points users at that page.
 
 ## Install
 
 ```bash
-# Install the backend (downloads ~2.5 GB split into two release assets).
 lemonade backends install vllm:rocm
 ```
 
@@ -40,7 +32,7 @@ curl -X POST http://localhost:13305/api/v1/install \
   -d '{"recipe": "vllm", "backend": "rocm"}'
 ```
 
-The install fetches `vllm{version}-rocm{version}-{gfx_target}` (e.g. `vllm0.20.1-rocm7.12.0-gfx1151`) from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm/releases). The base version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json); the `-{gfx_target}` suffix is appended at runtime from `SystemInfo::get_rocm_arch()` so a single pin covers all supported architectures.
+The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`) from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm/releases). The base version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json); the `-{gfx_target}` suffix is appended at runtime from `SystemInfo::get_rocm_arch()`, so a single pin covers all supported architectures.
 
 ## Use
 
@@ -52,20 +44,20 @@ lemonade pull user.MyModel \
   --recipe vllm
 ```
 
-Standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/completions`) work as usual. Lemonade forwards requests to vLLM's child process, which exposes the engine's own private endpoints (e.g. `/metrics`, `/version`) on a backend-only port surfaced via `GET /v1/health` (`backend_url` field) — useful for observability but not proxied through Lemonade.
+Standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/completions`) work as usual. Lemonade forwards requests to the vLLM child process, which exposes the engine's own private endpoints (e.g. `/metrics`, `/version`) on a backend-only port surfaced via `GET /v1/health` (`backend_url` field) — useful for observability but not proxied through Lemonade.
 
 ## Tuning
 
-The vLLM child process is launched with sensible defaults for single-GPU APUs. To override, set `vllm_args` (free-form CLI args appended to `vllm-server`) and / or `vllm_backend`:
+Free-form CLI args can be appended to `vllm-server` via `vllm_args`:
 
 ```bash
-# Allow more concurrent sequences (default is what the bundled launcher sets).
+# Allow more concurrent sequences and turn on prefix caching
 lemonade config set vllm_args="--max-num-seqs 128 --enable-prefix-caching"
 ```
 
 ## Known gotchas
 
-- **Cold first-load JIT.** Loading a new model size compiles HIP/Triton kernels for your GPU, taking 20 s – several minutes. Subsequent loads of the same shape hit the on-disk Triton cache.
-- **FP8 quantization on gfx1151.** vLLM 0.20.1 selects `TritonFp8BlockScaledMMKernel` for FP8 models on the 8060S, but no AMD-tuned kernel config exists for this GPU/shape — vLLM falls back to default configs and warns *"Performance might be sub-optimal."* Cold first-load can take 12+ minutes (longer than Lemonade's `wait_for_ready` timeout will tolerate). FP16 is the recommended precision today; revisit FP8 once AMD ships tuned configs.
+- **Cold first-load JIT.** Loading a new model size triggers a Triton kernel compile. Expect 20 s – several minutes the first time you hit a given model+shape; subsequent loads of the same shape are faster as kernels cache to disk.
+- **FP8 first-load is slow on gfx1151.** Cold-loading `Qwen/Qwen3-4B-FP8` took ~12 minutes in our test, exceeding Lemonade's default `wait_for_ready` timeout. The engine selects `TritonFp8BlockScaledMMKernel` and emits *"Using default W8A8 Block FP8 kernel config. Performance might be sub-optimal."* warnings — i.e. no AMD-tuned kernel configs are shipped for this GPU's exact shapes, so vLLM autotunes from defaults. FP16 is the most polished path today; FP8 should improve once AMD ships tuned configs.
 - **`huggingface-hub` shadowing.** Lemonade launches `vllm-server` with `PYTHONNOUSERSITE=1` so the bundled `huggingface_hub` is used. If a module-not-found error still appears, ensure `~/.local/lib/python3.12/site-packages/huggingface_hub` isn't being injected via `PYTHONPATH`.
-- **Long load times leave orphaned processes if interrupted.** If a load times out at the Lemonade level, vLLM's child `EngineCore` may continue running in the background and hold VRAM until killed. Look for a `VLLM::EngineCor` process and `kill -9` it before retrying.
+- **Long load times can leave orphaned processes if interrupted.** If a load times out at the Lemonade level, vLLM's child `EngineCore` may continue running in the background and hold VRAM until killed. Look for a `VLLM::EngineCor` process and `kill -9` it before retrying.

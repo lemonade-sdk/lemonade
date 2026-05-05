@@ -42,7 +42,3 @@ To build from source, see the [development](../../dev/README.md) guide.
     ```
     sudo snap install lemonade
     ```
-
-## AMD ROCm GPU acceleration (optional)
-
-If you have an AMD GPU and want to use the `llamacpp:rocm`, `sd-cpp:rocm-*`, or `vllm:rocm` backends, your kernel needs the CWSR fix. The fix is in mainline 6.18.4+ but may also be backported to vendor kernels. See [Kernel Update Required](https://lemonade-server.ai/gfx1151_linux.html) for the requirement and how to verify it on your system. The same page covers the `amdgpu-dkms` package collision that can mask the built-in driver.
