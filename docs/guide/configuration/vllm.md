@@ -2,9 +2,9 @@
 
 Lemonade integrates [vLLM](https://github.com/vllm-project/vllm) as an experimental backend for AMD ROCm GPUs on Linux. vLLM brings three things to Lemonade that the existing backends can't:
 
-1. **Day-0 model support.** vLLM is typically the first inference engine to support new transformer architectures, often within hours of a model's release on Hugging Face. Because vLLM loads models directly from Hugging Face checkpoints (no per-architecture porting, no quantized GGUF conversion), most newly released models work without any code changes in Lemonade.
-2. **True omni-modal support.** vLLM has first-class support for vision-language models, audio inputs, embeddings, and reranking in addition to text generation — all from a single engine, sharing the same model registry and serving stack.
-3. **Improved concurrency and multi-GPU support.** vLLM's paged-attention KV cache, continuous batching, and chunked prefill deliver significantly higher aggregate throughput under concurrent load than llama.cpp. vLLM also natively supports tensor and pipeline parallelism across multiple GPUs.
+1. **Day-0 model support.** vLLM typically supports new transformer architectures within hours of their release on Hugging Face — checkpoints load directly, with no per-architecture porting.
+2. **True omni-modal support.** First-class support for any-to-any models like Qwen3-Omni that mix text, audio, image, and video across both input and output sides.
+3. **Concurrency and multi-GPU.** Paged-attention KV cache, continuous batching, and chunked prefill scale aggregate throughput with in-flight request count; tensor and pipeline parallelism are supported across multiple GPUs.
 
 > **Status: experimental.** All vLLM models in the registry carry the `experimental` label and are surfaced only when the experimental opt-in is enabled. The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet.
 
