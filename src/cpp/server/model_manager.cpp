@@ -1006,6 +1006,7 @@ void ModelManager::build_cache() {
         parse_composite_models(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
+        info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
         if (value.contains("labels") && value["labels"].is_array()) {
@@ -1043,6 +1044,7 @@ void ModelManager::build_cache() {
         parse_composite_models(info, value);
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
+        info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
@@ -1225,6 +1227,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.recipe_options = build_recipe_options(info, jro, model_name, recipe_options_);
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
+    info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
     if (model_json->contains("labels") && (*model_json)["labels"].is_array()) {
@@ -3243,6 +3246,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     parse_composite_models(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
+    info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
     // Parse labels array
