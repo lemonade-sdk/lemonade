@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{#-
+  Lemonade docs theme override.
+
+  We let Zensical's modern default chrome (header, sidebar, footer) render
+  natively — the docs site is "Zensical-modern" in its own right; the
+  homepage retains its hand-coded navbar. Only the `fonts` block is
+  overridden to load Plus Jakarta Sans + Manrope (DESIGN.md §3) so docs
+  typography matches the rest of the site.
+-#}
+
+{% block fonts %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  {#- Single request: Google Fonts merges multiple `family=` parameters into
+      one stylesheet, saving a round trip. -#}
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+{% endblock %}

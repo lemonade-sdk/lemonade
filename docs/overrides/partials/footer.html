@@ -1,0 +1,80 @@
+{#-
+  Lemonade docs footer override.
+
+  Keeps Zensical's prev/next nav (the .md-footer__inner block) verbatim,
+  but replaces the .md-footer-meta strip with the exact markup the
+  homepage renders via docs/assets/footer.js (createFooter). URLs are
+  absolute so they resolve correctly from any docs depth.
+-#}
+<footer class="md-footer">
+  {% if "navigation.footer" in features %}
+    {% if page.previous_page or page.next_page %}
+      {% if page.meta and page.meta.hide %}
+        {% set hidden = "hidden" if "footer" in page.meta.hide %}
+      {% endif %}
+      <nav class="md-footer__inner md-grid" aria-label="{{ lang.t('footer') }}" {{ hidden }}>
+        {% if page.previous_page %}
+          {% set direction = lang.t("footer.previous") %}
+          <a href="{{ page.previous_page.url | url }}" class="md-footer__link md-footer__link--prev" aria-label="{{ direction }}: {{ page.previous_page.title | e }}">
+            <div class="md-footer__button md-icon">
+              {% set icon = config.theme.icon.previous or "material/arrow-left" %}
+              {% include ".icons/" ~ icon ~ ".svg" %}
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                {{ direction }}
+              </span>
+              <div class="md-ellipsis">
+                {{ page.previous_page.title }}
+              </div>
+            </div>
+          </a>
+        {% endif %}
+        {% if page.next_page %}
+          {% set direction = lang.t("footer.next") %}
+          <a href="{{ page.next_page.url | url }}" class="md-footer__link md-footer__link--next" aria-label="{{ direction }}: {{ page.next_page.title | e }}">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                {{ direction }}
+              </span>
+              <div class="md-ellipsis">
+                {{ page.next_page.title }}
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              {% set icon = config.theme.icon.next or "material/arrow-right" %}
+              {% include ".icons/" ~ icon ~ ".svg" %}
+            </div>
+          </a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% endif %}
+
+  {#- Homepage footer, mirrored from docs/assets/footer.js createFooter() -#}
+  <div class="site-footer">
+    <div class="footer-content">
+      <nav class="footer-nav-rail" role="navigation" aria-label="Footer quick links">
+        <a href="https://github.com/lemonade-sdk/lemonade" class="footer-rail-link footer-rail-link--community" target="_blank" rel="noopener">
+          <span class="footer-rail-icon" aria-hidden="true">
+            <img src="https://cdn.simpleicons.org/github/1f2937" alt="" loading="lazy" decoding="async" />
+          </span>
+          <span>GitHub</span>
+        </a>
+        <a href="https://discord.gg/5xXzkMu8Zk" class="footer-rail-link footer-rail-link--community" target="_blank" rel="noopener">
+          <span class="footer-rail-icon" aria-hidden="true">
+            <img src="https://cdn.simpleicons.org/discord/5865F2" alt="" loading="lazy" decoding="async" />
+          </span>
+          <span>Discord</span>
+        </a>
+        <a href="/docs/dev-getting-started/" class="footer-rail-link footer-rail-link--product">Developer Setup</a>
+        <a href="/docs/models.html" class="footer-rail-link footer-rail-link--product">Models</a>
+        <a href="/marketplace.html" class="footer-rail-link footer-rail-link--product">Marketplace</a>
+        <a href="/docs/" class="footer-rail-link footer-rail-link--product">Documentation</a>
+      </nav>
+      <div class="footer-meta">
+        <div class="copyright">© 2026 AMD. Licensed under Apache 2.0.</div>
+      </div>
+    </div>
+  </div>
+</footer>

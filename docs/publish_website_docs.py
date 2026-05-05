@@ -1,5 +1,5 @@
 # From lemonade repo root, run the following:
-# pip install -r docs/assets/mkdocs_requirements.txt
+# pip install -r docs/assets/docs_requirements.txt
 
 # Then run this script to publish the documentation to docs/docs/
 # python docs/publish_website_docs.py
@@ -50,24 +50,24 @@ def main():
         print("Removing ", os.path.abspath("docs/docs"))
         shutil.rmtree("docs/docs")
 
-    # Build the documentation using mkdocs
-    print("[INFO] Building documentation with mkdocs...")
-    mkdocs_exe = _get_venv_executable("mkdocs")
-    print(f"[INFO] mkdocs path: {mkdocs_exe}")
-    subprocess.run([mkdocs_exe, "build", "--clean"], check=True)
+    # Build the documentation using zensical
+    print("[INFO] Building documentation with zensical...")
+    zensical_exe = _get_venv_executable("zensical")
+    print(f"[INFO] zensical path: {zensical_exe}")
+    subprocess.run([zensical_exe, "build", "--clean"], check=True)
 
     # Move the generated site/ directory to docs/docs/, replacing it if it already exists
     print("[INFO] Moving site/ to docs/docs/...")
 
-    # Check what mkdocs actually generated
+    # Check what zensical actually generated
     if os.path.exists(os.path.abspath("site/docs")):
-        # If mkdocs generated site/docs/, move that content
+        # If zensical generated site/docs/, move that content
         source_dir = os.path.abspath("site/docs")
     elif os.path.exists(os.path.abspath("site")):
-        # If mkdocs generated site/, move that content
+        # If zensical generated site/, move that content
         source_dir = os.path.abspath("site")
     else:
-        print("[ERROR] No site directory found after mkdocs build!")
+        print("[ERROR] No site directory found after zensical build!")
         sys.exit(1)
 
     # Move the correct source directory

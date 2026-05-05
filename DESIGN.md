@@ -39,6 +39,75 @@ From darkest to lightest:
 
 ---
 
+## 2b. Midnight Palette (Dark Mode)
+The Midnight variant transposes Crystalline Zest into a **warm-dark** register. We avoid cold blue-blacks and pure `#000`; the canvas instead reads as a darkened citrus liqueur — deep, slightly warm, with the same yellow accent punching through.
+
+### The Background Gradient (Dark)
+- **Top (Night Ice):** `--surface-container-lowest-dark` (#0E0E0B)
+- **Bottom (Steeped Juice):** Transitioning toward `#1F1A0E` (warm dark amber).
+
+### Surface Scale (Dark)
+Mirrors the light scale but inverted in luminance with a faint yellow undertone to keep the family resemblance:
+- `--surface-container-lowest-dark` (#0E0E0B) — deepest layer.
+- `--surface-dark` (#1A1813) — equivalent of light `--surface`.
+- `--surface-container-low-dark` (#1F1D17)
+- `--surface-container-dark` (#25221B)
+- `--surface-container-high-dark` (#2D2922)
+- `--outline-variant-dark`: rgba(255, 255, 255, 0.10) — replaces the `rgba(45, 47, 47, 0.15)` ghost border.
+
+### Glass Tokens (Dark)
+**Pure backdrop-blur over dark loses contrast.** Dark glass uses a tinted-dark fill (so the surface is visible even without a busy backdrop) and a faint **yellow-tinted border** to retain Crystalline Zest's signature:
+- `--glass-bg-dark`: rgba(45, 41, 33, 0.55)
+- `--glass-bg-dense-dark`: rgba(45, 41, 33, 0.85)
+- `--glass-bg-hover-dark`: rgba(60, 54, 42, 0.75)
+- `--glass-border-dark`: rgba(252, 216, 70, 0.18) — yellow at low alpha
+- `--glass-blur`: 24px (unchanged; layered over the tinted fill it still adds depth without losing readability)
+
+### Text Hierarchy (Dark)
+Inverted scale, warm-leaning whites (avoid cool cyan-whites):
+- `--text-on-dark` (#FFFFFF) — maximum contrast, e.g. on yellow buttons (overrides `--on-primary` which stays `#000`).
+- `--text-primary-dark` (#F2EFE5) — body text and headings.
+- `--text-secondary-dark` (#C7C2B5)
+- `--text-nav-dark` (#A8A39A)
+- `--text-muted-dark` (#837F75)
+- `--text-light-dark` (#5C594F)
+
+Body text contrast is tested at ≥ 4.5:1 against the gradient at every visible point.
+
+### Shadows (Dark)
+Light-mode shadows are tuned to the on-surface color (`rgba(45, 47, 47, ...)`) and disappear on dark. Dark shadows use **plain black at higher alpha** plus the existing yellow-glow tokens for primary buttons:
+- `--shadow-light-dark`: 0 4px 16px rgba(0, 0, 0, 0.35)
+- `--shadow-medium-dark`: 0 8px 32px rgba(0, 0, 0, 0.45)
+- `--shadow-heavy-dark`: 0 14px 52px rgba(0, 0, 0, 0.60)
+- `--shadow-ambient-dark`: 0 12px 48px rgba(0, 0, 0, 0.40)
+- `--shadow-yellow` and `--shadow-yellow-hover` — **unchanged**. The yellow glow is part of the brand and reads beautifully on dark.
+
+### Accent Invariants
+These are deliberately unchanged across light and dark — they are the "citrus" of the brand and pop equally well on both surfaces:
+- `--primary-yellow` (#FCD846)
+- `--primary-yellow-dark` (#FAF972) — used for hover/highlights
+- `--tertiary` (#3C6531) — lemon-leaf green
+- `--on-primary` (#000) — black text on yellow buttons stays black even in Midnight mode
+
+### `.ice-card` — Midnight Recipe
+```css
+[data-md-color-scheme="zest-dark"] .ice-card {
+  background: var(--glass-bg-dark);             /* tinted dark, not white-on-dark */
+  backdrop-filter: blur(var(--glass-blur));     /* 24px */
+  border: 1px solid var(--glass-border-dark);   /* yellow at 18% alpha */
+  box-shadow: var(--shadow-ambient-dark);
+}
+```
+The yellow-tinted border is the dark-mode analogue of the light-mode "felt, not seen" ghost border — it gives ice cards a warm halo on dark surfaces without being literal.
+
+### Do's and Don'ts (Dark)
+- **Do** keep `--on-primary` as `#000` on yellow surfaces in dark mode — the contrast ratio against `#FCD846` is unchanged.
+- **Do** prefer tinted-dark fills over white-at-low-alpha for glass surfaces. White glass on dark backdrops looks washed out and washes out the text on top.
+- **Don't** use pure `#000` as a background. The lowest surface (`--surface-container-lowest-dark`) is `#0E0E0B` — slightly warm, slightly off-black, to keep the citrus character.
+- **Don't** invert `--tertiary` (lemon leaf green). It already has enough luminance to read on dark; lightening it would push toward an unrelated mint hue.
+
+---
+
 ## 3. Typography: Editorial Authority
 We pair the geometric precision of **Plus Jakarta Sans** for impact with the high-legibility of **Manrope** for narrative, and **Consolas/Monaco** for code.
 

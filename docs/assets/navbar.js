@@ -1,4 +1,6 @@
-// Shared Navbar Component for Lemonade docs pages
+// Shared Navbar Component for the Lemonade homepage and static HTML pages
+// (marketplace.html, models.html, news/, etc.). The Zensical-built docs site
+// uses Zensical's stock header instead — see docs/overrides/main.html.
 
 function createNavbar(basePath = '') {
   return `

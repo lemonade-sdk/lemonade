@@ -93,6 +93,51 @@
   --radius-card: 3rem;
 }
 
+/* === Crystalline Zest — Midnight (Dark Mode tokens, DESIGN.md §2b) ===
+   Activated when the document carries data-md-color-scheme="zest-dark". The
+   homepage and the docs share an origin and therefore share localStorage, so
+   either surface can flip the attribute and the other inherits the choice. */
+[data-md-color-scheme="zest-dark"] {
+  /* Surface scale (warm-dark, never pure black) */
+  --surface: #1A1813;
+  --surface-bright: rgba(45, 41, 33, 0.85);
+  --surface-container: #25221B;
+  --surface-container-low: #1F1D17;
+  --surface-container-lowest: #0E0E0B;
+  --surface-container-high: #2D2922;
+
+  --outline-variant: rgba(255, 255, 255, 0.10);
+
+  /* Glass tokens — tinted dark fill + yellow-tinted border (DESIGN.md §2b) */
+  --glass-bg: rgba(45, 41, 33, 0.55);
+  --glass-bg-dense: rgba(45, 41, 33, 0.85);
+  --glass-bg-hover: rgba(60, 54, 42, 0.75);
+  --glass-border: rgba(252, 216, 70, 0.18);
+
+  /* Text hierarchy — warm-leaning whites */
+  --text-on-light: #FFFFFF;
+  --text-primary: #F2EFE5;
+  --text-secondary: #C7C2B5;
+  --text-nav: #A8A39A;
+  --text-muted: #837F75;
+  --text-light: #5C594F;
+
+  --bg-primary: #1A1813;
+  --bg-secondary: #1F1D17;
+  --bg-tertiary: #FCD846; /* yellow accent unchanged */
+  --bg-white: #25221B;
+  --bg-overlay: rgba(20, 19, 16, 0.78);
+
+  --border-light: rgba(255, 255, 255, 0.06);
+  --border-medium: rgba(255, 255, 255, 0.12);
+
+  /* Shadows — plain black at higher alpha; yellow glow unchanged */
+  --shadow-light: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-medium: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-heavy: 0 14px 52px rgba(0, 0, 0, 0.60);
+  --shadow-ambient: 0 12px 48px rgba(0, 0, 0, 0.40);
+}
+
 /* === Ice Card — Glassmorphic base (DESIGN.md §4 "Ice" layer) === */
 .ice-card {
   background: var(--glass-bg);
@@ -122,6 +167,17 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* Midnight body gradient — DESIGN.md §2b "Background Gradient (Dark)".
+   The Midnight ice-card recipe needs no override here: .ice-card already reads
+   --glass-bg / --glass-border / --shadow-ambient, all redefined in the
+   [data-md-color-scheme="zest-dark"] block above. */
+[data-md-color-scheme="zest-dark"] body {
+  background: linear-gradient(to bottom, #0E0E0B 0px, #0E0E0B 541px, #1F1A0E 1804px, #1F1A0E 100%);
+}
+
+html, body {
   scroll-behavior: smooth;
 }
 
