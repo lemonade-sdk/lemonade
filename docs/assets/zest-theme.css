@@ -95,12 +95,14 @@
    Chrome but Safari ignores html bg here (body-bg propagation rules
    leave html's painted color invisible). Use a fixed-position pseudo on
    body: it paints into the viewport regardless of body's bounds, so it
-   covers the gutter, and Safari honors it. Source-of-truth gradients
-   live in website-styles.css; we mirror the stops here. The
-   data-md-color-scheme attribute is set on <body>, which is why dark
-   mode targets body[...] rather than a descendant combinator. */
+   covers the gutter, and Safari honors it. The gradient itself comes from
+   --page-gradient in website-styles.css. */
 html {
+  overflow-x: clip;
   scrollbar-color: var(--border-medium) transparent;
+}
+body {
+  overflow-x: clip;
 }
 body::before {
   content: "";
@@ -111,12 +113,8 @@ body::before {
   display: block;
   background: var(--page-gradient);
 }
-/* Body's gradient (set in website-styles.css for both schemes) would sit
-   on top of the fixed pseudo and produce a visible seam at body's right
-   edge against the gutter. Override with transparent — the pseudo shows
-   through. The dark-mode body rule in website-styles.css uses a higher-
-   specificity selector ([data-md-color-scheme="zest-dark"] body), so
-   !important is required to defeat it without specificity gymnastics. */
+/* Let the fixed pseudo own the viewport gradient, including the scrollbar
+   gutter, instead of layering a second body gradient on top. */
 body {
   background: transparent !important;
 }

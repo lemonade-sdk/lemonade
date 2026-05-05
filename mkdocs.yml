@@ -93,7 +93,7 @@ nav:
       - Models: embeddable/models.md
       - Building from Source: embeddable/building.md
 
-# The following adds icons on the bottom of the page
+# Footer social links
 extra:
   homepage: https://lemonade-server.ai
   social:
@@ -106,16 +106,12 @@ extra:
 
 copyright: "© 2026 AMD. Licensed under Apache 2.0."
 
-# CSS — website-styles.css owns design tokens (--primary-yellow, --glass-bg,
-# .ice-card, etc.); zest-theme.css bridges those tokens onto Zensical's --md-*
-# CSS variables and re-skins admonitions / tabs as ice cards.
+# website-styles.css owns design tokens; zest-theme.css maps them to Zensical.
 extra_css:
   - assets/website-styles.css
   - assets/zest-theme.css
 
-# JS — carousel.js handles YouTube embeds inside docs pages. The hand-coded
-# homepage uses navbar.js / footer.js but the docs site uses Zensical's stock
-# header / footer, so those scripts aren't loaded here.
+# carousel.js handles YouTube embeds inside docs pages.
 extra_javascript:
   - assets/carousel.js
 

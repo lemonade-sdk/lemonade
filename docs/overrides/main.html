@@ -3,11 +3,8 @@
 {#-
   Lemonade docs theme override.
 
-  We let Zensical's modern default chrome (header, sidebar, footer) render
-  natively — the docs site is "Zensical-modern" in its own right; the
-  homepage retains its hand-coded navbar. Only the `fonts` block is
-  overridden to load Plus Jakarta Sans + Manrope (DESIGN.md §3) so docs
-  typography matches the rest of the site.
+  Zensical renders the docs chrome; docs/assets/zest-theme.css restyles it to
+  match the homepage. This override only loads the shared brand fonts.
 -#}
 
 {% block fonts %}

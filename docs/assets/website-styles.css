@@ -98,9 +98,7 @@
 }
 
 /* === Crystalline Zest — Midnight (Dark Mode tokens, DESIGN.md §2b) ===
-   Activated when the document carries data-md-color-scheme="zest-dark". The
-   homepage and the docs share an origin and therefore share localStorage, so
-   either surface can flip the attribute and the other inherits the choice. */
+   Activated when the document carries data-md-color-scheme="zest-dark". */
 [data-md-color-scheme="zest-dark"] {
   /* Surface scale (warm-dark, never pure black) */
   --surface: #1A1813;
@@ -173,14 +171,6 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-}
-
-/* Midnight body gradient — DESIGN.md §2b "Background Gradient (Dark)".
-   The Midnight ice-card recipe needs no override here: .ice-card already reads
-   --glass-bg / --glass-border / --shadow-ambient, all redefined in the
-   [data-md-color-scheme="zest-dark"] block above. */
-[data-md-color-scheme="zest-dark"] body {
-  background: var(--page-gradient);
 }
 
 html, body {
