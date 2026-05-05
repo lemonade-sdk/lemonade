@@ -31,7 +31,10 @@ static const json DEFAULTS = {
     {"sampling_method", ""},
     {"flow_shift", 0.0},
     // FLM-specific options
-    {"flm_args", ""}       // Custom arguments to pass to flm serve
+    {"flm_args", ""},       // Custom arguments to pass to flm serve
+    // vLLM-specific options
+    {"vllm_backend", ""},  // "" means auto-detect
+    {"vllm_args", ""}      // Custom arguments to pass to vllm-server
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
@@ -46,7 +49,9 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
-    {"flm_args", "--flm-args"}
+    {"flm_args", "--flm-args"},
+    {"vllm_backend", "--vllm"},
+    {"vllm_args", "--vllm-args"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -60,6 +65,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
         return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift"};
+    } else if (recipe == "vllm") {
+        return {"vllm_backend", "vllm_args"};
     } else {
         return {};
     }
