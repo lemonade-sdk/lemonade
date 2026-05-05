@@ -2848,7 +2848,9 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         // Persist request options to model info if requested
         if (save_options) {
-            info.recipe_options = options;
+            RecipeOptions current_effective = model_manager_->get_effective_recipe_options(
+                info, /*refresh_saved_from_disk=*/true);
+            info.recipe_options = options.inherit(current_effective);
             model_manager_->save_model_options(info);
         }
 

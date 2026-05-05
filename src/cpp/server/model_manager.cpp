@@ -195,6 +195,32 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
     return RecipeOptions(info.recipe, base_options);
 }
 
+static const json* find_model_json_entry(const json& server_models,
+                                         const json& user_models,
+                                         const std::string& model_name) {
+    std::string json_key = model_name;
+    bool is_user_model = is_user_model_name(model_name);
+    if (is_user_model) {
+        json_key = strip_user_model_prefix(model_name);
+    }
+
+    if (is_user_model && user_models.contains(json_key)) {
+        return &user_models.at(json_key);
+    }
+    if (!is_user_model && server_models.contains(json_key)) {
+        return &server_models.at(json_key);
+    }
+
+    return nullptr;
+}
+
+static json extract_json_recipe_options(const json* model_json) {
+    if (model_json && model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object()) {
+        return (*model_json)["recipe_options"];
+    }
+    return json(nullptr);
+}
+
 // Clean up orphaned HF cache blobs after deleting a symlink.
 // HF hub downloads use: snapshots/<hash>/file.gguf -> ../../blobs/<sha256>
 // If no remaining symlink in the repo points to the blob, it's safe to remove.
@@ -465,6 +491,40 @@ std::string ModelManager::get_recipe_options_file() {
 
 std::string ModelManager::get_hf_cache_dir() const {
     return lemon::utils::get_hf_cache_dir();
+}
+
+json ModelManager::get_saved_recipe_options_snapshot(bool refresh_saved_from_disk) {
+    std::lock_guard<std::mutex> lock(recipe_options_mutex_);
+
+    if (refresh_saved_from_disk) {
+        recipe_options_ = load_optional_json(get_recipe_options_file());
+    }
+
+    return recipe_options_;
+}
+
+RecipeOptions ModelManager::resolve_effective_recipe_options(const ModelInfo& info,
+                                                            const json& saved_recipe_options) const {
+    json json_recipe_options = json(nullptr);
+    if (const auto* model_json = find_model_json_entry(server_models_, user_models_, info.model_name)) {
+        json_recipe_options = extract_json_recipe_options(model_json);
+    }
+
+    return build_recipe_options(info, json_recipe_options, info.model_name, saved_recipe_options);
+}
+
+RecipeOptions ModelManager::get_effective_recipe_options(const ModelInfo& info,
+                                                         bool refresh_saved_from_disk) {
+    RecipeOptions resolved = resolve_effective_recipe_options(
+        info, get_saved_recipe_options_snapshot(refresh_saved_from_disk));
+
+    if (refresh_saved_from_disk) {
+        ModelInfo updated = info;
+        updated.recipe_options = resolved;
+        update_model_options_in_cache(updated);
+    }
+
+    return resolved;
 }
 
 void ModelManager::invalidate_models_cache() {
@@ -914,10 +974,27 @@ void ModelManager::save_user_models(const json& user_models) {
 
 void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
-    // Persist changes
-    recipe_options_[info.model_name] = info.recipe_options.to_json();
+    {
+        std::lock_guard<std::mutex> lock(recipe_options_mutex_);
+        recipe_options_[info.model_name] = info.recipe_options.to_json();
+        save_user_json(get_recipe_options_file(), recipe_options_);
+    }
     update_model_options_in_cache(info);
-    save_user_json(get_recipe_options_file(), recipe_options_);
+}
+
+void ModelManager::delete_saved_model_options(const std::string& model_name) {
+    bool removed = false;
+    {
+        std::lock_guard<std::mutex> lock(recipe_options_mutex_);
+        removed = recipe_options_.erase(model_name) > 0;
+        if (removed) {
+            save_user_json(get_recipe_options_file(), recipe_options_);
+        }
+    }
+
+    if (removed) {
+        LOG(INFO, "ModelManager") << "✓ Removed saved recipe options for " << model_name << std::endl;
+    }
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
@@ -937,7 +1014,7 @@ std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     return public_models;
 }
 
-static void load_checkpoints(ModelInfo& info, json& model_json) {
+static void load_checkpoints(ModelInfo& info, const json& model_json) {
     if (model_json.contains("checkpoints") && model_json["checkpoints"].is_object()) {
         for (auto& [key, value] : model_json["checkpoints"].items()) {
             info.checkpoints[key] = value.get<std::string>();
@@ -984,6 +1061,7 @@ static bool check_composite_downloaded(const ModelInfo& info,
 }
 
 void ModelManager::build_cache() {
+    json saved_recipe_options = get_saved_recipe_options_snapshot(false);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
     if (cache_valid_) {
@@ -994,7 +1072,6 @@ void ModelManager::build_cache() {
 
     models_cache_.clear();
     std::map<std::string, ModelInfo> all_models;
-    std::map<std::string, json> json_recipe_options;  // Per-model recipe_options from JSON
 
     // Step 1: Load ALL models from JSON (server models)
     for (auto& [key, value] : server_models_.items()) {
@@ -1015,11 +1092,6 @@ void ModelManager::build_cache() {
         }
 
         parse_image_defaults(info, value);
-
-        // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
-        if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
-            json_recipe_options[key] = value["recipe_options"];
-        }
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
@@ -1053,11 +1125,6 @@ void ModelManager::build_cache() {
         }
 
         parse_image_defaults(info, value);
-
-        // Parse recipe_options if present (for per-model runtime config like sdcpp_args)
-        if (value.contains("recipe_options") && value["recipe_options"].is_object()) {
-            json_recipe_options[info.model_name] = value["recipe_options"];
-        }
 
         // Populate type and device fields (multi-model support)
         info.type = get_model_type_from_labels(info.labels);
@@ -1099,8 +1166,7 @@ void ModelManager::build_cache() {
 
     // Populate recipe options
     for (auto& [name, info] : all_models) {
-        json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
-        info.recipe_options = build_recipe_options(info, jro, name, recipe_options_);
+        info.recipe_options = resolve_effective_recipe_options(info, saved_recipe_options);
     }
 
     // Step 2: Filter by backend availability
@@ -1184,26 +1250,15 @@ void ModelManager::build_cache() {
 }
 
 void ModelManager::add_model_to_cache(const std::string& model_name) {
+    json saved_recipe_options = get_saved_recipe_options_snapshot(false);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
     if (!cache_valid_) {
         return; // Will initialize on next access
     }
 
-    // Parse model name to get JSON key
-    std::string json_key = model_name;
     bool is_user_model = is_user_model_name(model_name);
-    if (is_user_model) {
-        json_key = strip_user_model_prefix(model_name);
-    }
-
-    // Find in JSON
-    json* model_json = nullptr;
-    if (is_user_model && user_models_.contains(json_key)) {
-        model_json = &user_models_[json_key];
-    } else if (!is_user_model && server_models_.contains(json_key)) {
-        model_json = &server_models_[json_key];
-    }
+    const json* model_json = find_model_json_entry(server_models_, user_models_, model_name);
 
     if (!model_json) {
         LOG(WARNING, "ModelManager") << "'" << model_name << "' not found in JSON" << std::endl;
@@ -1220,9 +1275,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
 
     parse_image_defaults(info, *model_json);
-    json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
-        ? (*model_json)["recipe_options"] : json(nullptr);
-    info.recipe_options = build_recipe_options(info, jro, model_name, recipe_options_);
+    info.recipe_options = resolve_effective_recipe_options(info, saved_recipe_options);
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
@@ -2956,6 +3009,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
             user_models_ = updated_user_models;
+            delete_saved_model_options(canonical_model_name);
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -2976,6 +3030,7 @@ void ModelManager::delete_model(const std::string& model_name) {
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
             user_models_ = updated_user_models;
+            delete_saved_model_options(canonical_model_name);
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -3066,6 +3121,7 @@ void ModelManager::delete_model(const std::string& model_name) {
         updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
         save_user_models(updated_user_models);
         user_models_ = updated_user_models;
+        delete_saved_model_options(canonical_model_name);
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
 
