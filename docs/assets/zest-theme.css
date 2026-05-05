@@ -313,6 +313,23 @@ body {
   height: 64px;
 }
 
+@media screen and (max-width: 76.234375em) {
+  .md-header,
+  .md-header--shadow {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .md-header__inner {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .md-header__button[for="__drawer"] {
+    margin-left: 0;
+  }
+}
+
 /* Brand mark: favicon glyph + "Lemonade" wordmark, matching .navbar-brand.
    Selector specificity (.md-header .md-logo) wins over Zensical's own
    .md-logo rule without needing !important. */
@@ -323,21 +340,66 @@ body {
   width: auto;
   height: auto;
 }
-.md-logo img,
-.md-logo svg {
-  width: 1.4rem;
-  height: 1.4rem;
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  width: 31.5px;
+  height: 31.5px;
   object-fit: contain;
-  margin-right: 0.4rem;
+  margin-right: 7.875px;
 }
-.md-logo::after {
+.md-header__button.md-logo::after {
   content: "Lemonade";
   font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.45rem;
+  font-weight: 900;
+  font-size: 26.25px;
   letter-spacing: -0.04em;
   color: var(--text-primary);
-  line-height: 1;
+  line-height: 1.15;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* Mobile drawer: the title label contains its own logo and source link.
+   Keep it from picking up the desktop wordmark treatment, and make the
+   drawer chrome honor the active Zest palette instead of Zensical defaults. */
+@media screen and (max-width: 76.234375em) {
+  .md-sidebar--primary {
+    background: var(--surface-container-lowest);
+    border: 1px solid var(--border-medium);
+  }
+
+  [data-md-color-scheme="zest-dark"] .md-sidebar--primary {
+    background: var(--glass-bg-dense);
+    border-color: var(--glass-border);
+  }
+
+  .md-nav .md-nav__title[for="__drawer"] {
+    background: transparent;
+    border-bottom: 1px solid var(--border-medium);
+    color: var(--text-primary);
+    font-size: 0;
+    min-height: 64px;
+  }
+
+  .md-nav .md-nav__title[for="__drawer"]::after {
+    content: "Lemonade";
+    color: var(--text-primary);
+    font-family: var(--font-display);
+    font-size: 26.25px;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 1.15;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+  }
+
+  .md-nav .md-nav__title[for="__drawer"] .md-logo::after {
+    content: none;
+  }
+
+  .md-nav .md-nav__title[for="__drawer"] .md-source {
+    display: none;
+  }
 }
 
 /* Site / page title — quieter subtitle next to the wordmark */
