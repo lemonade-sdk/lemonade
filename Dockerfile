@@ -70,7 +70,8 @@ COPY --from=builder /app/build/resources ./resources
 RUN FLM_VERSION=$(jq -r '.flm.npu' ./resources/backend_versions.json) && \
     FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//') && \
     curl -L -o fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb" && \
-    apt install -y ./fastflowlm.deb && \
+    apt-get update && apt-get install -y libxrt2 libxrt-npu2 && \
+    apt-get install -y ./fastflowlm.deb && \
     rm fastflowlm.deb
 
 # Make executables executable
