@@ -1,6 +1,6 @@
 # Contributing to Lemonade
 
-We're excited that you are interesting in contributing!
+We're excited that you are interested in contributing!
 
 Please carefully review Lemonade's [philosophy](./philosophy.md) before making a pull request. As a contributor, you can anticipate the vast majority of reviewer feedback by aligning your design to the philosophy.
 
@@ -8,7 +8,7 @@ Please carefully review Lemonade's [philosophy](./philosophy.md) before making a
 
 ### Merging a Contribution
 
-1. We highly recommend that all contributors join the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk) meet [the maintainers](#maintainers) and get a sense of what is trending.
+1. We highly recommend that all contributors join the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk), meet [the maintainers](#maintainers) and get a sense of what is trending.
 2. Depending on the complexity of your contribution:
     - Simple fixes: just make a PR.
     - Features: contact [a maintainer](#maintainers) who works in the area of your feature and get them to agree to review it before you start coding.
@@ -21,21 +21,23 @@ Not sure what to work on? Come to the feature-requests and troubleshooting chann
 
 ### Issues
 
-Issues are a great way to document a bug or feature request. However, Lemonade is a community-driven project and you still need to find someone to implement your issue. It is highly recommended that you bring your issue to the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk) and connect with a contributor who is wants to implement it.
+Issues are a great way to document a bug or feature request. However, Lemonade is a community-driven project and you still need to find someone to implement your issue. It is highly recommended that you bring your issue to the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk) and connect with a contributor who wants to implement it.
 
 ### Reviewer Expectation
 
 Each contribution needs to:
 
 1. Adhere to the [philosophy](./philosophy.md).
-2. Pass the CI tests. Make sure to check the code *before* allowing CI to run!
+2. Pass the CI tests.
+    - Contributors: make sure the code builds locally before creating the PR.
+    - Reviewers: make sure to check the code *before* allowing CI to run!
 3. Sustain the overall code quality and standards of the rest of the repo.
 
 ### AI Policy
 
 Contributors are encouraged to use AI to code their project. However, please review your AI's code yourself before asking another human to review it.
 
-Reviewers are expected to use tools like `claude /review` to save time by analyzing code quality and edge cases. If you have AI tools make PR comments please clearly identify which comments are written by AI and which are written by you.
+Reviewers are expected to use tools like Claude Code's `/review` to save time by analyzing code quality and edge cases. If you have AI tools make PR comments please clearly identify which comments are written by AI and which are written by you.
 
 __Please do not use AI to write issues__. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.
 
@@ -54,7 +56,7 @@ While each maintainer is welcome to work on any part of the Lemonade codebase, e
 | Coding Agents | @sawansri |
 | Website | @jeremyfowers |
 | Content and guides | @vgodsoe |
-| LemonAIde bot | @kpoineal |
+| LemonAIde bot | @kpoineal (discord: primaL-) |
 
 ### AI Support
 
@@ -73,7 +75,7 @@ While each maintainer is welcome to work on any part of the Lemonade codebase, e
 | Arch | @sofiageo, @bitgamma (discord: mikkoph) |
 | Fedora | Maintainer needed |
 | macOS | @Geramy, @ramkrishna2910 |
-| Windows | @kpoineal, @jeremyfowers |
+| Windows | @kpoineal (discord: primaL-), @jeremyfowers |
 | Docker | @siavashhub (discord: icmpreply) |
 
 ### Backend Support
@@ -83,7 +85,7 @@ While each maintainer is welcome to work on any part of the Lemonade codebase, e
 | Adding new backends | @ramkrishna2910, @bitgamma (discord: mikkoph), @jeremyfowers |
 | AMD ROCm | @superm1, @Geramy, @danielholanda |
 | AMD NPU | @ramkrishna2910, @jeremyfowers |
-| Intel | Maintainer Needed |
+| Intel | Primary Maintainer Needed, @Geramy |
 | Nvidia | Maintainer Needed |
 | vLLM | @ramkrishna2910 |
 | MLX | @Geramy |

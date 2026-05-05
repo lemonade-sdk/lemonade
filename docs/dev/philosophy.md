@@ -2,7 +2,7 @@
 
 ## Mission
 
-Our goal is to meaningfully increase the amount of genuinely useful local AI uses cases and applications in the ecosystem.
+Our goal is to meaningfully increase the amount of genuinely useful local AI use cases and applications in the ecosystem.
 
 ## Fundamentals
 
@@ -12,7 +12,7 @@ Lemonade is designed to make high-performance local AI more accessible to users 
 2. Build abstractions on top to unlock new capabilities.
 3. Provide visibility to builders and apps.
 
-## Design Tenants
+## Design Tenets
 
 These are the practices that keep Lemonade's code aligned to its mission.
 
@@ -109,7 +109,7 @@ People use Lemonade to access the bleeding edge of AI. The latest models and fea
 
 ### The Customer is Right
 
-Lemonade should be sufficiently flexible that you can use it the way you want. We just have to find a way to support you that respects the tenants above.
+Lemonade should be sufficiently flexible that you can use it the way you want. We just have to find a way to support you that respects the tenets above.
 
 <details>
 <summary>Example</summary>

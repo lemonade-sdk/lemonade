@@ -12,7 +12,7 @@ You can also reference the [app](./app.md) and [web-ui](./web-ui.md) guides to l
 
 ### Philosophy
 
-Understand Lemonade's mission and design tenants before contributing by reading the [philosophy](./philosophy.md).
+Understand Lemonade's mission and design tenets before contributing by reading the [philosophy](./philosophy.md).
 
 ### Contributing
 
