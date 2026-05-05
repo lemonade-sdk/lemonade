@@ -6,4 +6,5 @@ export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
   'whispercpp': 'Whisper.cpp',
   'sd-cpp': 'StableDiffusion.cpp',
   'kokoro': 'Kokoro',
+  'vllm': 'vLLM ROCm',
 };

@@ -5,6 +5,7 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/vllm_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
@@ -39,6 +40,7 @@ namespace lemon::backends {
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
         return nullptr;
     }
@@ -349,8 +351,59 @@ namespace lemon::backends {
             );
 
             if (!download_result.success) {
-                throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
-                                        " - " + download_result.error_message);
+                // Try split archive download (parts: .part00.tar.gz, .part01.tar.gz, ...)
+                // Some backends (e.g. vLLM) exceed GitHub's 2GB release asset limit
+                // and are uploaded as split parts.
+                bool split_success = false;
+                if (is_tarball(filename)) {
+                    std::string base = filename.substr(0, filename.size() - 7); // remove .tar.gz
+                    std::string base_url = "https://github.com/" + repo + "/releases/download/" +
+                                          expected_version + "/";
+                    LOG(DEBUG, spec.log_name()) << "Single file download failed, trying split parts..." << std::endl;
+
+                    // Open combined output file
+                    std::ofstream combined(zip_path, std::ios::binary);
+                    int part_num = 0;
+                    while (true) {
+                        char part_suffix[16];
+                        snprintf(part_suffix, sizeof(part_suffix), ".part%02d.tar.gz", part_num);
+                        std::string part_filename = base + part_suffix;
+                        std::string part_url = base_url + part_filename;
+                        std::string part_path = zip_path + ".part" + std::to_string(part_num);
+
+                        LOG(DEBUG, spec.log_name()) << "Trying part: " << part_filename << std::endl;
+
+                        auto part_result = utils::HttpClient::download_file(
+                            part_url, part_path,
+                            utils::create_throttled_progress_callback()
+                        );
+
+                        if (!part_result.success) {
+                            fs::remove(part_path);
+                            break; // No more parts
+                        }
+
+                        // Append part to combined file
+                        std::ifstream part_in(part_path, std::ios::binary);
+                        combined << part_in.rdbuf();
+                        part_in.close();
+                        fs::remove(part_path);
+                        part_num++;
+                    }
+                    combined.close();
+
+                    if (part_num > 0) {
+                        LOG(INFO, spec.log_name()) << "Downloaded " << part_num << " split parts" << std::endl;
+                        split_success = true;
+                    } else {
+                        fs::remove(zip_path);
+                    }
+                }
+
+                if (!split_success) {
+                    throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
+                                            " - " + download_result.error_message);
+                }
             }
 
             LOG(DEBUG, spec.log_name()) << "Download complete!" << std::endl;
@@ -388,7 +441,18 @@ namespace lemon::backends {
             vf.close();
 
     #ifndef _WIN32
-            // Make executable on Linux/macOS
+            // Make all binaries in bin/ executable (tar may lose permissions)
+            {
+                auto bin_dir = fs::path(install_dir) / "bin";
+                if (fs::exists(bin_dir)) {
+                    for (auto& entry : fs::directory_iterator(bin_dir)) {
+                        if (entry.is_regular_file()) {
+                            chmod(entry.path().c_str(), 0755);
+                        }
+                    }
+                }
+            }
+            // Also make the found executable itself executable
             chmod(exe_path.c_str(), 0755);
     #endif
 
