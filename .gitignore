@@ -143,7 +143,8 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
+# Docs site build output (Zensical writes to site/, publish_website_docs.py
+# stages to docs/docs/ on the website branch only)
 /site
 
 # mypy
