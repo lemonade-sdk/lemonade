@@ -218,7 +218,7 @@ else
             missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
         fi
     elif [ "$OS" = "macos" ]; then
-        missing_packages+=("pkg-config" "curl" "openssl" "zlib" "libdrm")
+        missing_packages+=("pkg-config" "curl" "openssl" "zlib")
     fi
 fi
 

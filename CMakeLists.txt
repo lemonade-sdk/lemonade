@@ -1089,7 +1089,9 @@ if(APPLE)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
             set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
         else()
-            set(SIGNING_IDENTITY "BBC1E1924FF481293CF0928B5DFFF8A6419D7DA0")
+            # Ad-hoc sign so local dev builds work without an Apple Developer cert.
+            # Distribution builds set DEVELOPER_ID_APPLICATION_IDENTITY explicitly.
+            set(SIGNING_IDENTITY "-")
         endif()
     endif()
 
