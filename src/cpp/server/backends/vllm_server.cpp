@@ -85,9 +85,11 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
             );
         }
 #ifdef __linux__
-        // One release per version with per-arch assets, like llamacpp-rocm.
-        // e.g. release vllm0.19.0-rocm7.12.0, asset vllm0.19.0-rocm7.12.0-gfx1150-x64.tar.gz
-        params.filename = version + "-" + target_arch + "-x64.tar.gz";
+        // One release per GPU target since 0.19.1: release tag is
+        // {version}-{target_arch}, e.g. vllm0.20.1-rocm7.12.0-gfx1151.
+        std::string release_tag = version + "-" + target_arch;
+        params.version_override = release_tag;
+        params.filename = release_tag + "-x64.tar.gz";
 #else
         throw std::runtime_error("vLLM ROCm is only supported on Linux");
 #endif
