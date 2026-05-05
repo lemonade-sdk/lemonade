@@ -699,11 +699,10 @@ VSCODE_DIR="$SCRIPT_DIR/.vscode"
 CONTRIB_VSCODE_DIR="$SCRIPT_DIR/contrib/vscode"
 
 if [ ! -d "$VSCODE_DIR" ]; then
-        print_info "Creating .vscode directory and copying settings from contrib/vscode..."
-        mkdir -p "$VSCODE_DIR"
-        cp -r "$CONTRIB_VSCODE_DIR"/* "$VSCODE_DIR/"
-        print_success "VSCode settings installed"
-    fi
+    print_info "Creating .vscode directory and copying settings from contrib/vscode..."
+    mkdir -p "$VSCODE_DIR"
+    cp -r "$CONTRIB_VSCODE_DIR"/* "$VSCODE_DIR/"
+    print_success "VSCode settings installed"
 else
     print_success ".vscode directory already exists, skipping setup"
 fi
