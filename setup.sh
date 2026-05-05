@@ -691,6 +691,25 @@ if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
     echo ""
 fi
 
+# Setup .vscode directory
+print_info "Setting up .vscode directory..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VSCODE_DIR="$SCRIPT_DIR/.vscode"
+CONTRIB_VSCODE_DIR="$SCRIPT_DIR/contrib/vscode"
+
+if [ ! -d "$VSCODE_DIR" ]; then
+        print_info "Creating .vscode directory and copying settings from contrib/vscode..."
+        mkdir -p "$VSCODE_DIR"
+        cp -r "$CONTRIB_VSCODE_DIR"/* "$VSCODE_DIR/"
+        print_success "VSCode settings installed"
+    fi
+else
+    print_success ".vscode directory already exists, skipping setup"
+fi
+
+echo ""
+
 # Clean and create build directory
 print_info "Preparing build directory..."
 

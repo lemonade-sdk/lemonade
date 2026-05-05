@@ -8,9 +8,9 @@ Our goal is to meaningfully increase the amount of genuinely useful local AI use
 
 Lemonade is designed to make high-performance local AI more accessible to users and builders. We do this by:
 
-1. Make inference engines and models easy to deploy cross-platform.
-2. Build abstractions on top to unlock new capabilities.
-3. Provide visibility to builders and apps.
+1. Making inference engines and models easy to deploy cross-platform.
+2. Building abstractions to unlock new capabilities.
+3. Providing visibility to builders and apps.
 
 ## Design Tenets
 
@@ -22,7 +22,7 @@ We want you to get started in our app, then connect Lemonade to other apps, and 
 
 Lemonade has a GUI for two reasons only:
 
-1. To show you what's possible. We know that if a feature doesn't have a GUI to show it off then it doesn't exist for most people.
+1. To show you what's possible. We know that if a feature doesn't have a GUI to show it off, then it doesn't exist for most people.
 2. To help you manage models and backends across connected apps.
 
 ### Prioritize the Happy Path
@@ -32,7 +32,7 @@ Lemonade needs advanced features to facilitate innovation, but advanced features
 <details>
 <summary>Examples</summary>
 
-* *I want to make multiple ROCM distributions available for end-users, enthusiasts, and software vendors.*
+* *I want to make multiple AMD ROCm™ software distributions available for end-users, enthusiasts, and software vendors.*
     * Challenge: new users should have a default they can happily never worry about.
     * Solution: ROCm distribution channel is a well-documented configuration setting; the default channel is the best channel for new users.
 
