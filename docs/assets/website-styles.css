@@ -46,6 +46,10 @@
   --border-medium: rgba(45, 47, 47, 0.12);
   --border-primary: #FCD846;
 
+  /* Tonal page gradient — top fades white into pale lemon. Used by both the
+     homepage body and the docs site's body::before (in zest-theme.css). */
+  --page-gradient: linear-gradient(to bottom, #FFFFFF 0px, #FFFFFF 541px, #FFF9C4 1804px, #FFF9C4 100%);
+
   /* Ambient Shadows — on-surface color, never pure black */
   --shadow-light: 0 4px 16px rgba(45, 47, 47, 0.04);
   --shadow-medium: 0 8px 32px rgba(45, 47, 47, 0.06);
@@ -131,6 +135,8 @@
   --border-light: rgba(255, 255, 255, 0.06);
   --border-medium: rgba(255, 255, 255, 0.12);
 
+  --page-gradient: linear-gradient(to bottom, #0E0E0B 0px, #0E0E0B 541px, #1F1A0E 1804px, #1F1A0E 100%);
+
   /* Shadows — plain black at higher alpha; yellow glow unchanged */
   --shadow-light: 0 4px 16px rgba(0, 0, 0, 0.35);
   --shadow-medium: 0 8px 32px rgba(0, 0, 0, 0.45);
@@ -162,7 +168,7 @@ body {
   margin: 0;
   font-family: var(--font-body);
   /* Tonal gradient: matches reference (1804px body, 30%=541px, 100%=1804px) */
-  background: linear-gradient(to bottom, #FFFFFF 0px, #FFFFFF 541px, #FFF9C4 1804px, #FFF9C4 100%);
+  background: var(--page-gradient);
   color: var(--text-primary);
   min-height: 100vh;
   display: flex;
@@ -174,7 +180,7 @@ body {
    --glass-bg / --glass-border / --shadow-ambient, all redefined in the
    [data-md-color-scheme="zest-dark"] block above. */
 [data-md-color-scheme="zest-dark"] body {
-  background: linear-gradient(to bottom, #0E0E0B 0px, #0E0E0B 541px, #1F1A0E 1804px, #1F1A0E 100%);
+  background: var(--page-gradient);
 }
 
 html, body {

@@ -80,6 +80,65 @@
   --md-footer-bg-color--dark:      var(--surface-container-lowest);
 }
 
+/* ===== Scrollbar gutter — Zensical sets `html { scrollbar-gutter: stable }`
+   so the right edge always reserves space for a vertical scrollbar even
+   on short pages. The body has the page's tonal gradient, but the gutter
+   strip is part of html (outside body), so without help it shows white
+   through against the gradient. Painting the gradient on html works in
+   Chrome but Safari ignores html bg here (body-bg propagation rules
+   leave html's painted color invisible). Use a fixed-position pseudo on
+   body: it paints into the viewport regardless of body's bounds, so it
+   covers the gutter, and Safari honors it. Source-of-truth gradients
+   live in website-styles.css; we mirror the stops here. The
+   data-md-color-scheme attribute is set on <body>, which is why dark
+   mode targets body[...] rather than a descendant combinator. */
+html {
+  scrollbar-color: var(--border-medium) transparent;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  display: block;
+  background: var(--page-gradient);
+}
+/* Body's gradient (set in website-styles.css for both schemes) would sit
+   on top of the fixed pseudo and produce a visible seam at body's right
+   edge against the gutter. Override with transparent — the pseudo shows
+   through. The dark-mode body rule in website-styles.css uses a higher-
+   specificity selector ([data-md-color-scheme="zest-dark"] body), so
+   !important is required to defeat it without specificity gymnastics. */
+body {
+  background: transparent !important;
+}
+
+/* WebKit — these only take effect on browsers that show solid (non-overlay)
+   scrollbars; on macOS overlay scrollbars they're ignored, but the gutter
+   above already blends. The thumb sits as a faint pill in the gradient. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ===== Re-skin admonitions, tabs, and details as ice cards ===========
    The card chrome (glass bg, blur, border, shadow) lives on the OUTER
    element. Inner panels get padding only — no nested card-in-a-card. */
@@ -192,34 +251,6 @@
 .md-content,
 .md-content__inner {
   background: transparent;
-}
-
-/* ===== Page gradient ===================================================
-   Override the body gradient from website-styles.css. Zensical's modern
-   theme sets `html { height: 100% }` and `body { min-height: 100% }`,
-   which on long doc pages causes the gradient to tile against the body's
-   first-viewport-tall box. We re-anchor the gradient to the viewport with
-   background-attachment:fixed so it never tiles, and use vh stops so the
-   transition zone is a deterministic fraction of viewport height — same
-   visual recipe as the homepage's white→pale-lemon, just locked to the
-   viewport's frame instead of the body box. */
-body {
-  background:
-    linear-gradient(to bottom,
-      #FFFFFF 0vh,
-      #FFFFFF 30vh,
-      #FFF9C4 100vh,
-      #FFF9C4 100vh) fixed no-repeat;
-  background-color: #FFF9C4; /* solid fallback past the gradient */
-}
-body[data-md-color-scheme="zest-dark"] {
-  background:
-    linear-gradient(to bottom,
-      #0E0E0B 0vh,
-      #0E0E0B 30vh,
-      #1F1A0E 100vh,
-      #1F1A0E 100vh) fixed no-repeat;
-  background-color: #1F1A0E;
 }
 
 /* ===== Hover / active polish =========================================
@@ -444,22 +475,23 @@ body[data-md-color-scheme="zest-dark"] {
   color: var(--text-primary);
 }
 
-/* ===== Footer — Zensical chrome zeroed; the actual footer markup is
-   the homepage's .site-footer, rendered via docs/overrides/partials/footer.html
-   so docs and homepage are byte-identical from prev/next downward. */
+/* ===== Footer — Zensical's stock chrome (prev/next nav + meta strip)
+   reskinned with Crystalline Zest tokens. The full-bleed background comes
+   from .md-footer; .md-footer__inner and .md-footer-meta__inner are
+   .md-grid containers that center to the page max-width. */
 .md-footer {
   background: var(--md-footer-bg-color);
   color: var(--text-primary);
-  border-top: none;
+  border-top: 1px solid var(--border-light);
   border-bottom: none;
 }
 .md-footer__inner {
-  border-bottom: none;
+  border-bottom: 1px solid var(--border-light);
 }
 
-/* Prev/next nav block — compact, balanced typography matching the homepage
-   .footer-rail-link scale. Zensical's defaults inset 1rem top + 0.7rem
-   margin-bottom inside the title, which produced a tall, lopsided strip. */
+/* Prev/next nav block — compact, balanced typography. Zensical's defaults
+   inset 1rem top + 0.7rem margin-bottom inside the title, which produced a
+   tall, lopsided strip; tighten it. */
 .md-footer__inner {
   padding: 0.75rem 0.5rem;
 }
@@ -487,7 +519,7 @@ body[data-md-color-scheme="zest-dark"] {
 .md-footer__title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.69rem; /* 0.92rem / 1.333 (major fourth smaller) */
+  font-size: 0.92rem;
   color: var(--text-primary);
   margin: 0;
   padding: 0 0.6rem;
@@ -504,7 +536,7 @@ body[data-md-color-scheme="zest-dark"] {
 .md-footer__direction {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.51rem; /* 0.68rem / 1.333 (major fourth smaller) */
+  font-size: 0.68rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -518,20 +550,35 @@ body[data-md-color-scheme="zest-dark"] {
   padding: 0.3rem;
 }
 
-/* The .md-footer-meta strip from Zensical is not rendered on docs — the
-   override partial replaces it with the homepage .site-footer markup. Most
-   styling is owned by docs/assets/website-styles.css and applies as-is.
-   Exception: rem-sized font-sizes are 25% larger here than on the homepage
-   because Zensical sets html { font-size: 125% } (20px) vs the homepage's
-   default 16px. We rescale the footer text to homepage pixel-equivalent
-   (0.95rem * 0.8 ≈ 0.76rem) so it matches visually next to the .footer-
-   rail-icon imgs (which are 15px literal). */
-.md-footer .site-footer .footer-rail-link {
-  font-size: 0.76rem;
+/* Meta strip — copyright + social. Zensical's default uses
+   --md-footer-bg-color--dark (a darker shade) for this strip; we map it to
+   the same surface token as the rest of the footer for a flat look that
+   matches the homepage's white footer in light mode and the deep surface
+   in dark mode. */
+.md-footer-meta {
+  background: var(--md-footer-bg-color--dark);
+  color: var(--md-footer-fg-color);
 }
-.md-footer .site-footer .copyright {
-  font-size: 0.76rem;
+.md-footer-meta__inner {
+  padding: 0.6rem 0.5rem;
+  align-items: center;
 }
-.md-footer .site-footer .footer-nav-rail {
-  gap: 0.72rem 0.92rem; /* 0.9rem 1.15rem * 0.8 */
+.md-copyright {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.md-copyright__highlight {
+  color: var(--text-secondary);
+}
+.md-social {
+  padding: 0;
+}
+.md-social__link {
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+.md-social__link:hover,
+.md-social__link:focus {
+  color: var(--md-accent-fg-color);
 }

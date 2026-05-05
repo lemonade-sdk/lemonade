@@ -1,14 +1,31 @@
 {#-
   Lemonade docs footer override.
 
-  Keeps Zensical's prev/next nav (the .md-footer__inner block) verbatim,
-  but replaces the .md-footer-meta strip with the exact markup the
-  homepage renders via docs/assets/footer.js (createFooter). URLs are
-  absolute so they resolve correctly from any docs depth.
+  Same structure as Zensical's stock footer (prev/next nav + meta strip
+  with copyright + social) with one fix: Zensical doesn't populate
+  page.next_page on the home page (page.url == ""), so the prev/next nav
+  vanishes there. We fall back to walking nav.items depth-first; once we
+  pass the home item (url == "index.md") we take the next leaf as
+  next_page. The home page in mkdocs.yml is `Welcome: index.md`.
+
+  Visual styling lives in docs/assets/zest-theme.css.
 -#}
+{%- set next_page = page.next_page -%}
+{%- if not next_page and page.url == "" and nav and nav.items -%}
+  {%- set ns = namespace(found=none, after_home=false) -%}
+  {%- for item in nav.items recursive -%}
+    {%- if ns.found -%}{# already found, skip #}
+    {%- elif item.children -%}{{- loop(item.children) -}}
+    {%- elif not (item.url is defined and item.url) -%}{# section header, skip #}
+    {%- elif ns.after_home -%}{%- set ns.found = item -%}
+    {%- elif item.url == "index.md" -%}{%- set ns.after_home = true -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if ns.found -%}{%- set next_page = ns.found -%}{%- endif -%}
+{%- endif -%}
 <footer class="md-footer">
   {% if "navigation.footer" in features %}
-    {% if page.previous_page or page.next_page %}
+    {% if page.previous_page or next_page %}
       {% if page.meta and page.meta.hide %}
         {% set hidden = "hidden" if "footer" in page.meta.hide %}
       {% endif %}
@@ -30,15 +47,15 @@
             </div>
           </a>
         {% endif %}
-        {% if page.next_page %}
+        {% if next_page %}
           {% set direction = lang.t("footer.next") %}
-          <a href="{{ page.next_page.url | url }}" class="md-footer__link md-footer__link--next" aria-label="{{ direction }}: {{ page.next_page.title | e }}">
+          <a href="{{ next_page.url | url }}" class="md-footer__link md-footer__link--next" aria-label="{{ direction }}: {{ next_page.title | e }}">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 {{ direction }}
               </span>
               <div class="md-ellipsis">
-                {{ page.next_page.title }}
+                {{ next_page.title }}
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -50,31 +67,12 @@
       </nav>
     {% endif %}
   {% endif %}
-
-  {#- Homepage footer, mirrored from docs/assets/footer.js createFooter() -#}
-  <div class="site-footer">
-    <div class="footer-content">
-      <nav class="footer-nav-rail" role="navigation" aria-label="Footer quick links">
-        <a href="https://github.com/lemonade-sdk/lemonade" class="footer-rail-link footer-rail-link--community" target="_blank" rel="noopener">
-          <span class="footer-rail-icon" aria-hidden="true">
-            <img src="https://cdn.simpleicons.org/github/1f2937" alt="" loading="lazy" decoding="async" />
-          </span>
-          <span>GitHub</span>
-        </a>
-        <a href="https://discord.gg/5xXzkMu8Zk" class="footer-rail-link footer-rail-link--community" target="_blank" rel="noopener">
-          <span class="footer-rail-icon" aria-hidden="true">
-            <img src="https://cdn.simpleicons.org/discord/5865F2" alt="" loading="lazy" decoding="async" />
-          </span>
-          <span>Discord</span>
-        </a>
-        <a href="/docs/dev-getting-started/" class="footer-rail-link footer-rail-link--product">Developer Setup</a>
-        <a href="/docs/models.html" class="footer-rail-link footer-rail-link--product">Models</a>
-        <a href="/marketplace.html" class="footer-rail-link footer-rail-link--product">Marketplace</a>
-        <a href="/docs/" class="footer-rail-link footer-rail-link--product">Documentation</a>
-      </nav>
-      <div class="footer-meta">
-        <div class="copyright">© 2026 AMD. Licensed under Apache 2.0.</div>
-      </div>
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      {% include "partials/copyright.html" %}
+      {% if config.extra.social %}
+        {% include "partials/social.html" %}
+      {% endif %}
     </div>
   </div>
 </footer>
