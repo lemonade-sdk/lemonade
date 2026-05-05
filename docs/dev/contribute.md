@@ -37,7 +37,7 @@ Each contribution needs to:
 
 Contributors are encouraged to use AI to code their project. However, please review your AI's code yourself before asking another human to review it.
 
-Reviewers are expected to use tools like Claude Code's `/review` to save time by analyzing code quality and edge cases. If you have AI tools make PR comments please clearly identify which comments are written by AI and which are written by you.
+Reviewers are expected to use tools like Claude Code's `/review` to save time by analyzing code quality and edge cases. If AI tools generate PR comments, please clearly identify which comments are AI-generated and which are authored by you.
 
 __Please do not use AI to write issues__. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.
 
