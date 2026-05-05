@@ -126,6 +126,31 @@ CAPABILITIES = {
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
+        "lemon-mlx": {
+            "backends": ["metal", "rocm", "cpu"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": False,
+                "responses_api_streaming": False,
+                "embeddings": False,
+                "embeddings_batch": False,
+                "reranking": False,
+                "tool_calls": False,
+                "tool_calls_streaming": False,
+                "multi_model": True,
+                "stop_parameter": True,
+                "echo_parameter": False,
+                "generation_parameters": False,
+            },
+            "test_models": {
+                "llm": "Qwen3-0.6B-MLX",
+            },
+        },
     },
     "whisper": {
         "whispercpp": {
