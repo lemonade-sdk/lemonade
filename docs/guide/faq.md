@@ -182,6 +182,7 @@
    Yes! Lemonade supports multiple execution modes:
 
    - **AMD Ryzen 7000/8000/200 series**: GPU acceleration via llama.cpp + Vulkan backend
+   - **AMD Ryzen AI MAX+ (Strix Halo) on Linux**: in addition to the above, the experimental `vllm:rocm` backend is supported on gfx1151 (see [vLLM configuration](configuration/vllm.md))
    - **Systems with Radeon GPUs**: Yes
    - **Any x86 CPU**: Yes
    - **Intel/NVIDIA systems**: CPU inference, with GPU support via the llama.cpp + Vulkan backend

@@ -161,6 +161,8 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `sdcpp_backend` | string |
 | `whispercpp_backend` | string |
 | `whispercpp_args` | string |
+| `vllm_backend` | string |
+| `vllm_args` | string |
 | `steps` | int (positive) |
 | `cfg_scale` | number |
 | `width` | int (positive) |

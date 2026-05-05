@@ -53,6 +53,7 @@ Follow these instructions if you want backends to be bundled into your app's ins
 At the time of this writing:
 -  `flm` is not available for packaging-time bundling *on Linux*.
 - `llamacpp:rocm` is not available for packaging-time bundling on any OS.
+- `vllm:rocm` is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its `gfx_target` with the deployment machine.
 
 ### Installing Backends at Install-Time or Runtime
 
