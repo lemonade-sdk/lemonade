@@ -78,6 +78,13 @@
   --md-footer-fg-color--lighter:   var(--text-muted);
   --md-footer-bg-color:            var(--surface-container-lowest);
   --md-footer-bg-color--dark:      var(--surface-container-lowest);
+
+  /* Zensical's search dialog is rendered in a shadow root and reads these
+     RGB triplet tokens directly, not the --md-* surface variables above. */
+  --color-foreground: 242 239 229;
+  --color-background: 37 34 27;
+  --color-background-subtle: 45 41 34;
+  --color-backdrop: 14 14 11;
 }
 
 /* ===== Scrollbar gutter — Zensical sets `html { scrollbar-gutter: stable }`
@@ -274,12 +281,11 @@ body {
   color: var(--md-typeset-a-color);
 }
 
-/* Sidebar nav: tinted surface (not glass — backdrop-filter on a tall sticky
-   scroll surface causes per-frame re-composites and scroll jank on mid-tier
-   GPUs). The body gradient still shows through via the page-fixed gradient,
-   so a low-opacity tint reads as glass without the paint cost. */
+/* Sidebar nav: keep the sticky wrapper transparent. Zensical gives it
+   height: 0 plus vertical padding at desktop widths; painting this wrapper
+   creates a column-width band above the actual nav content. */
 .md-sidebar {
-  background: var(--glass-bg);
+  background: transparent;
 }
 
 /* ===== Zensical header — Crystalline Zest restyle ====================
@@ -382,8 +388,8 @@ body {
 .md-header .md-search__button {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.9rem;
-  height: 2.25rem;
+  font-size: 0.675rem;
+  height: 1.6875rem;
   background: var(--surface-container-lowest);
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-full);
@@ -396,9 +402,9 @@ body {
 }
 @media screen and (min-width: 45em) {
   .md-header .md-search__button {
-    width: 14rem;
-    padding-left: 2.6rem;
-    padding-right: 3.4rem;
+    width: 10.5rem;
+    padding-left: 1.95rem;
+    padding-right: 2.55rem;
   }
   .md-header .md-search__button:hover,
   .md-header .md-search__button:focus {
@@ -424,9 +430,9 @@ body {
 /* Search icon prefix (mask-image set by Zensical at :before) — recolor only */
 .md-header .md-search__button::before {
   background-color: var(--text-nav);
-  height: 1rem;
-  width: 1rem;
-  margin-left: 0.85rem;
+  height: 0.75rem;
+  width: 0.75rem;
+  margin-left: 0.6375rem;
   top: 50%;
   transform: translateY(-50%);
 }
@@ -440,14 +446,14 @@ body {
   background: var(--surface-container);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.465rem;
   font-weight: 500;
   line-height: 1;
-  padding: 0.22rem 0.36rem;
+  padding: 0.165rem 0.27rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-medium);
   top: 50%;
-  right: 0.5rem;
+  right: 0.375rem;
   transform: translateY(-50%);
 }
 
