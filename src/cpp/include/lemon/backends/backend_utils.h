@@ -16,7 +16,6 @@ namespace lemon::backends {
     struct InstallParams {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
-        std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
     };
 
     struct BackendSpec {

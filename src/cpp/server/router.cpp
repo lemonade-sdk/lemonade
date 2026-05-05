@@ -206,7 +206,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         ryzenai_server->set_model_path(model_path);
         new_server.reset(ryzenai_server);
     } else if (model_info.recipe == "vllm") {
-    LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
+        LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
         new_server = std::make_unique<backends::VLLMServer>(log_level, model_manager_, backend_manager_);
     } else {
     LOG(DEBUG, "Router") << "Creating LlamaCpp backend" << std::endl;
