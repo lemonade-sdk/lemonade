@@ -72,6 +72,8 @@ if ! command_exists pre-commit; then
         missing_packages+=("pre-commit")
     elif [ "$OS" = "linux" ] && command_exists apt; then
         missing_packages+=("pre-commit")
+    elif [ "$OS" = "linux" ] && command_exists rpm-ostree; then
+        missing_packages+=("pre-commit")
     elif [ "$OS" = "linux" ] && command_exists dnf; then
         missing_packages+=("pre-commit")
     elif [ "$OS" = "linux" ] && command_exists zypper; then
@@ -109,6 +111,8 @@ if [ ${#missing_tools[@]} -gt 0 ]; then
             missing_packages+=("git" "cmake" "ninja-build" "build-essential")
         elif command_exists pacman; then
             missing_packages+=("git" "cmake" "ninja" "base-devel")
+        elif command_exists rpm-ostree; then
+            missing_packages+=("git" "cmake" "ninja-build" "gcc" "gcc-c++" "make")
         elif command_exists dnf; then
             missing_packages+=("git" "cmake" "ninja-build" "gcc" "gcc-c++" "make")
         elif command_exists zypper; then
@@ -166,6 +170,19 @@ if command_exists pkg-config; then
                         libwebsockets) ;; # Not available in Arch repos, will use FetchContent
                     esac
                 done
+            elif command_exists rpm-ostree; then
+                # Map pkg-config names to rpm-ostree packages
+                for lib in "${missing_libs[@]}"; do
+                    case "$lib" in
+                        libcurl) missing_packages+=("libcurl-devel") ;;
+                        openssl) missing_packages+=("openssl-devel") ;;
+                        zlib) missing_packages+=("zlib-devel") ;;
+                        libsystemd) missing_packages+=("systemd-devel") ;;
+                        libdrm) missing_packages+=("libdrm-devel") ;;
+                        libcap) missing_packages+=("libcap-devel") ;;
+                        libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                    esac
+                done
             elif command_exists dnf; then
                 # Map pkg-config names to dnf packages
                 for lib in "${missing_libs[@]}"; do
@@ -212,6 +229,8 @@ else
             missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
         elif command_exists pacman; then
             missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
+        elif command_exists rpm-ostree; then
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
         elif command_exists dnf; then
             missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
         elif command_exists zypper; then
@@ -244,6 +263,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             missing_tray_packages+=("libayatana-appindicator3-dev")
         elif command_exists pacman; then
             missing_tray_packages+=("libayatana-appindicator")
+        elif command_exists rpm-ostree; then
+            missing_tray_packages+=("libayatana-appindicator-gtk3-devel")
         elif command_exists dnf; then
             missing_tray_packages+=("libayatana-appindicator-gtk3-devel")
         elif command_exists zypper; then
@@ -262,6 +283,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                 missing_tray_packages+=("libdbusmenu-glib-dev")
             elif command_exists pacman; then
                 missing_tray_packages+=("libdbusmenu-glib")
+            elif command_exists rpm-ostree; then
+                missing_tray_packages+=("dbusmenu-glib-devel")
             elif command_exists dnf; then
                 missing_tray_packages+=("dbusmenu-glib-devel")
             elif command_exists zypper; then
@@ -280,6 +303,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                 missing_tray_packages+=("libgtk-3-dev")
             elif command_exists pacman; then
                 missing_tray_packages+=("gtk3")
+            elif command_exists rpm-ostree; then
+                missing_tray_packages+=("gtk3-devel")
             elif command_exists dnf; then
                 missing_tray_packages+=("gtk3-devel")
             elif command_exists zypper; then
@@ -316,6 +341,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
             tray_install_cmd="sudo apt install -y ${missing_tray_packages[*]}"
         elif command_exists pacman; then
             tray_install_cmd="sudo pacman -S --needed --noconfirm ${missing_tray_packages[*]}"
+        elif command_exists rpm-ostree; then
+            tray_install_cmd="rpm-ostree install -A --idempotent ${missing_tray_packages[*]}"
         elif command_exists dnf; then
             tray_install_cmd="sudo dnf install -y ${missing_tray_packages[*]}"
         elif command_exists zypper; then
@@ -339,6 +366,8 @@ if [ "$OS" = "linux" ] && command_exists pkg-config; then
                     maybe_sudo apt install -y "${missing_tray_packages[@]}"
                 elif command_exists pacman; then
                     maybe_sudo pacman -S --needed --noconfirm "${missing_tray_packages[@]}"
+                elif command_exists rpm-ostree; then
+                    maybe_sudo rpm-ostree install -A --idempotent "${missing_tray_packages[@]}"
                 elif command_exists dnf; then
                     maybe_sudo dnf install -y "${missing_tray_packages[@]}"
                 elif command_exists zypper; then
@@ -361,7 +390,7 @@ print_info "Checking Node.js and npm installation..."
 if ! command_exists node; then
     print_warning "Node.js not found"
     if [ "$OS" = "linux" ]; then
-        if command_exists apt || command_exists pacman || command_exists dnf || command_exists zypper; then
+        if command_exists apt || command_exists pacman || command_exists rpm-ostree || command_exists dnf || command_exists zypper; then
             missing_packages+=("nodejs" "npm")
         fi
     elif [ "$OS" = "macos" ]; then
@@ -397,6 +426,20 @@ if [ "$OS" = "linux" ]; then
         )
         for dep in "${tauri_dep_candidates[@]}"; do
             if ! dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
+                tauri_linux_deps+=("$dep")
+            fi
+        done
+    elif command_exists rpm-ostree; then
+        tauri_dep_candidates=(
+            webkit2gtk4.1-devel
+            libsoup3-devel
+            librsvg2-devel
+            libappindicator-gtk3-devel
+            wget
+            file
+        )
+        for dep in "${tauri_dep_candidates[@]}"; do
+            if ! rpm -q "$dep" >/dev/null 2>&1; then
                 tauri_linux_deps+=("$dep")
             fi
         done
@@ -493,6 +536,8 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             else
                 install_cmd="sudo pacman -Syu --needed --noconfirm ${missing_packages[*]}"
             fi
+        elif command_exists rpm-ostree; then
+            install_cmd="rpm-ostree install -A --idempotent ${missing_packages[*]}"
         elif command_exists dnf; then
             if is_root; then
                 install_cmd="dnf install -y ${missing_packages[*]}"
@@ -549,6 +594,8 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
             fi
         elif command_exists pacman; then
             maybe_sudo pacman -Syu --needed --noconfirm ${missing_packages[@]}
+        elif command_exists rpm-ostree; then
+            maybe_sudo rpm-ostree install -A --idempotent ${missing_packages[@]}
         elif command_exists dnf; then
             maybe_sudo dnf install -y ${missing_packages[@]}
         elif command_exists zypper; then
@@ -603,6 +650,8 @@ if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
         if command_exists apt; then
             maybe_sudo apt update
             maybe_sudo apt install -y "${tauri_linux_deps[@]}"
+        elif command_exists rpm-ostree; then
+            maybe_sudo rpm-ostree install -A --idempotent "${tauri_linux_deps[@]}"
         elif command_exists dnf; then
             maybe_sudo dnf install -y "${tauri_linux_deps[@]}"
         elif command_exists pacman; then
@@ -625,6 +674,10 @@ if [ ${#tauri_linux_deps[@]} -gt 0 ] || [ "$rust_needs_install" = true ]; then
                 fi
             elif command_exists pacman; then
                 if maybe_sudo pacman -S --needed --noconfirm rust; then
+                    rust_install_ok=true
+                fi
+            elif command_exists rpm-ostree; then
+                if maybe_sudo rpm-ostree install -A --idempotent rust cargo; then
                     rust_install_ok=true
                 fi
             elif command_exists dnf; then
