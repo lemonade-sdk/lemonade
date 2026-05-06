@@ -1301,6 +1301,10 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["size"] = info.size;
     }
 
+    if (info.max_context_window > 0) {
+        model_json["max_context_window"] = info.max_context_window;
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {

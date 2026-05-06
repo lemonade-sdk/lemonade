@@ -878,7 +878,7 @@ The generated audio file is returned as-is.
 ## `GET /v1/models`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, and `labels`.
+Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, and, when known, `max_context_window`.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
@@ -912,6 +912,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
       "recipe": "llamacpp",
       "size": 0.38,
+      "max_context_window": 40960,
       "downloaded": true,
       "suggested": true,
       "labels": ["reasoning"]
@@ -961,6 +962,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `checkpoint` - Full checkpoint identifier on Hugging Face
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
+  - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `suggested` - Boolean indicating if the model is recommended for general use
   - `labels` - Array of tags describing the model (e.g., `"hot"`, `"reasoning"`, `"vision"`, `"embeddings"`, `"reranking"`, `"coding"`, `"tool-calling"`, `"image"`)
@@ -1001,10 +1003,11 @@ Returns a single model object with the same fields as described in the [models l
   "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
   "recipe": "llamacpp",
   "size": 0.38,
+  "max_context_window": 40960,
   "downloaded": true,
   "suggested": true,
   "labels": ["reasoning"],
-  "recipe_options" {
+  "recipe_options": {
     "ctx_size": 8192,
     "llamacpp_args": "--no-mmap",
     "llamacpp_backend": "rocm"
