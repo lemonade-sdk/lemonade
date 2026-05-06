@@ -6,7 +6,6 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -119,13 +118,6 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
 
-    // vLLM has historically defaulted to 16K context (vs the global 4K
-    // default in resources/defaults.json) because larger contexts amortize
-    // Triton JIT cost on consumer GPUs. Preserve that floor unless the user
-    // explicitly requested something larger via --ctx-size.
-    constexpr int VLLM_MIN_CTX_SIZE = 16384;
-    int max_model_len = std::max(ctx_size, VLLM_MIN_CTX_SIZE);
-
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
     // Install vllm-server if needed
@@ -161,12 +153,12 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("--enforce-eager");
     args.push_back("--dtype");
     args.push_back("float16");
-    // ctx_size from RecipeOptions, floored at the vLLM-specific minimum
-    // computed above. Larger values raise KV-cache memory and Triton JIT
-    // compile time. Users wanting smaller contexts can override via
-    // --vllm-args="--max-model-len N".
+    // Pass ctx_size through to vllm-server's --max-model-len. Trust the
+    // user's value verbatim; the global default lives in defaults.json
+    // (same as llamacpp). Larger values raise KV-cache memory and Triton
+    // JIT compile time.
     args.push_back("--max-model-len");
-    args.push_back(std::to_string(max_model_len));
+    args.push_back(std::to_string(ctx_size));
     // Detect the actual quantization method from config.json rather than guessing
     // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
