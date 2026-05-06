@@ -597,8 +597,17 @@ void OllamaApi::handle_chat(const httplib::Request& req, httplib::Response& res)
         try {
             auto_load_model(model);
         } catch (const std::exception& e) {
-            res.status = 404;
-            json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
+            if (!model_manager_->model_exists(model)) {
+                res.status = 404;
+                json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
+            LOG(ERROR, "OllamaApi") << "POST /api/chat - auto-load failed for model '"
+                << model << "': " << e.what() << std::endl;
+            res.status = 500;
+            json error = {{"error", "failed to load model '" + model + "': " + std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
             return;
         }
@@ -701,8 +710,17 @@ void OllamaApi::handle_generate(const httplib::Request& req, httplib::Response& 
         try {
             auto_load_model(model);
         } catch (const std::exception& e) {
-            res.status = 404;
-            json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
+            if (!model_manager_->model_exists(model)) {
+                res.status = 404;
+                json error = {{"error", "model '" + model + "' not found, try pulling it first"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
+            LOG(ERROR, "OllamaApi") << "POST /api/generate - auto-load failed for model '"
+                << model << "': " << e.what() << std::endl;
+            res.status = 500;
+            json error = {{"error", "failed to load model '" + model + "': " + std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
             return;
         }
@@ -1128,8 +1146,17 @@ void OllamaApi::handle_embed(const httplib::Request& req, httplib::Response& res
         try {
             auto_load_model(model);
         } catch (const std::exception& e) {
-            res.status = 404;
-            json error = {{"error", "model '" + model + "' not found"}};
+            if (!model_manager_->model_exists(model)) {
+                res.status = 404;
+                json error = {{"error", "model '" + model + "' not found"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
+            LOG(ERROR, "OllamaApi") << "POST /api/embed - auto-load failed for model '"
+                << model << "': " << e.what() << std::endl;
+            res.status = 500;
+            json error = {{"error", "failed to load model '" + model + "': " + std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
             return;
         }
@@ -1195,8 +1222,17 @@ void OllamaApi::handle_embeddings(const httplib::Request& req, httplib::Response
         try {
             auto_load_model(model);
         } catch (const std::exception& e) {
-            res.status = 404;
-            json error = {{"error", "model '" + model + "' not found"}};
+            if (!model_manager_->model_exists(model)) {
+                res.status = 404;
+                json error = {{"error", "model '" + model + "' not found"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+
+            LOG(ERROR, "OllamaApi") << "POST /api/embeddings - auto-load failed for model '"
+                << model << "': " << e.what() << std::endl;
+            res.status = 500;
+            json error = {{"error", "failed to load model '" + model + "': " + std::string(e.what())}};
             res.set_content(error.dump(), "application/json");
             return;
         }
