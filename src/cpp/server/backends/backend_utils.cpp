@@ -343,11 +343,19 @@ namespace lemon::backends {
                 http_progress_cb = utils::create_throttled_progress_callback();
             }
 
-            // Download the file
+            // Download the file. quiet_on_4xx because we may fall through to
+            // the split-archive path below — backends that publish only split
+            // parts (e.g. vLLM) will 404 here, and we don't want that to look
+            // alarming in the logs when the install actually succeeds via the
+            // fallback.
+            utils::DownloadOptions probe_opts;
+            probe_opts.quiet_on_4xx = true;
             auto download_result = utils::HttpClient::download_file(
                 url,
                 zip_path,
-                http_progress_cb
+                http_progress_cb,
+                {},
+                probe_opts
             );
 
             if (!download_result.success) {
@@ -373,9 +381,16 @@ namespace lemon::backends {
 
                         LOG(DEBUG, spec.log_name()) << "Trying part: " << part_filename << std::endl;
 
+                        // quiet_on_4xx because the loop probes one past the last
+                        // real part to detect end-of-list; the trailing 404 is
+                        // expected control flow, not an error.
+                        utils::DownloadOptions part_opts;
+                        part_opts.quiet_on_4xx = true;
                         auto part_result = utils::HttpClient::download_file(
                             part_url, part_path,
-                            utils::create_throttled_progress_callback()
+                            utils::create_throttled_progress_callback(),
+                            {},
+                            part_opts
                         );
 
                         if (!part_result.success) {
