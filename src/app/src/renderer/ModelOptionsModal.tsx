@@ -31,6 +31,51 @@ const getBackendDisplayName = (backend: string): string => {
   return BACKEND_DISPLAY_NAMES[backend] ?? backend;
 };
 
+const CONTEXT_SLIDER_MIN = 2048;
+const CONTEXT_SLIDER_THUMB_SIZE = 14;
+
+const formatContextSize = (value: number): string => {
+  if (value >= 1024 && value % 1024 === 0) {
+    return `${value / 1024}k`;
+  }
+  if (value >= 1024) {
+    return `${Math.round(value / 1024)}k`;
+  }
+  return String(value);
+};
+
+const getContextSliderMarks = (maxContextWindow?: number): number[] => {
+  if (!maxContextWindow || maxContextWindow < CONTEXT_SLIDER_MIN) {
+    return [];
+  }
+
+  const marks: number[] = [];
+  for (let value = CONTEXT_SLIDER_MIN; value < maxContextWindow; value *= 2) {
+    marks.push(value);
+  }
+
+  if (marks[marks.length - 1] !== maxContextWindow) {
+    marks.push(maxContextWindow);
+  }
+
+  return marks;
+};
+
+const contextSizeToSliderValue = (contextSize: number, maxContextWindow: number): number => {
+  const clamped = contextSize === 0
+    ? maxContextWindow
+    : Math.min(Math.max(contextSize, CONTEXT_SLIDER_MIN), maxContextWindow);
+  return Math.log2(clamped);
+};
+
+const sliderValueToContextSize = (sliderValue: number, maxContextWindow: number): number => {
+  const maxSliderValue = Math.log2(maxContextWindow);
+  if (sliderValue >= maxSliderValue - 0.0005) {
+    return maxContextWindow;
+  }
+  return Math.min(Math.round(2 ** sliderValue), maxContextWindow);
+};
+
 interface SettingsModalProps {
   isOpen: boolean;
   onSubmit: (modelName: string, options: RecipeOptions) => void;
@@ -152,6 +197,17 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     handleNumericChange(key, parsed);
   };
 
+  const commitContextSizeDraft = (key: string, draftValue: string, maxContextWindow: number): void => {
+    const trimmed = draftValue.trim();
+    if (trimmed === '') return;
+
+    const parsed = parseFloat(trimmed);
+    if (Number.isNaN(parsed)) return;
+
+    const clamped = parsed === 0 ? 0 : Math.min(Math.max(parsed, 1), maxContextWindow);
+    handleNumericChange(key, clamped);
+  };
+
   // Generic handler for string option changes
   const handleStringChange = (key: string, value: string) => {
     if (!options) return;
@@ -252,10 +308,15 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       const parsed = parseFloat(trimmed);
       if (Number.isNaN(parsed)) continue;
 
+      const maxContextWindow = key === 'ctxSize' ? modelInfo?.max_context_window : undefined;
+      const value = maxContextWindow
+        ? (parsed === 0 ? 0 : Math.min(Math.max(parsed, 1), maxContextWindow))
+        : clampOptionValue(key, parsed);
+
       submitOptions = {
         ...submitOptions,
         [key]: {
-          value: clampOptionValue(key, parsed),
+          value,
           useDefault: false,
         }
       } as RecipeOptions;
@@ -283,10 +344,97 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     return opt?.useDefault ?? true;
   };
 
+  const renderContextSizeField = (key: string) => {
+    const def = getOptionDefinition(key);
+    if (!def || def.type !== 'numeric') return null;
+
+    const value = getOptionValue<number>(key);
+    const maxContextWindow = modelInfo?.max_context_window;
+    if (value === undefined || !maxContextWindow || maxContextWindow < CONTEXT_SLIDER_MIN) return null;
+
+    const displayValue = numericDrafts[key] ?? String(value);
+    const parsedDraft = parseFloat(displayValue.trim());
+    const effectiveContextSize = !Number.isNaN(parsedDraft) ? parsedDraft : value;
+    const sliderValue = contextSizeToSliderValue(effectiveContextSize, maxContextWindow);
+    const marks = getContextSliderMarks(maxContextWindow);
+    const sliderMin = Math.log2(CONTEXT_SLIDER_MIN);
+    const sliderMax = Math.log2(maxContextWindow);
+    const sliderRange = Math.max(sliderMax - sliderMin, 0.0001);
+    const sliderProgress = ((sliderValue - sliderMin) / sliderRange) * 100;
+
+    return (
+      <div className="form-section context-size-section" key={key}>
+        <div className="context-size-label-row">
+          <label className="form-label" title={def.description}>{def.label.toLowerCase()}</label>
+        </div>
+        <div className="context-size-controls">
+          <input
+            type="range"
+            min={sliderMin}
+            max={sliderMax}
+            step={0.001}
+            value={sliderValue}
+            list="context-size-marks"
+            className="context-size-slider"
+            style={{ '--context-slider-progress': `${sliderProgress}%` } as React.CSSProperties}
+            aria-label="Context size"
+            onChange={(e) => {
+              clearNumericDraft(key);
+              handleNumericChange(key, sliderValueToContextSize(parseFloat(e.target.value), maxContextWindow));
+            }}
+          />
+          <datalist id="context-size-marks">
+            {marks.map(mark => (
+              <option key={mark} value={contextSizeToSliderValue(mark, maxContextWindow)} />
+            ))}
+          </datalist>
+          <input
+            type="text"
+            value={displayValue}
+            onChange={(e) => {
+              setNumericDrafts(prev => ({ ...prev, [key]: e.target.value }));
+            }}
+            onBlur={() => {
+              const draftValue = numericDrafts[key];
+              if (draftValue !== undefined) {
+                commitContextSizeDraft(key, draftValue, maxContextWindow);
+              }
+              clearNumericDraft(key);
+            }}
+            className="form-input context-size-input"
+            placeholder="auto"
+            inputMode="numeric"
+          />
+        </div>
+        <div className="context-size-ticks" aria-hidden="true">
+          {marks.map((mark) => {
+            const left = ((contextSizeToSliderValue(mark, maxContextWindow) - sliderMin) / sliderRange) * 100;
+            const thumbOffset = (CONTEXT_SLIDER_THUMB_SIZE / 2) - (left / 100) * CONTEXT_SLIDER_THUMB_SIZE;
+            return (
+              <span
+                key={mark}
+                className="context-size-tick"
+                style={{ left: `calc(${left}% + ${thumbOffset}px)` }}
+              />
+            );
+          })}
+        </div>
+        <div className="context-size-scale" aria-hidden="true">
+          <span>{formatContextSize(CONTEXT_SLIDER_MIN)}</span>
+          <span>{formatContextSize(maxContextWindow)}</span>
+        </div>
+      </div>
+    );
+  };
+
   // Render a numeric input field
   const renderNumericField = (key: string) => {
     const def = getOptionDefinition(key);
     if (!def || def.type !== 'numeric') return null;
+
+    if (key === 'ctxSize' && modelInfo?.max_context_window) {
+      return renderContextSizeField(key);
+    }
 
     const value = getOptionValue<number>(key);
     if (value === undefined) return null;
