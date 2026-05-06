@@ -44,6 +44,46 @@ from utils.test_models import (
 )
 
 
+def pull_and_wait(base_url, pull_body, timeout=TIMEOUT_MODEL_OPERATION):
+    """POST /pull and block until the download job completes. Returns True on success."""
+    response = requests.post(
+        f"{base_url}/pull",
+        json=pull_body,
+        timeout=TIMEOUT_DEFAULT,
+    )
+    if response.status_code not in (200, 202):
+        return False
+
+    data = response.json()
+    # Legacy sync path (local_import) still returns 200 + status=success.
+    if response.status_code == 200:
+        return data.get("status") == "success"
+
+    job_id = data.get("job_id")
+    if not job_id:
+        return False
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        status_resp = requests.get(
+            f"{base_url}/downloads/{job_id}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        if status_resp.status_code != 200:
+            return False
+        job = status_resp.json()
+        status = job.get("status")
+        if status == "complete":
+            return True
+        if status in ("failed", "cancelled"):
+            print(f"[pull_and_wait] Job {job_id} ended with status={status}: {job.get('error')}")
+            return False
+        time.sleep(2)
+
+    print(f"[pull_and_wait] Timed out waiting for job {job_id}")
+    return False
+
+
 class EndpointTests(ServerTestBase):
     """Tests for inference-agnostic endpoints."""
 
@@ -65,16 +105,15 @@ class EndpointTests(ServerTestBase):
             return
 
         print(f"\n[SETUP] Ensuring {ENDPOINT_TEST_MODEL} is pulled...")
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
+        ok = pull_and_wait(
+            f"http://localhost:{PORT}/api/v1",
+            {"model_name": ENDPOINT_TEST_MODEL},
         )
-        if response.status_code == 200:
+        if ok:
             print(f"[SETUP] {ENDPOINT_TEST_MODEL} is ready")
             cls._model_pulled = True
         else:
-            print(f"[SETUP] Warning: pull returned {response.status_code}")
+            print(f"[SETUP] Warning: pull failed for {ENDPOINT_TEST_MODEL}")
 
     def setUp(self):
         """Set up each test."""
@@ -100,6 +139,7 @@ class EndpointTests(ServerTestBase):
             "images/generations",
             "install",
             "uninstall",
+            "downloads",
         ]
 
         session = requests.Session()
@@ -231,8 +271,8 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] NotFoundError raised for non-existent model")
 
-    def test_007_pull_model_non_streaming(self):
-        """Test pulling/downloading a model (non-streaming mode)."""
+    def test_007_pull_model(self):
+        """Test pulling/downloading a model via the async download queue."""
         # First delete model if it exists to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
@@ -252,17 +292,30 @@ class EndpointTests(ServerTestBase):
             ENDPOINT_TEST_MODEL, model_ids, "Model should be deleted before pull test"
         )
 
-        # Now pull the model
+        # POST /pull → 202 Accepted with a job ID
         response = requests.post(
             f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
-            timeout=TIMEOUT_MODEL_OPERATION,
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 202)
 
         data = response.json()
+        self.assertIn("job_id", data)
         self.assertIn("status", data)
-        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["status"], "queued")
+        job_id = data["job_id"]
+
+        # Poll GET /downloads/{job_id} until complete
+        ok = pull_and_wait(self.base_url, {"model_name": ENDPOINT_TEST_MODEL})
+        self.assertTrue(ok, "Download job should complete successfully")
+
+        # Verify job is reported as complete
+        status_resp = requests.get(
+            f"{self.base_url}/downloads/{job_id}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(status_resp.status_code, 200)
+        self.assertEqual(status_resp.json().get("status"), "complete")
 
         # Verify model is now in downloaded list
         models_response = requests.get(
@@ -274,11 +327,11 @@ class EndpointTests(ServerTestBase):
             ENDPOINT_TEST_MODEL, model_ids, "Model should be downloaded after pull"
         )
 
-        print(f"[OK] Pull (non-streaming): model={ENDPOINT_TEST_MODEL}")
+        print(f"[OK] Pull (async): model={ENDPOINT_TEST_MODEL}, job={job_id}")
 
     def test_008_pull_model_streaming(self):
-        """Test pulling a model with streaming progress events."""
-        # First delete model to ensure we're actually testing pull
+        """Test GET /downloads/{id}/stream delivers SSE progress events."""
+        # First delete model to ensure a real download occurs
         delete_response = requests.post(
             f"{self.base_url}/delete",
             json={"model_name": ENDPOINT_TEST_MODEL},
@@ -286,49 +339,102 @@ class EndpointTests(ServerTestBase):
         )
         self.assertIn(delete_response.status_code, [200, 422])
 
-        # Pull with streaming
+        # Enqueue the download
         response = requests.post(
             f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL, "stream": True},
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 202)
+        job_id = response.json()["job_id"]
+
+        # Connect to the SSE stream for this job
+        stream_response = requests.get(
+            f"{self.base_url}/downloads/{job_id}/stream",
             timeout=TIMEOUT_MODEL_OPERATION,
             stream=True,
         )
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(stream_response.status_code, 200)
 
-        # Parse SSE events
+        # Parse SSE events until the terminal event arrives
         events_received = []
         complete_received = False
 
-        for line in response.iter_lines():
+        for line in stream_response.iter_lines():
             if line:
                 line_str = line.decode("utf-8")
                 if line_str.startswith("event:"):
                     event_type = line_str.split(":", 1)[1].strip()
                     events_received.append(event_type)
-                    if event_type == "complete":
+                    if event_type in ("complete", "error", "cancelled"):
                         complete_received = True
+                        break
 
-        # Should have received progress and complete events
         self.assertTrue(
-            complete_received
-            or "progress" in events_received
-            or len(events_received) > 0,
-            f"Expected streaming events, got: {events_received}",
+            complete_received or len(events_received) > 0,
+            f"Expected SSE events from /downloads/{job_id}/stream, got: {events_received}",
         )
 
         # Verify model is now in downloaded list
         models_response = requests.get(
             f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
         )
-        models_data = models_response.json()
-        model_ids = [m["id"] for m in models_data["data"]]
+        model_ids = [m["id"] for m in models_response.json()["data"]]
         self.assertIn(
             ENDPOINT_TEST_MODEL,
             model_ids,
             "Model should be downloaded after streaming pull",
         )
 
-        print(f"[OK] Pull (streaming): received events: {set(events_received)}")
+        print(f"[OK] Pull (SSE stream): job={job_id}, events: {set(events_received)}")
+
+    def test_008a_download_queue_endpoints(self):
+        """Test GET /downloads list and single-job status endpoints."""
+        # Enqueue a pull so there is at least one job to inspect
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 202)
+        job_id = response.json()["job_id"]
+
+        # GET /downloads should return a list containing this job
+        list_resp = requests.get(f"{self.base_url}/downloads", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(list_resp.status_code, 200)
+        list_data = list_resp.json()
+        self.assertIn("jobs", list_data)
+        self.assertIsInstance(list_data["jobs"], list)
+        job_ids_in_list = [j["id"] for j in list_data["jobs"]]
+        self.assertIn(job_id, job_ids_in_list, "Enqueued job should appear in /downloads")
+
+        # GET /downloads/{id} should return the individual job
+        status_resp = requests.get(
+            f"{self.base_url}/downloads/{job_id}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(status_resp.status_code, 200)
+        job = status_resp.json()
+        self.assertEqual(job["id"], job_id)
+        self.assertIn(job["status"], ("queued", "running", "complete", "failed", "cancelled"))
+        self.assertIn("model_name", job)
+        self.assertIn("progress", job)
+
+        # GET /downloads/{unknown} should return 404
+        not_found = requests.get(
+            f"{self.base_url}/downloads/dl_00000000", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(not_found.status_code, 404)
+
+        # Wait for this download to finish before proceeding
+        pull_and_wait(self.base_url, {"model_name": ENDPOINT_TEST_MODEL})
+
+        # After completion the job should report complete
+        final = requests.get(
+            f"{self.base_url}/downloads/{job_id}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(final.json().get("status"), "complete")
+
+        print(f"[OK] Download queue endpoints: job={job_id}")
 
     def test_009_load_model_basic(self):
         """Test loading a model into memory."""
@@ -749,11 +855,7 @@ class EndpointTests(ServerTestBase):
         self.assertNotIn(ENDPOINT_TEST_MODEL, model_ids)
 
         # Re-pull for subsequent tests (stats test needs a model)
-        requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        pull_and_wait(self.base_url, {"model_name": ENDPOINT_TEST_MODEL})
 
         print(f"[OK] Deleted and re-pulled model: {ENDPOINT_TEST_MODEL}")
 
@@ -984,9 +1086,9 @@ class EndpointTests(ServerTestBase):
         )
 
         # Now pull the model
-        response = requests.post(
-            f"{self.base_url}/pull",
-            json={
+        ok = pull_and_wait(
+            self.base_url,
+            {
                 "model_name": USER_MODEL_NAME,
                 "checkpoints": {
                     "main": USER_MODEL_MAIN_CHECKPOINT,
@@ -995,15 +1097,9 @@ class EndpointTests(ServerTestBase):
                 },
                 "recipe": recipe,
                 "recipe_options": {recipe_backend: "cpu"},
-                "stream": False,
             },
-            timeout=TIMEOUT_MODEL_OPERATION,
         )
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertIn("status", data)
-        self.assertEqual(data["status"], "success")
+        self.assertTrue(ok, "Multi-checkpoint pull should complete successfully")
 
         # Verify model is now in downloaded list
         models_response = requests.get(
@@ -1080,9 +1176,9 @@ class EndpointTests(ServerTestBase):
         }
 
         try:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={
+            ok = pull_and_wait(
+                self.base_url,
+                {
                     "model_name": model_name,
                     "checkpoints": {
                         # Use a different main quant than USER_MODEL_NAME so this test's
@@ -1095,11 +1191,9 @@ class EndpointTests(ServerTestBase):
                     "recipe": "sd-cpp",
                     "image_defaults": image_defaults,
                     "recipe_options": recipe_options,
-                    "stream": False,
                 },
-                timeout=TIMEOUT_MODEL_OPERATION,
             )
-            self.assertEqual(response.status_code, 200)
+            self.assertTrue(ok, "Pull should complete successfully")
 
             model_info_response = requests.get(
                 f"{self.base_url}/models/{model_name}",
@@ -1154,18 +1248,16 @@ class EndpointTests(ServerTestBase):
         public_name = canonical_name[5:]
 
         try:
-            response = requests.post(
-                f"{self.base_url}/pull",
-                json={
+            ok = pull_and_wait(
+                self.base_url,
+                {
                     "model_name": canonical_name,
                     "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
                     "recipe": "llamacpp",
                     "labels": ["appear-builtin"],
-                    "stream": False,
                 },
-                timeout=TIMEOUT_MODEL_OPERATION,
             )
-            self.assertEqual(response.status_code, 200)
+            self.assertTrue(ok, "Pull should complete successfully")
 
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true",

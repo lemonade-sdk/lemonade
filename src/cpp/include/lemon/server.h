@@ -17,6 +17,7 @@
 #include "backend_manager.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
+#include "lemon/download_queue.h"
 
 namespace lemon {
 
@@ -77,6 +78,12 @@ private:
     void handle_responses(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
+
+    // Download queue endpoints
+    void handle_downloads_list(const httplib::Request& req, httplib::Response& res);
+    void handle_download_status(const httplib::Request& req, httplib::Response& res);
+    void handle_download_cancel(const httplib::Request& req, httplib::Response& res);
+    void handle_download_stream(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
@@ -152,6 +159,7 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<WebSocketServer> websocket_server_;
+    std::unique_ptr<DownloadQueue> download_queue_;
 
     bool running_;
     std::atomic<bool> rebind_requested_{false};
