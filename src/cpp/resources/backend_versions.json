@@ -17,10 +17,10 @@
     "metal": "v1.8.2"
   },
   "sd-cpp": {
-    "cpu": "master-593-7f65f2a",
-    "rocm-stable": "master-593-7f65f2a",
-    "rocm-preview": "master-593-7f65f2a",
-    "metal": "master-593-7f65f2a"
+    "cpu": "master-596-b6f38cd",
+    "rocm-stable": "master-596-b6f38cd",
+    "rocm-preview": "master-596-b6f38cd",
+    "metal": "master-596-b6f38cd"
   },
   "therock": {
     "version": "7.12.0",
