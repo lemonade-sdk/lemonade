@@ -18,6 +18,7 @@ export interface ModelInfo {
   labels?: string[];
   composite_models?: string[];
   max_prompt_length?: number;
+  max_context_window?: number;
   mmproj?: string;
   source?: string;
   model_name?: string;
@@ -84,6 +85,11 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const maxPromptLength = info['max_prompt_length'];
   if (typeof maxPromptLength === 'number' && Number.isFinite(maxPromptLength)) {
     normalized.max_prompt_length = maxPromptLength;
+  }
+
+  const maxContextWindow = info['max_context_window'];
+  if (typeof maxContextWindow === 'number' && Number.isFinite(maxContextWindow)) {
+    normalized.max_context_window = maxContextWindow;
   }
 
   const mmproj = info['mmproj'];
@@ -154,6 +160,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       if (typeof model.max_prompt_length === 'number' && Number.isFinite(model.max_prompt_length)) {
         modelInfo.max_prompt_length = model.max_prompt_length;
+      }
+
+      if (typeof model.max_context_window === 'number' && Number.isFinite(model.max_context_window)) {
+        modelInfo.max_context_window = model.max_context_window;
       }
 
       if (typeof model.mmproj === 'string' && model.mmproj) {

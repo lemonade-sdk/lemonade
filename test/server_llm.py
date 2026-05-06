@@ -20,6 +20,7 @@ Usage:
 """
 
 import asyncio
+import os
 import time
 import requests
 import numpy as np
@@ -66,6 +67,44 @@ class LLMTests(ServerTestBase):
     def setUpClass(cls):
         """Verify server and apply multi-model config."""
         super().setUpClass()
+
+    @skip_if_unsupported("static_max_context_window")
+    def test_000_model_info_includes_max_context_window(self):
+        """Downloaded GGUF and installed FLM text models expose static context metadata."""
+        model = self.get_test_model("llm")
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.get(
+            f"{self.base_url}/models/{model}",
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if not data.get("downloaded", False):
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={"model_name": model, "stream": False},
+                headers=headers,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            pull_response.raise_for_status()
+
+            response = requests.get(
+                f"{self.base_url}/models/{model}",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        self.assertIn("max_context_window", data)
+        self.assertIsInstance(data["max_context_window"], int)
+        self.assertGreater(data["max_context_window"], 0)
 
     # =========================================================================
     # CHAT COMPLETIONS TESTS

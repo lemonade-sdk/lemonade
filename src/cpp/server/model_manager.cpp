@@ -13,6 +13,8 @@
 #include <fstream>
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
+#include <cstring>
 #include <sstream>
 #include <thread>
 #include <chrono>
@@ -20,6 +22,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <iomanip>
+#include <limits>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -84,6 +87,245 @@ static constexpr const char* APPEAR_BUILTIN_LABEL = "appear-builtin";
 
 static bool has_label(const ModelInfo& info, const std::string& label) {
     return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
+}
+
+template <typename T>
+static bool read_le(std::istream& in, T& value) {
+    in.read(reinterpret_cast<char*>(&value), sizeof(T));
+    return static_cast<bool>(in);
+}
+
+static bool read_gguf_string(std::istream& in, std::string& value) {
+    uint64_t len = 0;
+    if (!read_le(in, len)) return false;
+    if (len > 1024 * 1024) return false;
+    value.assign(static_cast<size_t>(len), '\0');
+    if (len == 0) return true;
+    in.read(&value[0], static_cast<std::streamsize>(len));
+    return static_cast<bool>(in);
+}
+
+static bool skip_bytes(std::istream& in, uint64_t bytes) {
+    if (bytes > static_cast<uint64_t>(std::numeric_limits<std::streamoff>::max())) return false;
+    in.seekg(static_cast<std::streamoff>(bytes), std::ios::cur);
+    return static_cast<bool>(in);
+}
+
+static uint64_t gguf_scalar_size(uint32_t type) {
+    switch (type) {
+        case 0:  // UINT8
+        case 1:  // INT8
+        case 7:  // BOOL
+            return 1;
+        case 2:  // UINT16
+        case 3:  // INT16
+            return 2;
+        case 4:  // UINT32
+        case 5:  // INT32
+        case 6:  // FLOAT32
+            return 4;
+        case 10: // UINT64
+        case 11: // INT64
+        case 12: // FLOAT64
+            return 8;
+        default:
+            return 0;
+    }
+}
+
+static bool skip_gguf_value(std::istream& in, uint32_t type);
+
+static bool read_gguf_integer_value(std::istream& in, uint32_t type, int64_t& value) {
+    switch (type) {
+        case 0: { uint8_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        case 1: { int8_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        case 2: { uint16_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        case 3: { int16_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        case 4: { uint32_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        case 5: { int32_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        case 10: {
+            uint64_t v = 0;
+            if (!read_le(in, v)) return false;
+            if (v > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) return false;
+            value = static_cast<int64_t>(v);
+            return true;
+        }
+        case 11: { int64_t v = 0; if (!read_le(in, v)) return false; value = v; return true; }
+        default:
+            return skip_gguf_value(in, type) && false;
+    }
+}
+
+static bool skip_gguf_value(std::istream& in, uint32_t type) {
+    if (type == 8) {  // STRING
+        std::string ignored;
+        return read_gguf_string(in, ignored);
+    }
+
+    if (type == 9) {  // ARRAY
+        uint32_t elem_type = 0;
+        uint64_t count = 0;
+        if (!read_le(in, elem_type) || !read_le(in, count)) return false;
+
+        if (elem_type == 8) {
+            for (uint64_t i = 0; i < count; ++i) {
+                std::string ignored;
+                if (!read_gguf_string(in, ignored)) return false;
+            }
+            return true;
+        }
+
+        if (elem_type == 9) return false;
+        uint64_t elem_size = gguf_scalar_size(elem_type);
+        if (elem_size == 0) return false;
+        if (count > std::numeric_limits<uint64_t>::max() / elem_size) return false;
+        return skip_bytes(in, count * elem_size);
+    }
+
+    uint64_t size = gguf_scalar_size(type);
+    return size > 0 && skip_bytes(in, size);
+}
+
+static int64_t read_gguf_context_length(const std::string& path) {
+    std::ifstream in(path_from_utf8(path), std::ios::binary);
+    if (!in) return 0;
+
+    char magic[4] = {};
+    in.read(magic, sizeof(magic));
+    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return 0;
+
+    uint32_t version = 0;
+    uint64_t tensor_count = 0;
+    uint64_t kv_count = 0;
+    if (!read_le(in, version) || !read_le(in, tensor_count) || !read_le(in, kv_count)) return 0;
+    (void)version;
+    (void)tensor_count;
+
+    std::string architecture;
+    int64_t pending_context_length = 0;
+
+    for (uint64_t i = 0; i < kv_count; ++i) {
+        std::string key;
+        uint32_t type = 0;
+        if (!read_gguf_string(in, key) || !read_le(in, type)) return 0;
+
+        if (key == "general.architecture" && type == 8) {
+            if (!read_gguf_string(in, architecture)) return 0;
+            if (pending_context_length > 0) return pending_context_length;
+            continue;
+        }
+
+        const bool context_key = !architecture.empty() && key == architecture + ".context_length";
+        const bool possible_context_key = architecture.empty() && key.size() > std::strlen(".context_length") &&
+                                          ends_with_ignore_case(key, ".context_length");
+        if (context_key || possible_context_key) {
+            int64_t value = 0;
+            if (!read_gguf_integer_value(in, type, value)) return 0;
+            if (value <= 0) return 0;
+            if (context_key) return value;
+            pending_context_length = value;
+            continue;
+        }
+
+        if (!skip_gguf_value(in, type)) return 0;
+    }
+
+    return pending_context_length;
+}
+
+static fs::path get_flm_models_dir_from_config_home() {
+#ifdef _WIN32
+    const char* appdata = std::getenv("APPDATA");
+    if (appdata && *appdata) return path_from_utf8(appdata) / "flm" / "models";
+    const char* userprofile = std::getenv("USERPROFILE");
+    if (userprofile && *userprofile) return path_from_utf8(userprofile) / ".config" / "flm" / "models";
+    return fs::path();
+#else
+    const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
+    if (xdg_config_home && *xdg_config_home) return path_from_utf8(xdg_config_home) / "flm" / "models";
+    const char* home = std::getenv("HOME");
+    if (home && *home) return path_from_utf8(home) / ".config" / "flm" / "models";
+    return fs::path();
+#endif
+}
+
+static fs::path find_flm_config_path_from_repo_dir(const std::string& repo_dir) {
+    if (repo_dir.empty()) return fs::path();
+
+    std::vector<fs::path> candidates;
+    const char* flm_home = std::getenv("FLM_HOME");
+    if (flm_home && *flm_home) {
+        candidates.push_back(path_from_utf8(flm_home) / "models" / repo_dir / "config.json");
+        candidates.push_back(path_from_utf8(flm_home) / repo_dir / "config.json");
+    }
+
+    fs::path config_home_models = get_flm_models_dir_from_config_home();
+    if (!config_home_models.empty()) {
+        candidates.push_back(config_home_models / repo_dir / "config.json");
+    }
+
+    for (const auto& path : candidates) {
+        if (safe_exists(path)) return path;
+    }
+    return fs::path();
+}
+
+static std::string repo_dir_from_url(const std::string& url) {
+    std::string clean = url;
+    while (!clean.empty() && clean.back() == '/') clean.pop_back();
+    size_t query_pos = clean.find_first_of("?#");
+    if (query_pos != std::string::npos) clean = clean.substr(0, query_pos);
+
+    for (const std::string marker : {"/tree/", "/resolve/"}) {
+        size_t marker_pos = clean.find(marker);
+        if (marker_pos != std::string::npos) {
+            clean = clean.substr(0, marker_pos);
+            break;
+        }
+    }
+
+    size_t slash = clean.find_last_of('/');
+    return slash == std::string::npos ? clean : clean.substr(slash + 1);
+}
+
+static int64_t read_flm_max_context_window(const ModelInfo& info) {
+    if (info.type != ModelType::LLM) return 0;
+
+    std::string config_path = info.resolved_path("config");
+    if (config_path.empty()) return 0;
+
+    try {
+        json config = JsonUtils::load_from_file(config_path);
+        if (config.contains("max_position_embeddings") && config["max_position_embeddings"].is_number_integer()) {
+            int64_t value = config["max_position_embeddings"].get<int64_t>();
+            return value > 0 ? value : 0;
+        }
+        if (config.contains("text_config") && config["text_config"].is_object()) {
+            const auto& text_config = config["text_config"];
+            if (text_config.contains("max_position_embeddings") && text_config["max_position_embeddings"].is_number_integer()) {
+                int64_t value = text_config["max_position_embeddings"].get<int64_t>();
+                return value > 0 ? value : 0;
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "ModelManager") << "Could not read FLM config metadata for "
+                                   << info.model_name << ": " << e.what() << std::endl;
+    }
+    return 0;
+}
+
+static void populate_static_max_context_window(ModelInfo& info) {
+    info.max_context_window = 0;
+    if (!info.downloaded) return;
+
+    if (info.recipe == "llamacpp") {
+        std::string gguf_path = info.resolved_path();
+        if (!gguf_path.empty() && ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
+            info.max_context_window = read_gguf_context_length(gguf_path);
+        }
+    } else if (info.recipe == "flm") {
+        info.max_context_window = read_flm_max_context_window(info);
+    }
 }
 
 static bool is_user_model_name(const std::string& model_name) {
@@ -1175,6 +1417,7 @@ void ModelManager::build_cache() {
     }
 
     for (auto& [name, info] : all_models) {
+        populate_static_max_context_window(info);
         models_cache_[name] = info;
     }
 
@@ -1287,6 +1530,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         }
     }
 
+    populate_static_max_context_window(info);
     models_cache_[model_name] = info;
     rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
@@ -1322,10 +1566,18 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // The path changes now that files exist on disk
         if (downloaded) {
             resolve_all_model_paths(it->second);
+            if (it->second.recipe == "flm") {
+                cache_valid_ = false;
+                LOG(INFO, "ModelManager") << "Invalidated model cache after FLM download for '"
+                          << model_name << "'" << std::endl;
+                return;
+            }
+            populate_static_max_context_window(it->second);
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded
                       << ", resolved_path=" << it->second.resolved_path() << std::endl;
         } else {
+            it->second.max_context_window = 0;
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded << std::endl;
         }
@@ -1834,6 +2086,13 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
                     info.checkpoints["main"] = checkpoint;
                     info.recipe = "flm";
                     info.suggested = true; // All official FLM models are suggested
+
+                    if (JsonUtils::get_or_default<bool>(m, "installed", false) && m.contains("url") && m["url"].is_string()) {
+                        fs::path config_path = find_flm_config_path_from_repo_dir(repo_dir_from_url(m["url"].get<std::string>()));
+                        if (!config_path.empty()) {
+                            info.resolved_paths["config"] = path_to_utf8(config_path);
+                        }
+                    }
 
                     // Size in GB (footprint field contains disk size in GB)
                     if (m.contains("footprint") && m["footprint"].is_number()) {
