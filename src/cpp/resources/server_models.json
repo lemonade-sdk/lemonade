@@ -1469,44 +1469,40 @@
         ],
         "size": 0.017
     },
-    "Qwen3.5-0.8B-vllm": {
+    "Qwen3.5-0.8B-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning",
-            "experimental"
+            "reasoning"
         ],
         "size": 1.6
     },
-    "Qwen3.5-2B-vllm": {
+    "Qwen3.5-2B-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-2B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning",
-            "experimental"
+            "reasoning"
         ],
         "size": 4.0
     },
-    "Qwen3.5-4B-vllm": {
+    "Qwen3.5-4B-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-4B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
             "reasoning",
-            "hot",
-            "experimental"
+            "hot"
         ],
         "size": 8.2
     },
-    "Qwen3.5-9B-vllm": {
+    "Qwen3.5-9B-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-9B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning",
-            "experimental"
+            "reasoning"
         ],
         "size": 18.6
     }
