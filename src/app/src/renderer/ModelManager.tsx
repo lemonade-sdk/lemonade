@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
+import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -96,6 +96,54 @@ const MODEL_FAMILIES: ModelFamily[] = [
 type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo }
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
+
+const MODEL_LABEL_DISPLAY_ORDER = [
+  'reasoning',
+  'coding',
+  'vision',
+  'hot',
+  'embeddings',
+  'reranking',
+  'tool-calling',
+  'custom',
+  'experience',
+];
+
+const sortModelLabelsForDisplay = (labels: string[]): string[] => {
+  const order = new Map(MODEL_LABEL_DISPLAY_ORDER.map((label, index) => [label, index]));
+  return [...labels].sort((a, b) => {
+    const aOrder = order.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = order.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return aOrder - bOrder;
+  });
+};
+
+const ModalityIcon: React.FC<{ label: string; title: string }> = ({ label, title }) => {
+  const size = 11;
+  const strokeWidth = 2.2;
+  const icon = (() => {
+    switch (label) {
+      case 'reasoning': return <Brain size={size} strokeWidth={strokeWidth} />;
+      case 'coding': return <SquareCode size={size} strokeWidth={strokeWidth} />;
+      case 'vision': return <Eye size={size} strokeWidth={strokeWidth} />;
+      case 'hot': return <Flame size={size} strokeWidth={strokeWidth} />;
+      case 'embeddings': return <Layers size={size} strokeWidth={strokeWidth} />;
+      case 'reranking': return <ListOrdered size={size} strokeWidth={strokeWidth} />;
+      case 'tool-calling': return <Wrench size={size} strokeWidth={strokeWidth} />;
+      case 'custom': return <User size={size} strokeWidth={strokeWidth} />;
+      case 'experience': return <Sparkles size={size} strokeWidth={strokeWidth} />;
+      default: return null;
+    }
+  })();
+
+  if (!icon) return null;
+
+  return (
+    <span className={`model-label-icon label-${label}`} title={title}>
+      {icon}
+    </span>
+  );
+};
 
 // Types for Hugging Face API responses
 interface HFModelInfo {
@@ -1256,8 +1304,8 @@ const [searchQuery, setSearchQuery] = useState('');
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (
             <span className="model-labels">
-              {modelInfo.labels.map(label => (
-                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              {sortModelLabelsForDisplay(modelInfo.labels).map(label => (
+                <ModalityIcon key={label} label={label} title={getCategoryLabel(label)} />
               ))}
             </span>
           )}
@@ -1294,8 +1342,8 @@ const [searchQuery, setSearchQuery] = useState('');
           <span className="model-name family-model-name">{family.displayName}</span>
           {sharedLabels && sharedLabels.length > 0 && (
             <span className="model-labels">
-              {sharedLabels.map(label => (
-                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              {sortModelLabelsForDisplay(sharedLabels).map(label => (
+                <ModalityIcon key={label} label={label} title={getCategoryLabel(label)} />
               ))}
             </span>
           )}
