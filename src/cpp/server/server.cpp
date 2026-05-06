@@ -132,10 +132,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
-    model_manager_ = std::make_unique<ModelManager>();
-
-    // Set extra models directory for GGUF discovery
-    model_manager_->set_extra_models_dir(config_->extra_models_dir());
+    model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -164,6 +161,26 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         router_.get(),
         config_->host(),
         config_->websocket_port());
+
+    start_model_cache_warmup();
+}
+
+void Server::start_model_cache_warmup() {
+    if (model_cache_warmup_thread_.joinable()) {
+        return;
+    }
+
+    model_cache_warmup_thread_ = std::thread([this]() {
+        try {
+            LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
+            model_manager_->get_supported_models();
+            LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
+        }
+    });
 }
 
 void Server::setup_http_servers() {
@@ -1046,6 +1063,10 @@ void Server::stop() {
             }
         }
         LOG(INFO, "Server") << "Cleanup complete" << std::endl;
+    }
+
+    if (model_cache_warmup_thread_.joinable()) {
+        model_cache_warmup_thread_.join();
     }
 }
 
@@ -3891,6 +3912,9 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             model_manager_->invalidate_models_cache();
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
+            // Recipe defaults (e.g. default_backend) are derived from these settings, so
+            // drop the memoized recipes so the next /system-info recomputes them.
+            SystemInfoCache::invalidate_recipes();
             // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.
             for (auto& [sub_key, sub_value] : value.items()) {
                 if (sub_key.size() >= 4
