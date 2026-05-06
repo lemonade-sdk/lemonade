@@ -3908,6 +3908,9 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             model_manager_->invalidate_models_cache();
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
+            // Recipe defaults (e.g. default_backend) are derived from these settings, so
+            // drop the memoized recipes so the next /system-info recomputes them.
+            SystemInfoCache::invalidate_recipes();
             // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.
             for (auto& [sub_key, sub_value] : value.items()) {
                 if (sub_key.size() >= 4
