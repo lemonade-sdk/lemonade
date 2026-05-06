@@ -235,10 +235,8 @@ static int64_t read_gguf_context_length(const std::string& path) {
 
 static fs::path get_flm_models_dir_from_config_home() {
 #ifdef _WIN32
-    const char* appdata = std::getenv("APPDATA");
-    if (appdata && *appdata) return path_from_utf8(appdata) / "flm" / "models";
     const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile && *userprofile) return path_from_utf8(userprofile) / ".config" / "flm" / "models";
+    if (userprofile && *userprofile) return path_from_utf8(userprofile) / "flm" / "models";
     return fs::path();
 #else
     const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
@@ -253,10 +251,9 @@ static fs::path find_flm_config_path_from_repo_dir(const std::string& repo_dir) 
     if (repo_dir.empty()) return fs::path();
 
     std::vector<fs::path> candidates;
-    const char* flm_home = std::getenv("FLM_HOME");
-    if (flm_home && *flm_home) {
-        candidates.push_back(path_from_utf8(flm_home) / "models" / repo_dir / "config.json");
-        candidates.push_back(path_from_utf8(flm_home) / repo_dir / "config.json");
+    const char* flm_model_path = std::getenv("FLM_MODEL_PATH");
+    if (flm_model_path && *flm_model_path) {
+        candidates.push_back(path_from_utf8(flm_model_path) / "models" / repo_dir / "config.json");
     }
 
     fs::path config_home_models = get_flm_models_dir_from_config_home();
