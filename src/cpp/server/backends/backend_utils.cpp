@@ -329,6 +329,13 @@ namespace lemon::backends {
             utils::ProgressCallback http_progress_cb;
             if (progress_cb) {
                 http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
+                    // Suppress events from non-existent assets. For backends
+                    // that use split archives (e.g. vLLM), the single-file
+                    // attempt 404s and curl writes the small error body before
+                    // the outer code falls through to split-part download.
+                    // Without this filter, the GUI flashes "9 bytes 100%"
+                    // while the real download is starting.
+                    if (total < 1024 * 1024) return true;
                     DownloadProgress p;
                     p.file = filename;
                     p.file_index = 1;
@@ -369,8 +376,19 @@ namespace lemon::backends {
                                           expected_version + "/";
                     LOG(DEBUG, spec.log_name()) << "Single file download failed, trying split parts..." << std::endl;
 
+                    // The failed single-file download may have already reported a
+                    // few bytes to progress_cb (the 404 response body). Reset the
+                    // GUI's display before starting the per-part downloads.
+                    if (progress_cb) {
+                        DownloadProgress reset_p;
+                        reset_p.file = filename;
+                        reset_p.complete = false;
+                        progress_cb(reset_p);
+                    }
+
                     // Open combined output file
                     std::ofstream combined(zip_path, std::ios::binary);
+                    size_t cumulative_downloaded = 0;
                     int part_num = 0;
                     while (true) {
                         char part_suffix[16];
@@ -381,6 +399,42 @@ namespace lemon::backends {
 
                         LOG(DEBUG, spec.log_name()) << "Trying part: " << part_filename << std::endl;
 
+                        // Per-part progress wrapper. Reports cumulative bytes
+                        // across all parts so far so the GUI shows continuous
+                        // progress instead of resetting to 0 between parts.
+                        // total_files grows as parts are discovered (we don't
+                        // know the count upfront).
+                        utils::ProgressCallback part_http_cb;
+                        if (progress_cb) {
+                            int part_index = part_num + 1;
+                            size_t cumulative_snapshot = cumulative_downloaded;
+                            part_http_cb = [&progress_cb, part_filename, part_index, cumulative_snapshot]
+                                          (size_t downloaded, size_t total) -> bool {
+                                // Skip events from non-existent parts. Probing
+                                // past the last real part returns a small 404
+                                // body (curl reports total = bytes of error JSON,
+                                // typically < 100 bytes). Real release parts are
+                                // hundreds of MB or larger; anything < 1 MB here
+                                // is almost certainly an error response that the
+                                // outer loop is about to detect and break on.
+                                if (total < 1024 * 1024) return true;
+                                DownloadProgress p;
+                                p.file = part_filename;
+                                p.file_index = part_index;
+                                p.total_files = part_index;  // lower bound — updated when we discover more
+                                p.bytes_downloaded = cumulative_snapshot + downloaded;
+                                p.bytes_total = cumulative_snapshot + total;
+                                p.total_download_size = p.bytes_total;
+                                p.percent = p.bytes_total > 0
+                                    ? static_cast<int>((p.bytes_downloaded * 100) / p.bytes_total)
+                                    : 0;
+                                p.complete = false;
+                                return progress_cb(p);
+                            };
+                        } else {
+                            part_http_cb = utils::create_throttled_progress_callback();
+                        }
+
                         // quiet_on_4xx because the loop probes one past the last
                         // real part to detect end-of-list; the trailing 404 is
                         // expected control flow, not an error.
@@ -388,7 +442,7 @@ namespace lemon::backends {
                         part_opts.quiet_on_4xx = true;
                         auto part_result = utils::HttpClient::download_file(
                             part_url, part_path,
-                            utils::create_throttled_progress_callback(),
+                            part_http_cb,
                             {},
                             part_opts
                         );
@@ -402,6 +456,11 @@ namespace lemon::backends {
                         std::ifstream part_in(part_path, std::ios::binary);
                         combined << part_in.rdbuf();
                         part_in.close();
+                        std::error_code part_size_ec;
+                        std::uintmax_t part_size = fs::file_size(part_path, part_size_ec);
+                        if (!part_size_ec) {
+                            cumulative_downloaded += part_size;
+                        }
                         fs::remove(part_path);
                         part_num++;
                     }
@@ -474,14 +533,19 @@ namespace lemon::backends {
             // Delete ZIP file
             fs::remove(zip_path);
 
-            // Send completion event now that installation is fully done
+            // Send completion event now that installation is fully done.
+            // download_result is from the single-file attempt and reports
+            // misleading ~9 bytes from the 404 response body when the archive
+            // was actually fetched via the multi-part fallback. Use the
+            // verified on-disk archive size (captured into file_size above,
+            // before zip_path was deleted) so the GUI shows the real total.
             if (progress_cb) {
                 DownloadProgress p;
                 p.file = filename;
                 p.file_index = 1;
                 p.total_files = 1;
-                p.bytes_downloaded = download_result.bytes_downloaded;
-                p.bytes_total = download_result.total_bytes;
+                p.bytes_downloaded = static_cast<size_t>(file_size);
+                p.bytes_total = static_cast<size_t>(file_size);
                 p.percent = 100;
                 p.complete = true;
                 progress_cb(p);
