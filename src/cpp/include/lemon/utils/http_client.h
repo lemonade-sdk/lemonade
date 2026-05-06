@@ -53,6 +53,10 @@ struct DownloadOptions {
     int low_speed_limit = 1000;       // Minimum bytes/sec before timeout (1KB/s)
     int low_speed_time = 60;          // Seconds below low_speed_limit before timeout
     int connect_timeout = 30;         // Connection timeout in seconds
+    bool quiet_on_4xx = false;        // When true, lower 4xx HTTP errors from
+                                      // [Error] to [Debug]. Set by callers that
+                                      // are probing URLs they expect may 404
+                                      // (e.g. split-archive part discovery).
 };
 
 class HttpClient {
