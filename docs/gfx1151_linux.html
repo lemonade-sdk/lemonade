@@ -30,6 +30,11 @@
           incorrect VGPR counts, causing crashes for various workloads.
         </p>
         <p>
+          This requirement applies to any ROCm backend on gfx1151 — <code>llamacpp:rocm</code>,
+          <code>sd-cpp:rocm-stable</code> / <code>sd-cpp:rocm-preview</code>, and
+          <code>vllm:rocm</code> all share the same kernel prerequisite.
+        </p>
+        <p>
           <strong>Technical details:</strong>
         </p>
         <ul>

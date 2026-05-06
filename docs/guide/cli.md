@@ -164,7 +164,7 @@ lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIP
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
-| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `whispercpp`, `sd-cpp`, `kokoro`) | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 
 **Happy path**
