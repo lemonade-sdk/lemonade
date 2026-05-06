@@ -150,6 +150,23 @@ Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm
 
 > Note: the `latest` setting is experimental.
 
+> **Important — `llamacpp.rocm_bin` version tags are channel-specific.** Each ROCm channel downloads from a different GitHub repository, so release tags are not interchangeable across channels:
+>
+> | Channel (`rocm_channel`) | Repository | Example tags |
+> |---|---|---|
+> | `preview` *(default)* | `lemonade-sdk/llama.cpp` | Lemonade-specific build tags |
+> | `stable` | `ggml-org/llama.cpp` | Upstream tags, e.g. `b4888` |
+> | `nightly` | `lemonade-sdk/llamacpp-rocm` | Nightly tags, e.g. `b1260` |
+>
+> If you set `llamacpp.rocm_bin` to a tag that doesn't exist in the current channel's repository, the download will fail with HTTP 404.
+> **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.**
+>
+> ```bash
+> # Correct: set channel first, then pin the tag
+> lemonade config set rocm_channel=nightly
+> lemonade config set llamacpp.rocm_bin=b1260
+> ```
+
 Examples:
 
 ```bash
