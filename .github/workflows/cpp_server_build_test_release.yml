@@ -1256,6 +1256,12 @@ jobs:
 
           echo "${{ matrix.test_type }} tests PASSED!"
 
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-ubuntu-latest-${{ matrix.test_type }}
+
   test-cli-endpoints:
     name: Test ${{ matrix.test_type }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
