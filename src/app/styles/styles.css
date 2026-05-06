@@ -1884,7 +1884,8 @@ footer {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 10px 4px 13px;
+    padding: 4px 12px;
+    border-left: 2px solid transparent;
     cursor: pointer;
     user-select: none;
 }
@@ -1900,6 +1901,8 @@ footer {
     align-items: center;
     justify-content: center;
     width: 12px;
+    margin-left: -3.5px;
+    margin-right: -3.5px;
     line-height: 1;
     color: var(--icon-hover);
     flex-shrink: 0;
@@ -2094,60 +2097,60 @@ footer {
 }
 
 .model-labels {
-    display: flex;
-    gap: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     flex-shrink: 0;
     margin-left: auto;
     padding-right: 2px;
 }
 
-.model-label {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
+.model-label-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 16px;
     cursor: help;
+    color: var(--text-secondary);
+    opacity: 0.86;
+    flex-shrink: 0;
 }
 
-.model-label.label-reasoning {
-    background: var(--label-reasoning);
+.model-label-icon.label-reasoning {
+    color: var(--label-reasoning);
 }
 
-.model-label.label-coding {
-    background: var(--label-coding);
+.model-label-icon.label-coding {
+    color: var(--label-coding);
 }
 
-.model-label.label-vision {
-    background: var(--label-vision);
+.model-label-icon.label-vision {
+    color: var(--label-vision);
 }
 
-.model-label.label-hot {
-    background: var(--label-hot);
+.model-label-icon.label-hot {
+    color: var(--label-hot);
 }
 
-.model-label.label-embeddings {
-    background: var(--label-embeddings);
+.model-label-icon.label-embeddings {
+    color: var(--label-embeddings);
 }
 
-.model-label.label-reranking {
-    background: var(--label-reranking);
+.model-label-icon.label-reranking {
+    color: var(--label-reranking);
 }
 
-.model-label.label-tool-calling {
-    background: var(--label-tool-calling);
+.model-label-icon.label-tool-calling {
+    color: var(--label-tool-calling);
 }
 
-.model-label.label-custom {
-    background: var(--label-custom);
+.model-label-icon.label-custom {
+    color: var(--label-custom);
 }
 
-.model-label.label-experience {
-    width: 7px;
-    height: 7px;
-    border-radius: 1px;
-    transform: rotate(45deg);
-    background: #e2b757;
-    box-shadow: 0 0 2px rgba(226, 183, 87, 0.45);
+.model-label-icon.label-experience {
+    color: #e2b757;
 }
 
 .model-manager-footer {
