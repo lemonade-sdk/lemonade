@@ -34,6 +34,7 @@ import uuid
 from utils.server_base import wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    ENDPOINT_TEST_MODEL_CTX_SIZE,
     MULTI_REPO_MODEL_A_CACHE_DIR,
     MULTI_REPO_MODEL_A_MAIN,
     MULTI_REPO_MODEL_A_NAME,
@@ -1286,8 +1287,12 @@ sys.exit(0)
             self.assertEqual(lemonade["options"]["apiKey"], "lemonade")
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
-                lemonade["models"][ENDPOINT_TEST_MODEL]["contextWindow"],
-                40960,
+                lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["context"],
+                ENDPOINT_TEST_MODEL_CTX_SIZE,
+            )
+            self.assertEqual(
+                lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["output"],
+                int(ENDPOINT_TEST_MODEL_CTX_SIZE / 3),
             )
 
     def test_119_launch_opencode_refreshes_model_entries(self):

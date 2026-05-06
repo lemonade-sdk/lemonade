@@ -424,7 +424,12 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
             }
 
             const std::string model_id = model["id"].get<std::string>();
-            models.push_back({model_id, model_id + " (local)", context_window});
+            int model_context_window = context_window;
+            if (model.contains("recipe_options") && model["recipe_options"].is_object()
+			    && model["recipe_options"].contains("ctx_size")) {
+                model_context_window = model["recipe_options"]["ctx_size"].get<int>();
+            }
+            models.push_back({model_id, model_id + " (local)", model_context_window});
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.

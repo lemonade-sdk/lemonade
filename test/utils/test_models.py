@@ -174,6 +174,7 @@ SAMPLE_TOOL = {
 
 # Models for endpoint testing (inference-agnostic, just need any valid small model)
 ENDPOINT_TEST_MODEL = "Tiny-Test-Model-GGUF"
+ENDPOINT_TEST_MODEL_CTX_SIZE = 2048
 
 # Model for tool-calling tests (must have native tool-calling support in its chat template)
 TOOL_CALLING_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
