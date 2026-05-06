@@ -560,33 +560,92 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                          resolved_backend == "rocm-preview" &&
                          will_install_therock(get_current_os(), backend_versions_);
 
-    // Wrap the progress callback to adjust file indices if runtime download follows
+    const bool runtime_install_may_follow = needs_rocm_stable_runtime || needs_therock;
+
+    // Roll back only brand-new backend dirs if a required runtime fails.
+    const std::string backend_install_dir =
+        backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
+    const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
+
+    // Track whether callers already received a terminal completion event.
+    bool completion_reported = false;
+    bool have_last_progress = false;
+    DownloadProgress last_progress;
+
+    // Report backend progress as file 1/2 when a runtime may follow.
     DownloadProgressCallback wrapped_progress_cb;
-    if (progress_cb && (needs_rocm_stable_runtime || needs_therock)) {
-        wrapped_progress_cb = [progress_cb](const DownloadProgress& p) -> bool {
+    if (progress_cb) {
+        wrapped_progress_cb = [progress_cb,
+                               runtime_install_may_follow,
+                               &completion_reported,
+                               &have_last_progress,
+                               &last_progress](const DownloadProgress& p) -> bool {
             DownloadProgress adjusted = p;
-            // Adjust to indicate this is file 1 of 2
-            adjusted.file_index = 1;
-            adjusted.total_files = 2;
-            // Suppress the completion event - we'll send it after the runtime download
-            if (p.complete) {
-                adjusted.complete = false;
+            if (runtime_install_may_follow) {
+                // Final completion belongs to the runtime path.
+                adjusted.file_index = 1;
+                adjusted.total_files = 2;
+                if (p.complete) {
+                    adjusted.complete = false;
+                }
             }
+            if (adjusted.complete) {
+                completion_reported = true;
+            }
+            last_progress = adjusted;
+            have_last_progress = true;
             return progress_cb(adjusted);
         };
-    } else {
-        wrapped_progress_cb = progress_cb;
     }
 
-    backends::BackendUtils::install_from_github(
-        *spec, params.version, params.repo, params.filename, resolved_backend, wrapped_progress_cb);
+    try {
+        backends::BackendUtils::install_from_github(
+            *spec, params.version, params.repo, params.filename, resolved_backend, wrapped_progress_cb);
 
-    if (needs_rocm_stable_runtime) {
-        install_rocm_stable_runtime_if_needed(get_current_os(), *spec, backend_versions_, progress_cb);
-    }
+        DownloadProgressCallback runtime_progress_cb;
+        if (progress_cb) {
+            runtime_progress_cb = [progress_cb,
+                                   &completion_reported,
+                                   &have_last_progress,
+                                   &last_progress](const DownloadProgress& p) -> bool {
+                if (p.complete) {
+                    completion_reported = true;
+                }
+                last_progress = p;
+                have_last_progress = true;
+                return progress_cb(p);
+            };
+        }
 
-    if (needs_therock) {
-        install_therock_if_needed(get_current_os(), backend_versions_, progress_cb);
+        if (needs_rocm_stable_runtime) {
+            install_rocm_stable_runtime_if_needed(get_current_os(), *spec, backend_versions_, runtime_progress_cb);
+        }
+
+        if (needs_therock) {
+            install_therock_if_needed(get_current_os(), backend_versions_, runtime_progress_cb);
+        }
+
+        if (progress_cb && runtime_install_may_follow && !completion_reported) {
+            DownloadProgress complete_progress;
+            if (have_last_progress) {
+                complete_progress = last_progress;
+            }
+            // Runtime emitted no progress; send a zero-byte final event.
+            complete_progress.file = "runtime";
+            complete_progress.file_index = 2;
+            complete_progress.total_files = 2;
+            complete_progress.bytes_downloaded = 0;
+            complete_progress.bytes_total = 0;
+            complete_progress.percent = 100;
+            complete_progress.complete = true;
+            progress_cb(complete_progress);
+        }
+    } catch (...) {
+        if (!backend_install_dir_existed_before) {
+            std::error_code cleanup_ec;
+            fs::remove_all(backend_install_dir, cleanup_ec);
+        }
+        throw;
     }
 }
 
