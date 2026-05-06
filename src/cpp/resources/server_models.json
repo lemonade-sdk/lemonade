@@ -33,14 +33,18 @@
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.78
     },
     "DeepSeek-R1-Distill-Qwen-7B-CPU": {
         "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-awq-asym-uint4-g128-lmhead-onnx-cpu",
         "recipe": "ryzenai-llm",
         "suggested": true,
-        "labels": ["reasoning"],
+        "labels": [
+            "reasoning"
+        ],
         "size": 5.78
     },
     "AMD-OLMo-1B-SFT-DPO-Hybrid": {
@@ -664,7 +668,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-	        "hot",
+            "hot",
             "tool-calling",
             "vision",
             "llamacpp"
@@ -677,9 +681,9 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
-	        "hot",
+            "hot",
             "tool-calling",
-	        "vision",
+            "vision",
             "llamacpp"
         ],
         "size": 18.3
@@ -838,6 +842,32 @@
             "vision"
         ],
         "size": 6.19
+    },
+    "Qwen2.5-Omni-7B-GGUF": {
+        "checkpoint": "ggml-org/Qwen2.5-Omni-7B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen2.5-Omni-7B-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "hf_load": true,
+        "labels": [
+            "vision",
+            "audio",
+            "transcription"
+        ],
+        "size": 4.68
+    },
+    "Qwen2.5-Omni-3B-GGUF": {
+        "checkpoint": "ggml-org/Qwen2.5-Omni-3B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Qwen2.5-Omni-3B-f16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "hf_load": true,
+        "labels": [
+            "vision",
+            "audio",
+            "transcription"
+        ],
+        "size": 2.10
     },
     "Qwen3-Next-80B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF:Qwen3-Next-80B-A3B-Instruct-UD-Q4_K_XL.gguf",
@@ -1438,5 +1468,46 @@
             "image"
         ],
         "size": 0.017
+    },
+    "Qwen3.5-0.8B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-0.8B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "experimental"
+        ],
+        "size": 1.6
+    },
+    "Qwen3.5-2B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-2B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "experimental"
+        ],
+        "size": 4.0
+    },
+    "Qwen3.5-4B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-4B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "hot",
+            "experimental"
+        ],
+        "size": 8.2
+    },
+    "Qwen3.5-9B-vllm": {
+        "checkpoint": "Qwen/Qwen3.5-9B",
+        "recipe": "vllm",
+        "suggested": true,
+        "labels": [
+            "reasoning",
+            "experimental"
+        ],
+        "size": 18.6
     }
 }

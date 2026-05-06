@@ -37,7 +37,7 @@ static bool is_backend_name(const std::string& key) {
 
 // Backends that have a selectable "backend" key
 static const std::vector<std::string> s_selectable_backends = {
-    "llamacpp", "whispercpp", "sdcpp"
+    "llamacpp", "whispercpp", "sdcpp", "vllm"
 };
 
 static bool has_backend_selection(const std::string& config_section) {

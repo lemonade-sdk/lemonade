@@ -1,120 +1,99 @@
-# This is the configuration file for MkDocs, a static site generator that uses Markdown files to create documentation sites.
-# The configuration file is written in YAML format and contains various settings for the site.
-
-# To install the MkDocs dependencies, run the following command in the terminal:
-# pip install -r docs/assets/mkdocs_requirements.txt
-
-# To build the site, run the following command in the terminal:
-# mkdocs build
-
-# To serve the site locally, run the following command in the terminal:
-# mkdocs serve
-
-# To deploy the site to GitHub Pages, run the following command in the terminal:
-# mkdocs gh-deploy  <-- this should be updated when we have CI setup with what the real instructions are.
+# Configuration for the Lemonade Server documentation site.
+#
+# The site is built with Zensical (the successor to MkDocs Material). Zensical
+# reads mkdocs.yml natively, so the filename and most of the Material schema
+# carry over from the previous MkDocs Material setup. See zensical.org for
+# documentation and upgrades.
+#
+# To install dependencies:
+#   pip install -r docs/assets/docs_requirements.txt
+#
+# To build (and stage to docs/docs/, the lemonade-server.ai layout):
+#   python docs/publish_website_docs.py
+#
+# To serve locally during authoring:
+#   zensical serve
 
 site_name: Lemonade Server Documentation
 site_url: https://lemonade-server.ai/
 site_description: Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.
 
-edit_uri: server/README.md
+edit_uri: README.md
 
 repo_name: lemonade-sdk/lemonade
 repo_url: https://github.com/lemonade-sdk/lemonade
 
 plugins:
-  - monorepo
   - search
 
 theme:
   name: material
-  logo: assets/logo.png  # If we want to use a custom logo instead of an icon
-  icon:
-    repo: fontawesome/brands/github # This is the icon for the repo link in the header
+  custom_dir: docs/overrides
+  # Match the homepage's brand mark: small favicon glyph + "Lemonade" wordmark
+  # (the wordmark is injected via .md-logo::after in zest-theme.css).
+  logo: assets/favicon.ico
   favicon: assets/favicon.ico
   features:
     - navigation.footer
     - navigation.tracking
-    - navigation.expand
     - navigation.top
     - content.code.annotate
     - content.code.copy
+  # Fonts are loaded by docs/overrides/main.html's `fonts` block (Plus Jakarta
+  # Sans + Manrope + Material Symbols), not via theme.font, to avoid double
+  # @import requests and keep parity with the homepage's font setup.
   palette:
-
-    # Light mode settings
-    - scheme: lightmode
-      primary: amber
+    - scheme: zest-light
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-
-    # Dark mode settings
-    - scheme: slate
-      primary: amber
-      accent: amber
+    - scheme: zest-dark
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
-  nav_style: dark
 
-# Add the list of markdown files to be included in the documentation
-# The order of the files in the list will determine the order they appear in the documentation
+# Sidebar / nav structure
 nav:
-  - Downloading and Getting Started: server/README.md
-
-  - FAQ Guide: faq.md
-  - Lemonade CLI Guide: lemonade-cli.md
-  - Application Guides:
-      - AI Toolkit: server/apps/ai-toolkit.md
-      - AnythingLLM: server/apps/anythingLLM.md
-      - CodeGPT: server/apps/codeGPT.md
-      - Continue: server/apps/continue.md
-      - Claude Code: server/apps/claude-code.md
-      - Mindcraft: server/apps/mindcraft.md
-      - OpenHands: server/apps/open-hands.md
-      - Open WebUI: server/apps/open-webui.md
-      - Wut: server/apps/wut.md
-  - Server Configuration: server/configuration.md
-  - llama.cpp Backend: llamacpp.md
-  - OmniRouter (tools for agents): omni-router.md
-  - Understanding local LLM servers: server/concepts.md
-  - Developer Getting Started: dev-getting-started.md
+  - Welcome: index.md
+  - User Guide:
+    - Getting Started: guide/README.md
+    - Install:
+      - Supported Platforms: guide/install/README.md
+      - Ubuntu: guide/install/ubuntu.md
+      - Arch: guide/install/arch.md
+      - Fedora: guide/install/fedora.md
+      - Docker: guide/install/docker.md
+    - Local Server Concepts: guide/concepts.md
+    - CLI: guide/cli.md
+    - Configuration:
+      - Service: guide/configuration/README.md
+      - Custom Models: guide/configuration/custom-models.md
+      - Running Many Models: guide/configuration/multi-model.md
+      - llama.cpp: guide/configuration/llamacpp.md
+    - FAQ: guide/faq.md
+  - Development:
+    - Overview: dev/README.md
+    - Contribute: dev/contribute.md
+    - C++: dev/getting-started.md
+    - Desktop App: dev/app.md
+    - Web UI: dev/web-ui.md
+    - OmniRouter (tools for agents): dev/omni-router.md
+    - Infrastructure: dev/self-hosted-runners.md
+  - API Spec:
+      - Overview: api/README.md
+      - OpenAI Compatible: api/openai.md
+      - Ollama Compatible: api/ollama.md
+      - Anthropic Compatible: api/anthropic.md
+      - llama.cpp Specific: api/llamacpp.md
+      - Lemonade Specific: api/lemonade.md
   - Embeddable Lemonade:
       - Overview: embeddable/README.md
       - Runtime: embeddable/runtime.md
       - Backends: embeddable/backends.md
       - Models: embeddable/models.md
       - Building from Source: embeddable/building.md
-  - API Spec:
-      - Overview: api/README.md
-      - OpenAI-Compatible: api/openai.md
-      - Ollama-Compatible: api/ollama.md
-      - Anthropic-Compatible: api/anthropic.md
-      - llama.cpp-Specific: api/llamacpp.md
-      - Lemonade-Specific: api/lemonade.md
-  - Multi-Model Support: guide/multi-model.md
-  - Integration Guide: server/server_integration.md
-  - Custom Model Configuration: server/custom-models.md
-  - Contribution Guide: contribute.md
 
-not_in_nav: |
-  /index.md
-  /self_hosted_runners.md
-  /eval/finetuned_model_export.md
-  /server/server_spec.md
-
-exclude_docs: |
-  code.md
-  versioning.md
-  eval/README.md
-  eval/humaneval_accuracy.md
-  eval/mmlu_accuracy.md
-  eval/perplexity.md
-  eval/quark.md
-  eval/ort_genai_igpu.md
-  eval/lm-eval.md
-
-# The following adds icons on the bottom of the page
+# Footer social links
 extra:
   homepage: https://lemonade-server.ai
   social:
@@ -125,13 +104,14 @@ extra:
     - icon: simple/discord
       link: https://discord.gg/5xXzkMu8Zk
 
-copyright: Copyright &copy; 2025 AMD. All rights reserved.
+copyright: "© 2026 AMD. Licensed under Apache 2.0."
 
-# The custom CSS for colors and more
+# website-styles.css owns design tokens; zest-theme.css maps them to Zensical.
 extra_css:
-  - assets/extra.css
+  - assets/website-styles.css
+  - assets/zest-theme.css
 
-# The custom JavaScript for the carousel for the videos
+# carousel.js handles YouTube embeds inside docs pages.
 extra_javascript:
   - assets/carousel.js
 

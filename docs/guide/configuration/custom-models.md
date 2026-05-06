@@ -10,9 +10,9 @@ This guide explains how to manually register custom models in Lemonade Server us
 > ```bash
 > lemonade pull org/repo:Q4_K_M
 > ```
-> The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](../api/lemonade.md#get-v1pullvariants) endpoint under the hood.
+> The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](../../api/lemonade.md#get-v1pullvariants) endpoint under the hood.
 >
-> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../lemonade-cli.md#options-for-pull):
+> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../cli.md#options-for-pull):
 > ```bash
 > lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
 > ```
@@ -27,7 +27,7 @@ Custom model configuration involves two files, both located in the Lemonade cach
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-See [configuration.md](./configuration.md) for more information about finding the cache directory.
+See [configuration.md](./README.md) for more information about finding the cache directory.
 
 ## `user_models.json` Reference
 
@@ -135,7 +135,7 @@ This file configures per-model runtime settings. Each key is a **full model name
 }
 ```
 
-> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../api/lemonade.md#post-v1load).
+> **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../../api/lemonade.md#post-v1load).
 
 ## Complete Examples
 
@@ -209,12 +209,11 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 1. Values explicitly passed in the `/api/v1/load` request
 2. Per-model values from `recipe_options.json`
-3. Global configuration values, see [Server Configuration](./configuration.md)
+3. Global configuration values, see [Server Configuration](./README.md)
 
-For full details, see the [load endpoint documentation](../api/lemonade.md#post-v1load).
+For full details, see the [load endpoint documentation](../../api/lemonade.md#post-v1load).
 
 ## See Also
 
-- [CLI pull command](../lemonade-cli.md#options-for-pull) — register and download models from the command line
-- [`/api/v1/pull` endpoint](../api/lemonade.md#post-v1pull) — register and download models via API
-- [Server Integration Guide](./server_integration.md#installing-additional-models) — overview of model management options
+- [CLI pull command](../cli.md#options-for-pull) — register and download models from the command line
+- [`/api/v1/pull` endpoint](../../api/lemonade.md#post-v1pull) — register and download models via API

@@ -120,7 +120,3 @@ This produces both an NSIS installer and a portable executable in `dist/`.
 | Ctrl + 0 | Reset zoom |
 | Escape | Cancel inpainting |
 | F12 | Toggle DevTools |
-
-## License
-
-[MIT](LICENSE)

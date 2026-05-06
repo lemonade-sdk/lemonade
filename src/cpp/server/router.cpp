@@ -5,6 +5,7 @@
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
+#include "lemon/backends/vllm_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
@@ -204,6 +205,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
                                                   log_level == "debug", model_manager_, backend_manager_);
         ryzenai_server->set_model_path(model_path);
         new_server.reset(ryzenai_server);
+    } else if (model_info.recipe == "vllm") {
+        LOG(DEBUG, "Router") << "Creating vLLM backend" << std::endl;
+        new_server = std::make_unique<backends::VLLMServer>(log_level, model_manager_, backend_manager_);
     } else {
     LOG(DEBUG, "Router") << "Creating LlamaCpp backend" << std::endl;
         new_server = std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
@@ -654,6 +658,80 @@ json Router::reranking(const json& request) {
         }
         return reranking_server->reranking(request);
     });
+}
+
+json Router::get_slots() {
+    WrappedServer* server = nullptr;
+    ISlotsServer* slots_server = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        server = get_most_recent_server();
+        if (!server) {
+            return ErrorResponse::from_exception(
+                ModelNotLoadedException("No models loaded")
+            );
+        }
+
+        // Check if server supports slots capability
+        slots_server = dynamic_cast<ISlotsServer*>(server);
+        if (!slots_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Slots", device_type_to_string(server->get_device_type()))
+            );
+        }
+
+        // Mark as busy and update access time
+        server->set_busy(true);
+        server->update_access_time();
+    } // Lock released here
+
+    // Execute without holding lock (but busy flag prevents eviction)
+    try {
+        auto response = slots_server->get_slots();
+        server->set_busy(false);
+        return response;
+    } catch (...) {
+        server->set_busy(false);
+        throw;
+    }
+}
+
+json Router::slots_action(int slot_id, const std::string& action, const json& request_body) {
+    WrappedServer* server = nullptr;
+    ISlotsServer* slots_server = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        server = get_most_recent_server();
+        if (!server) {
+            return ErrorResponse::from_exception(
+                ModelNotLoadedException("No models loaded")
+            );
+        }
+
+        // Check if server supports slots capability
+        slots_server = dynamic_cast<ISlotsServer*>(server);
+        if (!slots_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Slots", device_type_to_string(server->get_device_type()))
+            );
+        }
+
+        // Mark as busy and update access time
+        server->set_busy(true);
+        server->update_access_time();
+    } // Lock released here
+
+    // Execute without holding lock (but busy flag prevents eviction)
+    try {
+        auto response = slots_server->slots_action(slot_id, action, request_body);
+        server->set_busy(false);
+        return response;
+    } catch (...) {
+        server->set_busy(false);
+        throw;
+    }
 }
 
 json Router::responses(const json& request) {
