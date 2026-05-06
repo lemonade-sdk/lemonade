@@ -449,10 +449,15 @@ static GGUFFiles identify_gguf_models(
     return result;
 }
 
-ModelManager::ModelManager() {
+ModelManager::ModelManager(const std::string& extra_models_dir)
+    : extra_models_dir_(extra_models_dir) {
     server_models_ = load_server_models();
     user_models_ = load_optional_json(get_user_models_file());
     recipe_options_ = load_optional_json(get_recipe_options_file());
+
+    if (!extra_models_dir_.empty()) {
+        LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
+    }
 }
 
 std::string ModelManager::get_user_models_file() {
