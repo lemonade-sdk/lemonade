@@ -101,8 +101,8 @@ People use Lemonade to access the bleeding edge of AI. The latest models and fea
 <details>
 <summary>Example</summary>
 
-1. `lemonade-sdk/llamacpp-rocm` builds fresh artifacts every day.
-2. A GitHub action automatically validates and merges llamacpp-rocm upgrades into Lemonade weekly.
+1. `lemonade-sdk/llama.cpp-builds` builds fresh artifacts every day.
+2. A GitHub action automatically validates and merges llama.cpp-builds upgrades into Lemonade weekly.
 3. Users can `lemonade config set llamacpp.rocm_bin="latest"` to get new llamacpp without waiting for new Lemonade, if weekly is too slow for them.
 
 </details>

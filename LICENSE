@@ -245,7 +245,7 @@ that define the userspace API for system calls and ioctl operations.
 
 Binaries for llama.cpp are downloaded under the MIT license from
 https://github.com/ggml-org/llama.cpp, as well as
-https://github.com/lemonade-sdk/llamacpp-rocm (which uses
+https://github.com/lemonade-sdk/llama.cpp-builds (which uses
 https://github.com/ggml-org/llama.cpp to build them.)
 
 Lemonade SDK used the [ONNX TurnkeyML](https://github.com/onnx/turnkeyml)

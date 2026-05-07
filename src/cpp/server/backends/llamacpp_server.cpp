@@ -158,7 +158,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("ROCm preview llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "rocm-nightly") {
-        params.repo = "lemonade-sdk/llamacpp-rocm";
+        params.repo = "lemonade-sdk/llama.cpp-builds";
         std::string target_arch = SystemInfo::get_rocm_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(

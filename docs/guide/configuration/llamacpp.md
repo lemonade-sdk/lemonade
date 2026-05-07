@@ -27,7 +27,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Channel Options**:
   - **Preview** (default): Custom builds with latest optimizations from lemonade-sdk
   - **Stable**: Upstream llama.cpp releases with AMD ROCm support
-  - **Nightly**: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)
+  - **Nightly**: Bleeding-edge builds from lemonade-sdk/llama.cpp-builds (experimental)
 - **Installation**: Varies by channel (see below)
 
 ### Metal
@@ -85,7 +85,7 @@ The ROCm backend supports three channels to balance stability, performance, and 
   "rocm_channel": "nightly"
 }
 ```
-- **Source**: Nightly builds from [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm)
+- **Source**: Nightly builds from [lemonade-sdk/llama.cpp-builds](https://github.com/lemonade-sdk/llama.cpp-builds)
 - **Binaries**: Architecture-specific builds (gfx1150, gfx1151, gfx103X, gfx110X, gfx120X)
 - **Updates**: Nightly builds with experimental features and latest upstream changes
 - **Platform**: Windows and Linux
@@ -127,7 +127,7 @@ You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"bui
 |---|---|---|
 | `preview` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
 | `stable` | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | Upstream tags, e.g. `b4888` |
-| `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
+| `nightly` | [lemonade-sdk/llama.cpp-builds](https://github.com/lemonade-sdk/llama.cpp-builds) | Nightly tags, e.g. `b1260` |
 
 > **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.
 
