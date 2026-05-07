@@ -21,17 +21,35 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-InstallParams KokoroServer::get_install_params(const std::string& /*backend*/, const std::string& version) {
+namespace {
+// Kokoro doesn't expose backend selection through RuntimeConfig; we resolve it
+// from the host platform so each OS gets the right binary archive.
+std::string default_kokoro_backend() {
+#if defined(__APPLE__)
+    return "metal";
+#else
+    return "cpu";
+#endif
+}
+}
+
+InstallParams KokoroServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
     params.repo = "lemonade-sdk/Kokoros";
 
+    if (backend == "cpu") {
 #ifdef _WIN32
-    params.filename = "kokoros-windows-x86_64.tar.gz";
+        params.filename = "kokoros-windows-x86_64.tar.gz";
 #elif defined(__linux__)
-    params.filename = "kokoros-linux-x86_64.tar.gz";
-#else
-    throw std::runtime_error("Unsupported platform for kokoros");
+        params.filename = "kokoros-linux-x86_64.tar.gz";
 #endif
+    } else if (backend == "metal") {
+#if defined(__APPLE__)
+        params.filename = "kokoros-darwin-arm64-metal.tar.gz";
+#endif
+    } else {
+        throw std::runtime_error("[KokoroServer] Unknown kokoros backend: " + backend);
+    }
 
     return params;
 }
@@ -49,7 +67,8 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Loading model: " << model_name << std::endl;
 
     // Install kokoros if needed
-    backend_manager_->install_backend(SPEC.recipe, "cpu");
+    const std::string backend = default_kokoro_backend();
+    backend_manager_->install_backend(SPEC.recipe, backend);
 
     // Use pre-resolved model path
     fs::path model_path = fs::path(model_info.resolved_path());
@@ -69,7 +88,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     LOG(INFO, "KokoroServer") << "Using model: " << model_index["model"] << std::endl;
 
     // Get koko executable path
-    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, "cpu");
+    std::string exe_path = BackendUtils::get_backend_binary_path(SPEC, backend);
 
     // Choose a port
     port_ = choose_port();

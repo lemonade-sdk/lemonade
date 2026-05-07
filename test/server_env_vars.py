@@ -122,7 +122,15 @@ class TestConfigEnvVars(unittest.TestCase):
             # Recipe-option env vars
             "LEMONADE_CTX_SIZE": "2048",
         }
-        if not IS_MACOS:
+        if IS_MACOS:
+            # On macOS the platform defaults are metal for llamacpp/whispercpp
+            cls.env.update(
+                {
+                    "LEMONADE_LLAMACPP": "metal",
+                    "LEMONADE_WHISPERCPP": "metal",
+                }
+            )
+        else:
             cls.env.update(
                 {
                     "LEMONADE_LLAMACPP": "cpu",
@@ -170,17 +178,18 @@ class TestConfigEnvVars(unittest.TestCase):
     def test_ctx_size(self):
         self.assertEqual(self.snapshot["ctx_size"], 2048)
 
-    @unittest.skipIf(IS_MACOS, "llamacpp backend selection not applicable on macOS")
     def test_llamacpp_backend(self):
-        self.assertEqual(self.snapshot["llamacpp"]["backend"], "cpu")
+        expected = "metal" if IS_MACOS else "cpu"
+        self.assertEqual(self.snapshot["llamacpp"]["backend"], expected)
 
     @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
     def test_llamacpp_args(self):
         self.assertEqual(self.snapshot["llamacpp"]["args"], "--flash-attn on")
 
-    @unittest.skipIf(IS_MACOS, "whispercpp backend selection not applicable on macOS")
     def test_whispercpp_backend(self):
-        self.assertEqual(self.snapshot["whispercpp"]["backend"], "cpu")
+        # On macOS the default is metal; on other platforms it's cpu
+        expected = "metal" if IS_MACOS else "cpu"
+        self.assertEqual(self.snapshot["whispercpp"]["backend"], expected)
 
     @unittest.skipIf(IS_MACOS, "whispercpp args not applicable on macOS")
     def test_whispercpp_args(self):

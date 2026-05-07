@@ -1125,7 +1125,7 @@ jobs:
           Write-Host "Embeddable Windows smoke test PASSED!" -ForegroundColor Green
 
   test-dmg-inference:
-    name: Test .dmg - llamacpp (metal)
+    name: Test .dmg - macOS inference (${{ matrix.test_name }})
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
     # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
@@ -1137,6 +1137,22 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
       GGML_METAL_NO_RESIDENCY: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test_name: llamacpp-metal
+            script: server_llm.py
+            args: "--wrapped-server llamacpp --backend metal"
+          - test_name: whisper-metal
+            script: server_whisper.py
+            args: "--wrapped-server whispercpp --backend metal"
+          - test_name: sd-cpp-metal
+            script: server_sd.py
+            args: "--wrapped-server sd-cpp --backend metal"
+          - test_name: kokoro-metal
+            script: server_tts.py
+            args: ""
     steps:
       - uses: actions/checkout@v5
 
@@ -1155,18 +1171,18 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Test llamacpp (metal)
+      - name: Test ${{ matrix.test_name }}
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/${{ matrix.script }} ${{ matrix.args }} --server-binary /usr/local/bin/lemonade-server
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-dmg-llamacpp
+          artifact-name: server-logs-dmg-${{ matrix.test_name }}
 
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
@@ -1255,6 +1271,12 @@ jobs:
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-ubuntu-latest-${{ matrix.test_type }}
 
   test-cli-endpoints:
     name: Test ${{ matrix.test_type }} (${{ matrix.os }})

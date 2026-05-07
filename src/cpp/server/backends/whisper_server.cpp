@@ -69,9 +69,6 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #elif defined(__linux__)
         params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
-#elif defined(__APPLE__)
-        params.repo = "ggml-org/whisper.cpp";
-        params.filename = "whisper-bin-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for whisper.cpp");
 #endif
@@ -82,6 +79,9 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #else
         throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
 #endif
+    } else if (backend == "metal") {
+        params.repo = "lemonade-sdk/whisper.cpp-builds";
+        params.filename = "whisper-" + version + "-darwin-metal-arm64.tar.gz";
     } else {
         throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
     }
@@ -184,7 +184,7 @@ void WhisperServer::load(const std::string& model_name,
     // get_device_type_from_recipe() defaults whispercpp to CPU, but npu/vulkan use different devices.
     if (whispercpp_backend == "npu") {
         device_type_ = DEVICE_NPU;
-    } else if (whispercpp_backend == "vulkan") {
+    } else if (whispercpp_backend == "vulkan" || whispercpp_backend == "metal") {
         device_type_ = DEVICE_GPU;
     } else {
         device_type_ = DEVICE_CPU;
