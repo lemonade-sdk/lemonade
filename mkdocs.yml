@@ -70,6 +70,7 @@ nav:
       - Custom Models: guide/configuration/custom-models.md
       - Running Many Models: guide/configuration/multi-model.md
       - llama.cpp: guide/configuration/llamacpp.md
+      - vLLM: guide/configuration/vllm.md
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md
