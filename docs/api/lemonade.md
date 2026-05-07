@@ -220,6 +220,8 @@ curl 'http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
 
 Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.
 
+> Note: deleting a collection (`recipe: "collection"`) removes only the collection entry from `user_models.json`; its component models stay on disk. Delete the components individually if you want to free their disk space.
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -251,6 +253,8 @@ In case of an error, the status will be `error` and the message will contain the
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
+
+> Note: loading a collection (`recipe: "collection"`) loads each of its component models in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component model's own `recipe_options.json` entry instead.
 
 ### Parameters
 
