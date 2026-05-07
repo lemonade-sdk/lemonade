@@ -116,7 +116,7 @@ lemonade config set rocm_channel=nightly
 
 After changing channels, you'll need to reinstall the ROCm backend:
 ```bash
-lemonade backend install llamacpp:rocm
+lemonade backends install llamacpp:rocm
 ```
 
 ## Choosing the Right Backend
