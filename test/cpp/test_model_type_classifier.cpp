@@ -24,6 +24,11 @@ int main() {
         // indicators → AUDIO deployment mode.
         {"whisper-v3:turbo equivalent", {"audio", "transcription"}, ModelType::AUDIO},
         {"audio alone", {"audio"}, ModelType::AUDIO},
+        // Current `flm list --json` reports whisper as
+        // ["realtime-transcription","transcription"] without "audio".
+        {"FLM whisper labels", {"realtime-transcription", "transcription"}, ModelType::AUDIO},
+        {"transcription alone", {"transcription"}, ModelType::AUDIO},
+        {"realtime-transcription alone", {"realtime-transcription"}, ModelType::AUDIO},
 
         // Embedding / reranking / image / tts models keep their existing mapping.
         {"embedding (plural)", {"embeddings"}, ModelType::EMBEDDING},
