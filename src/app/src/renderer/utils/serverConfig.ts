@@ -355,3 +355,204 @@ export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);
 export const serverFetch = (endpoint: string, options?: RequestInit) => serverConfig.fetch(endpoint, options);
+
+// =====================================================================
+// Chat-target layer
+// =====================================================================
+//
+// Spotify-style "Run on" picker: per-feature override that re-routes JUST the
+// LLM chat panel's HTTP requests to a peer Lemonade server discovered via the
+// UDP beacon (see src/app/src-tauri/src/beacon.rs). Everything else (Model
+// Manager, downloads, image gen, TTS, etc.) keeps using the global
+// `serverConfig` singleton — that's the v1 scope agreed in the plan.
+//
+// Per AGENTS.md invariant 11 ("per-client state lives locally"), the selected
+// target is persisted in localStorage rather than pushed to lemond.
+
+export interface ChatTarget {
+  baseUrl: string;
+  apiKey: string;
+  isLocal: boolean;
+}
+
+type ChatTargetListener = (target: ChatTarget) => void;
+
+const CHAT_TARGET_STORAGE_KEY = 'lemonade.chatTarget';
+
+// Constant token sent on requests to remote peers. The plan explicitly defers
+// per-device API keys ("dummy token, all local"); a remote that has
+// LEMONADE_API_KEY set will reject this and the chat panel will surface the
+// 401 in the assistant bubble.
+const REMOTE_LAN_TOKEN = 'lemonade-lan';
+
+class ChatTargetConfig {
+  // Stored base URL with `/api/v1/` already appended (matches the beacon
+  // payload format from network_beacon.cpp). null = use the local singleton.
+  private remoteBaseUrl: string | null = null;
+  private listeners: Set<ChatTargetListener> = new Set();
+
+  constructor() {
+    this.loadFromStorage();
+  }
+
+  private loadFromStorage(): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const stored = localStorage.getItem(CHAT_TARGET_STORAGE_KEY);
+      if (stored && stored.length > 0) {
+        this.remoteBaseUrl = stored;
+      }
+    } catch (err) {
+      console.warn('Failed to read chat target from localStorage:', err);
+    }
+  }
+
+  private saveToStorage(): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      if (this.remoteBaseUrl) {
+        localStorage.setItem(CHAT_TARGET_STORAGE_KEY, this.remoteBaseUrl);
+      } else {
+        localStorage.removeItem(CHAT_TARGET_STORAGE_KEY);
+      }
+    } catch (err) {
+      console.warn('Failed to persist chat target to localStorage:', err);
+    }
+  }
+
+  /**
+   * Strip a trailing `/api/v1` (or `/api/v1/`) so we can append `/api/v1`
+   * uniformly when building the chat URL. The beacon advertises the
+   * `/api/v1/` form; the global singleton stores the bare server origin.
+   */
+  private toServerOrigin(rawBaseUrl: string): string {
+    let trimmed = rawBaseUrl.replace(/\/+$/, '');
+    if (trimmed.endsWith('/api/v1')) {
+      trimmed = trimmed.slice(0, -'/api/v1'.length);
+    } else if (trimmed.endsWith('/api/v0')) {
+      trimmed = trimmed.slice(0, -'/api/v0'.length);
+    }
+    return trimmed;
+  }
+
+  /** True if the user has picked a peer device (anything other than local). */
+  isRemote(): boolean {
+    return this.remoteBaseUrl !== null;
+  }
+
+  /** Raw selected base URL (with `/api/v1/`) or null if using local. */
+  getRawRemoteBaseUrl(): string | null {
+    return this.remoteBaseUrl;
+  }
+
+  /**
+   * Resolved chat target. When no remote is selected, falls through to the
+   * global singleton so chat behaves identically to every other panel.
+   */
+  getTarget(): ChatTarget {
+    if (this.remoteBaseUrl) {
+      return {
+        baseUrl: this.toServerOrigin(this.remoteBaseUrl),
+        apiKey: REMOTE_LAN_TOKEN,
+        isLocal: false,
+      };
+    }
+    return {
+      baseUrl: serverConfig.getServerBaseUrl(),
+      apiKey: serverConfig.getAPIKey(),
+      isLocal: true,
+    };
+  }
+
+  setRemoteBaseUrl(rawBaseUrl: string | null): void {
+    const normalized = rawBaseUrl && rawBaseUrl.length > 0 ? rawBaseUrl : null;
+    if (normalized === this.remoteBaseUrl) return;
+    this.remoteBaseUrl = normalized;
+    this.saveToStorage();
+    this.notify();
+  }
+
+  onChange(listener: ChatTargetListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify(): void {
+    const t = this.getTarget();
+    this.listeners.forEach((cb) => {
+      try {
+        cb(t);
+      } catch (err) {
+        console.error('Error in chat target listener:', err);
+      }
+    });
+  }
+
+  /**
+   * Force-fire listeners without changing the selection. Used when the
+   * global singleton's URL/port shifts under us while we're targeting local —
+   * subscribers (e.g. the picker pill) need to re-read `getTarget().baseUrl`.
+   */
+  notifyForLocalChange(): void {
+    if (!this.remoteBaseUrl) {
+      this.notify();
+    }
+  }
+
+  /**
+   * Drop-in replacement for `serverFetch` that routes through the selected
+   * chat target. When the target is local, this is intentionally identical to
+   * `serverConfig.fetch` (including the auto-rediscover-on-failure path).
+   * When the target is remote, we hit the peer directly and don't attempt
+   * port discovery — peers are responsible for their own beacons.
+   */
+  async fetch(endpoint: string, opts?: RequestInit): Promise<Response> {
+    if (!this.remoteBaseUrl) {
+      return serverConfig.fetch(endpoint, opts);
+    }
+    await serverConfig.waitForInit();
+    const target = this.getTarget();
+    const fullUrl = endpoint.startsWith('http')
+      ? endpoint
+      : `${target.baseUrl}/api/v1${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+    const options: RequestInit = { ...opts };
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string> | undefined),
+    };
+    if (target.apiKey) {
+      headers['Authorization'] = `Bearer ${target.apiKey}`;
+    }
+    // Hostname header lets the host owner's authorization prompt show a
+    // friendly label ("alice-mac") instead of just the IP. Cached on
+    // window.api.localHostname by the Tauri shim; absent in the web app
+    // (browsers can't read it), in which case the host falls back to IP.
+    const hostname = typeof window !== 'undefined' ? window.api?.localHostname : '';
+    if (hostname && hostname.length > 0) {
+      headers['X-Lemonade-Client-Hostname'] = hostname;
+    }
+    options.headers = headers;
+    return fetch(fullUrl, options);
+  }
+}
+
+const chatTargetConfig = new ChatTargetConfig();
+
+// React to the global singleton's URL changes so listeners get re-fired when
+// the user is on "local" and the local port shifts. This is the same
+// notify-on-port-change behavior chat had before the picker existed.
+serverConfig.onUrlChange(() => {
+  chatTargetConfig.notifyForLocalChange();
+});
+
+export const getChatTarget = (): ChatTarget => chatTargetConfig.getTarget();
+export const isRemoteChatTarget = (): boolean => chatTargetConfig.isRemote();
+export const getRemoteChatBaseUrl = (): string | null => chatTargetConfig.getRawRemoteBaseUrl();
+export const setChatTarget = (rawBaseUrl: string | null): void =>
+  chatTargetConfig.setRemoteBaseUrl(rawBaseUrl);
+export const onChatTargetChange = (listener: ChatTargetListener): (() => void) =>
+  chatTargetConfig.onChange(listener);
+export const chatFetch = (endpoint: string, options?: RequestInit): Promise<Response> =>
+  chatTargetConfig.fetch(endpoint, options);

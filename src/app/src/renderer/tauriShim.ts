@@ -18,6 +18,7 @@ type NavData = { view?: string; model?: string };
 const EVT_SETTINGS_UPDATED = 'settings-updated';
 const EVT_CONNECTION_SETTINGS_UPDATED = 'connection-settings-updated';
 const EVT_SERVER_PORT_UPDATED = 'server-port-updated';
+const EVT_REMOTE_DEVICES_UPDATED = 'remote-devices-updated';
 const EVT_MAXIMIZE_CHANGE = 'maximize-change';
 const EVT_NAVIGATE = 'navigate';
 
@@ -80,9 +81,20 @@ async function installTauriApi(): Promise<void> {
     console.warn('get_platform failed', err);
   }
 
+  // Cached so chatFetch can drop the hostname into a request header without
+  // an extra invoke round-trip on every send. Empty string is fine: the
+  // server falls back to displaying the IP.
+  let hostnameCache = '';
+  try {
+    hostnameCache = (await invoke<string>('get_local_hostname')) || '';
+  } catch (err) {
+    console.warn('get_local_hostname failed', err);
+  }
+
   const api = {
     isWebApp: false,
     platform: platformCache,
+    localHostname: hostnameCache,
 
     minimizeWindow: fire('minimize_window'),
     maximizeWindow: fire('maximize_window'),
@@ -134,6 +146,20 @@ async function installTauriApi(): Promise<void> {
         EVT_CONNECTION_SETTINGS_UPDATED,
         (payload) => callback(payload.base_url, payload.api_key),
       ),
+
+    // LAN beacon registry — see beacon.rs `run_beacon_listener`. The host
+    // emits the full snapshot whenever the set of devices (or any hostname)
+    // changes; the renderer just renders whatever it last saw.
+    listRemoteDevices: () =>
+      invoke<Array<{ hostname: string; baseUrl: string; isLocal: boolean }>>(
+        'list_remote_devices',
+      ),
+    onRemoteDevicesUpdated: (
+      callback: (devices: Array<{ hostname: string; baseUrl: string; isLocal: boolean }>) => void,
+    ) => on<Array<{ hostname: string; baseUrl: string; isLocal: boolean }>>(
+      EVT_REMOTE_DEVICES_UPDATED,
+      callback,
+    ),
 
     // Server version, system stats, and system info are NOT exposed via
     // window.api anymore. The renderer fetches /health, /system-stats, and
