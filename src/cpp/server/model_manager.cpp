@@ -233,36 +233,50 @@ static int64_t read_gguf_context_length(const std::string& path) {
     return pending_context_length;
 }
 
-static fs::path get_flm_models_dir_from_config_home() {
+// Candidate roots that FLM may use to store models. FLM resolves its model
+// directory from the FLM_MODEL_PATH env var (set by the installer) and falls
+// back to a built-in default that has changed across releases. lemond is often
+// launched from a parent process that predates the FLM install and therefore
+// doesn't see FLM_MODEL_PATH, so we also probe every documented default.
+// Order is most-specific to most-historical.
+static std::vector<fs::path> get_flm_models_dir_candidates() {
+    std::vector<fs::path> roots;
+
+    const char* flm_model_path = std::getenv("FLM_MODEL_PATH");
+    if (flm_model_path && *flm_model_path) {
+        roots.push_back(path_from_utf8(flm_model_path) / "models");
+    }
+
 #ifdef _WIN32
     const char* userprofile = std::getenv("USERPROFILE");
-    if (userprofile && *userprofile) return path_from_utf8(userprofile) / "flm" / "models";
-    return fs::path();
+    if (userprofile && *userprofile) {
+        fs::path home = path_from_utf8(userprofile);
+        roots.push_back(home / ".flm" / "models");          // current installer default
+        roots.push_back(home / "Documents" / "flm" / "models"); // legacy installer default
+        roots.push_back(home / "flm" / "models");
+    }
 #else
     const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
-    if (xdg_config_home && *xdg_config_home) return path_from_utf8(xdg_config_home) / "flm" / "models";
+    if (xdg_config_home && *xdg_config_home) {
+        roots.push_back(path_from_utf8(xdg_config_home) / "flm" / "models");
+    }
     const char* home = std::getenv("HOME");
-    if (home && *home) return path_from_utf8(home) / ".config" / "flm" / "models";
-    return fs::path();
+    if (home && *home) {
+        fs::path home_path = path_from_utf8(home);
+        roots.push_back(home_path / ".flm" / "models");
+        roots.push_back(home_path / ".config" / "flm" / "models");
+    }
 #endif
+
+    return roots;
 }
 
 static fs::path find_flm_config_path_from_repo_dir(const std::string& repo_dir) {
     if (repo_dir.empty()) return fs::path();
 
-    std::vector<fs::path> candidates;
-    const char* flm_model_path = std::getenv("FLM_MODEL_PATH");
-    if (flm_model_path && *flm_model_path) {
-        candidates.push_back(path_from_utf8(flm_model_path) / "models" / repo_dir / "config.json");
-    }
-
-    fs::path config_home_models = get_flm_models_dir_from_config_home();
-    if (!config_home_models.empty()) {
-        candidates.push_back(config_home_models / repo_dir / "config.json");
-    }
-
-    for (const auto& path : candidates) {
-        if (safe_exists(path)) return path;
+    for (const auto& root : get_flm_models_dir_candidates()) {
+        fs::path candidate = root / repo_dir / "config.json";
+        if (safe_exists(candidate)) return candidate;
     }
     return fs::path();
 }
