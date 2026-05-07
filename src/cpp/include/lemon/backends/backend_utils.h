@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -69,6 +70,11 @@ namespace lemon::backends {
         /** Download and install the specified version of the backend from github.
          *  If progress_cb is provided, it receives download progress events instead of console output. */
         static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb = nullptr);
+
+        /** Query the GitHub Releases API for the asset filenames published under
+         *  a given release tag. Returns just the asset names (not URLs). Throws
+         *  on network/HTTP/parse failure. */
+        static std::vector<std::string> list_release_assets(const std::string& repo, const std::string& tag);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);

@@ -652,15 +652,7 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                  && final_result.http_code != 408
                                  && final_result.http_code != 429);
         if (is_permanent_4xx) {
-            // Callers that are deliberately probing for the existence of a
-            // URL (e.g. split-archive part discovery) set quiet_on_4xx to
-            // suppress the alarming [Error] log. The error is still returned
-            // to the caller via DownloadResult.
-            if (options.quiet_on_4xx) {
-                LOG(DEBUG, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
-            } else {
-                LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
-            }
+            LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
             if (fs::exists(partial_path_fs)) {
                 fs::remove(partial_path_fs);
             }
