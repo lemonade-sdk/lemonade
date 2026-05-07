@@ -295,6 +295,7 @@ namespace lemon::backends {
         }
 
         utils::HttpResponse resp;
+        bool sent_with_auth = have_token;
         try {
             resp = utils::HttpClient::get(url, headers);
         } catch (const std::exception& e) {
@@ -307,6 +308,7 @@ namespace lemon::backends {
             // the Authorization header. We lose the higher rate limit but
             // recover the call instead of failing outright.
             headers.erase("Authorization");
+            sent_with_auth = false;
             try {
                 resp = utils::HttpClient::get(url, headers);
             } catch (const std::exception& e) {
@@ -315,14 +317,23 @@ namespace lemon::backends {
             }
         }
         if (resp.status_code == 403 || resp.status_code == 429) {
-            // Rate limit. Surface a clear, actionable message rather than the
-            // raw HTTP code; users without a token can hit 60/hr easily.
+            // Likely rate limit. Echo the actual headers GitHub returned so the
+            // log shows the real limit/remaining/reset/resource — don't invent
+            // numbers like "60" in user-facing strings.
+            auto header_or = [&](const std::string& key, const std::string& fallback) {
+                auto it = resp.headers.find(key);
+                return it != resp.headers.end() ? it->second : fallback;
+            };
+            const std::string limit = header_or("x-ratelimit-limit", "?");
+            const std::string remaining = header_or("x-ratelimit-remaining", "?");
+            const std::string reset = header_or("x-ratelimit-reset", "?");
+            const std::string resource = header_or("x-ratelimit-resource", "?");
             throw std::runtime_error(
-                "GitHub API rate limit reached when listing assets of " + repo + "@" + tag
-                + " (HTTP " + std::to_string(resp.status_code) + "). "
-                + "Set the GITHUB_TOKEN environment variable to a personal access token "
-                + "to raise the limit from 60 to 5000 requests per hour, or wait ~1 hour "
-                + "and retry.");
+                "GitHub returned HTTP " + std::to_string(resp.status_code)
+                + " when listing assets of " + repo + "@" + tag
+                + " (rate-limit: limit=" + limit + " remaining=" + remaining
+                + " reset=" + reset + " resource=" + resource
+                + ", token_sent=" + (sent_with_auth ? "true" : "false") + ")");
         }
         if (resp.status_code < 200 || resp.status_code >= 300) {
             throw std::runtime_error(
