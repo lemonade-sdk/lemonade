@@ -11,11 +11,19 @@
 using lemon::ModelType;
 using lemon::get_model_type_from_labels;
 using lemon::model_type_to_string;
+using lemon::infer_labels_from_name;
 
 struct Case {
     const char* name;
     std::vector<std::string> labels;
     ModelType expected;
+};
+
+struct InferCase {
+    const char* name;
+    std::string model_name;
+    std::string checkpoint;
+    std::vector<std::string> expected;
 };
 
 int main() {
@@ -63,6 +71,39 @@ int main() {
         if (!ok) ++failures;
     }
 
-    std::printf("\n%d/%zu cases passed\n", static_cast<int>(cases.size() - failures), cases.size());
+    // --- infer_labels_from_name: substring detection for user-pulled models ---
+    const std::vector<InferCase> infer_cases = {
+        // "embed" substring triggers embeddings label
+        {"embed in name", "zembed-1-Q4_K_M-GGUF", "", {"embeddings"}},
+        {"embed in checkpoint", "my-model", "Abiray/zembed-1-Q4_K_M-GGUF:Q4_K_M", {"embeddings"}},
+        {"case insensitive", "NOMIC-EMBED-TEXT", "", {"embeddings"}},
+        {"checkpoint only (no name)", "", "org/some-embed-model-GGUF:Q4_K_S", {"embeddings"}},
+
+        // "rerank" substring triggers reranking label
+        {"rerank in name", "my-reranker-v2", "", {"reranking"}},
+        {"rerank in checkpoint", "custom-model", "org/my-reranker-v2:Q8_0", {"reranking"}},
+
+        // Both substrings present
+        {"embed and rerank together", "embed-rerank-model", "", {"embeddings", "reranking"}},
+
+        // No match — regular models unaffected
+        {"plain LLM", "Qwen3-4B", "Qwen/Qwen3-4B-GGUF:Q4_K_M", {}},
+        {"partial overlap not matched", "remember-bot", "", {}},
+        {"empty inputs", "", "", {}},
+    };
+
+    for (const auto& c : infer_cases) {
+        auto actual = infer_labels_from_name(c.model_name, c.checkpoint);
+        bool ok = (actual == c.expected);
+        if (!ok) {
+            std::printf("[FAIL] infer: %s\n", c.name);
+            ++failures;
+        } else {
+            std::printf("[PASS] infer: %s\n", c.name);
+        }
+    }
+
+    int total = static_cast<int>(cases.size() + infer_cases.size());
+    std::printf("\n%d/%d cases passed\n", total - failures, total);
     return failures == 0 ? 0 : 1;
 }
