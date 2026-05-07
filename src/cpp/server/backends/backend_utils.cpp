@@ -279,10 +279,18 @@ namespace lemon::backends {
         // Returns just asset names so the caller can match against
         // expected filenames (e.g. "{filename}" or "{base}.partNN.tar.gz").
         const std::string url = "https://api.github.com/repos/" + repo + "/releases/tags/" + tag;
-        const std::map<std::string, std::string> headers = {
+        std::map<std::string, std::string> headers = {
             {"User-Agent", "lemonade"},
             {"Accept", "application/vnd.github+json"},
         };
+        // Use GITHUB_TOKEN if set in the environment. Without it, GitHub's
+        // unauthenticated rate limit is 60 requests/hour per IP, which CI
+        // runners and shared-IP environments exhaust quickly. Authenticated
+        // calls get 5000/hour. The token is read from the standard env var
+        // that GitHub Actions sets automatically.
+        if (const char* token = std::getenv("GITHUB_TOKEN"); token && *token) {
+            headers["Authorization"] = "Bearer " + std::string(token);
+        }
 
         utils::HttpResponse resp;
         try {
@@ -290,6 +298,16 @@ namespace lemon::backends {
         } catch (const std::exception& e) {
             throw std::runtime_error(
                 "Failed to query GitHub for release assets of " + repo + "@" + tag + ": " + e.what());
+        }
+        if (resp.status_code == 403 || resp.status_code == 429) {
+            // Rate limit. Surface a clear, actionable message rather than the
+            // raw HTTP code; users without a token can hit 60/hr easily.
+            throw std::runtime_error(
+                "GitHub API rate limit reached when listing assets of " + repo + "@" + tag
+                + " (HTTP " + std::to_string(resp.status_code) + "). "
+                + "Set the GITHUB_TOKEN environment variable to a personal access token "
+                + "to raise the limit from 60 to 5000 requests per hour, or wait ~1 hour "
+                + "and retry.");
         }
         if (resp.status_code < 200 || resp.status_code >= 300) {
             throw std::runtime_error(
