@@ -391,7 +391,13 @@ namespace lemon::backends {
                     size_t cumulative_downloaded = 0;
                     int part_num = 0;
                     while (true) {
-                        char part_suffix[16];
+                        // Buffer sized for ".part" + up to 4 digits + ".tar.gz" + null.
+                        // The %02d in the format prints at least 2 digits but is not
+                        // capped, so the compiler's -Wformat-truncation analysis treats
+                        // it as potentially unbounded; size for a safe upper bound
+                        // (releases with 100+ parts are not a realistic scenario, but
+                        // we'd rather not warn at every build).
+                        char part_suffix[24];
                         snprintf(part_suffix, sizeof(part_suffix), ".part%02d.tar.gz", part_num);
                         std::string part_filename = base + part_suffix;
                         std::string part_url = base_url + part_filename;
