@@ -1,0 +1,321 @@
+{
+  "_metadata": {
+    "flm_version": "v0.9.39",
+    "model_count": 35,
+    "source": "flm list --json"
+  },
+  "models": {
+    "deepseek-r1-0528-8b-FLM": {
+      "checkpoint": "deepseek-r1-0528:8b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 5.6,
+      "suggested": true
+    },
+    "deepseek-r1-8b-FLM": {
+      "checkpoint": "deepseek-r1:8b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 5.4,
+      "suggested": true
+    },
+    "embed-gemma-300m-FLM": {
+      "checkpoint": "embed-gemma:300m",
+      "labels": [
+        "embeddings"
+      ],
+      "recipe": "flm",
+      "size": 0.62,
+      "suggested": true
+    },
+    "gemma3-1b-FLM": {
+      "checkpoint": "gemma3:1b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 1.2,
+      "suggested": true
+    },
+    "gemma3-4b-FLM": {
+      "checkpoint": "gemma3:4b",
+      "labels": [
+        "vision"
+      ],
+      "recipe": "flm",
+      "size": 4.5,
+      "suggested": true
+    },
+    "gemma4-it-e2b-FLM": {
+      "checkpoint": "gemma4-it:e2b",
+      "labels": [
+        "vision",
+        "reasoning",
+        "tool-calling",
+        "audio",
+        "transcription"
+      ],
+      "recipe": "flm",
+      "size": 6.0,
+      "suggested": true
+    },
+    "gpt-oss-20b-FLM": {
+      "checkpoint": "gpt-oss:20b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 14.0,
+      "suggested": true
+    },
+    "gpt-oss-sg-20b-FLM": {
+      "checkpoint": "gpt-oss-sg:20b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 14.0,
+      "suggested": true
+    },
+    "lfm2-1.2b-FLM": {
+      "checkpoint": "lfm2:1.2b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 0.96,
+      "suggested": true
+    },
+    "lfm2-2.6b-FLM": {
+      "checkpoint": "lfm2:2.6b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 1.8,
+      "suggested": true
+    },
+    "lfm2-trans-2.6b-FLM": {
+      "checkpoint": "lfm2-trans:2.6b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 1.8,
+      "suggested": true
+    },
+    "lfm2.5-it-1.2b-FLM": {
+      "checkpoint": "lfm2.5-it:1.2b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 0.96,
+      "suggested": true
+    },
+    "lfm2.5-tk-1.2b-FLM": {
+      "checkpoint": "lfm2.5-tk:1.2b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 0.96,
+      "suggested": true
+    },
+    "llama3.1-8b-FLM": {
+      "checkpoint": "llama3.1:8b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 5.4,
+      "suggested": true
+    },
+    "llama3.2-1b-FLM": {
+      "checkpoint": "llama3.2:1b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 1.3,
+      "suggested": true
+    },
+    "llama3.2-3b-FLM": {
+      "checkpoint": "llama3.2:3b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 2.7,
+      "suggested": true
+    },
+    "medgemma-4b-FLM": {
+      "checkpoint": "medgemma:4b",
+      "labels": [
+        "vision"
+      ],
+      "recipe": "flm",
+      "size": 4.5,
+      "suggested": true
+    },
+    "medgemma1.5-4b-FLM": {
+      "checkpoint": "medgemma1.5:4b",
+      "labels": [
+        "vision"
+      ],
+      "recipe": "flm",
+      "size": 4.5,
+      "suggested": true
+    },
+    "nanbeige4.1-3b-FLM": {
+      "checkpoint": "nanbeige4.1:3b",
+      "labels": [
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 3.1,
+      "suggested": true
+    },
+    "phi4-mini-it-4b-FLM": {
+      "checkpoint": "phi4-mini-it:4b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 3.4,
+      "suggested": true
+    },
+    "qwen2.5-it-3b-FLM": {
+      "checkpoint": "qwen2.5-it:3b",
+      "labels": [],
+      "recipe": "flm",
+      "size": 2.5,
+      "suggested": true
+    },
+    "qwen2.5vl-it-3b-FLM": {
+      "checkpoint": "qwen2.5vl-it:3b",
+      "labels": [
+        "vision"
+      ],
+      "recipe": "flm",
+      "size": 3.8,
+      "suggested": true
+    },
+    "qwen3-0.6b-FLM": {
+      "checkpoint": "qwen3:0.6b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 0.66,
+      "suggested": true
+    },
+    "qwen3-1.7b-FLM": {
+      "checkpoint": "qwen3:1.7b",
+      "labels": [
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 1.6,
+      "suggested": true
+    },
+    "qwen3-4b-FLM": {
+      "checkpoint": "qwen3:4b",
+      "labels": [
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 3.1,
+      "suggested": true
+    },
+    "qwen3-8b-FLM": {
+      "checkpoint": "qwen3:8b",
+      "labels": [
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 5.6,
+      "suggested": true
+    },
+    "qwen3-it-4b-FLM": {
+      "checkpoint": "qwen3-it:4b",
+      "labels": [
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 3.1,
+      "suggested": true
+    },
+    "qwen3-tk-4b-FLM": {
+      "checkpoint": "qwen3-tk:4b",
+      "labels": [
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 3.1,
+      "suggested": true
+    },
+    "qwen3.5-0.8b-FLM": {
+      "checkpoint": "qwen3.5:0.8b",
+      "labels": [
+        "vision",
+        "reasoning"
+      ],
+      "recipe": "flm",
+      "size": 1.4,
+      "suggested": true
+    },
+    "qwen3.5-2b-FLM": {
+      "checkpoint": "qwen3.5:2b",
+      "labels": [
+        "vision",
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 3.2,
+      "suggested": true
+    },
+    "qwen3.5-4b-FLM": {
+      "checkpoint": "qwen3.5:4b",
+      "labels": [
+        "vision",
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 5.2,
+      "suggested": true
+    },
+    "qwen3.5-9b-FLM": {
+      "checkpoint": "qwen3.5:9b",
+      "labels": [
+        "vision",
+        "reasoning",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 8.94,
+      "suggested": true
+    },
+    "qwen3vl-it-4b-FLM": {
+      "checkpoint": "qwen3vl-it:4b",
+      "labels": [
+        "vision",
+        "tool-calling"
+      ],
+      "recipe": "flm",
+      "size": 3.9,
+      "suggested": true
+    },
+    "translategemma-4b-FLM": {
+      "checkpoint": "translategemma:4b",
+      "labels": [
+        "vision"
+      ],
+      "recipe": "flm",
+      "size": 4.5,
+      "suggested": true
+    },
+    "whisper-v3-turbo-FLM": {
+      "checkpoint": "whisper-v3:turbo",
+      "labels": [
+        "audio",
+        "transcription"
+      ],
+      "recipe": "flm",
+      "size": 0.62,
+      "suggested": true
+    }
+  }
+}

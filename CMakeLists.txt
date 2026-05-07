@@ -745,6 +745,8 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 # Resources are self-contained in src/cpp/resources/:
 #   - static/index.html, static/favicon.ico (web UI)
 #   - server_models.json (model registry)
+#   - flm_models.json (FLM catalog snapshot used as a fallback when FLM is
+#                      not installed; regenerate via tools/generate_flm_models.py)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
 
@@ -1595,6 +1597,9 @@ add_custom_target(embeddable
     # Copy resource files
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/server_models.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/flm_models.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"

@@ -960,6 +960,7 @@ jobs:
           test -f "$DIR/lemonade"
           test -f "$DIR/LICENSE"
           test -f "$DIR/resources/server_models.json"
+          test -f "$DIR/resources/flm_models.json"
           test -f "$DIR/resources/backend_versions.json"
           test -f "$DIR/resources/defaults.json"
           echo "All expected files present"
@@ -1052,6 +1053,7 @@ jobs:
               "$archiveDir\lemonade.exe",
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
+              "$archiveDir\resources\flm_models.json",
               "$archiveDir\resources\backend_versions.json",
               "$archiveDir\resources\defaults.json"
           )

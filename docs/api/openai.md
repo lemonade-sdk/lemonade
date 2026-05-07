@@ -886,7 +886,7 @@ By default, only models available locally (downloaded) are shown, matching OpenA
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
+| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. On AMD Ryzen AI hardware, FastFlowLM (FLM) models are included even when the FLM binary is not yet installed, sourced from a bundled snapshot of `flm list --json`. Live FLM data is preferred when FLM is installed. Models are still hardware-filtered, so systems without an NPU will not see FLM models in the response. |
 
 ### Example request
 

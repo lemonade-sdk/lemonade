@@ -166,6 +166,11 @@ public:
     // Get list of all available FLM models from 'flm list --json'
     std::vector<ModelInfo> get_flm_available_models();
 
+    // Load FLM model catalog from the bundled snapshot (resources/flm_models.json).
+    // Used as a fallback when the FLM binary is not installed so /models?show_all=true
+    // can still surface FLM models on supported hardware.
+    std::vector<ModelInfo> load_flm_snapshot_models();
+
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
