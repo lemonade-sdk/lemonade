@@ -531,6 +531,21 @@ jobs:
           .venv/bin/python test/server_env_vars.py --lemond-binary /usr/local/bin/lemond
           echo "Environment variable tests PASSED!"
 
+      - name: Run whisper Metal inference tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
+        run: |
+          set -e
+          echo "Running whisper Metal inference tests..."
+          .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --server-binary /usr/local/bin/lemonade-server
+          echo "Whisper Metal inference tests PASSED!"
+
       - name: Cleanup keychain
         if: always() && steps.check_signing.outputs.has_signing == 'true'
         shell: bash
@@ -1128,9 +1143,8 @@ jobs:
     name: Test .dmg - macOS inference (${{ matrix.test_name }})
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    # Skip inference tests when signing is enabled (tag pushes or manual workflow_dispatch)
-    # Also skip when no signing secrets (tests already ran inline in build job)
-    if: ${{ needs.build-lemonade-macos-dmg.outputs.has_signing == 'true' && !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    # Skip inference tests on tag pushes (releases) — signed path runs tests inline in build job
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1159,10 +1173,77 @@ jobs:
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
+      # ---- Install Server (signed .pkg path) ----
+      - name: Download .pkg package
+        id: download-pkg
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-macos-pkg
+          path: .
+
       - name: Install Lemonade Server (.pkg)
+        id: install-pkg
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing == 'true'
         uses: ./.github/actions/install-lemonade-server-dmg
         with:
           version: ${{ env.LEMONADE_VERSION }}
+          download-artifact: 'false'
+
+      # ---- Install Server (unsigned path — install from build dir) ----
+      - name: Install binaries locally (unsigned path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "Installing binaries from build directory (no signing)..."
+
+          # Copy binaries to /usr/local/bin
+          sudo cp build/lemond /usr/local/bin/
+          sudo cp build/lemonade-server /usr/local/bin/
+          sudo cp build/lemonade /usr/local/bin/
+          sudo chmod 755 /usr/local/bin/lemond
+          sudo chmod 755 /usr/local/bin/lemonade-server
+          sudo chmod 755 /usr/local/bin/lemonade
+
+          # Copy resources
+          sudo mkdir -p "/Library/Application Support/Lemonade/resources"
+          if [ -d "build/resources" ]; then
+            sudo cp -R build/resources/* "/Library/Application Support/Lemonade/resources/" 2>/dev/null || true
+          fi
+
+          # Run the postinst script for directory setup
+          echo "Running post-install script..."
+          sudo bash src/cpp/postinst-full-mac "" "/"
+
+          # Verify installation
+          echo "Verifying installation..."
+          /usr/local/bin/lemonade-server --version
+          /usr/local/bin/lemond --version
+          /usr/local/bin/lemonade --version
+
+          echo "Local installation complete!"
+
+      # ---- Start server (unsigned path needs manual start) ----
+      - name: Start server (unsigned path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "Starting server manually (unsigned path)..."
+          /usr/local/bin/lemonade-server serve --no-tray > /tmp/lemonade-server.log 2>&1 &
+
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "Server is running and healthy (started manually)"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/15)"
+            sleep 2
+          done
+          echo "ERROR: Server did not start within 30 seconds"
+          cat /tmp/lemonade-server.log 2>/dev/null || true
+          exit 1
 
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
@@ -1176,7 +1257,8 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          .venv/bin/python test/${{ matrix.script }} ${{ matrix.args }} --server-binary /usr/local/bin/lemonade-server
+          SERVER_BIN="/usr/local/bin/lemonade-server"
+          .venv/bin/python test/${{ matrix.script }} ${{ matrix.args }} --server-binary "$SERVER_BIN"
 
       - name: Capture and upload server logs
         if: always()
