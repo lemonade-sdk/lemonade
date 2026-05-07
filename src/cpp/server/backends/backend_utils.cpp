@@ -274,6 +274,92 @@ namespace lemon::backends {
         return version;
     }
 
+    std::vector<std::string> BackendUtils::list_release_assets(const std::string& repo, const std::string& tag) {
+        // GET https://api.github.com/repos/{repo}/releases/tags/{tag}
+        // Returns just asset names so the caller can match against
+        // expected filenames (e.g. "{filename}" or "{base}.partNN.tar.gz").
+        const std::string url = "https://api.github.com/repos/" + repo + "/releases/tags/" + tag;
+        std::map<std::string, std::string> headers = {
+            {"User-Agent", "lemonade"},
+            {"Accept", "application/vnd.github+json"},
+        };
+        // Use GITHUB_TOKEN if set in the environment. Without it, GitHub's
+        // unauthenticated rate limit is 60 requests/hour per IP, which CI
+        // runners and shared-IP environments exhaust quickly. Authenticated
+        // calls get 5000/hour. The token is read from the standard env var
+        // that GitHub Actions sets automatically.
+        const char* token_env = std::getenv("GITHUB_TOKEN");
+        const bool have_token = token_env && *token_env;
+        if (have_token) {
+            headers["Authorization"] = "Bearer " + std::string(token_env);
+        }
+
+        utils::HttpResponse resp;
+        bool sent_with_auth = have_token;
+        try {
+            resp = utils::HttpClient::get(url, headers);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to query GitHub for release assets of " + repo + "@" + tag + ": " + e.what());
+        }
+        if (resp.status_code == 401 && have_token) {
+            // Token is set but rejected (expired, wrong scope, malformed).
+            // Public release metadata doesn't require auth, so retry without
+            // the Authorization header. We lose the higher rate limit but
+            // recover the call instead of failing outright.
+            headers.erase("Authorization");
+            sent_with_auth = false;
+            try {
+                resp = utils::HttpClient::get(url, headers);
+            } catch (const std::exception& e) {
+                throw std::runtime_error(
+                    "Failed to query GitHub for release assets of " + repo + "@" + tag + ": " + e.what());
+            }
+        }
+        if (resp.status_code == 403 || resp.status_code == 429) {
+            // Likely rate limit. Echo the actual headers GitHub returned so the
+            // log shows the real limit/remaining/reset/resource — don't invent
+            // numbers like "60" in user-facing strings.
+            auto header_or = [&](const std::string& key, const std::string& fallback) {
+                auto it = resp.headers.find(key);
+                return it != resp.headers.end() ? it->second : fallback;
+            };
+            const std::string limit = header_or("x-ratelimit-limit", "?");
+            const std::string remaining = header_or("x-ratelimit-remaining", "?");
+            const std::string reset = header_or("x-ratelimit-reset", "?");
+            const std::string resource = header_or("x-ratelimit-resource", "?");
+            throw std::runtime_error(
+                "GitHub returned HTTP " + std::to_string(resp.status_code)
+                + " when listing assets of " + repo + "@" + tag
+                + " (rate-limit: limit=" + limit + " remaining=" + remaining
+                + " reset=" + reset + " resource=" + resource
+                + ", env_token=" + (have_token ? "true" : "false")
+                + ", token_sent=" + (sent_with_auth ? "true" : "false") + ")");
+        }
+        if (resp.status_code < 200 || resp.status_code >= 300) {
+            throw std::runtime_error(
+                "GitHub returned HTTP " + std::to_string(resp.status_code)
+                + " when listing assets of " + repo + "@" + tag);
+        }
+
+        std::vector<std::string> names;
+        try {
+            auto body = json::parse(resp.body);
+            if (!body.contains("assets") || !body["assets"].is_array()) {
+                throw std::runtime_error("Release JSON missing 'assets' array");
+            }
+            for (const auto& asset : body["assets"]) {
+                if (asset.contains("name") && asset["name"].is_string()) {
+                    names.push_back(asset["name"].get<std::string>());
+                }
+            }
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to parse GitHub release JSON for " + repo + "@" + tag + ": " + e.what());
+        }
+        return names;
+    }
+
     void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb) {
         std::string install_dir;
         std::string version_file;
@@ -311,9 +397,6 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            std::string url = "https://github.com/" + repo + "/releases/download/" +
-                            expected_version + "/" + filename;
-
             // Download ZIP to cache directory
             fs::path cache_dir = fs::temp_directory_path();
             fs::create_directories(cache_dir);
@@ -321,89 +404,144 @@ namespace lemon::backends {
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
-            LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
 
-            // Create the appropriate progress callback
-            // If an external progress_cb is provided, wrap it as a ProgressCallback for HttpClient
-            utils::ProgressCallback http_progress_cb;
-            if (progress_cb) {
-                http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
-                    DownloadProgress p;
-                    p.file = filename;
-                    p.file_index = 1;
-                    p.total_files = 1;
-                    p.bytes_downloaded = downloaded;
-                    p.bytes_total = total;
-                    p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
-                    p.complete = false;  // Don't signal complete until extraction is done
-                    return progress_cb(p);
-                };
-            } else {
-                http_progress_cb = utils::create_throttled_progress_callback();
+            // Ask the GitHub Releases API which asset filenames actually exist
+            // under this tag. We then download exactly the matching asset(s)
+            // — no probe-then-404 for a single-file URL that doesn't exist
+            // (vLLM only publishes split parts), and no probe-one-past-the-last
+            // to detect end-of-parts. One round trip vs. up to N+1 wasted
+            // requests, and the install log no longer carries any 404 lines.
+            std::vector<std::string> assets = list_release_assets(repo, expected_version);
+
+            // Decide single-file vs. split-archive based on which assets exist.
+            // Single-file: there's an asset named exactly `filename`.
+            // Split-archive: assets matching `{base}.partNN.tar.gz` for tarballs.
+            std::string base;
+            if (is_tarball(filename)) {
+                base = filename.substr(0, filename.size() - 7);  // strip ".tar.gz"
+            }
+            bool has_single = std::find(assets.begin(), assets.end(), filename) != assets.end();
+            std::vector<std::string> part_assets;
+            if (!has_single && is_tarball(filename)) {
+                const std::string part_prefix = base + ".part";
+                const std::string part_suffix = ".tar.gz";
+                for (const auto& name : assets) {
+                    if (name.size() > part_prefix.size() + part_suffix.size()
+                        && name.compare(0, part_prefix.size(), part_prefix) == 0
+                        && name.compare(name.size() - part_suffix.size(), part_suffix.size(), part_suffix) == 0) {
+                        part_assets.push_back(name);
+                    }
+                }
+                std::sort(part_assets.begin(), part_assets.end());
+            }
+            if (!has_single && part_assets.empty()) {
+                throw std::runtime_error(
+                    "Release " + repo + "@" + expected_version + " has no asset matching '"
+                    + filename + "' nor any '" + (base.empty() ? filename : base) + ".partNN.tar.gz' parts");
             }
 
-            // Download the file
-            auto download_result = utils::HttpClient::download_file(
-                url,
-                zip_path,
-                http_progress_cb
-            );
+            const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
+                                                  expected_version + "/";
 
-            if (!download_result.success) {
-                // Try split archive download (parts: .part00.tar.gz, .part01.tar.gz, ...)
-                // Some backends (e.g. vLLM) exceed GitHub's 2GB release asset limit
-                // and are uploaded as split parts.
-                bool split_success = false;
-                if (is_tarball(filename)) {
-                    std::string base = filename.substr(0, filename.size() - 7); // remove .tar.gz
-                    std::string base_url = "https://github.com/" + repo + "/releases/download/" +
-                                          expected_version + "/";
-                    LOG(DEBUG, spec.log_name()) << "Single file download failed, trying split parts..." << std::endl;
+            if (has_single) {
+                std::string url = base_download_url + filename;
+                LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
-                    // Open combined output file
-                    std::ofstream combined(zip_path, std::ios::binary);
-                    int part_num = 0;
-                    while (true) {
-                        char part_suffix[16];
-                        snprintf(part_suffix, sizeof(part_suffix), ".part%02d.tar.gz", part_num);
-                        std::string part_filename = base + part_suffix;
-                        std::string part_url = base_url + part_filename;
-                        std::string part_path = zip_path + ".part" + std::to_string(part_num);
-
-                        LOG(DEBUG, spec.log_name()) << "Trying part: " << part_filename << std::endl;
-
-                        auto part_result = utils::HttpClient::download_file(
-                            part_url, part_path,
-                            utils::create_throttled_progress_callback()
-                        );
-
-                        if (!part_result.success) {
-                            fs::remove(part_path);
-                            break; // No more parts
-                        }
-
-                        // Append part to combined file
-                        std::ifstream part_in(part_path, std::ios::binary);
-                        combined << part_in.rdbuf();
-                        part_in.close();
-                        fs::remove(part_path);
-                        part_num++;
-                    }
-                    combined.close();
-
-                    if (part_num > 0) {
-                        LOG(INFO, spec.log_name()) << "Downloaded " << part_num << " split parts" << std::endl;
-                        split_success = true;
-                    } else {
-                        fs::remove(zip_path);
-                    }
+                utils::ProgressCallback http_progress_cb;
+                if (progress_cb) {
+                    http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
+                        DownloadProgress p;
+                        p.file = filename;
+                        p.file_index = 1;
+                        p.total_files = 1;
+                        p.bytes_downloaded = downloaded;
+                        p.bytes_total = total;
+                        p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
+                        p.complete = false;  // Don't signal complete until extraction is done
+                        return progress_cb(p);
+                    };
+                } else {
+                    http_progress_cb = utils::create_throttled_progress_callback();
                 }
 
-                if (!split_success) {
+                auto download_result = utils::HttpClient::download_file(
+                    url, zip_path, http_progress_cb);
+
+                if (!download_result.success) {
                     throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
-                                            " - " + download_result.error_message);
+                                             " - " + download_result.error_message);
                 }
+            } else {
+                // Split-archive path. Assets known up front, so progress can
+                // report cumulative bytes against a (mostly) accurate total.
+                LOG(INFO, spec.log_name()) << "Downloading " << part_assets.size()
+                                           << " split parts from " << repo << "@"
+                                           << expected_version << std::endl;
+
+                std::ofstream combined(zip_path, std::ios::binary);
+                size_t cumulative_downloaded = 0;
+                int part_index = 0;
+                const int total_parts = static_cast<int>(part_assets.size());
+                for (const auto& part_filename : part_assets) {
+                    ++part_index;
+                    std::string part_url = base_download_url + part_filename;
+                    std::string part_path = zip_path + ".part" + std::to_string(part_index - 1);
+
+                    LOG(DEBUG, spec.log_name()) << "Downloading part "
+                                                << part_index << "/" << total_parts
+                                                << ": " << part_filename << std::endl;
+
+                    // Per-part progress wrapper. Reports cumulative bytes
+                    // across all parts so the GUI bar climbs continuously
+                    // instead of resetting between parts.
+                    utils::ProgressCallback part_http_cb;
+                    if (progress_cb) {
+                        size_t cumulative_snapshot = cumulative_downloaded;
+                        int idx_snapshot = part_index;
+                        std::string name_snapshot = part_filename;
+                        part_http_cb = [&progress_cb, name_snapshot, idx_snapshot, total_parts, cumulative_snapshot]
+                                      (size_t downloaded, size_t total) -> bool {
+                            DownloadProgress p;
+                            p.file = name_snapshot;
+                            p.file_index = idx_snapshot;
+                            p.total_files = total_parts;
+                            p.bytes_downloaded = cumulative_snapshot + downloaded;
+                            p.bytes_total = cumulative_snapshot + total;
+                            p.total_download_size = p.bytes_total;
+                            p.percent = p.bytes_total > 0
+                                ? static_cast<int>((p.bytes_downloaded * 100) / p.bytes_total)
+                                : 0;
+                            p.complete = false;
+                            return progress_cb(p);
+                        };
+                    } else {
+                        part_http_cb = utils::create_throttled_progress_callback();
+                    }
+
+                    auto part_result = utils::HttpClient::download_file(
+                        part_url, part_path, part_http_cb);
+
+                    if (!part_result.success) {
+                        combined.close();
+                        fs::remove(part_path);
+                        fs::remove(zip_path);
+                        throw std::runtime_error("Failed to download " + part_filename + " from: " + part_url +
+                                                 " - " + part_result.error_message);
+                    }
+
+                    // Append part to the combined archive
+                    std::ifstream part_in(part_path, std::ios::binary);
+                    combined << part_in.rdbuf();
+                    part_in.close();
+                    std::error_code part_size_ec;
+                    std::uintmax_t part_size = fs::file_size(part_path, part_size_ec);
+                    if (!part_size_ec) {
+                        cumulative_downloaded += part_size;
+                    }
+                    fs::remove(part_path);
+                }
+                combined.close();
             }
 
             LOG(DEBUG, spec.log_name()) << "Download complete!" << std::endl;
@@ -459,14 +597,19 @@ namespace lemon::backends {
             // Delete ZIP file
             fs::remove(zip_path);
 
-            // Send completion event now that installation is fully done
+            // Send completion event now that installation is fully done.
+            // download_result is from the single-file attempt and reports
+            // misleading ~9 bytes from the 404 response body when the archive
+            // was actually fetched via the multi-part fallback. Use the
+            // verified on-disk archive size (captured into file_size above,
+            // before zip_path was deleted) so the GUI shows the real total.
             if (progress_cb) {
                 DownloadProgress p;
                 p.file = filename;
                 p.file_index = 1;
                 p.total_files = 1;
-                p.bytes_downloaded = download_result.bytes_downloaded;
-                p.bytes_total = download_result.total_bytes;
+                p.bytes_downloaded = static_cast<size_t>(file_size);
+                p.bytes_total = static_cast<size_t>(file_size);
                 p.percent = 100;
                 p.complete = true;
                 progress_cb(p);
