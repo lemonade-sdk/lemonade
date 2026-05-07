@@ -333,6 +333,7 @@ namespace lemon::backends {
                 + " when listing assets of " + repo + "@" + tag
                 + " (rate-limit: limit=" + limit + " remaining=" + remaining
                 + " reset=" + reset + " resource=" + resource
+                + ", env_token=" + (have_token ? "true" : "false")
                 + ", token_sent=" + (sent_with_auth ? "true" : "false") + ")");
         }
         if (resp.status_code < 200 || resp.status_code >= 300) {

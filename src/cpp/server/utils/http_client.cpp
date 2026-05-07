@@ -25,6 +25,30 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
     return total_size;
 }
 
+// Callback for capturing response headers into a map. Header names are
+// normalized to lowercase so callers can do case-insensitive lookups
+// (HTTP headers are case-insensitive per RFC 7230).
+static size_t header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    size_t total_size = size * nitems;
+    auto* headers = static_cast<std::map<std::string, std::string>*>(userdata);
+    std::string line(buffer, total_size);
+    auto colon = line.find(':');
+    if (colon != std::string::npos) {
+        std::string name = line.substr(0, colon);
+        std::string value = line.substr(colon + 1);
+        // Trim leading whitespace and trailing CRLF on the value.
+        size_t v_start = value.find_first_not_of(" \t");
+        size_t v_end = value.find_last_not_of("\r\n \t");
+        value = (v_start == std::string::npos) ? "" : value.substr(v_start, v_end - v_start + 1);
+        // Lowercase the name.
+        for (auto& c : name) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        (*headers)[name] = value;
+    }
+    return total_size;
+}
+
 // Callback for writing to file
 static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
     size_t written = fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
@@ -86,6 +110,8 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
