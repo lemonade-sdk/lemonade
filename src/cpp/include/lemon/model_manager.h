@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 #include <map>
+#include <optional>
 #include <vector>
 #include <mutex>
 #include <functional>
@@ -144,6 +145,12 @@ public:
 
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
+
+    // Validate a collection (recipe="collection") registration request.
+    // Returns nullopt on success, or a user-facing error message on failure.
+    // Used by /pull request validation and as a defensive guard in download_model.
+    std::optional<std::string> validate_collection_request(
+        const std::string& model_name, const nlohmann::json& model_data);
 
     // Check if model exists in the raw registry (before filtering)
     // Returns true even for NPU models on systems without NPU

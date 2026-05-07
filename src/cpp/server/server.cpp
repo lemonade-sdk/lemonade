@@ -2725,6 +2725,12 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 }
 
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", message}};
+        res.set_content(error.dump(), "application/json");
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
@@ -2749,51 +2755,17 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         // Validate: if checkpoint or recipe are provided, model name must have "user." prefix
         if (!checkpoint.empty() || !recipe.empty()) {
             if (model_name.substr(0, 5) != "user.") {
-                res.status = 400;
-                nlohmann::json error = {{"error",
+                bad_request(
                     "When providing 'checkpoint' or 'recipe', the model name must include the "
-                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
-                res.set_content(error.dump(), "application/json");
+                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name);
                 return;
             }
         }
 
-        // Validate: collections require a non-empty composite_models array
-        // and every component must be already registered.
         if (recipe == "collection") {
-            if (!request_json.contains("composite_models") ||
-                !request_json["composite_models"].is_array() ||
-                request_json["composite_models"].empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error",
-                    "recipe='collection' requires a non-empty 'composite_models' array"}};
-                res.set_content(error.dump(), "application/json");
+            if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
+                bad_request(*err);
                 return;
-            }
-            for (const auto& component : request_json["composite_models"]) {
-                if (!component.is_string()) {
-                    res.status = 400;
-                    nlohmann::json error = {{"error",
-                        "composite_models entries must be strings"}};
-                    res.set_content(error.dump(), "application/json");
-                    return;
-                }
-                std::string component_name = component.get<std::string>();
-                if (component_name == model_name) {
-                    res.status = 400;
-                    nlohmann::json error = {{"error",
-                        "Collection cannot reference itself: " + component_name}};
-                    res.set_content(error.dump(), "application/json");
-                    return;
-                }
-                if (!model_manager_->model_exists(component_name)) {
-                    res.status = 400;
-                    nlohmann::json error = {{"error",
-                        "Collection component not registered: '" + component_name +
-                        "'. Pull or register it before referencing it in a collection."}};
-                    res.set_content(error.dump(), "application/json");
-                    return;
-                }
             }
         }
 

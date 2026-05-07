@@ -2209,30 +2209,8 @@ void ModelManager::download_model(const std::string& model_name,
         }
 
         if (actual_recipe == "collection") {
-            // Collections have no checkpoint; they reference other registered models.
-            if (!model_data.contains("composite_models") ||
-                !model_data["composite_models"].is_array() ||
-                model_data["composite_models"].empty()) {
-                throw std::runtime_error(
-                    "Collection registration requires a non-empty 'composite_models' array"
-                );
-            }
-            for (const auto& component : model_data["composite_models"]) {
-                if (!component.is_string()) {
-                    throw std::runtime_error("composite_models entries must be strings");
-                }
-                std::string component_name = component.get<std::string>();
-                if (component_name == model_name) {
-                    throw std::runtime_error(
-                        "Collection cannot reference itself: " + component_name
-                    );
-                }
-                if (!model_exists(component_name)) {
-                    throw std::runtime_error(
-                        "Collection component not registered: '" + component_name +
-                        "'. Pull or register it before referencing it in a collection."
-                    );
-                }
+            if (auto err = validate_collection_request(model_name, model_data)) {
+                throw std::runtime_error(*err);
             }
             LOG(INFO, "ModelManager") << "Registering new user collection: " << model_name << std::endl;
         } else {
@@ -2286,9 +2264,7 @@ void ModelManager::download_model(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
-    // Register a not-yet-registered user collection before fan-out so
-    // get_model_info() finds it. Non-collection user models are still
-    // registered later (after the recipe support / offline checks below).
+    // Register collections early — the fan-out below calls get_model_info().
     if (actual_recipe == "collection" && is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
         model_registered = true;
@@ -3489,6 +3465,29 @@ bool ModelManager::model_exists(const std::string& model_name) {
     auto alias_it = public_model_aliases_.find(model_name);
     std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
     return models_cache_.find(canonical_name) != models_cache_.end();
+}
+
+std::optional<std::string> ModelManager::validate_collection_request(
+    const std::string& model_name, const json& model_data) {
+    if (!model_data.contains("composite_models") ||
+        !model_data["composite_models"].is_array() ||
+        model_data["composite_models"].empty()) {
+        return std::string("recipe='collection' requires a non-empty 'composite_models' array");
+    }
+    for (const auto& component : model_data["composite_models"]) {
+        if (!component.is_string()) {
+            return std::string("composite_models entries must be strings");
+        }
+        std::string component_name = component.get<std::string>();
+        if (component_name == model_name) {
+            return "Collection cannot reference itself: " + component_name;
+        }
+        if (!model_exists(component_name)) {
+            return "Collection component not registered: '" + component_name +
+                   "'. Pull or register it before referencing it in a collection.";
+        }
+    }
+    return std::nullopt;
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
