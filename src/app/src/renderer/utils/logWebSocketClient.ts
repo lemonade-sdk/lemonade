@@ -1,4 +1,4 @@
-import { getAPIKey, getServerBaseUrl, getWebSocketProtocol, serverFetch } from './serverConfig';
+import { buildWebSocketUrl, serverFetch } from './serverConfig';
 
 export interface LogEntry {
   seq: number;
@@ -35,21 +35,7 @@ export async function connectLogStream(
     throw new Error('Server did not advertise a websocket port');
   }
 
-  const query = new URLSearchParams();
-  const apiKey = getAPIKey();
-  if (apiKey) {
-    query.set('api_key', apiKey);
-  }
-
-  // Construct the websocket URL from the configured server base URL so that
-  // hostname resolution, IPv6 vs IPv4, and any custom hostnames are preserved.
-  // Replace the port with the websocket port advertised by the server.
-  const base = new URL(getServerBaseUrl());
-  base.port = String(wsPort);
-  const baseHost = base.host; // includes hostname:port
-  const wsPath = '/logs/stream';
-  const wsQuery = query.size > 0 ? `?${query.toString()}` : '';
-  const wsUrl = `${getWebSocketProtocol()}://${baseHost}${wsPath}${wsQuery}`;
+  const wsUrl = buildWebSocketUrl('/logs/stream', wsPort);
   const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {

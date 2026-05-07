@@ -149,14 +149,6 @@ class ServerConfig {
   }
 
   /**
-   * Get the server hostname
-   */
-  getServerHost(): string {
-    const url = new URL(this.getServerBaseUrl());
-    return url.hostname;
-  }
-
-  /**
    * Get the server API key
    */
   getAPIKey(): string {
@@ -164,6 +156,28 @@ class ServerConfig {
       return this.apiKey;
     }
     return '';
+  }
+
+  /**
+   * Build a WebSocket URL for an endpoint served on the websocket port
+   * advertised by /health. Going through URL rather than string concat is
+   * what makes this correct for IPv6 literals — URL.host preserves the
+   * brackets that hostname does not. The configured API key is appended
+   * automatically when set.
+   */
+  buildWebSocketUrl(path: string, wsPort: number, query?: URLSearchParams): string {
+    const url = new URL(this.getServerBaseUrl());
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.port = String(wsPort);
+    url.pathname = url.pathname.replace(/\/$/, '') + path;
+
+    const params = new URLSearchParams(query);
+    const apiKey = this.getAPIKey();
+    if (apiKey) {
+      params.set('api_key', apiKey);
+    }
+    url.search = params.toString();
+    return url.toString();
   }
 
   /**
@@ -346,11 +360,11 @@ export const serverConfig = new ServerConfig();
 // Export convenience functions
 export const getApiBaseUrl = () => serverConfig.getApiBaseUrl();
 export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
-export const getServerHost = () => serverConfig.getServerHost();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
-export const getWebSocketProtocol = () => new URL(serverConfig.getServerBaseUrl()).protocol === 'https:' ? 'wss' : 'ws';
+export const buildWebSocketUrl = (path: string, wsPort: number, query?: URLSearchParams) =>
+  serverConfig.buildWebSocketUrl(path, wsPort, query);
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);
