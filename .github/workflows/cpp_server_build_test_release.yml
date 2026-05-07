@@ -436,18 +436,23 @@ jobs:
 
           # Launchd may not start reliably in CI. Fall back to manual start.
           echo "Server not reachable after 30s — starting manually..."
-          /usr/local/bin/lemonade-server serve --no-tray > /tmp/lemonade-server.log 2>&1 &
+          # Start lemond directly (not via deprecated lemonade-server serve shim)
+          # The legacy shim's 30s health-check timeout can kill lemond before Metal
+          # initialization completes, causing silent failures.
+          /usr/local/bin/lemond > /tmp/lemond.log 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
 
-          for i in $(seq 1 15); do
+          for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server is running and healthy (started manually)"
+              echo "Server is running and healthy (started manually, PID $LEMOND_PID)"
               exit 0
             fi
-            echo "Waiting for server... ($i/15)"
+            echo "Waiting for server... ($i/30)"
             sleep 2
           done
           echo "ERROR: Server did not start within 60 seconds"
-          cat /tmp/lemonade-server.log 2>/dev/null || true
+          cat /tmp/lemond.log 2>/dev/null || true
           exit 1
 
       - name: Setup Python and virtual environment (unsigned path)
@@ -1231,18 +1236,23 @@ jobs:
         run: |
           set -e
           echo "Starting server manually (unsigned path)..."
-          /usr/local/bin/lemonade-server serve --no-tray > /tmp/lemonade-server.log 2>&1 &
+          # Start lemond directly (not via deprecated lemonade-server serve shim).
+          # The legacy shim's 30s health-check timeout can kill lemond before Metal
+          # initialization completes, causing silent failures.
+          /usr/local/bin/lemond > /tmp/lemond.log 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
 
-          for i in $(seq 1 15); do
+          for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server is running and healthy (started manually)"
+              echo "Server is running and healthy (started manually, PID $LEMOND_PID)"
               exit 0
             fi
-            echo "Waiting for server... ($i/15)"
+            echo "Waiting for server... ($i/30)"
             sleep 2
           done
-          echo "ERROR: Server did not start within 30 seconds"
-          cat /tmp/lemonade-server.log 2>/dev/null || true
+          echo "ERROR: Server did not start within 60 seconds"
+          cat /tmp/lemond.log 2>/dev/null || true
           exit 1
 
       - name: Setup Python and virtual environment
