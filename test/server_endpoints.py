@@ -1209,6 +1209,120 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021c_register_user_collection(self):
+        """Register a user-defined collection via POST /pull."""
+        canonical_name = f"user.TestColl-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name[5:]
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection",
+                    "composite_models": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+
+            # Show all so user.* models are visible
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (
+                    m
+                    for m in models_response.json()["data"]
+                    if m["id"] == canonical_name
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{canonical_name} should appear in /models")
+            self.assertEqual(entry.get("recipe"), "collection")
+            self.assertEqual(entry.get("composite_models"), [ENDPOINT_TEST_MODEL])
+            self.assertTrue(
+                entry.get("downloaded"),
+                "Collection should report downloaded=true when all components are downloaded",
+            )
+
+            print(f"[OK] Registered user collection: {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021d_register_collection_missing_components(self):
+        """Collections referencing unknown components are rejected with 400."""
+        canonical_name = f"user.BadColl-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": canonical_name,
+                "recipe": "collection",
+                "composite_models": [f"user.does-not-exist-{uuid.uuid4().hex[:6]}"],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("not registered", response.json().get("error", "").lower())
+        print("[OK] Unknown component rejected with 400")
+
+    def test_021e_register_collection_empty_array(self):
+        """Empty composite_models is rejected with 400."""
+        canonical_name = f"user.EmptyColl-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": canonical_name,
+                "recipe": "collection",
+                "composite_models": [],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("composite_models", response.json().get("error", ""))
+        print("[OK] Empty composite_models rejected with 400")
+
+    def test_021f_register_collection_no_user_prefix(self):
+        """Collection name without user. prefix is rejected with 400."""
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": f"NoPrefixColl-{uuid.uuid4().hex[:8]}",
+                "recipe": "collection",
+                "composite_models": [ENDPOINT_TEST_MODEL],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("user.", response.json().get("error", ""))
+        print("[OK] Missing user. prefix rejected with 400")
+
+    def test_021g_register_collection_self_reference(self):
+        """A collection that lists itself in composite_models is rejected."""
+        canonical_name = f"user.SelfRef-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": canonical_name,
+                "recipe": "collection",
+                "composite_models": [canonical_name],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("itself", response.json().get("error", "").lower())
+        print("[OK] Self-reference rejected with 400")
+
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""
         import sys

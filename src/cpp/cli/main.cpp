@@ -100,6 +100,7 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
+    std::vector<std::string> composite_models;
     nlohmann::json recipe_options;
     bool save_options = false;
     std::string backend_spec;  // Format: "recipe:backend"
@@ -232,6 +233,10 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
+    if (!config.composite_models.empty()) {
+        model_data["composite_models"] = config.composite_models;
+    }
+
     if (!config.labels.empty()) {
         model_data["labels"] = config.labels;
     }
@@ -240,11 +245,21 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
 }
 
 static bool has_manual_pull_options(const CliConfig& config) {
-    return !config.checkpoints.empty() || !config.recipe.empty() || !config.labels.empty();
+    return !config.checkpoints.empty() || !config.recipe.empty() ||
+           !config.labels.empty() || !config.composite_models.empty();
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
+        if (config.recipe == "collection") {
+            if (config.composite_models.empty()) {
+                std::cerr << "Error: collection pull requires --composite-models MODEL [MODEL ...]."
+                          << std::endl;
+                std::cerr << "       See 'lemonade pull --help'." << std::endl;
+                return 1;
+            }
+            return handle_manual_pull_command(client, config);
+        }
         if (config.checkpoints.empty()) {
             std::cerr << "Error: manual pull requires at least one --checkpoint TYPE CHECKPOINT."
                       << std::endl;
@@ -1049,6 +1064,12 @@ int main(int argc, char* argv[]) {
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+    pull_cmd->add_option("--composite-models", config.composite_models,
+        "Component model names for a user.* collection (use with --recipe collection). "
+        "Components must already be registered (built-in or previously pulled user.* models).")
+        ->group("Manual Configuration Options")
+        ->type_name("MODEL")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
         "  https://lemonade-server.ai/docs/server/custom-models/");

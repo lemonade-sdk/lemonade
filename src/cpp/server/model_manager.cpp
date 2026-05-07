@@ -54,7 +54,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "composite_models"};
 
 // Helper functions for string operations
 static std::string to_lower(const std::string& str) {
@@ -2208,33 +2208,62 @@ void ModelManager::download_model(const std::string& model_name,
             );
         }
 
-        // Check that required arguments are provided
-        if (actual_checkpoint.empty() || actual_recipe.empty()) {
-            throw std::runtime_error(
-                "Model " + model_name + " is not registered with Lemonade Server. "
-                "To register and install it, provide the `checkpoint` and `recipe` "
-                "arguments, as well as the optional `reasoning` and `mmproj` arguments "
-                "as appropriate."
-            );
-        }
-
-        // Validate GGUF models (llamacpp recipe) require a variant
-        if (actual_recipe == "llamacpp") {
-            std::string checkpoint_lower = actual_checkpoint;
-            std::transform(checkpoint_lower.begin(), checkpoint_lower.end(),
-                          checkpoint_lower.begin(), ::tolower);
-            if (checkpoint_lower.find("gguf") != std::string::npos &&
-                actual_checkpoint.find(':') == std::string::npos) {
+        if (actual_recipe == "collection") {
+            // Collections have no checkpoint; they reference other registered models.
+            if (!model_data.contains("composite_models") ||
+                !model_data["composite_models"].is_array() ||
+                model_data["composite_models"].empty()) {
                 throw std::runtime_error(
-                    "You are required to provide a 'variant' in the checkpoint field when "
-                    "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
-                    "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
-                    "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
+                    "Collection registration requires a non-empty 'composite_models' array"
                 );
             }
-        }
+            for (const auto& component : model_data["composite_models"]) {
+                if (!component.is_string()) {
+                    throw std::runtime_error("composite_models entries must be strings");
+                }
+                std::string component_name = component.get<std::string>();
+                if (component_name == model_name) {
+                    throw std::runtime_error(
+                        "Collection cannot reference itself: " + component_name
+                    );
+                }
+                if (!model_exists(component_name)) {
+                    throw std::runtime_error(
+                        "Collection component not registered: '" + component_name +
+                        "'. Pull or register it before referencing it in a collection."
+                    );
+                }
+            }
+            LOG(INFO, "ModelManager") << "Registering new user collection: " << model_name << std::endl;
+        } else {
+            // Check that required arguments are provided
+            if (actual_checkpoint.empty() || actual_recipe.empty()) {
+                throw std::runtime_error(
+                    "Model " + model_name + " is not registered with Lemonade Server. "
+                    "To register and install it, provide the `checkpoint` and `recipe` "
+                    "arguments, as well as the optional `reasoning` and `mmproj` arguments "
+                    "as appropriate."
+                );
+            }
 
-        LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
+            // Validate GGUF models (llamacpp recipe) require a variant
+            if (actual_recipe == "llamacpp") {
+                std::string checkpoint_lower = actual_checkpoint;
+                std::transform(checkpoint_lower.begin(), checkpoint_lower.end(),
+                              checkpoint_lower.begin(), ::tolower);
+                if (checkpoint_lower.find("gguf") != std::string::npos &&
+                    actual_checkpoint.find(':') == std::string::npos) {
+                    throw std::runtime_error(
+                        "You are required to provide a 'variant' in the checkpoint field when "
+                        "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
+                        "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                        "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
+                    );
+                }
+            }
+
+            LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
+        }
     } else {
         // Model is registered - if checkpoint not provided, look up from registry
         // otherwise overwrite registration
@@ -2255,6 +2284,14 @@ void ModelManager::download_model(const std::string& model_name,
     if (colon_pos != std::string::npos) {
         repo_id = actual_checkpoint.substr(0, colon_pos);
         variant = actual_checkpoint.substr(colon_pos + 1);
+    }
+
+    // Register a not-yet-registered user collection before fan-out so
+    // get_model_info() finds it. Non-collection user models are still
+    // registered later (after the recipe support / offline checks below).
+    if (actual_recipe == "collection" && is_user_model_name(model_name) && !model_registered) {
+        register_user_model(model_name, model_data);
+        model_registered = true;
     }
 
     // Collections don't have their own backend — download each component model instead

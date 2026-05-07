@@ -2758,6 +2758,45 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
+        // Validate: collections require a non-empty composite_models array
+        // and every component must be already registered.
+        if (recipe == "collection") {
+            if (!request_json.contains("composite_models") ||
+                !request_json["composite_models"].is_array() ||
+                request_json["composite_models"].empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error",
+                    "recipe='collection' requires a non-empty 'composite_models' array"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            for (const auto& component : request_json["composite_models"]) {
+                if (!component.is_string()) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error",
+                        "composite_models entries must be strings"}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+                std::string component_name = component.get<std::string>();
+                if (component_name == model_name) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error",
+                        "Collection cannot reference itself: " + component_name}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+                if (!model_manager_->model_exists(component_name)) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error",
+                        "Collection component not registered: '" + component_name +
+                        "'. Pull or register it before referencing it in a collection."}};
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+            }
+        }
+
         // Local import mode: CLI has already copied files to HF cache, just resolve and register
         bool local_import = request_json.value("local_import", false);
         if (local_import) {
