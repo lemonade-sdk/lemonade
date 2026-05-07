@@ -122,7 +122,15 @@ class TestConfigEnvVars(unittest.TestCase):
             # Recipe-option env vars
             "LEMONADE_CTX_SIZE": "2048",
         }
-        if not IS_MACOS:
+        if IS_MACOS:
+            # On macOS the platform defaults are metal for llamacpp/whispercpp
+            cls.env.update(
+                {
+                    "LEMONADE_LLAMACPP": "metal",
+                    "LEMONADE_WHISPERCPP": "metal",
+                }
+            )
+        else:
             cls.env.update(
                 {
                     "LEMONADE_LLAMACPP": "cpu",
@@ -171,7 +179,8 @@ class TestConfigEnvVars(unittest.TestCase):
         self.assertEqual(self.snapshot["ctx_size"], 2048)
 
     def test_llamacpp_backend(self):
-        self.assertEqual(self.snapshot["llamacpp"]["backend"], "metal")
+        expected = "metal" if IS_MACOS else "cpu"
+        self.assertEqual(self.snapshot["llamacpp"]["backend"], expected)
 
     @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
     def test_llamacpp_args(self):
