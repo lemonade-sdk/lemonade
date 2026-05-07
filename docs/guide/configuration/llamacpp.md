@@ -119,6 +119,27 @@ After changing channels, you'll need to reinstall the ROCm backend:
 lemonade backends install llamacpp:rocm
 ```
 
+### Pinning to a Specific Version Tag
+
+You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"builtin"` or `"latest"`. **Each channel downloads from a different GitHub repository, so you must set the correct channel before setting a specific tag.**
+
+| Channel | Repository | Tag format |
+|---|---|---|
+| `preview` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
+| `stable` | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | Upstream tags, e.g. `b4888` |
+| `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
+
+> **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.
+
+Example — pin to a specific nightly build:
+```bash
+# 1. Switch to the nightly channel first
+lemonade config set rocm_channel=nightly
+
+# 2. Then pin to the desired nightly tag
+lemonade config set llamacpp.rocm_bin=b1260
+```
+
 ## Choosing the Right Backend
 
 ### Decision Tree

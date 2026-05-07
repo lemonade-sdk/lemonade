@@ -150,6 +150,8 @@ Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm
 
 > Note: the `latest` setting is experimental.
 
+> **Important — `llamacpp.rocm_bin` version tags are channel-specific.** Each ROCm channel downloads from a different GitHub repository, so you must set the correct `rocm_channel` before pinning `rocm_bin` to a specific tag. See [Pinning to a Specific Version Tag](./llamacpp.md#pinning-to-a-specific-version-tag) for details.
+
 Examples:
 
 ```bash
