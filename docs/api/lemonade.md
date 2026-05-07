@@ -431,6 +431,7 @@ curl http://localhost:13305/v1/health
       "type": "llm",
       "device": "gpu npu",
       "recipe": "ryzenai-llm",
+      "pid": 12345,
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -443,6 +444,7 @@ curl http://localhost:13305/v1/health
       "type": "embedding",
       "device": "gpu",
       "recipe": "llamacpp",
+      "pid": 12346,
       "recipe_options": {
         "ctx_size": 8192,
         "llamacpp_args": "--no-mmap",
@@ -474,8 +476,9 @@ curl http://localhost:13305/v1/health
   - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
-  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+  - `pid` - The Process ID (PID) of the backend engine handling this model
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
+  - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
