@@ -51,12 +51,14 @@ This file contains a JSON object where each key is a model name and each value d
 |-------|----------|------|-------------|
 | `checkpoint` | Yes* | String | HuggingFace checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
-| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`. |
+| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection`. |
+| `composite_models` | Yes** | Array | Component model names for a collection. Required when `recipe: "collection"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
+\*\* Required only when `recipe: "collection"`. Collections do not use `checkpoint`/`checkpoints`.
 
 ### Checkpoint format
 
@@ -92,6 +94,29 @@ Supported checkpoint keys:
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
+
+### Collections
+
+A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name.
+
+```json
+{
+    "MyKit": {
+        "recipe": "collection",
+        "composite_models": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+    }
+}
+```
+
+Component names must already be registered (built-in models, or other `user.*` entries earlier in this file). Self-references are rejected. Loading the collection (`lemonade load user.MyKit`) loads each component; deleting the collection removes only the collection entry, leaving components on disk.
+
+The same registration is also exposed via the `pull` CLI/API:
+
+```bash
+lemonade pull user.MyKit \
+    --recipe collection \
+    --composite-models Qwen3-0.6B-GGUF Whisper-Tiny SD-Turbo
+```
 
 ### Image defaults
 

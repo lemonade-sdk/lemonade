@@ -155,17 +155,19 @@ The `pull` command downloads and installs models. The single positional argument
 1. **A registered model name** from the [Lemonade Server registry](https://lemonade-server.ai/models.html), e.g. `Qwen3-0.6B-GGUF`.
 2. **A Hugging Face checkpoint** of the form `owner/repo`, with an optional `:variant` suffix, e.g. `unsloth/Qwen3-8B-GGUF` or `unsloth/Qwen3-8B-GGUF:Q4_K_M`. When the variant is omitted (or doesn't match), Lemonade fetches the repository, lists the available quantizations (including sharded folder variants), auto-detects any `mmproj-*.gguf` files for vision models, infers labels from the repo id (`embed`/`rerank`), and presents an interactive menu.
 3. **A custom `user.*` model name** when you want to manually register a model with explicit checkpoints, recipe, and optional labels.
+4. **A custom `user.*` collection name** when you want to bundle multiple already-registered models into one entry (`--recipe collection --composite-models ...`).
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL]
+lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--composite-models MODEL ...]
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
-| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`) | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
+| `--composite-models MODEL [MODEL ...]` | Collection registration: component model names to bundle. Use with `--recipe collection`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
 
 **Happy path**
 
@@ -215,6 +217,18 @@ lemonade pull user.MyCodingModel \
   --label coding \
   --label tool-calling
 ```
+
+**Register a collection**
+
+A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Components must already be registered (built-in models or previously pulled `user.*` models); any not-yet-downloaded components are pulled by the same call.
+
+```bash
+lemonade pull user.MyKit \
+  --recipe collection \
+  --composite-models Qwen3-0.6B-GGUF Whisper-Tiny SD-Turbo
+```
+
+`lemonade load user.MyKit` then loads every component, and `lemonade delete user.MyKit` removes only the collection entry (its components stay on disk).
 
 ## Options for import
 

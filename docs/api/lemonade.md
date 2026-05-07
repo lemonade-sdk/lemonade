@@ -106,6 +106,30 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+**Register a Collection**
+
+A collection bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection"` with a `composite_models` array instead of `checkpoint`.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
+| `recipe` | Yes | Must be `"collection"`. |
+| `composite_models` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). Self-references are rejected. |
+
+Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; component models stay on disk.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.MyKit",
+    "recipe": "collection",
+    "composite_models": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+  }'
+```
+
 ### Streaming Response (stream=true)
 
 When `stream=true`, the endpoint returns Server-Sent Events with real-time download progress:
