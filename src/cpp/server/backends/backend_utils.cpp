@@ -13,13 +13,13 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <cstdlib>
-#include <cstring>
 #include <lemon/utils/aixlog.hpp>
-#include <algorithm>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -274,65 +274,6 @@ namespace lemon::backends {
         return version;
     }
 
-    std::vector<std::string> BackendUtils::list_release_assets(const std::string& repo, const std::string& tag) {
-        // GET https://api.github.com/repos/{repo}/releases/tags/{tag}
-        // Returns just asset names so the caller can match against
-        // expected filenames (e.g. "{filename}" or "{base}.partNN.tar.gz").
-        const std::string url = "https://api.github.com/repos/" + repo + "/releases/tags/" + tag;
-        std::map<std::string, std::string> headers = {
-            {"User-Agent", "lemonade"},
-            {"Accept", "application/vnd.github+json"},
-        };
-        // Use GITHUB_TOKEN if set in the environment. Without it, GitHub's
-        // unauthenticated rate limit is 60 requests/hour per IP, which CI
-        // runners and shared-IP environments exhaust quickly. Authenticated
-        // calls get 5000/hour. The token is read from the standard env var
-        // that GitHub Actions sets automatically.
-        if (const char* token = std::getenv("GITHUB_TOKEN"); token && *token) {
-            headers["Authorization"] = "Bearer " + std::string(token);
-        }
-
-        utils::HttpResponse resp;
-        try {
-            resp = utils::HttpClient::get(url, headers);
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Failed to query GitHub for release assets of " + repo + "@" + tag + ": " + e.what());
-        }
-        if (resp.status_code == 403 || resp.status_code == 429) {
-            // Rate limit. Surface a clear, actionable message rather than the
-            // raw HTTP code; users without a token can hit 60/hr easily.
-            throw std::runtime_error(
-                "GitHub API rate limit reached when listing assets of " + repo + "@" + tag
-                + " (HTTP " + std::to_string(resp.status_code) + "). "
-                + "Set the GITHUB_TOKEN environment variable to a personal access token "
-                + "to raise the limit from 60 to 5000 requests per hour, or wait ~1 hour "
-                + "and retry.");
-        }
-        if (resp.status_code < 200 || resp.status_code >= 300) {
-            throw std::runtime_error(
-                "GitHub returned HTTP " + std::to_string(resp.status_code)
-                + " when listing assets of " + repo + "@" + tag);
-        }
-
-        std::vector<std::string> names;
-        try {
-            auto body = json::parse(resp.body);
-            if (!body.contains("assets") || !body["assets"].is_array()) {
-                throw std::runtime_error("Release JSON missing 'assets' array");
-            }
-            for (const auto& asset : body["assets"]) {
-                if (asset.contains("name") && asset["name"].is_string()) {
-                    names.push_back(asset["name"].get<std::string>());
-                }
-            }
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Failed to parse GitHub release JSON for " + repo + "@" + tag + ": " + e.what());
-        }
-        return names;
-    }
-
     void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb) {
         std::string install_dir;
         std::string version_file;
@@ -379,43 +320,63 @@ namespace lemon::backends {
 
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
 
-            // Ask the GitHub Releases API which asset filenames actually exist
-            // under this tag. We then download exactly the matching asset(s)
-            // — no probe-then-404 for a single-file URL that doesn't exist
-            // (vLLM only publishes split parts), and no probe-one-past-the-last
-            // to detect end-of-parts. One round trip vs. up to N+1 wasted
-            // requests, and the install log no longer carries any 404 lines.
-            std::vector<std::string> assets = list_release_assets(repo, expected_version);
+            const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
+                                                  expected_version + "/";
 
-            // Decide single-file vs. split-archive based on which assets exist.
-            // Single-file: there's an asset named exactly `filename`.
-            // Split-archive: assets matching `{base}.partNN.tar.gz` for tarballs.
+            // Decide single-file vs. split-archive without hitting the GitHub
+            // Releases API (which is rate-limited to 60 req/hr per IP, and
+            // 5000/hr even with a token — both insufficient for shared CI
+            // runners). For backends that opt in via supports_split_archive,
+            // probe a tiny `{base}.partcount` manifest published alongside
+            // the parts: HTTP 200 means split, with the body giving N; 404
+            // falls through to the single-file path. Non-split backends skip
+            // this entirely so their install logs stay quiet.
             std::string base;
             if (is_tarball(filename)) {
                 base = filename.substr(0, filename.size() - 7);  // strip ".tar.gz"
             }
-            bool has_single = std::find(assets.begin(), assets.end(), filename) != assets.end();
-            std::vector<std::string> part_assets;
-            if (!has_single && is_tarball(filename)) {
-                const std::string part_prefix = base + ".part";
-                const std::string part_suffix = ".tar.gz";
-                for (const auto& name : assets) {
-                    if (name.size() > part_prefix.size() + part_suffix.size()
-                        && name.compare(0, part_prefix.size(), part_prefix) == 0
-                        && name.compare(name.size() - part_suffix.size(), part_suffix.size(), part_suffix) == 0) {
-                        part_assets.push_back(name);
-                    }
-                }
-                std::sort(part_assets.begin(), part_assets.end());
-            }
-            if (!has_single && part_assets.empty()) {
-                throw std::runtime_error(
-                    "Release " + repo + "@" + expected_version + " has no asset matching '"
-                    + filename + "' nor any '" + (base.empty() ? filename : base) + ".partNN.tar.gz' parts");
-            }
 
-            const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
-                                                  expected_version + "/";
+            bool is_split = false;
+            std::vector<std::string> part_assets;
+            if (spec.supports_split_archive && is_tarball(filename)) {
+                const std::string partcount_url = base_download_url + base + ".partcount";
+                auto resp = utils::HttpClient::get(partcount_url);
+                if (resp.status_code == 200) {
+                    int total_parts = 0;
+                    try {
+                        std::string body = resp.body;
+                        while (!body.empty()
+                               && std::isspace(static_cast<unsigned char>(body.back()))) {
+                            body.pop_back();
+                        }
+                        total_parts = std::stoi(body);
+                    } catch (const std::exception& e) {
+                        throw std::runtime_error(
+                            "Malformed partcount at " + partcount_url + ": " + e.what());
+                    }
+                    if (total_parts < 1 || total_parts > 99) {
+                        throw std::runtime_error(
+                            "partcount out of range (1..99) at " + partcount_url
+                            + ": got " + std::to_string(total_parts));
+                    }
+                    auto two_digit = [](int n) {
+                        std::string s = std::to_string(n);
+                        return s.size() < 2 ? std::string(2 - s.size(), '0') + s : s;
+                    };
+                    const std::string total_padded = two_digit(total_parts);
+                    for (int i = 1; i <= total_parts; ++i) {
+                        part_assets.push_back(base + ".part" + two_digit(i)
+                                              + "-of-" + total_padded + ".tar.gz");
+                    }
+                    is_split = true;
+                } else if (resp.status_code != 404) {
+                    throw std::runtime_error(
+                        "Unexpected HTTP " + std::to_string(resp.status_code)
+                        + " when probing " + partcount_url);
+                }
+                // 404 = no manifest = single-file release; fall through.
+            }
+            const bool has_single = !is_split;
 
             if (has_single) {
                 std::string url = base_download_url + filename;

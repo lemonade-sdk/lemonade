@@ -3,7 +3,6 @@
 #include <string>
 #include <functional>
 #include <filesystem>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -23,12 +22,20 @@ namespace lemon::backends {
     struct BackendSpec {
         const std::string recipe;
         const std::string binary;
+        // True when the backend's GitHub release may publish the archive as
+        // multiple parts ({base}.partNN-of-MM.tar.gz) alongside a tiny
+        // {base}.partcount manifest. The installer probes the manifest only
+        // when this is set, so non-split backends incur no extra HTTP
+        // requests and no spurious 404 lines in install logs.
+        const bool supports_split_archive;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
-        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
-            : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}
+        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
+                    bool split = false)
+            : recipe(std::move(r)), binary(std::move(b)),
+              supports_split_archive(split), install_params_fn(fn) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };
@@ -70,11 +77,6 @@ namespace lemon::backends {
         /** Download and install the specified version of the backend from github.
          *  If progress_cb is provided, it receives download progress events instead of console output. */
         static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb = nullptr);
-
-        /** Query the GitHub Releases API for the asset filenames published under
-         *  a given release tag. Returns just the asset names (not URLs). Throws
-         *  on network/HTTP/parse failure. */
-        static std::vector<std::string> list_release_assets(const std::string& repo, const std::string& tag);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
