@@ -288,8 +288,10 @@ namespace lemon::backends {
         // runners and shared-IP environments exhaust quickly. Authenticated
         // calls get 5000/hour. The token is read from the standard env var
         // that GitHub Actions sets automatically.
-        if (const char* token = std::getenv("GITHUB_TOKEN"); token && *token) {
-            headers["Authorization"] = "Bearer " + std::string(token);
+        const char* token_env = std::getenv("GITHUB_TOKEN");
+        const bool have_token = token_env && *token_env;
+        if (have_token) {
+            headers["Authorization"] = "Bearer " + std::string(token_env);
         }
 
         utils::HttpResponse resp;
@@ -298,6 +300,19 @@ namespace lemon::backends {
         } catch (const std::exception& e) {
             throw std::runtime_error(
                 "Failed to query GitHub for release assets of " + repo + "@" + tag + ": " + e.what());
+        }
+        if (resp.status_code == 401 && have_token) {
+            // Token is set but rejected (expired, wrong scope, malformed).
+            // Public release metadata doesn't require auth, so retry without
+            // the Authorization header. We lose the higher rate limit but
+            // recover the call instead of failing outright.
+            headers.erase("Authorization");
+            try {
+                resp = utils::HttpClient::get(url, headers);
+            } catch (const std::exception& e) {
+                throw std::runtime_error(
+                    "Failed to query GitHub for release assets of " + repo + "@" + tag + ": " + e.what());
+            }
         }
         if (resp.status_code == 403 || resp.status_code == 429) {
             // Rate limit. Surface a clear, actionable message rather than the
