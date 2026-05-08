@@ -536,6 +536,39 @@ jobs:
           .venv/bin/python test/server_env_vars.py --lemond-binary /usr/local/bin/lemond
           echo "Environment variable tests PASSED!"
 
+      - name: Ensure server is running before whisper tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+        run: |
+          set -e
+          echo "Checking if lemond is running before whisper tests..."
+          if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+            echo "Server is already running and healthy"
+          else
+            echo "Server not reachable — restarting lemond..."
+            # Kill any existing lemond that may be zombie/hung
+            pkill -f lemond 2>/dev/null || true
+            sleep 2
+            # Start lemond directly (avoid legacy shim health-check timeout)
+            /usr/local/bin/lemond > /tmp/lemond-whisper-pre.log 2>&1 &
+            LEMOND_PID=$!
+            disown "$LEMOND_PID"
+            # Wait for server to become healthy
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+                echo "Server started successfully (PID $LEMOND_PID)"
+                exit 0
+              fi
+              echo "Waiting for server... ($i/30)"
+              sleep 2
+            done
+            echo "ERROR: Server did not start within 60 seconds"
+            cat /tmp/lemond-whisper-pre.log 2>/dev/null || true
+            exit 1
+          fi
+
       - name: Run whisper Metal inference tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
