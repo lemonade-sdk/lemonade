@@ -1,0 +1,301 @@
+name: Validate New vLLM Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      lite:
+        description: 'Run in lite mode (smallest model only)'
+        type: boolean
+        default: false
+  pull_request:
+  schedule:
+    # Sunday at 6:00 PM UTC
+    - cron: "0 18 * * 0"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+  LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
+
+jobs:
+  # ========================================================================
+  # Discover the latest vllm-rocm release
+  # ========================================================================
+  get-latest-releases:
+    name: Get latest releases
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
+    steps:
+      - name: Get latest vllm-rocm release
+        id: vllm_rocm
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE=$(gh api repos/lemonade-sdk/vllm-rocm/releases/latest --jq '.tag_name')
+          echo "Latest vllm-rocm release: $RELEASE"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+
+  # ========================================================================
+  # Build binaries with updated backend version
+  # ========================================================================
+  build:
+    name: Build (Linux)
+    needs: get-latest-releases
+    if: always() && !failure() && !cancelled()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Update backend_versions.json
+        if: needs.get-latest-releases.result == 'success'
+        env:
+          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+        run: |
+          set -e
+          python3 - << 'PY'
+          import json, os
+          path = "src/cpp/resources/backend_versions.json"
+          with open(path) as f:
+              data = json.load(f)
+          release = os.environ["VLLM_ROCM_RELEASE"]
+          old = data["vllm"].get("rocm", "")
+          data["vllm"]["rocm"] = release
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          print(f"vllm.rocm: {old} -> {release}")
+          PY
+
+      - name: Build Lemonade server
+        run: |
+          set -e
+          ./setup.sh
+          # Skip the web app; CI only exercises the backend.
+          cmake -DBUILD_WEB_APP=OFF --preset default
+          cmake --build --preset default
+          test -f build/lemond || { echo "lemond not found!"; exit 1; }
+          echo "Build successful!"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: vllm-build
+          path: |
+            build/lemond
+            build/lemonade
+            build/resources/
+          retention-days: 7
+
+  # ========================================================================
+  # Validate backend on self-hosted runner
+  # ========================================================================
+  validate:
+    name: Validate vllm (rocm)
+    needs: [get-latest-releases, build]
+    if: always() && needs.build.result == 'success'
+    runs-on: [self-hosted, stx-halo, Linux]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: vllm-build
+          path: build
+
+      - name: Verify binaries
+        run: |
+          set -e
+          chmod +x build/lemond build/lemonade
+          ./build/lemond --version
+          echo "Binaries verified!"
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation with lemond
+        run: |
+          set -e
+          CACHE_DIR="$(pwd)/ci-cache-vllm"
+          LOGS_DIR="$(pwd)/server-logs-rocm"
+          mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+
+          ./build/lemond "$CACHE_DIR" --port 13305 --host 127.0.0.1 \
+            > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
+          LEMOND_PID=$!
+          echo "Started lemond PID $LEMOND_PID"
+
+          EXIT_CODE=0
+          VALIDATION_ARGS=(
+            test/validate_vllm.py
+            --backend rocm
+            --output vllm_validation_rocm.json
+            --logs-dir "$LOGS_DIR"
+          )
+          if [ "${LITE_MODE}" = "true" ]; then
+            VALIDATION_ARGS+=(--lite)
+          fi
+
+          .venv/bin/python "${VALIDATION_ARGS[@]}" || EXIT_CODE=$?
+
+          # Shut the server down cleanly so logs flush.
+          curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
+          sleep 2
+          kill $LEMOND_PID 2>/dev/null || true
+
+          exit $EXIT_CODE
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-results-rocm
+          path: vllm_validation_rocm.json
+          retention-days: 30
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-logs-rocm
+          path: server-logs-rocm/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -9 -f lemond 2>/dev/null || true
+          pkill -9 -f "vllm" 2>/dev/null || true
+          pkill -9 -f "resource_tracker" 2>/dev/null || true
+
+  # ========================================================================
+  # Create PR if validation passed (schedule or workflow_dispatch only)
+  # ========================================================================
+  create-pr:
+    name: Create update PR
+    needs: [get-latest-releases, validate]
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      needs.validate.result == 'success'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation results
+        uses: actions/download-artifact@v7
+        with:
+          pattern: validation-results-*
+          merge-multiple: true
+
+      - name: Update backend_versions.json
+        env:
+          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+        run: |
+          python3 - << 'PY'
+          import json, os
+          path = 'src/cpp/resources/backend_versions.json'
+          with open(path) as f:
+              data = json.load(f)
+          rocm = os.environ['VLLM_ROCM_RELEASE']
+          data['vllm']['rocm'] = rocm
+          with open(path, 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          print(f"Updated: vllm.rocm = {rocm}")
+          PY
+
+      - name: Generate PR body
+        env:
+          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+
+          lines = []
+          rocm = os.environ.get("VLLM_ROCM_RELEASE", "unknown")
+
+          lines.append("## Auto-update vLLM backend")
+          lines.append("")
+          lines.append(f"- **vllm-rocm**: `{rocm}`")
+          lines.append("")
+          lines.append("## Validation Results")
+          lines.append("")
+          lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
+          lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
+
+          results_file = "vllm_validation_rocm.json"
+          if not os.path.isfile(results_file):
+              lines.append("| _rocm: no results_ | | | | | | |")
+          else:
+              with open(results_file) as f:
+                  results = json.load(f)
+              for r in results:
+                  status = "PASS" if r["pass"] else "FAIL"
+                  resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
+                  ttft = r.get("time_to_first_token", "N/A")
+                  if isinstance(ttft, float):
+                      ttft = f"{ttft:.3f}s"
+                  tps = r.get("tokens_per_second", "N/A")
+                  if isinstance(tps, float):
+                      tps = f"{tps:.1f}"
+                  lines.append(
+                      f"| {r['model']} (rocm) | {status} | {resp} | "
+                      f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
+                      f"{ttft} | {tps} |"
+                  )
+
+          lines.append("")
+          lines.append("---")
+          lines.append("*Auto-generated by validate_vllm workflow*")
+
+          with open("pr_body.md", "w") as f:
+              f.write("\n".join(lines))
+          PYEOF
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+        run: |
+          BRANCH="auto/vllm-update-${VLLM_ROCM_RELEASE}"
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged — nothing to update."
+            exit 0
+          fi
+
+          git checkout -b "$BRANCH"
+          git add src/cpp/resources/backend_versions.json
+          git commit -m "Update vllm-rocm to ${VLLM_ROCM_RELEASE}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update vllm-rocm to ${VLLM_ROCM_RELEASE}" \
+            --body-file pr_body.md \
+            --base main \
+            --head "$BRANCH"

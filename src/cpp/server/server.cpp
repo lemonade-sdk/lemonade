@@ -132,10 +132,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
-    model_manager_ = std::make_unique<ModelManager>();
-
-    // Set extra models directory for GGUF discovery
-    model_manager_->set_extra_models_dir(config_->extra_models_dir());
+    model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -164,6 +161,26 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         router_.get(),
         config_->host(),
         config_->websocket_port());
+
+    start_model_cache_warmup();
+}
+
+void Server::start_model_cache_warmup() {
+    if (model_cache_warmup_thread_.joinable()) {
+        return;
+    }
+
+    model_cache_warmup_thread_ = std::thread([this]() {
+        try {
+            LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
+            model_manager_->get_supported_models();
+            LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
+        } catch (...) {
+            LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
+        }
+    });
 }
 
 void Server::setup_http_servers() {
@@ -343,6 +360,25 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Reranking
     register_post("reranking", [this](const httplib::Request& req, httplib::Response& res) {
         handle_reranking(req, res);
+    });
+
+    // Slots (llama.cpp backend information)
+    register_get("slots", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots(req, res);
+    });
+
+    // Slots action endpoints (need to register for both versions with regex, with and without /api prefix)
+    web_server.Post(R"(/api/v0/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
+    });
+    web_server.Post(R"(/api/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
+    });
+    web_server.Post(R"(/v0/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
+    });
+    web_server.Post(R"(/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_slots_by_id(req, res);
     });
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
@@ -1028,6 +1064,10 @@ void Server::stop() {
         }
         LOG(INFO, "Server") << "Cleanup complete" << std::endl;
     }
+
+    if (model_cache_warmup_thread_.joinable()) {
+        model_cache_warmup_thread_.join();
+    }
 }
 
 bool Server::is_running() const {
@@ -1280,6 +1320,10 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     // Add size if available
     if (info.size > 0.0) {
         model_json["size"] = info.size;
+    }
+
+    if (info.max_context_window > 0) {
+        model_json["max_context_window"] = info.max_context_window;
     }
 
     // Add image_defaults if present (for sd-cpp models)
@@ -1768,6 +1812,96 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_reranking: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_slots(const httplib::Request& req, httplib::Response& res) {
+    try {
+        // Slots endpoint doesn't require a model parameter since it queries server state
+        // But we still need a model to be loaded to have an active server to query
+        if (!router_->is_model_loaded()) {
+            LOG(ERROR, "Server") << "No model loaded for slots query" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded for slots query\"}", "application/json");
+            return;
+        }
+
+        // Call router's get_slots method
+        auto response = router_->get_slots();
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_slots: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& res) {
+    try {
+        // Extract slot ID from path parameter
+        std::string slot_id_str = req.matches[1];
+        int slot_id;
+        try {
+            slot_id = std::stoi(slot_id_str);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Invalid slot ID: " << slot_id_str << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"Invalid slot ID: " + slot_id_str + "\"}", "application/json");
+            return;
+        }
+
+        // Check for action query parameter
+        auto action_param = req.get_param_value("action");
+        if (action_param.empty()) {
+            LOG(ERROR, "Server") << "Missing action parameter for slots POST endpoint" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"POST /api/v1/slots/{id} requires action query parameter (e.g., ?action=erase)\"}", "application/json");
+            return;
+        }
+
+        // Validate known actions for specific slots (can be extended as needed)
+        if (action_param != "erase" && action_param != "save" && action_param != "restore") {
+            LOG(ERROR, "Server") << "Unknown action parameter: " << action_param << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"Unknown action: " + action_param + ". Supported actions: erase, save, restore\"}", "application/json");
+            return;
+        }
+
+        // Slots actions don't require a model parameter since they operate on server state
+        // But we still need a model to be loaded to have an active server to operate on
+        if (!router_->is_model_loaded()) {
+            LOG(ERROR, "Server") << "No model loaded for slots " << action_param << " operation" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded for slots " + action_param + " operation\"}", "application/json");
+            return;
+        }
+
+        // Parse request body as JSON (use empty object if body is empty)
+        json request_body;
+        if (!req.body.empty()) {
+            try {
+                request_body = json::parse(req.body);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
+                res.status = 400;
+                res.set_content("{\"error\": \"Invalid JSON in request body\"}", "application/json");
+                return;
+            }
+        } else {
+            request_body = json::object();
+        }
+
+        // Call router's slots_action method with slot ID, action, and request body
+        auto response = router_->slots_action(slot_id, action_param, request_body);
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -3778,6 +3912,9 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             model_manager_->invalidate_models_cache();
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).
+            // Recipe defaults (e.g. default_backend) are derived from these settings, so
+            // drop the memoized recipes so the next /system-info recomputes them.
+            SystemInfoCache::invalidate_recipes();
             // Look for *_bin sub-keys and trigger a hot-swap of the affected backend.
             for (auto& [sub_key, sub_value] : value.items()) {
                 if (sub_key.size() >= 4

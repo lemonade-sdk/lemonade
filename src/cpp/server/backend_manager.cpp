@@ -520,7 +520,11 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
     auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
-    return {final_params.repo, final_params.filename, resolved_version};
+    // Allow backends to override the release tag (e.g. per-GPU-target releases)
+    std::string release_version = final_params.version_override.empty()
+                                      ? resolved_version
+                                      : final_params.version_override;
+    return {final_params.repo, final_params.filename, release_version};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,

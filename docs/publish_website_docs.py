@@ -1,97 +1,61 @@
-# From lemonade repo root, run the following:
-# pip install -r docs/assets/mkdocs_requirements.txt
+"""Build the docs site and stage it under docs/docs for the website branch.
 
-# Then run this script to publish the documentation to docs/docs/
-# python docs/publish_website_docs.py
+Run from the repository root after installing docs/assets/docs_requirements.txt.
+"""
 
-# Standard library imports for file, directory, regex, system, and subprocess operations
 import os
 import platform
 import shutil
-import re
 import sys
 import subprocess
 
 
 def _get_venv_executable(name):
-    """Get an executable path from the venv based on the current Python interpreter."""
+    """Resolve an executable from the active Python environment."""
     python_dir = os.path.dirname(sys.executable)
     if platform.system() == "Windows":
-        return os.path.join(python_dir, f"{name}.exe")
-    else:
-        return os.path.join(python_dir, name)
+        return os.path.join(python_dir, "Scripts", f"{name}.exe")
+    return os.path.join(python_dir, name)
 
 
 def main():
-
-    # Print the current working directory for debugging
     print("[INFO] Current working directory:", os.getcwd())
 
-    # Define source and destination file paths
-    src = "docs/server/README.md"
+    # Zensical needs index.md, but the source page is maintained as README.md.
+    src = "docs/README.md"
     dst = "docs/index.md"
 
-    # Check if the source README exists; exit with error if not
     if not os.path.exists(src):
-        print("[ERROR] docs/server/README.md not found!")
+        print(f"[ERROR] {src} not found!")
         sys.exit(1)
 
-    # Read the source README, making necessary replacements
     with open(src, "r", encoding="utf-8") as f:
         readme_content = f.read()
 
-    # Write the content to the destination index.md
     with open(dst, "w", encoding="utf-8") as f:
         f.write(readme_content)
-    print("[INFO] Copied docs/server/README.md to docs/index.md.")
+    print(f"[INFO] Copied {src} to {dst}.")
 
-    # Read the just-written index.md and perform additional link fixes for website publishing
-    print("[INFO] Fixing links in docs/index.md...")
-    with open(dst, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # List of (pattern, replacement) tuples for fixing internal documentation links
-    replacements = [
-        (r"\(\./apps/README\.md\)", r"(./server/apps/README.md)"),
-        (r"\(\./concepts\.md\)", r"(./server/concepts.md)"),
-        (r"\(\./lemonade-cli\.md\)", r"(./lemonade-cli.md)"),
-        (r"\(\./server/configuration\.md\)", r"(./server/configuration.md)"),
-        (r"\(\./server_models\.md\)", r"(https://lemonade-server.ai/models.html)"),
-        (r"\(\.\./api/README\.md\)", r"(./api/README.md)"),
-        (r"\(\./server_integration\.md\)", r"(./server/server_integration.md)"),
-    ]
-    for pattern, repl in replacements:
-        content = re.sub(pattern, repl, content)
-
-    # Write the fully processed content back to index.md
-    with open(dst, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    # Remove existing docs/docs if it exists
     if os.path.exists("docs/docs"):
         print("Removing ", os.path.abspath("docs/docs"))
         shutil.rmtree("docs/docs")
 
-    # Build the documentation using mkdocs
-    print("[INFO] Building documentation with mkdocs...")
-    mkdocs_exe = _get_venv_executable("mkdocs")
-    subprocess.run([mkdocs_exe, "build", "--clean"], check=True)
+    print("[INFO] Building documentation with zensical...")
+    zensical_exe = _get_venv_executable("zensical")
+    print(f"[INFO] zensical path: {zensical_exe}")
+    subprocess.run([zensical_exe, "build", "--clean"], check=True)
 
-    # Move the generated site/ directory to docs/docs/, replacing it if it already exists
     print("[INFO] Moving site/ to docs/docs/...")
 
-    # Check what mkdocs actually generated
+    # The website branch nests the docs build under site/docs; local builds use site/.
     if os.path.exists(os.path.abspath("site/docs")):
-        # If mkdocs generated site/docs/, move that content
         source_dir = os.path.abspath("site/docs")
     elif os.path.exists(os.path.abspath("site")):
-        # If mkdocs generated site/, move that content
         source_dir = os.path.abspath("site")
     else:
-        print("[ERROR] No site directory found after mkdocs build!")
+        print("[ERROR] No site directory found after zensical build!")
         sys.exit(1)
 
-    # Move the correct source directory
     shutil.move(source_dir, "docs/docs")
     print(f"[INFO] Moved {os.path.abspath(source_dir)} to docs/docs/")
 

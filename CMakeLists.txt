@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.3.0)
+project(lemon_cpp VERSION 10.4.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -582,6 +582,7 @@ set(SOURCES_CORE
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
+    src/cpp/server/backends/vllm_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
@@ -883,7 +884,7 @@ if(NODE_EXECUTABLE AND NPM_EXECUTABLE AND CARGO_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E echo "    cd src/app && npm run dev"
         COMMAND ${CMAKE_COMMAND} -E echo "============================================================"
         COMMAND ${CMAKE_COMMAND} -E echo "Installing npm dependencies for Tauri app..."
-        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci
+        COMMAND ${CMAKE_COMMAND} -E chdir "${TAURI_APP_SOURCE_DIR}" ${NPM_COMMAND} ci --ignore-scripts
         COMMAND ${CMAKE_COMMAND} -E echo "Compiling Rust host and bundling renderer..."
         COMMAND ${TAURI_BUILD_COMMAND}
         COMMAND ${CMAKE_COMMAND} -E echo "Staging Tauri build output into ${TAURI_APP_UNPACKED_DIR}..."
@@ -1089,7 +1090,9 @@ if(APPLE)
         if(DEFINED ENV{DEVELOPER_ID_APPLICATION_IDENTITY})
             set(SIGNING_IDENTITY "$ENV{DEVELOPER_ID_APPLICATION_IDENTITY}")
         else()
-            set(SIGNING_IDENTITY "BBC1E1924FF481293CF0928B5DFFF8A6419D7DA0")
+            # Ad-hoc sign so local dev builds work without an Apple Developer cert.
+            # Distribution builds set DEVELOPER_ID_APPLICATION_IDENTITY explicitly.
+            set(SIGNING_IDENTITY "-")
         endif()
     endif()
 
