@@ -585,6 +585,12 @@ jobs:
           .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --server-binary ./build/lemonade-server
           echo "Whisper Metal inference tests PASSED!"
 
+      - name: Ensure binaries are executable before upload (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          chmod +x build/lemond build/lemonade-server build/lemonade
+
       - name: Upload built binaries for test-dmg-inference (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         uses: actions/upload-artifact@v7
@@ -1248,6 +1254,15 @@ jobs:
         with:
           name: lemonade-unsigned-binaries
           path: build/
+
+      - name: Restore execute permissions on downloaded binaries (unsigned path)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "Restoring execute permissions..."
+          chmod +x build/lemond build/lemonade-server build/lemonade
+          echo "Permissions restored."
 
       - name: Verify binaries (unsigned path — test-dmg-inference)
         if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
