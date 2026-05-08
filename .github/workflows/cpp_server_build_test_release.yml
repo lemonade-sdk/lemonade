@@ -387,39 +387,40 @@ jobs:
           path: build/*.pkg
           retention-days: 7
 
-      # ---- Unsigned local install + test path ----
-      - name: Install binaries locally (unsigned path)
+      # ---- Unsigned local run + test path ----
+      # Run binaries directly from build/ — no system installation needed.
+      # The CMake post-build step already copies resources to build/resources/
+      # and the binary output directory, so lemond finds its config at runtime.
+      - name: Verify binaries (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
-          echo "Installing binaries locally (no signing)..."
+          echo "Verifying built binaries..."
 
-          # Copy binaries to /usr/local/bin
-          sudo cp build/lemond /usr/local/bin/
-          sudo cp build/lemonade-server /usr/local/bin/
-          sudo cp build/lemonade /usr/local/bin/
-          sudo chmod 755 /usr/local/bin/lemond
-          sudo chmod 755 /usr/local/bin/lemonade-server
-          sudo chmod 755 /usr/local/bin/lemonade
-
-          # Copy resources
-          sudo mkdir -p "/Library/Application Support/Lemonade/resources"
-          if [ -d "build/resources" ]; then
-            sudo cp -R build/resources/* "/Library/Application Support/Lemonade/resources/" 2>/dev/null || true
+          # Verify all three binaries exist
+          if [ ! -f "build/lemond" ]; then
+            echo "ERROR: build/lemond not found!"
+            ls -lh build/
+            exit 1
+          fi
+          if [ ! -f "build/lemonade-server" ]; then
+            echo "ERROR: build/lemonade-server not found!"
+            ls -lh build/
+            exit 1
+          fi
+          if [ ! -f "build/lemonade" ]; then
+            echo "ERROR: build/lemonade not found!"
+            ls -lh build/
+            exit 1
           fi
 
-          # Run the postinst script for directory setup
-          echo "Running post-install script..."
-          sudo bash src/cpp/postinst-full-mac "" "/"
+          # Verify executability
+          ./build/lemond --version
+          ./build/lemonade-server --version
+          ./build/lemonade --version
 
-          # Verify installation
-          echo "Verifying installation..."
-          /usr/local/bin/lemonade-server --version
-          /usr/local/bin/lemond --version
-          /usr/local/bin/lemonade --version
-
-          echo "Local installation complete!"
+          echo "All binaries verified!"
 
       - name: Verify server is running (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -436,10 +437,10 @@ jobs:
 
           # Launchd may not start reliably in CI. Fall back to manual start.
           echo "Server not reachable after 30s — starting manually..."
-          # Start lemond directly (not via deprecated lemonade-server serve shim)
+          # Start lemond directly from build/ (not via deprecated lemonade-server serve shim)
           # The legacy shim's 30s health-check timeout can kill lemond before Metal
           # initialization completes, causing silent failures.
-          /usr/local/bin/lemond > /tmp/lemond.log 2>&1 &
+          ./build/lemond > /tmp/lemond.log 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
@@ -475,8 +476,8 @@ jobs:
         run: |
           set -e
           echo "Running CLI tests..."
-          .venv/bin/python test/server_cli.py --server-binary /usr/local/bin/lemonade-server
-          .venv/bin/python test/server_cli2.py --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/server_cli.py --server-binary ./build/lemonade-server
+          .venv/bin/python test/server_cli2.py --server-binary ./build/lemonade-server
           echo "CLI tests PASSED!"
 
       - name: Run endpoint tests (unsigned path)
@@ -491,7 +492,7 @@ jobs:
         run: |
           set -e
           echo "Running endpoint tests..."
-          .venv/bin/python test/server_endpoints.py --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/server_endpoints.py --server-binary ./build/lemonade-server
           echo "Endpoint tests PASSED!"
 
       - name: Run Ollama API tests (unsigned path)
@@ -506,7 +507,7 @@ jobs:
         run: |
           set -e
           echo "Running Ollama API tests..."
-          .venv/bin/python test/test_ollama.py --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/test_ollama.py --server-binary ./build/lemonade-server
           echo "Ollama API tests PASSED!"
 
       - name: Run streaming error tests (unsigned path)
@@ -521,7 +522,7 @@ jobs:
         run: |
           set -e
           echo "Running streaming error termination tests..."
-          .venv/bin/python test/server_streaming_errors.py --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/server_streaming_errors.py --server-binary ./build/lemonade-server
           echo "Streaming error tests PASSED!"
 
       - name: Run environment variable tests (unsigned path)
@@ -533,7 +534,7 @@ jobs:
         run: |
           set -e
           echo "Running environment variable tests..."
-          .venv/bin/python test/server_env_vars.py --lemond-binary /usr/local/bin/lemond
+          .venv/bin/python test/server_env_vars.py --lemond-binary ./build/lemond
           echo "Environment variable tests PASSED!"
 
       - name: Ensure server is running before whisper tests (unsigned path)
@@ -551,8 +552,8 @@ jobs:
             # Kill any existing lemond that may be zombie/hung
             pkill -f lemond 2>/dev/null || true
             sleep 2
-            # Start lemond directly (avoid legacy shim health-check timeout)
-            /usr/local/bin/lemond > /tmp/lemond-whisper-pre.log 2>&1 &
+            # Start lemond directly from build/ (avoid legacy shim health-check timeout)
+            ./build/lemond > /tmp/lemond-whisper-pre.log 2>&1 &
             LEMOND_PID=$!
             disown "$LEMOND_PID"
             # Wait for server to become healthy
@@ -581,8 +582,19 @@ jobs:
         run: |
           set -e
           echo "Running whisper Metal inference tests..."
-          .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --server-binary /usr/local/bin/lemonade-server
+          .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --server-binary ./build/lemonade-server
           echo "Whisper Metal inference tests PASSED!"
+
+      - name: Upload built binaries for test-dmg-inference (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-unsigned-binaries
+          path: |
+            build/lemond
+            build/lemonade-server
+            build/lemonade
+          retention-days: 1
 
       - name: Cleanup keychain
         if: always() && steps.check_signing.outputs.has_signing == 'true'
@@ -1228,57 +1240,54 @@ jobs:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
 
-      # ---- Install Server (unsigned path — install from build dir) ----
-      - name: Install binaries locally (unsigned path)
+      # ---- Download and run from build dir (unsigned path — no system install) ----
+      # Download artifacts from build-lemonade-macos-dmg since this job runs on a fresh runner.
+      - name: Download built binaries (unsigned path — test-dmg-inference)
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: lemonade-unsigned-binaries
+          path: build/
+
+      - name: Verify binaries (unsigned path — test-dmg-inference)
         if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
-          echo "Installing binaries from build directory (no signing)..."
-
-          # Copy binaries to /usr/local/bin
-          sudo cp build/lemond /usr/local/bin/
-          sudo cp build/lemonade-server /usr/local/bin/
-          sudo cp build/lemonade /usr/local/bin/
-          sudo chmod 755 /usr/local/bin/lemond
-          sudo chmod 755 /usr/local/bin/lemonade-server
-          sudo chmod 755 /usr/local/bin/lemonade
-
-          # Copy resources
-          sudo mkdir -p "/Library/Application Support/Lemonade/resources"
-          if [ -d "build/resources" ]; then
-            sudo cp -R build/resources/* "/Library/Application Support/Lemonade/resources/" 2>/dev/null || true
+          echo "Verifying downloaded binaries..."
+          if [ ! -f "build/lemond" ]; then
+            echo "ERROR: build/lemond not found!"
+            ls -lh build/
+            exit 1
           fi
+          if [ ! -f "build/lemonade-server" ]; then
+            echo "ERROR: build/lemonade-server not found!"
+            ls -lh build/
+            exit 1
+          fi
+          if [ ! -f "build/lemonade" ]; then
+            echo "ERROR: build/lemonade not found!"
+            ls -lh build/
+            exit 1
+          fi
+          ./build/lemond --version
+          ./build/lemonade-server --version
+          ./build/lemonade --version
+          echo "All binaries verified!"
 
-          # Run the postinst script for directory setup
-          echo "Running post-install script..."
-          sudo bash src/cpp/postinst-full-mac "" "/"
-
-          # Verify installation
-          echo "Verifying installation..."
-          /usr/local/bin/lemonade-server --version
-          /usr/local/bin/lemond --version
-          /usr/local/bin/lemonade --version
-
-          echo "Local installation complete!"
-
-      # ---- Start server (unsigned path needs manual start) ----
-      - name: Start server (unsigned path)
+      - name: Start server before matrix tests (unsigned path)
         if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         shell: bash
         run: |
           set -e
-          echo "Starting server manually (unsigned path)..."
-          # Start lemond directly (not via deprecated lemonade-server serve shim).
-          # The legacy shim's 30s health-check timeout can kill lemond before Metal
-          # initialization completes, causing silent failures.
-          /usr/local/bin/lemond > /tmp/lemond.log 2>&1 &
+          echo "Starting server from build/ before matrix tests..."
+          ./build/lemond > /tmp/lemond.log 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-              echo "Server is running and healthy (started manually, PID $LEMOND_PID)"
+              echo "Server is running and healthy (PID $LEMOND_PID) — starting matrix tests..."
               exit 0
             fi
             echo "Waiting for server... ($i/30)"
@@ -1296,11 +1305,12 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       - name: Test ${{ matrix.test_name }}
+        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         env:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          SERVER_BIN="/usr/local/bin/lemonade-server"
+          SERVER_BIN="./build/lemonade-server"
           .venv/bin/python test/${{ matrix.script }} ${{ matrix.args }} --server-binary "$SERVER_BIN"
 
       - name: Capture and upload server logs
