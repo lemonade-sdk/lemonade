@@ -1,6 +1,8 @@
 #include "lemon/streaming_proxy.h"
+#include "lemon/utils/tool_call_parser.h"
 #include <sstream>
 #include <iostream>
+#include <memory>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -16,22 +18,29 @@ void StreamingProxy::forward_sse_stream(
     bool stream_error = false;
     bool has_done_marker = false;
 
+    // Create Hermes streaming parser for this stream
+    auto streaming_parser = std::make_shared<utils::HermesStreamingParser>();
+
     // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &telemetry_buffer, &has_done_marker](const char* data, size_t length) {
+        [&sink, &telemetry_buffer, &has_done_marker, streaming_parser](const char* data, size_t length) {
             // Buffer for telemetry parsing
             telemetry_buffer.append(data, length);
 
-            // Check if this chunk contains [DONE]
+            // Transform Hermes XML if present
             std::string chunk(data, length);
-            if (chunk.find("[DONE]") != std::string::npos) {
+            std::string transformed = streaming_parser->process_chunk(chunk);
+
+            // Check if this chunk contains [DONE]
+            if (transformed.find("[DONE]") != std::string::npos ||
+                chunk.find("[DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
 
-            // Forward chunk to client immediately
-            if (!sink.write(data, length)) {
+            // Forward transformed chunk to client immediately
+            if (!transformed.empty() && !sink.write(transformed.c_str(), transformed.size())) {
                 return false; // Client disconnected
             }
 

@@ -7,6 +7,7 @@
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/tool_call_parser.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/runtime_config.h"
@@ -1459,6 +1460,9 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(INFO, "Server") << "POST /api/v1/chat/completions - 200 OK" << std::endl;
 
             auto response = router_->chat_completion(request_json);
+
+            // Transform Hermes XML tool calls to OpenAI format
+            utils::ToolCallParser::transform_hermes_response(response);
 
             // Debug: Check if response contains tool_calls
             if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {

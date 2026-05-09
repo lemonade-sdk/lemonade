@@ -1180,7 +1180,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors, env-vars]
+        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors, env-vars, hermes-transformation]
     env:
       LEMONADE_CI_MODE: "True"
       PYTHONIOENCODING: utf-8
@@ -1248,6 +1248,9 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
               echo "Running environment variable tests..."
               $VENV_PYTHON test/server_env_vars.py --lemond-binary ./deb-extract/usr/bin/lemond
+          elif [ "${{ matrix.test_type }}" = "hermes-transformation" ]; then
+              echo "Running Hermes XML transformation tests..."
+              $VENV_PYTHON test/test_hermes_transformation.py
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
@@ -1262,7 +1265,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors]
+        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors, hermes-transformation]
         include:
           - os: macos-latest
             test_type: env-vars
@@ -1358,6 +1361,9 @@ jobs:
               echo "Running environment variable tests..."
               LEMOND_BINARY="$(dirname "$SERVER_BINARY")/lemond"
               $VENV_PYTHON test/server_env_vars.py --lemond-binary "$LEMOND_BINARY"
+          elif [ "${{ matrix.test_type }}" = "hermes-transformation" ]; then
+              echo "Running Hermes XML transformation tests..."
+              $VENV_PYTHON test/test_hermes_transformation.py
           fi
 
           echo "${{ matrix.test_type }} tests PASSED!"
