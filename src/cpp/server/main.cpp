@@ -28,7 +28,12 @@ void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
 #ifndef _WIN32
         const char* msg = "Shutdown signal received, exiting...\n";
-        (void)write(STDOUT_FILENO, msg, 38);
+        // Async-signal-safe write. The (void) cast doesn't suppress the
+        // warn_unused_result attribute on glibc's write(); explicitly
+        // assign-and-discard does. We genuinely don't care about partial
+        // writes from inside a signal handler.
+        ssize_t written = write(STDOUT_FILENO, msg, 38);
+        (void)written;
 #endif
 
         // Don't call server->stop() from signal handler - it can block/deadlock

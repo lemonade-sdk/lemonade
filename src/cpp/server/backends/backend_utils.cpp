@@ -5,6 +5,7 @@
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
+#include "lemon/backends/vllm_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
@@ -12,13 +13,13 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <cstdlib>
-#include <cstring>
 #include <lemon/utils/aixlog.hpp>
-#include <algorithm>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -39,6 +40,7 @@ namespace lemon::backends {
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
+        if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
         return nullptr;
     }
@@ -309,9 +311,6 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            std::string url = "https://github.com/" + repo + "/releases/download/" +
-                            expected_version + "/" + filename;
-
             // Download ZIP to cache directory
             fs::path cache_dir = fs::temp_directory_path();
             fs::create_directories(cache_dir);
@@ -319,38 +318,164 @@ namespace lemon::backends {
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
 
-            LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
 
-            // Create the appropriate progress callback
-            // If an external progress_cb is provided, wrap it as a ProgressCallback for HttpClient
-            utils::ProgressCallback http_progress_cb;
-            if (progress_cb) {
-                http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
-                    DownloadProgress p;
-                    p.file = filename;
-                    p.file_index = 1;
-                    p.total_files = 1;
-                    p.bytes_downloaded = downloaded;
-                    p.bytes_total = total;
-                    p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
-                    p.complete = false;  // Don't signal complete until extraction is done
-                    return progress_cb(p);
-                };
-            } else {
-                http_progress_cb = utils::create_throttled_progress_callback();
+            const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
+                                                  expected_version + "/";
+
+            // Decide single-file vs. split-archive without hitting the GitHub
+            // Releases API (which is rate-limited to 60 req/hr per IP, and
+            // 5000/hr even with a token — both insufficient for shared CI
+            // runners). For backends that opt in via supports_split_archive,
+            // probe a tiny `{base}.partcount` manifest published alongside
+            // the parts: HTTP 200 means split, with the body giving N; 404
+            // falls through to the single-file path. Non-split backends skip
+            // this entirely so their install logs stay quiet.
+            std::string base;
+            if (is_tarball(filename)) {
+                base = filename.substr(0, filename.size() - 7);  // strip ".tar.gz"
             }
 
-            // Download the file
-            auto download_result = utils::HttpClient::download_file(
-                url,
-                zip_path,
-                http_progress_cb
-            );
+            bool is_split = false;
+            std::vector<std::string> part_assets;
+            if (spec.supports_split_archive && is_tarball(filename)) {
+                const std::string partcount_url = base_download_url + base + ".partcount";
+                auto resp = utils::HttpClient::get(partcount_url);
+                if (resp.status_code == 200) {
+                    int total_parts = 0;
+                    try {
+                        std::string body = resp.body;
+                        while (!body.empty()
+                               && std::isspace(static_cast<unsigned char>(body.back()))) {
+                            body.pop_back();
+                        }
+                        total_parts = std::stoi(body);
+                    } catch (const std::exception& e) {
+                        throw std::runtime_error(
+                            "Malformed partcount at " + partcount_url + ": " + e.what());
+                    }
+                    if (total_parts < 1 || total_parts > 99) {
+                        throw std::runtime_error(
+                            "partcount out of range (1..99) at " + partcount_url
+                            + ": got " + std::to_string(total_parts));
+                    }
+                    auto two_digit = [](int n) {
+                        std::string s = std::to_string(n);
+                        return s.size() < 2 ? std::string(2 - s.size(), '0') + s : s;
+                    };
+                    const std::string total_padded = two_digit(total_parts);
+                    for (int i = 1; i <= total_parts; ++i) {
+                        part_assets.push_back(base + ".part" + two_digit(i)
+                                              + "-of-" + total_padded + ".tar.gz");
+                    }
+                    is_split = true;
+                } else if (resp.status_code != 404) {
+                    throw std::runtime_error(
+                        "Unexpected HTTP " + std::to_string(resp.status_code)
+                        + " when probing " + partcount_url);
+                }
+                // 404 = no manifest = single-file release; fall through.
+            }
+            const bool has_single = !is_split;
 
-            if (!download_result.success) {
-                throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
-                                        " - " + download_result.error_message);
+            if (has_single) {
+                std::string url = base_download_url + filename;
+                LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
+
+                utils::ProgressCallback http_progress_cb;
+                if (progress_cb) {
+                    http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
+                        DownloadProgress p;
+                        p.file = filename;
+                        p.file_index = 1;
+                        p.total_files = 1;
+                        p.bytes_downloaded = downloaded;
+                        p.bytes_total = total;
+                        p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
+                        p.complete = false;  // Don't signal complete until extraction is done
+                        return progress_cb(p);
+                    };
+                } else {
+                    http_progress_cb = utils::create_throttled_progress_callback();
+                }
+
+                auto download_result = utils::HttpClient::download_file(
+                    url, zip_path, http_progress_cb);
+
+                if (!download_result.success) {
+                    throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
+                                             " - " + download_result.error_message);
+                }
+            } else {
+                // Split-archive path. Assets known up front, so progress can
+                // report cumulative bytes against a (mostly) accurate total.
+                LOG(INFO, spec.log_name()) << "Downloading " << part_assets.size()
+                                           << " split parts from " << repo << "@"
+                                           << expected_version << std::endl;
+
+                std::ofstream combined(zip_path, std::ios::binary);
+                size_t cumulative_downloaded = 0;
+                int part_index = 0;
+                const int total_parts = static_cast<int>(part_assets.size());
+                for (const auto& part_filename : part_assets) {
+                    ++part_index;
+                    std::string part_url = base_download_url + part_filename;
+                    std::string part_path = zip_path + ".part" + std::to_string(part_index - 1);
+
+                    LOG(DEBUG, spec.log_name()) << "Downloading part "
+                                                << part_index << "/" << total_parts
+                                                << ": " << part_filename << std::endl;
+
+                    // Per-part progress wrapper. Reports cumulative bytes
+                    // across all parts so the GUI bar climbs continuously
+                    // instead of resetting between parts.
+                    utils::ProgressCallback part_http_cb;
+                    if (progress_cb) {
+                        size_t cumulative_snapshot = cumulative_downloaded;
+                        int idx_snapshot = part_index;
+                        std::string name_snapshot = part_filename;
+                        part_http_cb = [&progress_cb, name_snapshot, idx_snapshot, total_parts, cumulative_snapshot]
+                                      (size_t downloaded, size_t total) -> bool {
+                            DownloadProgress p;
+                            p.file = name_snapshot;
+                            p.file_index = idx_snapshot;
+                            p.total_files = total_parts;
+                            p.bytes_downloaded = cumulative_snapshot + downloaded;
+                            p.bytes_total = cumulative_snapshot + total;
+                            p.total_download_size = p.bytes_total;
+                            p.percent = p.bytes_total > 0
+                                ? static_cast<int>((p.bytes_downloaded * 100) / p.bytes_total)
+                                : 0;
+                            p.complete = false;
+                            return progress_cb(p);
+                        };
+                    } else {
+                        part_http_cb = utils::create_throttled_progress_callback();
+                    }
+
+                    auto part_result = utils::HttpClient::download_file(
+                        part_url, part_path, part_http_cb);
+
+                    if (!part_result.success) {
+                        combined.close();
+                        fs::remove(part_path);
+                        fs::remove(zip_path);
+                        throw std::runtime_error("Failed to download " + part_filename + " from: " + part_url +
+                                                 " - " + part_result.error_message);
+                    }
+
+                    // Append part to the combined archive
+                    std::ifstream part_in(part_path, std::ios::binary);
+                    combined << part_in.rdbuf();
+                    part_in.close();
+                    std::error_code part_size_ec;
+                    std::uintmax_t part_size = fs::file_size(part_path, part_size_ec);
+                    if (!part_size_ec) {
+                        cumulative_downloaded += part_size;
+                    }
+                    fs::remove(part_path);
+                }
+                combined.close();
             }
 
             LOG(DEBUG, spec.log_name()) << "Download complete!" << std::endl;
@@ -388,21 +513,37 @@ namespace lemon::backends {
             vf.close();
 
     #ifndef _WIN32
-            // Make executable on Linux/macOS
+            // Make all binaries in bin/ executable (tar may lose permissions)
+            {
+                auto bin_dir = fs::path(install_dir) / "bin";
+                if (fs::exists(bin_dir)) {
+                    for (auto& entry : fs::directory_iterator(bin_dir)) {
+                        if (entry.is_regular_file()) {
+                            chmod(entry.path().c_str(), 0755);
+                        }
+                    }
+                }
+            }
+            // Also make the found executable itself executable
             chmod(exe_path.c_str(), 0755);
     #endif
 
             // Delete ZIP file
             fs::remove(zip_path);
 
-            // Send completion event now that installation is fully done
+            // Send completion event now that installation is fully done.
+            // download_result is from the single-file attempt and reports
+            // misleading ~9 bytes from the 404 response body when the archive
+            // was actually fetched via the multi-part fallback. Use the
+            // verified on-disk archive size (captured into file_size above,
+            // before zip_path was deleted) so the GUI shows the real total.
             if (progress_cb) {
                 DownloadProgress p;
                 p.file = filename;
                 p.file_index = 1;
                 p.total_files = 1;
-                p.bytes_downloaded = download_result.bytes_downloaded;
-                p.bytes_total = download_result.total_bytes;
+                p.bytes_downloaded = static_cast<size_t>(file_size);
+                p.bytes_total = static_cast<size_t>(file_size);
                 p.percent = 100;
                 p.complete = true;
                 progress_cb(p);

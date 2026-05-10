@@ -181,6 +181,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"ryzenai-llm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
+
+    // vLLM - ROCm backend for AMD GPUs (Linux only)
+    {"vllm", "rocm", {"linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+    }},
 };
 
 // ============================================================================
@@ -303,7 +308,8 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
 
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend) {
+    bool is_vllm_rocm_backend = recipe == "vllm" && backend == "rocm";
+    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend || is_vllm_rocm_backend) {
         if (needs_gfx1151_cwsr_fix()) {
             error_message = "Linux kernel missing support";
             return false;
@@ -969,9 +975,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
                 bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
-                    (def.recipe == "llamacpp" && def.backend == "rocm");
+                    (def.recipe == "llamacpp" && def.backend == "rocm") ||
+                    (def.recipe == "vllm" && def.backend == "rocm");
 
-                // Special action for ROCm backends on llamacpp/sd-cpp if CWSR fix is missing
+                // Special action for ROCm backends on llamacpp/sd-cpp/vllm if CWSR fix is missing
                 if (is_rocm_backend
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
@@ -1008,6 +1015,18 @@ json SystemInfo::build_recipes_info(const json& devices) {
             bool has_expected = !expected_version.empty();
             bool latest_pin = is_bin_pinned_to_latest(def.recipe, def.backend);
             bool needs_update;
+
+            // Some recipes (e.g. vllm) install with per-GPU-target release
+            // tags (e.g. "{base}-gfx1151") via version_override, while
+            // backend_versions.json stores only the base. Treat
+            // "{expected}-{anything}" as a match for "{expected}" so the
+            // suffix doesn't perpetually trigger update_required.
+            auto versions_match = [](const std::string& installed,
+                                     const std::string& expected) {
+                if (installed == expected) return true;
+                const std::string prefix = expected + "-";
+                return installed.compare(0, prefix.size(), prefix) == 0;
+            };
 #if !defined(_WIN32)
             // On non-Windows, FLM is a system-managed package; a version newer
             // than the minimum required is acceptable.
@@ -1029,7 +1048,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     && (!version_known
                         || version_compare(installed_version, expected_version) < 0);
             } else {
-                needs_update = has_expected && (!version_known || installed_version != expected_version);
+                needs_update = has_expected
+                    && (!version_known || !versions_match(installed_version, expected_version));
             }
 
             if (needs_update) {

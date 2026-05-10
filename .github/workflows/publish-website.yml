@@ -26,7 +26,7 @@ jobs:
             venvPython=".venv/bin/python"
             venvPip=".venv/bin/pip"
             $venvPython -m pip install --upgrade pip
-            $venvPip install -r docs/assets/mkdocs_requirements.txt
+            $venvPip install -r docs/assets/docs_requirements.txt
         - name: Configure git
           run: |
             git config --global user.name "Lemonade Bot"
@@ -42,7 +42,7 @@ jobs:
           run: |
             venvPython=".venv/bin/python"
             $venvPython docs/update_readme_marketplace.py
-        - name: Run mkdocs update script
+        - name: Run docs build script
           run: |
             venvPython=".venv/bin/python"
             $venvPython docs/publish_website_docs.py

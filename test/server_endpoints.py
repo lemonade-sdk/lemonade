@@ -21,7 +21,6 @@ Usage:
 """
 
 import platform
-import time
 import uuid
 import requests
 from openai import NotFoundError
@@ -79,6 +78,21 @@ class EndpointTests(ServerTestBase):
     def setUp(self):
         """Set up each test."""
         super().setUp()
+
+    def _get_loaded_model_info(self, model_name):
+        """Return loaded model info from /health for a model, or None."""
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        for model in health.get("all_models_loaded", []):
+            if model["model_name"] == model_name:
+                return model
+        return None
+
+    def _assert_loaded_model_pid(self, model_info):
+        """Assert /health exposes a usable wrapped backend process ID."""
+        self.assertIsNotNone(model_info, "Model should appear in /health")
+        self.assertIn("pid", model_info)
+        self.assertIsInstance(model_info["pid"], int)
+        self.assertGreater(model_info["pid"], 0)
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
@@ -343,18 +357,9 @@ class EndpointTests(ServerTestBase):
         data = response.json()
         self.assertEqual(data["status"], "success")
 
-        # Verify model is loaded via health endpoint
-        health_response = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(health_response.status_code, 200)
-        health_data = health_response.json()
-
-        # Check model appears in all_models_loaded
-        loaded_models = [
-            m["model_name"] for m in health_data.get("all_models_loaded", [])
-        ]
-        self.assertIn(ENDPOINT_TEST_MODEL, loaded_models)
+        # Verify model is loaded via health endpoint and exposes backend PID
+        loaded_model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_model)
 
         print(f"[OK] Loaded model: {ENDPOINT_TEST_MODEL}")
 
@@ -476,10 +481,9 @@ class EndpointTests(ServerTestBase):
         """Test that /load is idempotent: loading an already-loaded model with
         the same options is a no-op (no eviction or reload).
 
-        Uses wall-clock time as the proof signal: a no-op /load returns in
-        milliseconds, while even a tiny model reload takes several seconds.
-        (backend_url is not a stable identity — WrappedServer::choose_port
-        can pick the same port after a restart.)"""
+        Uses the wrapped backend process ID as the proof signal: a no-op
+        /load keeps the same backend process, while an eviction/reload starts
+        a different process."""
         # Ensure model is loaded (this may take seconds for the initial load)
         response = requests.post(
             f"{self.base_url}/load",
@@ -487,27 +491,33 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
+        loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_before)
 
         # Second /load with the same options — should be a no-op
-        t0 = time.monotonic()
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
-        elapsed = time.monotonic() - t0
         self.assertEqual(response.status_code, 200)
+        loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_after)
 
-        # A no-op returns in <1s; a real reload takes several seconds
-        self.assertLess(
-            elapsed,
-            2.0,
-            f"Idempotent /load took {elapsed:.1f}s — expected <2s for a no-op",
+        self.assertEqual(
+            loaded_after["pid"],
+            loaded_before["pid"],
+            "Idempotent /load should keep the same wrapped backend process",
         )
-        print(f"[OK] Idempotent /load with same options was a no-op ({elapsed:.3f}s)")
+        print(
+            f"[OK] Idempotent /load with same options kept PID "
+            f"{loaded_after['pid']}"
+        )
 
     def test_012b_load_reloads_on_option_change(self):
-        """Test that /load evicts and reloads when options differ."""
+        """Test that /load evicts and reloads when options differ.
+
+        The changed PID proves the wrapped backend process was replaced."""
         # Ensure model is loaded with default options (no ctx_size override)
         requests.post(
             f"{self.base_url}/unload",
@@ -521,15 +531,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # Verify no ctx_size in loaded options
-        health_before = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        ).json()
-        opts_before = {}
-        for m in health_before.get("all_models_loaded", []):
-            if m["model_name"] == ENDPOINT_TEST_MODEL:
-                opts_before = m.get("recipe_options", {})
-                break
+        loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_before)
+        opts_before = loaded_before.get("recipe_options", {})
         self.assertNotEqual(
             opts_before.get("ctx_size"),
             2048,
@@ -545,23 +549,24 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
-        # Verify the new options are applied (proves a reload occurred)
-        health_after = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        ).json()
-        opts_after = {}
-        for m in health_after.get("all_models_loaded", []):
-            if m["model_name"] == ENDPOINT_TEST_MODEL:
-                opts_after = m.get("recipe_options", {})
-                break
+        loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_after)
+        opts_after = loaded_after.get("recipe_options", {})
         self.assertEqual(
             opts_after.get("ctx_size"),
             custom_ctx,
             "Option-change /load should reload with new options",
         )
+        self.assertNotEqual(
+            loaded_after["pid"],
+            loaded_before["pid"],
+            "Option-change /load should replace the wrapped backend process",
+        )
 
         print(
-            f"[OK] /load with different options triggered reload (ctx_size={custom_ctx})"
+            f"[OK] /load with different options replaced PID "
+            f"{loaded_before['pid']} -> {loaded_after['pid']} "
+            f"(ctx_size={custom_ctx})"
         )
 
     def test_012c_load_noop_when_already_loaded_by_inference(self):
@@ -574,9 +579,8 @@ class EndpointTests(ServerTestBase):
         models). The fix makes this decision atomic inside load_mutex_.
 
         We make this deterministic by loading via inference first (wait
-        for completion), then calling /load. Wall-clock time proves
-        whether a reload occurred: a no-op returns in milliseconds, a
-        reload takes seconds even for a tiny model."""
+        for completion), then calling /load. The wrapped backend process ID
+        proves whether a reload occurred."""
         # Ensure clean slate
         requests.post(
             f"{self.base_url}/unload",
@@ -595,37 +599,29 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(inference_response.status_code, 200)
+        loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_before)
 
         # Now /load the same model — should no-op, not evict+reload
-        t0 = time.monotonic()
         load_response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
-        elapsed = time.monotonic() - t0
         self.assertEqual(load_response.status_code, 200)
 
-        # A no-op returns in <1s; the old evict+reload took seconds
-        self.assertLess(
-            elapsed,
-            2.0,
-            f"/load after auto-load took {elapsed:.1f}s — expected <2s "
-            f"(old code would evict and reload)",
-        )
-
-        # Model should still be loaded
-        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
-        loaded = [
-            m
-            for m in health.get("all_models_loaded", [])
-            if m["model_name"] == ENDPOINT_TEST_MODEL
-        ]
+        loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self._assert_loaded_model_pid(loaded_after)
         self.assertEqual(
-            len(loaded), 1, "Model should appear exactly once in loaded list"
+            loaded_after["pid"],
+            loaded_before["pid"],
+            "/load after auto-load should keep the same wrapped backend process",
         )
 
-        print(f"[OK] /load after auto-load was a no-op ({elapsed:.3f}s)")
+        print(
+            f"[OK] /load after auto-load was a no-op and kept PID "
+            f"{loaded_after['pid']}"
+        )
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
