@@ -272,9 +272,12 @@ std::string HermesStreamingParser::process_chunk(const std::string& chunk) {
                 if (start_pos > pos) {
                     std::string text_before = chunk.substr(pos, start_pos - pos);
                     if (!text_before.empty()) {
-                        // Emit as content delta (SSE format)
-                        output << "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\""
-                               << text_before << "\"}}]}\n\n";
+                        // Emit as content delta (SSE format) using proper JSON construction
+                        json content_delta;
+                        content_delta["choices"] = json::array();
+                        content_delta["choices"][0]["index"] = 0;
+                        content_delta["choices"][0]["delta"]["content"] = text_before;
+                        output << "data: " << content_delta.dump() << "\n\n";
                     }
                 }
 
