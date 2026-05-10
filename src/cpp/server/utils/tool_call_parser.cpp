@@ -326,26 +326,38 @@ std::string HermesStreamingParser::emit_tool_call_delta() {
         arguments = tool_call["function"].value("arguments", "{}");
     }
 
-    // Build SSE delta events for tool call
+    // Build SSE delta events for tool call using proper JSON construction
     std::ostringstream sse;
 
     // First delta: tool call with id and name
-    sse << "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":"
-        << tool_call_index_ << ",\"id\":\"" << id << "\",\"type\":\"function\",\"function\":{"
-        << "\"name\":\"" << name << "\",\"arguments\":\"\"}}]}}]}\n\n";
+    json delta1;
+    delta1["choices"] = json::array();
+    delta1["choices"][0]["index"] = 0;
+    delta1["choices"][0]["delta"]["tool_calls"] = json::array();
+    delta1["choices"][0]["delta"]["tool_calls"][0] = {
+        {"index", tool_call_index_},
+        {"id", id},
+        {"type", "function"},
+        {"function", {
+            {"name", name},
+            {"arguments", ""}
+        }}
+    };
+    sse << "data: " << delta1.dump() << "\n\n";
 
     // Second delta: arguments (if non-empty)
     if (arguments != "{}") {
-        // Escape quotes in arguments JSON string
-        std::string escaped_args = arguments;
-        size_t pos = 0;
-        while ((pos = escaped_args.find("\"", pos)) != std::string::npos) {
-            escaped_args.insert(pos, "\\");
-            pos += 2;
-        }
-
-        sse << "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":"
-            << tool_call_index_ << ",\"function\":{\"arguments\":\"" << escaped_args << "\"}}]}}]}\n\n";
+        json delta2;
+        delta2["choices"] = json::array();
+        delta2["choices"][0]["index"] = 0;
+        delta2["choices"][0]["delta"]["tool_calls"] = json::array();
+        delta2["choices"][0]["delta"]["tool_calls"][0] = {
+            {"index", tool_call_index_},
+            {"function", {
+                {"arguments", arguments}
+            }}
+        };
+        sse << "data: " << delta2.dump() << "\n\n";
     }
 
     LOG(DEBUG, "HermesStreamingParser")
