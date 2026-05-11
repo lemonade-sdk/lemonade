@@ -38,6 +38,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "llamacpp": {
     "backend": "auto",
     "args": "",
+	"device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
@@ -100,6 +101,7 @@ Backend-specific settings are nested under their backend name:
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to llama-server |
+| `device` | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
