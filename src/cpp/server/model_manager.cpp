@@ -1062,7 +1062,9 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
             std::string relative_path = path_to_utf8(
                 path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
             std::string relative_lower = relative_path;
+            // Normalize path separators and case so folder-variant matching works cross-platform.
             std::transform(relative_lower.begin(), relative_lower.end(), relative_lower.begin(), ::tolower);
+            std::replace(relative_lower.begin(), relative_lower.end(), '\\', '/');
 
             if (relative_lower.find(folder_prefix_lower) != std::string::npos) {
                 return filepath;
