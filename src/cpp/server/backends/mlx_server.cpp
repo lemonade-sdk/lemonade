@@ -5,9 +5,11 @@
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
-#include <sstream>
+#include <stdexcept>
+#include <vector>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -34,6 +36,66 @@ static std::string resolve_mlx_backend(const std::string& backend) {
 
 static bool is_mlx_rocm_backend(const std::string& backend) {
     return backend == "rocm";
+}
+
+static std::vector<std::string> tokenize_quoted_args(const std::string& input) {
+    std::vector<std::string> tokens;
+    std::string current;
+    bool in_single_quote = false;
+    bool in_double_quote = false;
+    bool escaped = false;
+    bool token_started = false;
+
+    for (char ch : input) {
+        if (escaped) {
+            current.push_back(ch);
+            escaped = false;
+            token_started = true;
+            continue;
+        }
+
+        if (ch == '\\' && !in_single_quote) {
+            escaped = true;
+            token_started = true;
+            continue;
+        }
+
+        if (ch == '\'' && !in_double_quote) {
+            in_single_quote = !in_single_quote;
+            token_started = true;
+            continue;
+        }
+
+        if (ch == '"' && !in_single_quote) {
+            in_double_quote = !in_double_quote;
+            token_started = true;
+            continue;
+        }
+
+        if (std::isspace(static_cast<unsigned char>(ch)) && !in_single_quote && !in_double_quote) {
+            if (token_started) {
+                tokens.push_back(current);
+                current.clear();
+                token_started = false;
+            }
+            continue;
+        }
+
+        current.push_back(ch);
+        token_started = true;
+    }
+
+    if (escaped) {
+        throw std::runtime_error("Invalid lemon-mlx args: trailing escape");
+    }
+    if (in_single_quote || in_double_quote) {
+        throw std::runtime_error("Invalid lemon-mlx args: unmatched quote");
+    }
+    if (token_started) {
+        tokens.push_back(current);
+    }
+
+    return tokens;
 }
 
 InstallParams MlxServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -75,7 +137,7 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
         throw std::runtime_error("CPU lemon-mlx is not supported on this platform");
 #endif
     } else {
-        throw std::runtime_error("Unknown lemon-mlx backend: " + backend);
+        throw std::runtime_error("Unknown lemon-mlx backend: " + resolved);
     }
 
     return params;
@@ -146,9 +208,7 @@ void MlxServer::load(const std::string& model_name,
 
     // Honor custom user args last so they can override anything above.
     if (!mlx_args.empty()) {
-        std::istringstream iss(mlx_args);
-        std::string token;
-        while (iss >> token) {
+        for (const auto& token : tokenize_quoted_args(mlx_args)) {
             args.push_back(token);
         }
     }
