@@ -264,6 +264,12 @@ json RuntimeConfig::recipe_options() const {
         if (wc.contains("args")) result["whispercpp_args"] = wc["args"];
     }
 
+    if (config_.contains("lemon-mlx")) {
+        const auto& mlx = config_["lemon-mlx"];
+        if (mlx.contains("backend")) result["lemon-mlx_backend"] = resolve_auto(mlx["backend"]);
+        if (mlx.contains("args")) result["lemon-mlx_args"] = mlx["args"];
+    }
+
     if (config_.contains("sdcpp")) {
         const auto& sd = config_["sdcpp"];
         if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);

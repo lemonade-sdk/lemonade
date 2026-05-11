@@ -46,6 +46,14 @@ export interface WhisperOptions {
   saveOptions: BooleanOption;
 }
 
+export interface LemonMlxOptions {
+  recipe: 'lemon-mlx';
+  ctxSize: NumericOption;
+  lemonMlxBackend: StringOption;
+  lemonMlxArgs: StringOption;
+  saveOptions: BooleanOption;
+}
+
 export interface FlmOptions {
   recipe: 'flm';
   ctxSize: NumericOption;
@@ -71,7 +79,7 @@ export interface StableDiffusionOptions {
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | LemonMlxOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -168,6 +176,22 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Custom arguments to pass to whisper-server, for example --convert',
   },
 
+  // lemon-mlx-specific options
+  lemonMlxBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'lemon-mlx backend to use',
+    isBackendOption: true,
+    backendRecipe: 'lemon-mlx',
+  },
+  lemonMlxArgs: {
+    type: 'string',
+    default: '',
+    label: 'lemon-mlx Arguments',
+    description: 'Custom arguments to pass to lemon-mlx server',
+  },
+
   // Stable Diffusion options
   sdcppBackend: {
     type: 'string',
@@ -227,7 +251,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd-cpp';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'lemon-mlx' | 'flm' | 'ryzenai-llm' | 'sd-cpp';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -236,6 +260,7 @@ export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'saveOptions'],
   'whispercpp': ['whispercppBackend', 'whispercppArgs', 'saveOptions'],
+  'lemon-mlx': ['ctxSize', 'lemonMlxBackend', 'lemonMlxArgs', 'saveOptions'],
   'flm': ['ctxSize', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
   'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
@@ -268,6 +293,8 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',
   whispercppArgs: 'whispercpp_args',
+  lemonMlxBackend: 'lemon-mlx_backend',
+  lemonMlxArgs: 'lemon-mlx_args',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
   saveOptions: 'save_options',

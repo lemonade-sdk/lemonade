@@ -99,9 +99,9 @@ void MlxServer::load(const std::string& model_name,
     LOG(DEBUG, "MLX") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
-    std::string mlx_backend_option = options.get_option("lemon_mlx_backend");
+    std::string mlx_backend_option = options.get_option("lemon-mlx_backend");
     std::string mlx_backend = resolve_mlx_backend(mlx_backend_option);
-    std::string mlx_args = options.get_option("lemon_mlx_args");
+    std::string mlx_args = options.get_option("lemon-mlx_args");
 
     RuntimeConfig::validate_backend_choice("lemon-mlx", mlx_backend_option);
 
