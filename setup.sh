@@ -60,6 +60,40 @@ print_info "Lemonade Development Setup"
 print_info "Operating System: $OS"
 echo ""
 
+if [ "$OS" = "linux" ] && command_exists rpm-ostree; then
+    print_warning "============================================"
+    print_warning " rpm-ostree detected (Fedora Atomic/Desktop)"
+    print_warning "============================================"
+    echo ""
+    print_warning "Installing packages via rpm-ostree modifies"
+    print_warning "the immutable OS image by creating a new"
+    print_warning "boot entry with your changes layered on top."
+    echo ""
+    print_warning "This means:"
+    print_warning "  - Your system image will be altered"
+    print_warning "  - Future OS updates may require manual"
+    print_warning "    intervention to resolve conflicts"
+    print_warning "  - You can revert via 'rpm-ostree undo'"
+    print_warning "    or by selecting the previous boot entry"
+    echo ""
+    print_warning "Consider using a development container or"
+    print_warning "a mutable installation for building instead."
+    print_warning "============================================"
+    echo ""
+
+    if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+        print_info "CI environment detected, proceeding automatically."
+    else
+        read -p "Do you want to continue anyway? (y/N): " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_error "Aborted by user."
+            exit 1
+        fi
+    fi
+    echo ""
+fi
+
 # Arrays to track missing dependencies
 missing_packages=()
 install_commands=()
