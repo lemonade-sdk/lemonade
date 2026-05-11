@@ -30,6 +30,7 @@ interface AddModelPanelProps {
 
 const RECIPE_LABELS: Record<string, string> = {
   'llamacpp': 'Llama.cpp GPU',
+  'lemon-mlx': 'lemon-mlx',
   'flm': 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI LLM',
 };
