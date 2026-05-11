@@ -547,8 +547,11 @@ body.embedded .mp-filter-select option {
   box-shadow: var(--shadow-ambient, 0 12px 48px rgba(45, 47, 47, 0.05));
 }
 
-.app-link.secondary:hover {
+.app-link.secondary:hover,
+.app-link.secondary:focus {
   background: var(--glass-bg-hover, rgba(255, 255, 255, 0.65));
+  border-color: rgba(252, 216, 70, 0.55);
+  box-shadow: 0 16px 56px rgba(45, 47, 47, 0.12), 0 0 0 1px rgba(252, 216, 70, 0.18);
   transform: scale(1.02);
 }
 

@@ -63,6 +63,8 @@ CAPABILITIES = {
                 "stop_parameter": True,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": True,
+                "static_max_context_window": True,
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
@@ -90,6 +92,8 @@ CAPABILITIES = {
                 "stop_parameter": True,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": False,
             },
             "test_models": {
                 "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
@@ -117,6 +121,8 @@ CAPABILITIES = {
                 "stop_parameter": False,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": True,
             },
             "test_models": {
                 "llm": "llama3.2-1b-FLM",

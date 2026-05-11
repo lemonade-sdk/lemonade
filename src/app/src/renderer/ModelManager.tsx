@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, ChevronRight, Cpu, Settings, SlidersHorizontal, Store, XIcon } from './components/Icons';
+import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -23,6 +23,7 @@ import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel
 interface ModelFamily {
   displayName: string;
   regex: RegExp;
+  recipe?: string;
 }
 
 const SIZE_TOKEN = String.raw`(\d+\.?\d*B(?:-A\d+\.?\d*B)?)`;
@@ -32,6 +33,14 @@ function buildFamilyRegex(prefix: string, suffix = '-GGUF$'): RegExp {
   return new RegExp(`^${prefix}-${SIZE_TOKEN}${suffix}`);
 }
 
+function buildRecipePrefixFamilyRegex(prefix: string): RegExp {
+  return new RegExp(`^${prefix}-${SIZE_TOKEN}(?:$|[-_.])`);
+}
+
+function buildRecipeRemainderFamilyRegex(prefix: string): RegExp {
+  return new RegExp(`^${prefix}-(.+)`);
+}
+
 function buildFlmFamilyRegex(prefix: string): RegExp {
   return new RegExp(`^${prefix}-${FLM_SIZE_TOKEN}-FLM$`);
 }
@@ -39,16 +48,38 @@ function buildFlmFamilyRegex(prefix: string): RegExp {
 const MODEL_FAMILIES: ModelFamily[] = [
   // Standardized family matching: capture *B or *B-A*B.
   {
-    displayName: 'Qwen3',
-    regex: buildFamilyRegex('Qwen3'),
+    displayName: 'Bonsai',
+    regex: buildRecipeRemainderFamilyRegex('Bonsai'),
+    recipe: 'llamacpp',
+  },
+  {
+    displayName: 'Gemma-4',
+    regex: buildRecipeRemainderFamilyRegex('Gemma-4'),
+    recipe: 'llamacpp',
+  },
+  {
+    displayName: 'Qwen2.5-Omni',
+    regex: buildRecipeRemainderFamilyRegex('Qwen2\\.5-Omni'),
+    recipe: 'llamacpp',
   },
   {
     displayName: 'Qwen3-Instruct-2507',
     regex: buildFamilyRegex('Qwen3', '-Instruct-2507-GGUF$'),
   },
   {
+    displayName: 'Qwen3.6',
+    regex: buildRecipeRemainderFamilyRegex('Qwen3\\.6'),
+    recipe: 'llamacpp',
+  },
+  {
+    displayName: 'Qwen3',
+    regex: buildRecipePrefixFamilyRegex('Qwen3'),
+    recipe: 'llamacpp',
+  },
+  {
     displayName: 'Qwen3.5',
-    regex: buildFamilyRegex('Qwen3\\.5'),
+    regex: buildRecipePrefixFamilyRegex('Qwen3\\.5'),
+    recipe: 'llamacpp',
   },
   {
     displayName: 'Qwen3-Embedding',
@@ -97,6 +128,54 @@ type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo }
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
 
+const MODEL_LABEL_DISPLAY_ORDER = [
+  'reasoning',
+  'coding',
+  'vision',
+  'hot',
+  'embeddings',
+  'reranking',
+  'tool-calling',
+  'custom',
+  'experience',
+];
+
+const sortModelLabelsForDisplay = (labels: string[]): string[] => {
+  const order = new Map(MODEL_LABEL_DISPLAY_ORDER.map((label, index) => [label, index]));
+  return [...labels].sort((a, b) => {
+    const aOrder = order.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = order.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return aOrder - bOrder;
+  });
+};
+
+const ModalityIcon: React.FC<{ label: string; title: string }> = ({ label, title }) => {
+  const size = 11;
+  const strokeWidth = 2.2;
+  const icon = (() => {
+    switch (label) {
+      case 'reasoning': return <Brain size={size} strokeWidth={strokeWidth} />;
+      case 'coding': return <SquareCode size={size} strokeWidth={strokeWidth} />;
+      case 'vision': return <Eye size={size} strokeWidth={strokeWidth} />;
+      case 'hot': return <Flame size={size} strokeWidth={strokeWidth} />;
+      case 'embeddings': return <Layers size={size} strokeWidth={strokeWidth} />;
+      case 'reranking': return <ListOrdered size={size} strokeWidth={strokeWidth} />;
+      case 'tool-calling': return <Wrench size={size} strokeWidth={strokeWidth} />;
+      case 'custom': return <User size={size} strokeWidth={strokeWidth} />;
+      case 'experience': return <Sparkles size={size} strokeWidth={strokeWidth} />;
+      default: return null;
+    }
+  })();
+
+  if (!icon) return null;
+
+  return (
+    <span className={`model-label-icon label-${label}`} title={title}>
+      {icon}
+    </span>
+  );
+};
+
 // Types for Hugging Face API responses
 interface HFModelInfo {
   id: string;
@@ -126,9 +205,29 @@ interface GGUFQuantization {
 interface DetectedBackend {
   recipe: string;
   label: string;
+  suggestedName?: string;
   quantizations?: GGUFQuantization[];
   mmprojFiles?: string[];
 }
+
+const HIDDEN_MODEL_NAME_PREFIXES = ['user.', 'extra.'];
+
+const getModelDisplayName = (modelName: string): string => {
+  const prefix = HIDDEN_MODEL_NAME_PREFIXES.find(p => modelName.startsWith(p));
+  return prefix ? modelName.slice(prefix.length) : modelName;
+};
+
+const isNamespaceHiddenModel = (modelName: string): boolean =>
+  HIDDEN_MODEL_NAME_PREFIXES.some(prefix => modelName.startsWith(prefix));
+
+const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
+  if (!isNamespaceHiddenModel(modelName)) return match[1];
+
+  const displayName = getModelDisplayName(modelName);
+  return displayName.startsWith(`${family.displayName}-`)
+    ? displayName.slice(family.displayName.length + 1)
+    : displayName;
+};
 
 function buildModelList(
   models: Array<{ name: string; info: ModelInfo }>
@@ -140,14 +239,21 @@ function buildModelList(
   for (const family of MODEL_FAMILIES) {
     const members: { label: string; name: string; info: ModelInfo }[] = [];
     for (const m of models) {
-      const match = family.regex.exec(m.name);
+      if (consumed.has(m.name)) continue;
+      if (family.recipe && m.info.recipe !== family.recipe) continue;
+      const match = family.regex.exec(getModelDisplayName(m.name));
       if (match) {
-        members.push({ label: match[1], name: m.name, info: m.info });
+        members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
         consumed.add(m.name);
       }
     }
     if (members.length > 1) {
-      members.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
+      members.sort((a, b) => {
+        const sizeA = parseFloat(a.label);
+        const sizeB = parseFloat(b.label);
+        if (Number.isFinite(sizeA) && Number.isFinite(sizeB)) return sizeA - sizeB;
+        return a.label.localeCompare(b.label, undefined, { numeric: true });
+      });
       familyItems.push({ type: 'family', family, members });
     } else {
       members.forEach(m => consumed.delete(m.name));
@@ -162,9 +268,11 @@ function buildModelList(
   // Merge and sort alphabetically by display name
   const allItems = [...familyItems, ...individualItems];
   allItems.sort((a, b) => {
-    const nameA = a.type === 'family' ? a.family.displayName : a.name;
-    const nameB = b.type === 'family' ? b.family.displayName : b.name;
-    return nameA.localeCompare(nameB);
+    const nameA = a.type === 'family' ? a.family.displayName : getModelDisplayName(a.name);
+    const nameB = b.type === 'family' ? b.family.displayName : getModelDisplayName(b.name);
+    return nameA.localeCompare(nameB) || (
+      a.type === 'model' && b.type === 'model' ? a.name.localeCompare(b.name) : 0
+    );
   });
 
   return allItems;
@@ -355,7 +463,8 @@ const [searchQuery, setSearchQuery] = useState('');
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(model =>
-        model.name.toLowerCase().includes(query)
+        model.name.toLowerCase().includes(query) ||
+        getModelDisplayName(model.name).toLowerCase().includes(query)
       );
     }
 
@@ -549,7 +658,10 @@ const [searchQuery, setSearchQuery] = useState('');
       seen.add(modelName);
       entries.push({ modelName, isLoading: true });
     }
-    return entries.sort((a, b) => a.modelName.localeCompare(b.modelName));
+    return entries.sort((a, b) =>
+      getModelDisplayName(a.modelName).localeCompare(getModelDisplayName(b.modelName)) ||
+      a.modelName.localeCompare(b.modelName)
+    );
   })();
 
 
@@ -646,6 +758,7 @@ const [searchQuery, setSearchQuery] = useState('');
               variants: { name: string; primary_file: string; files: string[]; sharded: boolean; size_bytes: number }[];
               mmproj_files: string[];
               recipe: string;
+              suggested_name?: string;
             } = await variantsRes.json();
             if (payload.variants && payload.variants.length > 0) {
               const quantizations: GGUFQuantization[] = payload.variants.map(v => ({
@@ -658,6 +771,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 [modelId]: {
                   recipe: payload.recipe || 'llamacpp',
                   label: 'GGUF',
+                  suggestedName: payload.suggested_name,
                   quantizations,
                   mmprojFiles: payload.mmproj_files && payload.mmproj_files.length > 0 ? payload.mmproj_files : undefined,
                 },
@@ -808,15 +922,26 @@ const [searchQuery, setSearchQuery] = useState('');
     return `${modelId}:${quantObj?.quantization ?? selectedFilename}`;
   }, [hfSelectedQuantizations]);
 
+  const resolveHfModelName = useCallback((modelId: string, backend: DetectedBackend): string => {
+    const suggestedName = backend.suggestedName || modelId.split('/').pop() || modelId;
+    if (backend.recipe !== 'llamacpp') return suggestedName;
+
+    const selectedFilename = hfSelectedQuantizations[modelId];
+    if (!selectedFilename) return suggestedName;
+    const quantObj = backend.quantizations?.find(q => q.filename === selectedFilename);
+    const variantName = quantObj?.quantization ?? selectedFilename;
+    return `${suggestedName}-${variantName}`;
+  }, [hfSelectedQuantizations]);
+
   const handleInstallHFModel = useCallback((hfModel: HFModelInfo) => {
     const backend = hfModelBackends[hfModel.id];
     if (!backend) return;
     const checkpoint = backend.recipe === 'llamacpp'
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
-    const modelName = `user.${hfModel.id.split('/').pop() ?? hfModel.id}`;
+    const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
     handleDownloadModel(modelName, { checkpoint, recipe: backend.recipe });
-  }, [hfModelBackends, resolveGgufCheckpoint, handleDownloadModel]);
+  }, [hfModelBackends, resolveGgufCheckpoint, resolveHfModelName, handleDownloadModel]);
 
   // Debounced HF search effect - to avoid HF API rate limit error
   useEffect(() => {
@@ -1238,6 +1363,8 @@ const [searchQuery, setSearchQuery] = useState('');
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
       nameTooltip = `Collection of ${components.length} models:\n${lines.join('\n')}`;
+    } else if (displayName || getModelDisplayName(modelName) !== modelName) {
+      nameTooltip = modelName;
     }
 
     return (
@@ -1250,14 +1377,14 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? modelName}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? getModelDisplayName(modelName)}</span>
             <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (
             <span className="model-labels">
-              {modelInfo.labels.map(label => (
-                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              {sortModelLabelsForDisplay(modelInfo.labels).map(label => (
+                <ModalityIcon key={label} label={label} title={getCategoryLabel(label)} />
               ))}
             </span>
           )}
@@ -1294,8 +1421,8 @@ const [searchQuery, setSearchQuery] = useState('');
           <span className="model-name family-model-name">{family.displayName}</span>
           {sharedLabels && sharedLabels.length > 0 && (
             <span className="model-labels">
-              {sharedLabels.map(label => (
-                <span key={label} className={`model-label label-${label}`} title={getCategoryLabel(label)} />
+              {sortModelLabelsForDisplay(sharedLabels).map(label => (
+                <ModalityIcon key={label} label={label} title={getCategoryLabel(label)} />
               ))}
             </span>
           )}
@@ -1548,7 +1675,7 @@ const [searchQuery, setSearchQuery] = useState('');
                         className={`loaded-model-indicator${isLoading ? ' loading' : ''}`}
                         title={isLoading ? 'Loading' : 'Loaded'}
                       />
-                      <span className="loaded-model-name">{modelName}</span>
+                      <span className="loaded-model-name" title={modelName}>{getModelDisplayName(modelName)}</span>
                     </div>
                     {!isLoading && (
                       <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">
@@ -1622,7 +1749,7 @@ const [searchQuery, setSearchQuery] = useState('');
                                   window.dispatchEvent(new CustomEvent('openAddModel', {
                                     detail: {
                                       initialValues: {
-                                        name: hfModel.id.split('/').pop() || hfModel.id,
+                                        name: resolveHfModelName(hfModel.id, backend),
                                         checkpoint,
                                         recipe: backend.recipe,
                                         mmprojOptions: backend.mmprojFiles,

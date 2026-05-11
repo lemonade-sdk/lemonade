@@ -30,6 +30,7 @@ import {
   LemonadeToolsResult,
   ToolExecutionContext,
 } from '../../utils/lemonadeTools';
+import { COLLECTION_IMAGE_HEIGHT } from '../../utils/collectionImageConfig';
 import { useAudioCapture } from '../../hooks/useAudioCapture';
 import { encodeWAV, base64ToPlaybackUrl } from '../../utils/audioUtils';
 
@@ -166,6 +167,12 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
   const autoScrollResetRef = useRef<number | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(false);
+  // Kill switch for the auto-scroll useEffect once a collection image is
+  // anchored. Needed because handleScroll resets userScrolledAwayRef → false
+  // whenever the post-anchor position is within the "at bottom" threshold
+  // (which happens whenever the message is shorter than the viewport),
+  // re-enabling auto-scroll for subsequent audio/text artifacts.
+  const collectionAutoScrollDisabledRef = useRef(false);
 
   useEffect(() => {
     const decodePrompt = (raw: string) => {
@@ -354,7 +361,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   // Auto-scroll
   useEffect(() => {
-    if (!userScrolledAwayRef.current && isUserAtBottom) {
+    if (!collectionAutoScrollDisabledRef.current && !userScrolledAwayRef.current && isUserAtBottom) {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollToBottom();
     }
@@ -423,6 +430,35 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  // Freeze auto-scroll and pin the viewport on the assistant's image. Called
+  // after the setMessages that renders the image so the RAF can find it in the
+  // DOM. The disabled-ref persists across iterations so later audio/text
+  // artifacts don't re-trigger auto-scroll; it's reset in sendMessage /
+  // submitEdit when the user starts a new turn.
+  const anchorOnCollectionImage = (messageIndex: number) => {
+    collectionAutoScrollDisabledRef.current = true;
+    userScrolledAwayRef.current = true;
+
+    if (autoScrollRafRef.current !== null) {
+      window.cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+    if (autoScrollResetRef.current !== null) {
+      window.clearTimeout(autoScrollResetRef.current);
+      autoScrollResetRef.current = null;
+    }
+    pendingAutoScrollRef.current = false;
+    autoScrollInProgressRef.current = false;
+
+    window.requestAnimationFrame(() => {
+      const container = messagesContainerRef.current;
+      const messageEl = container?.querySelector<HTMLElement>(`.chat-message[data-message-index="${messageIndex}"]`);
+      if (!container || !messageEl) return;
+      const target = messageEl.querySelector<HTMLElement>('.collection-chat-image') ?? messageEl;
+      container.scrollTop += target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    });
+  };
+
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
     messages: messageHistory,
@@ -456,6 +492,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     if (!lemonadeTools) throw new Error('Lemonade tools not loaded');
     const MAX_ITERATIONS = 5;
     const isNewModelLoad = currentLoadedModel !== chatModelName;
+    const assistantMessageIndex = messageHistory.length;
 
     // Pre-extract audio and image data from user messages
     const extractedAudio: Array<{ data: string; mime: string }> = [];
@@ -602,6 +639,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         const toolModel = lemonadeTools.models[funcName];
 
         let resultContent: string;
+        let imageAddedThisCall = false;
         if (toolModel) {
           try {
             const context: ToolExecutionContext = {
@@ -625,6 +663,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                 artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
               }
               resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+              imageAddedThisCall = true;
             } else if (result.type === 'audio' && result.data) {
               artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });
               resultContent = 'Audio generated successfully.';
@@ -654,6 +693,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
           };
           return newMessages;
         });
+
+        if (imageAddedThisCall) {
+          anchorOnCollectionImage(assistantMessageIndex);
+        }
       }
     }
 
@@ -834,6 +877,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    collectionAutoScrollDisabledRef.current = false;
 
     let messageContent: MessageContent;
     if (uploadedImages.length > 0 || uploadedAudio.length > 0) {
@@ -909,6 +953,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     abortControllerRef.current = new AbortController();
     setIsUserAtBottom(true);
     userScrolledAwayRef.current = false;
+    collectionAutoScrollDisabledRef.current = false;
 
     const truncatedMessages = messages.slice(0, editingIndex);
 
@@ -998,6 +1043,14 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     });
   };
 
+  const isCollectionImageOnlyMessage = (message: Message) => (
+    collectionMode &&
+    message.role === 'assistant' &&
+    Array.isArray(message.content) &&
+    message.content.length > 0 &&
+    message.content.every((item) => item.type === 'image_url')
+  );
+
   const renderMessageContent = (content: MessageContent, thinking?: string, messageIndex?: number, isComplete?: boolean, role?: string) => (
     <>
       {thinking && (
@@ -1039,20 +1092,15 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
               if (!url.startsWith('data:image/')) return null;
               if (role === 'assistant') {
                 return (
-                  <div key={index} className="image-generation-item">
-                    <div className="generated-images-row">
-                      <div className="generated-image-column">
-                        <div className="image-wrapper">
-                          <img
-                            src={url}
-                            alt="Generated"
-                            className="generated-image in-chat"
-                            onClick={() => setLightboxSrc(url)}
-                            title="Click to expand"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <div key={index} className="collection-chat-image">
+                    <img
+                      src={url}
+                      alt="Generated"
+                      className="generated-image in-chat"
+                      style={{ height: COLLECTION_IMAGE_HEIGHT }}
+                      onClick={() => setLightboxSrc(url)}
+                      title="Click to expand"
+                    />
                   </div>
                 );
               }
@@ -1189,12 +1237,16 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
         {messages.length === 0 && <EmptyState title="Lemonade Chat" />}
         {messages.map((message, index) => {
           const isGrayedOut = editingIndex !== null && index > editingIndex;
+          const isBubblelessImageMessage = isCollectionImageOnlyMessage(message);
           return (
             <div
               key={index}
+              data-message-index={index}
               className={`chat-message ${message.role === 'user' ? 'user-message' : 'assistant-message'} ${
                 message.role === 'user' && !isBusy ? 'editable' : ''
-              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''}`}
+              } ${isGrayedOut ? 'grayed-out' : ''} ${editingIndex === index ? 'editing' : ''} ${
+                isBubblelessImageMessage ? 'collection-image-message' : ''
+              }`}
             >
               {renderAudioButton(message.role, message.content, index)}
               {editingIndex === index ? (

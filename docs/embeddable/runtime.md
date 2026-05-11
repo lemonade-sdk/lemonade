@@ -103,7 +103,7 @@ This matches the existing CLI, tray, app, and test implementations in this repo.
 | `GET /v1/models` | List available models |
 | `GET /v1/health` | Server status and loaded models |
 
-See the [Server Spec](../server/server_spec.md) for full request/response details.
+See the [Endpoints Spec](../api/README.md) for full request/response details.
 
 ## Runtime Settings Management
 
@@ -114,7 +114,7 @@ Your app can manage its `lemond` instance at runtime by using `/internal` endpoi
 | `POST` | `/internal/set` | Unified config setter (see below) |
 | `GET`  | `/internal/config` | Returns the full runtime config snapshot |
 
-The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../server/configuration.md) for details on all settings.
+The settings defined in `config.json` can all be changed at runtime without restarting `lemond` with the `/internal/set` endpoint. See the [Configuration Guide](../guide/configuration/README.md) for details on all settings.
 
 > Note: The `lemonade` CLI uses `/internal/set` and `/internal/config` internally for the `lemonade config` commands.
 
@@ -161,6 +161,8 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `sdcpp_backend` | string |
 | `whispercpp_backend` | string |
 | `whispercpp_args` | string |
+| `vllm_backend` | string |
+| `vllm_args` | string |
 | `steps` | int (positive) |
 | `cfg_scale` | number |
 | `width` | int (positive) |

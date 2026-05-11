@@ -78,8 +78,16 @@ export interface StableDiffusionOptions {
   saveOptions: BooleanOption;
 }
 
+export interface VLLMOptions {
+  recipe: 'vllm';
+  ctxSize: NumericOption;
+  vllmBackend: StringOption;
+  vllmArgs: StringOption;
+  saveOptions: BooleanOption;
+}
+
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | LemonMlxOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | LemonMlxOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -158,6 +166,22 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     default: '',
     label: 'LlamaCpp Arguments',
     description: 'Custom arguments to pass to llama-server',
+  },
+
+  // vLLM-specific options
+  vllmBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'vLLM backend to use',
+    isBackendOption: true,
+    backendRecipe: 'vllm',
+  },
+  vllmArgs: {
+    type: 'string',
+    default: '',
+    label: 'vLLM Arguments',
+    description: 'Custom arguments to pass to vllm-server',
   },
 
   // WhisperCpp-specific options
@@ -251,7 +275,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'lemon-mlx' | 'flm' | 'ryzenai-llm' | 'sd-cpp';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'lemon-mlx' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -264,6 +288,7 @@ export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'flm': ['ctxSize', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
   'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
+  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'saveOptions'],
 };
 
 /**
@@ -297,6 +322,8 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   lemonMlxArgs: 'lemon-mlx_args',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
+  vllmBackend: 'vllm_backend',
+  vllmArgs: 'vllm_args',
   saveOptions: 'save_options',
 };
 

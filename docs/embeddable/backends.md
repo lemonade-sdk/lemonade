@@ -53,10 +53,11 @@ Follow these instructions if you want backends to be bundled into your app's ins
 At the time of this writing:
 -  `flm` is not available for packaging-time bundling *on Linux*.
 - `llamacpp:rocm` is not available for packaging-time bundling on any OS.
+- `vllm:rocm` is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its `gfx_target` with the deployment machine.
 
 ### Installing Backends at Install-Time or Runtime
 
-You can install backends either during your app's installer or first-run flow, or later while the app is running. In both cases, start by calling [`GET /v1/system-info`](../server/server_spec.md#get-apiv1system-info) on the target machine. The response tells you which backends are supported on that specific system.
+You can install backends either during your app's installer or first-run flow, or later while the app is running. In both cases, start by calling [`GET /v1/system-info`](../api/lemonade.md#get-v1system-info) on the target machine. The response tells you which backends are supported on that specific system.
 
 This is useful when the correct backend depends on the user's hardware. For example, you can prefer `llamacpp:rocm` when ROCm is supported, and fall back to `llamacpp:vulkan` otherwise.
 
@@ -143,7 +144,7 @@ Otherwise, install Vulkan:
       }'
     ```
 
-See the [Server Spec](../server/server_spec.md) for endpoint details.
+See the [Endpoints Spec](../api/README.md) for endpoint details.
 
 ## Bring Your Own Backends
 
@@ -171,4 +172,4 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ./lemonade config set llamacpp.vulkan_bin /path/to/bins
     ```
 
-See the `*_bin` settings in the [Configuration Guide](../server/configuration.md) for the full set of customization options.
+See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.

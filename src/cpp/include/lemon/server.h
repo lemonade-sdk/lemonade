@@ -72,6 +72,8 @@ private:
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
+    void handle_slots(const httplib::Request& req, httplib::Response& res);
+    void handle_slots_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
@@ -127,6 +129,9 @@ private:
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
 
+    // Warm model list cache in the background after startup dependencies are initialized
+    void start_model_cache_warmup();
+
     // Helper function to generate detailed model error responses (not found, not supported, load failure)
     nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
     // System stats helper methods
@@ -141,6 +146,7 @@ private:
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
+    std::thread model_cache_warmup_thread_;
 
 
     std::unique_ptr<httplib::Server> http_server_;

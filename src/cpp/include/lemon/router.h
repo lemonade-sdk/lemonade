@@ -68,6 +68,8 @@ public:
     json completion(const json& request);
     json embeddings(const json& request);
     json reranking(const json& request);
+    json get_slots();
+    json slots_action(int slot_id, const std::string& action, const json& request_body);
     json responses(const json& request);
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)

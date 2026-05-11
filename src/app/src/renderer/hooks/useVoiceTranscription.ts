@@ -94,8 +94,15 @@ export function useVoiceTranscription({
     wsToCloseRef.current?.close();
   }, []);
 
-  // Manual-stop path: commit buffered audio so the server transcribes it, then
-  // keep the socket alive until the 'completed' response arrives.
+  const closeCommittedWs = useCallback(() => {
+    if (wsToCloseRef.current) {
+      wsToCloseRef.current.close();
+      wsToCloseRef.current = null;
+    }
+  }, []);
+
+  // Manual-stop path: ask the server to finish any active VAD speech window,
+  // then keep the socket alive until the server replies with completed/cleared.
   const closeWs = useCallback(() => {
     if (wsClientRef.current) {
       wsClientRef.current.commitAudio();
@@ -127,13 +134,12 @@ export function useVoiceTranscription({
     setInputValueRef.current(newValue);
     if (textareaRef?.current) adjustTextareaHeight(textareaRef.current);
 
-    // After manual stop the committed buffer produces one last 'completed' —
-    // close the socket cleanly once it arrives.
+    // After manual stop, close the socket once the server finishes or discards
+    // the pending buffer.
     if (isFinal && !isRecordingRef.current && wsToCloseRef.current) {
-      wsToCloseRef.current.close();
-      wsToCloseRef.current = null;
+      closeCommittedWs();
     }
-  }, [textareaRef]);
+  }, [textareaRef, closeCommittedWs]);
 
   const start = useCallback(async () => {
     if (!activeModel) {
@@ -157,6 +163,7 @@ export function useVoiceTranscription({
       wsClientRef.current = await TranscriptionWebSocket.connect(modelToUse, {
         onTranscription: handleTranscription,
         onSpeechEvent: () => {},
+        onAudioBufferCleared: closeCommittedWs,
         onError: (err) => onError(err),
       });
       await new Promise(r => setTimeout(r, 500));

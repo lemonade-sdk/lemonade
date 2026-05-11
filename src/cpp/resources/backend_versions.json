@@ -2,12 +2,12 @@
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, FLM, and lemon-mlx versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "rocm-stable-runtime": "v7.2.1",
   "llamacpp": {
-    "vulkan": "b8766",
-    "rocm-stable": "b8653",
-    "rocm-preview": "b8705",
-    "rocm-nightly": "b1238",
-    "metal": "b8884",
-    "cpu": "b8766"
+    "vulkan": "b9095",
+    "rocm-stable": "b9095",
+    "rocm-preview": "b9093",
+    "rocm-nightly": "b1264",
+    "metal": "b9095",
+    "cpu": "b9095"
   },
   "whispercpp": {
     "cpu": "v1.8.2",
@@ -63,6 +63,9 @@
   },
   "kokoro": {
     "cpu": "b16"
+  },
+  "vllm": {
+    "rocm": "vllm0.20.1-rocm7.12.0"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

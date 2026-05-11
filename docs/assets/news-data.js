@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "vLLM ROCm now in Lemonade",
+        url: "https://lemonade-server.ai/news/vllm-rocm.html",
+        date: "May 8, 2026",
+        description: "Lemonade now includes experimental vLLM ROCm support on Linux for AMD GPUs, with day-0 model support, multi-GPU concurrency, and a self-contained backend bundle.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "AMD Making It Easier To Embed Lemonade AI Capabilities Into Other Apps",
         url: "https://www.phoronix.com/news/Lemonade-SDK-10.2-Released",
         date: "April 9, 2026",

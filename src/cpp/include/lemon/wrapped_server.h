@@ -111,6 +111,7 @@ public:
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
+    int get_process_id() const { return process_handle_.pid; }
 
     // Load a model and start the server
     virtual void load(const std::string& model_name,
