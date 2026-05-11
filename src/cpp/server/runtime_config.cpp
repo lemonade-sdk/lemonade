@@ -256,7 +256,7 @@ json RuntimeConfig::recipe_options() const {
         const auto& lc = config_["llamacpp"];
         if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
         if (lc.contains("args")) result["llamacpp_args"] = lc["args"];
-	if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
+        if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
     }
 
     if (config_.contains("whispercpp")) {

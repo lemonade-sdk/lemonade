@@ -199,12 +199,7 @@ json RecipeOptions::get_option(const std::string& opt) const {
 static const json CLI_OPTIONS = {
     {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
-    {"--llamacpp-device", {
-        {"option_name", "llamacpp_device"},
-        {"type_name", "DEVICES"},
-        {"envname", "LEMONADE_LLAMACPP_DEVICE"},
-        {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}
-    }},
+    {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"envname", "LEMONADE_LLAMACPP_DEVICE"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}}},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
