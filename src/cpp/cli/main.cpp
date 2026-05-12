@@ -1085,26 +1085,36 @@ int main(int argc, char* argv[]) {
     export_cmd->add_option("--output", config.output_file, "Output file path (prints to stdout if not specified)")->type_name("PATH");
 
     // Launch options
-    CLI::Option* provider_opt = nullptr;
-    launch_cmd->add_option("agent", config.agent, "Agent name to launch")
-        ->type_name("AGENT")
-        ->check(CLI::IsMember(SUPPORTED_AGENTS));
-    launch_cmd->add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
-    launch_cmd->add_option("--directory", config.repo_dir,
-        "Remote recipe directory used only if you choose recipe import at prompt")
-        ->type_name("DIR");
-    launch_cmd->add_option("--recipe-file", config.recipe_file,
-        "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
-    provider_opt = launch_cmd->add_option("--provider,-p", config.codex_model_provider,
-        "Use model provider name for Codex instead of Lemonade-injected provider definition")
-        ->type_name("PROVIDER")
-        ->default_val(config.codex_model_provider)
-        ->expected(0, 1);
-    launch_cmd->add_option("--agent-args", config.agent_args,
-        "Custom arguments to pass directly to the launched agent process")
-        ->type_name("ARGS")
-        ->default_val(config.agent_args);
-    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
+    auto add_common_launch_options = [&config](CLI::App& cmd) {
+        cmd.add_option("--model,-m", config.model, "Model name to load")->type_name("MODEL");
+        cmd.add_option("--directory", config.repo_dir,
+            "Remote recipe directory used only if you choose recipe import at prompt")
+            ->type_name("DIR");
+        cmd.add_option("--recipe-file", config.recipe_file,
+            "Remote recipe JSON filename used only if you choose recipe import at prompt")->type_name("FILE");
+        cmd.add_option("--agent-args", config.agent_args,
+            "Custom arguments to pass directly to the launched agent process")
+            ->type_name("ARGS")
+            ->default_val(config.agent_args);
+    };
+
+    add_common_launch_options(*launch_cmd);
+    CLI::Option* codex_provider_opt = nullptr;
+    for (const std::string& agent_name : SUPPORTED_AGENTS) {
+        CLI::App* agent_cmd =
+            launch_cmd->add_subcommand(agent_name, "Launch " + agent_name + " with a model")
+                ->group("Agents");
+        agent_cmd->callback([&config, agent_name]() { config.agent = agent_name; });
+        add_common_launch_options(*agent_cmd);
+
+        if (agent_name == "codex") {
+            codex_provider_opt = agent_cmd->add_option("--provider,-p", config.codex_model_provider,
+                "Use model provider name for Codex instead of Lemonade-injected provider definition")
+                ->type_name("PROVIDER")
+                ->default_val(config.codex_model_provider)
+                ->expected(0, 1);
+        }
+    }
 
     // Scan options
     scan_cmd->add_option("--duration", config.scan_duration, "Scan duration in seconds")->default_val(config.scan_duration)->type_name("SECONDS");
@@ -1114,7 +1124,7 @@ int main(int argc, char* argv[]) {
 
     // Parse arguments
     CLI11_PARSE(app, argc, argv);
-    config.codex_use_user_config = (provider_opt != nullptr && provider_opt->count() > 0);
+    config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
     // Skip when: no command given, scan command, or user explicitly set --host/--port

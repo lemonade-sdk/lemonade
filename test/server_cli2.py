@@ -1143,7 +1143,7 @@ sys.exit(0)
 
             self.assertNotEqual(result.returncode, 0)
             output = result.stdout + result.stderr
-            self.assertIn("only supported for the codex agent", output)
+            self.assertIn("not expected: --provider", output)
 
     def test_102h_launch_agent_args_passthrough(self):
         """--agent-args should be tokenized and appended to agent argv."""
@@ -1697,6 +1697,10 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
         help_output = result.stdout + result.stderr
+        self.assertIn("Agents:", help_output)
+        self.assertIn("claude", help_output)
+        self.assertIn("codex", help_output)
+        self.assertIn("opencode", help_output)
         self.assertIn(
             "Remote recipe directory used only if you choose recipe import at prompt",
             help_output,
@@ -1706,13 +1710,42 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             help_output,
         )
         self.assertIn(
-            "Use model provider name for Codex",
-            help_output,
-        )
-        self.assertIn(
             "Custom arguments to pass directly to the launched agent process",
             help_output,
         )
+        self.assertNotIn("--provider", help_output)
+        self.assertNotIn("--ctx-size", help_output)
+        self.assertNotIn("LEMONADE_CTX_SIZE", help_output)
+
+        claude_result = run_cli_command(
+            ["launch", "claude", "--help"], timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(claude_result.returncode, 0)
+        claude_help = claude_result.stdout + claude_result.stderr
+        self.assertNotIn("--provider", claude_help)
+        self.assertNotIn("--ctx-size", claude_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
+        self.assertNotIn("--llamacpp", claude_help)
+        self.assertNotIn("--flm-args", claude_help)
+
+        opencode_result = run_cli_command(
+            ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(opencode_result.returncode, 0)
+        opencode_help = opencode_result.stdout + opencode_result.stderr
+        self.assertNotIn("--provider", opencode_help)
+        self.assertNotIn("--ctx-size", opencode_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", opencode_help)
+
+        codex_result = run_cli_command(
+            ["launch", "codex", "--help"], timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(codex_result.returncode, 0)
+        codex_help = codex_result.stdout + codex_result.stderr
+        self.assertIn("Use model provider name for Codex", codex_help)
+        self.assertIn("--provider", codex_help)
+        self.assertNotIn("--ctx-size", codex_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", codex_help)
 
         docs_path = os.path.join(
             os.path.dirname(__file__), "..", "docs", "guide", "cli.md"
@@ -1735,6 +1768,11 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         )
         self.assertIn("--provider,-p [PROVIDER]", docs_text)
         self.assertIn("--agent-args ARGS", docs_text)
+        launch_section = docs_text.split("## Options for launch", 1)[1].split(
+            "## Options for scan", 1
+        )[0]
+        self.assertNotIn("--ctx-size", launch_section)
+        self.assertNotIn("--llamacpp", launch_section)
 
     def test_901_legacy_pull_deprecation_message(self):
         """The legacy shim should not forward pull args and should print migration guidance."""
