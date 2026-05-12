@@ -171,13 +171,18 @@ void MlxServer::load(const std::string& model_name,
     // Install lemon-mlx binary if needed.
     backend_manager_->install_backend(SPEC.recipe, mlx_backend);
 
-    // MLX identifies models by HuggingFace repo-id or a local directory path.
-    // The ModelManager resolves local paths when available; fall back to the
-    // checkpoint string (usually a repo-id) so the server auto-downloads on
-    // first use.
-    std::string model_ref = model_info.resolved_path();
+    // Pass the HuggingFace repo-id (checkpoint) to lemon-mlx, not the
+    // resolved local path. Upstream lemon-mlx unconditionally URL-joins the
+    // model argument onto huggingface.co/api/models/, so an absolute
+    // filesystem path produces a 404 like
+    //   huggingface.co/api/models//home/.../hf-cache/...
+    // HF_HOME is honored by the lemon-mlx process, so a previously
+    // downloaded model is still resolved from the local cache. The
+    // resolved_path remains as a fallback for setups where the checkpoint
+    // field is empty (rare; future custom-model recipes).
+    std::string model_ref = model_info.checkpoint();
     if (model_ref.empty()) {
-        model_ref = model_info.checkpoint();
+        model_ref = model_info.resolved_path();
     }
     if (model_ref.empty()) {
         throw std::runtime_error("lemon-mlx: no model path or checkpoint provided");
