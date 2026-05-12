@@ -34,10 +34,6 @@ static std::string resolve_mlx_backend(const std::string& backend) {
     return backend;
 }
 
-static bool is_mlx_rocm_backend(const std::string& backend) {
-    return backend == "rocm";
-}
-
 static std::vector<std::string> tokenize_quoted_args(const std::string& input) {
     std::vector<std::string> tokens;
     std::string current;
@@ -217,9 +213,12 @@ void MlxServer::load(const std::string& model_name,
 
     std::vector<std::pair<std::string, std::string>> env_vars;
 #ifdef __linux__
-    if (is_mlx_rocm_backend(mlx_backend)) {
-        // Point the loader at the bundled ROCm shared libraries shipped next
-        // to the server binary (same pattern as llamacpp-rocm).
+    // Both Linux variants bundle their runtime libs next to the server binary
+    // and the binary has no DT_RUNPATH, so without LD_LIBRARY_PATH the loader
+    // can't find them and exits 127.
+    //   rocm: libamdhip64.so, librocblas.so, ...
+    //   cpu:  libopenblas.so.0, liblapacke.so.3, libgfortran.so.5
+    {
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
 
