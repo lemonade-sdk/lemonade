@@ -177,10 +177,10 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
     fetchSystemInfo();
   }, [isOpen]);
 
-  const runUpdateCheck = async (guard?: { cancelled: boolean }) => {
+  const runUpdateCheck = async (cancellationGuard?: { cancelled: boolean }) => {
     const isWebApp = window.api?.isWebApp === true;
     if (isWebApp || !window.api?.getAppVersion) {
-      if (!guard?.cancelled) {
+      if (!cancellationGuard?.cancelled) {
         setAppVersion(isWebApp ? 'Web app' : 'Unknown');
         setUpdateStatus('unsupported');
         setUpdateMessage('Update checks are available in the desktop app.');
@@ -194,7 +194,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
 
     try {
       const currentVersion = normalizeVersion(await window.api.getAppVersion());
-      if (!guard?.cancelled) {
+      if (!cancellationGuard?.cancelled) {
         setAppVersion(currentVersion || 'Unknown');
       }
 
@@ -216,7 +216,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
       const platform = window.api?.platform || navigator.platform || 'unknown';
       const downloadUrl = pickDownloadUrl(assets, platform, releaseUrl);
 
-      if (guard?.cancelled) {
+      if (cancellationGuard?.cancelled) {
         return;
       }
 
@@ -235,7 +235,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
       }
     } catch (error) {
       console.error('Update check failed:', error);
-      if (!guard?.cancelled) {
+      if (!cancellationGuard?.cancelled) {
         setUpdateStatus('error');
         setUpdateMessage('Unable to check for updates right now.');
       }
@@ -245,11 +245,11 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (!isOpen) return;
 
-    const guard = { cancelled: false };
-    runUpdateCheck(guard);
+    const cancellationGuard = { cancelled: false };
+    runUpdateCheck(cancellationGuard);
 
     return () => {
-      guard.cancelled = true;
+      cancellationGuard.cancelled = true;
     };
   }, [isOpen]);
 
@@ -278,10 +278,6 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
-  const handleCheckUpdates = async () => {
-    await runUpdateCheck();
-  };
 
   const handleDownloadUpdate = () => {
     const url = updateInfo?.downloadUrl || updateInfo?.releaseUrl;
@@ -321,7 +317,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
           <span className="about-popover-info-value">{updateMessage}</span>
         </div>
         <div className="about-popover-actions">
-          <button className="left-panel-link-btn" onClick={handleCheckUpdates}>
+          <button className="left-panel-link-btn" onClick={() => runUpdateCheck()}>
             {updateStatus === 'checking' ? 'Checking...' : 'Check for updates'}
           </button>
           {updateStatus === 'available' && (
