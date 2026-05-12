@@ -81,8 +81,6 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
 }
 
-static constexpr const char USER_MODEL_PREFIX[] = "user.";
-static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char* APPEAR_BUILTIN_LABEL = "appear-builtin";
 
 static bool has_label(const ModelInfo& info, const std::string& label) {
@@ -339,16 +337,6 @@ static void populate_static_max_context_window(ModelInfo& info) {
     }
 }
 
-static bool is_user_model_name(const std::string& model_name) {
-    return model_name.rfind(USER_MODEL_PREFIX, 0) == 0;
-}
-
-static std::string strip_user_model_prefix(const std::string& model_name) {
-    if (is_user_model_name(model_name)) {
-        return model_name.substr(USER_MODEL_PREFIX_LEN);
-    }
-    return model_name;
-}
 
 static std::string repo_id_to_cache_dir_name(const std::string& repo_id) {
     std::string cache_dir_name = "models--";
@@ -760,7 +748,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     LOG(INFO, "ModelManager") << "Scanning for GGUF models in: " << search_dir << std::endl;
 
     // Configuration for discovered models (single source of truth)
-    static constexpr const char* EXTRA_MODEL_PREFIX = "extra.";
     static constexpr const char* EXTRA_MODEL_RECIPE = "llamacpp";
     static constexpr const char* EXTRA_MODEL_SOURCE = "extra_models_dir";
 
@@ -813,7 +800,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         // Skip mmproj files - they're part of multimodal models
         if (contains_ignore_case(filename, "mmproj")) continue;
 
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + filename;
+        std::string model_name = filename;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
@@ -867,7 +854,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             continue;
         }
 
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
+        std::string model_name = dir_name;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = dir_path;
         info.resolved_paths["main"] = main_model_path.string();
@@ -1294,10 +1281,10 @@ void ModelManager::build_cache() {
         all_models[key] = info;
     }
 
-    // Load user models with "user." prefix
+    // Load user models
     for (auto& [key, value] : user_models_.items()) {
         ModelInfo info;
-        info.model_name = "user." + key;
+        info.model_name = key;
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
         parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
@@ -1334,8 +1321,6 @@ void ModelManager::build_cache() {
     }
 
     // Step 1.5: Discover models from extra_models_dir
-    // All discovered models are prefixed with "extra." to avoid conflicts
-    // We still gracefully handle conflicts just in case, though
     auto discovered_models = discover_extra_models();
     for (const auto& [name, info] : discovered_models) {
         // Check for conflicts with registered models
@@ -1453,19 +1438,12 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         return; // Will initialize on next access
     }
 
-    // Parse model name to get JSON key
-    std::string json_key = model_name;
-    bool is_user_model = is_user_model_name(model_name);
-    if (is_user_model) {
-        json_key = strip_user_model_prefix(model_name);
-    }
-
-    // Find in JSON
+    // Find in JSON (user models take precedence over built-in models)
     json* model_json = nullptr;
-    if (is_user_model && user_models_.contains(json_key)) {
-        model_json = &user_models_[json_key];
-    } else if (!is_user_model && server_models_.contains(json_key)) {
-        model_json = &server_models_[json_key];
+    if (user_models_.contains(model_name)) {
+        model_json = &user_models_[model_name];
+    } else if (server_models_.contains(model_name)) {
+        model_json = &server_models_[model_name];
     }
 
     if (!model_json) {
@@ -1487,7 +1465,9 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         ? (*model_json)["recipe_options"] : json(nullptr);
     info.recipe_options = build_recipe_options(info, jro, model_name, recipe_options_);
 
-    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
+    // Custom models default to suggested=true, built-in models use their JSON value
+    bool is_custom_model = user_models_.contains(model_name);
+    info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_custom_model);
     info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");
 
@@ -1630,15 +1610,15 @@ void ModelManager::remove_model_from_cache(const std::string& model_name) {
 
     auto it = models_cache_.find(model_name);
     if (it != models_cache_.end()) {
-        // User models and local uploads should be removed entirely from cache
+        // Custom models and local uploads should be removed entirely from cache
         // (they're not in server_models.json, so keeping them makes no sense)
-        bool is_user_model = is_user_model_name(model_name);
-        if (is_user_model || it->second.source == "local_upload") {
+        bool is_custom_model = user_models_.contains(model_name);
+        if (is_custom_model || it->second.source == "local_upload") {
             models_cache_.erase(model_name);
             rebuild_public_model_aliases_locked();
             LOG(INFO, "ModelManager") << "Removed '" << model_name << "' from cache" << std::endl;
         } else {
-            // Registered model - just mark as not downloaded
+            // Built-in model - just mark as not downloaded
             it->second.downloaded = false;
             LOG(INFO, "ModelManager") << "Marked '" << model_name << "' as not downloaded" << std::endl;
         }
@@ -1902,12 +1882,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
-    // Remove "user." prefix if present
-    std::string clean_name = model_name;
-    if (is_user_model_name(clean_name)) {
-        clean_name = strip_user_model_prefix(clean_name);
-    }
-
     // Filter only known, user-definable model props
     json model_entry;
     for (const std::string& prop : USER_DEFINED_MODEL_PROPS) {
@@ -1951,13 +1925,13 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
 
     json updated_user_models = user_models_;
-    updated_user_models[clean_name] = model_entry;
+    updated_user_models[model_name] = model_entry;
 
     save_user_models(updated_user_models);
     user_models_ = updated_user_models;
 
     // Add new model to cache incrementally
-    add_model_to_cache("user." + clean_name);
+    add_model_to_cache(model_name);
 }
 
 // Find the FLM executable: install dir on Windows, system PATH on Linux.
@@ -2187,20 +2161,10 @@ void ModelManager::download_model(const std::string& model_name,
 
     std::string actual_recipe = model_data.value("recipe", "");
 
-    // If checkpoint or recipe are provided, this is a model registration
-    // and the model name must have the "user." prefix
-    if (!actual_checkpoint.empty() || !actual_recipe.empty()) {
-        if (!is_user_model_name(model_name)) {
-            throw std::runtime_error(
-                "When providing 'checkpoint' or 'recipe', the model name must include the "
-                "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " +
-                model_name
-            );
-        }
-    }
-
     // Check if model exists in registry
     bool model_registered = model_exists(model_name);
+    bool is_builtin = server_models_.contains(model_name);
+    bool has_custom_params = !actual_checkpoint.empty() || !actual_recipe.empty();
 
     if (!model_registered) {
         // First, check if the model exists but was filtered out (unsupported recipe)
@@ -2213,16 +2177,7 @@ void ModelManager::download_model(const std::string& model_name,
             );
         }
 
-        // Model not in registry - this must be a user model registration
-        // Validate it has the "user." prefix
-        if (!is_user_model_name(model_name)) {
-            // See UnknownModelError contract in include/lemon/model_manager.h.
-            throw UnknownModelError(
-                "When registering a new model, the model name must include the "
-                "`user` namespace, for example `user.Phi-4-Mini-GGUF`. Received: " +
-                model_name
-            );
-        }
+        // Model not in registry - this is a custom model registration
 
         // Check that required arguments are provided
         if (actual_checkpoint.empty() || actual_recipe.empty()) {
@@ -2250,17 +2205,46 @@ void ModelManager::download_model(const std::string& model_name,
             }
         }
 
-        LOG(INFO, "ModelManager") << "Registering new user model: " << model_name << std::endl;
-    } else {
-        // Model is registered - if checkpoint not provided, look up from registry
-        // otherwise overwrite registration
-        if (actual_checkpoint.empty()) {
-            auto info = get_model_info(model_name);
-            actual_checkpoint = info.checkpoint();
-            actual_recipe = info.recipe;
+        LOG(INFO, "ModelManager") << "Registering new custom model: " << model_name << std::endl;
+    } else if (model_registered && has_custom_params) {
+        // User is providing custom parameters for an existing model (built-in or custom)
+        // This updates the model configuration - it does NOT create a duplicate model
+        auto existing_info = get_model_info(model_name);
+
+        if (is_builtin) {
+            LOG(WARNING, "ModelManager") << "⚠️  Updating configuration for built-in model '" << model_name << "'\n"
+                      << "    Old checkpoint: " << existing_info.checkpoint() << "\n"
+                      << "    New checkpoint: " << actual_checkpoint << "\n"
+                      << "    This affects ALL clients using this model name." << std::endl;
         } else {
-            model_registered = false;
+            LOG(INFO, "ModelManager") << "Updating configuration for custom model '" << model_name << "'\n"
+                      << "    Old checkpoint: " << existing_info.checkpoint() << "\n"
+                      << "    New checkpoint: " << actual_checkpoint << std::endl;
         }
+
+        // Validate GGUF models (llamacpp recipe) require a variant
+        if (actual_recipe == "llamacpp") {
+            std::string checkpoint_lower = actual_checkpoint;
+            std::transform(checkpoint_lower.begin(), checkpoint_lower.end(),
+                          checkpoint_lower.begin(), ::tolower);
+            if (checkpoint_lower.find("gguf") != std::string::npos &&
+                actual_checkpoint.find(':') == std::string::npos) {
+                throw std::runtime_error(
+                    "You are required to provide a 'variant' in the checkpoint field when "
+                    "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
+                    "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
+                    "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf"
+                );
+            }
+        }
+
+        // Treat as new registration to trigger download and save custom config
+        model_registered = false;
+    } else if (model_registered) {
+        // Model is registered and no custom params provided - pull using existing config
+        auto info = get_model_info(model_name);
+        actual_checkpoint = info.checkpoint();
+        actual_recipe = info.recipe;
     }
 
     // Parse checkpoint
@@ -2362,8 +2346,8 @@ void ModelManager::download_model(const std::string& model_name,
         return;
     }
 
-    // Register user models to user_models.json
-    if (is_user_model_name(model_name) && !model_registered) {
+    // Register custom models to user_models.json
+    if (!model_registered) {
         register_user_model(model_name, model_data);
     }
 
@@ -3175,7 +3159,7 @@ void ModelManager::delete_model(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Recipe: " << info.recipe << std::endl;
 
     // Handle extra models (from --extra-models-dir) - these are user-managed external files
-    if (canonical_model_name.substr(0, 6) == "extra.") {
+    if (info.source == "extra_models_dir") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
     }
@@ -3230,10 +3214,10 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << canonical_model_name << std::endl;
 
-        // Remove from user models if it's a user model
-        if (is_user_model_name(canonical_model_name)) {
+        // Remove from user models if it's a custom model
+        if (user_models_.contains(canonical_model_name)) {
             json updated_user_models = user_models_;
-            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
+            updated_user_models.erase(canonical_model_name);
             save_user_models(updated_user_models);
             user_models_ = updated_user_models;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
@@ -3251,9 +3235,9 @@ void ModelManager::delete_model(const std::string& model_name) {
         // Just remove from user_models.json and cache
         LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
 
-        if (is_user_model_name(canonical_model_name)) {
+        if (user_models_.contains(canonical_model_name)) {
             json updated_user_models = user_models_;
-            updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
+            updated_user_models.erase(canonical_model_name);
             save_user_models(updated_user_models);
             user_models_ = updated_user_models;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
@@ -3340,10 +3324,10 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
     }
 
-    // Remove from user models if it's a user model
-    if (is_user_model_name(canonical_model_name)) {
+    // Remove from user models if it's a custom model
+    if (user_models_.contains(canonical_model_name)) {
         json updated_user_models = user_models_;
-        updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
+        updated_user_models.erase(canonical_model_name);
         save_user_models(updated_user_models);
         user_models_ = updated_user_models;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
@@ -3474,17 +3458,9 @@ bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
     if (server_models_.contains(model_name)) {
         return true;
     }
-    if (is_user_model_name(model_name)) {
-        return user_models_.contains(strip_user_model_prefix(model_name));
-    }
 
     std::string canonical_name = resolve_model_name(model_name);
-    if (is_user_model_name(canonical_name)) {
-        return user_models_.contains(strip_user_model_prefix(canonical_name));
-    }
-
-    // Check raw server_models_ JSON (before filtering)
-    return false;
+    return user_models_.contains(canonical_name);
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
@@ -3492,14 +3468,8 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     std::string registry_name = model_name;
 
     if (!server_models_.contains(registry_name)) {
-        if (is_user_model_name(registry_name)) {
-            registry_name = strip_user_model_prefix(registry_name);
-        } else {
-            std::string canonical_name = resolve_model_name(model_name);
-            if (is_user_model_name(canonical_name)) {
-                registry_name = strip_user_model_prefix(canonical_name);
-            }
-        }
+        std::string canonical_name = resolve_model_name(model_name);
+        registry_name = canonical_name;
     }
 
     // Check server models first
@@ -3515,8 +3485,7 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     }
 
     // Parse model info from JSON
-    info.model_name = is_user_model_name(model_name) ? model_name
-        : (user_models_.contains(registry_name) ? std::string(USER_MODEL_PREFIX) + registry_name : registry_name);
+    info.model_name = registry_name;
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
@@ -3568,29 +3537,7 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 void ModelManager::rebuild_public_model_aliases_locked() {
     public_model_aliases_.clear();
     canonical_public_names_.clear();
-
-    for (const auto& [name, info] : models_cache_) {
-        if (!is_user_model_name(name) || !has_label(info, APPEAR_BUILTIN_LABEL)) {
-            continue;
-        }
-
-        std::string bare_name = strip_user_model_prefix(name);
-        if (server_models_.contains(bare_name) || models_cache_.find(bare_name) != models_cache_.end()) {
-            LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
-                      << "' for '" << name << "' because it collides with an existing model" << std::endl;
-            continue;
-        }
-
-        auto existing = public_model_aliases_.find(bare_name);
-        if (existing != public_model_aliases_.end() && existing->second != name) {
-            LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
-                      << "' for '" << name << "' because it collides with '" << existing->second << "'" << std::endl;
-            continue;
-        }
-
-        public_model_aliases_[bare_name] = name;
-        canonical_public_names_[name] = bare_name;
-    }
+    // No longer populating public aliases - appear-builtin feature removed
 }
 
 } // namespace lemon

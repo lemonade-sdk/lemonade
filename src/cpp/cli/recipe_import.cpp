@@ -168,9 +168,6 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
     }
 
     std::string model_name = model_data["model_name"].get<std::string>();
-    if (model_name.substr(0, 5) != "user.") {
-        model_data["model_name"] = "user." + model_name;
-    }
 
     if (!model_data.contains("recipe") || !model_data["recipe"].is_string()) {
         std::cerr << "Error: JSON file must contain a 'recipe' string field" << std::endl;

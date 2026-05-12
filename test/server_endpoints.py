@@ -1061,7 +1061,7 @@ class EndpointTests(ServerTestBase):
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
 
-        model_name = f"user.Pull-Merge-Regression-{uuid.uuid4().hex[:8]}"
+        model_name = f"Pull-Merge-Regression-{uuid.uuid4().hex[:8]}"
         image_defaults = {
             "steps": 33,
             "cfg_scale": 8.5,
@@ -1146,8 +1146,8 @@ class EndpointTests(ServerTestBase):
 
     def test_021b_appear_builtin_aliases_user_model(self):
         """User models labeled appear-builtin should expose a bare public ID."""
-        canonical_name = f"user.AppearBuiltin-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
+        canonical_name = f"AppearBuiltin-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name
 
         try:
             response = requests.post(

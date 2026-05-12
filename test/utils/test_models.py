@@ -203,7 +203,7 @@ ESRGAN_MODEL = "RealESRGAN-x4plus"
 TTS_MODEL = "kokoro-v1"
 
 # User models. The combinations of files seen here do not work but we will only test download
-USER_MODEL_NAME = "user.Dummy-Model"
+USER_MODEL_NAME = "Dummy-Model"
 USER_MODEL_MAIN_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
@@ -214,11 +214,11 @@ USER_MODEL_TE_CHECKPOINT = (
 USER_MODEL_VAE_CHECKPOINT = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
 
 # Models for shared-repo dependency testing (same repo, different quants)
-SHARED_REPO_MODEL_A_NAME = "user.SharedRepo-TestA"
+SHARED_REPO_MODEL_A_NAME = "SharedRepo-TestA"
 SHARED_REPO_MODEL_A_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
-SHARED_REPO_MODEL_B_NAME = "user.SharedRepo-TestB"
+SHARED_REPO_MODEL_B_NAME = "SharedRepo-TestB"
 SHARED_REPO_MODEL_B_CHECKPOINT = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q4_K_M.gguf"
 )
@@ -227,11 +227,11 @@ SHARED_REPO_MODEL_B_CHECKPOINT = (
 # Scenario: Model A has main(repo1) + text_encoder(repo2-shared)
 #           Model B has main(repo3) + text_encoder(repo2-shared)
 # Deleting A must keep repo2 (still needed by B). Deleting B then cleans up repo2+repo3.
-MULTI_REPO_MODEL_A_NAME = "user.MultiRepo-TestA"
+MULTI_REPO_MODEL_A_NAME = "MultiRepo-TestA"
 MULTI_REPO_MODEL_A_MAIN = (
     "unsloth/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct-Q2_K.gguf"
 )
-MULTI_REPO_MODEL_B_NAME = "user.MultiRepo-TestB"
+MULTI_REPO_MODEL_B_NAME = "MultiRepo-TestB"
 MULTI_REPO_MODEL_B_MAIN = "Comfy-Org/z_image:split_files/vae/ae.safetensors"
 MULTI_REPO_SHARED_CHECKPOINT = (
     "mradermacher/SmolLM2-135M-Instruct-GGUF:SmolLM2-135M-Instruct.Q2_K.gguf"

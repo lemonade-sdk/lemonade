@@ -188,8 +188,8 @@ class OllamaTests(ServerTestBase):
 
     def test_007_user_model_appear_builtin_alias(self):
         """Aliased user models should appear built-in through Ollama endpoints."""
-        canonical_name = f"user.OllamaAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
+        canonical_name = f"OllamaAlias-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name
 
         try:
             pull_response = requests.post(
@@ -390,16 +390,12 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         chunks = [
-            json.loads(line.decode("utf-8"))
-            for line in response.iter_lines()
-            if line
+            json.loads(line.decode("utf-8")) for line in response.iter_lines() if line
         ]
         self.assertGreater(len(chunks), 0)
 
         tool_chunks = [
-            chunk
-            for chunk in chunks
-            if chunk.get("message", {}).get("tool_calls")
+            chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
         ]
         self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
 

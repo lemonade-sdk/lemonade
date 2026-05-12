@@ -550,8 +550,8 @@ sys.exit(0)
 
     def test_060a_import_json_file_with_appear_builtin_label(self):
         """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"user.ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
+        canonical_name = f"ImportAlias-{uuid.uuid4().hex[:8]}"
+        public_name = canonical_name
         json_data = {
             "model_name": canonical_name,
             "checkpoint": USER_MODEL_MAIN_CHECKPOINT,

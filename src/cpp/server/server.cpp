@@ -2746,23 +2746,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
         }
 
-        // Validate: if checkpoint or recipe are provided, model name must have "user." prefix
-        if (!checkpoint.empty() || !recipe.empty()) {
-            if (model_name.substr(0, 5) != "user.") {
-                res.status = 400;
-                nlohmann::json error = {{"error",
-                    "When providing 'checkpoint' or 'recipe', the model name must include the "
-                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
-                res.set_content(error.dump(), "application/json");
-                return;
-            }
-        }
-
         // Local import mode: CLI has already copied files to HF cache, just resolve and register
         bool local_import = request_json.value("local_import", false);
         if (local_import) {
             std::string hf_cache = model_manager_->get_hf_cache_dir();
-            std::string model_name_clean = model_name.substr(5); // Remove "user." prefix
+            std::string model_name_clean = model_name;
             std::replace(model_name_clean.begin(), model_name_clean.end(), '/', '-');
             std::string dest_path = hf_cache + "/models--" + model_name_clean;
 
@@ -3128,7 +3116,7 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
 // Called by handle_pull when local_import=true
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
-//   - model_name: Model name with "user." prefix
+//   - model_name: Model name
 //   - model_data: Request content
 //   - hf_cache: HuggingFace cache directory for computing relative paths
 void Server::resolve_and_register_local_model(

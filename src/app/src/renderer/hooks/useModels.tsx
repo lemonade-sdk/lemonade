@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ModelsData, ModelInfo, USER_MODEL_PREFIX, fetchSupportedModelsData } from '../utils/modelData';
+import { ModelsData, ModelInfo, fetchSupportedModelsData } from '../utils/modelData';
 import { onServerPortChange } from '../utils/serverConfig';
 import { isModelEffectivelyDownloaded } from '../utils/collectionModels';
 
@@ -60,10 +60,10 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       .map(([id, info]) => ({ id, info }));
   }, [modelsData]);
 
-  // Derive suggested models for Model Manager (suggested + user models)
+  // Derive suggested models for Model Manager
   const suggestedModels = useMemo<SuggestedModel[]>(() => {
     return Object.entries(modelsData)
-      .filter(([name, info]) => info.suggested || name.startsWith(USER_MODEL_PREFIX))
+      .filter(([name, info]) => info.suggested)
       .map(([name, info]) => ({ name, info }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [modelsData]);

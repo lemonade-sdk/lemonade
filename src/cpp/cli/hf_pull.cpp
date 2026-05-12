@@ -131,13 +131,6 @@ bool prompt_model_name(const std::string& default_name, std::string& out) {
     return true;
 }
 
-std::string normalize_user_model_name(std::string name) {
-    const std::string prefix = "user.";
-    if (name.rfind(prefix, 0) == 0) {
-        return name;
-    }
-    return prefix + name;
-}
 
 std::string strip_huggingface_url_prefix(const std::string& arg) {
     static const std::string prefix = "https://huggingface.co/";
@@ -270,7 +263,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
 
         std::string suggested_name = variants_response.value("suggested_name", checkpoint);
         json pull_body;
-        pull_body["model_name"] = "user." + suggested_name;
+        pull_body["model_name"] = suggested_name;
         pull_body["checkpoint"] = checkpoint;
         pull_body["recipe"] = recipe;
 
@@ -320,7 +313,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         if (!prompt_model_name(default_model_name, model_name)) return 1;
     }
     json pull_body;
-    pull_body["model_name"] = normalize_user_model_name(model_name);
+    pull_body["model_name"] = model_name;
     pull_body["checkpoint"] = checkpoint + ":" + variant_name;
     pull_body["recipe"] = recipe;
 

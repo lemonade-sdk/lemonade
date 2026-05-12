@@ -1,4 +1,3 @@
-export const USER_MODEL_PREFIX = 'user.';
 
 export interface ImageDefaults {
   steps?: number;
