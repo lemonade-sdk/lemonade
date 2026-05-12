@@ -256,6 +256,7 @@ json RuntimeConfig::recipe_options() const {
         const auto& lc = config_["llamacpp"];
         if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
         if (lc.contains("args")) result["llamacpp_args"] = lc["args"];
+        if (lc.contains("device")) result["llamacpp_device"] = lc["device"];
     }
 
     if (config_.contains("whispercpp")) {
@@ -393,6 +394,11 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         validate_backend_choice(backend, value.get<std::string>());
     }
     else if (key == "args") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+    }
+    else if (key == "device") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }

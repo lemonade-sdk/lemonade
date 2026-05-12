@@ -478,6 +478,7 @@ json Router::get_all_loaded_models() const {
         model_info["type"] = model_type_to_string(server->get_model_type());
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
+        model_info["pid"] = server->get_process_id();
         RecipeOptions recipe_options =  server->get_recipe_options();
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();

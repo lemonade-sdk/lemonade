@@ -77,6 +77,7 @@ struct ModelInfo {
     // parts — the -hf path drives the dual-clip (vision+audio) context correctly.
     bool hf_load = false;
     double size = 0.0;   // Model size in GB
+    int64_t max_context_window = 0;  // Static model-supported text context, when known
     RecipeOptions recipe_options;
 
     // Multi-model support fields
@@ -95,7 +96,7 @@ struct ModelInfo {
 
 class ModelManager {
 public:
-    ModelManager();
+    explicit ModelManager(const std::string& extra_models_dir = "");
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
