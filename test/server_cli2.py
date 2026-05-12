@@ -549,11 +549,10 @@ sys.exit(0)
                 os.unlink(json_file)
 
     def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name
+        """Import should preserve appear-builtin label on custom models."""
+        model_name = f"ImportAlias-{uuid.uuid4().hex[:8]}"
         json_data = {
-            "model_name": canonical_name,
+            "model_name": model_name,
             "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
             "recipe": "llamacpp",
             "labels": ["appear-builtin"],
@@ -575,11 +574,10 @@ sys.exit(0)
                 timeout=TIMEOUT_DEFAULT,
             )
             output = list_result.stdout + list_result.stderr
-            self.assertIn(public_name, output)
-            self.assertNotIn(canonical_name, output)
+            self.assertIn(model_name, output)
 
             delete_result = run_cli_command(
-                ["delete", public_name],
+                ["delete", model_name],
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(delete_result.returncode, 0)

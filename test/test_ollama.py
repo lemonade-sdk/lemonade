@@ -187,15 +187,14 @@ class OllamaTests(ServerTestBase):
         )
 
     def test_007_user_model_appear_builtin_alias(self):
-        """Aliased user models should appear built-in through Ollama endpoints."""
-        canonical_name = f"OllamaAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name
+        """Custom models with appear-builtin label should appear through Ollama endpoints."""
+        model_name = f"OllamaAlias-{uuid.uuid4().hex[:8]}"
 
         try:
             pull_response = requests.post(
                 f"{self.base_url}/pull",
                 json={
-                    "model_name": canonical_name,
+                    "model_name": model_name,
                     "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
                     "recipe": "llamacpp",
                     "labels": ["appear-builtin"],
@@ -214,12 +213,11 @@ class OllamaTests(ServerTestBase):
                 model["model"].replace(":latest", "")
                 for model in tags_response.json()["models"]
             }
-            self.assertIn(public_name, tag_names)
-            self.assertNotIn(canonical_name, tag_names)
+            self.assertIn(model_name, tag_names)
 
             show_response = requests.post(
                 f"{OLLAMA_BASE_URL}/api/show",
-                json={"name": public_name},
+                json={"name": model_name},
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(show_response.status_code, 200)
@@ -227,7 +225,7 @@ class OllamaTests(ServerTestBase):
         finally:
             requests.post(
                 f"{self.base_url}/delete",
-                json={"model_name": public_name},
+                json={"model_name": model_name},
                 timeout=TIMEOUT_DEFAULT,
             )
 
