@@ -452,7 +452,7 @@ curl http://localhost:13305/v1/health
     }
   ],
   "max_models": {
-    "audio":1,
+    "transcription":1,
     "embedding":1,
     "image":1,
     "llm":1,

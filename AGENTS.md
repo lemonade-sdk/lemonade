@@ -30,7 +30,7 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | stable-diffusion.cpp | `SdServer` | Image | CPU | Image generation, editing, variations |
 | Kokoro | `KokoroServer` | TTS | CPU | Text-to-speech |
 
-Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `IAudioServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
+Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
 
 ### Router & Multi-Model Support
 
@@ -90,7 +90,7 @@ cmake --build --preset default --target tauri-app    # Linux / macOS
 cmake --build --preset windows --target tauri-app    # Windows (VS 2022)
 cmake --build --preset vs18 --target tauri-app       # Windows (VS 2026)
 
-# 4. Web app (auto-built on non-Windows; manual on Windows)
+# 4. Web app (auto-built on all platforms)
 cmake --build --preset default --target web-app         # Linux / macOS
 cmake --build --preset windows --target web-app         # Windows
 

@@ -35,10 +35,10 @@ public:
     virtual json reranking(const json& request) = 0;
 };
 
-// Optional audio capability (speech-to-text)
-class IAudioServer : public virtual ICapability {
+// Optional transcription capability (speech-to-text)
+class ITranscriptionServer : public virtual ICapability {
 public:
-    virtual ~IAudioServer() = default;
+    virtual ~ITranscriptionServer() = default;
 
     // Speech-to-text transcription (OpenAI /v1/audio/transcriptions compatible)
     virtual json audio_transcriptions(const json& request) = 0;

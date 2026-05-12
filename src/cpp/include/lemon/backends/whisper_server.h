@@ -9,7 +9,7 @@
 namespace lemon {
 namespace backends {
 
-class WhisperServer : public WrappedServer, public IAudioServer {
+class WhisperServer : public WrappedServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -41,7 +41,7 @@ public:
     json completion(const json& request) override;
     json responses(const json& request) override;
 
-    // IAudioServer implementation
+    // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
 
 private:

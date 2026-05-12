@@ -1670,6 +1670,7 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("image");
     }
     if (recipe == "whispercpp") {
+        labels.insert("transcription");
         labels.insert("audio");
     }
 

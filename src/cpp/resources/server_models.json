@@ -852,7 +852,7 @@
         "labels": [
             "vision",
             "audio",
-            "transcription"
+            "chat-transcription"
         ],
         "size": 4.68
     },
@@ -865,7 +865,7 @@
         "labels": [
             "vision",
             "audio",
-            "transcription"
+            "chat-transcription"
         ],
         "size": 2.10
     },
@@ -1180,7 +1180,8 @@
         "suggested": true,
         "labels": [
             "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 0.075
     },
@@ -1193,7 +1194,8 @@
         "suggested": true,
         "labels": [
             "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 0.142
     },
@@ -1206,7 +1208,8 @@
         "suggested": true,
         "labels": [
             "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 0.466
     },
@@ -1219,7 +1222,8 @@
         "suggested": true,
         "labels": [
             "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 1.42
     },
@@ -1232,7 +1236,8 @@
         "suggested": true,
         "labels": [
             "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 2.87
     },
@@ -1246,6 +1251,7 @@
         "labels": [
             "audio",
             "transcription",
+            "realtime-transcription",
             "hot"
         ],
         "size": 1.55

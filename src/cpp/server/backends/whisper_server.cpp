@@ -613,7 +613,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     }
 }
 
-// IAudioServer implementation
+// ITranscriptionServer implementation
 json WhisperServer::audio_transcriptions(const json& request) {
     try {
         // Extract audio data from request

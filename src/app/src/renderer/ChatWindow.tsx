@@ -82,16 +82,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return info?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
 
-  // A multimodal chat model that accepts audio *as input* to a chat turn —
-  // distinct from a pure ASR (Whisper) model which is also labeled "audio" but
-  // should only appear in the Transcription panel. We require the model to
-  // also carry a chat-indicator label so we don't surface an audio-attach
-  // button on a Whisper model.
+  // A multimodal chat model that accepts audio *as input* to a chat turn.
+  // Models with the "chat-transcription" label can handle audio in
+  // /chat/completions; distinct from pure ASR (Whisper) models which serve
+  // /audio/transcriptions via the "transcription" label.
   const isAudioChat = useMemo(() => {
     if (!selectedModel) return false;
     const labels = modelsData[selectedModel]?.labels || [];
-    if (!labels.includes('audio')) return false;
-    return labels.some(l => l === 'vision' || l === 'reasoning' || l === 'tool-calling' || l === 'tools');
+    return labels.includes('chat-transcription');
   }, [selectedModel, modelsData]);
 
   const isCollectionSelected = useMemo(() => {
