@@ -180,12 +180,37 @@ static std::string map_to_args_string(const std::map<std::string, std::vector<st
     return result;
 }
 
+/// Given a flag like "--flag" or "--no-flag", return the negation key.
+/// "--no-<name>" ↔ "--<name>". Returns empty string if no negation exists.
+static std::string negate_flag(const std::string& flag) {
+    if (flag.size() >= 5 && flag.substr(0, 5) == "--no-") {
+        return "--" + flag.substr(5);
+    }
+    if (flag.size() >= 3 && flag.substr(0, 2) == "--" &&
+        flag.size() >= 5 && flag.substr(0, 5) != "--no-") {
+        return "--no-" + flag.substr(2);
+    }
+    return "";
+}
+
 static std::map<std::string, std::vector<std::string>> merge_args_maps(
     const std::map<std::string, std::vector<std::string>>& target,
     const std::map<std::string, std::vector<std::string>>& incoming) {
     std::map<std::string, std::vector<std::string>> merged = target;
+
+    // Remove binary-flag negations from incoming that conflict with target.
+    // Only flags without arguments are considered binary flags.
     for (const auto& [flag, values] : incoming) {
-        merged[flag] = values;  // incoming overrides target
+        if (values.empty()) {
+            std::string neg = negate_flag(flag);
+            if (!neg.empty() && merged.count(neg)) {
+                // Target has the opposite binary flag — skip this incoming flag
+                continue;
+            }
+        }
+        if (!merged.count(flag)) {
+            merged[flag] = values;
+        }
     }
     return merged;
 }

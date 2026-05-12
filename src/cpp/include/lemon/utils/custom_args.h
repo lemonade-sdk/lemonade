@@ -45,16 +45,16 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
 inline std::map<std::string, std::vector<std::string>> build_custom_args_map(
     const std::vector<std::string>& tokens) {
     std::map<std::string, std::vector<std::string>> result;
+    std::string last_flag;  // Track the most recently seen flag independently of map ordering
 
     for (const auto& token : tokens) {
         if (!token.empty() && token[0] == '-') {
             // This is a flag; start a new entry
             result[token] = {};
-        } else if (!result.empty()) {
+            last_flag = token;
+        } else if (!last_flag.empty()) {
             // Append to the most recently seen flag
-            auto it = result.end();
-            --it;
-            it->second.push_back(token);
+            result[last_flag].push_back(token);
         }
     }
 
