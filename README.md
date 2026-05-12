@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://discord.gg/5xXzkMu8Zk">
     <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
-  <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/contribute.md" title="Contribution Guide">
+  <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/contribute.md" title="Contribution Guide">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
   <a href="https://github.com/lemonade-sdk/lemonade/releases/latest" title="Download the latest release">
     <img src="https://img.shields.io/github/v/release/lemonade-sdk/lemonade?include_prereleases" alt="Latest Release" /></a>
@@ -317,7 +317,7 @@ To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
 
 ## Contributing
 
-Lemonade is built by the local AI community! If you would like to contribute to this project, please check out our [contribution guide](./docs/contribute.md).
+Lemonade is built by the local AI community! If you would like to contribute to this project, please check out our [contribution guide](./docs/dev/contribute.md).
 
 ## Maintainers
 
