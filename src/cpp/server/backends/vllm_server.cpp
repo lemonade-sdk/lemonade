@@ -149,10 +149,8 @@ void VLLMServer::load(const std::string& model_name,
     // Serve using the Lemonade model name so forwarded requests match
     args.push_back("--served-model-name");
     args.push_back(model_name);
-    // Default args for consumer GPU inference
+    // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     args.push_back("--enforce-eager");
-    args.push_back("--dtype");
-    args.push_back("float16");
     // Pass ctx_size through to vllm-server's --max-model-len. Trust the
     // user's value verbatim; the global default lives in defaults.json
     // (same as llamacpp). Larger values raise KV-cache memory and Triton
