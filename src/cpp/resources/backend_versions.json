@@ -55,11 +55,11 @@
   },
   "lemon-mlx": {
     "metal": "b1013-stable",
-    "metal-preview": "b1005-preview",
+    "metal-preview": "b1013-preview",
     "rocm": "b1013-stable",
-    "rocm-preview": "b1005-preview",
+    "rocm-preview": "b1013-preview",
     "cpu": "b1013-stable",
-    "cpu-preview": "b1005-preview"
+    "cpu-preview": "b1013-preview"
   },
   "kokoro": {
     "cpu": "b16"
