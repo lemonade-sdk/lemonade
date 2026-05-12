@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -36,6 +37,25 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
 
     if (!current_arg.empty()) {
         result.push_back(current_arg);
+    }
+
+    return result;
+}
+
+inline std::map<std::string, std::vector<std::string>> build_custom_args_map(
+    const std::vector<std::string>& tokens) {
+    std::map<std::string, std::vector<std::string>> result;
+
+    for (const auto& token : tokens) {
+        if (!token.empty() && token[0] == '-') {
+            // This is a flag; start a new entry
+            result[token] = {};
+        } else if (!result.empty()) {
+            // Append to the most recently seen flag
+            auto it = result.end();
+            --it;
+            it->second.push_back(token);
+        }
     }
 
     return result;

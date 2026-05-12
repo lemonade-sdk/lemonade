@@ -1,12 +1,12 @@
 #include <lemon/recipe_options.h>
-#ifndef LEMONADE_CLI
-#include <lemon/system_info.h>
-#endif
 #include <nlohmann/json.hpp>
+#include <lemon/utils/custom_args.h>
 #include <algorithm>
 #include <map>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
+#else
+#include <lemon/system_info.h>
 #endif
 
 namespace lemon {
@@ -166,11 +166,53 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
     return log_string;
 }
 
+static std::string map_to_args_string(const std::map<std::string, std::vector<std::string>>& m) {
+    std::string result;
+    bool first = true;
+    for (const auto& [flag, values] : m) {
+        if (!first) result += " ";
+        first = false;
+        result += flag;
+        for (const auto& v : values) {
+            result += " " + v;
+        }
+    }
+    return result;
+}
+
+static std::map<std::string, std::vector<std::string>> merge_args_maps(
+    const std::map<std::string, std::vector<std::string>>& target,
+    const std::map<std::string, std::vector<std::string>>& incoming) {
+    std::map<std::string, std::vector<std::string>> merged = target;
+    for (const auto& [flag, values] : incoming) {
+        merged[flag] = values;  // incoming overrides target
+    }
+    return merged;
+}
+
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
 
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
-        if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
+        if (it.key().size() >= 5 &&
+            it.key().substr(it.key().size() - 5) == "_args") {
+            // Special handling for _args options: parse, merge maps, re-stringify
+            std::string target_str = "";
+            if (merged.contains(it.key()) && merged[it.key()].is_string()) {
+                target_str = merged[it.key()];
+            }
+
+            std::string incoming_str = it.value().is_string() ? it.value() : "";
+
+            auto target_tokens = lemon::utils::parse_custom_args(target_str);
+            auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str);
+
+            auto target_map = lemon::utils::build_custom_args_map(target_tokens);
+            auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
+
+            auto merged_map = merge_args_maps(target_map, incoming_map);
+            merged[it.key()] = map_to_args_string(merged_map);
+        } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
             merged[it.key()] = it.value();
         }
     }

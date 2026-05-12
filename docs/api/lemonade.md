@@ -252,6 +252,8 @@ When loading a model, settings are applied in this priority order:
 3. Values from environment variables or server startup arguments (see [Server Configuration](../guide/configuration/README.md))
 4. Default hardcoded values in `lemond` (lowest priority)
 
+**`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `flm_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
+
 ### Per-model options
 
 You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). The available options depend on the model's recipe:
