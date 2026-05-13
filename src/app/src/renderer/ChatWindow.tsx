@@ -150,7 +150,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       if (loadedModelId) {
         setCurrentLoadedModel(loadedModelId);
         setSelectedModel(loadedModelId);
-        setUserHasSelectedModel(false);
       } else {
         fetchLoadedModel();
       }
