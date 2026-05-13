@@ -107,7 +107,8 @@ static bool is_launch_provider_misuse(int argc, char* argv[]) {
             continue;
         }
 
-        if ((token == "--provider" || token == "-p")) {
+        if (token == "--provider" || token == "-p" ||
+            token.rfind("--provider=", 0) == 0 || token.rfind("-p=", 0) == 0) {
             return launch_agent != "codex";
         }
 
