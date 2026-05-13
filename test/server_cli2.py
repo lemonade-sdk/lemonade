@@ -548,14 +548,14 @@ sys.exit(0)
             if os.path.exists(json_file):
                 os.unlink(json_file)
 
-    def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin label on custom models."""
-        model_name = f"ImportAlias-{uuid.uuid4().hex[:8]}"
+    def test_060a_import_json_file_with_labels(self):
+        """Import should preserve labels on custom models."""
+        model_name = f"ImportLabeled-{uuid.uuid4().hex[:8]}"
         json_data = {
             "model_name": model_name,
             "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
             "recipe": "llamacpp",
-            "labels": ["appear-builtin"],
+            "labels": ["coding"],
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:

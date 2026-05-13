@@ -1144,9 +1144,9 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
-    def test_021b_appear_builtin_aliases_user_model(self):
-        """Custom models with appear-builtin label should appear in model list."""
-        model_name = f"AppearBuiltin-{uuid.uuid4().hex[:8]}"
+    def test_021b_custom_model_lifecycle(self):
+        """Custom models should appear in model list and support load/unload."""
+        model_name = f"CustomModel-{uuid.uuid4().hex[:8]}"
 
         try:
             response = requests.post(
@@ -1155,7 +1155,6 @@ class EndpointTests(ServerTestBase):
                     "model_name": model_name,
                     "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
                     "recipe": "llamacpp",
-                    "labels": ["appear-builtin"],
                     "stream": False,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
@@ -1192,7 +1191,7 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(unload_response.status_code, 200)
 
-            print(f"[OK] Custom model with appear-builtin label: {model_name}")
+            print(f"[OK] Custom model lifecycle: {model_name}")
         finally:
             try:
                 requests.post(

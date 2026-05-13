@@ -41,7 +41,7 @@ WrappedServer* Router::find_server_by_model_name(const std::string& model_name) 
 }
 
 std::string Router::resolve_model_name(const std::string& model_name) const {
-    return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
+    return model_name;
 }
 
 WrappedServer* Router::get_most_recent_server() const {
@@ -221,7 +221,6 @@ void Router::load_model(const std::string& model_name,
                        RecipeOptions options,
                        bool do_not_upgrade,
                        bool allow_reload_on_option_change) {
-    const std::string canonical_model_name = resolve_model_name(model_name);
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options());
 
     // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
@@ -242,7 +241,7 @@ void Router::load_model(const std::string& model_name,
     // Mark that we're now loading (prevents concurrent loads)
     is_loading_ = true;
 
-    LOG(DEBUG, "Router") << "Loading model: " << canonical_model_name
+    LOG(DEBUG, "Router") << "Loading model: " << model_name
             << " (checkpoint: " << model_info.checkpoint()
             << ", recipe: " << model_info.recipe
             << ", type: " << model_type_to_string(model_info.type)
@@ -250,11 +249,11 @@ void Router::load_model(const std::string& model_name,
 
     try {
         // Check if model is already loaded
-        WrappedServer* existing = find_server_by_model_name(canonical_model_name);
+        WrappedServer* existing = find_server_by_model_name(model_name);
         if (existing) {
             if (allow_reload_on_option_change &&
                 existing->get_recipe_options().to_json() != effective_options.to_json()) {
-                LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
+                LOG(INFO, "Router") << "Options changed, reloading model: " << model_name << std::endl;
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
@@ -329,7 +328,7 @@ void Router::load_model(const std::string& model_name,
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
 
         // Set model metadata
-        new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_model_metadata(model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup
@@ -341,7 +340,7 @@ void Router::load_model(const std::string& model_name,
         std::string error_message;
 
         try {
-            new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
+            new_server->load(model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
         LOG(DEBUG, "Router") << "Backend started successfully" << std::endl;
         } catch (const std::exception& e) {
@@ -393,14 +392,14 @@ void Router::load_model(const std::string& model_name,
 
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
-            retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_model_metadata(model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->update_access_time();
 
             lock.unlock();
 
         LOG(DEBUG, "Router") << "Retrying backend load..." << std::endl;
             try {
-                retry_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
+                retry_server->load(model_name, model_info, effective_options, do_not_upgrade);
 
                 lock.lock();
 
@@ -442,8 +441,7 @@ void Router::unload_model(const std::string& model_name) {
     } else {
         // Unload specific model
     LOG(INFO, "Router") << "Unload model called: " << model_name << std::endl;
-        std::string canonical_model_name = resolve_model_name(model_name);
-        WrappedServer* server = find_server_by_model_name(canonical_model_name);
+        WrappedServer* server = find_server_by_model_name(model_name);
         if (!server) {
             throw std::runtime_error("Model not loaded: " + model_name);
         }
@@ -454,7 +452,7 @@ void Router::unload_model(const std::string& model_name) {
 std::string Router::get_loaded_model() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
-    return server ? model_manager_->get_public_model_name(server->get_model_name()) : "";
+    return server ? server->get_model_name() : "";
 }
 
 std::string Router::get_loaded_recipe() const {
@@ -473,7 +471,7 @@ json Router::get_all_loaded_models() const {
 
     for (const auto& server : loaded_servers_) {
         json model_info;
-        model_info["model_name"] = model_manager_->get_public_model_name(server->get_model_name());
+        model_info["model_name"] = server->get_model_name();
         model_info["checkpoint"] = server->get_checkpoint();
         model_info["type"] = model_type_to_string(server->get_model_type());
         model_info["device"] = device_type_to_string(server->get_device_type());

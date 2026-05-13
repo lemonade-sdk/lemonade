@@ -186,9 +186,9 @@ class OllamaTests(ServerTestBase):
             f"Model name should end with ':latest', got: {model['name']}",
         )
 
-    def test_007_user_model_appear_builtin_alias(self):
-        """Custom models with appear-builtin label should appear through Ollama endpoints."""
-        model_name = f"OllamaAlias-{uuid.uuid4().hex[:8]}"
+    def test_007_custom_model_via_ollama(self):
+        """Custom models should appear through Ollama endpoints."""
+        model_name = f"OllamaCustom-{uuid.uuid4().hex[:8]}"
 
         try:
             pull_response = requests.post(
@@ -197,7 +197,6 @@ class OllamaTests(ServerTestBase):
                     "model_name": model_name,
                     "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
                     "recipe": "llamacpp",
-                    "labels": ["appear-builtin"],
                     "stream": False,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
