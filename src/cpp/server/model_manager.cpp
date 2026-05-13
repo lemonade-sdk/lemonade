@@ -3191,6 +3191,9 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << model_name << std::endl;
 
+        // Remove from cache first (while model is still in user_models_)
+        remove_model_from_cache(model_name);
+
         // Remove from user models if it's a custom model
         if (user_models_.contains(model_name)) {
             json updated_user_models = user_models_;
@@ -3199,9 +3202,6 @@ void ModelManager::delete_model(const std::string& model_name) {
             user_models_ = updated_user_models;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
-
-        // Remove from cache after successful deletion
-        remove_model_from_cache(model_name);
 
         return;
     }
@@ -3212,6 +3212,9 @@ void ModelManager::delete_model(const std::string& model_name) {
         // Just remove from user_models.json and cache
         LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
 
+        // Remove from cache first (while model is still in user_models_)
+        remove_model_from_cache(model_name);
+
         if (user_models_.contains(model_name)) {
             json updated_user_models = user_models_;
             updated_user_models.erase(model_name);
@@ -3220,7 +3223,6 @@ void ModelManager::delete_model(const std::string& model_name) {
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
-        remove_model_from_cache(model_name);
         LOG(INFO, "ModelManager") << "Successfully removed model from registry: " << model_name << std::endl;
         return;
     }
@@ -3301,6 +3303,9 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
     }
 
+    // Remove from cache first (while model is still in user_models_)
+    remove_model_from_cache(model_name);
+
     // Remove from user models if it's a custom model
     if (user_models_.contains(model_name)) {
         json updated_user_models = user_models_;
@@ -3309,9 +3314,6 @@ void ModelManager::delete_model(const std::string& model_name) {
         user_models_ = updated_user_models;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
-
-    // Remove from cache after successful deletion
-    remove_model_from_cache(model_name);
 }
 
 json ModelManager::cleanup_orphaned_cache(bool dry_run) {
