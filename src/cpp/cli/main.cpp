@@ -90,6 +90,48 @@ static bool prompt_agent_selection(std::string& agent_out) {
     return true;
 }
 
+static bool is_supported_agent_name(const std::string& token) {
+    return std::find(SUPPORTED_AGENTS.begin(), SUPPORTED_AGENTS.end(), token) != SUPPORTED_AGENTS.end();
+}
+
+static bool is_launch_provider_misuse(int argc, char* argv[]) {
+    bool saw_launch = false;
+    std::string launch_agent;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string token = argv[i];
+        if (!saw_launch) {
+            if (token == "launch") {
+                saw_launch = true;
+            }
+            continue;
+        }
+
+        if ((token == "--provider" || token == "-p")) {
+            return launch_agent != "codex";
+        }
+
+        if (!token.empty() && token[0] != '-' && launch_agent.empty() && is_supported_agent_name(token)) {
+            launch_agent = token;
+        }
+    }
+
+    return false;
+}
+
+static void hide_option(CLI::Option* option) {
+    if (option != nullptr) {
+        option->group("");
+    }
+}
+
+static void hide_new_options(CLI::App& app, size_t start_index) {
+    std::vector<CLI::Option*> options = app.get_options();
+    for (size_t i = start_index; i < options.size(); ++i) {
+        hide_option(options[i]);
+    }
+}
+
 // Configuration structure for CLI options
 struct CliConfig {
     std::string host = "127.0.0.1";
@@ -501,13 +543,6 @@ static int handle_launch_command(lemonade::LemonadeClient& client, CliConfig& co
     lemon_tray::AgentConfig agent_config;
     lemon_tray::AgentLaunchOptions launch_options;
     std::string config_error;
-
-    if (config.codex_use_user_config) {
-        if (config.agent != "codex") {
-            LOG(ERROR, "AgentBuilder") << "--provider is only supported for the codex agent." << std::endl;
-            return 1;
-        }
-    }
 
     launch_options.codex_use_user_config = config.codex_use_user_config;
     launch_options.codex_model_provider = config.codex_model_provider;
@@ -1098,7 +1133,13 @@ int main(int argc, char* argv[]) {
             ->default_val(config.agent_args);
     };
 
+    size_t launch_option_count = launch_cmd->get_options().size();
     add_common_launch_options(*launch_cmd);
+    hide_new_options(*launch_cmd, launch_option_count);
+    launch_option_count = launch_cmd->get_options().size();
+    lemon::RecipeOptions::add_cli_options(*launch_cmd, config.recipe_options);
+    hide_new_options(*launch_cmd, launch_option_count);
+
     CLI::Option* codex_provider_opt = nullptr;
     for (const std::string& agent_name : SUPPORTED_AGENTS) {
         CLI::App* agent_cmd =
@@ -1123,7 +1164,15 @@ int main(int argc, char* argv[]) {
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
     // Parse arguments
-    CLI11_PARSE(app, argc, argv);
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError& e) {
+        if (is_launch_provider_misuse(argc, argv)) {
+            std::cerr << "Error: --provider is only supported for 'lemonade launch codex'." << std::endl;
+            return 1;
+        }
+        return app.exit(e);
+    }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
