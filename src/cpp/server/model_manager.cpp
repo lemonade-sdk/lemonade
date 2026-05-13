@@ -1671,6 +1671,7 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
     if (recipe == "whispercpp") {
         labels.insert("transcription");
+        labels.insert("realtime-transcription");
         labels.insert("audio");
     }
 
