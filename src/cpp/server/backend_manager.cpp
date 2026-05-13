@@ -40,6 +40,10 @@ std::string normalize_backend_name(const std::string& recipe, const std::string&
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel();
         }
+        if (recipe == "sd-cpp" && channel == "nightly") {
+            // sd-cpp currently has no nightly artifacts; use preview builds.
+            channel = "preview";
+        }
         return "rocm-" + channel;
     }
     return backend;

@@ -2566,6 +2566,9 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             if (config_) {
                 channel = config_->rocm_channel();
             }
+            if (channel == "nightly") {
+                channel = "preview";
+            }
             resolved_backend = "rocm-" + channel;
         }
 #ifndef _WIN32

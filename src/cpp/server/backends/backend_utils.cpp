@@ -212,6 +212,9 @@ namespace lemon::backends {
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel();
             }
+            if (spec.recipe == "sd-cpp" && channel == "nightly") {
+                channel = "preview";
+            }
             resolved_backend = "rocm-" + channel;
         }
 
@@ -251,6 +254,9 @@ namespace lemon::backends {
             std::string channel = "preview";  // default to preview for now
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel();
+            }
+            if (recipe == "sd-cpp" && channel == "nightly") {
+                channel = "preview";
             }
             resolved_backend = "rocm-" + channel;
         }
