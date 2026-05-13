@@ -2567,6 +2567,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
                 channel = config_->rocm_channel();
             }
             if (channel == "nightly") {
+                // This handler is sd-cpp specific; sd-cpp has no nightly artifacts.
                 channel = "preview";
             }
             resolved_backend = "rocm-" + channel;

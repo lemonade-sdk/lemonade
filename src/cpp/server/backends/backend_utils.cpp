@@ -213,6 +213,7 @@ namespace lemon::backends {
                 channel = cfg->rocm_channel();
             }
             if (spec.recipe == "sd-cpp" && channel == "nightly") {
+                // sd-cpp currently has no nightly artifacts; use preview builds.
                 channel = "preview";
             }
             resolved_backend = "rocm-" + channel;
@@ -256,6 +257,7 @@ namespace lemon::backends {
                 channel = cfg->rocm_channel();
             }
             if (recipe == "sd-cpp" && channel == "nightly") {
+                // sd-cpp currently has no nightly artifacts; use preview builds.
                 channel = "preview";
             }
             resolved_backend = "rocm-" + channel;
