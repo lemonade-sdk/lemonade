@@ -842,9 +842,12 @@ jobs:
           dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
           # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
           FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
+          FLM_CONFIG=$(find /tmp/flm-extract -name "model_list.json" -type f | head -1)
           chmod +x "$FLM_BIN"
           echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
+          echo "FLM_CONFIG_PATH=$FLM_CONFIG" >> $GITHUB_ENV
           export PATH="$(dirname "$FLM_BIN"):$PATH"
+          export FLM_CONFIG_PATH="$FLM_CONFIG"
           rm /tmp/fastflowlm.deb
           flm version
 
