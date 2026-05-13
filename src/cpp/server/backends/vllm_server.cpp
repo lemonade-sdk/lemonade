@@ -116,6 +116,7 @@ void VLLMServer::load(const std::string& model_name,
 
     std::string vllm_backend = options.get_option("vllm_backend");
     std::string vllm_args = options.get_option("vllm_args");
+    int ctx_size = options.get_option("ctx_size");
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
@@ -148,14 +149,14 @@ void VLLMServer::load(const std::string& model_name,
     // Serve using the Lemonade model name so forwarded requests match
     args.push_back("--served-model-name");
     args.push_back(model_name);
-    // Default args for consumer GPU inference
+    // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     args.push_back("--enforce-eager");
-    args.push_back("--dtype");
-    args.push_back("float16");
-    // Users can override with vllm_args (e.g. "--max-model-len 32768"). Larger values
-    // raise KV-cache memory and Triton JIT compile time, so 16K is a balanced default.
+    // Pass ctx_size through to vllm-server's --max-model-len. Trust the
+    // user's value verbatim; the global default lives in defaults.json
+    // (same as llamacpp). Larger values raise KV-cache memory and Triton
+    // JIT compile time.
     args.push_back("--max-model-len");
-    args.push_back("16384");
+    args.push_back(std::to_string(ctx_size));
     // Detect the actual quantization method from config.json rather than guessing
     // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
