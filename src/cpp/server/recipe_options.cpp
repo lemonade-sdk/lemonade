@@ -1,7 +1,6 @@
 #include <lemon/recipe_options.h>
-#include <nlohmann/json.hpp>
 #include <lemon/utils/custom_args.h>
-#include <algorithm>
+#include <nlohmann/json.hpp>
 #include <map>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
@@ -183,11 +182,10 @@ static std::string map_to_args_string(const std::map<std::string, std::vector<st
 /// Given a flag like "--flag" or "--no-flag", return the negation key.
 /// "--no-<name>" ↔ "--<name>". Returns empty string if no negation exists.
 static std::string negate_flag(const std::string& flag) {
-    if (flag.size() >= 5 && flag.substr(0, 5) == "--no-") {
+    if (flag.size() >= 5 && flag.compare(0, 5, "--no-") == 0) {
         return "--" + flag.substr(5);
     }
-    if (flag.size() >= 3 && flag.substr(0, 2) == "--" &&
-        flag.size() >= 5 && flag.substr(0, 5) != "--no-") {
+    if (flag.size() >= 3 && flag.compare(0, 2, "--") == 0) {
         return "--no-" + flag.substr(2);
     }
     return "";
@@ -229,14 +227,20 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
 
             std::string incoming_str = it.value().is_string() ? it.value() : "";
 
-            auto target_tokens = lemon::utils::parse_custom_args(target_str);
-            auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str);
+            if (target_str.empty()) {
+                merged[it.key()] = incoming_str;
+            } else if (incoming_str.empty()) {
+                merged[it.key()] = target_str;
+            } else {
+                auto target_tokens = lemon::utils::parse_custom_args(target_str);
+                auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str);
 
-            auto target_map = lemon::utils::build_custom_args_map(target_tokens);
-            auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
+                auto target_map = lemon::utils::build_custom_args_map(target_tokens);
+                auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
 
-            auto merged_map = merge_args_maps(target_map, incoming_map);
-            merged[it.key()] = map_to_args_string(merged_map);
+                auto merged_map = merge_args_maps(target_map, incoming_map);
+                merged[it.key()] = map_to_args_string(merged_map);
+            }
         } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
             merged[it.key()] = it.value();
         }
