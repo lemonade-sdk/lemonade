@@ -339,7 +339,7 @@
       }
 
       function gsVersion() {
-        return window.lmnLatestVersion || 'VERSION';
+        return window.lmnLatestVersion || '';
       }
 
       function gsConsoleHtml(commands) {
@@ -380,8 +380,11 @@
               '<span class="material-symbols-outlined">desktop_windows</span> Download for Windows (.msi)</a>';
             break;
           case 'apple':
-            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade-' + v + '-Darwin.pkg">' +
-              '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>';
+            html = v
+              ? '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest/download/Lemonade-' + v + '-Darwin.pkg">' +
+                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>'
+              : '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
+                '<span class="material-symbols-outlined">laptop_mac</span> Download for macOS (.pkg)</a>';
             break;
           case 'docker':
             html = gsConsoleHtml([
@@ -406,14 +409,19 @@
             html = gsConsoleHtml(['yay -S lemonade-server']);
             break;
           case 'fedora':
-            var rpm = 'lemonade-server-' + v + '.x86_64.rpm';
-            html = gsConsoleHtml([
-              'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm,
-              'sudo dnf install ./' + rpm
-            ]);
+            if (v) {
+              var rpm = 'lemonade-server-' + v + '.x86_64.rpm';
+              html = gsConsoleHtml([
+                'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm,
+                'sudo dnf install ./' + rpm
+              ]);
+            } else {
+              html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
+                '<span class="material-symbols-outlined">open_in_new</span> View latest release</a>';
+            }
             break;
           case 'debian':
-            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#building-from-source" target="_blank" rel="noopener">' +
+            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/getting-started.md#building-from-source" target="_blank" rel="noopener">' +
               '<span class="material-symbols-outlined">open_in_new</span> Build from source</a>';
             break;
         }
@@ -459,6 +467,10 @@
         gsSetPlatform(gsDetectPlatform());
 
         // Re-render when version becomes available
+        window.addEventListener('lmnLatestVersionReady', function() {
+          gsRenderInstall();
+          gsRenderQuickstart();
+        });
         var versionCheck = setInterval(function() {
           if (window.lmnLatestVersion) {
             clearInterval(versionCheck);
@@ -587,6 +599,20 @@
 
     // ---- Release fetch ----
     var releaseCarouselState = { items: [], index: 0 };
+    function setLatestVersionFromTag(tag) {
+      if (!tag) return;
+      window.lmnLatestVersion = String(tag).replace(/^v/, '');
+      window.dispatchEvent(new Event('lmnLatestVersionReady'));
+    }
+    async function fetchLatestVersion() {
+      try {
+        var response = await fetch('https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest');
+        if (!response.ok) throw new Error('Failed to load latest release');
+        var release = await response.json();
+        setLatestVersionFromTag(release && release.tag_name);
+      } catch (error) {}
+      return window.lmnLatestVersion || '';
+    }
     function formatReleaseTitle(release) {
       var version = release && (release.tag_name || release.name);
       if (!version) return 'Lemonade latest';
@@ -661,6 +687,7 @@
         if (!Array.isArray(releases)) throw new Error('Invalid release payload');
         releaseCarouselState.items = releases.filter(function(item) { return item && !item.draft; });
         if (!releaseCarouselState.items.length) throw new Error('No releases available');
+        setLatestVersionFromTag(releaseCarouselState.items[0].tag_name);
         renderReleaseAt(0);
       } catch (error) {
         document.getElementById('releaseName').textContent = 'Lemonade latest';

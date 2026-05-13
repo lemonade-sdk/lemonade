@@ -38,6 +38,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "llamacpp": {
     "backend": "auto",
     "args": "",
+	"device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
@@ -100,6 +101,7 @@ Backend-specific settings are nested under their backend name:
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to llama-server |
+| `device` | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
@@ -149,6 +151,8 @@ Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm
 | `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
 
 > Note: the `latest` setting is experimental.
+
+> **Important — `llamacpp.rocm_bin` version tags are channel-specific.** Each ROCm channel downloads from a different GitHub repository, so you must set the correct `rocm_channel` before pinning `rocm_bin` to a specific tag. See [Pinning to a Specific Version Tag](./llamacpp.md#pinning-to-a-specific-version-tag) for details.
 
 Examples:
 
