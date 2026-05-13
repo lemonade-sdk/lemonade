@@ -38,11 +38,7 @@ std::string normalize_backend_name(const std::string& recipe, const std::string&
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "preview";  // default to preview for now
         if (auto* cfg = RuntimeConfig::global()) {
-            channel = cfg->rocm_channel();
-        }
-        if (recipe == "sd-cpp" && channel == "nightly") {
-            // sd-cpp currently has no nightly artifacts; use preview builds.
-            channel = "preview";
+            channel = cfg->rocm_channel_for_recipe(recipe);
         }
         return "rocm-" + channel;
     }
