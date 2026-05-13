@@ -849,6 +849,12 @@ jobs:
           chmod +x "$FLM_BIN"
           echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
           export PATH="$(dirname "$FLM_BIN"):$PATH"
+          # Point FLM at the model_list.json bundled in this .deb so it doesn't
+          # fall back to /usr/share/flm/model_list.json (which may be missing or
+          # belong to a different FLM version installed on the runner).
+          FLM_CONFIG=$(find /tmp/flm-extract -name model_list.json | head -1)
+          echo "FLM_CONFIG_PATH=$FLM_CONFIG" >> $GITHUB_ENV
+          export FLM_CONFIG_PATH="$FLM_CONFIG"
           rm /tmp/fastflowlm.deb
           flm version
 
