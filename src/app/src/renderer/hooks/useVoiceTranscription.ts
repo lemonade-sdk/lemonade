@@ -33,9 +33,6 @@ async function fetchLoadedAudioModel(modelsData: ModelsData): Promise<string | n
     if (!res.ok) return null;
     const health = await res.json();
     const allLoaded: { model_name: string; type?: string }[] = health.all_models_loaded || [];
-    // Must be *loaded as transcription* — omni models (e.g. gemma4) carry the
-    // "audio" label statically but may be currently loaded as an LLM; using one
-    // of those for transcription hangs the realtime session.
     const loaded = allLoaded.find(
       (m) => m.type === 'transcription' && modelsData[m.model_name]?.labels?.includes('realtime-transcription'),
     );
