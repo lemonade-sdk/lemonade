@@ -164,9 +164,9 @@ void Router::evict_server(WrappedServer* server) {
 void Router::evict_all_servers() {
     LOG(INFO, "Router") << "Evicting all models (" << loaded_servers_.size() << " total)" << std::endl;
 
-    // Wait for all servers to finish
+    // Wait for all servers to finish (with timeout to prevent infinite hang).
     for (const auto& server : loaded_servers_) {
-        server->wait_until_not_busy();
+        server->wait_until_not_busy(EVICTION_TIMEOUT);
     }
 
     // Unload all
