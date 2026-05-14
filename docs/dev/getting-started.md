@@ -187,10 +187,10 @@ If not found, the "Open app" menu option is hidden but everything else works.
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
   - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
 
-**macOS (beta):**
+**macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
-- macOS support is currently in beta; a signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
+- A signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
 - Local Release builds are ad-hoc codesigned (`codesign --sign -`) so they run without an Apple Developer certificate. To sign with a real Developer ID, export `DEVELOPER_ID_APPLICATION_IDENTITY` before configuring CMake (see [Building and Notarizing for Distribution](#building-and-notarizing-for-distribution)).
 
 ## Building Installers
