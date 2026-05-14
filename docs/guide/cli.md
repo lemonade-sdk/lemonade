@@ -514,7 +514,6 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
-| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model | `true` |
 
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
@@ -550,8 +549,6 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768 --llamacpp-args "--flash-attn on --no-mmap"
 
-# Launch an agent without merging global args
-lemonade launch claude --model Qwen3.5-0.8B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
 
 # Pass additional arguments directly to the agent
 lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"
