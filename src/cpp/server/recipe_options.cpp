@@ -14,6 +14,7 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
+    {"merge_args", true},
     {"llamacpp_device", ""},
     {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
@@ -43,6 +44,7 @@ static const json DEFAULTS = {
 // Runtime options (diffusion_fa, offload_to_cpu) go through --sdcpp-args.
 static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"ctx_size", "--ctx-size"},
+    {"merge_args", "--merge-args"},
     {"llamacpp_backend", "--llamacpp"},
     {"llamacpp_device", "--llamacpp-device"},
     {"llamacpp_args", "--llamacpp-args"},
@@ -57,17 +59,17 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args"};
+        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
     } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend", "whispercpp_args"};
+        return {"whispercpp_backend", "whispercpp_args", "merge_args"};
     } else if (recipe == "flm") {
-        return {"ctx_size", "flm_args"};
+        return {"ctx_size", "flm_args", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift"};
+        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
     } else if (recipe == "vllm") {
-        return {"ctx_size", "vllm_backend", "vllm_args"};
+        return {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
     } else {
         return {};
     }
@@ -140,7 +142,7 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
 
 static std::string format_option_for_logging(const json& opt) {
     if (opt.is_null() || opt == "") return "(none)";
-    if (opt.is_boolean()) return opt.get<bool>() ? "1" : "0";
+    if (opt.is_boolean()) return opt.get<bool>() ? "true" : "false";
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
     return opt;
@@ -165,60 +167,12 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
     return log_string;
 }
 
-static std::string map_to_args_string(const std::map<std::string, std::vector<std::string>>& m) {
-    std::string result;
-    bool first = true;
-    for (const auto& [flag, values] : m) {
-        if (!first) result += " ";
-        first = false;
-        result += flag;
-        for (const auto& v : values) {
-            result += " " + v;
-        }
-    }
-    return result;
-}
-
-/// Given a flag like "--flag" or "--no-flag", return the negation key.
-/// "--no-<name>" ↔ "--<name>". Returns empty string if no negation exists.
-static std::string negate_flag(const std::string& flag) {
-    if (flag.size() >= 5 && flag.compare(0, 5, "--no-") == 0) {
-        return "--" + flag.substr(5);
-    }
-    if (flag.size() >= 3 && flag.compare(0, 2, "--") == 0) {
-        return "--no-" + flag.substr(2);
-    }
-    return "";
-}
-
-static std::map<std::string, std::vector<std::string>> merge_args_maps(
-    const std::map<std::string, std::vector<std::string>>& target,
-    const std::map<std::string, std::vector<std::string>>& incoming) {
-    std::map<std::string, std::vector<std::string>> merged = target;
-
-    // Remove binary-flag negations from incoming that conflict with target.
-    // Only flags without arguments are considered binary flags.
-    for (const auto& [flag, values] : incoming) {
-        if (values.empty()) {
-            std::string neg = negate_flag(flag);
-            if (!neg.empty() && merged.count(neg)) {
-                // Target has the opposite binary flag — skip this incoming flag
-                continue;
-            }
-        }
-        if (!merged.count(flag)) {
-            merged[flag] = values;
-        }
-    }
-    return merged;
-}
-
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
+    bool merge_args = options_.contains("merge_args") ? options_["merge_args"].get<bool>() : options.get_option("merge_args").get<bool>();
 
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
-        if (it.key().size() >= 5 &&
-            it.key().substr(it.key().size() - 5) == "_args") {
+        if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {
             // Special handling for _args options: parse, merge maps, re-stringify
             std::string target_str = "";
             if (merged.contains(it.key()) && merged[it.key()].is_string()) {
@@ -238,8 +192,8 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
                 auto target_map = lemon::utils::build_custom_args_map(target_tokens);
                 auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
 
-                auto merged_map = merge_args_maps(target_map, incoming_map);
-                merged[it.key()] = map_to_args_string(merged_map);
+                auto merged_map = lemon::utils::merge_args_maps(target_map, incoming_map);
+                merged[it.key()] = lemon::utils::map_to_args_string(merged_map);
             }
         } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
             merged[it.key()] = it.value();
@@ -269,6 +223,7 @@ json RecipeOptions::get_option(const std::string& opt) const {
 // CLI_OPTIONS used only by the lemonade CLI client for add_cli_options
 static const json CLI_OPTIONS = {
     {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
+    {"--merge-args", {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"envname", "LEMONADE_MERGE_ARGS"}, {"help", "Merge global and model arguments when loading the model"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
     {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"envname", "LEMONADE_LLAMACPP_DEVICE"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}}},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
@@ -295,6 +250,9 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         } else if (defval.is_number_integer()) {
             o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((int) defval);
+        } else if (defval.is_boolean()) {
+            o = app.add_flag_function(key + ",!" + lemon::utils::negate_flag(key), [opt_name, defval, &storage = storage](std::int64_t val) { storage[opt_name] = val == 0 ? defval.get<bool>() : val > 0; }, opt["help"]);
+            o->default_val((bool) defval);
         } else {
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(defval);
