@@ -16,8 +16,8 @@ using json = nlohmann::json;
 
 // Thrown by ModelManager::download_model when a pull request names a model
 // that (a) is not registered, (b) is not in the filtered-out registry, and
-// (c) lacks the `user.` prefix that would make it a new-model registration
-// attempt.
+// (c) does not include checkpoint/recipe parameters that would make it a
+// new-model registration attempt.
 //
 // CONTRACT: the /pull HTTP handler catches this type and attaches
 // {"code": kUnknownModelErrorCode, ...} to the error response. The lemonade
@@ -167,6 +167,9 @@ public:
     void set_extra_models_dir(const std::string& dir);
 
     void save_model_options(const ModelInfo& info);
+
+    // Normalize a model name (strip legacy user./extra. prefixes for backwards compatibility)
+    std::string normalize_model_name(const std::string& model_name) const;
 
 private:
     json load_server_models();

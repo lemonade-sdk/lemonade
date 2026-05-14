@@ -119,8 +119,8 @@ bool prompt_variant(const std::vector<std::string>& labels,
 
 bool prompt_model_name(const std::string& default_name, std::string& out) {
     std::cout << "Choose a model name." << std::endl;
-    std::cout << "Press enter to use the default: user." << default_name << std::endl;
-    std::cout << "Or type a name starting with \"user.\" and press enter:" << std::endl;
+    std::cout << "Press enter to use the default: " << default_name << std::endl;
+    std::cout << "Or type a name and press enter:" << std::endl;
     std::cout << "> " << std::flush;
 
     std::string input;

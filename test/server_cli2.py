@@ -1842,7 +1842,7 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
             "Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M", output
         )
         self.assertIn(
-            "Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp",
+            "Manual pull:    lemonade pull MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp",
             output,
         )
 

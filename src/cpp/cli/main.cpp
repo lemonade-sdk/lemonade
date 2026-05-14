@@ -1070,16 +1070,16 @@ int main(int argc, char* argv[]) {
         ->required()
         ->type_name("MODEL_OR_CHECKPOINT");
     pull_cmd->add_option("--checkpoint", config.checkpoints,
-        "Add a TYPE CHECKPOINT pair for a custom user.* model. Repeat for multi-file models.")
+        "Add a TYPE CHECKPOINT pair for a custom model. Repeat for multi-file models.")
         ->group("Manual Configuration Options")
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        "Recipe for the custom model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
-    pull_cmd->add_option("--label", config.labels, "Add a label to the custom user.* model")
+    pull_cmd->add_option("--label", config.labels, "Add a label to the custom model")
         ->group("Manual Configuration Options")
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)

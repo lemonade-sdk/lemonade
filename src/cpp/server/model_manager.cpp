@@ -794,7 +794,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         // Skip mmproj files - they're part of multimodal models
         if (contains_ignore_case(filename, "mmproj")) continue;
 
+        // Strip .gguf extension for cleaner model name
         std::string model_name = filename;
+        if (filename.length() > 5 && filename.rfind(".gguf") == filename.length() - 5) {
+            model_name = filename.substr(0, filename.length() - 5);
+        }
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
@@ -2099,9 +2103,10 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Build cache if needed
     build_cache();
 
-    // O(1) lookup - download status is in cache
+    // O(1) lookup - download status is in cache (with backwards compatibility)
+    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = models_cache_.find(model_name);
+    auto it = models_cache_.find(normalized);
     if (it != models_cache_.end()) {
         return it->second.downloaded;
     }
@@ -3394,9 +3399,10 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     // Build cache if needed
     build_cache();
 
-    // O(1) lookup in cache
+    // O(1) lookup in cache (with backwards compatibility)
+    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = models_cache_.find(model_name);
+    auto it = models_cache_.find(normalized);
     if (it != models_cache_.end()) {
         return it->second;
     }
@@ -3404,26 +3410,44 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     throw std::runtime_error("Model not found: " + model_name);
 }
 
+std::string ModelManager::normalize_model_name(const std::string& model_name) const {
+    // Backwards compatibility: strip legacy user./extra. prefixes if the model
+    // with the prefix doesn't exist but the unprefixed version does
+    if (model_name.rfind("user.", 0) == 0 || model_name.rfind("extra.", 0) == 0) {
+        std::string stripped = model_name.substr(model_name.find('.') + 1);
+
+        // Check if the unprefixed model exists in user_models_ (custom models)
+        if (user_models_.contains(stripped) && !user_models_.contains(model_name)) {
+            return stripped;
+        }
+    }
+
+    return model_name;
+}
+
 bool ModelManager::model_exists(const std::string& model_name) {
     // Build cache if needed
     build_cache();
 
-    // O(1) lookup in cache
+    // O(1) lookup in cache (with backwards compatibility)
+    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    return models_cache_.find(model_name) != models_cache_.end();
+    return models_cache_.find(normalized) != models_cache_.end();
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
-    if (server_models_.contains(model_name)) {
+    std::string normalized = normalize_model_name(model_name);
+
+    if (server_models_.contains(normalized)) {
         return true;
     }
 
-    return user_models_.contains(model_name);
+    return user_models_.contains(normalized);
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
     ModelInfo info;
-    std::string registry_name = model_name;
+    std::string registry_name = normalize_model_name(model_name);
 
     // Check server models first
     json* model_json = nullptr;
@@ -3471,11 +3495,12 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
     // Ensure cache is built (this populates filtered_out_models_)
     build_cache();
 
-    // Look up in the filtered-out models cache
+    // Look up in the filtered-out models cache (with backwards compatibility)
     // This is populated by filter_models_by_backend() during cache building
+    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-    auto it = filtered_out_models_.find(model_name);
+    auto it = filtered_out_models_.find(normalized);
     if (it != filtered_out_models_.end()) {
         return it->second;
     }

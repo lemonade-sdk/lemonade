@@ -77,7 +77,7 @@ static int print_pull_deprecation_message() {
         << "Examples:\n"
         << "  Built-in model: lemonade pull Qwen3-0.6B-GGUF\n"
         << "  Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M\n"
-        << "  Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp\n";
+        << "  Manual pull:    lemonade pull MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp\n";
     return 1;
 }
 
