@@ -840,11 +840,20 @@ jobs:
           curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
           mkdir -p /tmp/flm-extract
           dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
+          # FLM resolves xclbins under bin/xclbins in this CI layout, while the
+          # package stores them under share/flm/xclbins. Create a compat link.
+          if [ ! -e /tmp/flm-extract/opt/fastflowlm/bin/xclbins ] && [ -d /tmp/flm-extract/opt/fastflowlm/share/flm/xclbins ]; then
+            mkdir -p /tmp/flm-extract/opt/fastflowlm/bin
+            ln -s ../share/flm/xclbins /tmp/flm-extract/opt/fastflowlm/bin/xclbins
+          fi
           # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
           FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
+          FLM_CONFIG=$(find /tmp/flm-extract -name "model_list.json" -type f | head -1)
           chmod +x "$FLM_BIN"
           echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
+          echo "FLM_CONFIG_PATH=$FLM_CONFIG" >> $GITHUB_ENV
           export PATH="$(dirname "$FLM_BIN"):$PATH"
+          export FLM_CONFIG_PATH="$FLM_CONFIG"
           rm /tmp/fastflowlm.deb
           flm version
 
