@@ -2615,7 +2615,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         if (backend == "rocm") {
             std::string channel = "preview";
             if (config_) {
-                channel = config_->rocm_channel();
+                channel = config_->rocm_channel_for_recipe("sd-cpp");
             }
             resolved_backend = "rocm-" + channel;
         }
