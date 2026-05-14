@@ -431,10 +431,11 @@
       function gsRenderQuickstart() {
         var el = document.getElementById('gsQuickstart');
         if (!el) return;
+        var guideLink = 'and read <a href="https://developer.amd.com/playbooks/lemonade-getting-started/" target="_blank" rel="noopener">getting started</a>.';
         if (gsPlatform === 'windows' || gsPlatform === 'apple') {
-          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Open the desktop app and explore the models.</p>';
+          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Explore the desktop app ' + guideLink + '</p>';
         } else {
-          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Open <a href="http://localhost:13305" target="_blank">http://localhost:13305</a> and explore the models.</p>';
+          el.innerHTML = '<p class="gs-quickstart-text"><span class="material-symbols-outlined">rocket_launch</span> Explore the web UI at <a href="http://localhost:13305" target="_blank">http://localhost:13305</a> ' + guideLink + '</p>';
         }
       }
 
