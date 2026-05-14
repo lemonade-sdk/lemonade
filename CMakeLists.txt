@@ -922,13 +922,8 @@ endif()
 # Web App Integration (Cross-Platform)
 # ============================================================
 
-# On Windows, disable automatic build by default (can be enabled with -DBUILD_WEB_APP=ON)
-# On other platforms, enable automatic build by default (can be disabled with -DBUILD_WEB_APP=OFF)
-if(WIN32)
-    option(BUILD_WEB_APP "Build the Web app automatically" OFF)
-else()
-    option(BUILD_WEB_APP "Build the Web app automatically" ON)
-endif()
+# Enable automatic web app build on all platforms (can be disabled with -DBUILD_WEB_APP=OFF)
+option(BUILD_WEB_APP "Build the Web app automatically" ON)
 
 # Check if webpack is available for system-package mode
 if(USE_SYSTEM_NODEJS_MODULES)

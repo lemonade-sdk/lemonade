@@ -38,7 +38,7 @@ std::string normalize_backend_name(const std::string& recipe, const std::string&
         // Map "rocm" to the appropriate channel based on config
         std::string channel = "preview";  // default to preview for now
         if (auto* cfg = RuntimeConfig::global()) {
-            channel = cfg->rocm_channel();
+            channel = cfg->rocm_channel_for_recipe(recipe);
         }
         return "rocm-" + channel;
     }

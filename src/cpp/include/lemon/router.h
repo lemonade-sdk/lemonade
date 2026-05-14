@@ -12,6 +12,10 @@
 #include "backend_manager.h"
 #include "runtime_config.h"
 
+// 5 seconds is generous enough for inference to complete but prevents
+// indefinite blocking if a backend is stuck.
+#define EVICTION_TIMEOUT 5
+
 namespace lemon {
 
 using json = nlohmann::json;

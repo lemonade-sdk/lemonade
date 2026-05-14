@@ -210,7 +210,7 @@ namespace lemon::backends {
         if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
             std::string channel = "preview";  // default to preview
             if (auto* cfg = RuntimeConfig::global()) {
-                channel = cfg->rocm_channel();
+                channel = cfg->rocm_channel_for_recipe(spec.recipe);
             }
             resolved_backend = "rocm-" + channel;
         }
@@ -250,7 +250,7 @@ namespace lemon::backends {
             // Map "rocm" to the appropriate channel based on config
             std::string channel = "preview";  // default to preview for now
             if (auto* cfg = RuntimeConfig::global()) {
-                channel = cfg->rocm_channel();
+                channel = cfg->rocm_channel_for_recipe(recipe);
             }
             resolved_backend = "rocm-" + channel;
         }

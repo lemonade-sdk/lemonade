@@ -197,6 +197,15 @@ std::string RuntimeConfig::rocm_channel() const {
     return config_["rocm_channel"].get<std::string>();
 }
 
+std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) const {
+    std::string channel = rocm_channel();
+    // sd-cpp currently has no nightly artifacts; use preview builds.
+    if (recipe == "sd-cpp" && channel == "nightly") {
+        return "preview";
+    }
+    return channel;
+}
+
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
     std::shared_lock lock(mutex_);
     if (config_.contains(backend_name) && config_[backend_name].is_object()) {

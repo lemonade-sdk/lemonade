@@ -32,6 +32,12 @@ public:
     // Stop the server
     void stop();
 
+    // Check if shutdown has been requested (for use by the main loop)
+    bool should_shutdown() const;
+
+    // Signal that shutdown has been requested (called by signal handler)
+    void set_shutdown_requested(bool requested);
+
     // Get server status
     bool is_running() const;
 
@@ -158,6 +164,7 @@ private:
     std::unique_ptr<WebSocketServer> websocket_server_;
 
     bool running_;
+    std::atomic<bool> shutdown_requested_{false};
     std::atomic<bool> rebind_requested_{false};
 
     std::string api_key_;
