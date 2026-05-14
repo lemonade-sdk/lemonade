@@ -10,15 +10,17 @@
     "cpu": "b9095"
   },
   "whispercpp": {
-    "cpu": "v1.8.2",
-    "vulkan": "v1.8.2",
-    "rocm": "v1.8.2",
-    "npu": "v1.8.2"
+    "cpu": "v1.8.4",
+    "vulkan": "v1.8.4",
+    "rocm": "v1.8.4",
+    "npu": "v1.8.4",
+    "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-569-ab6afe8",
-    "rocm-stable": "master-569-ab6afe8",
-    "rocm-preview": "master-569-ab6afe8"
+    "cpu": "master-596-b6f38cd",
+    "rocm-stable": "master-596-b6f38cd",
+    "rocm-preview": "master-596-b6f38cd",
+    "metal": "master-596-b6f38cd"
   },
   "therock": {
     "version": "7.12.0",
@@ -54,7 +56,8 @@
     "npu": "v0.9.42"
   },
   "kokoro": {
-    "cpu": "b16"
+    "cpu": "b17",
+    "metal": "b17"
   },
   "vllm": {
     "rocm": "vllm0.20.1-rocm7.12.0"

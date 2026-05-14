@@ -100,7 +100,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         }
     }
 
-    if (is_rocm_backend(resolved_backend)) {
+    if (resolved_backend == "metal") {
+#if defined(__APPLE__)
+        params.filename = "sd-" + short_version + "-bin-Darwin-arm64-metal.zip";
+#endif
+    } else if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
 
         if (target_arch.empty()) {
@@ -133,8 +137,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
-#elif defined(__APPLE__)
-        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.2-arm64.zip";
 #else
         throw std::runtime_error("Unsupported platform for stable-diffusion.cpp");
 #endif
@@ -168,8 +170,8 @@ void SDServer::load(const std::string& model_name,
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan are GPU backends.
-    if (backend == "rocm" || backend == "vulkan") {
+    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan/metal are GPU backends.
+    if (backend == "rocm" || backend == "vulkan" || backend == "metal") {
         device_type_ = DEVICE_GPU;
     } else {
         device_type_ = DEVICE_CPU;

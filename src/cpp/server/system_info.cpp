@@ -143,7 +143,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan only
+    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan; macOS: Metal
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
@@ -153,10 +153,16 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"whispercpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
+    {"whispercpp", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
 
-    // kokoro - Windows/Linux x86_64
+    // kokoro - Windows/Linux x86_64; macOS arm64 (Metal)
     {"kokoro", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+    }},
+    {"kokoro", "metal", {"macos"}, {
+        {"metal", {}},
     }},
 
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
@@ -170,6 +176,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
     {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+    }},
+
+    // stable-diffusion.cpp - Metal backend (macOS arm64)
+    {"sd-cpp", "metal", {"macos"}, {
+        {"metal", {}},
     }},
 
     // FLM - NPU (XDNA2)

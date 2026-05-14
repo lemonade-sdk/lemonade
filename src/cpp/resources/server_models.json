@@ -1263,6 +1263,20 @@
             "height": 512
         }
     },
+    "SD-Turbo-GGUF": {
+        "checkpoint": "Green-Sky/SD-Turbo-GGUF:sd_turbo-f16-q8_0.gguf",
+        "recipe": "sd-cpp",
+        "labels": [
+            "image"
+        ],
+        "size": 2.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 512,
+            "height": 512
+        }
+    },
     "SDXL-Turbo": {
         "checkpoint": "stabilityai/sdxl-turbo:sd_xl_turbo_1.0_fp16.safetensors",
         "recipe": "sd-cpp",

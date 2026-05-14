@@ -194,7 +194,9 @@ TEST_AUDIO_URL = (
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Stable Diffusion test configuration
-SD_MODEL = "SD-Turbo"
+# Allow CI to override with a smaller model (e.g. SD-Turbo-GGUF) on memory-
+# constrained runners like GitHub-hosted macos-latest.
+SD_MODEL = os.environ.get("LEMONADE_TEST_SD_MODEL", "SD-Turbo")
 
 # ESRGAN upscale model test configuration
 ESRGAN_MODEL = "RealESRGAN-x4plus"

@@ -1852,13 +1852,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
-        // On macOS, only show llamacpp models
-        if (is_macos && recipe != "llamacpp") {
-            filter_out = true;
-            filter_reason = "This model uses the '" + recipe + "' recipe which is not supported on macOS. "
-                           "Only llamacpp models are supported on macOS.";
-        }
-
         // Filter out models that are too large for system RAM
         // Heuristic: if model size > 80% of system RAM, filter it out
         if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {

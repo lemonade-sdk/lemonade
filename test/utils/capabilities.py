@@ -132,7 +132,7 @@ CAPABILITIES = {
     },
     "whisper": {
         "whispercpp": {
-            "backends": ["cpu", "npu", "vulkan"],
+            "backends": ["cpu", "npu", "vulkan", "metal"],
             "supports": {
                 "transcription": True,
                 "transcription_with_language": True,
@@ -158,7 +158,7 @@ CAPABILITIES = {
     },
     "stable_diffusion": {
         "sd-cpp": {
-            "backends": ["cpu", "vulkan"],
+            "backends": ["cpu", "vulkan", "metal"],
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,
