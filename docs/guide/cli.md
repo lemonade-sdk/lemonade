@@ -549,7 +549,6 @@ lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
 # Launch an agent with custom llama.cpp arguments
 lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768 --llamacpp-args "--flash-attn on --no-mmap"
 
-
 # Pass additional arguments directly to the agent
 lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"
 
