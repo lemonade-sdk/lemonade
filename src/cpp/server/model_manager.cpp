@@ -1313,10 +1313,17 @@ void ModelManager::build_cache() {
     // Step 1.5: Discover models from extra_models_dir
     auto discovered_models = discover_extra_models();
     for (const auto& [name, info] : discovered_models) {
-        // Check for conflicts with registered models
-        if (all_models.find(name) != all_models.end()) {
-            LOG(INFO, "ModelManager") << "Warning: Discovered model '" << name
-                      << "' conflicts with registered model, skipping." << std::endl;
+        auto existing = all_models.find(name);
+        if (existing != all_models.end()) {
+            // Name conflict with registered model - prefer the downloaded model
+            if (info.downloaded && !existing->second.downloaded) {
+                LOG(INFO, "ModelManager") << "Discovered model '" << name
+                          << "' is downloaded, replacing undownloaded registered model" << std::endl;
+                all_models[name] = info;
+            } else {
+                LOG(INFO, "ModelManager") << "Discovered model '" << name
+                          << "' conflicts with registered model, keeping registered model" << std::endl;
+            }
             continue;
         }
         all_models[name] = info;
