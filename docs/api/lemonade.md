@@ -243,6 +243,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
+| `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
 
 **Setting Priority:**
 
@@ -252,7 +253,6 @@ When loading a model, settings are applied in this priority order:
 3. Values from environment variables or server startup arguments (see [Server Configuration](../guide/configuration/README.md))
 4. Default hardcoded values in `lemond` (lowest priority)
 
-**`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `flm_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
 
 ### Per-model options
 
