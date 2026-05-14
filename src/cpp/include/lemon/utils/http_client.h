@@ -74,19 +74,21 @@ public:
     static HttpResponse post(const std::string& url,
                             const std::string& body,
                             const std::map<std::string, std::string>& headers = {},
-                            long timeout_seconds = 300);
+                            long timeout_seconds = 0);
 
     // Multipart form data POST request
     static HttpResponse post_multipart(const std::string& url,
                                        const std::vector<MultipartField>& fields,
-                                       long timeout_seconds = 300);
+                                       long timeout_seconds = 0);
 
     // Streaming POST request (calls callback for each chunk as it arrives)
+    // If timeout_seconds is 0, it uses inactivity timeout (low_speed_limit/time)
+    // instead of a total request timeout.
     static HttpResponse post_stream(const std::string& url,
                                    const std::string& body,
                                    StreamCallback stream_callback,
                                    const std::map<std::string, std::string>& headers = {},
-                                   long timeout_seconds = 300);
+                                   long timeout_seconds = 0);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
