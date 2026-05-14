@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -41,8 +42,25 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
     return result;
 }
 
-inline std::string validate_custom_args(const std::string& custom_args_str,
-                                        const std::set<std::string>& reserved_flags) {
+inline std::map<std::string, std::vector<std::string>> build_custom_args_map(const std::vector<std::string>& tokens) {
+    std::map<std::string, std::vector<std::string>> result;
+    std::string last_flag;  // Track the most recently seen flag independently of map ordering
+
+    for (const auto& token : tokens) {
+        if (!token.empty() && token[0] == '-') {
+            // This is a flag; start a new entry
+            result[token] = {};
+            last_flag = token;
+        } else if (!last_flag.empty()) {
+            // Append to the most recently seen flag
+            result[last_flag].push_back(token);
+        }
+    }
+
+    return result;
+}
+
+inline std::string validate_custom_args(const std::string& custom_args_str, const std::set<std::string>& reserved_flags) {
     std::vector<std::string> custom_args = parse_custom_args(custom_args_str);
 
     for (const auto& arg : custom_args) {
@@ -67,6 +85,54 @@ inline std::string validate_custom_args(const std::string& custom_args_str,
     }
 
     return "";
+}
+
+inline std::string map_to_args_string(const std::map<std::string, std::vector<std::string>>& m) {
+    std::string result;
+    bool first = true;
+    for (const auto& [flag, values] : m) {
+        if (!first) result += " ";
+        first = false;
+        result += flag;
+        for (const auto& v : values) {
+            result += " " + v;
+        }
+    }
+    return result;
+}
+
+// Given a flag like "--flag" or "--no-flag", return the negation key.
+// "--no-<name>" ↔ "--<name>". Returns empty string if no negation exists.
+inline std::string negate_flag(const std::string& flag) {
+    if (flag.size() >= 5 && flag.compare(0, 5, "--no-") == 0) {
+        return "--" + flag.substr(5);
+    }
+    if (flag.size() >= 3 && flag.compare(0, 2, "--") == 0) {
+        return "--no-" + flag.substr(2);
+    }
+    return "";
+}
+
+inline std::map<std::string, std::vector<std::string>> merge_args_maps(
+    const std::map<std::string, std::vector<std::string>>& target,
+    const std::map<std::string, std::vector<std::string>>& incoming) {
+    std::map<std::string, std::vector<std::string>> merged = target;
+
+    // Remove binary-flag negations from incoming that conflict with target.
+    // Only flags without arguments are considered binary flags.
+    for (const auto& [flag, values] : incoming) {
+        if (values.empty()) {
+            std::string neg = negate_flag(flag);
+            if (!neg.empty() && merged.count(neg)) {
+                // Target has the opposite binary flag — skip this incoming flag
+                continue;
+            }
+        }
+        if (!merged.count(flag)) {
+            merged[flag] = values;
+        }
+    }
+    return merged;
 }
 
 } // namespace utils

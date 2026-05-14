@@ -243,6 +243,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
+| `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
 
 **Setting Priority:**
 
@@ -251,6 +252,7 @@ When loading a model, settings are applied in this priority order:
 2. Per-model values configurable in `recipe_options.json` (see below for details)
 3. Values from environment variables or server startup arguments (see [Server Configuration](../guide/configuration/README.md))
 4. Default hardcoded values in `lemond` (lowest priority)
+
 
 ### Per-model options
 

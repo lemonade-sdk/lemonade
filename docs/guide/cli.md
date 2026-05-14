@@ -375,11 +375,13 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
+| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model | `true` |
 
 **Notes:**
 - Use `--save-options` to persist your configuration for the model
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
+- `--merge-args` controls whether `*_args` from global config are merged with per-model args (default: merge). Use `--no-merge-args` to replace global args entirely with per-model args.
 
 **Examples:**
 
@@ -398,6 +400,9 @@ lemonade load Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Load a llama.cpp model with custom arguments
 lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --no-mmap"
+
+# Load a model without merging global args (per-model args replace global entirely)
+lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
 
 # Load an image generation model with custom settings
 lemonade load Z-Image-Turbo --sdcpp rocm --steps 8 --cfg-scale 1 --width 1024 --height 1024
