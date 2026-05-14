@@ -10,11 +10,11 @@
     "cpu": "b8940"
   },
   "whispercpp": {
-    "cpu": "v1.8.3",
-    "vulkan": "v1.8.3",
-    "rocm": "v1.8.3",
-    "npu": "v1.8.3",
-    "metal": "v1.8.3"
+    "cpu": "v1.8.4",
+    "vulkan": "v1.8.4",
+    "rocm": "v1.8.4",
+    "npu": "v1.8.4",
+    "metal": "v1.8.4"
   },
   "sd-cpp": {
     "cpu": "master-596-b6f38cd",
