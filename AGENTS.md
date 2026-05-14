@@ -90,7 +90,7 @@ cmake --build --preset default --target tauri-app    # Linux / macOS
 cmake --build --preset windows --target tauri-app    # Windows (VS 2022)
 cmake --build --preset vs18 --target tauri-app       # Windows (VS 2026)
 
-# 4. Web app (auto-built on non-Windows; manual on Windows)
+# 4. Web app (auto-built on all platforms)
 cmake --build --preset default --target web-app         # Linux / macOS
 cmake --build --preset windows --target web-app         # Windows
 
@@ -108,7 +108,7 @@ cd build && cpack -G RPM     # .rpm
 
 CMake presets: `default` (Ninja, Release), `windows` (VS 2022), `vs18` (VS 2026), `debug` (Ninja, Debug).
 
-CMake options: `BUILD_WEB_APP` (ON by default on non-Windows), `BUILD_TAURI_APP` (Linux only, include Tauri desktop app in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemond.service`).
+CMake options: `BUILD_WEB_APP` (ON by default on all platforms), `BUILD_TAURI_APP` (Linux only, include Tauri desktop app in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemond.service`).
 
 ## Testing
 
