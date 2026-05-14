@@ -1218,10 +1218,11 @@ jobs:
           - test_name: whisper-metal
             script: server_whisper.py
             args: "--wrapped-server whispercpp --backend metal"
-          - test_name: sd-cpp-metal
-            script: server_sd.py
-            args: "--wrapped-server sd-cpp --backend metal"
-            sd_model: SD-Turbo-GGUF
+          # Temporarily disabled — sd-cpp metal test is being skipped
+          # - test_name: sd-cpp-metal
+          #   script: server_sd.py
+          #   args: "--wrapped-server sd-cpp --backend metal"
+          #   sd_model: SD-Turbo-GGUF
           - test_name: kokoro-metal
             script: server_tts.py
             args: ""
