@@ -90,7 +90,8 @@ inline std::string device_type_to_string(DeviceType device) {
 inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
     for (const auto& label : labels) {
         if (label == "vision" || label == "reasoning" ||
-            label == "tool-calling" || label == "tools") {
+            label == "tool-calling" || label == "tools" ||
+            label == "chat-transcription") {
             return ModelType::LLM;
         }
     }
