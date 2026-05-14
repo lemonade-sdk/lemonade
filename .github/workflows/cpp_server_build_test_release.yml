@@ -1221,6 +1221,7 @@ jobs:
           - test_name: sd-cpp-metal
             script: server_sd.py
             args: "--wrapped-server sd-cpp --backend metal"
+            sd_model: SD-Turbo-GGUF
           - test_name: kokoro-metal
             script: server_tts.py
             args: ""
@@ -1324,6 +1325,7 @@ jobs:
         if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
         env:
           HF_HOME: ${{ env.HF_HOME }}
+          LEMONADE_TEST_SD_MODEL: ${{ matrix.sd_model }}
         run: |
           set -e
           SERVER_BIN="./build/lemonade-server"
