@@ -784,13 +784,27 @@ json Router::responses(const json& request) {
 
 json Router::anthropic_messages(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        return server->anthropic_messages(request);
+        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
+        if (!anthropic_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Anthropic Messages API",
+                                              device_type_to_string(server->get_device_type()))
+            );
+        }
+        return anthropic_server->anthropic_messages(request);
     });
 }
 
 json Router::anthropic_count_tokens(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
-        return server->anthropic_count_tokens(request);
+        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
+        if (!anthropic_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Anthropic token counting",
+                                              device_type_to_string(server->get_device_type()))
+            );
+        }
+        return anthropic_server->anthropic_count_tokens(request);
     });
 }
 
@@ -899,7 +913,22 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
 
 void Router::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        server->anthropic_messages_stream(request_body, sink);
+        auto anthropic_server = dynamic_cast<IAnthropicServer*>(server);
+        if (!anthropic_server) {
+            json error = {
+                {"type", "error"},
+                {"error", {
+                    {"type", "unsupported_operation"},
+                    {"message", "Anthropic Messages API not supported by " +
+                                    device_type_to_string(server->get_device_type())}
+                }}
+            };
+            std::string event = "event: error\ndata: " + error.dump() + "\n\n";
+            sink.write(event.c_str(), event.size());
+            sink.done();
+            return;
+        }
+        anthropic_server->anthropic_messages_stream(request_body, sink);
     });
 }
 

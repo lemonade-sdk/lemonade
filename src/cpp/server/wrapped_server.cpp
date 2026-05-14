@@ -180,7 +180,7 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     }
 }
 
-json WrappedServer::anthropic_messages(const json& request) {
+json WrappedServer::forward_anthropic_messages(const json& request) {
     const auto raw = forward_request_raw("/v1/messages", request);
     if (raw.status_code == 200) {
         return json::parse(raw.body);
@@ -195,12 +195,12 @@ json WrappedServer::anthropic_messages(const json& request) {
     };
 }
 
-void WrappedServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
+void WrappedServer::forward_anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
     // Anthropic SSE events should pass through untouched.
     forward_streaming_request("/v1/messages", request_body, sink, false);
 }
 
-json WrappedServer::anthropic_count_tokens(const json& request) {
+json WrappedServer::forward_anthropic_count_tokens(const json& request) {
     const auto raw = forward_request_raw("/v1/messages/count_tokens", request);
     if (raw.status_code == 200) {
         return json::parse(raw.body);

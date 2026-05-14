@@ -49,10 +49,10 @@ public:
     virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
 };
 
-// Optional transcription capability (speech-to-text)
-class ITranscriptionServer : public virtual ICapability {
+// Optional audio capability (speech-to-text)
+class IAudioServer : public virtual ICapability {
 public:
-    virtual ~ITranscriptionServer() = default;
+    virtual ~IAudioServer() = default;
 
     // Speech-to-text transcription (OpenAI /v1/audio/transcriptions compatible)
     virtual json audio_transcriptions(const json& request) = 0;

@@ -250,5 +250,17 @@ json VLLMServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }
 
+json VLLMServer::anthropic_messages(const json& request) {
+    return forward_anthropic_messages(request);
+}
+
+void VLLMServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
+    forward_anthropic_messages_stream(request_body, sink);
+}
+
+json VLLMServer::anthropic_count_tokens(const json& request) {
+    return forward_anthropic_count_tokens(request);
+}
+
 } // namespace backends
 } // namespace lemon

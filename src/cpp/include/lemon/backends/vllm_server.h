@@ -7,7 +7,8 @@
 namespace lemon {
 namespace backends {
 
-class VLLMServer : public WrappedServer {
+class VLLMServer : public WrappedServer,
+                   public IAnthropicServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -35,6 +36,11 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+
+    // IAnthropicServer implementation
+    json anthropic_messages(const json& request) override;
+    void anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) override;
+    json anthropic_count_tokens(const json& request) override;
 };
 
 } // namespace backends

@@ -650,38 +650,15 @@ json LlamaCppServer::responses(const json& request) {
 }
 
 json LlamaCppServer::anthropic_messages(const json& request) {
-    const auto raw = forward_request_raw("/v1/messages", request);
-    if (raw.status_code == 200) {
-        return json::parse(raw.body);
-    }
-
-    return {
-        {"_lemonade_raw_backend", {
-            {"status_code", raw.status_code},
-            {"content_type", raw.content_type},
-            {"body", raw.body}
-        }}
-    };
+    return forward_anthropic_messages(request);
 }
 
 void LlamaCppServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
-    // Anthropic streaming uses typed SSE events and must not be rewritten with OpenAI [DONE] semantics.
-    forward_streaming_request("/v1/messages", request_body, sink, false);
+    forward_anthropic_messages_stream(request_body, sink);
 }
 
 json LlamaCppServer::anthropic_count_tokens(const json& request) {
-    const auto raw = forward_request_raw("/v1/messages/count_tokens", request);
-    if (raw.status_code == 200) {
-        return json::parse(raw.body);
-    }
-
-    return {
-        {"_lemonade_raw_backend", {
-            {"status_code", raw.status_code},
-            {"content_type", raw.content_type},
-            {"body", raw.body}
-        }}
-    };
+    return forward_anthropic_count_tokens(request);
 }
 
 } // namespace backends
