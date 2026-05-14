@@ -600,6 +600,7 @@ jobs:
             build/lemond
             build/lemonade-server
             build/lemonade
+            build/resources/
           retention-days: 1
 
       - name: Cleanup keychain
