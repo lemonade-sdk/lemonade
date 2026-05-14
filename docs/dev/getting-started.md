@@ -563,7 +563,7 @@ A pure HTTP server that:
 
 **Multi-Model Support:**
 - Router maintains multiple WrappedServer instances simultaneously
-- Separate LRU caches for LLM, embedding, reranking, and audio model types
+- Separate LRU caches for LLM, embedding, reranking, transcription, image, and TTS model types
 - NPU exclusivity: only one model can use NPU at a time
 - Configurable limits via `--max-loaded-models N` (default: 1)
 - Automatic eviction of least-recently-used models when limits reached

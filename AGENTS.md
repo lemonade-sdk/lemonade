@@ -30,7 +30,7 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | stable-diffusion.cpp | `SdServer` | Image | CPU | Image generation, editing, variations |
 | Kokoro | `KokoroServer` | TTS | CPU | Text-to-speech |
 
-Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `IAudioServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
+Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
 
 ### Router & Multi-Model Support
 

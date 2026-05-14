@@ -45,7 +45,7 @@
       }
     },
     {
-      "requires_labels": ["audio", "transcription"],
+      "requires_labels": ["transcription"],
       "function": {
         "name": "transcribe_audio",
         "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system — just call this tool with the language parameter.",

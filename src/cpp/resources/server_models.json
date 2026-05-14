@@ -851,8 +851,7 @@
         "hf_load": true,
         "labels": [
             "vision",
-            "audio",
-            "transcription"
+            "chat-transcription"
         ],
         "size": 4.68
     },
@@ -864,8 +863,7 @@
         "hf_load": true,
         "labels": [
             "vision",
-            "audio",
-            "transcription"
+            "chat-transcription"
         ],
         "size": 2.10
     },
@@ -1179,8 +1177,8 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 0.075
     },
@@ -1192,8 +1190,8 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 0.142
     },
@@ -1205,8 +1203,8 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 0.466
     },
@@ -1218,8 +1216,8 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 1.42
     },
@@ -1231,8 +1229,8 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
-            "transcription"
+            "transcription",
+            "realtime-transcription"
         ],
         "size": 2.87
     },
@@ -1244,8 +1242,8 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
+            "realtime-transcription",
             "hot"
         ],
         "size": 1.55

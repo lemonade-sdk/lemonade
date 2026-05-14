@@ -427,7 +427,6 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     static const std::unordered_set<std::string> non_llm_labels = {
         "embeddings",
         "reranking",
-        "audio",
         "transcription",
         "image",
         "tts",

@@ -456,7 +456,7 @@ curl http://localhost:13305/v1/health
     }
   ],
   "max_models": {
-    "audio":1,
+    "transcription":1,
     "embedding":1,
     "image":1,
     "llm":1,
@@ -475,7 +475,7 @@ curl http://localhost:13305/v1/health
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
   - `last_use` - Unix timestamp of last access (load or inference)
-  - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
+  - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
@@ -485,7 +485,7 @@ curl http://localhost:13305/v1/health
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
-  - `audio` - Maximum speech-to-text models
+  - `transcription` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.

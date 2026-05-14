@@ -1940,7 +1940,8 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("image");
     }
     if (recipe == "whispercpp") {
-        labels.insert("audio");
+        labels.insert("transcription");
+        labels.insert("realtime-transcription");
     }
 
     model_entry["labels"] = labels;
