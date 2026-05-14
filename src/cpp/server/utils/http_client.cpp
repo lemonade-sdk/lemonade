@@ -224,7 +224,29 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
 struct StreamCallbackData {
     StreamCallback* callback;
     std::string* buffer;
+    long* response_code;
 };
+
+static size_t stream_header_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    size_t total_size = size * nmemb;
+    StreamCallbackData* data = static_cast<StreamCallbackData*>(userdata);
+    if (!data || !data->response_code) {
+        return total_size;
+    }
+
+    std::string header(ptr, total_size);
+    if (header.rfind("HTTP/", 0) == 0) {
+        std::istringstream stream(header);
+        std::string http_version;
+        long status_code = 0;
+        stream >> http_version >> status_code;
+        if (status_code > 0) {
+            *data->response_code = status_code;
+        }
+    }
+
+    return total_size;
+}
 
 // Static C-style callback function
 static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -235,6 +257,13 @@ static size_t stream_write_callback(char* ptr, size_t size, size_t nmemb, void* 
         if (!data || !data->callback || !*(data->callback)) {
             LOG(ERROR, "HttpClient") << "Callback data is null!" << std::endl;
             return 0;
+        }
+
+        if (data->response_code && *data->response_code != 0 && *data->response_code != 200) {
+            if (data->buffer) {
+                data->buffer->append(ptr, total_size);
+            }
+            return total_size;
         }
 
         if (!(*(data->callback))(ptr, total_size)) {
@@ -262,17 +291,23 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     }
 
     HttpResponse response;
+    std::string response_body;
+    long response_code = 0;
 
     // Create callback data
     StreamCallbackData callback_data;
     callback_data.callback = &stream_callback;
-    callback_data.buffer = nullptr;
+    callback_data.buffer = &response_body;
+    callback_data.response_code = &response_code;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, stream_header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &callback_data);
+    // Use provided timeout, or fallback to global default (set via --http-timeout)
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -287,9 +322,9 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     CURLcode res = curl_easy_perform(curl);
 
     // Get response code before checking for errors
-    long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     response.status_code = static_cast<int>(response_code);
+    response.body = response_body;
 
     // For streaming, CURLE_PARTIAL_FILE or CURLE_RECV_ERROR at the end is normal
     // (backend closes connection after sending all data)

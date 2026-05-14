@@ -6,6 +6,57 @@
 
 namespace lemon {
 
+namespace {
+
+json stream_error_payload(int status_code, const std::string& body) {
+    if (!body.empty()) {
+        try {
+            auto parsed = json::parse(body);
+            if (parsed.is_object()) {
+                if (parsed.value("type", "") == "error" && parsed.contains("error")) {
+                    return parsed;
+                }
+                if (parsed.contains("error") && parsed["error"].is_object()) {
+                    json error = parsed["error"];
+                    if (!error.contains("type")) {
+                        error["type"] = "backend_error";
+                    }
+                    return {{"type", "error"}, {"error", error}};
+                }
+            }
+        } catch (const std::exception&) {
+            // Fall through to wrapping the raw body as the error message.
+        }
+    }
+
+    std::string message = body.empty()
+        ? "Backend returned HTTP " + std::to_string(status_code)
+        : body;
+    return {
+        {"type", "error"},
+        {"error", {
+            {"type", "backend_error"},
+            {"message", message},
+            {"status_code", status_code}
+        }}
+    };
+}
+
+void write_sse_error(httplib::DataSink& sink,
+                     int status_code,
+                     const std::string& body,
+                     bool include_event_name) {
+    const auto payload = stream_error_payload(status_code, body).dump();
+    std::string event;
+    if (include_event_name) {
+        event += "event: error\n";
+    }
+    event += "data: " + payload + "\n\n";
+    sink.write(event.c_str(), event.size());
+}
+
+} // namespace
+
 void StreamingProxy::forward_sse_stream(
     const std::string& backend_url,
     const std::string& request_body,
@@ -91,7 +142,7 @@ void StreamingProxy::forward_sse_stream(
         // completed stream as soon as the client observes stream completion.
         sink.done();
     } else {
-        // Properly terminate the chunked response even on error
+        write_sse_error(sink, result.status_code, result.body, false);
         sink.done();
     }
 }
@@ -165,7 +216,7 @@ void StreamingProxy::forward_byte_stream(
         // completed stream as soon as the client observes stream completion.
         sink.done();
     } else {
-        // Properly terminate the chunked response even on error
+        write_sse_error(sink, result.status_code, result.body, true);
         sink.done();
     }
 }
