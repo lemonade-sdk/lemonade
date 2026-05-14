@@ -210,23 +210,8 @@ interface DetectedBackend {
   mmprojFiles?: string[];
 }
 
-const HIDDEN_MODEL_NAME_PREFIXES = ['user.', 'extra.'];
-
-const getModelDisplayName = (modelName: string): string => {
-  const prefix = HIDDEN_MODEL_NAME_PREFIXES.find(p => modelName.startsWith(p));
-  return prefix ? modelName.slice(prefix.length) : modelName;
-};
-
-const isNamespaceHiddenModel = (modelName: string): boolean =>
-  HIDDEN_MODEL_NAME_PREFIXES.some(prefix => modelName.startsWith(prefix));
-
 const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  if (!isNamespaceHiddenModel(modelName)) return match[1];
-
-  const displayName = getModelDisplayName(modelName);
-  return displayName.startsWith(`${family.displayName}-`)
-    ? displayName.slice(family.displayName.length + 1)
-    : displayName;
+  return match[1];
 };
 
 function buildModelList(
@@ -241,7 +226,7 @@ function buildModelList(
     for (const m of models) {
       if (consumed.has(m.name)) continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
-      const match = family.regex.exec(getModelDisplayName(m.name));
+      const match = family.regex.exec(m.name);
       if (match) {
         members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
         consumed.add(m.name);
@@ -268,8 +253,8 @@ function buildModelList(
   // Merge and sort alphabetically by display name
   const allItems = [...familyItems, ...individualItems];
   allItems.sort((a, b) => {
-    const nameA = a.type === 'family' ? a.family.displayName : getModelDisplayName(a.name);
-    const nameB = b.type === 'family' ? b.family.displayName : getModelDisplayName(b.name);
+    const nameA = a.type === 'family' ? a.family.displayName : a.name;
+    const nameB = b.type === 'family' ? b.family.displayName : b.name;
     return nameA.localeCompare(nameB) || (
       a.type === 'model' && b.type === 'model' ? a.name.localeCompare(b.name) : 0
     );
@@ -463,8 +448,7 @@ const [searchQuery, setSearchQuery] = useState('');
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(model =>
-        model.name.toLowerCase().includes(query) ||
-        getModelDisplayName(model.name).toLowerCase().includes(query)
+        model.name.toLowerCase().includes(query)
       );
     }
 
@@ -659,7 +643,6 @@ const [searchQuery, setSearchQuery] = useState('');
       entries.push({ modelName, isLoading: true });
     }
     return entries.sort((a, b) =>
-      getModelDisplayName(a.modelName).localeCompare(getModelDisplayName(b.modelName)) ||
       a.modelName.localeCompare(b.modelName)
     );
   })();
@@ -939,7 +922,7 @@ const [searchQuery, setSearchQuery] = useState('');
     const checkpoint = backend.recipe === 'llamacpp'
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
-    const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
+    const modelName = resolveHfModelName(hfModel.id, backend);
     handleDownloadModel(modelName, { checkpoint, recipe: backend.recipe });
   }, [hfModelBackends, resolveGgufCheckpoint, resolveHfModelName, handleDownloadModel]);
 
@@ -1363,7 +1346,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
       nameTooltip = `Collection of ${components.length} models:\n${lines.join('\n')}`;
-    } else if (displayName || getModelDisplayName(modelName) !== modelName) {
+    } else if (displayName) {
       nameTooltip = modelName;
     }
 
@@ -1377,7 +1360,7 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? getModelDisplayName(modelName)}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? modelName}</span>
             <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>
@@ -1675,7 +1658,7 @@ const [searchQuery, setSearchQuery] = useState('');
                         className={`loaded-model-indicator${isLoading ? ' loading' : ''}`}
                         title={isLoading ? 'Loading' : 'Loaded'}
                       />
-                      <span className="loaded-model-name" title={modelName}>{getModelDisplayName(modelName)}</span>
+                      <span className="loaded-model-name" title={modelName}>{modelName}</span>
                     </div>
                     {!isLoading && (
                       <button className="model-action-btn unload-btn active-model-eject-button" onClick={() => handleUnloadModel(modelName)} title="Eject model">

@@ -208,7 +208,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setAddModelInitialValues(undefined);
     window.dispatchEvent(new CustomEvent('installModel', {
       detail: {
-        name: `user.${data.name}`,
+        name: data.name,
         registrationData: {
           checkpoint: data.checkpoint,
           recipe: data.recipe,

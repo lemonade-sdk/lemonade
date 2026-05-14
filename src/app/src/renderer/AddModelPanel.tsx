@@ -159,16 +159,13 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
           <label className="form-label" title="A unique name to identify your model in the catalog">
             Model Name
           </label>
-          <div className="input-with-prefix">
-            <span className="input-prefix">user.</span>
-            <input
-              type="text"
-              className="form-input with-prefix"
-              placeholder="Gemma-3-12b-it-GGUF"
-              value={form.name}
-              onChange={(e) => handleChange('name', e.target.value)}
-            />
-          </div>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Gemma-3-12b-it-GGUF"
+            value={form.name}
+            onChange={(e) => handleChange('name', e.target.value)}
+          />
         </div>
 
         <div className="form-section">

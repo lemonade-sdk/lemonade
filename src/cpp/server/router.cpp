@@ -40,9 +40,6 @@ WrappedServer* Router::find_server_by_model_name(const std::string& model_name) 
     return nullptr;
 }
 
-std::string Router::resolve_model_name(const std::string& model_name) const {
-    return model_name;
-}
 
 WrappedServer* Router::get_most_recent_server() const {
     if (loaded_servers_.empty()) {
@@ -512,12 +509,12 @@ bool Router::is_model_loaded() const {
 
 bool Router::is_model_loaded(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    return find_server_by_model_name(resolve_model_name(model_name)) != nullptr;
+    return find_server_by_model_name(model_name) != nullptr;
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    auto* server = find_server_by_model_name(model_name);
     if (server) return server->get_recipe_options();
     return RecipeOptions();
 }
@@ -526,7 +523,7 @@ ModelType Router::get_model_type(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = model_name.empty()
         ? get_most_recent_server()
-        : find_server_by_model_name(resolve_model_name(model_name));
+        : find_server_by_model_name(model_name);
     return server ? server->get_model_type() : ModelType::LLM;
 }
 
@@ -554,7 +551,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             return ErrorResponse::from_exception(InvalidRequestException("No model specified in request"));
         }
 
-        server = find_server_by_model_name(resolve_model_name(requested_model));
+        server = find_server_by_model_name(requested_model);
         if (!server) {
             return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
         }
@@ -603,7 +600,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             return;
         }
 
-        server = find_server_by_model_name(resolve_model_name(requested_model));
+        server = find_server_by_model_name(requested_model);
         if (!server) {
             std::string error_msg = "data: {\"error\":{\"message\":\"Model not loaded: " + requested_model + "\",\"type\":\"model_not_loaded\"}}\n\n";
             sink.write(error_msg.c_str(), error_msg.size());
