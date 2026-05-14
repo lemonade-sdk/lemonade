@@ -2111,8 +2111,8 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup - download status is in cache (with backwards compatibility)
-    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    std::string normalized = normalize_model_name(model_name);
     auto it = models_cache_.find(normalized);
     if (it != models_cache_.end()) {
         return it->second.downloaded;
@@ -3407,8 +3407,8 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache (with backwards compatibility)
-    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    std::string normalized = normalize_model_name(model_name);
     auto it = models_cache_.find(normalized);
     if (it != models_cache_.end()) {
         return it->second;
@@ -3420,12 +3420,18 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
 std::string ModelManager::normalize_model_name(const std::string& model_name) const {
     // Backwards compatibility: strip legacy user./extra. prefixes if the model
     // with the prefix doesn't exist but the unprefixed version does
+    // NOTE: This must be called while holding models_cache_mutex_
     if (model_name.rfind("user.", 0) == 0 || model_name.rfind("extra.", 0) == 0) {
         std::string stripped = model_name.substr(model_name.find('.') + 1);
 
-        // Check if the unprefixed model exists in user_models_ (custom models)
-        if (user_models_.contains(stripped) && !user_models_.contains(model_name)) {
-            return stripped;
+        // Check the cache to see if the unprefixed version exists as a custom model
+        auto it = models_cache_.find(stripped);
+        if (it != models_cache_.end()) {
+            // Only apply backwards compat if it's actually a custom model
+            bool is_custom = std::find(it->second.labels.begin(), it->second.labels.end(), "custom") != it->second.labels.end();
+            if (is_custom && models_cache_.find(model_name) == models_cache_.end()) {
+                return stripped;
+            }
         }
     }
 
@@ -3437,8 +3443,8 @@ bool ModelManager::model_exists(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache (with backwards compatibility)
-    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    std::string normalized = normalize_model_name(model_name);
     return models_cache_.find(normalized) != models_cache_.end();
 }
 
@@ -3504,8 +3510,8 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 
     // Look up in the filtered-out models cache (with backwards compatibility)
     // This is populated by filter_models_by_backend() during cache building
-    std::string normalized = normalize_model_name(model_name);
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    std::string normalized = normalize_model_name(model_name);
 
     auto it = filtered_out_models_.find(normalized);
     if (it != filtered_out_models_.end()) {
