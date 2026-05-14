@@ -50,7 +50,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (isCollectionModel(info)) return 'llm';
     // Chat-indicator labels win over modality labels so multimodal "any-to-text"
     // models (e.g. Gemma 4 on FLM) — which carry both "vision" / "tool-calling"
-    // AND modality labels like "audio" / "transcription" — route to the LLM
+    // AND modality labels like "transcription" — route to the LLM
     // panel rather than the Transcription/Image panel.
     const chatIndicators = ['vision', 'reasoning', 'tool-calling', 'tools'];
     if (info.labels?.some(l => chatIndicators.includes(l))) return 'llm';

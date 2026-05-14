@@ -81,12 +81,11 @@ inline std::string device_type_to_string(DeviceType device) {
 //   "transcription"          → model can serve /audio/transcriptions (functional)
 //   "realtime-transcription" → model supports WebSocket /realtime streaming
 //   "chat-transcription"     → model accepts audio input in /chat/completions
-//   "audio"                  → cosmetic/backwards-compat on transcription models
 //
 // Resolution: chat-indicator labels win. The "transcription" label triggers
 // ModelType::TRANSCRIPTION only when no chat indicator is present (pure Whisper).
-// "audio" alone is cosmetic and maps to LLM. "chat-transcription" is an LLM
-// input-modality label and does not change the deployment mode.
+// "chat-transcription" is an LLM input-modality label and does not change the
+// deployment mode.
 inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
     for (const auto& label : labels) {
         if (label == "vision" || label == "reasoning" ||

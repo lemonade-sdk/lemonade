@@ -1008,7 +1008,6 @@ Labels describe what a model can do. A model may carry multiple labels.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `audio` | Cosmetic tag retained for backwards compatibility on transcription models. |
 | `speech` | Informational tag on TTS models indicating audio output. |
 | `esrgan` | Image upscaling model (Real-ESRGAN). Used as a component in image pipelines. |
 | `edit` | Image editing model; supports the `/images/edits` endpoint. |

@@ -851,7 +851,6 @@
         "hf_load": true,
         "labels": [
             "vision",
-            "audio",
             "chat-transcription"
         ],
         "size": 4.68
@@ -864,7 +863,6 @@
         "hf_load": true,
         "labels": [
             "vision",
-            "audio",
             "chat-transcription"
         ],
         "size": 2.10
@@ -1179,7 +1177,6 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
             "realtime-transcription"
         ],
@@ -1193,7 +1190,6 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
             "realtime-transcription"
         ],
@@ -1207,7 +1203,6 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
             "realtime-transcription"
         ],
@@ -1221,7 +1216,6 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
             "realtime-transcription"
         ],
@@ -1235,7 +1229,6 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
             "realtime-transcription"
         ],
@@ -1249,7 +1242,6 @@
         "recipe": "whispercpp",
         "suggested": true,
         "labels": [
-            "audio",
             "transcription",
             "realtime-transcription",
             "hot"
