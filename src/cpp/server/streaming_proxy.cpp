@@ -63,11 +63,6 @@ void StreamingProxy::forward_sse_stream(
             sink.write(done_marker, strlen(done_marker));
         }
 
-        // Explicitly flush and signal completion
-        sink.done();
-
-        LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
-
         // Parse telemetry from buffered data
         auto telemetry = parse_telemetry(telemetry_buffer);
 
@@ -86,11 +81,15 @@ void StreamingProxy::forward_sse_stream(
             }
         }
 
-        telemetry.print();
-
         if (on_complete) {
             on_complete(telemetry);
         }
+
+        telemetry.print();
+
+        // Signal completion after telemetry is stored, so /stats reflects the
+        // completed stream as soon as the client observes stream completion.
+        sink.done();
     } else {
         // Properly terminate the chunked response even on error
         sink.done();
@@ -139,10 +138,6 @@ void StreamingProxy::forward_byte_stream(
     }
 
     if (!stream_error) {
-        // Explicitly flush and signal completion
-        sink.done();
-        LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
-
         auto telemetry = parse_telemetry(telemetry_buffer);
 
         // Anthropic streams often omit timing fields. Derive TTFT/TPS from wall clock if needed.
@@ -160,11 +155,15 @@ void StreamingProxy::forward_byte_stream(
             }
         }
 
-        telemetry.print();
-
         if (on_complete) {
             on_complete(telemetry);
         }
+
+        telemetry.print();
+
+        // Signal completion after telemetry is stored, so /stats reflects the
+        // completed stream as soon as the client observes stream completion.
+        sink.done();
     } else {
         // Properly terminate the chunked response even on error
         sink.done();
@@ -185,6 +184,10 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
         } else if (line.find("ChatCompletionChunk: ") == 0) {
             // FLM debug format
             json_str = line.substr(21); // Remove "ChatCompletionChunk: " prefix
+        }
+
+        if (!json_str.empty() && json_str.back() == '\r') {
+            json_str.pop_back();
         }
 
         if (!json_str.empty() && json_str != "[DONE]") {

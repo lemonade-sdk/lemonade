@@ -206,7 +206,7 @@ class TestConfigEnvVars(unittest.TestCase):
 
 
 class TestApiKeyEnvVar(unittest.TestCase):
-    """Verify LEMONADE_API_KEY enables Bearer auth on API routes."""
+    """Verify LEMONADE_API_KEY enables auth on API routes."""
 
     proc = None
     API_KEY = "test-secret-key-12345"
@@ -238,6 +238,14 @@ class TestApiKeyEnvVar(unittest.TestCase):
         r = requests.get(
             f"{BASE}/v1/health",
             headers={"Authorization": f"Bearer {self.API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_correct_x_api_key_accepted(self):
+        r = requests.get(
+            f"{BASE}/v1/health",
+            headers={"X-Api-Key": self.API_KEY},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(r.status_code, 200)

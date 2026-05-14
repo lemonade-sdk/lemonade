@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 
@@ -33,6 +35,18 @@ class IRerankingServer : public virtual ICapability {
 public:
     virtual ~IRerankingServer() = default;
     virtual json reranking(const json& request) = 0;
+};
+
+// Optional llama.cpp slots capability
+class ISlotsServer : public virtual ICapability {
+public:
+    virtual ~ISlotsServer() = default;
+
+    // llama.cpp /slots
+    virtual json get_slots() = 0;
+
+    // llama.cpp /slots/{id}?action=...
+    virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
 };
 
 // Optional transcription capability (speech-to-text)

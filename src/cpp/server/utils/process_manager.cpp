@@ -57,6 +57,11 @@ static bool should_filter_line(const std::string& line) {
     // Also filter FLM's interactive prompt spam
     return (line.find("GET /health") != std::string::npos ||
             line.find("GET /v1/health") != std::string::npos ||
+            line.find("slot print_timing:") != std::string::npos ||
+            line.find("prompt eval time =") != std::string::npos ||
+            line.find("       eval time =") != std::string::npos ||
+            line.find("      total time =") != std::string::npos ||
+            line.find("slot      release:") != std::string::npos ||
             line.find("Enter 'exit' to stop the server") != std::string::npos);
 }
 

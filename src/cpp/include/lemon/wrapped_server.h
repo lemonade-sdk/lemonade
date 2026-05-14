@@ -60,8 +60,7 @@ public:
                   ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
-          last_access_time_(std::chrono::steady_clock::now()),
-          is_busy_(false) {}
+          last_access_time_(std::chrono::steady_clock::now()) {}
 
     virtual ~WrappedServer() = default;
 
@@ -84,15 +83,22 @@ public:
     // Multi-model support: Track if server is currently processing a request
     void set_busy(bool busy) {
         std::lock_guard<std::mutex> lock(busy_mutex_);
-        is_busy_ = busy;
-        if (!busy) {
+        if (busy) {
+            active_request_count_++;
+            return;
+        }
+
+        if (active_request_count_ > 0) {
+            active_request_count_--;
+        }
+        if (active_request_count_ == 0) {
             busy_cv_.notify_all();
         }
     }
 
     bool is_busy() const {
         std::lock_guard<std::mutex> lock(busy_mutex_);
-        return is_busy_;
+        return active_request_count_ > 0;
     }
 
     // Wait until the server is no longer busy processing a request.
@@ -102,13 +108,13 @@ public:
         std::unique_lock<std::mutex> lock(busy_mutex_);
         if (timeout_seconds < 0) {
             // Indefinite wait — original behavior
-            while (is_busy_) {
+            while (active_request_count_ > 0) {
                 busy_cv_.wait(lock);
             }
         } else {
             // Bounded wait with timeout
             if (!busy_cv_.wait_for(lock, std::chrono::seconds(timeout_seconds),
-                                   [this] { return !is_busy_; })) {
+                                   [this] { return active_request_count_ == 0; })) {
                 // Timeout expired — server is still busy, proceed anyway
                 // The backend will be force-killed after SIGTERM timeout
             }
@@ -166,11 +172,15 @@ public:
     }
 
     // Get telemetry data
-    Telemetry get_telemetry() const { return telemetry_; }
+    Telemetry get_telemetry() const {
+        std::lock_guard<std::mutex> lock(telemetry_mutex_);
+        return telemetry_;
+    }
 
     // Set telemetry data (for non-streaming requests)
     void set_telemetry(int input_tokens, int output_tokens,
                       double time_to_first_token, double tokens_per_second) {
+        std::lock_guard<std::mutex> lock(telemetry_mutex_);
         telemetry_.input_tokens = input_tokens;
         telemetry_.output_tokens = output_tokens;
         telemetry_.time_to_first_token = time_to_first_token;
@@ -179,6 +189,7 @@ public:
 
     // Set prompt_tokens field from usage
     void set_prompt_tokens(int prompt_tokens) {
+        std::lock_guard<std::mutex> lock(telemetry_mutex_);
         telemetry_.prompt_tokens = prompt_tokens;
     }
 
@@ -229,7 +240,10 @@ protected:
     // Busy state tracking (for safe eviction)
     mutable std::mutex busy_mutex_;
     mutable std::condition_variable busy_cv_;
-    bool is_busy_;
+    int active_request_count_ = 0;
+
+    // Last completed request telemetry, read by /stats.
+    mutable std::mutex telemetry_mutex_;
 };
 
 } // namespace lemon

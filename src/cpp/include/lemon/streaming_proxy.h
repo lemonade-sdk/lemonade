@@ -1,12 +1,13 @@
 #pragma once
 
-#include <string>
 #include <functional>
+#include <iomanip>
+#include <sstream>
+#include <string>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/http_client.h"
 #include "utils/aixlog.hpp"
-#include <iomanip>
 
 namespace lemon {
 
@@ -20,16 +21,29 @@ public:
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
 
+        bool has_tokens() const {
+            return input_tokens > 0 || output_tokens > 0;
+        }
+
+        std::string to_log_banner() const {
+            std::ostringstream ss;
+            ss << "=== Telemetry ===\n";
+            ss << "Input tokens:  " << input_tokens << "\n";
+            ss << "Output tokens: " << output_tokens << "\n";
+            ss << "TTFT (s):      " << std::fixed << std::setprecision(3)
+               << time_to_first_token << "\n";
+            ss << "TPS:           " << std::fixed << std::setprecision(2)
+               << tokens_per_second << "\n";
+            ss << "=================";
+            return ss.str();
+        }
+
         void print() const {
             if (input_tokens > 0 || output_tokens > 0) {
-                LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
-                LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
-                LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
-                LOG(INFO, "Telemetry") << "TTFT (s):      " << std::fixed << std::setprecision(3)
-                          << time_to_first_token << std::endl;
-                LOG(INFO, "Telemetry") << "TPS:           " << std::fixed << std::setprecision(2)
-                          << tokens_per_second << std::endl;
-                LOG(INFO, "Telemetry") << "=================" << std::endl;
+                LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
+                LOG(INFO, "Telemetry") << to_log_banner() << std::endl;
+            } else {
+                LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
             }
         }
     };
