@@ -1,5 +1,7 @@
 #include "lemon/ollama_api.h"
+#include <chrono>
 #include <iostream>
+#include <stdexcept>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -70,6 +72,9 @@ bool apply_raw_backend_passthrough_if_present(const json& response, httplib::Res
     if (!response.contains("_lemonade_raw_backend") || !response["_lemonade_raw_backend"].is_object()) {
         return false;
     }
+    if (response.size() != 1) {
+        throw std::runtime_error("_lemonade_raw_backend must be the only top-level response key");
+    }
 
     const auto& raw = response["_lemonade_raw_backend"];
     const int status = raw.value("status_code", 500);
@@ -81,7 +86,9 @@ bool apply_raw_backend_passthrough_if_present(const json& response, httplib::Res
     return true;
 }
 
-void update_telemetry_from_anthropic_usage_if_present(Router* router, const json& response) {
+void update_telemetry_from_anthropic_usage_if_present(Router* router,
+                                                     const json& response,
+                                                     double elapsed_seconds) {
     if (!response.contains("usage") || !response["usage"].is_object()) {
         return;
     }
@@ -89,13 +96,18 @@ void update_telemetry_from_anthropic_usage_if_present(Router* router, const json
     const auto& usage = response["usage"];
     const int input_tokens = usage.value("input_tokens", 0);
     const int output_tokens = usage.value("output_tokens", 0);
+    const double tokens_per_second = elapsed_seconds > 0.0 && output_tokens > 0
+        ? static_cast<double>(output_tokens) / elapsed_seconds
+        : 0.0;
 
     LOG(INFO, "Telemetry") << "=== Telemetry ===" << std::endl;
     LOG(INFO, "Telemetry") << "Input tokens:  " << input_tokens << std::endl;
     LOG(INFO, "Telemetry") << "Output tokens: " << output_tokens << std::endl;
+    LOG(INFO, "Telemetry") << "TTFT (s):      " << elapsed_seconds << std::endl;
+    LOG(INFO, "Telemetry") << "TPS:           " << tokens_per_second << std::endl;
     LOG(INFO, "Telemetry") << "=================" << std::endl;
 
-    router->update_telemetry(input_tokens, output_tokens, 0.0, 0.0);
+    router->update_telemetry(input_tokens, output_tokens, elapsed_seconds, tokens_per_second);
     router->update_prompt_tokens(input_tokens);
 }
 
@@ -152,12 +164,16 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
             return;
         }
 
+        const auto started_at = std::chrono::steady_clock::now();
         auto response = router_->anthropic_messages(request_json);
+        const auto finished_at = std::chrono::steady_clock::now();
         if (apply_raw_backend_passthrough_if_present(response, res)) {
             return;
         }
 
-        update_telemetry_from_anthropic_usage_if_present(router_, response);
+        const double elapsed_seconds =
+            std::chrono::duration<double>(finished_at - started_at).count();
+        update_telemetry_from_anthropic_usage_if_present(router_, response, elapsed_seconds);
 
         const int status = infer_status_from_error(response);
         if (status != 200) {
