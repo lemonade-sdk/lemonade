@@ -42,7 +42,7 @@ The `embeddable` CMake target builds the server, CLI, and required resource file
     cmake --build --preset default --target embeddable
     ```
 
-    This produces `build/lemonade-embeddable-{VERSION}-macos-arm64.tar.gz` on Apple Silicon, or `...-macos-x64.tar.gz` on Intel.
+    This produces `build/lemonade-embeddable-{VERSION}-macos-arm64.tar.gz`.
 
 ## Include the Web App
 
@@ -77,7 +77,7 @@ The `embeddable` target produces a single archive in `build/`:
 |----------|---------|
 | Linux    | `lemonade-embeddable-{VERSION}-ubuntu-x64.tar.gz` |
 | Windows  | `lemonade-embeddable-{VERSION}-windows-x64.zip` |
-| macOS    | `lemonade-embeddable-{VERSION}-macos-arm64.tar.gz` (or `-macos-x64.tar.gz` on Intel) |
+| macOS    | `lemonade-embeddable-{VERSION}-macos-arm64.tar.gz` |
 
 Each archive contains:
 
