@@ -730,6 +730,53 @@ jobs:
           path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
           retention-days: 7
 
+  build-lemonade-embeddable-macos:
+    name: Build Embeddable Lemonade (macOS)
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Install minimal build dependencies
+        shell: bash
+        run: |
+          set -e
+          # macos-latest already ships cmake; install ninja if missing.
+          # We intentionally avoid setup.sh so FetchContent statically links
+          # deps where possible, matching the Linux/Windows embeddable jobs.
+          if ! command -v ninja >/dev/null 2>&1; then
+            brew install ninja
+          fi
+
+      - name: Build embeddable archive
+        shell: bash
+        run: |
+          set -e
+
+          cmake --preset default -DBUILD_WEB_APP=OFF
+          cmake --build --preset default --target embeddable
+
+          ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz"
+          test -f "$ARCHIVE"
+          echo "Archive contents:"
+          tar tzf "$ARCHIVE"
+          ls -lh "$ARCHIVE"
+
+      - name: Upload embeddable archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: lemonade-embeddable-macos
+          path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
+          retention-days: 7
+
 
   # ========================================================================
   # TEST JOBS - Inference tests on self-hosted runners
@@ -1008,17 +1055,32 @@ jobs:
           /opt/bin/lemonade-server --version
           /opt/bin/lemond --version
 
-  test-embeddable-linux:
-    name: Test Embeddable (Linux)
-    runs-on: ubuntu-latest
-    needs: build-lemonade-embeddable-linux
+  test-embeddable-posix:
+    name: Test Embeddable (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    needs:
+      - build-lemonade-embeddable-linux
+      - build-lemonade-embeddable-macos
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux
+            os: ubuntu-latest
+            platform: ubuntu-x64
+            artifact: lemonade-embeddable-linux
+          - label: macOS
+            os: macos-latest
+            platform: macos-arm64
+            artifact: lemonade-embeddable-macos
     env:
+      # Both build jobs read version from the same CMakeLists.txt, so either is fine.
       LEMONADE_VERSION: ${{ needs.build-lemonade-embeddable-linux.outputs.version }}
     steps:
       - name: Download embeddable archive
         uses: actions/download-artifact@v4
         with:
-          name: lemonade-embeddable-linux
+          name: ${{ matrix.artifact }}
           path: .
 
       - name: Validate archive structure
@@ -1026,11 +1088,11 @@ jobs:
         run: |
           set -e
 
-          ARCHIVE="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+          ARCHIVE="lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}.tar.gz"
           test -f "$ARCHIVE"
           tar xzf "$ARCHIVE"
 
-          DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
+          DIR="lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}"
 
           # Verify expected files exist
           test -f "$DIR/lemond"
@@ -1065,7 +1127,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
+          DIR="lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}"
           "$DIR/lemond" --version
           "$DIR/lemonade" --version
 
@@ -1073,7 +1135,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          DIR="lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64"
+          DIR="lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}"
           cd "$DIR"
 
           ./lemond ./ &
@@ -1100,7 +1162,7 @@ jobs:
           # Clean shutdown
           kill $LEMOND_PID 2>/dev/null || true
           wait $LEMOND_PID 2>/dev/null || true
-          echo "Embeddable Linux smoke test PASSED!"
+          echo "Embeddable ${{ matrix.label }} smoke test PASSED!"
 
   test-embeddable-windows:
     name: Test Embeddable (Windows)
@@ -1762,9 +1824,10 @@ jobs:
       - build-lemonade-macos-dmg
       - build-lemonade-embeddable-linux
       - build-lemonade-embeddable-windows
+      - build-lemonade-embeddable-macos
       - test-cli-endpoints
       - test-rpm-package
-      - test-embeddable-linux
+      - test-embeddable-posix
       - test-embeddable-windows
     if: startsWith(github.ref, 'refs/tags/v')
     env:
@@ -1805,6 +1868,12 @@ jobs:
           name: lemonade-embeddable-windows
           path: .
 
+      - name: Download Lemonade Embeddable (macOS)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-embeddable-macos
+          path: .
+
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -1814,6 +1883,7 @@ jobs:
           ls -lh *.pkg
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
+          ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
 
       - name: Generate release notes
         id: release-notes
@@ -1835,4 +1905,5 @@ jobs:
             *.pkg
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
+            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
           fail_on_unmatched_files: true
