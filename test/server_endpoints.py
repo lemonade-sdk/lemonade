@@ -20,7 +20,10 @@ Usage:
     python server_endpoints.py
 """
 
+import os
 import platform
+import shutil
+import tempfile
 import uuid
 import requests
 from openai import NotFoundError
@@ -1334,6 +1337,153 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
+
+    def _set_extra_models_dir(self, value):
+        """Swap extra_models_dir via /internal/set; returns the prior value."""
+        prior = (
+            requests.get(
+                f"http://localhost:{PORT}/internal/config", timeout=TIMEOUT_DEFAULT
+            )
+            .json()
+            .get("extra_models_dir", "")
+        )
+        response = requests.post(
+            f"http://localhost:{PORT}/internal/set",
+            json={"extra_models_dir": value},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code, 200, f"/internal/set failed: {response.text}"
+        )
+        return prior
+
+    def _write_stub_gguf(self, directory, bare_name):
+        """Drop a stub GGUF in a subdir so extras discovery emits extra.<bare_name>."""
+        import struct
+
+        sub_dir = os.path.join(directory, bare_name)
+        os.makedirs(sub_dir, exist_ok=True)
+        with open(os.path.join(sub_dir, "model.gguf"), "wb") as f:
+            f.write(b"GGUF")
+            f.write(struct.pack("<I", 3))  # version
+            f.write(struct.pack("<Q", 0))  # tensor_count
+            f.write(struct.pack("<Q", 0))  # kv_count
+
+    def test_021g_naming_spec_three_way_collision(self):
+        """Naming spec: built-in + user.* + extra.* all sharing a bare name.
+
+        The user.* wins precedence; the other two appear under their canonical IDs.
+        """
+        bare = ENDPOINT_TEST_MODEL  # known built-in
+        user_canonical = f"user.{bare}"
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_3way_")
+        self._write_stub_gguf(extra_dir, bare)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
+
+            self.assertIn(bare, ids, "Winner emits bare id")
+            self.assertIn(f"extra.{bare}", ids, "Imported source under canonical id")
+            self.assertIn(f"builtin.{bare}", ids, "Built-in under canonical id")
+            self.assertNotIn(
+                user_canonical,
+                ids,
+                "Winning user.* not also emitted under canonical id",
+            )
+
+            bare_resp = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            user_resp = requests.get(
+                f"{self.base_url}/models/{user_canonical}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            extra_resp = requests.get(
+                f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            builtin_resp = requests.get(
+                f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            self.assertEqual(bare_resp["checkpoint"], user_resp["checkpoint"])
+            self.assertNotEqual(extra_resp["checkpoint"], bare_resp["checkpoint"])
+            self.assertNotEqual(builtin_resp["checkpoint"], bare_resp["checkpoint"])
+            self.assertNotEqual(extra_resp["checkpoint"], builtin_resp["checkpoint"])
+
+            print(
+                f"[OK] three-way collision: bare/{bare}, extra.{bare}, builtin.{bare}"
+            )
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": user_canonical},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021h_naming_spec_extra_shadows_builtin(self):
+        """Naming spec: extra.* + built-in (no user.*); extra wins precedence."""
+        bare = ENDPOINT_TEST_MODEL
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shadow_")
+        self._write_stub_gguf(extra_dir, bare)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
+
+            self.assertIn(
+                bare, ids, "extra wins precedence over builtin; emits bare id"
+            )
+            self.assertIn(f"builtin.{bare}", ids, "shadowed builtin under canonical id")
+            self.assertNotIn(
+                f"extra.{bare}",
+                ids,
+                "winning extra.* not also emitted under canonical id",
+            )
+
+            bare_resp = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            extra_resp = requests.get(
+                f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            builtin_resp = requests.get(
+                f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            self.assertEqual(bare_resp["checkpoint"], extra_resp["checkpoint"])
+            self.assertNotEqual(bare_resp["checkpoint"], builtin_resp["checkpoint"])
+
+            print(
+                f"[OK] extra shadows built-in: bare/{bare} -> extra, builtin.{bare} -> built-in"
+            )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""

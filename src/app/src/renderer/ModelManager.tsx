@@ -238,12 +238,15 @@ const hasCanonicalPrefix = (modelName: string): boolean =>
   CANONICAL_PREFIXES.some(p => modelName.startsWith(p.prefix));
 
 const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  if (!hasCanonicalPrefix(modelName)) return match[1];
+  const prefixInfo = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  if (!prefixInfo) return match[1];
 
   const bare = stripCanonicalPrefix(modelName);
-  return bare.startsWith(`${family.displayName}-`)
+  const inner = bare.startsWith(`${family.displayName}-`)
     ? bare.slice(family.displayName.length + 1)
     : bare;
+  // Keep the source suffix on collapsed family rows so shadowed sources stay distinguishable.
+  return inner + prefixInfo.suffix;
 };
 
 function buildModelList(
