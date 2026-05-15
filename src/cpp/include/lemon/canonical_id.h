@@ -80,4 +80,26 @@ inline bool is_reserved_for_registration(ModelSource source) {
     return source == ModelSource::Imported || source == ModelSource::Builtin;
 }
 
+// Reject a registration name when its source token is reserved, OR when it's a
+// user.* alias whose bare-name part itself begins with a reserved source token
+// (e.g. user.builtin.Foo, user.extra.Foo). The latter would otherwise hijack
+// the builtin.<bare> / extra.<bare> alias slot in the public-alias map and
+// break the spec's "builtin.X always means built-in X" contract.
+inline bool is_reserved_registration_name(const std::string& model_name) {
+    auto canon = parse_canonical_id(model_name);
+    if (!canon) {
+        return false;
+    }
+    if (is_reserved_for_registration(canon->source)) {
+        return true;
+    }
+    if (canon->source == ModelSource::Registered) {
+        if (auto inner = parse_canonical_id(canon->bare_name);
+            inner && is_reserved_for_registration(inner->source)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace lemon

@@ -1153,10 +1153,15 @@ class EndpointTests(ServerTestBase):
                 pass
 
     def test_021c_naming_spec_pull_rejects_reserved_prefixes(self):
-        """Naming spec: /pull rejects extra.* / builtin.* model names."""
+        """Naming spec: /pull rejects extra.* / builtin.* model names, including
+        as the bare-name part of a user.* alias (e.g. user.builtin.Foo)."""
         for reserved in [
             f"extra.Rejected-{uuid.uuid4().hex[:6]}",
             f"builtin.Rejected-{uuid.uuid4().hex[:6]}",
+            # user.<reserved>.<bare> must also be rejected — otherwise it would
+            # hijack the builtin.<bare> / extra.<bare> alias slot.
+            f"user.builtin.Hijack-{uuid.uuid4().hex[:6]}",
+            f"user.extra.Hijack-{uuid.uuid4().hex[:6]}",
         ]:
             response = requests.post(
                 f"{self.base_url}/pull",
@@ -1175,7 +1180,9 @@ class EndpointTests(ServerTestBase):
                 f"{response.status_code}: {response.text}",
             )
             self.assertIn("reserved", response.text.lower())
-        print("[OK] /pull rejects extra.* and builtin.* prefixes")
+        print(
+            "[OK] /pull rejects extra.*/builtin.* and user.extra.*/user.builtin.* names"
+        )
 
     def test_021d_naming_spec_builtin_canonical_alias(self):
         """Naming spec: builtin.<name> resolves to the same model as the bare name."""

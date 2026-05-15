@@ -723,6 +723,15 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     // One-shot migration of recipe_options.json: older Lemonade keyed built-in
     // entries by bare name; the current spec requires a canonical "builtin."
     // prefix so each source is addressable distinctly even on shadowing.
+    //
+    // Normalize to an object before iterating — a corrupted file may parse as
+    // null, array, or scalar, and json::iterator::key() throws on non-objects.
+    if (!recipe_options_.is_object()) {
+        if (!recipe_options_.is_null()) {
+            LOG(WARNING, "ModelManager") << "recipe_options.json is not a JSON object; resetting to empty object" << std::endl;
+        }
+        recipe_options_ = json::object();
+    }
     {
         int migrated = 0;
         json migrated_options = json::object();

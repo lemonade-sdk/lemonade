@@ -2802,14 +2802,17 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
 
         // Reject reserved prefixes — extra.* / builtin.* cannot be created via
-        // /pull. Then enforce the existing rule that explicit checkpoint/recipe
-        // requires the user.* prefix.
-        if (auto canon = lemon::parse_canonical_id(model_name);
-            canon && lemon::is_reserved_for_registration(canon->source)) {
+        // /pull, and user.extra.* / user.builtin.* are also rejected because
+        // their bare-name part ("extra.X" / "builtin.X") would otherwise hijack
+        // the corresponding canonical alias slot. Then enforce the existing rule
+        // that explicit checkpoint/recipe requires the user.* prefix.
+        if (lemon::is_reserved_registration_name(model_name)) {
             res.status = 400;
             nlohmann::json error = {{"error",
-                "Model names with 'extra.' / 'builtin.' prefixes are reserved. "
-                "Use 'user.<name>' for registration. Received: " + model_name}};
+                "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+                "including as bare-name parts of a 'user.' alias. "
+                "Use 'user.<name>' for registration where <name> does not begin "
+                "with 'extra.' or 'builtin.'. Received: " + model_name}};
             res.set_content(error.dump(), "application/json");
             return;
         }
