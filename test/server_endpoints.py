@@ -21,10 +21,10 @@ Usage:
 """
 
 import platform
-import re
 import uuid
 import requests
 from openai import NotFoundError
+from prometheus_client.parser import text_string_to_metric_families
 
 from utils.server_base import (
     ServerTestBase,
@@ -96,38 +96,15 @@ class EndpointTests(ServerTestBase):
         self.assertGreater(model_info["pid"], 0)
 
     def _parse_prometheus_text(self, body):
-        """Parse enough Prometheus text format to validate names, labels, and values."""
+        """Validate Prometheus text format and return sample labels by metric name."""
         samples = {}
-        metric_re = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*$")
-        label_re = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-
-        for line in body.splitlines():
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split(None, 1)
-            self.assertEqual(len(parts), 2, f"Invalid sample line: {line}")
-            metric_and_labels, value_text = parts
-            if "{" in metric_and_labels:
-                name, label_text = metric_and_labels.split("{", 1)
-                self.assertTrue(label_text.endswith("}"), f"Invalid labels: {line}")
-                label_text = label_text[:-1]
-                labels = {}
-                if label_text:
-                    for label in label_text.split(","):
-                        key, value = label.split("=", 1)
-                        self.assertRegex(key, label_re)
-                        self.assertTrue(
-                            value.startswith('"') and value.endswith('"'),
-                            f"Invalid label value: {line}",
-                        )
-                        labels[key] = value[1:-1]
-            else:
-                name = metric_and_labels
-                labels = {}
-
-            self.assertRegex(name, metric_re)
-            float(value_text.split()[0])
-            samples.setdefault(name, []).append(labels)
+        for family in text_string_to_metric_families(body):
+            self.assertTrue(family.name, "Metric family name should not be empty")
+            self.assertTrue(family.documentation is not None)
+            self.assertTrue(family.type, f"{family.name} should have a metric type")
+            for sample in family.samples:
+                float(sample.value)
+                samples.setdefault(sample.name, []).append(sample.labels)
 
         return samples
 
