@@ -26,6 +26,10 @@ struct Telemetry {
     double tokens_per_second = 0.0;
     std::vector<double> decode_token_times;
     int prompt_tokens = 0;  // From usage.prompt_tokens (includes cached tokens)
+    uint64_t request_count_total = 0;
+    uint64_t input_tokens_total = 0;
+    uint64_t output_tokens_total = 0;
+    uint64_t prompt_tokens_total = 0;
 
     void reset() {
         input_tokens = 0;
@@ -34,6 +38,10 @@ struct Telemetry {
         tokens_per_second = 0.0;
         decode_token_times.clear();
         prompt_tokens = 0;
+        request_count_total = 0;
+        input_tokens_total = 0;
+        output_tokens_total = 0;
+        prompt_tokens_total = 0;
     }
 
     json to_json() const {
@@ -43,7 +51,11 @@ struct Telemetry {
             {"time_to_first_token", time_to_first_token},
             {"tokens_per_second", tokens_per_second},
             {"decode_token_times", decode_token_times},
-            {"prompt_tokens", prompt_tokens}
+            {"prompt_tokens", prompt_tokens},
+            {"request_count_total", request_count_total},
+            {"input_tokens_total", input_tokens_total},
+            {"output_tokens_total", output_tokens_total},
+            {"prompt_tokens_total", prompt_tokens_total}
         };
     }
 };
@@ -159,15 +171,30 @@ public:
     // Set telemetry data (for non-streaming requests)
     void set_telemetry(int input_tokens, int output_tokens,
                       double time_to_first_token, double tokens_per_second) {
+        record_telemetry(input_tokens, output_tokens, time_to_first_token, tokens_per_second);
+    }
+
+    void record_telemetry(int input_tokens, int output_tokens,
+                          double time_to_first_token, double tokens_per_second) {
         telemetry_.input_tokens = input_tokens;
         telemetry_.output_tokens = output_tokens;
         telemetry_.time_to_first_token = time_to_first_token;
         telemetry_.tokens_per_second = tokens_per_second;
+        telemetry_.request_count_total++;
+        if (input_tokens > 0) {
+            telemetry_.input_tokens_total += static_cast<uint64_t>(input_tokens);
+        }
+        if (output_tokens > 0) {
+            telemetry_.output_tokens_total += static_cast<uint64_t>(output_tokens);
+        }
     }
 
     // Set prompt_tokens field from usage
     void set_prompt_tokens(int prompt_tokens) {
         telemetry_.prompt_tokens = prompt_tokens;
+        if (prompt_tokens > 0) {
+            telemetry_.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
+        }
     }
 
 protected:

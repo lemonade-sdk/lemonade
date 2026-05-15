@@ -808,6 +808,52 @@ json Router::get_stats() const {
     return server->get_telemetry().to_json();
 }
 
+json Router::get_metrics_snapshot() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    json result;
+    result["loaded_models"] = json::array();
+    result["totals"] = {
+        {"requests", 0},
+        {"input_tokens", 0},
+        {"output_tokens", 0},
+        {"prompt_tokens", 0}
+    };
+
+    uint64_t request_count_total = 0;
+    uint64_t input_tokens_total = 0;
+    uint64_t output_tokens_total = 0;
+    uint64_t prompt_tokens_total = 0;
+
+    for (const auto& server : loaded_servers_) {
+        RecipeOptions recipe_options = server->get_recipe_options();
+        Telemetry telemetry = server->get_telemetry();
+
+        json model_info;
+        model_info["model_name"] = model_manager_->get_public_model_name(server->get_model_name());
+        model_info["checkpoint"] = server->get_checkpoint();
+        model_info["type"] = model_type_to_string(server->get_model_type());
+        model_info["device"] = device_type_to_string(server->get_device_type());
+        model_info["backend_url"] = server->get_address();
+        model_info["pid"] = server->get_process_id();
+        model_info["recipe"] = recipe_options.get_recipe();
+        model_info["telemetry"] = telemetry.to_json();
+        result["loaded_models"].push_back(model_info);
+
+        request_count_total += telemetry.request_count_total;
+        input_tokens_total += telemetry.input_tokens_total;
+        output_tokens_total += telemetry.output_tokens_total;
+        prompt_tokens_total += telemetry.prompt_tokens_total;
+    }
+
+    result["totals"]["requests"] = request_count_total;
+    result["totals"]["input_tokens"] = input_tokens_total;
+    result["totals"]["output_tokens"] = output_tokens_total;
+    result["totals"]["prompt_tokens"] = prompt_tokens_total;
+
+    return result;
+}
+
 void Router::update_telemetry(int input_tokens, int output_tokens,
                               double time_to_first_token, double tokens_per_second) {
     std::lock_guard<std::mutex> lock(load_mutex_);
