@@ -1376,6 +1376,17 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    def _write_root_stub_gguf(self, directory, filename):
+        """Drop a stub GGUF directly in extra_models_dir."""
+        import struct
+
+        os.makedirs(directory, exist_ok=True)
+        with open(os.path.join(directory, filename), "wb") as f:
+            f.write(b"GGUF")
+            f.write(struct.pack("<I", 3))  # version
+            f.write(struct.pack("<Q", 0))  # tensor_count
+            f.write(struct.pack("<Q", 0))  # kv_count
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -1488,6 +1499,38 @@ class EndpointTests(ServerTestBase):
             print(
                 f"[OK] extra shadows built-in: bare/{bare} -> extra, builtin.{bare} -> built-in"
             )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021i_extra_root_gguf_emits_stem_name(self):
+        """Root-level extra_models_dir GGUF files emit the filename stem."""
+        bare = "Qwen3.5-4B-UD-Q4_K_XL"
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_root_")
+        self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
+
+            self.assertIn(bare, ids)
+            self.assertNotIn(f"{bare}.gguf", ids)
+
+            bare_resp = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(bare_resp.status_code, 200)
+            self.assertEqual(bare_resp.json()["id"], bare)
+            self.assertEqual(
+                bare_resp.json()["checkpoint"],
+                os.path.join(extra_dir, f"{bare}.gguf"),
+            )
+
+            print(f"[OK] root GGUF emits stem: {bare}")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)

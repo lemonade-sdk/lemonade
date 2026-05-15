@@ -214,10 +214,10 @@ interface DetectedBackend {
 // source suffix that the GUI appends when a model is shadowed by a
 // higher-precedence source sharing the same bare name. Winners are emitted by
 // the server with no prefix and render as the bare name.
-const CANONICAL_PREFIXES: { prefix: string; suffix: string }[] = [
-  { prefix: 'user.',    suffix: ' (registered)' },
-  { prefix: 'extra.',   suffix: ' (imported)' },
-  { prefix: 'builtin.', suffix: ' (builtin)' },
+const CANONICAL_PREFIXES: { prefix: string; suffix: string; sourceRank: number }[] = [
+  { prefix: 'user.',    suffix: ' (registered)', sourceRank: 1 },
+  { prefix: 'extra.',   suffix: ' (imported)', sourceRank: 2 },
+  { prefix: 'builtin.', suffix: ' (builtin)', sourceRank: 3 },
 ];
 
 // Strip the canonical prefix (if any) to get the bare model name. Used for
@@ -237,16 +237,25 @@ const getModelDisplayName = (modelName: string): string => {
 const hasCanonicalPrefix = (modelName: string): boolean =>
   CANONICAL_PREFIXES.some(p => modelName.startsWith(p.prefix));
 
-const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  const prefixInfo = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
-  if (!prefixInfo) return match[1];
+const getSourceSortRank = (modelName: string): number => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match?.sourceRank ?? 0;
+};
 
+const stripSourceSuffix = (label: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => label.endsWith(p.suffix));
+  return match ? label.slice(0, -match.suffix.length) : label;
+};
+
+const getFamilyMemberLabel = (modelName: string, family: ModelFamily): string => {
+  const prefixInfo = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
   const bare = stripCanonicalPrefix(modelName);
-  const inner = bare.startsWith(`${family.displayName}-`)
-    ? bare.slice(family.displayName.length + 1)
+  const relativeName = bare.startsWith(family.displayName)
+    ? bare.slice(family.displayName.length).replace(/^[-_.]/, '')
     : bare;
+  const label = relativeName.endsWith('-GGUF') ? relativeName.slice(0, -'-GGUF'.length) : relativeName;
   // Keep the source suffix on collapsed family rows so shadowed sources stay distinguishable.
-  return inner + prefixInfo.suffix;
+  return label + (prefixInfo?.suffix ?? '');
 };
 
 function buildModelList(
@@ -263,15 +272,24 @@ function buildModelList(
       if (family.recipe && m.info.recipe !== family.recipe) continue;
       const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
-        members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
+        members.push({ label: getFamilyMemberLabel(m.name, family), name: m.name, info: m.info });
         consumed.add(m.name);
       }
     }
     if (members.length > 1) {
       members.sort((a, b) => {
-        const sizeA = parseFloat(a.label);
-        const sizeB = parseFloat(b.label);
-        if (Number.isFinite(sizeA) && Number.isFinite(sizeB)) return sizeA - sizeB;
+        const baseLabelA = stripSourceSuffix(a.label);
+        const baseLabelB = stripSourceSuffix(b.label);
+        const sizeA = parseFloat(baseLabelA);
+        const sizeB = parseFloat(baseLabelB);
+        if (Number.isFinite(sizeA) && Number.isFinite(sizeB) && sizeA !== sizeB) return sizeA - sizeB;
+
+        const baseCompare = baseLabelA.localeCompare(baseLabelB, undefined, { numeric: true });
+        if (baseCompare !== 0) return baseCompare;
+
+        const sourceCompare = getSourceSortRank(a.name) - getSourceSortRank(b.name);
+        if (sourceCompare !== 0) return sourceCompare;
+
         return a.label.localeCompare(b.label, undefined, { numeric: true });
       });
       familyItems.push({ type: 'family', family, members });
