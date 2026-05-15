@@ -266,7 +266,7 @@ def main():
     parser.add_argument(
         "--channel",
         default=None,
-        choices=["stable", "preview", "nightly"],
+        choices=["stable", "nightly"],
         help="Channel for backends that support multiple releases (e.g. rocm)",
     )
     parser.add_argument(

@@ -199,9 +199,9 @@ std::string RuntimeConfig::rocm_channel() const {
 
 std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) const {
     std::string channel = rocm_channel();
-    // sd-cpp currently has no nightly artifacts; use preview builds.
+    // sd-cpp currently has no nightly artifacts; use stable builds.
     if (recipe == "sd-cpp" && channel == "nightly") {
-        return "preview";
+        return "stable";
     }
     return channel;
 }
@@ -378,8 +378,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'rocm_channel' must be a string");
         }
         std::string channel = value.get<std::string>();
-        if (channel != "preview" && channel != "stable" && channel != "nightly") {
-            throw std::invalid_argument("'rocm_channel' must be either 'preview', 'stable', or 'nightly'");
+        if (channel != "stable" && channel != "nightly") {
+            throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
         }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {

@@ -38,7 +38,6 @@ namespace backends {
 static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
-static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
 
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
@@ -99,7 +98,7 @@ static void push_overridable_arg(std::vector<std::string>& args,
 static std::string resolve_llamacpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
-        std::string channel = "preview";  // default to preview for now
+        std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel();
         }
@@ -109,7 +108,7 @@ static std::string resolve_llamacpp_backend(const std::string& backend) {
 }
 
 static bool is_llamacpp_rocm_backend(const std::string& backend) {
-    return backend == "rocm-stable" || backend == "rocm-preview" || backend == "rocm-nightly";
+    return backend == "rocm-stable" || backend == "rocm-nightly";
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -147,7 +146,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         return params; // Return empty params for system backend
     }
 
-    if (resolved_backend == "rocm-preview") {
+    if (resolved_backend == "rocm-stable") {
         params.repo = "lemonade-sdk/llama.cpp";
         std::string therock_ver = get_therock_version();
 #ifdef _WIN32
@@ -155,7 +154,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #elif defined(__linux__)
         params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
 #else
-        throw std::runtime_error("ROCm preview llamacpp is currently supported on Windows and Linux only");
+        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
@@ -171,15 +170,6 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         params.filename = "llama-" + version + "-ubuntu-rocm-" + target_arch + "-x64.zip";
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
-#endif
-    } else if (resolved_backend == "rocm-stable") {
-        params.repo = "ggml-org/llama.cpp";
-#ifdef _WIN32
-        params.filename = "llama-" + version + "-bin-win-hip-radeon-x64.zip";
-#elif defined(__linux__)
-        params.filename = "llama-" + version + "-bin-ubuntu-rocm-7.2-x64.tar.gz";
-#else
-        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "metal") {
         params.repo = "ggml-org/llama.cpp";
@@ -382,11 +372,6 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string lib_path = exe_dir.string();
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-            if (fs::exists(runtime_dir)) {
-                lib_path = runtime_dir + ":" + lib_path;
-            }
-        } else if (llamacpp_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
@@ -412,11 +397,6 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string new_path;
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-            if (fs::exists(runtime_dir)) {
-                new_path = runtime_dir;
-            }
-        } else if (llamacpp_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);

@@ -19,8 +19,6 @@ namespace lemon {
 
 namespace {
 
-static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
-
 std::string get_current_os() {
 #ifdef _WIN32
     return "windows";
@@ -36,7 +34,7 @@ std::string get_current_os() {
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
     if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
-        std::string channel = "preview";  // default to preview for now
+        std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel_for_recipe(recipe);
         }
@@ -128,132 +126,8 @@ bool has_matching_system_rocm_runtime(const std::string& expected_runtime_versio
     return runtime_version_matches_expected(system_version, expected_runtime_version);
 }
 
-bool has_matching_installed_rocm_stable_runtime(const std::string& install_dir,
-                                                const std::string& expected_runtime_version) {
-    const fs::path info_version_file = fs::path(install_dir) / ".info" / "version";
-    const std::string installed_runtime_version = read_version_file(info_version_file);
-    return runtime_version_matches_expected(installed_runtime_version, expected_runtime_version);
-}
-
-std::string get_rocm_stable_runtime_asset_filename(const std::string& version) {
-    std::string normalized_version = normalize_runtime_version(version);
-    if (normalized_version.empty()) {
-        throw std::runtime_error("Invalid ROCm stable runtime version in backend_versions.json");
-    }
-    return "rocm-" + normalized_version + "-runtime-libs.tar.gz";
-}
-
-void install_rocm_stable_runtime_if_needed(const std::string& os,
-                                           const backends::BackendSpec& spec,
-                                           const json& backend_versions,
-                                           DownloadProgressCallback progress_cb) {
-    // ROCm stable runtime is only needed on Linux.
-    // On Windows, the llama.cpp HIP binaries are self-contained.
-    if (os != "linux") {
-        return;
-    }
-    const std::string backend_type = "rocm-stable";
-    const std::string version = get_backend_runtime_version(backend_versions, spec.recipe, backend_type);
-    const std::string repo = "lemonade-sdk/rocm-stable";
-    const std::string filename = get_rocm_stable_runtime_asset_filename(version);
-    const std::string install_dir = backends::BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-    const std::string expected_runtime_version = normalize_runtime_version(version);
-
-    if (has_matching_system_rocm_runtime(expected_runtime_version)) {
-        LOG(DEBUG, "BackendManager")
-            << "Detected compatible system ROCm runtime version at /opt/rocm/.info/version: "
-            << expected_runtime_version << std::endl;
-        return;
-    }
-
-    if (has_matching_installed_rocm_stable_runtime(install_dir, expected_runtime_version)) {
-        LOG(DEBUG, "BackendManager")
-            << "Detected compatible bundled ROCm stable runtime version in "
-            << install_dir << std::endl;
-        return;
-    }
-
-    fs::remove_all(install_dir);
-    fs::create_directories(install_dir);
-
-    const std::string url = "https://github.com/" + repo + "/releases/download/" + version + "/" + filename;
-    std::string archive_basename = filename;
-    for (char& ch : archive_basename) {
-        if (ch == '/' || ch == '\\' || ch == ':') {
-            ch = '_';
-        }
-    }
-    const std::string archive_path = (fs::temp_directory_path() /
-        ("llamacpp_rocm_stable_runtime_" + version + "_" + archive_basename)).string();
-
-    // Remove any stale archive from a previous failed download. The HTTP downloader
-    // supports resume-by-default, which is undesirable here because older attempts
-    // may have cached an HTML error page under the same temp filename.
-    std::error_code archive_ec;
-    fs::remove(archive_path, archive_ec);
-
-    utils::ProgressCallback http_progress_cb;
-    if (progress_cb) {
-        http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
-            DownloadProgress p;
-            p.file = filename;
-            p.file_index = 2;  // ROCm runtime is the second file
-            p.total_files = 2;  // Backend binary + ROCm runtime
-            p.bytes_downloaded = downloaded;
-            p.bytes_total = total;
-            p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
-            p.complete = false;
-            return progress_cb(p);
-        };
-    } else {
-        http_progress_cb = utils::create_throttled_progress_callback();
-    }
-
-    auto download_result = utils::HttpClient::download_file(url, archive_path, http_progress_cb);
-    if (!download_result.success) {
-        throw std::runtime_error("Failed to download ROCm stable runtime from: " + url +
-                                 " - " + download_result.error_message);
-    }
-
-    if (!backends::BackendUtils::extract_archive(archive_path, install_dir, spec.log_name())) {
-        fs::remove(archive_path);
-        fs::remove_all(install_dir);
-        throw std::runtime_error("Failed to extract ROCm stable runtime archive: " + archive_path);
-    }
-
-    fs::remove(archive_path);
-
-    if (progress_cb) {
-        DownloadProgress p;
-        p.file = filename;
-        p.file_index = 2;  // ROCm runtime is the second file
-        p.total_files = 2;  // Backend binary + ROCm runtime
-        p.bytes_downloaded = download_result.bytes_downloaded;
-        p.bytes_total = download_result.total_bytes;
-        p.percent = 100;
-        p.complete = true;  // Now we can send the completion event
-        progress_cb(p);
-    }
-}
-
-void uninstall_rocm_stable_runtime_if_needed(const std::string& os) {
-    // ROCm stable runtime is only used on Linux.
-    // On Windows, the llama.cpp HIP binaries are self-contained.
-    if (os != "linux") {
-        return;
-    }
-    std::string runtime_dir = backends::BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-    if (fs::exists(runtime_dir)) {
-        std::error_code ec;
-        fs::remove_all(runtime_dir, ec);
-        if (ec && fs::exists(runtime_dir)) {
-            throw std::runtime_error("Failed to remove " + runtime_dir + ": " + ec.message());
-        }
-    }
-}
-
 bool will_install_therock(const std::string& os, const json& backend_versions) {
-    // TheRock is needed on Linux and Windows for ROCm preview channel.
+    // TheRock is needed on Linux and Windows for ROCm stable channel.
     if (os != "linux" && os != "windows") {
         return false;
     }
@@ -552,17 +426,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     }
 
     // Check if we need to install additional runtime components after the main backend
-    bool needs_rocm_stable_runtime = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                                      resolved_backend == "rocm-stable" &&
-                                      get_current_os() == "linux";
-
     bool needs_therock = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                         resolved_backend == "rocm-preview" &&
+                         resolved_backend == "rocm-stable" &&
                          will_install_therock(get_current_os(), backend_versions_);
 
     // Wrap the progress callback to adjust file indices if runtime download follows
     DownloadProgressCallback wrapped_progress_cb;
-    if (progress_cb && (needs_rocm_stable_runtime || needs_therock)) {
+    if (progress_cb && (needs_therock)) {
         wrapped_progress_cb = [progress_cb](const DownloadProgress& p) -> bool {
             DownloadProgress adjusted = p;
             // Adjust to indicate this is file 1 of 2
@@ -580,10 +450,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     backends::BackendUtils::install_from_github(
         *spec, params.version, params.repo, params.filename, resolved_backend, wrapped_progress_cb);
-
-    if (needs_rocm_stable_runtime) {
-        install_rocm_stable_runtime_if_needed(get_current_os(), *spec, backend_versions_, progress_cb);
-    }
 
     if (needs_therock) {
         install_therock_if_needed(get_current_os(), backend_versions_, progress_cb);
@@ -617,11 +483,6 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     } else {
         LOG(DEBUG, "BackendManager") << "Nothing to uninstall at: " << install_dir << std::endl;
     }
-
-    if (recipe == "llamacpp" && resolved_backend == "rocm-stable") {
-        uninstall_rocm_stable_runtime_if_needed(get_current_os());
-    }
-
 }
 
 // ============================================================================
