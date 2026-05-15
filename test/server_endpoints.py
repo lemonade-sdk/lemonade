@@ -21,6 +21,7 @@ Usage:
 """
 
 import platform
+import re
 import uuid
 import requests
 from openai import NotFoundError
@@ -93,6 +94,42 @@ class EndpointTests(ServerTestBase):
         self.assertIn("pid", model_info)
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
+
+    def _parse_prometheus_text(self, body):
+        """Parse enough Prometheus text format to validate names, labels, and values."""
+        samples = {}
+        metric_re = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*$")
+        label_re = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+        for line in body.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(None, 1)
+            self.assertEqual(len(parts), 2, f"Invalid sample line: {line}")
+            metric_and_labels, value_text = parts
+            if "{" in metric_and_labels:
+                name, label_text = metric_and_labels.split("{", 1)
+                self.assertTrue(label_text.endswith("}"), f"Invalid labels: {line}")
+                label_text = label_text[:-1]
+                labels = {}
+                if label_text:
+                    for label in label_text.split(","):
+                        key, value = label.split("=", 1)
+                        self.assertRegex(key, label_re)
+                        self.assertTrue(
+                            value.startswith('"') and value.endswith('"'),
+                            f"Invalid label value: {line}",
+                        )
+                        labels[key] = value[1:-1]
+            else:
+                name = metric_and_labels
+                labels = {}
+
+            self.assertRegex(name, metric_re)
+            float(value_text.split()[0])
+            samples.setdefault(name, []).append(labels)
+
+        return samples
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
@@ -167,6 +204,50 @@ class EndpointTests(ServerTestBase):
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
+
+    def test_002a_metrics_endpoint(self):
+        """Test root-level /metrics returns Prometheus text and loaded model samples."""
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response.headers.get("Content-Type", ""))
+        body = response.text
+        self.assertIn("# HELP lemonade_server_up", body)
+        self.assertIn("# TYPE lemonade_server_up gauge", body)
+        self.assertRegex(body, r"(?m)^lemonade_server_up 1(?:\.0+)?$")
+
+        samples = self._parse_prometheus_text(body)
+        self.assertIn("lemonade_server_up", samples)
+        self.assertIn("lemonade_loaded_models", samples)
+        self.assertIn("lemonade_max_loaded_models", samples)
+
+        head_response = requests.head(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(head_response.status_code, 200)
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        loaded_response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(loaded_response.status_code, 200)
+        loaded_samples = self._parse_prometheus_text(loaded_response.text)
+        self.assertIn("lemonade_model_info", loaded_samples)
+        self.assertTrue(
+            any(
+                labels.get("model_name") == ENDPOINT_TEST_MODEL
+                for labels in loaded_samples["lemonade_model_info"]
+            ),
+            "Loaded model should be exposed in lemonade_model_info",
+        )
+        print("[OK] /metrics returned Prometheus text with loaded model samples")
 
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""

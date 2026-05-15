@@ -226,6 +226,10 @@ class TestApiKeyEnvVar(unittest.TestCase):
         r = requests.get(f"{BASE}/v1/health", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(r.status_code, 401)
 
+    def test_metrics_no_key_rejected(self):
+        r = requests.get(f"{BASE}/metrics", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(r.status_code, 401)
+
     def test_wrong_key_rejected(self):
         r = requests.get(
             f"{BASE}/v1/health",
@@ -241,6 +245,15 @@ class TestApiKeyEnvVar(unittest.TestCase):
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(r.status_code, 200)
+
+    def test_metrics_correct_key_accepted(self):
+        r = requests.get(
+            f"{BASE}/metrics",
+            headers={"Authorization": f"Bearer {self.API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("# HELP lemonade_server_up", r.text)
 
     def test_internal_config_also_requires_key(self):
         r = requests.get(CONFIG, timeout=TIMEOUT_DEFAULT)
@@ -352,10 +365,28 @@ class TestBothApiKeysEnvVar(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200)
 
+    def test_regular_key_works_on_metrics(self):
+        """Regular API key should work on /metrics."""
+        r = requests.get(
+            f"{BASE}/metrics",
+            headers={"Authorization": f"Bearer {self.REGULAR_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
     def test_admin_key_works_on_regular_endpoints(self):
         """Admin API key should also work on regular API endpoints."""
         r = requests.get(
             f"{BASE}/v1/health",
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_admin_key_works_on_metrics(self):
+        """Admin API key should also work on /metrics when a regular key is configured."""
+        r = requests.get(
+            f"{BASE}/metrics",
             headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
             timeout=TIMEOUT_DEFAULT,
         )
