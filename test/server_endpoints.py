@@ -969,6 +969,9 @@ class EndpointTests(ServerTestBase):
             recipe = "llamacpp"
         recipe_backend = f"{recipe}_backend"
 
+        # Bare-name alias for a unique user.* registration — what `/v1/models` emits.
+        public_name = USER_MODEL_NAME.split(".", 1)[1]
+
         # Verify model is not in downloaded list
         models_response = requests.get(
             f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
@@ -976,7 +979,7 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(
-            USER_MODEL_NAME, model_ids, "Model should be deleted before pull test"
+            public_name, model_ids, "Model should be deleted before pull test"
         )
 
         # Now pull the model
@@ -1001,14 +1004,16 @@ class EndpointTests(ServerTestBase):
         self.assertIn("status", data)
         self.assertEqual(data["status"], "success")
 
-        # Verify model is now in downloaded list
+        # Verify model is now in downloaded list. Under the model-naming spec the
+        # API emits a unique user.* registration as its bare name; both forms are
+        # accepted as input and resolve to the same record.
         models_response = requests.get(
             f"{self.base_url}/models/" + USER_MODEL_NAME, timeout=TIMEOUT_DEFAULT
         )
         model_data = models_response.json()
         self.assertIn("id", model_data)
         self.assertEqual(
-            model_data["id"], USER_MODEL_NAME, "Model should be downloaded after pull"
+            model_data["id"], public_name, "Model should be downloaded after pull"
         )
         self.assertIn("checkpoints", model_data)
         self.assertIn("main", model_data["checkpoints"])
@@ -1144,62 +1149,187 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
-    def test_021b_appear_builtin_aliases_user_model(self):
-        """User models labeled appear-builtin should expose a bare public ID."""
-        canonical_name = f"user.AppearBuiltin-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-
-        try:
+    def test_021c_naming_spec_pull_rejects_reserved_prefixes(self):
+        """Naming spec: /pull rejects extra.* / builtin.* model names."""
+        for reserved in [
+            f"extra.Rejected-{uuid.uuid4().hex[:6]}",
+            f"builtin.Rejected-{uuid.uuid4().hex[:6]}",
+        ]:
             response = requests.post(
                 f"{self.base_url}/pull",
                 json={
-                    "model_name": canonical_name,
+                    "model_name": reserved,
                     "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
                     "recipe": "llamacpp",
-                    "labels": ["appear-builtin"],
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                response.status_code,
+                400,
+                f"Expected 400 for reserved prefix '{reserved}', got "
+                f"{response.status_code}: {response.text}",
+            )
+            self.assertIn("reserved", response.text.lower())
+        print("[OK] /pull rejects extra.* and builtin.* prefixes")
+
+    def test_021d_naming_spec_builtin_canonical_alias(self):
+        """Naming spec: builtin.<name> resolves to the same model as the bare name."""
+        bare_response = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bare_response.status_code, 200)
+        self.assertEqual(bare_response.json()["id"], ENDPOINT_TEST_MODEL)
+
+        canonical_response = requests.get(
+            f"{self.base_url}/models/builtin.{ENDPOINT_TEST_MODEL}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(canonical_response.status_code, 200)
+        # When the built-in is the precedence-winner (no shadowing), the API
+        # emits the bare id regardless of which form the client requested.
+        self.assertEqual(canonical_response.json()["id"], ENDPOINT_TEST_MODEL)
+        self.assertEqual(
+            canonical_response.json()["checkpoint"],
+            bare_response.json()["checkpoint"],
+        )
+        print(f"[OK] builtin.{ENDPOINT_TEST_MODEL} alias resolves to bare id")
+
+    def test_021e_naming_spec_user_shadows_builtin(self):
+        """Naming spec: a user.X registration shadows a built-in X.
+
+        The user model wins precedence and emits as the bare name; the built-in
+        is shadowed and emits as builtin.X. Both must remain visible.
+        """
+        user_canonical = f"user.{ENDPOINT_TEST_MODEL}"
+        shadowed_id = f"builtin.{ENDPOINT_TEST_MODEL}"
+
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
                     "stream": False,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
-            self.assertEqual(response.status_code, 200)
+            self.assertEqual(pull_response.status_code, 200)
 
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true",
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(models_response.status_code, 200)
-            model_ids = {model["id"] for model in models_response.json()["data"]}
-            self.assertIn(public_name, model_ids)
-            self.assertNotIn(canonical_name, model_ids)
+            model_ids = {m["id"] for m in models_response.json()["data"]}
 
-            model_info_response = requests.get(
-                f"{self.base_url}/models/{public_name}",
+            self.assertIn(
+                ENDPOINT_TEST_MODEL,
+                model_ids,
+                "Bare id should be present (user model winner)",
+            )
+            self.assertIn(
+                shadowed_id,
+                model_ids,
+                "Shadowed built-in should expose its builtin.<name> id",
+            )
+            self.assertNotIn(
+                user_canonical,
+                model_ids,
+                "Winning user model should NOT also appear under user.<name>",
+            )
+
+            # All four input forms must resolve.
+            for input_id in [ENDPOINT_TEST_MODEL, user_canonical, shadowed_id]:
+                r = requests.get(
+                    f"{self.base_url}/models/{input_id}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(r.status_code, 200, f"Failed to resolve {input_id}")
+
+            # Bare and user.* should resolve to the same record (the user model).
+            bare_info = requests.get(
+                f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}",
                 timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(model_info_response.status_code, 200)
-            self.assertEqual(model_info_response.json()["id"], public_name)
-
-            load_response = requests.post(
-                f"{self.base_url}/load",
-                json={"model_name": public_name},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(load_response.status_code, 200)
-            self.assertEqual(load_response.json()["model_name"], public_name)
-
-            unload_response = requests.post(
-                f"{self.base_url}/unload",
-                json={"model_name": public_name},
+            ).json()
+            user_info = requests.get(
+                f"{self.base_url}/models/{user_canonical}",
                 timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(unload_response.status_code, 200)
+            ).json()
+            self.assertEqual(bare_info["checkpoint"], user_info["checkpoint"])
+            self.assertEqual(bare_info["id"], user_info["id"])  # both emit bare
 
-            print(f"[OK] appear-builtin alias exposed and accepted for {public_name}")
+            # builtin.* should resolve to a different record (the built-in).
+            builtin_info = requests.get(
+                f"{self.base_url}/models/{shadowed_id}",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            self.assertEqual(builtin_info["id"], shadowed_id)
+            self.assertNotEqual(builtin_info["checkpoint"], bare_info["checkpoint"])
+
+            print(f"[OK] user.{ENDPOINT_TEST_MODEL} shadows built-in cleanly")
         finally:
             try:
                 requests.post(
                     f"{self.base_url}/delete",
-                    json={"model_name": public_name},
+                    json={"model_name": user_canonical},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021f_naming_spec_unique_registered(self):
+        """Naming spec: a unique user.<name> with no built-in collision emits as bare."""
+        bare = f"NameSpec-Unique-{uuid.uuid4().hex[:8]}"
+        canonical = f"user.{bare}"
+
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            model_ids = {m["id"] for m in models_response.json()["data"]}
+            self.assertIn(bare, model_ids)
+            self.assertNotIn(canonical, model_ids)
+            self.assertNotIn(f"builtin.{bare}", model_ids)
+
+            # Bare and user.* both resolve; builtin.* must 404.
+            for ok_id in [bare, canonical]:
+                r = requests.get(
+                    f"{self.base_url}/models/{ok_id}",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(r.status_code, 200)
+                self.assertEqual(r.json()["id"], bare)
+
+            builtin_response = requests.get(
+                f"{self.base_url}/models/builtin.{bare}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(builtin_response.status_code, 404)
+
+            print(f"[OK] unique user.{bare} emits as bare id with no collision")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical},
                     timeout=TIMEOUT_DEFAULT,
                 )
             except Exception:

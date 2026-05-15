@@ -550,45 +550,6 @@ sys.exit(0)
             if os.path.exists(json_file):
                 os.unlink(json_file)
 
-    def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"user.ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-        json_data = {
-            "model_name": canonical_name,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-            "labels": ["appear-builtin"],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            import_result = run_cli_command(
-                ["import", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(import_result.returncode, 0)
-
-            list_result = run_cli_command(
-                ["list", "--downloaded"],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = list_result.stdout + list_result.stderr
-            self.assertIn(public_name, output)
-            self.assertNotIn(canonical_name, output)
-
-            delete_result = run_cli_command(
-                ["delete", public_name],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(delete_result.returncode, 0)
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
     def test_061_import_malformed_json(self):
         """Test import command with malformed JSON file should fail."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:

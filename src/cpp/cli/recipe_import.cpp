@@ -1,5 +1,6 @@
 #include "lemon_cli/recipe_import.h"
 
+#include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
 
 #include <algorithm>
@@ -168,7 +169,14 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
     }
 
     std::string model_name = model_data["model_name"].get<std::string>();
-    if (model_name.substr(0, 5) != "user.") {
+    if (auto canon = lemon::parse_canonical_id(model_name)) {
+        if (lemon::is_reserved_for_registration(canon->source)) {
+            std::cerr << "Error: Model names with 'extra.' / 'builtin.' prefixes are reserved. "
+                      << "Use 'user.<name>' for import." << std::endl;
+            return false;
+        }
+        // Already user.* — leave as-is.
+    } else {
         model_data["model_name"] = "user." + model_name;
     }
 

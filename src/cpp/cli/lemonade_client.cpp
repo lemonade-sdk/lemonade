@@ -355,6 +355,12 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
                   << "Details" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
+        // Model Name is the API id emitted verbatim by `/v1/models`. For each
+        // bare name, the precedence-winning source (registered > imported >
+        // builtin) shows as the bare name; any shadowed sources show as their
+        // canonical id (user.NAME / extra.NAME / builtin.NAME). Either form is
+        // valid input to `lemonade load`, `lemonade delete`, etc., so the
+        // column is always copy-paste-safe.
         for (const auto& model : models) {
             std::string downloaded = model.downloaded ? "Yes" : "No";
             std::string details = model.recipe.empty() ? "-" : model.recipe;

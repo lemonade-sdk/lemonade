@@ -210,23 +210,40 @@ interface DetectedBackend {
   mmprojFiles?: string[];
 }
 
-const HIDDEN_MODEL_NAME_PREFIXES = ['user.', 'extra.'];
+// Canonical-id prefixes emitted by `/v1/models`. Each maps to a parenthetical
+// source suffix that the GUI appends when a model is shadowed by a
+// higher-precedence source sharing the same bare name. Winners are emitted by
+// the server with no prefix and render as the bare name.
+const CANONICAL_PREFIXES: { prefix: string; suffix: string }[] = [
+  { prefix: 'user.',    suffix: ' (registered)' },
+  { prefix: 'extra.',   suffix: ' (imported)' },
+  { prefix: 'builtin.', suffix: ' (builtin)' },
+];
 
-const getModelDisplayName = (modelName: string): string => {
-  const prefix = HIDDEN_MODEL_NAME_PREFIXES.find(p => modelName.startsWith(p));
-  return prefix ? modelName.slice(prefix.length) : modelName;
+// Strip the canonical prefix (if any) to get the bare model name. Used for
+// family-regex matching and family grouping.
+const stripCanonicalPrefix = (modelName: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match ? modelName.slice(match.prefix.length) : modelName;
 };
 
-const isNamespaceHiddenModel = (modelName: string): boolean =>
-  HIDDEN_MODEL_NAME_PREFIXES.some(prefix => modelName.startsWith(prefix));
+// Render a model id as a human-readable display name. Bare ids (winners) render
+// as-is; canonical-prefixed ids (shadowed sources) render as "NAME (source)".
+const getModelDisplayName = (modelName: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match ? modelName.slice(match.prefix.length) + match.suffix : modelName;
+};
+
+const hasCanonicalPrefix = (modelName: string): boolean =>
+  CANONICAL_PREFIXES.some(p => modelName.startsWith(p.prefix));
 
 const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  if (!isNamespaceHiddenModel(modelName)) return match[1];
+  if (!hasCanonicalPrefix(modelName)) return match[1];
 
-  const displayName = getModelDisplayName(modelName);
-  return displayName.startsWith(`${family.displayName}-`)
-    ? displayName.slice(family.displayName.length + 1)
-    : displayName;
+  const bare = stripCanonicalPrefix(modelName);
+  return bare.startsWith(`${family.displayName}-`)
+    ? bare.slice(family.displayName.length + 1)
+    : bare;
 };
 
 function buildModelList(
@@ -241,7 +258,7 @@ function buildModelList(
     for (const m of models) {
       if (consumed.has(m.name)) continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
-      const match = family.regex.exec(getModelDisplayName(m.name));
+      const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
         members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
         consumed.add(m.name);

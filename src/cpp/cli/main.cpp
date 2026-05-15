@@ -41,7 +41,6 @@
 #include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
-    "appear-builtin",
     "coding",
     "embeddings",
     "hot",

@@ -29,6 +29,54 @@ Custom model configuration involves two files, both located in the Lemonade cach
 
 See [configuration.md](./README.md) for more information about finding the cache directory.
 
+## Model naming spec
+
+Lemonade tracks three sources of models. Every model has a **canonical ID** of the form `<source>.<bare-name>`:
+
+| Canonical ID    | Source                                                                   |
+|-----------------|--------------------------------------------------------------------------|
+| `user.NAME`     | Model registered via `lemonade pull` (entry in `user_models.json`)       |
+| `extra.NAME`    | Model imported by dropping a GGUF in `--extra-models-dir`                |
+| `builtin.NAME`  | Model compiled into Lemonade's built-in catalog (`server_models.json`)   |
+
+The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
+
+### What the API emits
+
+`/v1/models`, `/v1/models/{id}`, `lemonade list`, and the Ollama `/api/tags` endpoint emit each model with an `id` set to either:
+
+- the **bare name** if the model is the precedence-winner for its bare name, or
+- the **canonical-prefixed ID** if another source outranks it on the same bare name.
+
+For each bare name with collisions, the response contains one bare row plus one canonical-prefixed row per shadowed source.
+
+### What input forms are accepted
+
+Anywhere a model name is accepted (request bodies, CLI args, URL path parameters), all four forms work:
+
+- the bare name `NAME` — resolves to the winner
+- `user.NAME` — always the registered model (404 if none)
+- `extra.NAME` — always the imported model (404 if none)
+- `builtin.NAME` — always the built-in model (404 if none)
+
+`lemonade pull` rejects model names starting with `extra.` or `builtin.` since those prefixes are reserved.
+
+### CLI vs. GUI display
+
+The CLI (`lemonade list`) prints the API `id` verbatim. That means the Name column is always copy-paste-safe — every cell is a valid input to `lemonade load`, `lemonade delete`, `lemonade run`, etc.
+
+The Tauri desktop app and the web app apply a display transformation on top of the API id: bare ids render as `NAME`, and canonical-prefixed ids render as `NAME (registered)` / `NAME (imported)` / `NAME (builtin)`. The suffix appears only for shadowed sources.
+
+### Five reference cases
+
+| Sources                                         | `/v1/models` ids                                      | Resolution                                                                 |
+|-------------------------------------------------|--------------------------------------------------------|-----------------------------------------------------------------------------|
+| built-in `Qwen2.5-Coder` only                   | `Qwen2.5-Coder`                                        | `Qwen2.5-Coder`, `builtin.Qwen2.5-Coder` → built-in                          |
+| built-in `Foo` + registered `Foo`               | `Foo`, `builtin.Foo`                                   | `Foo`/`user.Foo` → user; `builtin.Foo` → built-in                            |
+| built-in `Bar` + registered `Bar` + extra `Bar` | `Bar`, `extra.Bar`, `builtin.Bar`                      | `Bar`/`user.Bar` → user; `extra.Bar` → extra; `builtin.Bar` → built-in       |
+| built-in `Baz` + extra `Baz`                    | `Baz`, `builtin.Baz`                                   | `Baz`/`extra.Baz` → extra; `builtin.Baz` → built-in                          |
+| registered `MyModel` only                       | `MyModel`                                              | `MyModel`/`user.MyModel` → user; `builtin.MyModel` → 404                     |
+
 ## `user_models.json` Reference
 
 This file contains a JSON object where each key is a model name and each value defines the model's properties. Create this file in your cache directory if it doesn't exist.
@@ -121,7 +169,7 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
 
 ## `recipe_options.json` Reference
 
-This file configures per-model runtime settings. Each key is a **full model name** (including prefix like `user.` or `extra.`) and each value contains the settings for that model.
+This file configures per-model runtime settings. Each key is a **canonical model ID** — one of `user.NAME`, `extra.NAME`, or `builtin.NAME` (see the [Model naming spec](#model-naming-spec) above). Each value contains the settings for that model.
 
 ### Template
 
@@ -131,9 +179,14 @@ This file configures per-model runtime settings. Each key is a **full model name
         "ctx_size": 4096,
         "llamacpp_backend": "vulkan",
         "llamacpp_args": ""
+    },
+    "builtin.Qwen2.5-Coder-1.5B-Instruct": {
+        "ctx_size": 16384
     }
 }
 ```
+
+> **Migration:** Older Lemonade versions stored built-in entries under their bare name (e.g. `"Qwen2.5-Coder-1.5B-Instruct"` with no prefix). On first load with the current version, any bare key matching a known built-in is rewritten to `builtin.<name>` in place. An INFO log line reports the number of migrated keys. Bare keys that don't match a built-in are preserved unchanged.
 
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../../api/lemonade.md#post-v1load).
 
@@ -161,6 +214,8 @@ This file configures per-model runtime settings. Each key is a **full model name
     }
 }
 ```
+
+(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for an `--extra-models-dir` GGUF.)
 
 Then load the model:
 ```bash
