@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
+import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
 export interface AddModelInitialValues {
   name: string;
   checkpoint: string;
   recipe: string;
+  checkpoints?: Record<string, string>;
   mmprojOptions?: string[];
   vision?: boolean;
   reranking?: boolean;
@@ -15,6 +17,7 @@ export interface ModelInstallData {
   name: string;
   checkpoint: string;
   recipe: string;
+  checkpoints?: Record<string, string>;
   mmproj?: string;
   reasoning?: boolean;
   vision?: boolean;
@@ -28,16 +31,17 @@ interface AddModelPanelProps {
   initialValues?: AddModelInitialValues;
 }
 
-const RECIPE_LABELS: Record<string, string> = {
-  'llamacpp': 'Llama.cpp GPU',
-  'flm': 'FastFlowLM NPU',
-  'ryzenai-llm': 'Ryzen AI LLM',
-};
+const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'flm', 'ryzenai-llm'];
+const HIDDEN_RECIPE_OPTIONS = new Set(['collection']);
+
+const getRecipeLabel = (recipe: string): string => RECIPE_DISPLAY_NAMES[recipe] ?? recipe;
 
 const createEmptyForm = (initial?: AddModelInitialValues) => ({
   name: initial?.name ?? '',
-  checkpoint: initial?.checkpoint ?? '',
+  checkpoint: initial?.checkpoint ?? initial?.checkpoints?.main ?? '',
   recipe: initial?.recipe ?? 'llamacpp',
+  textEncoderCheckpoint: initial?.checkpoints?.text_encoder ?? '',
+  vaeCheckpoint: initial?.checkpoints?.vae ?? '',
   mmproj: '',
   reasoning: false,
   vision: initial?.vision ?? false,
@@ -46,7 +50,7 @@ const createEmptyForm = (initial?: AddModelInitialValues) => ({
 });
 
 const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initialValues }) => {
-  const { supportedRecipes } = useSystem();
+  const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [form, setForm] = useState(() => createEmptyForm(initialValues));
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +58,10 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
 
   const getMmprojLabel = (filename: string): string =>
     filename.replace(/^mmproj-/i, '').replace(/^model-/i, '').replace(/\.gguf$/i, '');
+
+  useEffect(() => {
+    void ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
 
   useEffect(() => {
     const newForm = createEmptyForm(initialValues);
@@ -73,6 +81,9 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     const name = form.name.trim();
     const checkpoint = form.checkpoint.trim();
     const recipe = form.recipe.trim();
+    const textEncoderCheckpoint = form.textEncoderCheckpoint.trim();
+    const vaeCheckpoint = form.vaeCheckpoint.trim();
+    const hasSdComponents = Boolean(textEncoderCheckpoint || vaeCheckpoint);
 
     if (!name) {
       setError('Model name is required.');
@@ -90,10 +101,25 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       setError('GGUF checkpoints must include a variant using the CHECKPOINT:VARIANT syntax.');
       return;
     }
+    if (hasSdComponents && recipe !== 'sd-cpp') {
+      setError('Text encoder and VAE checkpoints are only supported for StableDiffusion.cpp models.');
+      return;
+    }
+    if (hasSdComponents && (!textEncoderCheckpoint || !vaeCheckpoint)) {
+      setError('Provide both text encoder and VAE checkpoints for sd-cpp component models.');
+      return;
+    }
+    if ((textEncoderCheckpoint && !textEncoderCheckpoint.includes(':')) || (vaeCheckpoint && !vaeCheckpoint.includes(':'))) {
+      setError('Additional sd-cpp checkpoints must include exact variants using the CHECKPOINT:VARIANT syntax.');
+      return;
+    }
 
     onInstall({
       name,
       checkpoint,
+      checkpoints: recipe === 'sd-cpp' && hasSdComponents
+        ? { main: checkpoint, text_encoder: textEncoderCheckpoint, vae: vaeCheckpoint }
+        : undefined,
       recipe,
       mmproj: form.mmproj.trim() || undefined,
       reasoning: form.reasoning,
@@ -103,10 +129,12 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     });
   };
 
-  const filteredSupportedRecipes = Object.keys(supportedRecipes).filter(r => r in RECIPE_LABELS);
-  const recipeOptions = filteredSupportedRecipes.length > 0
-    ? filteredSupportedRecipes
-    : Object.keys(RECIPE_LABELS);
+  const supportedRecipeOptions = Object.keys(supportedRecipes)
+    .filter(recipe => !HIDDEN_RECIPE_OPTIONS.has(recipe))
+    .sort((a, b) => getRecipeLabel(a).localeCompare(getRecipeLabel(b)));
+  const recipeOptions = supportedRecipeOptions.length > 0
+    ? supportedRecipeOptions
+    : FALLBACK_RECIPE_OPTIONS;
 
   const mmprojOptionElements = mmprojOptions.map((f: string) => {
     const label = getMmprojLabel(f);
@@ -191,7 +219,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
             <option value="">Select a recipe...</option>
             {recipeOptions.map(recipe => (
               <option key={recipe} value={recipe}>
-                {RECIPE_LABELS[recipe] ?? recipe}
+                {getRecipeLabel(recipe)}
               </option>
             ))}
           </select>
@@ -199,6 +227,30 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
 
         <div className="form-section">
           <label className="form-label">More info</label>
+          {form.recipe === 'sd-cpp' && (
+            <div className="form-subsection">
+              <label
+                className="form-label-secondary"
+                title="Optional component checkpoints for sd.cpp models with separate text encoder or VAE files"
+              >
+                sd.cpp component checkpoints (Optional)
+              </label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Text encoder CHECKPOINT:VARIANT"
+                value={form.textEncoderCheckpoint}
+                onChange={(e) => handleChange('textEncoderCheckpoint', e.target.value)}
+              />
+              <input
+                type="text"
+                className="form-input"
+                placeholder="VAE CHECKPOINT:VARIANT"
+                value={form.vaeCheckpoint}
+                onChange={(e) => handleChange('vaeCheckpoint', e.target.value)}
+              />
+            </div>
+          )}
           {mmprojField}
         </div>
 

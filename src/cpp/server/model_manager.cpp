@@ -1039,8 +1039,19 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return all_bin_files[0];
     }
 
-    // For llamacpp, find the GGUF file with advanced sharded model support
-    if (info.recipe == "llamacpp" && type == "main") {
+    // For GGUF-backed recipes, find the GGUF file with advanced sharded model support.
+    // sd-cpp supports GGUF checkpoints too; those can be registered with a quant alias
+    // such as CHECKPOINT:Q8_0, and download_from_huggingface() resolves that alias to
+    // the concrete filename. Use the same resolver here so load finds the downloaded file.
+    auto is_direct_non_gguf_variant = [](const std::string& value) {
+        return ends_with_ignore_case(value, ".safetensors") ||
+               ends_with_ignore_case(value, ".pth") ||
+               ends_with_ignore_case(value, ".ckpt");
+    };
+    const bool should_resolve_gguf = type == "main" &&
+        (info.recipe == "llamacpp" ||
+         (info.recipe == "sd-cpp" && !is_direct_non_gguf_variant(variant)));
+    if (should_resolve_gguf) {
         if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }

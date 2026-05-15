@@ -314,7 +314,7 @@ interface ModelJSON {
   recipe: string,
   recipe_options?: object,
   checkpoint?: string,
-  checkpoints?: string[],
+  checkpoints?: Record<string, string>,
   downloaded?: boolean,
   labels?: string[],
   size?: number,

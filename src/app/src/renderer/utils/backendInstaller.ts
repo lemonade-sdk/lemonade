@@ -25,7 +25,7 @@ function extractServerErrorMessage(errorText: string, fallback: string): string 
  */
 export interface ModelRegistrationData {
   checkpoint?: string;
-  checkpoints?: string[];
+  checkpoints?: Record<string, string>;
   recipe: string;
   mmproj?: string;
   reasoning?: boolean;
