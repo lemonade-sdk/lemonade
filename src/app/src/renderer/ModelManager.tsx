@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
+import { CANONICAL_PREFIXES, getModelDisplayName } from './utils/modelDisplayName';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
@@ -210,28 +211,11 @@ interface DetectedBackend {
   mmprojFiles?: string[];
 }
 
-// Canonical-id prefixes emitted by `/v1/models`. Each maps to a parenthetical
-// source suffix that the GUI appends when a model is shadowed by a
-// higher-precedence source sharing the same bare name. Winners are emitted by
-// the server with no prefix and render as the bare name.
-const CANONICAL_PREFIXES: { prefix: string; suffix: string; sourceRank: number }[] = [
-  { prefix: 'user.',    suffix: ' (registered)', sourceRank: 1 },
-  { prefix: 'extra.',   suffix: ' (imported)', sourceRank: 2 },
-  { prefix: 'builtin.', suffix: ' (builtin)', sourceRank: 3 },
-];
-
 // Strip the canonical prefix (if any) to get the bare model name. Used for
 // family-regex matching and family grouping.
 const stripCanonicalPrefix = (modelName: string): string => {
   const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
   return match ? modelName.slice(match.prefix.length) : modelName;
-};
-
-// Render a model id as a human-readable display name. Bare ids (winners) render
-// as-is; canonical-prefixed ids (shadowed sources) render as "NAME (source)".
-const getModelDisplayName = (modelName: string): string => {
-  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
-  return match ? modelName.slice(match.prefix.length) + match.suffix : modelName;
 };
 
 const hasCanonicalPrefix = (modelName: string): boolean =>
