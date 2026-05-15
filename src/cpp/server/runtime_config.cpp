@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
@@ -7,6 +8,7 @@
 #include <filesystem>
 #include <mutex>
 #include <stdexcept>
+#include <utility>
 
 namespace fs = std::filesystem;
 
@@ -43,6 +45,29 @@ static const std::vector<std::string> s_selectable_backends = {
 static bool has_backend_selection(const std::string& config_section) {
     return std::find(s_selectable_backends.begin(), s_selectable_backends.end(),
                      config_section) != s_selectable_backends.end();
+}
+
+static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
+    json normalized = changes;
+    std::string message;
+
+    if (normalized.contains("rocm")) {
+        if (normalized.contains("rocm_channel") && normalized["rocm_channel"] != normalized["rocm"]) {
+            throw std::invalid_argument(
+                "Ambiguous ROCm channel settings: use only 'rocm_channel'");
+        }
+        normalized["rocm_channel"] = normalized["rocm"];
+        normalized.erase("rocm");
+    }
+
+    if (normalized.contains("rocm_channel") && normalized["rocm_channel"].is_string() &&
+        normalized["rocm_channel"].get<std::string>() == "preview") {
+        normalized["rocm_channel"] = "stable";
+        message = "rocm_channel=preview is deprecated; using rocm_channel=stable";
+        LOG(WARNING) << message << std::endl;
+    }
+
+    return {normalized, message};
 }
 
 std::string RuntimeConfig::config_section_to_recipe(const std::string& config_section) {
@@ -474,8 +499,10 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
         throw std::invalid_argument("Request body must be a non-empty JSON object");
     }
 
+    auto [normalized_changes, message] = normalize_config_set_changes(changes);
+
     // Validate all keys before acquiring write lock
-    for (auto& [key, value] : changes.items()) {
+    for (auto& [key, value] : normalized_changes.items()) {
         validate(key, value);
     }
 
@@ -484,10 +511,10 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
 
     {
         std::unique_lock lock(mutex_);
-        apply_changes(changes, applied_diff);
+        apply_changes(normalized_changes, applied_diff);
 
         // Build updated response
-        for (auto& [key, value] : changes.items()) {
+        for (auto& [key, value] : normalized_changes.items()) {
             updated[key] = value;
         }
     } // Lock released
@@ -497,7 +524,11 @@ json RuntimeConfig::set(const json& changes, ConfigSideEffectCallback side_effec
         side_effect_cb(applied_diff);
     }
 
-    return {{"status", "success"}, {"updated", updated}};
+    json response = {{"status", "success"}, {"updated", updated}};
+    if (!message.empty()) {
+        response["message"] = message;
+    }
+    return response;
 }
 
 json RuntimeConfig::snapshot() const {

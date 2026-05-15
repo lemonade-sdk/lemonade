@@ -887,6 +887,9 @@ static int handle_config_set(lemonade::LemonadeClient& client,
         std::string response = client.make_request(
             "/internal/set", "POST", updates.dump(), "application/json");
         auto result = nlohmann::json::parse(response);
+        if (result.contains("message") && result["message"].is_string()) {
+            std::cout << result["message"].get<std::string>() << std::endl;
+        }
         if (result.contains("updated")) {
             std::cout << "Configuration updated:" << std::endl;
             std::cout << result["updated"].dump(4) << std::endl;
