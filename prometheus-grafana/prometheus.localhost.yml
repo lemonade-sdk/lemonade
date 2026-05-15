@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 1s
+
+scrape_configs:
+  - job_name: 'lemonade-localhost'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['host.docker.internal:13305']
