@@ -30,7 +30,7 @@
       }
     },
     {
-      "requires_labels": ["tts", "speech"],
+      "requires_labels": ["tts"],
       "function": {
         "name": "text_to_speech",
         "description": "Convert text to spoken audio. Use this when the user asks you to speak, say, read aloud, or convert text to speech.",
