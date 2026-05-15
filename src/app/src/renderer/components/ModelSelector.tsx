@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
+import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
   disabled: boolean;
@@ -33,7 +34,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     : visibleDownloadedModels;
 
   const dropdownModels = searchQuery.trim()
-    ? allModels.filter(m => m.id.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? allModels.filter(m => {
+        const q = searchQuery.toLowerCase();
+        return m.id.toLowerCase().includes(q) || getModelDisplayName(m.id).toLowerCase().includes(q);
+      })
     : allModels;
 
   useEffect(() => {
@@ -70,7 +74,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
         disabled={disabled}
         title={selectedModel}
       >
-        <span className="model-selector-label">{selectedModel}</span>
+        <span className="model-selector-label">{getModelDisplayName(selectedModel)}</span>
         <svg className="model-selector-chevron" width="10" height="10" viewBox="0 0 10 10">
           <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
@@ -86,7 +90,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
                 onClick={() => handleSelect(model.id)}
                 title={model.id}
               >
-                {model.id}
+                {getModelDisplayName(model.id)}
               </div>
             )) : (
               <div className="model-selector-empty">No models match</div>
