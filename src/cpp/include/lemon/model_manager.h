@@ -7,6 +7,7 @@
 #include <mutex>
 #include <functional>
 #include <nlohmann/json.hpp>
+#include "canonical_id.h"
 #include "model_types.h"
 #include "recipe_options.h"
 

@@ -1400,7 +1400,11 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+        // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
+        // for shadowed sources), regardless of which form the client requested.
+        std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
+        std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -2787,7 +2791,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
         }
 
-        // Validate: if checkpoint or recipe are provided, model name must have "user." prefix
+        // Reject reserved prefixes — extra.* / builtin.* cannot be created via
+        // /pull, and user.extra.* / user.builtin.* are also rejected because
+        // their bare-name part ("extra.X" / "builtin.X") would otherwise hijack
+        // the corresponding canonical alias slot. Then enforce the existing rule
+        // that explicit checkpoint/recipe requires the user.* prefix.
+        if (lemon::is_reserved_registration_name(model_name)) {
+            res.status = 400;
+            nlohmann::json error = {{"error",
+                "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+                "including as bare-name parts of a 'user.' alias. "
+                "Use 'user.<name>' for registration where <name> does not begin "
+                "with 'extra.' or 'builtin.'. Received: " + model_name}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
         if (!checkpoint.empty() || !recipe.empty()) {
             if (model_name.substr(0, 5) != "user.") {
                 res.status = 400;

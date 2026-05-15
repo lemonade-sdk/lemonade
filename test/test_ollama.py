@@ -186,51 +186,6 @@ class OllamaTests(ServerTestBase):
             f"Model name should end with ':latest', got: {model['name']}",
         )
 
-    def test_007_user_model_appear_builtin_alias(self):
-        """Aliased user models should appear built-in through Ollama endpoints."""
-        canonical_name = f"user.OllamaAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-
-        try:
-            pull_response = requests.post(
-                f"{self.base_url}/pull",
-                json={
-                    "model_name": canonical_name,
-                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-                    "recipe": "llamacpp",
-                    "labels": ["appear-builtin"],
-                    "stream": False,
-                },
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(pull_response.status_code, 200)
-
-            tags_response = requests.get(
-                f"{OLLAMA_BASE_URL}/api/tags",
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(tags_response.status_code, 200)
-            tag_names = {
-                model["model"].replace(":latest", "")
-                for model in tags_response.json()["models"]
-            }
-            self.assertIn(public_name, tag_names)
-            self.assertNotIn(canonical_name, tag_names)
-
-            show_response = requests.post(
-                f"{OLLAMA_BASE_URL}/api/show",
-                json={"name": public_name},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(show_response.status_code, 200)
-            self.assertIn("details", show_response.json())
-        finally:
-            requests.post(
-                f"{self.base_url}/delete",
-                json={"model_name": public_name},
-                timeout=TIMEOUT_DEFAULT,
-            )
-
     def test_008_pull_streaming_progress(self):
         """Test /api/pull streams NDJSON progress with digest field."""
         self.ensure_model_pulled()
@@ -390,16 +345,12 @@ class OllamaTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         chunks = [
-            json.loads(line.decode("utf-8"))
-            for line in response.iter_lines()
-            if line
+            json.loads(line.decode("utf-8")) for line in response.iter_lines() if line
         ]
         self.assertGreater(len(chunks), 0)
 
         tool_chunks = [
-            chunk
-            for chunk in chunks
-            if chunk.get("message", {}).get("tool_calls")
+            chunk for chunk in chunks if chunk.get("message", {}).get("tool_calls")
         ]
         self.assertGreater(len(tool_chunks), 0, "Expected a tool call chunk")
 

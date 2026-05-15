@@ -550,45 +550,6 @@ sys.exit(0)
             if os.path.exists(json_file):
                 os.unlink(json_file)
 
-    def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"user.ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-        json_data = {
-            "model_name": canonical_name,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-            "labels": ["appear-builtin"],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            import_result = run_cli_command(
-                ["import", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(import_result.returncode, 0)
-
-            list_result = run_cli_command(
-                ["list", "--downloaded"],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = list_result.stdout + list_result.stderr
-            self.assertIn(public_name, output)
-            self.assertNotIn(canonical_name, output)
-
-            delete_result = run_cli_command(
-                ["delete", public_name],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(delete_result.returncode, 0)
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
     def test_061_import_malformed_json(self):
         """Test import command with malformed JSON file should fail."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -1512,6 +1473,44 @@ sys.exit(0)
             timeout=TIMEOUT_DEFAULT,
         )
         print(f"Delete model exit code: {result.returncode}")
+
+    def test_090a_naming_spec_list_shows_canonical_shadowed_rows(self):
+        """`list` prints API ids verbatim, so shadowed sources appear under their canonical IDs.
+
+        Verifies the copy-paste-safe contract: when a user.* shadows a built-in,
+        the list shows both `<bare>` (winner) and `builtin.<bare>` (shadowed),
+        and either string is directly usable in `lemonade load`/`delete`.
+        """
+        bare = ENDPOINT_TEST_MODEL  # known built-in
+        user_canonical = f"user.{bare}"
+
+        try:
+            pull_response = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            result = self.assertCommandSucceeds(["list"], timeout=TIMEOUT_DEFAULT)
+            output = result.stdout + result.stderr
+
+            # Winner appears as bare id; shadowed built-in appears under its canonical id.
+            self.assertIn(bare, output)
+            self.assertIn(f"builtin.{bare}", output)
+            # The user.* canonical form must NOT appear in output — winners emit bare.
+            self.assertNotIn(user_canonical, output)
+
+            print(
+                f"[OK] list shows both {bare} (user winner) and builtin.{bare} (shadowed)"
+            )
+        finally:
+            run_cli_command(["delete", user_canonical], timeout=TIMEOUT_DEFAULT)
 
     def test_091_delete_preserves_shared_repo(self):
         """Test that deleting one model preserves files used by another model sharing the same repo."""

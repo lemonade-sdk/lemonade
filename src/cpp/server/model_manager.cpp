@@ -83,10 +83,19 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
-static constexpr const char* APPEAR_BUILTIN_LABEL = "appear-builtin";
 
 static bool has_label(const ModelInfo& info, const std::string& label) {
     return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
+}
+
+// Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
+// include their canonical prefix. This helper returns the canonical ID for any
+// cache key, which is the form used by recipe_options.json on disk.
+static std::string cache_key_to_canonical_id(const std::string& cache_key) {
+    if (parse_canonical_id(cache_key)) {
+        return cache_key;
+    }
+    return canonical_id(ModelSource::Builtin, cache_key);
 }
 
 template <typename T>
@@ -412,9 +421,12 @@ static void parse_image_defaults(ModelInfo& info, const json& model_json) {
 // Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
 // json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
 // two-phase pattern). Pass a null json if the model JSON should be read directly instead.
+// saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
+// user's saved options are keyed in recipe_options.json. Translate from the cache key with
+// cache_key_to_canonical_id() before calling.
 static RecipeOptions build_recipe_options(const ModelInfo& info,
                                           const json& json_recipe_options,
-                                          const std::string& model_name,
+                                          const std::string& saved_recipe_options_key,
                                           const json& saved_recipe_options) {
     json base_options = json::object();
 
@@ -438,8 +450,8 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
     }
 
     // Layer 3: User-saved recipe options override everything
-    if (JsonUtils::has_key(saved_recipe_options, model_name)) {
-        auto saved = saved_recipe_options[model_name];
+    if (JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)) {
+        auto saved = saved_recipe_options[saved_recipe_options_key];
         for (auto& [key, value] : saved.items()) {
             base_options[key] = value;
         }
@@ -708,6 +720,48 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     user_models_ = load_optional_json(get_user_models_file());
     recipe_options_ = load_optional_json(get_recipe_options_file());
 
+    // One-shot migration of recipe_options.json: older Lemonade keyed built-in
+    // entries by bare name; the current spec requires a canonical "builtin."
+    // prefix so each source is addressable distinctly even on shadowing.
+    //
+    // Normalize to an object before iterating — a corrupted file may parse as
+    // null, array, or scalar, and json::iterator::key() throws on non-objects.
+    if (!recipe_options_.is_object()) {
+        if (!recipe_options_.is_null()) {
+            LOG(WARNING, "ModelManager") << "recipe_options.json is not a JSON object; resetting to empty object" << std::endl;
+        }
+        recipe_options_ = json::object();
+    }
+    {
+        int migrated = 0;
+        json migrated_options = json::object();
+        for (auto it = recipe_options_.begin(); it != recipe_options_.end(); ++it) {
+            const std::string& key = it.key();
+            if (parse_canonical_id(key)) {
+                migrated_options[key] = it.value();
+            } else if (server_models_.contains(key)) {
+                migrated_options[canonical_id(ModelSource::Builtin, key)] = it.value();
+                ++migrated;
+            } else {
+                // Preserve unknown bare keys (likely stale built-ins) — avoids silent data loss.
+                migrated_options[key] = it.value();
+            }
+        }
+        if (migrated > 0) {
+            recipe_options_ = std::move(migrated_options);
+            try {
+                fs::path dir = fs::path(get_recipe_options_file()).parent_path();
+                fs::create_directories(dir);
+                JsonUtils::save_to_file(recipe_options_, get_recipe_options_file());
+                LOG(INFO, "ModelManager") << "migrated " << migrated
+                          << " legacy recipe_options keys to builtin. prefix" << std::endl;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "ModelManager") << "Could not persist migrated recipe_options.json: "
+                                              << e.what() << std::endl;
+            }
+        }
+    }
+
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
     }
@@ -813,7 +867,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         // Skip mmproj files - they're part of multimodal models
         if (contains_ignore_case(filename, "mmproj")) continue;
 
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + filename;
+        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + gguf_path.stem().string();
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
@@ -1174,8 +1228,9 @@ void ModelManager::save_user_models(const json& user_models) {
 
 void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
-    // Persist changes
-    recipe_options_[info.model_name] = info.recipe_options.to_json();
+    // Persist under canonical ID (built-ins are keyed bare in cache but
+    // recipe_options.json stores them as builtin.<name>).
+    recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
     update_model_options_in_cache(info);
     save_user_json(get_recipe_options_file(), recipe_options_);
 }
@@ -1334,14 +1389,15 @@ void ModelManager::build_cache() {
     }
 
     // Step 1.5: Discover models from extra_models_dir
-    // All discovered models are prefixed with "extra." to avoid conflicts
-    // We still gracefully handle conflicts just in case, though
+    // All discovered models are prefixed with "extra." so they have distinct
+    // canonical IDs from any user. or builtin. records that may share a bare
+    // name. Bare-name collisions are surfaced via the friendly-name layer in
+    // rebuild_public_model_aliases_locked, not by dropping records here.
     auto discovered_models = discover_extra_models();
     for (const auto& [name, info] : discovered_models) {
-        // Check for conflicts with registered models
         if (all_models.find(name) != all_models.end()) {
             LOG(INFO, "ModelManager") << "Warning: Discovered model '" << name
-                      << "' conflicts with registered model, skipping." << std::endl;
+                      << "' conflicts with another extra.* registration; skipping." << std::endl;
             continue;
         }
         all_models[name] = info;
@@ -1359,10 +1415,12 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Populate recipe options
+    // Populate recipe options. recipe_options.json is keyed by canonical ID
+    // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
+    // we translate before lookup.
     for (auto& [name, info] : all_models) {
         json jro = json_recipe_options.count(name) ? json_recipe_options[name] : json(nullptr);
-        info.recipe_options = build_recipe_options(info, jro, name, recipe_options_);
+        info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
     }
 
     // Step 2: Filter by backend availability
@@ -1485,7 +1543,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     parse_image_defaults(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
         ? (*model_json)["recipe_options"] : json(nullptr);
-    info.recipe_options = build_recipe_options(info, jro, model_name, recipe_options_);
+    info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(model_name), recipe_options_);
 
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", is_user_model);
     info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
@@ -3465,52 +3523,80 @@ bool ModelManager::model_exists(const std::string& model_name) {
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
+    // Direct match in server_models_ (built-ins are keyed bare).
     if (server_models_.contains(model_name)) {
         return true;
     }
-    if (is_user_model_name(model_name)) {
-        return user_models_.contains(strip_user_model_prefix(model_name));
+    if (auto canon = parse_canonical_id(model_name)) {
+        switch (canon->source) {
+            case ModelSource::Registered:
+                return user_models_.contains(canon->bare_name);
+            case ModelSource::Builtin:
+                return server_models_.contains(canon->bare_name);
+            case ModelSource::Imported:
+                // extra.* models are filesystem-discovered; not in either JSON registry.
+                return false;
+        }
     }
 
     std::string canonical_name = resolve_model_name(model_name);
-    if (is_user_model_name(canonical_name)) {
-        return user_models_.contains(strip_user_model_prefix(canonical_name));
+    if (auto canon = parse_canonical_id(canonical_name)) {
+        switch (canon->source) {
+            case ModelSource::Registered:
+                return user_models_.contains(canon->bare_name);
+            case ModelSource::Builtin:
+                return server_models_.contains(canon->bare_name);
+            case ModelSource::Imported:
+                return false;
+        }
     }
-
-    // Check raw server_models_ JSON (before filtering)
-    return false;
+    return server_models_.contains(canonical_name);
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
     ModelInfo info;
     std::string registry_name = model_name;
+    bool is_user_lookup = false;
 
-    if (!server_models_.contains(registry_name)) {
-        if (is_user_model_name(registry_name)) {
-            registry_name = strip_user_model_prefix(registry_name);
-        } else {
-            std::string canonical_name = resolve_model_name(model_name);
-            if (is_user_model_name(canonical_name)) {
-                registry_name = strip_user_model_prefix(canonical_name);
+    auto try_resolve = [&](const std::string& name) -> bool {
+        if (server_models_.contains(name)) {
+            registry_name = name;
+            is_user_lookup = false;
+            return true;
+        }
+        if (auto canon = parse_canonical_id(name)) {
+            if (canon->source == ModelSource::Builtin && server_models_.contains(canon->bare_name)) {
+                registry_name = canon->bare_name;
+                is_user_lookup = false;
+                return true;
+            }
+            if (canon->source == ModelSource::Registered && user_models_.contains(canon->bare_name)) {
+                registry_name = canon->bare_name;
+                is_user_lookup = true;
+                return true;
             }
         }
+        return false;
+    };
+
+    if (!try_resolve(model_name)) {
+        try_resolve(resolve_model_name(model_name));
     }
 
-    // Check server models first
     json* model_json = nullptr;
-    if (server_models_.contains(registry_name)) {
-        model_json = &server_models_[registry_name];
-    } else if (user_models_.contains(registry_name)) {
+    if (is_user_lookup && user_models_.contains(registry_name)) {
         model_json = &user_models_[registry_name];
+    } else if (!is_user_lookup && server_models_.contains(registry_name)) {
+        model_json = &server_models_[registry_name];
     }
 
     if (!model_json) {
         throw std::runtime_error("Model not found in registry: " + model_name);
     }
 
-    // Parse model info from JSON
-    info.model_name = is_user_model_name(model_name) ? model_name
-        : (user_models_.contains(registry_name) ? std::string(USER_MODEL_PREFIX) + registry_name : registry_name);
+    info.model_name = is_user_lookup
+        ? canonical_id(ModelSource::Registered, registry_name)
+        : registry_name;
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
@@ -3559,31 +3645,70 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 }
 
 // Must be called with models_cache_mutex_ held.
+//
+// Populates two maps that drive the friendly-name / canonical-ID system:
+//
+//   public_model_aliases_ — input alias → cache key (canonical name in cache):
+//     - <bare> → cache key of the precedence-winner for that bare name
+//     - builtin.<X> → bare cache key X (built-ins are keyed bare in the cache)
+//     - user.<X>, extra.<X> resolve directly via cache lookup fallback in the
+//       callers, so no identity entries are required here
+//
+//   canonical_public_names_ — cache key → wire-format ID emitted by the API:
+//     - winner cache keys → bare name
+//     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
+//
+// Precedence: Registered > Imported > Builtin.
 void ModelManager::rebuild_public_model_aliases_locked() {
     public_model_aliases_.clear();
     canonical_public_names_.clear();
 
-    for (const auto& [name, info] : models_cache_) {
-        if (!is_user_model_name(name) || !has_label(info, APPEAR_BUILTIN_LABEL)) {
-            continue;
-        }
+    struct Entry {
+        std::string cache_key;
+        ModelSource source;
+    };
+    std::map<std::string, std::vector<Entry>> by_bare;
 
-        std::string bare_name = strip_user_model_prefix(name);
-        if (server_models_.contains(bare_name) || models_cache_.find(bare_name) != models_cache_.end()) {
-            LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
-                      << "' for '" << name << "' because it collides with an existing model" << std::endl;
-            continue;
+    for (const auto& [cache_key, info] : models_cache_) {
+        ModelSource source;
+        std::string bare;
+        if (auto canon = parse_canonical_id(cache_key)) {
+            source = canon->source;
+            bare = canon->bare_name;
+        } else {
+            // Unprefixed cache keys are built-ins (server_models.json).
+            source = ModelSource::Builtin;
+            bare = cache_key;
         }
+        by_bare[bare].push_back({cache_key, source});
+    }
 
-        auto existing = public_model_aliases_.find(bare_name);
-        if (existing != public_model_aliases_.end() && existing->second != name) {
-            LOG(INFO, "ModelManager") << "Skipping public alias '" << bare_name
-                      << "' for '" << name << "' because it collides with '" << existing->second << "'" << std::endl;
-            continue;
+    for (auto& [bare, entries] : by_bare) {
+        std::sort(entries.begin(), entries.end(),
+                  [](const Entry& a, const Entry& b) {
+                      return precedence_rank(a.source) < precedence_rank(b.source);
+                  });
+
+        const Entry& winner = entries.front();
+        public_model_aliases_[bare] = winner.cache_key;
+        canonical_public_names_[winner.cache_key] = bare;
+
+        for (size_t i = 1; i < entries.size(); ++i) {
+            const Entry& shadowed = entries[i];
+            std::string canonical = canonical_id(shadowed.source, bare);
+            canonical_public_names_[shadowed.cache_key] = canonical;
+            if (canonical != shadowed.cache_key) {
+                public_model_aliases_[canonical] = shadowed.cache_key;
+            }
         }
+    }
 
-        public_model_aliases_[bare_name] = name;
-        canonical_public_names_[name] = bare_name;
+    // Always accept builtin.<X> as an input alias for the bare cache key,
+    // even when no other source shadows the built-in.
+    for (const auto& [cache_key, _info] : models_cache_) {
+        if (parse_canonical_id(cache_key)) continue;
+        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
+        public_model_aliases_.try_emplace(canonical, cache_key);
     }
 }
 

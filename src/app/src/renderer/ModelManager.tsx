@@ -210,23 +210,52 @@ interface DetectedBackend {
   mmprojFiles?: string[];
 }
 
-const HIDDEN_MODEL_NAME_PREFIXES = ['user.', 'extra.'];
+// Canonical-id prefixes emitted by `/v1/models`. Each maps to a parenthetical
+// source suffix that the GUI appends when a model is shadowed by a
+// higher-precedence source sharing the same bare name. Winners are emitted by
+// the server with no prefix and render as the bare name.
+const CANONICAL_PREFIXES: { prefix: string; suffix: string; sourceRank: number }[] = [
+  { prefix: 'user.',    suffix: ' (registered)', sourceRank: 1 },
+  { prefix: 'extra.',   suffix: ' (imported)', sourceRank: 2 },
+  { prefix: 'builtin.', suffix: ' (builtin)', sourceRank: 3 },
+];
 
-const getModelDisplayName = (modelName: string): string => {
-  const prefix = HIDDEN_MODEL_NAME_PREFIXES.find(p => modelName.startsWith(p));
-  return prefix ? modelName.slice(prefix.length) : modelName;
+// Strip the canonical prefix (if any) to get the bare model name. Used for
+// family-regex matching and family grouping.
+const stripCanonicalPrefix = (modelName: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match ? modelName.slice(match.prefix.length) : modelName;
 };
 
-const isNamespaceHiddenModel = (modelName: string): boolean =>
-  HIDDEN_MODEL_NAME_PREFIXES.some(prefix => modelName.startsWith(prefix));
+// Render a model id as a human-readable display name. Bare ids (winners) render
+// as-is; canonical-prefixed ids (shadowed sources) render as "NAME (source)".
+const getModelDisplayName = (modelName: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match ? modelName.slice(match.prefix.length) + match.suffix : modelName;
+};
 
-const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  if (!isNamespaceHiddenModel(modelName)) return match[1];
+const hasCanonicalPrefix = (modelName: string): boolean =>
+  CANONICAL_PREFIXES.some(p => modelName.startsWith(p.prefix));
 
-  const displayName = getModelDisplayName(modelName);
-  return displayName.startsWith(`${family.displayName}-`)
-    ? displayName.slice(family.displayName.length + 1)
-    : displayName;
+const getSourceSortRank = (modelName: string): number => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match?.sourceRank ?? 0;
+};
+
+const stripSourceSuffix = (label: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => label.endsWith(p.suffix));
+  return match ? label.slice(0, -match.suffix.length) : label;
+};
+
+const getFamilyMemberLabel = (modelName: string, family: ModelFamily): string => {
+  const prefixInfo = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  const bare = stripCanonicalPrefix(modelName);
+  const relativeName = bare.startsWith(family.displayName)
+    ? bare.slice(family.displayName.length).replace(/^[-_.]/, '')
+    : bare;
+  const label = relativeName.endsWith('-GGUF') ? relativeName.slice(0, -'-GGUF'.length) : relativeName;
+  // Keep the source suffix on collapsed family rows so shadowed sources stay distinguishable.
+  return label + (prefixInfo?.suffix ?? '');
 };
 
 function buildModelList(
@@ -241,17 +270,26 @@ function buildModelList(
     for (const m of models) {
       if (consumed.has(m.name)) continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
-      const match = family.regex.exec(getModelDisplayName(m.name));
+      const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
-        members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
+        members.push({ label: getFamilyMemberLabel(m.name, family), name: m.name, info: m.info });
         consumed.add(m.name);
       }
     }
     if (members.length > 1) {
       members.sort((a, b) => {
-        const sizeA = parseFloat(a.label);
-        const sizeB = parseFloat(b.label);
-        if (Number.isFinite(sizeA) && Number.isFinite(sizeB)) return sizeA - sizeB;
+        const baseLabelA = stripSourceSuffix(a.label);
+        const baseLabelB = stripSourceSuffix(b.label);
+        const sizeA = parseFloat(baseLabelA);
+        const sizeB = parseFloat(baseLabelB);
+        if (Number.isFinite(sizeA) && Number.isFinite(sizeB) && sizeA !== sizeB) return sizeA - sizeB;
+
+        const baseCompare = baseLabelA.localeCompare(baseLabelB, undefined, { numeric: true });
+        if (baseCompare !== 0) return baseCompare;
+
+        const sourceCompare = getSourceSortRank(a.name) - getSourceSortRank(b.name);
+        if (sourceCompare !== 0) return sourceCompare;
+
         return a.label.localeCompare(b.label, undefined, { numeric: true });
       });
       familyItems.push({ type: 'family', family, members });
