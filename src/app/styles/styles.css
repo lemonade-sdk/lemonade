@@ -1807,6 +1807,46 @@ footer {
     text-transform: none;
 }
 
+.model-options-name-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.model-options-copy-button {
+    width: 18px;
+    height: 18px;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.model-options-copy-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-alpha-1);
+}
+
+.model-options-copy-button:focus-visible {
+    outline: 1px solid var(--border-5);
+    outline-offset: 2px;
+}
+
+.model-options-copy-button.copied {
+    color: var(--success-color);
+}
+
+.model-options-copy-button svg {
+    flex-shrink: 0;
+}
+
 .model-options-category-header .model-options-checkpoint-link {
     color: var(--text-link);
     text-decoration: none;
