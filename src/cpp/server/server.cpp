@@ -2613,7 +2613,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::string resolved_backend = backend;
         if (backend == "rocm") {
-            std::string channel = "preview";
+            std::string channel = "stable";
             if (config_) {
                 channel = config_->rocm_channel_for_recipe("sd-cpp");
             }
@@ -2623,13 +2623,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         std::string lib_path = cli_dir.string();
 
         if (resolved_backend == "rocm-stable") {
-            std::string runtime_dir = lemon::backends::BackendUtils::get_install_directory(
-                "rocm-stable-runtime", ""
-            );
-            if (std::filesystem::exists(runtime_dir)) {
-                lib_path = runtime_dir + ":" + lib_path;
-            }
-        } else if (resolved_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
@@ -2645,16 +2638,13 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
 #else
-        if (resolved_backend == "rocm-stable" || resolved_backend == "rocm-preview") {
+        if (resolved_backend == "rocm-stable") {
             std::string new_path = cli_dir.string();
-
-            if (resolved_backend == "rocm-preview") {
-                std::string rocm_arch = SystemInfo::get_rocm_arch();
-                if (!rocm_arch.empty()) {
-                    std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
-                    if (!therock_bin.empty()) {
-                        new_path = therock_bin + ";" + new_path;
-                    }
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+                if (!therock_bin.empty()) {
+                    new_path = therock_bin + ";" + new_path;
                 }
             }
 

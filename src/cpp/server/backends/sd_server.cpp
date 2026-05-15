@@ -23,22 +23,21 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
 
 namespace {
 bool is_rocm_backend(const std::string& backend) {
-    return backend == "rocm" || backend == "rocm-stable" || backend == "rocm-preview";
+    return backend == "rocm" || backend == "rocm-stable";
 }
 
 std::string resolve_sdcpp_backend(const std::string& backend) {
     if (backend == "rocm") {
-        std::string channel = "preview";
+        std::string channel = "stable";
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel();
         }
-        // sd.cpp has no nightly build - fall back to preview
+        // sd.cpp has no nightly build - fall back to stable
         if (channel == "nightly") {
-            channel = "preview";
+            channel = "stable";
         }
         return "rocm-" + channel;
     }
@@ -60,16 +59,6 @@ std::string trim_to_major_minor(const std::string& version) {
         return trimmed.substr(0, second_dot);
     }
     return trimmed;
-}
-
-std::string get_rocm_stable_runtime_version() {
-    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
-
-    if (config.contains("rocm-stable-runtime") && config["rocm-stable-runtime"].is_string()) {
-        return trim_version_prefix(config["rocm-stable-runtime"].get<std::string>());
-    }
-
-    throw std::runtime_error("backend_versions.json is missing 'rocm-stable-runtime'");
 }
 
 std::string get_therock_version() {
@@ -113,21 +102,10 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
             );
         }
 #ifdef _WIN32
-        if (resolved_backend == "rocm-stable") {
-            // Windows stable diffusion artifacts are currently built against ROCm 7.1.1
-            // and don't follow the rocm-stable-runtime version from backend_versions.json
-            params.filename = "sd-" + short_version + "-bin-win-rocm-7.1.1-x64.zip";
-        } else {  // rocm-preview
-            params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
-        }
+        params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
 #elif defined(__linux__)
-    if (resolved_backend == "rocm-stable") {
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
-                  get_rocm_stable_runtime_version() + ".zip";
-    } else {
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
                   get_therock_version() + ".zip";
-    }
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
@@ -263,11 +241,6 @@ void SDServer::load(const std::string& model_name,
     std::string lib_path = exe_dir.string();
 
     if (resolved_backend == "rocm-stable") {
-        std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-        if (fs::exists(runtime_dir)) {
-            lib_path = runtime_dir + ":" + lib_path;
-        }
-    } else if (resolved_backend == "rocm-preview") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
             std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
@@ -293,11 +266,6 @@ void SDServer::load(const std::string& model_name,
         std::string new_path = exe_dir.string();
 
         if (resolved_backend == "rocm-stable") {
-            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-            if (fs::exists(runtime_dir)) {
-                new_path = runtime_dir + ";" + new_path;
-            }
-        } else if (resolved_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
