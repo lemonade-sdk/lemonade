@@ -41,7 +41,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [addModelInitialValues, setAddModelInitialValues] = useState<AddModelInitialValues | undefined>(undefined);
   const addModelFromJSONRef = useRef<HTMLInputElement>(null);
 
-  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
+  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'tts';
 
   const modelType = useMemo((): ModelType => {
     if (!selectedModel) return 'llm';
@@ -58,7 +58,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
     if (info.labels?.includes('image')) return 'image';
-    if (info.labels?.includes('speech')) return 'speech';
+    if (info.labels?.includes('tts')) return 'tts';
     return 'llm';
   }, [selectedModel, modelsData]);
 
@@ -261,7 +261,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     : activeModelType === 'reranking' ? 'Lemonade Reranking'
     : activeModelType === 'transcription' ? 'Lemonade Transcriber'
     : activeModelType === 'image' ? 'Lemonade Image Generator'
-    : activeModelType === 'speech' ? 'Lemonade Text to Speech'
+    : activeModelType === 'tts' ? 'Lemonade Text to Speech'
     : 'LLM Chat';
 
   const sharedProps = {
@@ -298,7 +298,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       {activeModelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
-      {activeModelType === 'speech' && <TTSPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'tts' && <TTSPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'llm' && (
         <LLMChatPanel
           key={resetKey}

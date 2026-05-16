@@ -429,8 +429,7 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
         "transcription",
         "image",
         "tts",
-        "speech",
-        "esrgan",
+        "upscaling",
         "edit"
     };
 

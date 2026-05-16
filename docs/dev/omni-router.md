@@ -36,7 +36,7 @@ The canonical definitions live in [`src/app/src/renderer/utils/toolDefinitions.j
 |------|----------|-------------------------|
 | `generate_image` | `POST /v1/images/generations` | `image` |
 | `edit_image` | `POST /v1/images/edits` | `edit` |
-| `text_to_speech` | `POST /v1/audio/speech` | `tts` or `speech` |
+| `text_to_speech` | `POST /v1/audio/speech` | `tts` |
 | `transcribe_audio` | `POST /v1/audio/transcriptions` | `transcription` |
 | `analyze_image` | `POST /v1/chat/completions` | LLM with `vision` |
 

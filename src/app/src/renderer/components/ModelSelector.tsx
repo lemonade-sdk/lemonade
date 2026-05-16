@@ -22,7 +22,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const visibleDownloadedModels = downloadedModels.filter((model) => {
-    if (model.info?.labels?.includes('esrgan')) return false;
+    if (model.info?.labels?.includes('upscaling')) return false;
     if (!isCollectionModel(model.info)) {
       return true;
     }

@@ -1456,8 +1456,7 @@
         "recipe": "kokoro",
         "suggested": true,
         "labels": [
-            "tts",
-            "speech"
+            "tts"
         ],
         "size": 0.34
     },
@@ -1466,7 +1465,7 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "esrgan",
+            "upscaling",
             "image"
         ],
         "size": 0.064
@@ -1476,7 +1475,7 @@
         "recipe": "sd-cpp",
         "suggested": true,
         "labels": [
-            "esrgan",
+            "upscaling",
             "image"
         ],
         "size": 0.017
