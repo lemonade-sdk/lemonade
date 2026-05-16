@@ -950,7 +950,13 @@ sys.exit(0)
             )
             self.assertIn('model_provider="lemonade"', argv)
             self.assertEqual(payload["env"]["OPENAI_BASE_URL"], "")
-            self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
+            # OPENAI_API_KEY mirrors whatever lemonade was running with — the
+            # default "lemonade" when no key is set, or the LEMONADE_API_KEY
+            # env value when the test job sets one (e.g. Test API Key CI job).
+            self.assertEqual(
+                payload["env"]["OPENAI_API_KEY"],
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
 
     def test_114_launch_claude_defaults_and_host_normalization(self):
         """Claude launch should default auth token and normalize wildcard host to localhost."""
