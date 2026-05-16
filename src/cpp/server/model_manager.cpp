@@ -1039,17 +1039,8 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return all_bin_files[0];
     }
 
-    // For GGUF-backed recipes, find the GGUF file with advanced sharded model support.
-    // sd-cpp supports GGUF checkpoints too; those can be registered with a quant alias
-    // such as CHECKPOINT:Q8_0, and download_from_huggingface() resolves that alias to
-    // the concrete filename. Use the same resolver here so load finds the downloaded file.
-    auto is_direct_non_gguf_variant = [](const std::string& value) {
-        return ends_with_ignore_case(value, ".safetensors");
-    };
-    const bool should_resolve_gguf = type == "main" &&
-        (info.recipe == "llamacpp" ||
-         (info.recipe == "sd-cpp" && !is_direct_non_gguf_variant(variant)));
-    if (should_resolve_gguf) {
+    // For llamacpp, find the GGUF file with advanced sharded model support
+    if (info.recipe == "llamacpp" && type == "main") {
         if (!safe_exists(model_cache_path_fs)) {
             return model_cache_path;  // Return directory path even if not found
         }
@@ -1973,39 +1964,6 @@ void ModelManager::register_user_model(const std::string& model_name,
     for (const std::string& prop : USER_DEFINED_MODEL_PROPS) {
         if (model_data.contains(prop)) {
             model_entry[prop] = model_data[prop];
-        }
-    }
-
-    // Preserve existing named checkpoints when an older or partial client
-    // re-registers the same user model with only the legacy top-level
-    // `checkpoint` field. This keeps sd-cpp component checkpoints such as
-    // text_encoder and vae from being dropped by a refresh/re-pull round trip.
-    if (user_models_.contains(clean_name) && user_models_[clean_name].is_object()) {
-        const json& existing_entry = user_models_[clean_name];
-        if (existing_entry.contains("checkpoints") && existing_entry["checkpoints"].is_object()) {
-            std::string requested_main;
-            if (model_entry.contains("checkpoints") && model_entry["checkpoints"].is_object()) {
-                requested_main = JsonUtils::get_or_default<std::string>(model_entry["checkpoints"], "main", "");
-            }
-            if (requested_main.empty()) {
-                requested_main = JsonUtils::get_or_default<std::string>(model_entry, "checkpoint", "");
-            }
-
-            std::string existing_main = JsonUtils::get_or_default<std::string>(existing_entry["checkpoints"], "main", "");
-            if (existing_main.empty()) {
-                existing_main = JsonUtils::get_or_default<std::string>(existing_entry, "checkpoint", "");
-            }
-
-            if (!existing_main.empty() && (requested_main.empty() || requested_main == existing_main)) {
-                if (!model_entry.contains("checkpoints") || !model_entry["checkpoints"].is_object()) {
-                    model_entry["checkpoints"] = json::object();
-                }
-                for (const auto& [key, value] : existing_entry["checkpoints"].items()) {
-                    if (!model_entry["checkpoints"].contains(key)) {
-                        model_entry["checkpoints"][key] = value;
-                    }
-                }
-            }
         }
     }
 
