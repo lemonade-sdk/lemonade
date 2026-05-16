@@ -1,4 +1,4 @@
-name: "🐛 Bug Report"
+﻿name: "🐛 Bug Report"
 description: Report a bug or unexpected behavior in Lemonade
 labels: ["bug"]
 body:
@@ -26,7 +26,7 @@ body:
     id: version
     attributes:
       label: Lemonade Version
-      description: "Run `lemonade-server --version` or check the About dialog in the app."
+      description: "Run `lemonade --version` or check the About dialog in the app."
       placeholder: "e.g. 9.4.2"
     validations:
       required: true
@@ -35,7 +35,7 @@ body:
     id: gpu
     attributes:
       label: GPU / APU Model
-      description: "Which GPU or APU are you using? You can find this in `lemonade-server status` output."
+      description: "Which GPU or APU are you using? Run `lemonade scan` to see detected devices."
       placeholder: "e.g. AMD Radeon RX 7900 XTX, AMD Ryzen AI 9 HX 370"
     validations:
       required: false
@@ -72,8 +72,8 @@ body:
       label: Steps to Reproduce
       description: Step-by-step instructions to reproduce the issue.
       placeholder: |
-        1. Start lemonade-server with `lemonade-server serve`
-        2. Load model X with `lemonade-server run <model>`
+        1. Start the server with `lemond`
+        2. Load model X with `lemonade run <model>`
         3. Send a request to ...
         4. See error ...
     validations:
@@ -100,23 +100,24 @@ body:
         **How to collect logs:**
         1. Start (or restart) the server with debug logging:
            ```
-           lemonade-server serve --log-level debug
+           lemond --log-level debug
            ```
         2. Reproduce the issue.
         3. Copy the relevant log output and paste it below, or attach the log file.
 
         **Log file locations:**
         - **Windows:** `%LOCALAPPDATA%\lemonade\logs\`
-        - **Linux/macOS:** `~/.local/share/lemonade/logs/` or run `lemonade-server logs`
+        - **Linux/macOS:** `~/.local/share/lemonade/logs/` or run `lemonade logs`
 
         **Additional diagnostic commands (run these and paste the output):**
-        - `lemonade-server status` — shows server info, loaded models, and GPU details
-        - `lemonade-server recipes` — shows installed backends and driver status
+        - `lemonade status` — shows server info and loaded models
+         - `lemonade scan` — shows detected GPU/APU devices
+        - `lemonade recipes` — shows installed backends and driver status
 
         **Platform-specific tips:**
         - **Windows:** Check Event Viewer (Application log) if the server crashes silently.
-        - **Linux:** If using systemd, check `journalctl -u lemonade-server` for service logs.
-        - **macOS:** Check Console.app or run `log show --predicate 'process == "lemonade-server"' --last 5m`
+        - **Linux:** If using systemd, check `journalctl -u lemond` for service logs.
+        - **macOS:** Check Console.app or run `log show --predicate 'process == "lemond"' --last 5m`
       render: shell
     validations:
       required: false
