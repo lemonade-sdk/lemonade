@@ -16,7 +16,7 @@ Expects a running server (started by the installer or manually).
 
 Usage:
     python server_cli2.py
-    python server_cli2.py --server-binary /path/to/lemonade-server
+    python server_cli2.py --cli-binary /path/to/lemonade
 """
 
 import argparse
@@ -33,7 +33,7 @@ import time
 import unittest
 import uuid
 
-from utils.server_base import wait_for_server
+from utils.server_base import _auth_headers, set_server_config, wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     MULTI_REPO_MODEL_A_CACHE_DIR,
@@ -54,7 +54,7 @@ from utils.test_models import (
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_NAME,
-    get_default_server_binary,
+    get_default_cli_binary,
     get_hf_cache_dir_candidates,
 )
 
@@ -123,7 +123,7 @@ def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
 
 # Global configuration
 _config = {
-    "server_binary": None,
+    "cli_binary": None,
 }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -131,30 +131,23 @@ WINDOWS_LAUNCH_STUB_SKIP_REASON = "Windows launch-stub execution uses non-native
 
 
 def get_cli_binary():
-    """Get the CLI binary path (same as server binary but called 'lemonade')."""
-    server_binary = _config["server_binary"] or get_default_server_binary()
-    # Replace 'lemonade-server' with 'lemonade' in the path
-    return server_binary.replace("lemonade-server", "lemonade")
-
-
-def get_legacy_cli_binary():
-    """Get the deprecated lemonade-server shim binary path."""
-    return _config["server_binary"] or get_default_server_binary()
+    """Get the lemonade CLI binary path."""
+    return _config["cli_binary"] or get_default_cli_binary()
 
 
 def parse_cli_args():
     """Parse command line arguments for CLI client tests."""
     parser = argparse.ArgumentParser(description="Test lemonade CLI client")
     parser.add_argument(
-        "--server-binary",
+        "--cli-binary",
         type=str,
-        default=get_default_server_binary(),
-        help="Path to lemonade-server binary (default: CMake build output)",
+        default=get_default_cli_binary(),
+        help="Path to lemonade CLI binary (default: CMake build output)",
     )
 
     args = parser.parse_args()
 
-    _config["server_binary"] = args.server_binary
+    _config["cli_binary"] = args.cli_binary
 
     return args
 
@@ -199,34 +192,6 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         print(f"stdout: {result.stdout}")
     if result.stderr:
         print(f"stderr: {result.stderr}")
-
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, cmd, result.stdout, result.stderr
-        )
-
-    return result
-
-
-def run_legacy_cli_command(args, timeout=60, check=False):
-    """Run the deprecated lemonade-server shim and return the result."""
-    legacy_binary = get_legacy_cli_binary()
-    cmd = [legacy_binary] + args
-    print(f"Running legacy shim: {' '.join(cmd)}")
-
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-    if result.stdout:
-        print(f"legacy stdout: {result.stdout}")
-    if result.stderr:
-        print(f"legacy stderr: {result.stderr}")
 
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -339,6 +304,18 @@ sys.exit(0)
         return env
 
     # =============================================================================
+    # Version Tests
+    # =============================================================================
+
+    def test_005_version(self):
+        """Test --version flag."""
+        result = self.assertCommandSucceeds(["--version"])
+        self.assertTrue(
+            len(result.stdout) > 0 or len(result.stderr) > 0,
+            "Version command should produce output",
+        )
+
+    # =============================================================================
     # Status Tests
     # =============================================================================
 
@@ -428,6 +405,69 @@ sys.exit(0)
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
+
+    # =============================================================================
+    # Runtime Config Tests
+    # =============================================================================
+
+    def test_043_listen_all_via_runtime_config(self):
+        """Test that setting host to 0.0.0.0 via /internal/set works."""
+        # Set host to 0.0.0.0 (listen on all interfaces)
+        try:
+            set_server_config({"host": "0.0.0.0"})
+            print("[OK] Set host to 0.0.0.0 via /internal/set")
+        except Exception as e:
+            self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+        # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+        # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+        # ::1 (IPv6) in some environments (e.g. Fedora containers).
+        for i in range(30):
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:{PORT}/api/v1/health",
+                    headers=_auth_headers(),
+                    timeout=2,
+                )
+                if response.status_code == 200:
+                    break
+            except requests.ConnectionError:
+                pass
+            time.sleep(1)
+        else:
+            self.fail(
+                "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+            )
+
+        # Verify the server still responds (status command should work)
+        result = self.assertCommandSucceeds(["status"])
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "running" in output or "online" in output or "active" in output,
+            f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
+        )
+
+        # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason)
+        response = requests.get(
+            f"http://127.0.0.1:{PORT}/api/v1/health",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Restore host back to localhost. Use 127.0.0.1 directly since
+        # the server is currently bound to 0.0.0.0 (IPv4 only).
+        try:
+            requests.post(
+                f"http://127.0.0.1:{PORT}/internal/set",
+                json={"host": "localhost"},
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            print("[OK] Restored host to localhost")
+        except Exception as e:
+            # Best-effort restore — don't fail the test
+            print(f"Warning: Failed to restore host to localhost: {e}")
 
     # =============================================================================
     # Pull Tests
@@ -1828,25 +1868,6 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--ctx-size", launch_section)
         self.assertNotIn("--llamacpp", launch_section)
 
-    def test_901_legacy_pull_deprecation_message(self):
-        """The legacy shim should not forward pull args and should print migration guidance."""
-        result = run_legacy_cli_command(
-            ["pull", "Qwen3-0.6B-GGUF"], timeout=TIMEOUT_DEFAULT
-        )
-        self.assertNotEqual(result.returncode, 0)
-
-        output = result.stdout + result.stderr
-        self.assertIn("This command is deprecated.", output)
-        self.assertIn("use 'lemonade pull --help' instead", output.lower())
-        self.assertIn("Built-in model: lemonade pull Qwen3-0.6B-GGUF", output)
-        self.assertIn(
-            "Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M", output
-        )
-        self.assertIn(
-            "Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp",
-            output,
-        )
-
 
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
@@ -1854,7 +1875,7 @@ def run_cli_client_tests():
 
     print(f"\n{'=' * 70}")
     print("CLI CLIENT TESTS")
-    print(f"Server binary: {_config['server_binary']}")
+    print(f"CLI binary: {_config['cli_binary']}")
     print(f"CLI binary: {get_cli_binary()}")
     print(f"{'=' * 70}\n")
 

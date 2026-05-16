@@ -3,7 +3,7 @@ Inference-agnostic endpoint tests for Lemonade Server.
 
 Requires a Lemonade server to already be running on port 13305.
 This test module does not start the server, and its inherited
-`--server-binary` argument is not used here.
+`--cli-binary` argument is not used here.
 
 Tests endpoints that don't require specific inference backends:
 - /health

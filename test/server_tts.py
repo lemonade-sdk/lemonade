@@ -5,7 +5,7 @@ Tests the /audio/speech endpoint.
 
 Usage:
     python server_tts.py
-    python server_tts.py --server-binary /path/to/lemonade-server
+    python server_tts.py --cli-binary /path/to/lemonade
 """
 
 import base64

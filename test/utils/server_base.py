@@ -45,12 +45,12 @@ from .test_models import (
     STANDARD_MESSAGES,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
-    get_default_server_binary,
+    get_default_cli_binary,
 )
 
 # Global configuration set by parse_args()
 _config = {
-    "server_binary": None,
+    "cli_binary": None,
     "wrapped_server": None,
     "backend": None,
     "modality": None,
@@ -84,10 +84,10 @@ def parse_args(additional_args=None, modality=None):
         help="Run tests in offline mode",
     )
     parser.add_argument(
-        "--server-binary",
+        "--cli-binary",
         type=str,
-        default=get_default_server_binary(),
-        help="Path to server binary (default: lemonade-server in venv)",
+        default=get_default_cli_binary(),
+        help="Path to lemonade CLI binary (default: build/lemonade)",
     )
     parser.add_argument(
         "--wrapped-server",
@@ -105,7 +105,7 @@ def parse_args(additional_args=None, modality=None):
     args, unknown = parser.parse_known_args()
 
     # Update global config
-    _config["server_binary"] = args.server_binary
+    _config["cli_binary"] = args.cli_binary
     _config["wrapped_server"] = args.wrapped_server
     _config["backend"] = args.backend
     _config["modality"] = modality
@@ -124,9 +124,9 @@ def get_config():
     return _config.copy()
 
 
-def get_server_binary():
-    """Get the server binary path."""
-    return _config["server_binary"]
+def get_cli_binary():
+    """Get the lemonade CLI binary path."""
+    return _config["cli_binary"]
 
 
 def wait_for_server(port=PORT, timeout=60):
@@ -409,7 +409,7 @@ __all__ = [
     "ServerTestBase",
     "parse_args",
     "get_config",
-    "get_server_binary",
+    "get_cli_binary",
     "wait_for_server",
     "set_server_config",
     "unload_all_models",

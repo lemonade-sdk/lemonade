@@ -14,7 +14,6 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 - **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`, etc. Communicates with router via HTTP. Discovers running server via UDP beacon.
 - **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemond` and shows a system tray icon. Auto-starts via Windows startup folder.
 - **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemond`. Platform code in `src/cpp/tray/platform/`.
-- **lemonade-server** — Deprecated backwards-compatibility shim. Delegates to `lemond` or `lemonade`.
 
 ### Backend Abstraction
 
@@ -118,7 +117,7 @@ Integration tests in Python against a live server. Tests auto-discover the serve
 pip install -r test/requirements.txt
 
 # CLI tests (no inference backend needed)
-python test/server_cli.py
+python test/server_cli2.py
 
 # Endpoint tests (no inference backend needed)
 python test/server_endpoints.py

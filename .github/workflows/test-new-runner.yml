@@ -37,4 +37,4 @@ jobs:
       - name: Refresh Environment and Test
         run: |
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          lemonade-server --help
+          lemonade --help
