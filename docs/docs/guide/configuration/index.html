@@ -1189,6 +1189,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/contribute/" class="md-nav__link">
         
   
@@ -2105,10 +2133,11 @@
 <span class="w">  </span><span class="nt">&quot;no_fetch_executables&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;disable_model_filtering&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;enable_dgpu_gtt&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;preview&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;device&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;prefer_system&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;rocm_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;vulkan_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
@@ -2234,8 +2263,8 @@
 <tr>
 <td><code>rocm_channel</code></td>
 <td>string</td>
-<td>"preview"</td>
-<td>ROCm backend channel: "preview" (default), "stable", or "nightly". See <a href="./llamacpp/">llama.cpp Backend</a> for details</td>
+<td>"stable"</td>
+<td>ROCm backend channel: "stable" (default) or "nightly". See <a href="./llamacpp/">llama.cpp Backend</a> for details</td>
 </tr>
 </tbody>
 </table>
@@ -2246,6 +2275,7 @@
 |-----|---------|-------------|
 | <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
 | <code>args</code> | "" | Custom arguments to pass to llama-server |
+| <code>device</code> | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | <code>prefer_system</code> | false | Prefer system-installed llama.cpp over bundled |
 | <code>*_bin</code> | "builtin" | Backend binary selection — see <a href="#backend-binary-selection">Backend binary selection</a> |</p>
 <p><strong>whispercpp</strong> — Audio transcription:

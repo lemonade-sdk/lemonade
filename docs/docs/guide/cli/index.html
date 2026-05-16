@@ -1203,6 +1203,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/contribute/" class="md-nav__link">
         
   
@@ -2599,6 +2627,11 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <td>Auto-detected</td>
 </tr>
 <tr>
+<td><code>--llamacpp-device DEVICE</code></td>
+<td>Comma-separated list of accelerator devices to use (e.g. Vulkan0)</td>
+<td>(empty)</td>
+</tr>
+<tr>
 <td><code>--llamacpp-args ARGS</code></td>
 <td>Custom arguments to pass to llama-server (must not conflict with managed args)</td>
 <td><code>""</code></td>
@@ -2701,12 +2734,18 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <td>WhisperCpp backend to use</td>
 <td>Auto-detected</td>
 </tr>
+<tr>
+<td><code>--merge-args</code> / <code>--no-merge-args</code></td>
+<td>Merge global and model arguments when loading the model</td>
+<td><code>true</code></td>
+</tr>
 </tbody>
 </table>
 <p><strong>Notes:</strong>
 - Use <code>--save-options</code> to persist your configuration for the model
 - Unspecified options will use the backend's default values
-- Backend options (<code>--llamacpp</code>, <code>--sdcpp</code>, <code>--whispercpp</code>) are auto-detected based on system capabilities</p>
+- Backend options (<code>--llamacpp</code>, <code>--sdcpp</code>, <code>--whispercpp</code>) are auto-detected based on system capabilities
+- <code>--merge-args</code> controls whether <code>*_args</code> from global config are merged with per-model args (default: merge). Use <code>--no-merge-args</code> to replace global args entirely with per-model args.</p>
 <p><strong>Examples:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Load a model with default options</span>
 lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF
@@ -2722,6 +2761,9 @@ lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span
 
 <span class="c1"># Load a llama.cpp model with custom arguments</span>
 lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on --no-mmap&quot;</span>
+
+<span class="c1"># Load a model without merging global args (per-model args replace global entirely)</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--no-merge-args<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on&quot;</span>
 
 <span class="c1"># Load an image generation model with custom settings</span>
 lemonade<span class="w"> </span>load<span class="w"> </span>Z-Image-Turbo<span class="w"> </span>--sdcpp<span class="w"> </span>rocm<span class="w"> </span>--steps<span class="w"> </span><span class="m">8</span><span class="w"> </span>--cfg-scale<span class="w"> </span><span class="m">1</span><span class="w"> </span>--width<span class="w"> </span><span class="m">1024</span><span class="w"> </span>--height<span class="w"> </span><span class="m">1024</span>
@@ -2825,7 +2867,7 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 </code></pre></div>
 <h2 id="options-for-launch">Options for launch</h2>
 <p>The <code>launch</code> command launches an agent and triggers model loading asynchronously. If no model is provided, launch prompts for recipe/model selection before starting the agent:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>AGENT<span class="w"> </span><span class="o">[</span>--model<span class="w"> </span>MODEL_NAME<span class="o">]</span><span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span><span class="o">[</span>AGENT<span class="o">]</span><span class="w"> </span><span class="o">[</span>--model<span class="w"> </span>MODEL_NAME<span class="o">]</span><span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
 </code></pre></div>
 <table>
 <thead>
@@ -2838,8 +2880,8 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 <tbody>
 <tr>
 <td><code>AGENT</code></td>
-<td>Agent name to launch. Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code></td>
-<td>Yes</td>
+<td>Agent name to launch. Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>. If omitted, you will be prompted to select one.</td>
+<td>No</td>
 </tr>
 <tr>
 <td><code>--model MODEL_NAME</code></td>
@@ -2857,29 +2899,26 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 <td>No</td>
 </tr>
 <tr>
-<td><code>--provider,-p [PROVIDER]</code></td>
-<td>Codex only: select provider name for Codex config; Lemonade does not read or modify <code>config.toml</code> (defaults to <code>lemonade</code>)</td>
-<td>No</td>
-</tr>
-<tr>
 <td><code>--agent-args ARGS</code></td>
 <td>Custom arguments to pass directly to the launched agent process</td>
 <td><code>""</code></td>
 </tr>
+</tbody>
+</table>
+<p>Codex-only option:</p>
+<table>
+<thead>
 <tr>
-<td><code>--ctx-size SIZE</code></td>
-<td>Context size for the model</td>
-<td><code>4096</code></td>
+<th>Option/Argument</th>
+<th>Description</th>
+<th>Required</th>
 </tr>
+</thead>
+<tbody>
 <tr>
-<td><code>--llamacpp BACKEND</code></td>
-<td>LlamaCpp backend to use</td>
-<td>Auto-detected</td>
-</tr>
-<tr>
-<td><code>--llamacpp-args ARGS</code></td>
-<td>Custom arguments to pass to llama-server (must not conflict with managed args)</td>
-<td><code>""</code></td>
+<td><code>--provider,-p [PROVIDER]</code></td>
+<td>Select provider name for Codex config; Lemonade does not read or modify <code>config.toml</code> (defaults to <code>lemonade</code>)</td>
+<td>No</td>
 </tr>
 </tbody>
 </table>
@@ -2890,7 +2929,8 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 - For local recipe files, run <code>lemonade import &lt;LOCAL_RECIPE_JSON&gt;</code> first, then launch with the imported model id.
 - <code>--api-key</code> is propagated to the launched agent process.
 - For <code>codex</code>, launch now injects a Lemonade model provider by default so host/port settings are honored.
-- <code>--provider</code> is passed directly to Codex as <code>model_provider</code>; provider resolution/errors are handled by Codex.
+- <code>--provider</code> is accepted only by <code>lemonade launch codex</code> and is passed directly to Codex as <code>model_provider</code>; provider resolution/errors are handled by Codex.
+- Existing <code>LEMONADE_*</code> recipe env vars such as <code>LEMONADE_CTX_SIZE</code> are still honored by <code>launch</code>.
 - <code>--agent-args</code> is parsed and appended to the launched agent command.
 - Supported agents: <code>claude</code>, <code>codex</code>, <code>opencode</code>
 - <code>opencode</code> uses an auto-managed config file at <code>~/.config/opencode/opencode.json</code>.
@@ -2899,20 +2939,11 @@ lemonade<span class="w"> </span>backends<span class="w"> </span>install<span cla
 <div class="highlight"><pre><span></span><code><span class="c1"># Launch an agent with default model settings</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF
 
-<span class="c1"># Launch an agent with custom context size</span>
-lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">32768</span>
-
-<span class="c1"># Launch an agent with a specific llama.cpp backend</span>
-lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
-
 <span class="c1"># Launch codex using provider from your Codex config.toml (default provider: lemonade)</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>-p
 
 <span class="c1"># Launch codex using a custom provider name from your Codex config.toml</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--provider<span class="w"> </span>my-provider
-
-<span class="c1"># Launch an agent with custom llama.cpp arguments</span>
-lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--ctx-size<span class="w"> </span><span class="m">32768</span><span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on --no-mmap&quot;</span>
 
 <span class="c1"># Pass additional arguments directly to the agent</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">&quot;--approval-mode never&quot;</span>

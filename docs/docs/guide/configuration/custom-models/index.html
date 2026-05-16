@@ -739,6 +739,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#model-naming-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model naming spec
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model naming spec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-api-emits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What the API emits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-input-forms-are-accepted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What input forms are accepted
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-vs-gui-display" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI vs. GUI display
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#five-reference-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Five reference cases
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#user_modelsjson-reference" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1119,6 +1180,34 @@
     
   
     Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
   
 
     
@@ -1775,6 +1864,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#model-naming-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model naming spec
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model naming spec">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-api-emits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What the API emits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-input-forms-are-accepted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What input forms are accepted
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-vs-gui-display" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI vs. GUI display
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#five-reference-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Five reference cases
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#user_modelsjson-reference" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2011,6 +2161,87 @@ This guide covers the underlying JSON files for users who need manual control be
 </tbody>
 </table>
 <p>See <a href=".././">configuration.md</a> for more information about finding the cache directory.</p>
+<h2 id="model-naming-spec">Model naming spec</h2>
+<p>Lemonade tracks three sources of models. Every model has a <strong>canonical ID</strong> of the form <code>&lt;source&gt;.&lt;bare-name&gt;</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Canonical ID</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user.NAME</code></td>
+<td>Model registered via <code>lemonade pull</code> (entry in <code>user_models.json</code>)</td>
+</tr>
+<tr>
+<td><code>extra.NAME</code></td>
+<td>Model imported by dropping a GGUF in <code>--extra-models-dir</code></td>
+</tr>
+<tr>
+<td><code>builtin.NAME</code></td>
+<td>Model compiled into Lemonade's built-in catalog (<code>server_models.json</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>bare name</strong> <code>NAME</code> is an alias that always resolves to whichever source wins precedence for that name. Precedence is <strong>registered &gt; imported &gt; built-in</strong>.</p>
+<h3 id="what-the-api-emits">What the API emits</h3>
+<p><code>/v1/models</code>, <code>/v1/models/{id}</code>, <code>lemonade list</code>, and the Ollama <code>/api/tags</code> endpoint emit each model with an <code>id</code> set to either:</p>
+<ul>
+<li>the <strong>bare name</strong> if the model is the precedence-winner for its bare name, or</li>
+<li>the <strong>canonical-prefixed ID</strong> if another source outranks it on the same bare name.</li>
+</ul>
+<p>For each bare name with collisions, the response contains one bare row plus one canonical-prefixed row per shadowed source.</p>
+<h3 id="what-input-forms-are-accepted">What input forms are accepted</h3>
+<p>Anywhere a model name is accepted (request bodies, CLI args, URL path parameters), all four forms work:</p>
+<ul>
+<li>the bare name <code>NAME</code> — resolves to the winner</li>
+<li><code>user.NAME</code> — always the registered model (404 if none)</li>
+<li><code>extra.NAME</code> — always the imported model (404 if none)</li>
+<li><code>builtin.NAME</code> — always the built-in model (404 if none)</li>
+</ul>
+<p><code>lemonade pull</code> rejects model names starting with <code>extra.</code> or <code>builtin.</code> since those prefixes are reserved.</p>
+<h3 id="cli-vs-gui-display">CLI vs. GUI display</h3>
+<p>The CLI (<code>lemonade list</code>) prints the API <code>id</code> verbatim. That means the Name column is always copy-paste-safe — every cell is a valid input to <code>lemonade load</code>, <code>lemonade delete</code>, <code>lemonade run</code>, etc.</p>
+<p>The Tauri desktop app and the web app apply a display transformation on top of the API id: bare ids render as <code>NAME</code>, and canonical-prefixed ids render as <code>NAME (registered)</code> / <code>NAME (imported)</code> / <code>NAME (builtin)</code>. The suffix appears only for shadowed sources.</p>
+<h3 id="five-reference-cases">Five reference cases</h3>
+<table>
+<thead>
+<tr>
+<th>Sources</th>
+<th><code>/v1/models</code> ids</th>
+<th>Resolution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>built-in <code>Qwen2.5-Coder</code> only</td>
+<td><code>Qwen2.5-Coder</code></td>
+<td><code>Qwen2.5-Coder</code>, <code>builtin.Qwen2.5-Coder</code> → built-in</td>
+</tr>
+<tr>
+<td>built-in <code>Foo</code> + registered <code>Foo</code></td>
+<td><code>Foo</code>, <code>builtin.Foo</code></td>
+<td><code>Foo</code>/<code>user.Foo</code> → user; <code>builtin.Foo</code> → built-in</td>
+</tr>
+<tr>
+<td>built-in <code>Bar</code> + registered <code>Bar</code> + extra <code>Bar</code></td>
+<td><code>Bar</code>, <code>extra.Bar</code>, <code>builtin.Bar</code></td>
+<td><code>Bar</code>/<code>user.Bar</code> → user; <code>extra.Bar</code> → extra; <code>builtin.Bar</code> → built-in</td>
+</tr>
+<tr>
+<td>built-in <code>Baz</code> + extra <code>Baz</code></td>
+<td><code>Baz</code>, <code>builtin.Baz</code></td>
+<td><code>Baz</code>/<code>extra.Baz</code> → extra; <code>builtin.Baz</code> → built-in</td>
+</tr>
+<tr>
+<td>registered <code>MyModel</code> only</td>
+<td><code>MyModel</code></td>
+<td><code>MyModel</code>/<code>user.MyModel</code> → user; <code>builtin.MyModel</code> → 404</td>
+</tr>
+</tbody>
+</table>
 <h2 id="user_modelsjson-reference"><code>user_models.json</code> Reference</h2>
 <p>This file contains a JSON object where each key is a model name and each value defines the model's properties. Create this file in your cache directory if it doesn't exist.</p>
 <h3 id="template">Template</h3>
@@ -2148,17 +2379,21 @@ This guide covers the underlying JSON files for users who need manual control be
 <li>Labels like <code>custom</code> are added automatically. Additional labels (<code>reasoning</code>, <code>vision</code>, <code>embeddings</code>, <code>reranking</code>) can be set via the <code>pull</code> CLI/API flags, or by including a <code>labels</code> array in the JSON entry.</li>
 </ul>
 <h2 id="recipe_optionsjson-reference"><code>recipe_options.json</code> Reference</h2>
-<p>This file configures per-model runtime settings. Each key is a <strong>full model name</strong> (including prefix like <code>user.</code> or <code>extra.</code>) and each value contains the settings for that model.</p>
+<p>This file configures per-model runtime settings. Each key is a <strong>canonical model ID</strong> — one of <code>user.NAME</code>, <code>extra.NAME</code>, or <code>builtin.NAME</code> (see the <a href="#model-naming-spec">Model naming spec</a> above). Each value contains the settings for that model.</p>
 <h3 id="template_1">Template</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;user.MyCustomModel&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vulkan&quot;</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">&quot;llamacpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;builtin.Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <blockquote>
+<p><strong>Migration:</strong> Older Lemonade versions stored built-in entries under their bare name (e.g. <code>"Qwen2.5-Coder-1.5B-Instruct"</code> with no prefix). On first load with the current version, any bare key matching a known built-in is rewritten to <code>builtin.&lt;name&gt;</code> in place. An INFO log line reports the number of migrated keys. Bare keys that don't match a built-in are preserved unchanged.</p>
 <p><strong>Note:</strong> Per-model options can also be configured through the Lemonade desktop app's model settings, or via the <code>save_options</code> parameter in the <a href="../../../api/lemonade/#post-v1load"><code>/api/v1/load</code> endpoint</a>.</p>
 </blockquote>
 <h2 id="complete-examples">Complete Examples</h2>
@@ -2180,6 +2415,7 @@ This guide covers the underlying JSON files for users who need manual control be
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
+<p>(Use <code>builtin.NAME</code> here if you're overriding a built-in model's defaults, or <code>extra.NAME</code> for an <code>--extra-models-dir</code> GGUF.)</p>
 <p>Then load the model:
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>run<span class="w"> </span>user.Qwen2.5-Coder-1.5B-Instruct
 </code></pre></div></p>
@@ -2218,6 +2454,7 @@ Or just <code>lemonade pull nomic-ai/nomic-embed-text-v1-GGUF</code> — the <co
 <li>Per-model values from <code>recipe_options.json</code></li>
 <li>Global configuration values, see <a href=".././">Server Configuration</a></li>
 </ol>
+<p><strong><code>*_args</code> merge behavior:</strong> For options ending in <code>_args</code> (e.g., <code>llamacpp_args</code>, <code>whispercpp_args</code>, <code>sdcpp_args</code>, <code>flm_args</code>, <code>vllm_args</code>), the CLI/API arguments are <strong>merged</strong> rather than replaced. The merge works at the flag level with higher priority settings taking priority.</p>
 <p>For full details, see the <a href="../../../api/lemonade/#post-v1load">load endpoint documentation</a>.</p>
 <h2 id="see-also">See Also</h2>
 <ul>

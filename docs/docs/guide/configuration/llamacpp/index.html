@@ -868,21 +868,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#preview-channel-default" class="md-nav__link">
+  <a href="#stable-channel-default" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Preview Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel
+        Stable Channel (Default)
       </span>
     </span>
   </a>
@@ -1158,6 +1147,34 @@
     
   
     Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
   
 
     
@@ -1887,21 +1904,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#preview-channel-default" class="md-nav__link">
+  <a href="#stable-channel-default" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Preview Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel
+        Stable Channel (Default)
       </span>
     </span>
   </a>
@@ -2080,8 +2086,7 @@
 <li><strong>Use Case</strong>: AMD GPU-optimized inference</li>
 <li><strong>Performance</strong>: Optimized for AMD hardware, may outperform Vulkan on supported GPUs</li>
 <li><strong>Channel Options</strong>:</li>
-<li><strong>Preview</strong> (default): Custom builds with latest optimizations from lemonade-sdk</li>
-<li><strong>Stable</strong>: Upstream llama.cpp releases with AMD ROCm support</li>
+<li><strong>Stable</strong> (default): Custom builds with latest optimizations from lemonade-sdk</li>
 <li><strong>Nightly</strong>: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)</li>
 <li><strong>Installation</strong>: Varies by channel (see below)</li>
 </ul>
@@ -2104,9 +2109,9 @@
 </ul>
 <h2 id="rocm-channel-configuration">ROCm Channel Configuration</h2>
 <p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
-<h3 id="preview-channel-default">Preview Channel (Default)</h3>
+<h3 id="stable-channel-default">Stable Channel (Default)</h3>
 <p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;preview&quot;</span>
+<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
 <span class="p">}</span>
 </code></pre></div>
 - <strong>Source</strong>: Custom builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a>
@@ -2115,21 +2120,6 @@
 - <strong>Platform</strong>: Windows and Linux
 - <strong>Runtime</strong>: Requires runtime for both Windows and Linux to be installed separately.
 - <strong>Best For</strong>: Users who want the latest performance optimizations</p>
-<h3 id="stable-channel">Stable Channel</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-- <strong>Source</strong>: Upstream <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a> releases
-- <strong>Binaries</strong>:
-  - <strong>Windows</strong>: Self-contained HIP binaries (no separate runtime needed)
-  - <strong>Linux</strong>: Binaries built against ROCm 7.2 runtime
-- <strong>Updates</strong>: Follows upstream llama.cpp release cycle
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>:
-  - Windows: Self-contained, no runtime installation required
-  - Linux: Downloads AMD ROCm 7.2.1 runtime if not present at <code>/opt/rocm</code>
-- <strong>Best For</strong>: Users who prefer stable, tested releases aligned with upstream</p>
 <h3 id="nightly-channel">Nightly Channel</h3>
 <p><div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nightly&quot;</span>
@@ -2151,8 +2141,8 @@
 <div class="highlight"><pre><span></span><code><span class="c1"># Switch to stable channel</span>
 lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
 
-<span class="c1"># Switch to preview channel (default)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>preview
+<span class="c1"># Switch to stable channel (default)</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
 
 <span class="c1"># Switch to nightly channel (experimental)</span>
 lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
@@ -2172,14 +2162,9 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 </thead>
 <tbody>
 <tr>
-<td><code>preview</code> <em>(default)</em></td>
+<td><code>stable</code> <em>(default)</em></td>
 <td><a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></td>
 <td>Lemonade-specific build tags</td>
-</tr>
-<tr>
-<td><code>stable</code></td>
-<td><a href="https://github.com/ggml-org/llama.cpp">ggml-org/llama.cpp</a></td>
-<td>Upstream tags, e.g. <code>b4888</code></td>
 </tr>
 <tr>
 <td><code>nightly</code></td>
@@ -2232,15 +2217,7 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 </ol>
 <h3 id="rocm-channel-selection">ROCm Channel Selection</h3>
 <ul>
-<li><strong>Use Preview</strong> if you:</li>
-<li>Want the best performance on AMD hardware</li>
-<li>Are comfortable with frequent updates</li>
-<li>
-<p>Are testing new models or features</p>
-</li>
-<li>
-<p><strong>Use Stable</strong> if you:</p>
-</li>
+<li><strong>Use Stable</strong> if you:</li>
 <li>Prefer stability over latest features</li>
 <li>Want upstream llama.cpp compatibility</li>
 <li>

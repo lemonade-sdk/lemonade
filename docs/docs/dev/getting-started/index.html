@@ -895,6 +895,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../contribute/" class="md-nav__link">
         
   
@@ -2857,10 +2885,10 @@ This is dramatically faster (&lt;1s per renderer change) and is the right loop f
   - Downloaded backends (llama-server, ryzenai-server): <code>~/.cache/lemonade/bin/</code>
   - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)
   - Runtime files (lock, log): <code>$XDG_RUNTIME_DIR/lemonade/</code> when set and writable, otherwise <code>/tmp/</code></p>
-<p><strong>macOS (beta):</strong>
+<p><strong>macOS:</strong>
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
-- macOS support is currently in beta; a signed and notarized <code>.pkg</code> installer is available from the <a href="https://github.com/lemonade-sdk/lemonade/releases/latest">releases page</a>
+- A signed and notarized <code>.pkg</code> installer is available from the <a href="https://github.com/lemonade-sdk/lemonade/releases/latest">releases page</a>
 - Local Release builds are ad-hoc codesigned (<code>codesign --sign -</code>) so they run without an Apple Developer certificate. To sign with a real Developer ID, export <code>DEVELOPER_ID_APPLICATION_IDENTITY</code> before configuring CMake (see <a href="#building-and-notarizing-for-distribution">Building and Notarizing for Distribution</a>).</p>
 <h2 id="building-installers">Building Installers</h2>
 <h3 id="windows-installer-wixmsi">Windows Installer (WiX/MSI)</h3>
@@ -3175,7 +3203,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 - <strong>Backend Wrappers:</strong> Manages llama.cpp, FastFlowLM, RyzenAI, and whisper.cpp backends</p>
 <p><strong>Multi-Model Support:</strong>
 - Router maintains multiple WrappedServer instances simultaneously
-- Separate LRU caches for LLM, embedding, reranking, and audio model types
+- Separate LRU caches for LLM, embedding, reranking, transcription, image, and TTS model types
 - NPU exclusivity: only one model can use NPU at a time
 - Configurable limits via <code>--max-loaded-models N</code> (default: 1)
 - Automatic eviction of least-recently-used models when limits reached
@@ -3316,6 +3344,10 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </tr>
 <tr>
 <td><code>llamacpp_args</code></td>
+<td>string</td>
+</tr>
+<tr>
+<td><code>llamacpp_device</code></td>
 <td>string</td>
 </tr>
 <tr>

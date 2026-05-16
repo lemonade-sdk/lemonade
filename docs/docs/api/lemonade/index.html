@@ -893,6 +893,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/contribute/" class="md-nav__link">
         
   
@@ -3265,6 +3293,12 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <td>sd-cpp</td>
 <td>Image height in pixels. Default: 512.</td>
 </tr>
+<tr>
+<td><code>merge_args</code></td>
+<td>No</td>
+<td>All</td>
+<td>Boolean. If true (default), <code>*_args</code> values from global config and per-model config are merged (per-model takes priority). If false, per-model <code>*_args</code> replace global <code>*_args</code> entirely.</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Setting Priority:</strong></p>
@@ -3435,7 +3469,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
 <span class="w">  </span><span class="nt">&quot;max_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;audio&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;transcription&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;embedding&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;image&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;llm&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span>
@@ -3453,7 +3487,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>model_name</code> - Name of the loaded model</li>
 <li><code>checkpoint</code> - Full checkpoint identifier</li>
 <li><code>last_use</code> - Unix timestamp of last access (load or inference)</li>
-<li><code>type</code> - Model type: <code>"llm"</code>, <code>"embedding"</code>, or <code>"reranking"</code></li>
+<li><code>type</code> - Model type: <code>"llm"</code>, <code>"embedding"</code>, <code>"reranking"</code>, <code>"transcription"</code>, <code>"image"</code>, or <code>"tts"</code></li>
 <li><code>device</code> - Space-separated device list: <code>"cpu"</code>, <code>"gpu"</code>, <code>"npu"</code>, or combinations like <code>"gpu npu"</code></li>
 <li><code>backend_url</code> - URL of the backend server process handling this model (useful for debugging)</li>
 <li><code>pid</code> - The Process ID (PID) of the backend engine handling this model</li>
@@ -3463,7 +3497,7 @@ data: {&quot;file_index&quot;:2,&quot;total_files&quot;:2,&quot;percent&quot;:10
 <li><code>llm</code> - Maximum LLM/chat models</li>
 <li><code>embedding</code> - Maximum embedding models</li>
 <li><code>reranking</code> - Maximum reranking models</li>
-<li><code>audio</code> - Maximum speech-to-text models</li>
+<li><code>transcription</code> - Maximum speech-to-text models</li>
 <li><code>image</code> - Maximum image models</li>
 <li><code>tts</code> - Maximum text-to-speech models</li>
 <li><code>websocket_port</code> - <em>(optional)</em> Port of the WebSocket server for the <a href=".././openai/#ws-realtime">Realtime Audio Transcription API</a> and <a href="#log-streaming-api-websocket">Log Streaming API</a>. Only present when the WebSocket server is running. The port is OS-assigned or set via <code>--websocket-port</code>.</li>

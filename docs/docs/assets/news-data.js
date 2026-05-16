@@ -10,6 +10,15 @@ const newsData = [
         type: "blog"
         },
     {
+        title: "Lemonade Getting Started Playbook",
+        url: "https://developer.amd.com/playbooks/lemonade-getting-started/",
+        date: "April 30, 2026",
+        description: "Use AMD's getting started playbook to install Lemonade, run local models, and connect apps through the OpenAI-compatible API.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/lemonade_playbook.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "tutorial"
+        },
+    {
         title: "AMD Making It Easier To Embed Lemonade AI Capabilities Into Other Apps",
         url: "https://www.phoronix.com/news/Lemonade-SDK-10.2-Released",
         date: "April 9, 2026",

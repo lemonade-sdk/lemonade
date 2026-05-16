@@ -893,6 +893,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/philosophy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/contribute/" class="md-nav__link">
         
   
@@ -1860,6 +1888,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Response format
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model Labels
       </span>
     </span>
   </a>
@@ -2949,6 +2988,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Response format
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model Labels
       </span>
     </span>
   </a>
@@ -4542,7 +4592,7 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 <li><code>max_context_window</code> - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.</li>
 <li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
 <li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
-<li><code>labels</code> - Array of tags describing the model (e.g., <code>"hot"</code>, <code>"reasoning"</code>, <code>"vision"</code>, <code>"embeddings"</code>, <code>"reranking"</code>, <code>"coding"</code>, <code>"tool-calling"</code>, <code>"image"</code>)</li>
+<li><code>labels</code> - Array of tags describing the model's capabilities and characteristics. See <a href="#model-labels">Model Labels</a> for the full list.</li>
 <li><code>image_defaults</code> - (Image models only) Default generation parameters for the model:<ul>
 <li><code>steps</code> - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)</li>
 <li><code>cfg_scale</code> - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)</li>
@@ -4551,6 +4601,119 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </ul>
 </li>
 </ul>
+<h3 id="model-labels">Model Labels</h3>
+<p>Labels describe what a model can do. A model may carry multiple labels.</p>
+<p><strong>Deployment labels</strong> — determine which backend endpoint the model is routed to:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>transcription</code></td>
+<td><code>/audio/transcriptions</code></td>
+<td>Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment.</td>
+</tr>
+<tr>
+<td><code>embeddings</code></td>
+<td><code>/embeddings</code></td>
+<td>Produces text embedding vectors.</td>
+</tr>
+<tr>
+<td><code>reranking</code></td>
+<td><code>/reranking</code></td>
+<td>Scores and reranks a list of passages given a query.</td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td><code>/images/generations</code></td>
+<td>Text-to-image generation model.</td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td>Image editing model; supports the <code>/images/edits</code> endpoint.</td>
+<td></td>
+</tr>
+<tr>
+<td><code>tts</code></td>
+<td><code>/audio/speech</code></td>
+<td>Text-to-speech synthesis model.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Input-modality labels</strong> — the model is deployed as an LLM but accepts additional input types in <code>/chat/completions</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vision</code></td>
+<td>Accepts image attachments in chat messages.</td>
+</tr>
+<tr>
+<td><code>chat-transcription</code></td>
+<td>Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Streaming labels</strong> — capability flags for real-time features:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>realtime-transcription</code></td>
+<td>Supports the WebSocket <code>/realtime</code> endpoint for live microphone transcription.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Characteristic labels</strong> — informational, do not affect routing:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hot</code></td>
+<td>Featured or popular model, highlighted in the UI.</td>
+</tr>
+<tr>
+<td><code>reasoning</code></td>
+<td>Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3).</td>
+</tr>
+<tr>
+<td><code>tool-calling</code></td>
+<td>Supports function/tool calling in chat completions.</td>
+</tr>
+<tr>
+<td><code>coding</code></td>
+<td>Tuned for code generation and software tasks.</td>
+</tr>
+<tr>
+<td><code>upscaling</code></td>
+<td>Image upscaling model (e.g. Real-ESRGAN). Used as a component in image pipelines.</td>
+</tr>
+<tr>
+<td><code>experimental</code></td>
+<td>Not yet validated for production use.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="get-v1modelsmodel_id"><code>GET /v1/models/{model_id}</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
 <p>Retrieve a specific model by its ID. Returns the same model object format as the list endpoint above.</p>
