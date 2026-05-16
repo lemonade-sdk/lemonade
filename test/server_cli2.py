@@ -990,8 +990,12 @@ sys.exit(0)
             with open(capture_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
 
-            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], "lemonade")
-            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "lemonade")
+            # Both env vars mirror the lemonade api key in use — default
+            # "lemonade" when no key is set, or LEMONADE_API_KEY when the
+            # test job sets one (e.g. Test API Key CI job).
+            expected_key = os.environ.get("LEMONADE_API_KEY", "lemonade")
+            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], expected_key)
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], expected_key)
             self.assertEqual(
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
