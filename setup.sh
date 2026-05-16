@@ -169,7 +169,7 @@ if command_exists pkg-config; then
     print_success "pkg-config is installed"
 
     # Check for required libraries using pkg-config
-    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap" "libwebsockets")
+    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap")
     missing_libs=()
 
     for lib in "${libs_to_check[@]}"; do
@@ -219,7 +219,6 @@ if command_exists pkg-config; then
                         libsystemd) missing_packages+=("systemd-devel") ;;
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
-                        libwebsockets) missing_packages+=("libwebsockets-devel") ;;
                     esac
                 done
             elif command_exists dnf; then
@@ -232,7 +231,6 @@ if command_exists pkg-config; then
                         libsystemd) missing_packages+=("systemd-devel") ;;
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
-                        libwebsockets) missing_packages+=("libwebsockets-devel") ;;
                     esac
                 done
             elif command_exists zypper; then
