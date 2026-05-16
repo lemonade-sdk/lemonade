@@ -1807,6 +1807,35 @@ footer {
     text-transform: none;
 }
 
+.model-options-name-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.model-options-copy-button {
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.model-options-copy-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-alpha-1);
+}
+
+.model-options-copy-button:focus-visible {
+    outline: 1px solid var(--border-5);
+    outline-offset: 2px;
+}
+
+.model-options-copy-button.copied {
+    color: var(--success-color);
+}
+
 .model-options-category-header .model-options-checkpoint-link {
     color: var(--text-link);
     text-decoration: none;

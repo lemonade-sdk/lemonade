@@ -119,8 +119,8 @@ bool prompt_variant(const std::vector<std::string>& labels,
 
 bool prompt_model_name(const std::string& default_name, std::string& out) {
     std::cout << "Choose a model name." << std::endl;
-    std::cout << "Press enter to use the default: user." << default_name << std::endl;
-    std::cout << "Or type a name starting with \"user.\" and press enter:" << std::endl;
+    std::cout << "Press enter to use the default: " << default_name << std::endl;
+    std::cout << "Or type a custom name and press enter." << std::endl;
     std::cout << "> " << std::flush;
 
     std::string input;
@@ -275,8 +275,8 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         pull_body["recipe"] = recipe;
 
         std::cout << "Pulling " << checkpoint
-                  << " as " << pull_body["model_name"].get<std::string>() << std::endl;
-        return client.pull_model(pull_body);
+                  << " as " << suggested_name << std::endl;
+        return client.pull_model(pull_body, suggested_name);
     }
 
     // Resolve variant by case-insensitive name match.
@@ -337,9 +337,9 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     }
 
     std::cout << "Pulling " << pull_body["checkpoint"].get<std::string>()
-              << " as " << pull_body["model_name"].get<std::string>() << std::endl;
+              << " as " << model_name << std::endl;
 
-    return client.pull_model(pull_body);
+    return client.pull_model(pull_body, model_name);
 }
 
 }  // namespace lemon_cli

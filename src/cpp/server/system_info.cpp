@@ -143,7 +143,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan only
+    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan; macOS: Metal
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
@@ -153,10 +153,16 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"whispercpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
+    {"whispercpp", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
 
-    // kokoro - Windows/Linux x86_64
+    // kokoro - Windows/Linux x86_64; macOS arm64 (Metal)
     {"kokoro", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+    }},
+    {"kokoro", "metal", {"macos"}, {
+        {"metal", {}},
     }},
 
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
@@ -170,6 +176,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
     {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+    }},
+
+    // stable-diffusion.cpp - Metal backend (macOS arm64)
+    {"sd-cpp", "metal", {"macos"}, {
+        {"metal", {}},
     }},
 
     // FLM - NPU (XDNA2)
@@ -777,6 +788,35 @@ json SystemInfo::build_recipes_info(const json& devices) {
         detected_devices.push_back({"metal", "Apple Metal", "metal", true});
     }
 
+    // Explicit backend selections in config.json define the recipe default
+    // reported to clients. "auto" falls back to RECIPE_DEFS preference order.
+    // Unknown backend names (e.g., a renamed or removed backend left in
+    // config.json) are dropped with a warning so the recipe still gets a
+    // valid default_backend from the fallback path below.
+    std::map<std::string, std::string> configured_default_backends;
+    if (auto* cfg = RuntimeConfig::global()) {
+        std::set<std::string> processed_recipes;
+        for (const auto& def : RECIPE_DEFS) {
+            if (!processed_recipes.insert(def.recipe).second) continue;
+            std::string section = RuntimeConfig::recipe_to_config_section(def.recipe);
+            std::string backend = cfg->backend_string(section, "backend");
+            if (backend.empty() || backend == "auto") continue;
+            bool known = std::any_of(RECIPE_DEFS.begin(), RECIPE_DEFS.end(),
+                [&](const RecipeBackendDef& d) {
+                    return d.recipe == def.recipe && d.backend == backend;
+                });
+            if (!known) {
+                LOG(WARNING, "Server")
+                    << "Ignoring unknown configured backend '" << backend
+                    << "' for recipe '" << def.recipe
+                    << "'; falling back to RECIPE_DEFS preference order."
+                    << std::endl;
+                continue;
+            }
+            configured_default_backends[def.recipe] = backend;
+        }
+    }
+
     // Default to preferring system llamacpp on Linux AMD systems.
     // This can be overridden with LEMONADE_LLAMACPP_PREFER_SYSTEM=true/false.
     bool prefer_llamacpp_system = false;
@@ -1089,8 +1129,17 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
         recipes[def.recipe]["backends"][def.backend] = backend;
 
-        // First supported backend in RECIPE_DEFS order becomes the default.
-        // Skip 'system' backend unless explicitly preferred via env var.
+        auto configured_default = configured_default_backends.find(def.recipe);
+        if (configured_default != configured_default_backends.end()) {
+            if (def.backend == configured_default->second) {
+                recipes[def.recipe]["default_backend"] = def.backend;
+            }
+            continue;
+        }
+
+        // First supported backend in RECIPE_DEFS order becomes the default when
+        // the recipe backend is auto-selected. Skip 'system' backend unless
+        // explicitly preferred via env var.
         bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
         if (supported && !skip_as_default && !recipes[def.recipe].contains("default_backend")) {
             recipes[def.recipe]["default_backend"] = def.backend;

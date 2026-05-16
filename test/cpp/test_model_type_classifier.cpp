@@ -20,10 +20,15 @@ struct Case {
 
 int main() {
     const std::vector<Case> cases = {
-        // Pure ASR model (e.g. whisper-v3:turbo on FLM). Audio but no chat
-        // indicators → AUDIO deployment mode.
-        {"whisper-v3:turbo equivalent", {"audio", "transcription"}, ModelType::AUDIO},
-        {"audio alone", {"audio"}, ModelType::AUDIO},
+        // Pure ASR model (e.g. whisper-v3:turbo on FLM). "transcription" label
+        // triggers TRANSCRIPTION deployment mode.
+        {"whisper-v3:turbo equivalent", {"transcription"}, ModelType::TRANSCRIPTION},
+        {"transcription alone", {"transcription"}, ModelType::TRANSCRIPTION},
+        {"transcription + realtime", {"transcription", "realtime-transcription"}, ModelType::TRANSCRIPTION},
+
+        // chat-transcription is an LLM input-modality label, not a deployment mode.
+        {"chat-transcription alone → LLM", {"chat-transcription"}, ModelType::LLM},
+        {"chat-transcription + vision → LLM", {"chat-transcription", "vision"}, ModelType::LLM},
 
         // Embedding / reranking / image / tts models keep their existing mapping.
         {"embedding (plural)", {"embeddings"}, ModelType::EMBEDDING},
@@ -38,13 +43,11 @@ int main() {
         {"tool-calling-only chat", {"tool-calling"}, ModelType::LLM},
         {"reasoning + tool-calling", {"reasoning", "tool-calling"}, ModelType::LLM},
 
-        // The regression we just fixed: multimodal any-to-text chat with audio
-        // label (e.g. Gemma 4 on FLM). Must be LLM, not AUDIO.
+        // Multimodal any-to-text chat with transcription label (e.g. Gemma 4 on FLM).
+        // Must be LLM, not TRANSCRIPTION.
         {"Gemma-4-style any-to-text",
-         {"vision", "reasoning", "tool-calling", "audio", "transcription"},
+         {"vision", "reasoning", "tool-calling", "transcription"},
          ModelType::LLM},
-        {"audio + vision only", {"audio", "vision"}, ModelType::LLM},
-        {"audio + tool-calling only", {"audio", "tool-calling"}, ModelType::LLM},
 
         // Fallbacks.
         {"empty labels → LLM", {}, ModelType::LLM},

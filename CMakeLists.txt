@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.4.0)
+project(lemon_cpp VERSION 10.5.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -922,13 +922,8 @@ endif()
 # Web App Integration (Cross-Platform)
 # ============================================================
 
-# On Windows, disable automatic build by default (can be enabled with -DBUILD_WEB_APP=ON)
-# On other platforms, enable automatic build by default (can be disabled with -DBUILD_WEB_APP=OFF)
-if(WIN32)
-    option(BUILD_WEB_APP "Build the Web app automatically" OFF)
-else()
-    option(BUILD_WEB_APP "Build the Web app automatically" ON)
-endif()
+# Enable automatic web app build on all platforms (can be disabled with -DBUILD_WEB_APP=OFF)
+option(BUILD_WEB_APP "Build the Web app automatically" ON)
 
 # Check if webpack is available for system-package mode
 if(USE_SYSTEM_NODEJS_MODULES)
@@ -1561,6 +1556,17 @@ endif()
 
 if(WIN32)
     set(EMBEDDABLE_PLATFORM "windows-x64")
+elseif(APPLE)
+    if(DEFINED CMAKE_OSX_ARCHITECTURES AND CMAKE_OSX_ARCHITECTURES)
+        set(_embeddable_arch "${CMAKE_OSX_ARCHITECTURES}")
+    else()
+        set(_embeddable_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    endif()
+    if(_embeddable_arch STREQUAL "arm64")
+        set(EMBEDDABLE_PLATFORM "macos-arm64")
+    else()
+        set(EMBEDDABLE_PLATFORM "macos-x64")
+    endif()
 else()
     set(EMBEDDABLE_PLATFORM "ubuntu-x64")
 endif()

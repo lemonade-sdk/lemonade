@@ -7,7 +7,7 @@
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public IAudioServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -49,7 +49,7 @@ public:
     // IRerankingServer implementation
     json reranking(const json& request) override;
 
-    // IAudioServer implementation
+    // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
 
     // FLM uses /api/tags for readiness check instead of /health

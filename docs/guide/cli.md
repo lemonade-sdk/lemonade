@@ -343,6 +343,7 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
+| `--llamacpp-device DEVICE` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | (empty) |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
 
 #### FLM (`flm` recipe)
@@ -374,11 +375,13 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
+| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model | `true` |
 
 **Notes:**
 - Use `--save-options` to persist your configuration for the model
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
+- `--merge-args` controls whether `*_args` from global config are merged with per-model args (default: merge). Use `--no-merge-args` to replace global args entirely with per-model args.
 
 **Examples:**
 
@@ -397,6 +400,9 @@ lemonade load Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Load a llama.cpp model with custom arguments
 lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --no-mmap"
+
+# Load a model without merging global args (per-model args replace global entirely)
+lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
 
 # Load an image generation model with custom settings
 lemonade load Z-Image-Turbo --sdcpp rocm --steps 8 --cfg-scale 1 --width 1024 --height 1024
@@ -494,20 +500,22 @@ lemonade backends install llamacpp:rocm --force
 The `launch` command launches an agent and triggers model loading asynchronously. If no model is provided, launch prompts for recipe/model selection before starting the agent:
 
 ```bash
-lemonade launch AGENT [--model MODEL_NAME] [options]
+lemonade launch [AGENT] [--model MODEL_NAME] [options]
 ```
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode` | Yes |
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
-| `--provider,-p [PROVIDER]` | Codex only: select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
 | `--agent-args ARGS` | Custom arguments to pass directly to the launched agent process | `""` |
-| `--ctx-size SIZE` | Context size for the model | `4096` |
-| `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
-| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
+
+Codex-only option:
+
+| Option/Argument | Description | Required |
+|-----------------|-------------|----------|
+| `--provider,-p [PROVIDER]` | Select provider name for Codex config; Lemonade does not read or modify `config.toml` (defaults to `lemonade`) | No |
 
 **Notes:**
 - The model load request is asynchronous: launch starts the agent immediately while loading continues in the background.
@@ -516,7 +524,8 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 - For local recipe files, run `lemonade import <LOCAL_RECIPE_JSON>` first, then launch with the imported model id.
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
-- `--provider` is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
+- `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
+- Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
@@ -528,20 +537,11 @@ lemonade launch AGENT [--model MODEL_NAME] [options]
 # Launch an agent with default model settings
 lemonade launch claude --model Qwen3.5-0.8B-GGUF
 
-# Launch an agent with custom context size
-lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768
-
-# Launch an agent with a specific llama.cpp backend
-lemonade launch codex --model Qwen3.5-0.8B-GGUF --llamacpp vulkan
-
 # Launch codex using provider from your Codex config.toml (default provider: lemonade)
 lemonade launch codex --model Qwen3.5-0.8B-GGUF -p
 
 # Launch codex using a custom provider name from your Codex config.toml
 lemonade launch codex --model Qwen3.5-0.8B-GGUF --provider my-provider
-
-# Launch an agent with custom llama.cpp arguments
-lemonade launch claude --model Qwen3.5-0.8B-GGUF --ctx-size 32768 --llamacpp-args "--flash-attn on --no-mmap"
 
 # Pass additional arguments directly to the agent
 lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--approval-mode never"

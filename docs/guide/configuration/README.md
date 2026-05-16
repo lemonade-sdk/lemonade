@@ -34,10 +34,11 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
-  "rocm_channel": "preview",
+  "rocm_channel": "stable",
   "llamacpp": {
     "backend": "auto",
     "args": "",
+	"device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
@@ -89,7 +90,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
-| `rocm_channel` | string | "preview" | ROCm backend channel: "preview" (default), "stable", or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
+| `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 
 ### Backend Configuration
 
@@ -100,6 +101,7 @@ Backend-specific settings are nested under their backend name:
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
 | `args` | "" | Custom arguments to pass to llama-server |
+| `device` | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 

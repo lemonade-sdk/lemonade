@@ -187,10 +187,10 @@ If not found, the "Open app" menu option is hidden but everything else works.
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
   - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
 
-**macOS (beta):**
+**macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
-- macOS support is currently in beta; a signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
+- A signed and notarized `.pkg` installer is available from the [releases page](https://github.com/lemonade-sdk/lemonade/releases/latest)
 - Local Release builds are ad-hoc codesigned (`codesign --sign -`) so they run without an Apple Developer certificate. To sign with a real Developer ID, export `DEVELOPER_ID_APPLICATION_IDENTITY` before configuring CMake (see [Building and Notarizing for Distribution](#building-and-notarizing-for-distribution)).
 
 ## Building Installers
@@ -563,7 +563,7 @@ A pure HTTP server that:
 
 **Multi-Model Support:**
 - Router maintains multiple WrappedServer instances simultaneously
-- Separate LRU caches for LLM, embedding, reranking, and audio model types
+- Separate LRU caches for LLM, embedding, reranking, transcription, image, and TTS model types
 - NPU exclusivity: only one model can use NPU at a time
 - Configurable limits via `--max-loaded-models N` (default: 1)
 - Automatic eviction of least-recently-used models when limits reached
@@ -648,6 +648,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `ctx_size` | int (positive) |
 | `llamacpp_backend` | string |
 | `llamacpp_args` | string |
+| `llamacpp_device` | string |
 | `sdcpp_backend` | string |
 | `whispercpp_backend` | string |
 | `whispercpp_args` | string |

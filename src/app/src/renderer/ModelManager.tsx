@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
 import { ModelInfo } from './utils/modelData';
+import { CANONICAL_PREFIXES, getModelDisplayName } from './utils/modelDisplayName';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
@@ -210,23 +211,35 @@ interface DetectedBackend {
   mmprojFiles?: string[];
 }
 
-const HIDDEN_MODEL_NAME_PREFIXES = ['user.', 'extra.'];
-
-const getModelDisplayName = (modelName: string): string => {
-  const prefix = HIDDEN_MODEL_NAME_PREFIXES.find(p => modelName.startsWith(p));
-  return prefix ? modelName.slice(prefix.length) : modelName;
+// Strip the canonical prefix (if any) to get the bare model name. Used for
+// family-regex matching and family grouping.
+const stripCanonicalPrefix = (modelName: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match ? modelName.slice(match.prefix.length) : modelName;
 };
 
-const isNamespaceHiddenModel = (modelName: string): boolean =>
-  HIDDEN_MODEL_NAME_PREFIXES.some(prefix => modelName.startsWith(prefix));
+const hasCanonicalPrefix = (modelName: string): boolean =>
+  CANONICAL_PREFIXES.some(p => modelName.startsWith(p.prefix));
 
-const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  if (!isNamespaceHiddenModel(modelName)) return match[1];
+const getSourceSortRank = (modelName: string): number => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match?.sourceRank ?? 0;
+};
 
-  const displayName = getModelDisplayName(modelName);
-  return displayName.startsWith(`${family.displayName}-`)
-    ? displayName.slice(family.displayName.length + 1)
-    : displayName;
+const stripSourceSuffix = (label: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => label.endsWith(p.suffix));
+  return match ? label.slice(0, -match.suffix.length) : label;
+};
+
+const getFamilyMemberLabel = (modelName: string, family: ModelFamily): string => {
+  const prefixInfo = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  const bare = stripCanonicalPrefix(modelName);
+  const relativeName = bare.startsWith(family.displayName)
+    ? bare.slice(family.displayName.length).replace(/^[-_.]/, '')
+    : bare;
+  const label = relativeName.endsWith('-GGUF') ? relativeName.slice(0, -'-GGUF'.length) : relativeName;
+  // Keep the source suffix on collapsed family rows so shadowed sources stay distinguishable.
+  return label + (prefixInfo?.suffix ?? '');
 };
 
 function buildModelList(
@@ -241,17 +254,26 @@ function buildModelList(
     for (const m of models) {
       if (consumed.has(m.name)) continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
-      const match = family.regex.exec(getModelDisplayName(m.name));
+      const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
-        members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
+        members.push({ label: getFamilyMemberLabel(m.name, family), name: m.name, info: m.info });
         consumed.add(m.name);
       }
     }
     if (members.length > 1) {
       members.sort((a, b) => {
-        const sizeA = parseFloat(a.label);
-        const sizeB = parseFloat(b.label);
-        if (Number.isFinite(sizeA) && Number.isFinite(sizeB)) return sizeA - sizeB;
+        const baseLabelA = stripSourceSuffix(a.label);
+        const baseLabelB = stripSourceSuffix(b.label);
+        const sizeA = parseFloat(baseLabelA);
+        const sizeB = parseFloat(baseLabelB);
+        if (Number.isFinite(sizeA) && Number.isFinite(sizeB) && sizeA !== sizeB) return sizeA - sizeB;
+
+        const baseCompare = baseLabelA.localeCompare(baseLabelB, undefined, { numeric: true });
+        if (baseCompare !== 0) return baseCompare;
+
+        const sourceCompare = getSourceSortRank(a.name) - getSourceSortRank(b.name);
+        if (sourceCompare !== 0) return sourceCompare;
+
         return a.label.localeCompare(b.label, undefined, { numeric: true });
       });
       familyItems.push({ type: 'family', family, members });
@@ -452,7 +474,7 @@ const [searchQuery, setSearchQuery] = useState('');
     let filtered = suggestedModels;
 
     // Hide ESRGAN upscaler models (managed via the Image Generation panel)
-    filtered = filtered.filter(model => !model.info?.labels?.includes('esrgan'));
+    filtered = filtered.filter(model => !model.info?.labels?.includes('upscaling'));
 
     // Filter by downloaded status
     if (showDownloadedOnly) {
@@ -1279,7 +1301,7 @@ const [searchQuery, setSearchQuery] = useState('');
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
-    const isEsrgan = info?.labels?.includes('esrgan');
+    const isUpscaling = info?.labels?.includes('upscaling');
     const isCollection = isCollectionModel(info);
     return (
       <>
@@ -1296,12 +1318,12 @@ const [searchQuery, setSearchQuery] = useState('');
             </svg>
           </button>
         )}
-        {isDownloaded && !isLoaded && !isLoading && isEsrgan && (
+        {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
           <>
             {renderDeleteButton(modelName)}
           </>
         )}
-        {isDownloaded && !isLoaded && !isLoading && !isEsrgan && (
+        {isDownloaded && !isLoaded && !isLoading && !isUpscaling && (
           <>
             <button
               className="model-action-btn load-btn"

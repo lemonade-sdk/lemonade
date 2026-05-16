@@ -24,10 +24,12 @@ import glob
 import json
 import os
 import platform
+import requests
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 
@@ -544,45 +546,6 @@ sys.exit(0)
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             print(f"Import from JSON exit code: {result.returncode}")
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"user.ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-        json_data = {
-            "model_name": canonical_name,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-            "labels": ["appear-builtin"],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            import_result = run_cli_command(
-                ["import", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(import_result.returncode, 0)
-
-            list_result = run_cli_command(
-                ["list", "--downloaded"],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = list_result.stdout + list_result.stderr
-            self.assertIn(public_name, output)
-            self.assertNotIn(canonical_name, output)
-
-            delete_result = run_cli_command(
-                ["delete", public_name],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(delete_result.returncode, 0)
         finally:
             if os.path.exists(json_file):
                 os.unlink(json_file)
@@ -1143,7 +1106,10 @@ sys.exit(0)
 
             self.assertNotEqual(result.returncode, 0)
             output = result.stdout + result.stderr
-            self.assertIn("only supported for the codex agent", output)
+            self.assertIn(
+                "Error: --provider is only supported for 'lemonade launch codex'.",
+                output,
+            )
 
     def test_102h_launch_agent_args_passthrough(self):
         """--agent-args should be tokenized and appended to agent argv."""
@@ -1177,6 +1143,64 @@ sys.exit(0)
             self.assertIn("never", argv)
             self.assertIn("--custom", argv)
             self.assertIn("a b", argv)
+
+    def test_102i_launch_recipe_env_var_bindings_preserved(self):
+        """Launch should continue honoring hidden recipe env vars like LEMONADE_CTX_SIZE."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_capture_ctx_env.json")
+            self._write_fake_agent(temp_dir, "claude", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+            env["LEMONADE_CTX_SIZE"] = "2048"
+
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake claude binary was not executed",
+            )
+
+            deadline = time.time() + TIMEOUT_MODEL_OPERATION
+            loaded_model = None
+            while time.time() < deadline:
+                response = requests.get(
+                    f"http://127.0.0.1:{PORT}/api/v1/health",
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200)
+                health_data = response.json()
+                loaded_model = next(
+                    (
+                        model
+                        for model in health_data.get("all_models_loaded", [])
+                        if model.get("model_name") == ENDPOINT_TEST_MODEL
+                    ),
+                    None,
+                )
+                recipe_options = (loaded_model or {}).get("recipe_options", {})
+                if recipe_options.get("ctx_size") == 2048:
+                    break
+                time.sleep(1)
+
+            self.assertIsNotNone(
+                loaded_model, f"Model {ENDPOINT_TEST_MODEL} should be loaded"
+            )
+            self.assertEqual(
+                loaded_model.get("recipe_options", {}).get("ctx_size"),
+                2048,
+            )
 
     def test_103_launch_explicit_model_with_repo_flags_is_deterministic(self):
         """Explicit model should skip import flow even when repo flags are present."""
@@ -1450,6 +1474,44 @@ sys.exit(0)
         )
         print(f"Delete model exit code: {result.returncode}")
 
+    def test_090a_naming_spec_list_shows_canonical_shadowed_rows(self):
+        """`list` prints API ids verbatim, so shadowed sources appear under their canonical IDs.
+
+        Verifies the copy-paste-safe contract: when a user.* shadows a built-in,
+        the list shows both `<bare>` (winner) and `builtin.<bare>` (shadowed),
+        and either string is directly usable in `lemonade load`/`delete`.
+        """
+        bare = ENDPOINT_TEST_MODEL  # known built-in
+        user_canonical = f"user.{bare}"
+
+        try:
+            pull_response = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            result = self.assertCommandSucceeds(["list"], timeout=TIMEOUT_DEFAULT)
+            output = result.stdout + result.stderr
+
+            # Winner appears as bare id; shadowed built-in appears under its canonical id.
+            self.assertIn(bare, output)
+            self.assertIn(f"builtin.{bare}", output)
+            # The user.* canonical form must NOT appear in output — winners emit bare.
+            self.assertNotIn(user_canonical, output)
+
+            print(
+                f"[OK] list shows both {bare} (user winner) and builtin.{bare} (shadowed)"
+            )
+        finally:
+            run_cli_command(["delete", user_canonical], timeout=TIMEOUT_DEFAULT)
+
     def test_091_delete_preserves_shared_repo(self):
         """Test that deleting one model preserves files used by another model sharing the same repo."""
         # Import two user models that share the same HF repo (different GGUF quants)
@@ -1697,22 +1759,47 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
 
         help_output = result.stdout + result.stderr
-        self.assertIn(
-            "Remote recipe directory used only if you choose recipe import at prompt",
-            help_output,
+        self.assertIn("Agents:", help_output)
+        self.assertIn("claude", help_output)
+        self.assertIn("codex", help_output)
+        self.assertIn("opencode", help_output)
+        self.assertNotIn("--model", help_output)
+        self.assertNotIn("--directory", help_output)
+        self.assertNotIn("--recipe-file", help_output)
+        self.assertNotIn("--agent-args", help_output)
+        self.assertNotIn("--provider", help_output)
+        self.assertNotIn("--ctx-size", help_output)
+        self.assertNotIn("LEMONADE_CTX_SIZE", help_output)
+
+        claude_result = run_cli_command(
+            ["launch", "claude", "--help"], timeout=TIMEOUT_DEFAULT
         )
-        self.assertIn(
-            "Remote recipe JSON filename used only if you choose recipe import at prompt",
-            help_output,
+        self.assertEqual(claude_result.returncode, 0)
+        claude_help = claude_result.stdout + claude_result.stderr
+        self.assertNotIn("--provider", claude_help)
+        self.assertNotIn("--ctx-size", claude_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
+        self.assertNotIn("--llamacpp", claude_help)
+        self.assertNotIn("--flm-args", claude_help)
+
+        opencode_result = run_cli_command(
+            ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT
         )
-        self.assertIn(
-            "Use model provider name for Codex",
-            help_output,
+        self.assertEqual(opencode_result.returncode, 0)
+        opencode_help = opencode_result.stdout + opencode_result.stderr
+        self.assertNotIn("--provider", opencode_help)
+        self.assertNotIn("--ctx-size", opencode_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", opencode_help)
+
+        codex_result = run_cli_command(
+            ["launch", "codex", "--help"], timeout=TIMEOUT_DEFAULT
         )
-        self.assertIn(
-            "Custom arguments to pass directly to the launched agent process",
-            help_output,
-        )
+        self.assertEqual(codex_result.returncode, 0)
+        codex_help = codex_result.stdout + codex_result.stderr
+        self.assertIn("Use model provider name for Codex", codex_help)
+        self.assertIn("--provider", codex_help)
+        self.assertNotIn("--ctx-size", codex_help)
+        self.assertNotIn("LEMONADE_CTX_SIZE", codex_help)
 
         docs_path = os.path.join(
             os.path.dirname(__file__), "..", "docs", "guide", "cli.md"
@@ -1735,6 +1822,11 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         )
         self.assertIn("--provider,-p [PROVIDER]", docs_text)
         self.assertIn("--agent-args ARGS", docs_text)
+        launch_section = docs_text.split("## Options for launch", 1)[1].split(
+            "## Options for scan", 1
+        )[0]
+        self.assertNotIn("--ctx-size", launch_section)
+        self.assertNotIn("--llamacpp", launch_section)
 
     def test_901_legacy_pull_deprecation_message(self):
         """The legacy shim should not forward pull args and should print migration guidance."""
