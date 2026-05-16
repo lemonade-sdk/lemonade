@@ -72,10 +72,9 @@ body:
       label: Steps to Reproduce
       description: Step-by-step instructions to reproduce the issue.
       placeholder: |
-        1. Start the server with `lemond`
-        2. Load model X with `lemonade run <model>`
-        3. Send a request to ...
-        4. See error ...
+        1. Load model X with `lemonade run <model>`
+        2. Send a request to ...
+        3. See error ...
     validations:
       required: true
 
@@ -98,9 +97,9 @@ body:
         Please reproduce the issue with debug logging enabled and paste the relevant log output below.
 
         **How to collect logs:**
-        1. Start (or restart) the server with debug logging:
+        1. Set the server to debug logging:
            ```
-           lemond --log-level debug
+           lemonade config set log_level=debug
            ```
         2. Reproduce the issue.
         3. Copy the relevant log output and paste it below, or attach the log file.
@@ -112,7 +111,7 @@ body:
         **Additional diagnostic commands (run these and paste the output):**
         - `lemonade status` — shows server info and loaded models
          
-        - `lemonade recipes` — shows installed backends and driver status
+        - `lemonade backends` — shows installed backends and driver status
 
         **Platform-specific tips:**
         - **Windows:** Check Event Viewer (Application log) if the server crashes silently.
