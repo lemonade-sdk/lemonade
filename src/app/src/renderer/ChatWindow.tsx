@@ -209,6 +209,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
         name: modelName,
         registrationData: {
           checkpoint: data.checkpoint,
+          checkpoints: data.checkpoints,
           recipe: data.recipe,
           mmproj: data.mmproj,
           reasoning: data.reasoning,
