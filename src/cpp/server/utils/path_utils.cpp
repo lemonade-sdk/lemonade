@@ -213,8 +213,8 @@ std::string find_flm_executable() {
     }
     return "";
 #else
-    // On Linux/Mac, check PATH using which
-    if (system("which flm > /dev/null 2>&1") == 0) {
+    // Walk PATH directly — minimal Fedora/openSUSE containers do not ship `which`.
+    if (!find_executable_in_path("flm").empty()) {
         return "flm";
     }
     return "";
@@ -243,10 +243,31 @@ std::string find_executable_in_path(const std::string& executable_name) {
 
     return "";
 #else
-    // On Linux/Mac, check PATH using which
-    std::string command = "which " + executable_name + " > /dev/null 2>&1";
-    if (system(command.c_str()) == 0) {
-        return executable_name; // Return the executable name itself, relying on PATH for execution
+    // Walk PATH ourselves instead of shelling out to `which`. Minimal Fedora /
+    // openSUSE containers (and other slimmed-down environments) do not ship
+    // `which`, and even when they do, system() forks a shell which inherits
+    // the process's PATH — so this approach is both more portable and more
+    // efficient.
+    const char* path_env = std::getenv("PATH");
+    if (!path_env || *path_env == '\0') {
+        return "";
+    }
+    std::string path_str(path_env);
+    size_t start = 0;
+    while (start <= path_str.size()) {
+        size_t end = path_str.find(':', start);
+        std::string dir = path_str.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (!dir.empty()) {
+            std::error_code ec;
+            fs::path candidate = fs::path(dir) / executable_name;
+            if (fs::is_regular_file(candidate, ec) &&
+                (access(candidate.c_str(), X_OK) == 0)) {
+                std::string full = candidate.string();
+                return is_safe_executable_path(full) ? executable_name : "";
+            }
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
     }
     return "";
 #endif

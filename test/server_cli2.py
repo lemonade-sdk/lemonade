@@ -1217,6 +1217,7 @@ sys.exit(0)
             while time.time() < deadline:
                 response = requests.get(
                     f"http://127.0.0.1:{PORT}/api/v1/health",
+                    headers=_auth_headers(),
                     timeout=TIMEOUT_DEFAULT,
                 )
                 self.assertEqual(response.status_code, 200)
@@ -1533,6 +1534,7 @@ sys.exit(0)
                     "recipe": "llamacpp",
                     "stream": False,
                 },
+                headers=_auth_headers(),
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             self.assertEqual(pull_response.status_code, 200)
