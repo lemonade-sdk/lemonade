@@ -172,6 +172,9 @@ void VLLMServer::load(const std::string& model_name,
                            << "'; letting vLLM auto-select kernel" << std::endl;
     }
 
+    // enable prompt caching
+    args.push_back("--enable-prefix-caching");
+
     // Append custom vllm_args if provided
     if (!vllm_args.empty()) {
         LOG(DEBUG, "vLLM") << "Adding custom arguments: " << vllm_args << std::endl;
