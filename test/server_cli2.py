@@ -1358,7 +1358,11 @@ sys.exit(0)
             lemonade = cfg["provider"]["Lemonade"]
             self.assertEqual(lemonade["npm"], "@ai-sdk/openai-compatible")
             self.assertIn("baseURL", lemonade["options"])
-            self.assertEqual(lemonade["options"]["apiKey"], "lemonade")
+            # Mirrors lemonade api key in use; LEMONADE_API_KEY env wins.
+            self.assertEqual(
+                lemonade["options"]["apiKey"],
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
                 lemonade["models"][ENDPOINT_TEST_MODEL]["contextWindow"],
