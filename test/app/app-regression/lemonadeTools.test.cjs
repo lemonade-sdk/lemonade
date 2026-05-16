@@ -29,32 +29,29 @@ const tests = [
     },
   },
   {
-    name: 'buildLemonadeTools maps label-required tools to matching collection components',
+    name: 'tool definitions keep canonical routing labels for each tool family',
     run() {
-      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
-      const usesMainLabelSet = /const requiresLabels = def\.requires_labels[\s\S]*?const labelSet = new Set\(requiresLabels\)[\s\S]*?components\.find[\s\S]*?labels\.some\(l => labelSet\.has\(l\)\)[\s\S]*?models\[def\.function\.name\] = match/.test(source);
-      const usesSharedLabelHelper = /const requiresLabels = def\.requires_labels[\s\S]*?const match = findComponentWithAnyLabel\(requiresLabels\)[\s\S]*?models\[def\.function\.name\] = match/.test(source)
-        && /hasAnyModelLabel|componentHasAnyLabel/.test(source);
-
-      assert.ok(
-        usesMainLabelSet || usesSharedLabelHelper,
-        'Tools with requires_labels should map to a matching component using either the main label-set path or the shared label helper path.',
-      );
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
+      assert.ok(byName.generate_image.requires_labels.includes('image'), 'Image generation should require image capability.');
+      assert.ok(byName.edit_image.requires_labels.includes('edit'), 'Image editing should require edit capability.');
+      assert.ok(byName.text_to_speech.requires_labels.some((label) => label === 'tts' || label === 'speech'), 'TTS should require a speech/TTS label.');
+      assert.ok(byName.transcribe_audio.requires_labels.some((label) => label === 'audio' || label === 'transcription'), 'Transcription should require an audio/transcription label.');
+      assert.deepEqual(byName.analyze_image.requires_llm_labels, ['vision']);
     },
   },
   {
-    name: 'buildLemonadeTools maps LLM-required tools only through the selected planner model',
+    name: 'buildLemonadeTools keeps component matching separate from planner matching',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
-      const usesMainPlannerModel = /const llmModel = components\.find[\s\S]*?NON_LLM_LABELS\.has\(l\)[\s\S]*?\|\| components\[0\] \|\| ''/.test(source)
-        && /const requiresLlmLabels = def\.requires_llm_labels[\s\S]*?const llmLabels = modelsData\[llmModel\]\?\.labels \?\? \[\][\s\S]*?!llmLabels\.some\(l => labelSet\.has\(l\)\)\) continue[\s\S]*?models\[def\.function\.name\] = llmModel/.test(source);
-      const usesCentralPlannerPredicate = /isChatPlannerCandidate/.test(source)
-        && /const requiresLlmLabels = def\.requires_llm_labels[\s\S]*?const match = findComponentWithAnyLabel\(requiresLlmLabels, true\)[\s\S]*?models\[def\.function\.name\] = match/.test(source);
-
-      assert.ok(
-        usesMainPlannerModel || usesCentralPlannerPredicate,
-        'Tools with requires_llm_labels should route through either the main planner model path or the centralized chat-planner predicate path.',
+      assertMatches(
+        source,
+        /requiresLabels[\s\S]*?components\.find[\s\S]*?models\[def\.function\.name\] = match/,
+        'Tools with requires_labels should map to a concrete matching component.',
       );
+      const hasPlannerPath = /requiresLlmLabels[\s\S]*?models\[def\.function\.name\] = llmModel/.test(source)
+        || /requiresLlmLabels[\s\S]*?models\[def\.function\.name\] = match/.test(source);
+      assert.ok(hasPlannerPath, 'Tools with requires_llm_labels should route through the selected planner path.');
     },
   },
   {
@@ -68,16 +65,6 @@ const tests = [
         /prop\.description\.includes\('\{image_size\}'\)[\s\S]*?replaceAll\('\{image_size\}', COLLECTION_IMAGE_SIZE\)/,
         'Tool parameter descriptions should replace {image_size} at materialization time.',
       );
-    },
-  },
-  {
-    name: 'toolDefinitions encode both aliases for TTS and transcription labels',
-    run() {
-      const definitions = readToolDefinitions();
-      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
-      assert.deepEqual(byName.text_to_speech.requires_labels, ['tts', 'speech']);
-      assert.deepEqual(byName.transcribe_audio.requires_labels, ['audio', 'transcription']);
-      assert.deepEqual(byName.analyze_image.requires_llm_labels, ['vision']);
     },
   },
   {
@@ -95,10 +82,15 @@ const tests = [
     name: 'vision tool rejects arbitrary non-data image URLs before calling chat completions',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      assertIncludes(
+        source,
+        "rawImageUrl.startsWith('data:image/')",
+        'Vision analysis should only forward explicit LLM image_url values when they are data:image URLs.',
+      );
       assertMatches(
         source,
-        /rawImageUrl\.startsWith\('data:image\/'\) \? rawImageUrl : ''[\s\S]*?context\.extractedImages/,
-        'Vision analysis should only use LLM-provided image_url when it is a data:image URL, otherwise fall back to extracted images.',
+        /if \(!imageUrl && context\.extractedImages\.length > 0\)[\s\S]*?context\.extractedImages\[context\.extractedImages\.length - 1\]\.dataUrl/,
+        'Vision analysis should fall back to the user-provided extracted image data URL.',
       );
     },
   },

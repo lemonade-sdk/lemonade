@@ -33,7 +33,7 @@ const tests = [
     },
   },
   {
-    name: 'model detail fetch uses the selected model variable',
+    name: 'model detail fetch uses the selected model variable and encodes it when collections are enabled',
     run() {
       const source = normalizeWhitespace(readSource(MODAL));
       assertMatches(
@@ -41,34 +41,21 @@ const tests = [
         /serverFetch\(`\/models\/\$\{[^}]*model[^}]*\}`\)/,
         'ModelOptionsModal should request details for the selected model variable.',
       );
-    },
-  },
-  {
-    name: 'model detail fetch is safe for ids that need URL encoding when the feature branch enables it',
-    run() {
-      const source = normalizeWhitespace(readSource(MODAL));
-      if (!source.includes('encodeURIComponent(model)') && !hasFile(CUSTOM_COLLECTIONS)) {
-        return { skip: true, reason: 'main does not yet include URL encoding for model ids' };
+      if (hasFile(CUSTOM_COLLECTIONS)) {
+        assertMatches(
+          source,
+          /serverFetch\(`\/models\/\$\{encodeURIComponent\(model\)\}`\)/,
+          'Collection-enabled branches should encode the model id at the /models/:id path segment.',
+        );
       }
-      assertMatches(
-        source,
-        /serverFetch\(`\/models\/\$\{encodeURIComponent\(model\)\}`\)/,
-        'When enabled, model id encoding should be applied exactly at the /models/:id path segment.',
-      );
     },
   },
   {
-    name: 'loading state is set before fetch and cleared in finally',
+    name: 'loading state wraps the model detail request and response conversion',
     run() {
       const source = normalizeWhitespace(readSource(MODAL));
       assertMatches(source, /setIsLoading\(true\)[\s\S]*?serverFetch/, 'Loading state should be set before fetching options.');
       assertMatches(source, /finally \{[\s\S]*?setIsLoading\(false\)/, 'Loading state should be cleared in finally.');
-    },
-  },
-  {
-    name: 'server response is converted from API recipe options into frontend state',
-    run() {
-      const source = normalizeWhitespace(readSource(MODAL));
       assertIncludes(source, 'apiToRecipeOptions(recipe, recipeOptions)', 'Model Options should convert API recipe options into frontend option state.');
     },
   },

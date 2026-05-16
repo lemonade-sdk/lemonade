@@ -7,10 +7,14 @@ node test/app/run-app-regression-tests.cjs
 ```
 
 These tests are intentionally dependency-free: no Jest, no jsdom, no React
-runtime, and no TypeScript package are required. They use source-level guards
-for renderer regressions that are easy to introduce while changing Model
-Manager, Model Options, and OmniRouter collection logic.
+runtime, and no TypeScript package are required. They use focused source-level
+regression guards for renderer paths that are easy to break while changing
+Model Manager, Model Options, and OmniRouter collection logic.
 
-The suite is meant to be cheap enough for a precommit hook. Tests that cover
-feature-branch-only custom collection files skip cleanly on `main` when those
-files are not present.
+The suite is cheap enough for CI and local pre-commit use. It is wired into the
+`Docs And Style` GitHub Actions workflow, and can still be run directly with
+plain Node for fast local checks.
+
+Some tests are feature-aware. Custom-collection-specific checks skip cleanly on
+`main` when the feature files are not present, then become active on branches
+that add those files.

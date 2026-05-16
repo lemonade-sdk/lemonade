@@ -9,6 +9,21 @@ permissions:
   contents: read
 
 jobs:
+
+  app-regression-tests:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-app-regression-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Run app regression tests
+        run: node test/app/run-app-regression-tests.cjs
+
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
