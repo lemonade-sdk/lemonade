@@ -80,7 +80,7 @@ public:
     virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
 };
 
-// Optional tokenize capability (llama.cpp server slots information)
+// Optional tokenize capability (llama.cpp tokenization of input)
 class ITokenizerServer : public virtual ICapability {
 public:
     virtual ~ITokenizerServer() = default;
