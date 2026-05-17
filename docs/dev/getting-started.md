@@ -830,7 +830,7 @@ python test/server_whisper.py
 python test/server_sd.py
 ```
 
-The tests auto-discover the server binary from the build directory. Use `--server-binary` to override if needed.
+The tests auto-discover the `lemonade` CLI binary from the build directory. Use `--cli-binary` to override if needed.
 
 See the `.github/workflows/` directory for CI/CD test configurations.
 
