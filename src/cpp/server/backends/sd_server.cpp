@@ -10,11 +10,14 @@
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
+#include <cstdlib>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <chrono>
 #include <set>
+#include <random>
 #include <lemon/utils/aixlog.hpp>
 
 namespace fs = std::filesystem;
@@ -25,6 +28,32 @@ namespace backends {
 
 
 namespace {
+constexpr const char* kImageRequestTimeoutEnv = "LEMONADE_IMAGE_REQUEST_TIMEOUT";
+constexpr long kNoImageRequestTimeout = 0; // libcurl: 0 disables the overall request timeout.
+
+long get_image_request_timeout_seconds() {
+    const char* raw_value = std::getenv(kImageRequestTimeoutEnv);
+    if (raw_value == nullptr || raw_value[0] == '\0') {
+        return kNoImageRequestTimeout;
+    }
+
+    try {
+        std::string raw(raw_value);
+        size_t parsed_chars = 0;
+        long timeout_seconds = std::stol(raw, &parsed_chars);
+        if (parsed_chars != raw.size() || timeout_seconds < 0) {
+            throw std::invalid_argument("invalid image request timeout");
+        }
+        return timeout_seconds;
+    } catch (const std::exception&) {
+        LOG(WARNING, "SDServer") << "Ignoring invalid " << kImageRequestTimeoutEnv
+                                 << "=" << raw_value
+                                 << "; using no overall timeout for image requests"
+                                 << std::endl;
+        return kNoImageRequestTimeout;
+    }
+}
+
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
 }
@@ -70,6 +99,10 @@ std::string get_therock_version() {
     // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
+}
+
+int generate_random_seed() {
+    return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
 }
 
@@ -408,9 +441,12 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         extra_args["sample_params"] = sample_params;
     }
 
-    // seed stays top-level in from_json_str; preserve if the caller supplied one.
+    // seed stays top-level in from_json_str. Negative seeds mean "random" for
+    // Lemonade, so generate a concrete seed instead of letting sd-server fall
+    // back to its deterministic default.
     if (request.contains("seed") && request["seed"].is_number_integer()) {
-        extra_args["seed"] = request["seed"].get<int>();
+        int seed = request["seed"].get<int>();
+        extra_args["seed"] = seed >= 0 ? seed : generate_random_seed();
     }
 
     return extra_args;
@@ -471,6 +507,9 @@ json SDServer::image_generations(const json& request) {
     }
 
     json extra_args = build_extra_args(request);
+    if (extra_args.contains("seed")) {
+        sd_request["seed"] = extra_args["seed"];
+    }
 
     std::string prompt = sd_request.value("prompt", "");
     prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
@@ -479,8 +518,9 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models -- use global timeout
-    return forward_request("/v1/images/generations", sd_request, utils::HttpClient::get_default_timeout());
+    // Image generation can legitimately exceed the generic global HTTP timeout.
+    // Use an image-specific timeout override, defaulting to no overall timeout.
+    return forward_request("/v1/images/generations", sd_request, get_image_request_timeout_seconds());
 }
 
 json SDServer::image_edits(const json& request) {
@@ -520,7 +560,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, get_image_request_timeout_seconds());
 }
 
 json SDServer::image_variations(const json& request) {
@@ -553,7 +593,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, get_image_request_timeout_seconds());
 }
 
 std::string SDServer::upscale_via_cli(

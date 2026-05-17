@@ -33,7 +33,7 @@ const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
   cfgScale: 7.0,
   width: 512,
   height: 512,
-  seed: -1,
+  seed: 42,
   upscaleModel: '',
 };
 
@@ -89,7 +89,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
       cfgScale: defaults?.cfg_scale ?? DEFAULT_IMAGE_SETTINGS.cfgScale,
       width: defaults?.width ?? DEFAULT_IMAGE_SETTINGS.width,
       height: defaults?.height ?? DEFAULT_IMAGE_SETTINGS.height,
-      seed: -1,
+      seed: DEFAULT_IMAGE_SETTINGS.seed,
       upscaleModel: prev.upscaleModel,
     }));
     // Reset to generate mode if the new model doesn't support editing
@@ -194,9 +194,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         response_format: 'b64_json',
       };
 
-      if (imageSettings.seed > 0) {
-        requestBody.seed = imageSettings.seed;
-      }
+      requestBody.seed = imageSettings.seed;
 
       const genStart = Date.now();
       const genResponse = await serverFetch('/images/generations', {
@@ -295,7 +293,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         form.append('prompt', currentPrompt);
         form.append('steps', String(imageSettings.steps));
         form.append('cfg_scale', String(imageSettings.cfgScale));
-        if (imageSettings.seed > 0) form.append('seed', String(imageSettings.seed));
+        form.append('seed', String(imageSettings.seed));
       });
 
       if (!response.ok) {
@@ -576,7 +574,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
           <div className="image-setting">
             <label>Seed</label>
             <input type="number" min="-1" value={imageSettings.seed}
-              onChange={(e) => setImageSettings(prev => ({ ...prev, seed: parseInt(e.target.value) || -1 }))}
+              onChange={(e) => setImageSettings(prev => ({ ...prev, seed: Math.max(parseInt(e.target.value) || -1, -1) }))}
               disabled={isBusy} placeholder="-1 = random" />
           </div>
         )}
