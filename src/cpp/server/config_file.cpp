@@ -197,6 +197,9 @@ static const EnvMapping env_mappings[] = {
     // llamacpp
     {"LEMONADE_LLAMACPP",                "llamacpp",  "backend"},
     {"LEMONADE_LLAMACPP_ARGS",           "llamacpp",  "args"},
+    {"LEMONADE_LLAMACPP_ROCM_ARGS",      "llamacpp",  "rocm_args"},
+    {"LEMONADE_LLAMACPP_VULKAN_ARGS",    "llamacpp",  "vulkan_args"},
+    {"LEMONADE_LLAMACPP_CPU_ARGS",       "llamacpp",  "cpu_args"},
     {"LEMONADE_LLAMACPP_DEVICE",         "llamacpp",  "device"},
     {"LEMONADE_LLAMACPP_PREFER_SYSTEM",  "llamacpp",  "prefer_system"},
     {"LEMONADE_LLAMACPP_ROCM_BIN",       "llamacpp",  "rocm_bin"},
@@ -205,11 +208,16 @@ static const EnvMapping env_mappings[] = {
     // whispercpp
     {"LEMONADE_WHISPERCPP",              "whispercpp", "backend"},
     {"LEMONADE_WHISPERCPP_ARGS",         "whispercpp", "args"},
+    {"LEMONADE_WHISPERCPP_CPU_ARGS",     "whispercpp", "cpu_args"},
+    {"LEMONADE_WHISPERCPP_NPU_ARGS",     "whispercpp", "npu_args"},
     {"LEMONADE_WHISPERCPP_CPU_BIN",      "whispercpp", "cpu_bin"},
     {"LEMONADE_WHISPERCPP_NPU_BIN",      "whispercpp", "npu_bin"},
     // sdcpp
     {"LEMONADE_SDCPP",                   "sdcpp", "backend"},
     {"LEMONADE_SDCPP_ARGS",              "sdcpp", "args"},
+    {"LEMONADE_SDCPP_CPU_ARGS",          "sdcpp", "cpu_args"},
+    {"LEMONADE_SDCPP_ROCM_ARGS",         "sdcpp", "rocm_args"},
+    {"LEMONADE_SDCPP_VULKAN_ARGS",       "sdcpp", "vulkan_args"},
     {"LEMONADE_STEPS",                   "sdcpp", "steps"},
     {"LEMONADE_CFG_SCALE",               "sdcpp", "cfg_scale"},
     {"LEMONADE_WIDTH",                   "sdcpp", "width"},

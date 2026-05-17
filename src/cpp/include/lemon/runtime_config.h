@@ -50,7 +50,7 @@ public:
     /// Returns recipe options in the flat format that RecipeOptions/backends expect.
     /// Maps nested config to flat keys: llamacpp.backend -> llamacpp_backend,
     /// sdcpp.steps -> steps, etc.
-    json recipe_options() const;
+    json recipe_options(const std::string& backend) const;
 
     // --- Unified setter ---
     // Validates and applies changes, then calls side_effect_cb (outside lock)

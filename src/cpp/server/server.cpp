@@ -2559,7 +2559,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
             // Honor explicit config first (e.g. sdcpp.backend = "rocm").
             // "auto" in config.json is mapped to "" by recipe_options().
-            auto recipe_opts = config_->recipe_options();
+            auto recipe_opts = config_->recipe_options("");
             if (recipe_opts.contains("sd-cpp_backend") &&
                 recipe_opts["sd-cpp_backend"].is_string()) {
                 backend = recipe_opts["sd-cpp_backend"].get<std::string>();

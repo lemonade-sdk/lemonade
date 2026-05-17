@@ -38,6 +38,9 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "llamacpp": {
     "backend": "auto",
     "args": "",
+    "vulkan_args": "",
+    "rocm_args": "",
+    "cpu_args": "",
 	"device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
@@ -47,12 +50,17 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "whispercpp": {
     "backend": "auto",
     "args": "",
+    "cpu_args": "",
+    "npu_args": "",
     "cpu_bin": "builtin",
     "npu_bin": "builtin"
   },
   "sdcpp": {
     "backend": "auto",
     "args": "",
+    "cpu_args": "",
+    "rocm_args": "",
+    "vulkan_args": "",
     "steps": 20,
     "cfg_scale": 7.0,
     "width": 512,
@@ -100,7 +108,8 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to llama-server |
+| `args` | "" | Custom arguments to pass to llama-server (fallback, unused when backend-specific args defined) |
+| `*_args` | "" | Backend-specific custom arguments to pass to llama-server |
 | `device` | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
@@ -109,14 +118,16 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to whisper-server |
+| `args` | "" | Custom arguments to pass to whisper-server (fallback, unused when backend-specific args defined) |
+| `*_args` | "" | Backend-specific custom arguments to pass to whisper-server |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **sdcpp** — Image generation:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to `sd-server` |
+| `args` | "" | Custom arguments to pass to `sd-server` (fallback, unused when backend-specific args defined) |
+| `*_args` | "" | Backend-specific custom arguments to pass to `sd-server` |
 | `steps` | 20 | Number of inference steps |
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |
 | `width` | 512 | Image width in pixels |
