@@ -1891,7 +1891,6 @@ def run_cli_client_tests():
 
     print(f"\n{'=' * 70}")
     print("CLI CLIENT TESTS")
-    print(f"CLI binary: {_config['cli_binary']}")
     print(f"CLI binary: {get_cli_binary()}")
     print(f"{'=' * 70}\n")
 
