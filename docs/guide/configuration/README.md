@@ -38,9 +38,9 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "llamacpp": {
     "backend": "auto",
     "args": "",
-    "vulkan_args",
-    "rocm_args",
-    "cpu_args",
+    "vulkan_args": "",
+    "rocm_args": "",
+    "cpu_args": "",
 	"device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
@@ -108,7 +108,7 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to llama-server (fallback) |
+| `args` | "" | Custom arguments to pass to llama-server (fallback, unused when backend-specific args defined) |
 | `*_args` | "" | Backend-specific custom arguments to pass to llama-server |
 | `device` | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
@@ -118,7 +118,7 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to whisper-server (fallback) |
+| `args` | "" | Custom arguments to pass to whisper-server (fallback, unused when backend-specific args defined) |
 | `*_args` | "" | Backend-specific custom arguments to pass to whisper-server |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
@@ -126,7 +126,7 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to `sd-server` (fallback) |
+| `args` | "" | Custom arguments to pass to `sd-server` (fallback, unused when backend-specific args defined) |
 | `*_args` | "" | Backend-specific custom arguments to pass to `sd-server` |
 | `steps` | 20 | Number of inference steps |
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |

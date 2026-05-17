@@ -223,11 +223,13 @@ void Router::load_model(const std::string& model_name,
                        bool allow_reload_on_option_change) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     const std::string backend_option = model_info.recipe + "_backend";
-    std::string backend = options.get_option(backend_option).get<std::string>();
-    backend = backend.empty() ? model_info.recipe_options.get_option(backend_option).get<std::string>() : backend;
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
 
-    // Resolve settings: load overrides take precedence over per-model overrides which take precedence over defaults
+    RecipeOptions tentative = options.inherit(model_info.recipe_options.inherit(
+    RecipeOptions(model_info.recipe, config_->recipe_options(""))));
+    const std::string backend = tentative.get_option(backend_option).get<std::string>();
+
+    // Second pass: rebuild defaults using the resolved backend
+    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
 
     LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
