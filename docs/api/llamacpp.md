@@ -11,7 +11,7 @@ This page documents Lemonade's llama.cpp-specific compatibility surface.
 | `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsidactionsave) | Save the prompt cache of the specified slot to a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsidactionrestore) | Restore the prompt cache of the specified slot from a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsidactionerase) | Erase the prompt cache of the specified slot | prompt cache |
-| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize a given text | prompt
+| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize a given text | tokenization |
 
 ## `POST /v1/reranking`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -418,6 +418,18 @@ Tokenize a given text. Does not count towards the current model's context window
 ```json
 {
   "tokens": [1919,369,264,886,310,74995]
+}
+```
+
+If `with_pieces` is `true`:
+
+```json
+{
+  "tokens": [
+    {"id": 123, "piece": "Hello"},
+    {"id": 456, "piece": " world"},
+    {"id": 789, "piece": "!"}
+  ]
 }
 ```
 
