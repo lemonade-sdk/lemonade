@@ -20,7 +20,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 
 ```json
 {
-  "config_version": 2,
+  "config_version": 1,
   "port": 13305,
   "host": "localhost",
   "log_level": "info",
