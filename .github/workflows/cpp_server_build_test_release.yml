@@ -275,10 +275,16 @@ jobs:
           retention-days: 7
 
   build-lemonade-rpm:
-    name: Build Lemonade .rpm Package
+    name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}
     runs-on: ubuntu-latest
     container:
-      image: fedora:latest
+      image: fedora:${{ matrix.fedora-version }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora-version: ["43", "44"]
+
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
@@ -305,22 +311,25 @@ jobs:
           echo "Running setup.sh to configure build environment..."
           bash setup.sh
 
-          echo "Building lemond and lemonade-server for Fedora..."
+          echo "Building lemond and lemonade-server for Fedora ${{ matrix.fedora-version }}..."
           cmake --build --preset default
-
-          RPM_FILE="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
 
           cd build
 
           echo "Creating .rpm package with CPack..."
           cpack -G RPM -V
 
-          if [ ! -f "$RPM_FILE" ]; then
+          CPACK_RPM="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.x86_64.rpm"
+
+          if [ ! -f "$CPACK_RPM" ]; then
               echo "ERROR: .rpm package not created!"
               echo "Contents of build directory:"
               ls -lR .
               exit 1
           fi
+
+          mv "$CPACK_RPM" "$RPM_FILE"
 
           echo "Package information:"
           rpm -qip "$RPM_FILE"
@@ -328,8 +337,8 @@ jobs:
       - name: Upload .rpm package
         uses: actions/upload-artifact@v7
         with:
-          name: lemonade-rpm
-          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
+          path: build/lemonade-server-${{ env.LEMONADE_VERSION }}-fc${{ matrix.fedora-version }}.x86_64.rpm
           retention-days: 7
 
   build-lemonade-macos-dmg:
@@ -1014,18 +1023,24 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
   test-rpm-package:
-    name: Test .rpm - Fedora
+    name: Test .rpm - Fedora ${{ matrix.fedora-version }}
     runs-on: ubuntu-latest
     needs: build-lemonade-rpm
     container:
-      image: fedora:latest
+      image: fedora:${{ matrix.fedora-version }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora-version: ["43", "44"]
+
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
     steps:
       - name: Download Lemonade .rpm Package
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-rpm
+          name: lemonade-rpm-fedora-${{ matrix.fedora-version }}
           path: .
 
       - name: Install and verify Lemonade (.rpm)
@@ -1033,7 +1048,7 @@ jobs:
         run: |
           set -e
 
-          RPM_FILE="lemonade-server-${LEMONADE_VERSION}.x86_64.rpm"
+          RPM_FILE="lemonade-server-${LEMONADE_VERSION}-fc${{ matrix.fedora-version }}.x86_64.rpm"
 
           if [ ! -f "$RPM_FILE" ]; then
               echo "ERROR: .rpm file not found: $RPM_FILE"
@@ -1879,7 +1894,7 @@ jobs:
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
-          ls -lh lemonade-server-${LEMONADE_VERSION}.x86_64.rpm
+          ls -lh lemonade-server-*.x86_64.rpm
           ls -lh *.pkg
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
@@ -1901,7 +1916,7 @@ jobs:
           files: |
             lemonade-server-minimal.msi
             lemonade.msi
-            lemonade-server-${{ env.LEMONADE_VERSION }}.x86_64.rpm
+            lemonade-server-*.x86_64.rpm
             *.pkg
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip

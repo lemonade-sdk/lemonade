@@ -268,9 +268,7 @@ lemonade --help
 lemond --help
 ```
 
-### Linux .rpm Package (Fedora, RHEL etc)
-
-Very similar to the Debian instructions above with minor changes
+### Linux .rpm Package (Fedora 43 & 44)
 
 **Building:**
 
@@ -281,14 +279,18 @@ cpack -G RPM
 
 **Package Output:**
 
-Creates `lemonade-server-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-9.1.2.x86_64.rpm`) and
-resources are installed as per DEB version above
+Creates `lemonade-server-<VERSION>.x86_64.rpm` (e.g., `lemonade-server-9.1.2.x86_64.rpm`).
+The CI release pipeline builds two variants — `-fc43` and `-fc44` — and renames them
+accordingly. Resources are installed the same as the .deb package above.
 
 **Installation:**
 
 ```bash
-# Replace <VERSION> with the actual version (e.g., 9.0.0)
-sudo dnf install ./lemonade-server-<VERSION>.x86_64.rpm
+# Fedora 43
+sudo dnf install ./lemonade-server-<VERSION>-fc43.x86_64.rpm
+
+# Fedora 44
+sudo dnf install ./lemonade-server-<VERSION>-fc44.x86_64.rpm
 ```
 
 **Uninstallation:**
