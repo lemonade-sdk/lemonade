@@ -924,7 +924,7 @@ class LLMTests(ServerTestBase):
         )
         self.assertEqual(load_response.status_code, 200)
 
-        # Test the tokenize endpoint
+        # Test the tokenize endpoint defaults (with_pieces = false)
         payload = {"content": "Hello world!"}
         response = requests.post(
             f"{self.base_url}/tokenize",
@@ -934,21 +934,42 @@ class LLMTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
 
         data = response.json()
-        print(f"Tokenize response: {data}")
+        print(f"Tokenize default response: {data}")
 
-        # Basic validation that we get a JSON response with a tokens list
+        # Test the tokenize endpoint with pieces
+        payload = {"content": "Hello World!", "with_pieces": true}
+        response = requests.post(
+            f"{self.base_url}/tokenize",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data_with_pieces = response.json()
+        print(f"Tokenize response with pieces: {data_with_pieces}")
+
+        # Basic validation that we get a JSON response with a tokens list for default response
         self.assertIsInstance(data, dict)
         self.assertIn("tokens", data)
         tokens = data["tokens"]
         self.assertIsInstance(tokens, list)
         self.assertGreater(len(tokens), 0, "Tokens list should not be empty")
 
-        # Verify that the response conforms to one of the specified JSON outputs
+        # Basic validation that we get a JSON response with a tokens list for with_pieces response
+        self.assertIsInstance(data_with_pieces, dict)
+        self.assertIn("tokens", data_with_pieces)
+        tokens_with_pieces = data_with_pieces["tokens"]
+        self.assertIsInstance(tokens_with_pieces, list)
+        self.assertGreater(len(tokens_with_pieces), 0, "Tokens list should not be empty")
+
+        # Verify that the response conforms to the specified JSON output for default response
         for token in tokens:
             # Format 1: List of integers
             if isinstance(token, int):
                 continue
 
+        # Verify that the response conforms to the specified JSON output for with_pieces response
+        for token in tokens_with_pieces:
             # Formats 2 & 3: List of objects with id and piece
             self.assertIsInstance(token, dict, f"Token should be an int or a dict, got {type(token)}")
             self.assertIn("id", token)
