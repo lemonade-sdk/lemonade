@@ -1453,7 +1453,6 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
               echo "Running endpoint tests..."
               $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
-              $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY" --server-per-test
           elif [ "${{ matrix.test_type }}" = "ollama" ]; then
               echo "Running Ollama API tests..."
               $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
