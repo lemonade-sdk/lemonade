@@ -1978,7 +1978,7 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
             res.set_content("{\"error\": \"Request body for tokenization cannot be empty\"}", "application/json");
             return;
         }
-        
+
         auto request_json = nlohmann::json::parse(req.body);
 
         // Tokenize endpoint requires at least a valid "content" entry in the body
