@@ -823,6 +823,10 @@ class LLMTests(ServerTestBase):
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 0)
 
+    # =========================================================================
+    # LLAMA.CPP SPECIFIC TESTS
+    # =========================================================================
+    
     @skip_if_unsupported("slots")
     def test_023_slots(self):
         """Test the /api/v1/slots endpoint for llamacpp backend."""
@@ -906,6 +910,61 @@ class LLMTests(ServerTestBase):
         else:
             self.fail("No slots available to test erasure in /api/v1/slots endpoint")
 
+@skip_if_unsupported("tokenize")
+    def test_024_tokenize(self):
+        """Test the /api/v1/tokenize endpoint for llamacpp backend."""
+        # First ensure a model is loaded
+        model = self.get_test_model("llm")
+
+        # Load the model
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": model},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        # Test the tokenize endpoint
+        payload = {"content": "Hello world!"}
+        response = requests.post(
+            f"{self.base_url}/tokenize",
+            json=payload,
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        data = response.json()
+        print(f"Tokenize response: {data}")
+
+        # Basic validation that we get a JSON response with a tokens list
+        self.assertIsInstance(data, dict)
+        self.assertIn("tokens", data)
+        tokens = data["tokens"]
+        self.assertIsInstance(tokens, list)
+        self.assertGreater(len(tokens), 0, "Tokens list should not be empty")
+
+        # Verify that the response conforms to one of the specified JSON outputs
+        for token in tokens:
+            # Format 1: List of integers
+            if isinstance(token, int):
+                continue
+
+            # Formats 2 & 3: List of objects with id and piece
+            self.assertIsInstance(token, dict, f"Token should be an int or a dict, got {type(token)}")
+            self.assertIn("id", token)
+            self.assertIn("piece", token)
+            self.assertIsInstance(token["id"], int)
+
+            # piece can be string (Format 2) or list of integers (Format 3)
+            if isinstance(token["piece"], str):
+                continue
+            elif isinstance(token["piece"], list):
+                for byte_val in token["piece"]:
+                    self.assertIsInstance(byte_val, int)
+            else:
+                self.fail(f"Unexpected type for piece: {type(token['piece'])}")
+
+        print("[OK] Tokenize response format verified")
 
 if __name__ == "__main__":
     run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING/SLOTS TESTS", modality="llm")
