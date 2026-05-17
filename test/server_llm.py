@@ -910,7 +910,7 @@ class LLMTests(ServerTestBase):
         else:
             self.fail("No slots available to test erasure in /api/v1/slots endpoint")
 
-@skip_if_unsupported("tokenize")
+    @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):
         """Test the /api/v1/tokenize endpoint for llamacpp backend."""
         # First ensure a model is loaded
