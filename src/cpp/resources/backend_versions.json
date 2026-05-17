@@ -28,10 +28,21 @@
       "gfx1100",
       "gfx1101",
       "gfx1102",
-      "gfx1151",
       "gfx1150",
+      "gfx1151",
+      "gfx1152",
       "gfx1200",
-      "gfx1201"
+      "gfx1201",
+      "gfx1010",
+      "gfx1011",
+      "gfx1012",
+      "gfx1030",
+      "gfx1031",
+      "gfx1032",
+      "gfx1033",
+      "gfx1034",
+      "gfx1035",
+      "gfx1036"
     ],
     "url_mapping": {
       "gfx908": "gfx90X-dcgpu",
@@ -40,10 +51,21 @@
       "gfx1100": "gfx110X-all",
       "gfx1101": "gfx110X-all",
       "gfx1102": "gfx110X-all",
-      "gfx1151": "gfx1151",
       "gfx1150": "gfx1150",
+      "gfx1151": "gfx1151",
+      "gfx1152": "gfx1152",
       "gfx1200": "gfx120X-all",
-      "gfx1201": "gfx120X-all"
+      "gfx1201": "gfx120X-all",
+      "gfx1010": "gfx101X-dgpu",
+      "gfx1011": "gfx101X-dgpu",
+      "gfx1012": "gfx101X-dgpu",
+      "gfx1030": "gfx103X-all",
+      "gfx1031": "gfx103X-all",
+      "gfx1032": "gfx103X-all",
+      "gfx1033": "gfx103X-all",
+      "gfx1034": "gfx103X-all",
+      "gfx1035": "gfx103X-all",
+      "gfx1036": "gfx103X-all"
     }
   },
   "ryzenai-llm": {
