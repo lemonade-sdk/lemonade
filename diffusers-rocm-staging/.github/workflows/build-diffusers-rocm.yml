@@ -1,0 +1,440 @@
+name: Build Diffusers + ROCm
+on:
+  workflow_dispatch:
+    inputs:
+      gfx_target:
+        description: 'AMD GPU targets (comma-separated)'
+        required: false
+        default: 'gfx110X,gfx1151,gfx1150,gfx120X'
+      create_release:
+        description: 'Create a GitHub release after successful build'
+        required: false
+        default: true
+        type: boolean
+
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  schedule:
+    - cron: '0 17 * * 0'
+
+env:
+  GFX_TARGETS: ${{ github.event.inputs.gfx_target || 'gfx110X,gfx1151,gfx1150,gfx120X' }}
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-22.04
+    outputs:
+      ubuntu_matrix: ${{ steps.set-matrix.outputs.ubuntu_matrix }}
+    steps:
+    - name: Set matrix
+      id: set-matrix
+      run: |
+        targets="${{ env.GFX_TARGETS }}"
+        matrix_targets=$(echo "$targets" \
+          | tr ',' '\n' \
+          | sed 's/^ *//;s/ *$//' \
+          | jq -R . \
+          | jq -s '{gfx_target: .}' \
+          | jq -c)
+        echo "ubuntu_matrix=$matrix_targets" >> $GITHUB_OUTPUT
+        echo "Generated matrix: $matrix_targets"
+
+  build-ubuntu:
+    runs-on: ubuntu-22.04
+    needs: prepare-matrix
+    strategy:
+      matrix: ${{fromJson(needs.prepare-matrix.outputs.ubuntu_matrix)}}
+      fail-fast: false
+    outputs:
+      diffusers_version: ${{ steps.set-outputs.outputs.diffusers_version }}
+      torch_version: ${{ steps.set-outputs.outputs.torch_version }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download portable Python 3.12 (python-build-standalone)
+      run: |
+        # Same relocatable CPython as vllm-rocm — works across Linux distros
+        # without any system Python dependency.
+        PBS_TAG="20250604"
+        PBS_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-3.12.11+${PBS_TAG}-x86_64-unknown-linux-gnu-install_only.tar.gz"
+        echo "Downloading portable Python from $PBS_URL"
+        curl -fsSL "$PBS_URL" | tar -xz -C /opt
+        mv /opt/python /opt/diffusers
+        /opt/diffusers/bin/python3.12 --version
+        echo "Portable Python installed at /opt/diffusers"
+
+    - name: Map GPU target to AMD wheel URLs
+      id: wheel-urls
+      run: |
+        target="${{ matrix.gfx_target }}"
+
+        case "$target" in
+          gfx110X) suffix="gfx110X-all" ;;
+          gfx1151) suffix="gfx1151" ;;
+          gfx1150) suffix="gfx1150" ;;
+          gfx120X) suffix="gfx120X-all" ;;
+          *)
+            echo "ERROR: No AMD pre-built wheels for target: $target"
+            exit 1
+            ;;
+        esac
+
+        echo "torch_index=https://repo.amd.com/rocm/whl/${suffix}/" >> $GITHUB_OUTPUT
+        echo "Using PyTorch index: https://repo.amd.com/rocm/whl/${suffix}/"
+
+    - name: Prepare Python environment
+      run: |
+        /opt/diffusers/bin/python3 -m pip install --upgrade pip
+        echo "Python: $(/opt/diffusers/bin/python3 --version)"
+
+    - name: Install PyTorch ROCm from AMD
+      run: |
+        echo "Installing PyTorch from AMD ROCm wheel index..."
+        /opt/diffusers/bin/pip install \
+          --index-url "${{ steps.wheel-urls.outputs.torch_index }}" \
+          torch torchvision
+        /opt/diffusers/bin/python3 -c "
+        import torch
+        print(f'PyTorch {torch.__version__}')
+        print(f'ROCm built-in: {torch.version.hip is not None}')
+        "
+
+    - name: Install ROCm SDK wheels (best-effort, provides _rocm_sdk_*)
+      run: |
+        # vLLM brings these in transitively; for diffusers we install them
+        # explicitly so the Triton HIP backend can find libamdhip64.so etc.
+        # If the index doesn't expose them, fall back to torch's bundled libs.
+        target="${{ matrix.gfx_target }}"
+        /opt/diffusers/bin/pip install \
+          --index-url "${{ steps.wheel-urls.outputs.torch_index }}" \
+          rocm-sdk-core "rocm-sdk-libraries-${target}" || \
+        echo "WARN: rocm-sdk wheels unavailable for ${target}; relying on torch/lib"
+
+    - name: Install Diffusers + serving deps
+      run: |
+        echo "Installing diffusers, transformers, fastapi server stack..."
+        /opt/diffusers/bin/pip install \
+          'diffusers>=0.32.0' \
+          'transformers>=4.46.0' \
+          accelerate \
+          safetensors \
+          sentencepiece \
+          protobuf \
+          pillow \
+          huggingface_hub \
+          fastapi \
+          'uvicorn[standard]' \
+          imageio \
+          'imageio-ffmpeg'
+
+        /opt/diffusers/bin/python3 -c "
+        import diffusers, transformers, fastapi, uvicorn
+        print(f'diffusers  {diffusers.__version__}')
+        print(f'transformers {transformers.__version__}')
+        print(f'fastapi    {fastapi.__version__}')
+        print(f'uvicorn    {uvicorn.__version__}')
+        "
+
+    - name: Copy diffusers_server module into bundle
+      run: |
+        SP="/opt/diffusers/lib/python3.12/site-packages"
+        cp -r src/diffusers_server "$SP/"
+        /opt/diffusers/bin/python3 -c "import diffusers_server; print('module installed')"
+
+    - name: Pre-compile Triton HIP utilities (eliminates gcc dependency)
+      run: |
+        SP="/opt/diffusers/lib/python3.12/site-packages"
+        TRITON_AMD="$SP/triton/backends/amd"
+
+        # If triton wasn't pulled in by torch, skip this step.
+        if [ ! -d "$TRITON_AMD" ]; then
+          echo "Triton AMD backend not present; skipping prebuild."
+          exit 0
+        fi
+
+        for libdir in $SP/_rocm_sdk_*/lib $SP/torch/lib; do
+          [ -d "$libdir" ] && LD_LIBRARY_PATH="${libdir}:${LD_LIBRARY_PATH:-}"
+        done
+        export LD_LIBRARY_PATH
+
+        # Create unversioned symlinks for ROCm libs (.so -> .so.N)
+        for sdk_lib in $SP/_rocm_sdk_*/lib; do
+          [ -d "$sdk_lib" ] || continue
+          for lib in "$sdk_lib"/*.so.*; do
+            [ -e "$lib" ] || continue
+            name=$(basename "$lib")
+            link="$sdk_lib/${name%%.*}.so"
+            [ ! -e "$link" ] && ln -sf "$name" "$link"
+          done
+        done
+        # Also covers torch/lib where libamdhip64.so usually lives
+        for lib in $SP/torch/lib/*.so.*; do
+          [ -e "$lib" ] || continue
+          name=$(basename "$lib")
+          link="$SP/torch/lib/${name%%.*}.so"
+          [ ! -e "$link" ] && ln -sf "$name" "$link"
+        done
+
+        PYTHON_INC="/opt/diffusers/include/python3.12"
+
+        # Generate the C source with the HIP library name baked in
+        /opt/diffusers/bin/python3 -c "
+        from pathlib import Path
+        import os
+        dirname = '$TRITON_AMD'
+        src = Path(os.path.join(dirname, 'driver.c')).read_text()
+        src = src.replace('/*py_libhip_search_path*/', 'libamdhip64.so', 1)
+        Path('/tmp/hip_utils.c').write_text(src)
+        print('Generated /tmp/hip_utils.c')
+        "
+
+        gcc /tmp/hip_utils.c -O3 -shared -fPIC -Wno-psabi \
+          -o "$TRITON_AMD/hip_utils_prebuilt.so" \
+          -I"$TRITON_AMD/include" \
+          -I"$PYTHON_INC"
+        echo "Pre-compiled: $TRITON_AMD/hip_utils_prebuilt.so ($(stat -c%s "$TRITON_AMD/hip_utils_prebuilt.so") bytes)"
+
+        DRIVER_PY="$TRITON_AMD/driver.py"
+        sed -i 's|mod = compile_module_from_src(src=src, name="hip_utils", include_dirs=include_dirs)|_pso = os.path.join(dirname, "hip_utils_prebuilt.so")\n        if os.path.exists(_pso):\n            import importlib.util as _ilu\n            _sp = _ilu.spec_from_file_location("hip_utils", _pso)\n            mod = _ilu.module_from_spec(_sp)\n            _sp.loader.exec_module(mod)\n        else:\n            mod = compile_module_from_src(src=src, name="hip_utils", include_dirs=include_dirs)|' "$DRIVER_PY"
+        /opt/diffusers/bin/python3 -c "import ast; ast.parse(open('$DRIVER_PY').read()); print('Patched driver.py — syntax OK')"
+
+    - name: Create launcher script
+      run: |
+        cat > /opt/diffusers/bin/diffusers-server << 'LAUNCHER_EOF'
+        #!/bin/bash
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        VENV_DIR="$(dirname "$SCRIPT_DIR")"
+        SP="$VENV_DIR/lib/python3.12/site-packages"
+        for libdir in "$SP"/_rocm_sdk_*/lib "$SP"/torch/lib; do
+        [ -d "$libdir" ] && LD_LIBRARY_PATH="${libdir}:${LD_LIBRARY_PATH:-}"
+        done
+        # LLVM lib path (present if rocm-sdk-core wheel was installed)
+        if [ -d "$SP/_rocm_sdk_core/lib/llvm/lib" ]; then
+        LD_LIBRARY_PATH="$SP/_rocm_sdk_core/lib/llvm/lib:${LD_LIBRARY_PATH}"
+        fi
+        export LD_LIBRARY_PATH
+        if [ -d "$SP/_rocm_sdk_core/share/amd_smi" ]; then
+        export PYTHONPATH="$SP/_rocm_sdk_core/share/amd_smi:${PYTHONPATH:-}"
+        fi
+        # PyTorch SDPA path works without FlashAttention; opt-in via env if desired.
+        export PYTHONNOUSERSITE=1
+        # Bundled clang for Triton JIT, if present
+        CLANG="$SP/_rocm_sdk_core/lib/llvm/bin/clang"
+        if [ -f "$CLANG" ]; then
+        chmod +x "$CLANG" "$CLANG"-22 2>/dev/null || true
+        export CC="$CLANG"
+        fi
+        exec "$SCRIPT_DIR/python3" -m diffusers_server "$@"
+        LAUNCHER_EOF
+
+        sed -i 's/^        //' /opt/diffusers/bin/diffusers-server
+        chmod +x /opt/diffusers/bin/diffusers-server
+        echo "Launcher script:"
+        cat /opt/diffusers/bin/diffusers-server
+
+    - name: Strip unnecessary files to reduce size
+      run: |
+        cd /opt/diffusers
+        echo "=== Size before cleanup ==="
+        du -sh .
+
+        SP="lib/python3.12/site-packages"
+
+        rm -rf $SP/pip* $SP/wheel* 2>/dev/null || true
+        find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+        find . -name "*.pyc" -delete 2>/dev/null || true
+        rm -rf $SP/torch/test $SP/torch/benchmarks 2>/dev/null || true
+
+        # Packages diffusers doesn't need at runtime
+        rm -rf $SP/pyarrow* $SP/opencv* $SP/cv2* 2>/dev/null || true
+        rm -rf $SP/onnx* $SP/pandas* $SP/plotly* 2>/dev/null || true
+        rm -rf $SP/datasets* $SP/evaluate* 2>/dev/null || true
+        rm -rf $SP/boto3* $SP/botocore* $SP/s3transfer* 2>/dev/null || true
+        rm -rf $SP/azure* $SP/google_cloud* $SP/google_auth* $SP/msal* 2>/dev/null || true
+
+        # LLVM trim (only if rocm-sdk-core wheel was installed)
+        LLVM="$SP/_rocm_sdk_core/lib/llvm"
+        if [ -d "$LLVM" ]; then
+          find "$LLVM/bin" -type f ! -name "clang" ! -name "clang-22" -delete 2>/dev/null || true
+          find "$LLVM/bin" -type l ! -name "clang" -delete 2>/dev/null || true
+          find "$LLVM/lib" -name "*.so*" \
+            ! -name "libclang-cpp*" \
+            ! -name "libLLVM*" \
+            -delete 2>/dev/null || true
+          rm -rf "$LLVM/lib/clang/22/include/cuda_wrappers" 2>/dev/null || true
+        fi
+        rm -rf "$SP/_rocm_sdk_core/bin" 2>/dev/null || true
+
+        rm -rf lib/python3.12/test lib/python3.12/tkinter lib/python3.12/idlelib 2>/dev/null || true
+        rm -rf lib/python3.12/turtledemo lib/python3.12/ensurepip 2>/dev/null || true
+
+        chmod +x "$LLVM/bin/clang"* 2>/dev/null || true
+
+        echo "=== Size after cleanup ==="
+        du -sh .
+        echo ""
+        echo "Top consumers:"
+        du -sh $SP/torch/ $SP/diffusers/ $SP/transformers/ \
+               $SP/_rocm_sdk_core/ $SP/triton/ 2>/dev/null || true
+
+    - name: Verify bundled environment works
+      run: |
+        SP="/opt/diffusers/lib/python3.12/site-packages"
+        for libdir in $SP/_rocm_sdk_*/lib $SP/torch/lib; do
+          [ -d "$libdir" ] && LD_LIBRARY_PATH="${libdir}:${LD_LIBRARY_PATH:-}"
+        done
+        export LD_LIBRARY_PATH
+
+        /opt/diffusers/bin/python3 -c "import diffusers; print(f'diffusers {diffusers.__version__} OK')"
+        /opt/diffusers/bin/python3 -c "import transformers; print(f'transformers {transformers.__version__} OK')"
+        /opt/diffusers/bin/python3 -c "import torch; print(f'PyTorch {torch.__version__} OK')"
+        /opt/diffusers/bin/python3 -c "import diffusers_server; print('diffusers_server OK')"
+        /opt/diffusers/bin/python3 -c "
+        from diffusers import SanaPipeline, DiffusionPipeline
+        print('SanaPipeline available:', SanaPipeline is not None)
+        "
+        bash -n /opt/diffusers/bin/diffusers-server
+        # --help exits 0 without GPU
+        /opt/diffusers/bin/diffusers-server --help | head -5 || true
+        echo "All sanity checks passed"
+
+    - name: Report final size
+      run: |
+        echo "=== Final artifact ==="
+        du -sh /opt/diffusers/
+        echo ""
+        du -sh /opt/diffusers/*/ 2>/dev/null
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: diffusers-ubuntu-rocm-${{ matrix.gfx_target }}-x64
+        path: /opt/diffusers/
+        retention-days: 30
+        compression-level: 6
+
+    - name: Set job outputs
+      id: set-outputs
+      run: |
+        SP="/opt/diffusers/lib/python3.12/site-packages"
+        for libdir in $SP/_rocm_sdk_*/lib $SP/torch/lib; do
+          [ -d "$libdir" ] && LD_LIBRARY_PATH="${libdir}:${LD_LIBRARY_PATH:-}"
+        done
+        export LD_LIBRARY_PATH
+
+        diff_ver=$(/opt/diffusers/bin/python3 -c "import diffusers; print(diffusers.__version__)")
+        torch_ver=$(/opt/diffusers/bin/python3 -c "import torch; print(torch.__version__)")
+        echo "diffusers_version=$diff_ver" >> $GITHUB_OUTPUT
+        echo "torch_version=$torch_ver" >> $GITHUB_OUTPUT
+
+    - name: Clean up
+      if: always()
+      run: |
+        [ -d "/opt/diffusers" ] && sudo rm -rf /opt/diffusers
+
+  create-release:
+    needs: [prepare-matrix, build-ubuntu]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      matrix: ${{fromJson(needs.prepare-matrix.outputs.ubuntu_matrix)}}
+      fail-fast: false
+    if: |
+      always() &&
+      needs.build-ubuntu.result == 'success' &&
+      github.event_name != 'pull_request' &&
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.create_release == 'true' || github.event.inputs.create_release == null) ||
+       github.event_name == 'schedule')
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download build artifact for ${{ matrix.gfx_target }}
+      uses: actions/download-artifact@v4
+      with:
+        name: diffusers-ubuntu-rocm-${{ matrix.gfx_target }}-x64
+        path: ./artifact
+
+    - name: Generate release tag
+      id: generate-tag
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        DIFF_VERSION="${{ needs.build-ubuntu.outputs.diffusers_version }}"
+        TORCH_VERSION="${{ needs.build-ubuntu.outputs.torch_version }}"
+        TARGET="${{ matrix.gfx_target }}"
+
+        ROCM_VERSION=$(echo "$TORCH_VERSION" | grep -oP 'rocm[\d.]+' || echo "rocm")
+
+        # Tag format mirrors vllm-rocm: {pkg}{version}-{rocm}-{gfx}
+        # e.g. diffusers0.32.1-rocm7.12.0-gfx1151
+        TAG="diffusers${DIFF_VERSION}-${ROCM_VERSION}-${TARGET}"
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+        echo "Generated release tag: ${TAG}"
+
+    - name: Create archive (split if >1.9 GB for GitHub release limit)
+      run: |
+        TAG="${{ steps.generate-tag.outputs.tag }}"
+        MAX_SIZE=1900
+        base="${TAG}-x64"
+
+        echo "Creating: ${base}.tar.gz"
+        tar -czf "${base}.tar.gz" -C ./artifact .
+        size_mb=$(du -m "${base}.tar.gz" | cut -f1)
+        echo "Archive size: ${size_mb} MB"
+
+        if [ "$size_mb" -gt "$MAX_SIZE" ]; then
+          echo "Splitting into ${MAX_SIZE}MB parts..."
+          split -b ${MAX_SIZE}M --numeric-suffixes=1 -a 2 \
+            --additional-suffix=.tar.gz \
+            "${base}.tar.gz" "${base}.part"
+          rm "${base}.tar.gz"
+
+          parts=( "${base}".part*.tar.gz )
+          total=${#parts[@]}
+          total_padded=$(printf "%02d" "$total")
+          for f in "${parts[@]}"; do
+            nn="${f##*.part}"; nn="${nn%%.tar.gz}"
+            mv "$f" "${base}.part${nn}-of-${total_padded}.tar.gz"
+          done
+          echo "$total" > "${base}.partcount"
+
+          echo "Parts created:"
+          ls -la "${base}".part*
+          echo "Manifest:"
+          cat "${base}.partcount"
+        fi
+
+        echo "=== Release assets ==="
+        ls -la *.tar.gz *.partcount 2>/dev/null || echo "No archives"
+
+    - name: Create Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        TAG="${{ steps.generate-tag.outputs.tag }}"
+        DIFF_VERSION="${{ needs.build-ubuntu.outputs.diffusers_version }}"
+        TORCH_VERSION="${{ needs.build-ubuntu.outputs.torch_version }}"
+        TARGET="${{ matrix.gfx_target }}"
+
+        upload_files=$(ls -1 *.tar.gz *.partcount 2>/dev/null | tr '\n' ' ')
+        echo "Files to upload: $upload_files"
+
+        gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+
+        gh release create "$TAG" \
+          --title "$TAG" \
+          --notes "**GPU Target**: $TARGET
+        **Diffusers Version**: $DIFF_VERSION
+        **PyTorch Version**: $TORCH_VERSION
+        **Build Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+        Portable Diffusers build for $TARGET. Includes bundled Python, PyTorch ROCm, ROCm runtime, and a FastAPI server exposing OpenAI-compatible image generation endpoints. No separate installation required." \
+          $upload_files
