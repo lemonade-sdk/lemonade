@@ -826,7 +826,7 @@ class LLMTests(ServerTestBase):
     # =========================================================================
     # LLAMA.CPP SPECIFIC TESTS
     # =========================================================================
-    
+
     @skip_if_unsupported("slots")
     def test_023_slots(self):
         """Test the /api/v1/slots endpoint for llamacpp backend."""
