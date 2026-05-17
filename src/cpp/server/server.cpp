@@ -1972,20 +1972,26 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
     try {
         LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
 
-        // Tokenize endpoint cannot work with empty body
-        if (req.body.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\": \"Request body for tokenization cannot be empty\"}", "application/json");
-            return;
+        // Parse request body as JSON (use empty object if body is empty)
+        json request_body;
+        if (!req.body.empty()) {
+            try {
+                request_body = json::parse(req.body);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
+                res.status = 400;
+                res.set_content("{\"error\": \"Invalid JSON in request body\"}", "application/json");
+                return;
+            }
+        } else {
+            request_body = json::object();
         }
 
-        auto request_json = nlohmann::json::parse(req.body);
-
         // Tokenize endpoint requires at least a valid "content" entry in the body
-        if (!request_json.contains("content") || !request_json["content"].is_string() || request_json["content"].get<std::string>().empty()) {
-            LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing or empty" << std::endl;
+        if (!request_body.contains("content") || !request_body["content"].is_string()) {
+            LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
             res.status = 400;
-            res.set_content("{\"error\": \"'content' parameter is required and cannot be empty\"}", "application/json");
+            res.set_content("{\"error\": \"'content' parameter is required\"}", "application/json");
             return;
         }
 
@@ -1998,7 +2004,7 @@ void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res
         }
 
         // Forward request to router
-        auto response = router_->tokenize(request_json);
+        auto response = router_->tokenize(request_body);
         res.set_content(response.dump(), "application/json");
 
     } catch (const std::exception& e) {
