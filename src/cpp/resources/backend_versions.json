@@ -15,9 +15,9 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-604-8acff71",
-    "rocm-stable": "master-604-8acff71",
-    "metal": "master-604-8acff71"
+    "cpu": "master-616-cde20d5",
+    "rocm-stable": "master-616-cde20d5",
+    "metal": "master-616-cde20d5"
   },
   "therock": {
     "version": "7.13.0",
