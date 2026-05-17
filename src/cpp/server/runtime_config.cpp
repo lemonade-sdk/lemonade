@@ -291,7 +291,7 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
     if (config_.contains("llamacpp")) {
         const auto& lc = config_["llamacpp"];
         if (lc.contains("backend")) result["llamacpp_backend"] = resolve_auto(lc["backend"]);
-        if (lc.contains(backend_args)) {
+        if (lc.contains(backend_args) && lc[backend_args] != "") {
             result["llamacpp_args"] = lc[backend_args];
         } else if (lc.contains("args")) {
             result["llamacpp_args"] = lc["args"];
@@ -302,7 +302,7 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
     if (config_.contains("whispercpp")) {
         const auto& wc = config_["whispercpp"];
         if (wc.contains("backend")) result["whispercpp_backend"] = resolve_auto(wc["backend"]);
-        if (wc.contains(backend_args)) {
+        if (wc.contains(backend_args) && wc[backend_args] != "") {
             result["whispercpp_args"] = wc[backend_args];
         } else if (wc.contains("args")) {
             result["whispercpp_args"] = wc["args"];
@@ -312,7 +312,7 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
     if (config_.contains("sdcpp")) {
         const auto& sd = config_["sdcpp"];
         if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
-        if (sd.contains(backend_args)) {
+        if (sd.contains(backend_args) && sd[backend_args] != "") {
             result["sdcpp_args"] = sd[backend_args];
         } else if (sd.contains("args")) {
             result["sdcpp_args"] = sd["args"];
