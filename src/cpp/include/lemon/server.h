@@ -80,6 +80,7 @@ private:
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
     void handle_slots(const httplib::Request& req, httplib::Response& res);
     void handle_slots_by_id(const httplib::Request& req, httplib::Response& res);
+    void handle_tokenize(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
