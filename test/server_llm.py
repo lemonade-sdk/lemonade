@@ -937,7 +937,7 @@ class LLMTests(ServerTestBase):
         print(f"Tokenize default response: {data}")
 
         # Test the tokenize endpoint with pieces
-        payload = {"content": "Hello World!", "with_pieces": true}
+        payload = {"content": "Hello World!", "with_pieces": True}
         response = requests.post(
             f"{self.base_url}/tokenize",
             json=payload,
