@@ -2,6 +2,7 @@
 
 #include "../wrapped_server.h"
 #include "backend_utils.h"
+#include <cstdint>
 #include <string>
 
 namespace lemon {
@@ -41,6 +42,11 @@ public:
     json anthropic_messages(const json& request) override;
     void anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) override;
     json anthropic_count_tokens(const json& request) override;
+
+private:
+    json fit_anthropic_max_tokens_to_context(const json& request);
+
+    int64_t max_model_len_ = 0;
 };
 
 } // namespace backends

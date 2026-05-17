@@ -3,9 +3,12 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -15,6 +18,8 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+
+static constexpr int64_t ANTHROPIC_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -30,6 +35,37 @@ static std::string parse_quant_method(const std::string& config_json) {
         // fall through
     }
     return "";
+}
+
+static bool parse_positive_int(const std::string& value, int64_t& result) {
+    char* end = nullptr;
+    long long parsed = std::strtoll(value.c_str(), &end, 10);
+    if (end == value.c_str() || *end != '\0' || parsed <= 0) {
+        return false;
+    }
+    result = static_cast<int64_t>(parsed);
+    return true;
+}
+
+static int64_t resolve_max_model_len(int ctx_size, const std::string& vllm_args) {
+    int64_t max_model_len = ctx_size;
+    auto tokens = lemon::utils::parse_custom_args(vllm_args);
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+        int64_t parsed = 0;
+        const std::string flag = "--max-model-len";
+
+        if (token == flag && i + 1 < tokens.size() && parse_positive_int(tokens[i + 1], parsed)) {
+            max_model_len = parsed;
+            ++i;
+        } else if (token.rfind(flag + "=", 0) == 0 &&
+                   parse_positive_int(token.substr(flag.size() + 1), parsed)) {
+            max_model_len = parsed;
+        }
+    }
+
+    return max_model_len;
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
@@ -117,6 +153,7 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_backend = options.get_option("vllm_backend");
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
+    max_model_len_ = resolve_max_model_len(ctx_size, vllm_args);
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
@@ -157,6 +194,12 @@ void VLLMServer::load(const std::string& model_name,
     // JIT compile time.
     args.push_back("--max-model-len");
     args.push_back(std::to_string(ctx_size));
+
+    args.push_back("--enable-auto-tool-choice");
+    args.push_back("--tool-call-parser");
+    args.push_back("qwen3_coder");
+    args.push_back("--enable-prefix-caching");
+
     // Detect the actual quantization method from config.json rather than guessing
     // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
     // GPTQ, etc. and forcing --quantization awq would fail the load.
@@ -219,6 +262,7 @@ void VLLMServer::load(const std::string& model_name,
             err += ". Your kernel may be missing the gfx1151 CWSR fix — "
                    "see https://lemonade-server.ai/gfx1151_linux.html";
         }
+        max_model_len_ = 0;
         throw std::runtime_error(err);
     }
 
@@ -235,6 +279,7 @@ void VLLMServer::unload() {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
+        max_model_len_ = 0;
     }
 }
 
@@ -251,15 +296,77 @@ json VLLMServer::responses(const json& request) {
 }
 
 json VLLMServer::anthropic_messages(const json& request) {
-    return forward_anthropic_messages(request);
+    return forward_anthropic_messages(fit_anthropic_max_tokens_to_context(request));
 }
 
 void VLLMServer::anthropic_messages_stream(const std::string& request_body, httplib::DataSink& sink) {
-    forward_anthropic_messages_stream(request_body, sink);
+    try {
+        json request = json::parse(request_body);
+        forward_anthropic_messages_stream(fit_anthropic_max_tokens_to_context(request).dump(), sink);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "vLLM") << "Failed to inspect Anthropic stream request: "
+                             << e.what() << "; forwarding unchanged" << std::endl;
+        forward_anthropic_messages_stream(request_body, sink);
+    }
 }
 
 json VLLMServer::anthropic_count_tokens(const json& request) {
     return forward_anthropic_count_tokens(request);
+}
+
+json VLLMServer::fit_anthropic_max_tokens_to_context(const json& request) {
+    if (max_model_len_ <= 0 ||
+        !request.contains("max_tokens") ||
+        (!request["max_tokens"].is_number_integer() &&
+         !request["max_tokens"].is_number_unsigned())) {
+        return request;
+    }
+
+    int64_t requested_max_tokens = request["max_tokens"].get<int64_t>();
+    if (requested_max_tokens <= 0 ||
+        requested_max_tokens <= ANTHROPIC_MAX_TOKENS_PREFLIGHT_THRESHOLD) {
+        return request;
+    }
+
+    json count_request = request;
+    count_request.erase("max_tokens");
+    count_request.erase("stream");
+
+    auto raw = forward_request_raw("/v1/messages/count_tokens", count_request);
+    if (raw.status_code != 200) {
+        LOG(DEBUG, "vLLM") << "Skipping Anthropic max_tokens fit; count_tokens returned HTTP "
+                           << raw.status_code << std::endl;
+        return request;
+    }
+
+    json count_response;
+    try {
+        count_response = json::parse(raw.body);
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "vLLM") << "Skipping Anthropic max_tokens fit; count_tokens parse failed: "
+                           << e.what() << std::endl;
+        return request;
+    }
+
+    if (!count_response.contains("input_tokens") ||
+        (!count_response["input_tokens"].is_number_integer() &&
+         !count_response["input_tokens"].is_number_unsigned())) {
+        return request;
+    }
+
+    int64_t input_tokens = count_response["input_tokens"].get<int64_t>();
+    int64_t available_output_tokens = max_model_len_ - input_tokens;
+    if (available_output_tokens <= 0 || requested_max_tokens <= available_output_tokens) {
+        return request;
+    }
+
+    json modified_request = request;
+    modified_request["max_tokens"] = available_output_tokens;
+    LOG(INFO, "vLLM") << "Reduced Anthropic max_tokens from " << requested_max_tokens
+                      << " to " << available_output_tokens
+                      << " so input_tokens (" << input_tokens
+                      << ") fits max_model_len (" << max_model_len_ << ")" << std::endl;
+    return modified_request;
 }
 
 } // namespace backends
