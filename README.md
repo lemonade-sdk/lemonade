@@ -309,6 +309,8 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
+Click to learn more about the [available APIs](./docs/api/README.md) and how to [embed Lemonade](./docs/embeddable/README.md) in your own application.
+
 ## FAQ
 
 To read our frequently asked questions, see our [FAQ Guide](./docs/guide/faq.md)
