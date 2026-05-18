@@ -51,6 +51,10 @@
   "flm": {
     "args": ""
   },
+  "vllm": {
+    "backend": "auto",
+    "args": ""
+  },
   "ryzenai": {
     "server_bin": "builtin"
   },

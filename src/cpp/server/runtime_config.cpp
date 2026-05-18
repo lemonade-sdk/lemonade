@@ -30,7 +30,7 @@ RuntimeConfig* RuntimeConfig::global() {
 }
 
 static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "sdcpp", "flm", "ryzenai", "kokoro"
+    "llamacpp", "whispercpp", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
 };
 
 static bool is_backend_name(const std::string& key) {
@@ -326,6 +326,12 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
     if (config_.contains("flm")) {
         const auto& flm = config_["flm"];
         if (flm.contains("args")) result["flm_args"] = flm["args"];
+    }
+
+    if (config_.contains("vllm")) {
+        const auto& vl = config_["vllm"];
+        if (vl.contains("backend")) result["vllm_backend"] = resolve_auto(vl["backend"]);
+        if (vl.contains("args")) result["vllm_args"] = vl["args"];
     }
 
     if (config_.contains("ctx_size")) result["ctx_size"] = config_["ctx_size"];
