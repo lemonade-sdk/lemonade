@@ -44,6 +44,7 @@ static const std::vector<std::string> VALID_LABELS = {
     "coding",
     "embeddings",
     "hot",
+    "mtp",
     "reasoning",
     "reranking",
     "tool-calling",
