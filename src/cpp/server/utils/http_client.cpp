@@ -9,6 +9,13 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdint>
+#include <fstream>
+#include <vector>
+#include <lemon/utils/hash_digest.h>
 
 namespace fs = std::filesystem;
 
@@ -16,6 +23,409 @@ namespace lemon {
 namespace utils {
 
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
+
+namespace {
+
+static std::string trim_copy(const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n\"'");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = value.find_last_not_of(" \t\r\n\"'");
+    return value.substr(first, last - first + 1);
+}
+
+static std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static bool is_hex_digest(const std::string& value, size_t expected_len) {
+    if (value.size() != expected_len) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return std::isxdigit(c) != 0;
+    });
+}
+
+static uint32_t rotl32(uint32_t value, uint32_t count) {
+    return (value << count) | (value >> (32 - count));
+}
+
+static uint32_t rotr32(uint32_t value, uint32_t count) {
+    return (value >> count) | (value << (32 - count));
+}
+
+static std::string bytes_to_hex(const uint8_t* bytes, size_t len) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; ++i) {
+        oss << std::setw(2) << static_cast<unsigned int>(bytes[i]);
+    }
+    return oss.str();
+}
+
+class Sha1Context {
+public:
+    Sha1Context() {
+        state_[0] = 0x67452301;
+        state_[1] = 0xefcdab89;
+        state_[2] = 0x98badcfe;
+        state_[3] = 0x10325476;
+        state_[4] = 0xc3d2e1f0;
+    }
+
+    void update(const uint8_t* data, size_t len) {
+        bit_len_ += static_cast<uint64_t>(len) * 8;
+        while (len > 0) {
+            const size_t take = (std::min)(len, block_.size() - block_len_);
+            std::copy(data, data + take, block_.begin() + block_len_);
+            block_len_ += take;
+            data += take;
+            len -= take;
+            if (block_len_ == block_.size()) {
+                transform(block_.data());
+                block_len_ = 0;
+            }
+        }
+    }
+
+    void update(const std::string& data) {
+        update(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+    }
+
+    std::string final_hex() {
+        block_[block_len_++] = 0x80;
+        if (block_len_ > 56) {
+            while (block_len_ < 64) block_[block_len_++] = 0;
+            transform(block_.data());
+            block_len_ = 0;
+        }
+        while (block_len_ < 56) block_[block_len_++] = 0;
+
+        for (int i = 7; i >= 0; --i) {
+            block_[block_len_++] = static_cast<uint8_t>((bit_len_ >> (i * 8)) & 0xff);
+        }
+        transform(block_.data());
+
+        uint8_t digest[20];
+        for (size_t i = 0; i < 5; ++i) {
+            digest[i * 4 + 0] = static_cast<uint8_t>((state_[i] >> 24) & 0xff);
+            digest[i * 4 + 1] = static_cast<uint8_t>((state_[i] >> 16) & 0xff);
+            digest[i * 4 + 2] = static_cast<uint8_t>((state_[i] >> 8) & 0xff);
+            digest[i * 4 + 3] = static_cast<uint8_t>(state_[i] & 0xff);
+        }
+        return bytes_to_hex(digest, sizeof(digest));
+    }
+
+private:
+    void transform(const uint8_t* chunk) {
+        uint32_t w[80];
+        for (int i = 0; i < 16; ++i) {
+            w[i] = (static_cast<uint32_t>(chunk[i * 4 + 0]) << 24) |
+                   (static_cast<uint32_t>(chunk[i * 4 + 1]) << 16) |
+                   (static_cast<uint32_t>(chunk[i * 4 + 2]) << 8) |
+                   (static_cast<uint32_t>(chunk[i * 4 + 3]));
+        }
+        for (int i = 16; i < 80; ++i) {
+            w[i] = rotl32(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        }
+
+        uint32_t a = state_[0];
+        uint32_t b = state_[1];
+        uint32_t c = state_[2];
+        uint32_t d = state_[3];
+        uint32_t e = state_[4];
+
+        for (int i = 0; i < 80; ++i) {
+            uint32_t f = 0;
+            uint32_t k = 0;
+            if (i < 20) {
+                f = (b & c) | ((~b) & d);
+                k = 0x5a827999;
+            } else if (i < 40) {
+                f = b ^ c ^ d;
+                k = 0x6ed9eba1;
+            } else if (i < 60) {
+                f = (b & c) | (b & d) | (c & d);
+                k = 0x8f1bbcdc;
+            } else {
+                f = b ^ c ^ d;
+                k = 0xca62c1d6;
+            }
+            uint32_t temp = rotl32(a, 5) + f + e + k + w[i];
+            e = d;
+            d = c;
+            c = rotl32(b, 30);
+            b = a;
+            a = temp;
+        }
+
+        state_[0] += a;
+        state_[1] += b;
+        state_[2] += c;
+        state_[3] += d;
+        state_[4] += e;
+    }
+
+    std::array<uint8_t, 64> block_{};
+    size_t block_len_ = 0;
+    uint64_t bit_len_ = 0;
+    uint32_t state_[5];
+};
+
+class Sha256Context {
+public:
+    Sha256Context() {
+        state_[0] = 0x6a09e667;
+        state_[1] = 0xbb67ae85;
+        state_[2] = 0x3c6ef372;
+        state_[3] = 0xa54ff53a;
+        state_[4] = 0x510e527f;
+        state_[5] = 0x9b05688c;
+        state_[6] = 0x1f83d9ab;
+        state_[7] = 0x5be0cd19;
+    }
+
+    void update(const uint8_t* data, size_t len) {
+        bit_len_ += static_cast<uint64_t>(len) * 8;
+        while (len > 0) {
+            const size_t take = (std::min)(len, block_.size() - block_len_);
+            std::copy(data, data + take, block_.begin() + block_len_);
+            block_len_ += take;
+            data += take;
+            len -= take;
+            if (block_len_ == block_.size()) {
+                transform(block_.data());
+                block_len_ = 0;
+            }
+        }
+    }
+
+    std::string final_hex() {
+        block_[block_len_++] = 0x80;
+        if (block_len_ > 56) {
+            while (block_len_ < 64) block_[block_len_++] = 0;
+            transform(block_.data());
+            block_len_ = 0;
+        }
+        while (block_len_ < 56) block_[block_len_++] = 0;
+
+        for (int i = 7; i >= 0; --i) {
+            block_[block_len_++] = static_cast<uint8_t>((bit_len_ >> (i * 8)) & 0xff);
+        }
+        transform(block_.data());
+
+        uint8_t digest[32];
+        for (size_t i = 0; i < 8; ++i) {
+            digest[i * 4 + 0] = static_cast<uint8_t>((state_[i] >> 24) & 0xff);
+            digest[i * 4 + 1] = static_cast<uint8_t>((state_[i] >> 16) & 0xff);
+            digest[i * 4 + 2] = static_cast<uint8_t>((state_[i] >> 8) & 0xff);
+            digest[i * 4 + 3] = static_cast<uint8_t>(state_[i] & 0xff);
+        }
+        return bytes_to_hex(digest, sizeof(digest));
+    }
+
+private:
+    void transform(const uint8_t* chunk) {
+        static constexpr uint32_t k[64] = {
+            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+            0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+            0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+            0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+            0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+            0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+            0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+            0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+            0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+        };
+
+        uint32_t w[64];
+        for (int i = 0; i < 16; ++i) {
+            w[i] = (static_cast<uint32_t>(chunk[i * 4 + 0]) << 24) |
+                   (static_cast<uint32_t>(chunk[i * 4 + 1]) << 16) |
+                   (static_cast<uint32_t>(chunk[i * 4 + 2]) << 8) |
+                   (static_cast<uint32_t>(chunk[i * 4 + 3]));
+        }
+        for (int i = 16; i < 64; ++i) {
+            const uint32_t s0 = rotr32(w[i - 15], 7) ^ rotr32(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            const uint32_t s1 = rotr32(w[i - 2], 17) ^ rotr32(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+
+        uint32_t a = state_[0];
+        uint32_t b = state_[1];
+        uint32_t c = state_[2];
+        uint32_t d = state_[3];
+        uint32_t e = state_[4];
+        uint32_t f = state_[5];
+        uint32_t g = state_[6];
+        uint32_t h = state_[7];
+
+        for (int i = 0; i < 64; ++i) {
+            const uint32_t s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+            const uint32_t ch = (e & f) ^ ((~e) & g);
+            const uint32_t temp1 = h + s1 + ch + k[i] + w[i];
+            const uint32_t s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+            const uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            const uint32_t temp2 = s0 + maj;
+
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+
+        state_[0] += a;
+        state_[1] += b;
+        state_[2] += c;
+        state_[3] += d;
+        state_[4] += e;
+        state_[5] += f;
+        state_[6] += g;
+        state_[7] += h;
+    }
+
+    std::array<uint8_t, 64> block_{};
+    size_t block_len_ = 0;
+    uint64_t bit_len_ = 0;
+    uint32_t state_[8];
+};
+
+struct ExpectedHash {
+    std::string algorithm;
+    std::string value;
+
+    bool present() const { return !algorithm.empty() && !value.empty(); }
+};
+
+struct HashCheckResult {
+    bool ok = false;
+    std::string actual;
+    std::string error;
+};
+
+static ExpectedHash parse_expected_hash(const DownloadOptions& options) {
+    std::string algorithm = lower_copy(trim_copy(options.expected_hash_algorithm));
+    std::string value = lower_copy(trim_copy(options.expected_hash));
+
+    const auto colon = value.find(':');
+    if (colon != std::string::npos) {
+        const std::string prefix = lower_copy(trim_copy(value.substr(0, colon)));
+        if (!prefix.empty() && algorithm.empty()) {
+            algorithm = prefix;
+        }
+        value = trim_copy(value.substr(colon + 1));
+    }
+
+    if (algorithm == "sha-256") algorithm = "sha256";
+    if (algorithm == "sha-1") algorithm = "sha1";
+    if (algorithm == "gitsha1" || algorithm == "git-sha") algorithm = "git-sha1";
+
+    if (algorithm.empty()) {
+        if (is_hex_digest(value, 64)) {
+            algorithm = "sha256";
+        } else if (is_hex_digest(value, 40)) {
+            algorithm = "sha1";
+        }
+    }
+
+    if ((algorithm == "sha256" && !is_hex_digest(value, 64)) ||
+        ((algorithm == "sha1" || algorithm == "git-sha1") && !is_hex_digest(value, 40))) {
+        return {};
+    }
+
+    return {algorithm, value};
+}
+
+static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    HashCheckResult result;
+    if (!expected.present()) {
+        result.ok = true;
+        return result;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        result.error = "failed to open file for hash verification";
+        return result;
+    }
+
+    constexpr size_t buffer_size = 1024 * 1024;
+    std::vector<uint8_t> buffer(buffer_size);
+
+    if (expected.algorithm == "sha256") {
+        Sha256Context ctx;
+        while (file.good()) {
+            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize count = file.gcount();
+            if (count > 0) {
+                ctx.update(buffer.data(), static_cast<size_t>(count));
+            }
+        }
+        result.actual = ctx.final_hex();
+    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
+        Sha1Context ctx;
+        if (expected.algorithm == "git-sha1") {
+            std::error_code ec;
+            const auto size = fs::file_size(path, ec);
+            if (ec) {
+                result.error = "failed to get file size for git-sha1 verification: " + ec.message();
+                return result;
+            }
+            ctx.update("blob " + std::to_string(size) + std::string(1, '\0'));
+        }
+        while (file.good()) {
+            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize count = file.gcount();
+            if (count > 0) {
+                ctx.update(buffer.data(), static_cast<size_t>(count));
+            }
+        }
+        result.actual = ctx.final_hex();
+    } else {
+        result.error = "unsupported hash algorithm: " + expected.algorithm;
+        return result;
+    }
+
+    if (file.bad()) {
+        result.error = "failed while reading file for hash verification";
+        return result;
+    }
+
+    result.ok = (lower_copy(result.actual) == expected.value);
+    if (!result.ok) {
+        result.error = "hash mismatch: expected " + expected.algorithm + ":" + expected.value +
+                       ", got " + expected.algorithm + ":" + result.actual;
+    }
+    return result;
+}
+
+static HashCheckResult verify_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    auto result = calculate_file_hash(path, expected);
+    if (!expected.present() || result.ok) {
+        return result;
+    }
+    LOG(ERROR, "Download") << "Content verification failed for " << path.string()
+                            << ": " << result.error << std::endl;
+    return result;
+}
+
+} // namespace
 
 // Callback for writing response data to string
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -549,19 +959,77 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                          const DownloadOptions& options) {
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
+    const ExpectedHash expected_hash = parse_expected_hash(options);
+
+    if (!options.expected_hash.empty() && !expected_hash.present()) {
+        final_result.success = false;
+        final_result.error_message = "Invalid or unsupported expected hash: " + options.expected_hash;
+        return final_result;
+    }
 
     // Use .partial extension for in-progress downloads
     std::string partial_path = output_path + ".partial";
     fs::path output_path_fs = path_from_utf8(output_path);
     fs::path partial_path_fs = path_from_utf8(partial_path);
 
-    // Check if final file already exists and is complete
+    // If a verified final file exists next to a stale .partial file, trust the
+    // verified final file and remove the stale partial.
+    if (expected_hash.present() && fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
+        auto hash_result = verify_file_hash(output_path_fs, expected_hash);
+        if (hash_result.ok) {
+            std::error_code remove_partial_ec;
+            fs::remove(partial_path_fs, remove_partial_ec);
+            final_result.success = true;
+            final_result.bytes_downloaded = 0;
+            final_result.verified_hash = hash_result.actual;
+            LOG(INFO, "Download") << "File already exists and hash verified; removed stale partial: "
+                                  << output_path << std::endl;
+            return final_result;
+        }
+
+        std::error_code remove_output_ec;
+        fs::remove(output_path_fs, remove_output_ec);
+        if (remove_output_ec) {
+            final_result.success = false;
+            final_result.error_message = "Existing file failed verification and could not be removed: "
+                                       + remove_output_ec.message();
+            return final_result;
+        }
+    }
+
+    // Check if final file already exists and is complete. When the caller
+    // provided a content hash, the final path is only trusted if the hash
+    // matches; otherwise remove it and force a fresh download.
     if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
-        // Final file exists with no partial - consider it complete
-        final_result.success = true;
-        final_result.bytes_downloaded = 0;
-        LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
-        return final_result;
+        if (expected_hash.present()) {
+            auto hash_result = verify_file_hash(output_path_fs, expected_hash);
+            if (hash_result.ok) {
+                final_result.success = true;
+                final_result.bytes_downloaded = 0;
+                final_result.verified_hash = hash_result.actual;
+                LOG(INFO, "Download") << "File already exists and hash verified: "
+                                      << output_path << std::endl;
+                return final_result;
+            }
+
+            LOG(WARNING, "Download") << "Existing file failed verification; removing for fresh download: "
+                                     << output_path << std::endl;
+            std::error_code remove_ec;
+            fs::remove(output_path_fs, remove_ec);
+            if (remove_ec) {
+                final_result.success = false;
+                final_result.error_message = "Existing file failed verification and could not be removed: "
+                                           + remove_ec.message();
+                return final_result;
+            }
+        } else {
+            // Final file exists with no partial - consider it complete when no
+            // stronger source-of-truth hash is available.
+            final_result.success = true;
+            final_result.bytes_downloaded = 0;
+            LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
+            return final_result;
+        }
     }
 
     // Check for existing partial file to resume
@@ -626,6 +1094,29 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
 
         if (final_result.success) {
+            if (expected_hash.present()) {
+                auto hash_result = verify_file_hash(partial_path_fs, expected_hash);
+                if (!hash_result.ok) {
+                    final_result.success = false;
+                    final_result.can_resume = false;
+                    final_result.error_message = "Download content verification failed for " + output_path +
+                                                 ": " + hash_result.error;
+                    std::error_code remove_ec;
+                    fs::remove(partial_path_fs, remove_ec);
+                    resume_offset = 0;
+
+                    if (attempt < options.max_retries) {
+                        LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message
+                                                  << "; retrying from scratch" << std::endl;
+                        continue;
+                    }
+
+                    break;
+                }
+                final_result.verified_hash = hash_result.actual;
+                LOG(INFO, "Download") << "Hash verified for " << output_path << std::endl;
+            }
+
             // Download complete - rename .partial to final path
             std::error_code ec;
             fs::rename(partial_path_fs, output_path_fs, ec);
