@@ -1834,11 +1834,12 @@ jobs:
           name: Lemonade_Server_MSI_Signed
           path: .
 
-      - name: Download Lemonade .rpm Package
+      - name: Download Lemonade .rpm Packages
         uses: actions/download-artifact@v7
         with:
-          name: lemonade-rpm
+          pattern: lemonade-rpm-fedora-*
           path: .
+          merge-multiple: true
 
       - name: Download Lemonade macOS .pkg Package
         uses: actions/download-artifact@v7
