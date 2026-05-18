@@ -1001,6 +1001,12 @@ Labels describe what a model can do. A model may carry multiple labels.
 |-------|-------------|
 | `realtime-transcription` | Supports the WebSocket `/realtime` endpoint for live microphone transcription. |
 
+**Runtime labels** — affect backend launch defaults:
+
+| Label | Description |
+|-------|-------------|
+| `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
+
 **Characteristic labels** — informational, do not affect routing:
 
 | Label | Description |

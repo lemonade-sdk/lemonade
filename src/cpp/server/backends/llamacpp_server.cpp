@@ -8,10 +8,11 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
-#include <iostream>
-#include <filesystem>
-#include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <set>
 #ifdef __APPLE__
 #include <pwd.h>
@@ -319,6 +320,13 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
+
+    if (std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end()) {
+        LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
+        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
+        push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
+        push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
+    }
 
     // Disable llamacpp webui by default
     push_overridable_arg(args, llamacpp_args, "--no-webui");
