@@ -36,7 +36,7 @@ Lemonade comes in two flavors:
 
 ## Getting Started
 
-1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev-getting-started.md)
+1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev/getting-started.md)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
 4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
@@ -309,11 +309,11 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
-For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
+Click to learn more about the [available APIs](./docs/api/README.md) and how to [embed Lemonade](./docs/embeddable/README.md) in your own application.
 
 ## FAQ
 
-To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
+To read our frequently asked questions, see our [FAQ Guide](./docs/guide/faq.md)
 
 ## Contributing
 
