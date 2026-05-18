@@ -596,6 +596,47 @@ json LlamaCppServer::slots_action(int slot_id, const std::string& action, const 
     }
 }
 
+json LlamaCppServer::tokenize(const json& request_body) {
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    std::string url = get_base_url() + "/tokenize";
+    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
+
+    LOG(DEBUG, "LlamaCpp") << server_name_ << " POST request to /tokenize with body: " << request_body.dump() << std::endl;
+
+    try {
+        auto response = utils::HttpClient::post(url, request_body.dump(), headers);
+        if (response.status_code == 200) {
+            LOG(DEBUG, "LlamaCpp") << server_name_ << " received tokenize response: " << response.body << std::endl;
+            return json::parse(response.body);
+        } else {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(
+            "HTTP request failed: " + std::string(e.what()),
+            ErrorType::NETWORK_ERROR
+        );
+    }
+}
+
 json LlamaCppServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }

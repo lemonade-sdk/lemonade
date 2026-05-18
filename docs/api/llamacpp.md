@@ -11,6 +11,7 @@ This page documents Lemonade's llama.cpp-specific compatibility surface.
 | `POST` | [`/v1/slots/{id}?action=save`](#post-v1slotsidactionsave) | Save the prompt cache of the specified slot to a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=restore`](#post-v1slotsidactionrestore) | Restore the prompt cache of the specified slot from a file | prompt cache |
 | `POST` | [`/v1/slots/{id}?action=erase`](#post-v1slotsidactionerase) | Erase the prompt cache of the specified slot | prompt cache |
+| `POST` | [`/v1/tokenize`](#post-v1tokenize) | Tokenize a given text | tokenization |
 
 ## `POST /v1/reranking`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -361,3 +362,77 @@ Erase (clear) the prompt cache of a specific slot. This removes all cached conte
 - `id_slot` - The slot ID that was erased
 
 > **Note:** If the server returns an error, it may indicate that the slot was not found or that the operation failed.
+
+## `POST /v1/tokenize`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Tokenize a given text. Does not count towards the current model's context window.
+
+> **Note:** This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's `/tokenize` endpoint.
+
+> **Note:** This endpoint supports all four path prefixes: `/api/v0/tokenize`, `/api/v1/tokenize`, `/v0/tokenize`, and `/v1/tokenize`.
+
+> **Note:** Actual response values may vary for the same string across different models if the models do not share the same tokenizer.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `content` | Yes | The text to tokenize. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `add_special` | No | Boolean indicating if special tokens, i.e. `BOS`, should be inserted. Default: `false` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `parse_special` | No | Boolean indicating if special tokens should be tokenized. When `false` special tokens are treated as plaintext. Default: `true` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `with_pieces` | No | Boolean indicating whether to return token pieces along with IDs. Default: `false` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+### Example request
+
+=== "PowerShell"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/v1/tokenize" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"content": "This is a string to tokenize"}' -UseBasicParsing
+    ```
+
+=== "PowerShell (/api/v1)"
+
+    ```powershell
+    Invoke-WebRequest `
+      -Uri "http://localhost:13305/api/v1/tokenize" `
+      -Method POST `
+      -Headers @{ "Content-Type" = "application/json" } `
+      -Body '{"content": "This is a string to tokenize"}' -UseBasicParsing
+    ```
+
+=== "Bash"
+
+    ```bash
+    curl -X POST "http://localhost:13305/v1/tokenize" \
+      -H "Content-Type: application/json" \
+      -d '{"content": "This is a string to tokenize"}'
+    ```
+
+### Response format
+
+```json
+{
+  "tokens": [1919,369,264,886,310,74995]
+}
+```
+
+If `with_pieces` is `true`:
+
+```json
+{
+  "tokens": [
+    {"id": 123, "piece": "Hello"},
+    {"id": 456, "piece": " world"},
+    {"id": 789, "piece": "!"}
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `tokens` - Array of token IDs

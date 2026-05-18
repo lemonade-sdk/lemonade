@@ -739,6 +739,43 @@ json Router::slots_action(int slot_id, const std::string& action, const json& re
     }
 }
 
+json Router::tokenize(const json& request_body) {
+    WrappedServer* server = nullptr;
+    ITokenizerServer* tokenizer_server = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        server = get_most_recent_server();
+        if (!server) {
+            return ErrorResponse::from_exception(
+                ModelNotLoadedException("No models loaded")
+            );
+        }
+
+        // Check if server supports tokenize capability
+        tokenizer_server = dynamic_cast<ITokenizerServer*>(server);
+        if (!tokenizer_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Tokenization", device_type_to_string(server->get_device_type()))
+            );
+        }
+
+        // Mark as busy and update access time
+        server->set_busy(true);
+        server->update_access_time();
+    } // Lock released here
+
+    // Execute without holding lock (but busy flag prevents eviction)
+    try {
+        auto response = tokenizer_server->tokenize(request_body);
+        server->set_busy(false);
+        return response;
+    } catch (...) {
+        server->set_busy(false);
+        throw;
+    }
+}
+
 json Router::responses(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         return server->responses(request);

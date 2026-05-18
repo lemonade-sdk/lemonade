@@ -381,6 +381,11 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_slots_by_id(req, res);
     });
 
+    // Tokenize endpoint (llama.cpp specific)
+    register_post("tokenize", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_tokenize(req, res);
+    });
+
     // Audio endpoints (OpenAI /v1/audio/* compatible)
     register_post("audio/transcriptions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_transcriptions(req, res);
@@ -1957,6 +1962,53 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
+
+        // Parse request body as JSON (use empty object if body is empty)
+        json request_body;
+        if (!req.body.empty()) {
+            try {
+                request_body = json::parse(req.body);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
+                res.status = 400;
+                res.set_content("{\"error\": \"Invalid JSON in request body\"}", "application/json");
+                return;
+            }
+        } else {
+            request_body = json::object();
+        }
+
+        // Tokenize endpoint requires at least a valid "content" entry in the body
+        if (!request_body.contains("content") || !request_body["content"].is_string()) {
+            LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"'content' parameter is required\"}", "application/json");
+            return;
+        }
+
+        // Tokenization requires a model to be loaded
+        if (!router_->is_model_loaded()) {
+            LOG(ERROR, "Server") << "No model loaded for tokenization" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded for tokenization\"}", "application/json");
+            return;
+        }
+
+        // Forward request to router
+        auto response = router_->tokenize(request_body);
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_tokenize: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
