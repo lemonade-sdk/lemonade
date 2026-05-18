@@ -21,15 +21,20 @@ fi
 if command -v systemctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
     systemctl daemon-reload > /dev/null 2>&1 || true
 
-    # Handle migration from lemonade-server.service to lemond.service during upgrade
-    # In RPM, $1=2 means upgrade (new package count after transaction)
+    # In RPM:
+    #   $1 = 1 -> fresh install
+    #   $1 = 2 -> upgrade
+
     if [ "${1:-0}" -eq 2 ]; then
-        # If old service was enabled, enable and start the new one
+        # Upgrade: preserve previous enabled state
         if systemctl is-enabled lemonade-server.service > /dev/null 2>&1; then
-            systemctl enable lemond.service > /dev/null 2>&1 || true
-            systemctl start lemond.service > /dev/null 2>&1 || true
+            systemctl enable --now lemond.service > /dev/null 2>&1 || true
         fi
+    else
+        # Fresh install: enable and start service by default
+        systemctl enable --now lemond.service > /dev/null 2>&1 || true
     fi
 fi
 
 exit 0
+
