@@ -10,6 +10,10 @@
 #include <memory>
 #include <atomic>
 #include <chrono>
+#include <functional>
+#include <map>
+#include <mutex>
+#include <vector>
 #include <httplib.h>
 #include "runtime_config.h"
 #include "router.h"
@@ -102,10 +106,53 @@ private:
     // Enrich recipes JSON with release_url, download_filename, version from BackendManager
     void enrich_recipes(json& recipes);
 
-    // Shared SSE streaming helper for download operations
+    // Download manager endpoints and server-owned download jobs
+    void handle_downloads(const httplib::Request& req, httplib::Response& res);
+    void handle_download_control(const httplib::Request& req, httplib::Response& res);
+
+    // Shared SSE streaming helper for legacy download operations. The operation
+    // remains tied to this response for backwards compatibility.
     void stream_download_operation(
         httplib::Response& res,
         std::function<void(DownloadProgressCallback)> operation);
+
+    struct DownloadJob {
+        std::string id;
+        std::string type;
+        std::string display_name;
+        std::string status;
+        std::string cancel_action;
+        std::string error;
+        nlohmann::json progress;
+        uint64_t completed_files_bytes = 0;
+        uint64_t current_file_bytes_total = 0;
+        int current_file_index = -1;
+        bool cancel_requested = false;
+        // Set by the worker's progress callback once the downloader has actually
+        // observed a pause/cancel request and stopped before completion. This
+        // prevents a late UI request from overriding a successful operation that
+        // already returned normally.
+        bool stop_acknowledged = false;
+        bool running = false;
+        std::chrono::steady_clock::time_point terminal_since;
+        // Protects worker publication/join. A job can be visible in the registry
+        // while start_download_job is still joining the previous worker; removals
+        // and shutdown must wait until the new worker thread is either assigned
+        // or known to be absent before deciding whether to join.
+        mutable std::mutex worker_mutex;
+        std::thread worker;
+    };
+
+    nlohmann::json download_progress_to_json(const DownloadProgress& progress);
+    nlohmann::json download_job_to_json(const std::shared_ptr<DownloadJob>& job);
+    bool is_download_job_visible(const std::shared_ptr<DownloadJob>& job) const;
+    std::shared_ptr<DownloadJob> start_download_job(
+        const std::string& download_id,
+        const std::string& download_type,
+        const std::string& display_name,
+        std::function<void(DownloadProgressCallback)> operation);
+    void join_download_job(const std::shared_ptr<DownloadJob>& job);
+    void cancel_download_jobs();
 
     // Helper function for local model resolution and registration
     void resolve_and_register_local_model(
@@ -163,6 +210,9 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<WebSocketServer> websocket_server_;
+
+    std::mutex downloads_mutex_;
+    std::map<std::string, std::shared_ptr<DownloadJob>> download_jobs_;
 
     bool running_;
     std::atomic<bool> shutdown_requested_{false};
