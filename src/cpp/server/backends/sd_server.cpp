@@ -75,7 +75,7 @@ std::string get_therock_version() {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "lemonade-sdk/stable-diffusion.cpp";
+    params.repo = "leejet/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform version for URL (master-NNN-HASH -> master-HASH)
