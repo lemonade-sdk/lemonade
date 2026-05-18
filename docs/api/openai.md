@@ -1005,7 +1005,7 @@ Labels describe what a model can do. A model may carry multiple labels.
 
 | Label | Description |
 |-------|-------------|
-| `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 6`); users can override these with `llamacpp_args`. |
+| `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
 
 **Characteristic labels** — informational, do not affect routing:
 
