@@ -227,7 +227,12 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     // Internal endpoints are restricted to loopback regardless of API key
     if (is_internal_route) {
-        bool is_loopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
+        // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
+        // lemond uses to accept both IPv4 and IPv6 on the same port).
+        bool is_loopback = (req.remote_addr == "127.0.0.1" ||
+                            req.remote_addr == "::1" ||
+                            req.remote_addr == "::ffff:127.0.0.1");
         if (!is_loopback) {
             LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
                         << req.remote_addr << " " << req.path << std::endl;
@@ -1190,7 +1195,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
             message += ". ";
         }
 
-        message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
+        message += "Use 'lemonade list' or GET /api/v1/models?show_all=true to see all available models.";
 
         // Add FLM hint for -FLM model names when FLM is not ready
         if (requested_model.size() > 4 &&

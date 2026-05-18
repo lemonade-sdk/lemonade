@@ -245,7 +245,7 @@ If the server won't start and CLI arguments aren't sufficient, you can edit conf
 ```bash
 # Linux
 sudo nano /var/lib/lemonade/.cache/lemonade/config.json
-sudo systemctl restart lemonade-server
+sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
 # %USERPROFILE%\.cache\lemonade\config.json

@@ -1209,7 +1209,7 @@ int main(int argc, char* argv[]) {
         if (config.json_output) {
             // Verify the server is actually reachable before reporting its port.
             // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers (e.g. lemonade-server stop) to target the wrong process.
+            // which could cause callers to target the wrong process.
             bool reachable = try_live_check(config.host, config.port, config.api_key, 500);
             if (!reachable) {
                 std::cerr << "Server is not running" << std::endl;

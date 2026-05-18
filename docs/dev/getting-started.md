@@ -42,7 +42,6 @@ Lemonade consists of these main executables:
 - **lemonade** - CLI client for terminal users (list, pull, delete, run, status, logs, launch, backends, scan)
 - **LemonadeServer.exe** (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
 - **lemonade-tray** (macOS/Linux) - Lightweight tray client that connects to a running `lemond`
-- **lemonade-server** - Deprecated backwards-compatibility shim (delegates to `lemond` or `lemonade`)
 
 ## Building from Source
 
@@ -99,12 +98,10 @@ cmake --build --preset vs18
   - `build/Release/lemond.exe` - HTTP server
   - `build/Release/LemonadeServer.exe` - GUI app (embedded server + system tray)
   - `build/Release/lemonade.exe` - CLI client
-  - `build/Release/lemonade-server.exe` - Legacy shim (deprecated)
 - **Linux/macOS:**
   - `build/lemond` - HTTP server
   - `build/lemonade` - CLI client
   - `build/lemonade-tray` - System tray client (macOS always; Linux when AppIndicator3 found)
-  - `build/lemonade-server` - Legacy shim (deprecated)
 - **Resources:** Automatically copied to `build/Release/resources/` on Windows, `build/resources/` on Linux/macOS (web UI files, model registry, backend version configuration)
 
 ### Building the Tauri Desktop App (Optional)
@@ -811,7 +808,7 @@ The C++ implementation is tested using the existing Python test suite.
 
 | Test File | Description |
 |-----------|-------------|
-| `server_cli.py` | CLI commands (version, list, pull, status, delete, serve, stop, run) |
+| `server_cli2.py` | CLI commands (version, status, list, export, backends, pull, import, load, unload, run, launch, delete) |
 | `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, stats) |
 | `server_llm.py` | LLM inference (chat completions, embeddings, reranking) |
 | `server_whisper.py` | Audio transcription (whisper models) |
@@ -820,7 +817,7 @@ The C++ implementation is tested using the existing Python test suite.
 **Running tests:**
 ```bash
 # CLI tests (no inference backend needed)
-python test/server_cli.py
+python test/server_cli2.py
 
 # Endpoint tests (no inference backend needed)
 python test/server_endpoints.py
@@ -835,11 +832,11 @@ python test/server_whisper.py
 python test/server_sd.py
 ```
 
-The tests auto-discover the server binary from the build directory. Use `--server-binary` to override if needed.
+The tests auto-discover the `lemonade` CLI binary from the build directory. Use `--cli-binary` to override if needed.
 
 See the `.github/workflows/` directory for CI/CD test configurations.
 
-**Note:** The Python tests should now use `lemonade-server.exe` as the entry point since it provides the CLI interface.
+**Note:** The Python tests use the `lemonade` CLI binary as the entry point.
 
 ## Development
 

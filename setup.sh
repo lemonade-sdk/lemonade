@@ -282,7 +282,7 @@ fi
 
 # Check optional Linux tray dependencies (AppIndicator3 + libnotify [+ GTK3 if not using glib variant])
 # These are optional - lemonade-tray is only built when they are present.
-# lemonade-server always builds without them (headless, daemon-friendly).
+# lemond always builds without them (headless, daemon-friendly).
 if [ "$OS" = "linux" ] && command_exists pkg-config; then
     print_info "Checking optional Linux tray dependencies (AppIndicator3)..."
     missing_tray_packages=()

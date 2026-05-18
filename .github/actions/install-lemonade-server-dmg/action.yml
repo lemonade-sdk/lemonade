@@ -63,19 +63,19 @@ runs:
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
         echo "Verifying installation at: $BIN_PATH"
 
-        if [ -x "$BIN_PATH/lemonade-server" ]; then
-            echo "Found: lemonade-server"
-            "$BIN_PATH/lemonade-server" --version
-        else
-            echo "ERROR: lemonade-server not found at $BIN_PATH"
-            exit 1
-        fi
-
         if [ -x "$BIN_PATH/lemond" ]; then
             echo "Found: lemond"
             "$BIN_PATH/lemond" --version
         else
-            echo "WARNING: lemond not found at $BIN_PATH"
+            echo "ERROR: lemond not found at $BIN_PATH"
+            exit 1
+        fi
+
+        if [ -x "$BIN_PATH/lemonade" ]; then
+            echo "Found: lemonade"
+            "$BIN_PATH/lemonade" --version
+        else
+            echo "WARNING: lemonade not found at $BIN_PATH"
         fi
 
         echo "Installation verification complete!"
@@ -84,7 +84,7 @@ runs:
       shell: bash
       run: |
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
-        LOG_FILE="/tmp/lemonade-server.log"
+        LOG_FILE="/tmp/lemond.log"
 
         # The .pkg postflight script starts the server via launchd.
         # Give it a few seconds to come up before checking.
@@ -100,7 +100,7 @@ runs:
         # Launchd may not work reliably in CI (no GUI session, restricted
         # sandbox). Fall back to starting the server manually.
         echo "Server not reachable after 30s — starting manually..."
-        "$BIN_PATH/lemonade-server" serve --no-tray > "$LOG_FILE" 2>&1 &
+        "$BIN_PATH/lemond" > "$LOG_FILE" 2>&1 &
 
         for i in $(seq 1 15); do
           if curl -sf http://localhost:13305/live > /dev/null 2>&1; then

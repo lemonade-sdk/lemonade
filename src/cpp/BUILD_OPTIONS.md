@@ -7,7 +7,7 @@
 #### `REQUIRE_LINUX_TRAY` (Default: **OFF** / auto-detect)
 Enable system tray support on Linux via AppIndicator3 (GTK3 not required when using the GLib variant).
 
-- When **OFF** (default): Tray support is auto-detected at configure time. If AppIndicator3 libraries are found, `lemonade-tray` is built as a separate executable. `lemonade-server` on Linux is always headless regardless. If dependencies are missing, only `lemonade-server` is built (headless mode).
+- When **OFF** (default): Tray support is auto-detected at configure time. If AppIndicator3 libraries are found, `lemonade-tray` is built as a separate executable. `lemond` on Linux is always headless regardless. If dependencies are missing, only `lemond` is built (headless mode).
 - When **ON**: Tray support is required — the build will fail if the dependencies are not found.
 
 Optional runtime dependencies (for tray support):

@@ -155,10 +155,10 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade"
+          CLI_BINARY="$(pwd)/build/lemonade"
 
           echo "Running CLI tests..."
-          python test/server_cli.py --server-binary "$SERVER_BINARY"
+          python test/server_cli2.py --cli-binary "$CLI_BINARY"
 
           echo "CLI tests PASSED!"
 
@@ -170,10 +170,10 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade"
+          CLI_BINARY="$(pwd)/build/lemonade"
 
           echo "Running endpoint tests..."
-          python test/server_endpoints.py --server-binary "$SERVER_BINARY"
+          python test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
           echo "Endpoint tests PASSED!"
 

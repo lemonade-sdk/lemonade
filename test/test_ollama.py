@@ -6,7 +6,7 @@ with Lemonade's inference backends.
 
 Usage:
     python test_ollama.py
-    python test_ollama.py --server-binary /path/to/lemonade-server
+    python test_ollama.py --cli-binary /path/to/lemonade
 """
 
 import base64
