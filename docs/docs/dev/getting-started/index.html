@@ -1140,10 +1140,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#linux-rpm-package-fedora-rhel-etc" class="md-nav__link">
+  <a href="#linux-rpm-package-fedora-43-44" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Linux .rpm Package (Fedora, RHEL etc)
+        Linux .rpm Package (Fedora 43 &amp; 44)
       </span>
     </span>
   </a>
@@ -2285,10 +2285,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#linux-rpm-package-fedora-rhel-etc" class="md-nav__link">
+  <a href="#linux-rpm-package-fedora-43-44" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Linux .rpm Package (Fedora, RHEL etc)
+        Linux .rpm Package (Fedora 43 &amp; 44)
       </span>
     </span>
   </a>
@@ -2775,8 +2775,7 @@
 - <strong>lemond</strong> - Core HTTP server that handles requests and LLM backend orchestration
 - <strong>lemonade</strong> - CLI client for terminal users (list, pull, delete, run, status, logs, launch, backends, scan)
 - <strong>LemonadeServer.exe</strong> (Windows only) - SUBSYSTEM:WINDOWS GUI app that embeds the server and shows a system tray icon
-- <strong>lemonade-tray</strong> (macOS/Linux) - Lightweight tray client that connects to a running <code>lemond</code>
-- <strong>lemonade-server</strong> - Deprecated backwards-compatibility shim (delegates to <code>lemond</code> or <code>lemonade</code>)</p>
+- <strong>lemonade-tray</strong> (macOS/Linux) - Lightweight tray client that connects to a running <code>lemond</code></p>
 <h2 id="building-from-source">Building from Source</h2>
 <h3 id="prerequisites">Prerequisites</h3>
 <p><strong>All Platforms:</strong>
@@ -2815,12 +2814,10 @@ package managers and create the build directory.</p>
 <li><code>build/Release/lemond.exe</code> - HTTP server</li>
 <li><code>build/Release/LemonadeServer.exe</code> - GUI app (embedded server + system tray)</li>
 <li><code>build/Release/lemonade.exe</code> - CLI client</li>
-<li><code>build/Release/lemonade-server.exe</code> - Legacy shim (deprecated)</li>
 <li><strong>Linux/macOS:</strong></li>
 <li><code>build/lemond</code> - HTTP server</li>
 <li><code>build/lemonade</code> - CLI client</li>
 <li><code>build/lemonade-tray</code> - System tray client (macOS always; Linux when AppIndicator3 found)</li>
-<li><code>build/lemonade-server</code> - Legacy shim (deprecated)</li>
 <li><strong>Resources:</strong> Automatically copied to <code>build/Release/resources/</code> on Windows, <code>build/resources/</code> on Linux/macOS (web UI files, model registry, backend version configuration)</li>
 </ul>
 <h3 id="building-the-tauri-desktop-app-optional">Building the Tauri Desktop App (Optional)</h3>
@@ -2940,18 +2937,21 @@ sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> <
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>--help
 lemond<span class="w"> </span>--help
 </code></pre></div></p>
-<h3 id="linux-rpm-package-fedora-rhel-etc">Linux .rpm Package (Fedora, RHEL etc)</h3>
-<p>Very similar to the Debian instructions above with minor changes</p>
+<h3 id="linux-rpm-package-fedora-43-44">Linux .rpm Package (Fedora 43 &amp; 44)</h3>
 <p><strong>Building:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>build
 cpack<span class="w"> </span>-G<span class="w"> </span>RPM
 </code></pre></div>
 <p><strong>Package Output:</strong></p>
-<p>Creates <code>lemonade-server-&lt;VERSION&gt;.x86_64.rpm</code> (e.g., <code>lemonade-server-9.1.2.x86_64.rpm</code>) and
-resources are installed as per DEB version above</p>
+<p>Creates <code>lemonade-server-&lt;VERSION&gt;.x86_64.rpm</code> (e.g., <code>lemonade-server-9.1.2.x86_64.rpm</code>).
+The CI release pipeline builds two variants — <code>-fc43</code> and <code>-fc44</code> — and renames them
+accordingly. Resources are installed the same as the .deb package above.</p>
 <p><strong>Installation:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Replace &lt;VERSION&gt; with the actual version (e.g., 9.0.0)</span>
-sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>./lemonade-server-&lt;VERSION&gt;.x86_64.rpm
+<div class="highlight"><pre><span></span><code><span class="c1"># Fedora 43</span>
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>./lemonade-server-&lt;VERSION&gt;-fc43.x86_64.rpm
+
+<span class="c1"># Fedora 44</span>
+sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> </span>./lemonade-server-&lt;VERSION&gt;-fc44.x86_64.rpm
 </code></pre></div>
 <p><strong>Uninstallation:</strong></p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>dnf<span class="w"> </span>remove<span class="w"> </span>lemonade-server
@@ -3507,8 +3507,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </thead>
 <tbody>
 <tr>
-<td><code>server_cli.py</code></td>
-<td>CLI commands (version, list, pull, status, delete, serve, stop, run)</td>
+<td><code>server_cli2.py</code></td>
+<td>CLI commands (version, status, list, export, backends, pull, import, load, unload, run, launch, delete)</td>
 </tr>
 <tr>
 <td><code>server_endpoints.py</code></td>
@@ -3530,7 +3530,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </table>
 <p><strong>Running tests:</strong>
 <div class="highlight"><pre><span></span><code><span class="c1"># CLI tests (no inference backend needed)</span>
-python<span class="w"> </span>test/server_cli.py
+python<span class="w"> </span>test/server_cli2.py
 
 <span class="c1"># Endpoint tests (no inference backend needed)</span>
 python<span class="w"> </span>test/server_endpoints.py
@@ -3544,9 +3544,9 @@ python<span class="w"> </span>test/server_whisper.py
 <span class="c1"># Image generation tests (slow)</span>
 python<span class="w"> </span>test/server_sd.py
 </code></pre></div></p>
-<p>The tests auto-discover the server binary from the build directory. Use <code>--server-binary</code> to override if needed.</p>
+<p>The tests auto-discover the <code>lemonade</code> CLI binary from the build directory. Use <code>--cli-binary</code> to override if needed.</p>
 <p>See the <code>.github/workflows/</code> directory for CI/CD test configurations.</p>
-<p><strong>Note:</strong> The Python tests should now use <code>lemonade-server.exe</code> as the entry point since it provides the CLI interface.</p>
+<p><strong>Note:</strong> The Python tests use the <code>lemonade</code> CLI binary as the entry point.</p>
 <h2 id="development">Development</h2>
 <h3 id="code-style">Code Style</h3>
 <ul>

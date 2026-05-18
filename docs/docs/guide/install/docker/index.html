@@ -1992,11 +1992,11 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 
 <span class="c"># Copy built executables and resources from builder</span>
 <span class="k">COPY</span><span class="w"> </span>--from<span class="o">=</span>builder<span class="w"> </span>/app/build/lemond<span class="w"> </span>./lemond
-<span class="k">COPY</span><span class="w"> </span>--from<span class="o">=</span>builder<span class="w"> </span>/app/build/lemonade-server<span class="w"> </span>./lemonade-server
+<span class="k">COPY</span><span class="w"> </span>--from<span class="o">=</span>builder<span class="w"> </span>/app/build/lemonade<span class="w"> </span>./lemonade
 <span class="k">COPY</span><span class="w"> </span>--from<span class="o">=</span>builder<span class="w"> </span>/app/build/resources<span class="w"> </span>./resources
 
 <span class="c"># Make executables executable</span>
-<span class="k">RUN</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>./lemond<span class="w"> </span>./lemonade-server
+<span class="k">RUN</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>./lemond<span class="w"> </span>./lemonade
 
 <span class="c"># Create necessary directories</span>
 <span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/lemonade/llama/cpu<span class="w"> </span><span class="se">\</span>
@@ -2044,7 +2044,7 @@ volumes:
 </code></pre></div>
 <p>This will:</p>
 <ul>
-<li>Compile Lemonade C++ (lemonade-server and lemond)</li>
+<li>Compile Lemonade C++ (lemond server and lemonade CLI)</li>
 <li>Prepare a runtime image with all dependencies</li>
 </ul>
 <h3 id="3-run-the-container">3. Run the Container</h3>

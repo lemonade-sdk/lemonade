@@ -2137,6 +2137,9 @@
 <span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;vulkan_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rocm_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cpu_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;device&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;prefer_system&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;rocm_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
@@ -2146,12 +2149,17 @@
 <span class="w">  </span><span class="nt">&quot;whispercpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cpu_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;npu_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;cpu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;npu_bin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;builtin&quot;</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">&quot;sdcpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;auto&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;cpu_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rocm_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;vulkan_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;cfg_scale&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">7.0</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
@@ -2274,7 +2282,8 @@
 | Key | Default | Description |
 |-----|---------|-------------|
 | <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
-| <code>args</code> | "" | Custom arguments to pass to llama-server |
+| <code>args</code> | "" | Custom arguments to pass to llama-server (fallback, unused when backend-specific args defined) |
+| <code>*_args</code> | "" | Backend-specific custom arguments to pass to llama-server |
 | <code>device</code> | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | <code>prefer_system</code> | false | Prefer system-installed llama.cpp over bundled |
 | <code>*_bin</code> | "builtin" | Backend binary selection — see <a href="#backend-binary-selection">Backend binary selection</a> |</p>
@@ -2282,13 +2291,15 @@
 | Key | Default | Description |
 |-----|---------|-------------|
 | <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
-| <code>args</code> | "" | Custom arguments to pass to whisper-server |
+| <code>args</code> | "" | Custom arguments to pass to whisper-server (fallback, unused when backend-specific args defined) |
+| <code>*_args</code> | "" | Backend-specific custom arguments to pass to whisper-server |
 | <code>*_bin</code> | "builtin" | Backend binary selection — see <a href="#backend-binary-selection">Backend binary selection</a> |</p>
 <p><strong>sdcpp</strong> — Image generation:
 | Key | Default | Description |
 |-----|---------|-------------|
 | <code>backend</code> | "auto" | Backend to use: "auto" means "choose for me" |
-| <code>args</code> | "" | Custom arguments to pass to <code>sd-server</code> |
+| <code>args</code> | "" | Custom arguments to pass to <code>sd-server</code> (fallback, unused when backend-specific args defined) |
+| <code>*_args</code> | "" | Backend-specific custom arguments to pass to <code>sd-server</code> |
 | <code>steps</code> | 20 | Number of inference steps |
 | <code>cfg_scale</code> | 7.0 | Classifier-free guidance scale |
 | <code>width</code> | 512 | Image width in pixels |
@@ -2398,7 +2409,7 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <p>If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Linux</span>
 sudo<span class="w"> </span>nano<span class="w"> </span>/var/lib/lemonade/.cache/lemonade/config.json
-sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemonade-server
+sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemond
 
 <span class="c1"># Windows — edit with your preferred text editor:</span>
 <span class="c1"># %USERPROFILE%\.cache\lemonade\config.json</span>

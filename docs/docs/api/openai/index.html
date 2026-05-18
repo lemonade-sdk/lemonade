@@ -4679,6 +4679,21 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </tr>
 </tbody>
 </table>
+<p><strong>Runtime labels</strong> — affect backend launch defaults:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mtp</code></td>
+<td>Enables llama.cpp MTP draft decoding defaults (<code>--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75</code>); users can override these with <code>llamacpp_args</code>.</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Characteristic labels</strong> — informational, do not affect routing:</p>
 <table>
 <thead>
