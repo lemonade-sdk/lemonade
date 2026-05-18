@@ -632,56 +632,52 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
             // When llama-server returns e.g. {"error":{"message":"Compute error."}},
             // it arrives as bare JSON without a "data: " prefix.
             if (line[0] == '{' && line.find("\"error\"") != std::string::npos) {
-                try {
-                    auto err_json = json::parse(line);
-                    if (err_json.contains("error") && err_json["error"].is_object()) {
-                        std::string err_msg = err_json["error"].value("message", "Unknown backend error");
+                auto err_json = json::parse(line, nullptr, false);
+                if (!err_json.is_discarded() && err_json.contains("error") && err_json["error"].is_object()) {
+                    std::string err_msg = err_json["error"].value("message", "Unknown backend error");
 
-                        if (!sent_message_start) {
-                            json message_start = {
-                                {"type", "message_start"},
-                                {"message", {
-                                    {"id", message_id},
-                                    {"type", "message"},
-                                    {"role", "assistant"},
-                                    {"model", model},
-                                    {"content", json::array()},
-                                    {"stop_reason", nullptr},
-                                    {"stop_sequence", nullptr},
-                                    {"usage", {{"input_tokens", 0}, {"output_tokens", 0}}}
-                                }}
-                            };
-                            if (!write_sse_event(client_sink, "message_start", message_start)) {
-                                return false;
-                            }
-                            sent_message_start = true;
-                        }
-
-                        // Emit error as visible text so the client can display it
-                        if (!sent_text_content_start) {
-                            json content_start = {
-                                {"type", "content_block_start"},
-                                {"index", 0},
-                                {"content_block", {{"type", "text"}, {"text", ""}}}
-                            };
-                            if (!write_sse_event(client_sink, "content_block_start", content_start)) {
-                                return false;
-                            }
-                            sent_text_content_start = true;
-                        }
-
-                        json content_delta = {
-                            {"type", "content_block_delta"},
-                            {"index", 0},
-                            {"delta", {{"type", "text_delta"}, {"text", "[Backend error: " + err_msg + "]"}}}
+                    if (!sent_message_start) {
+                        json message_start = {
+                            {"type", "message_start"},
+                            {"message", {
+                                {"id", message_id},
+                                {"type", "message"},
+                                {"role", "assistant"},
+                                {"model", model},
+                                {"content", json::array()},
+                                {"stop_reason", nullptr},
+                                {"stop_sequence", nullptr},
+                                {"usage", {{"input_tokens", 0}, {"output_tokens", 0}}}
+                            }}
                         };
-                        if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
+                        if (!write_sse_event(client_sink, "message_start", message_start)) {
                             return false;
                         }
-                        continue;
+                        sent_message_start = true;
                     }
-                } catch (...) {
-                    // Not valid JSON, fall through
+
+                    // Emit error as visible text so the client can display it
+                    if (!sent_text_content_start) {
+                        json content_start = {
+                            {"type", "content_block_start"},
+                            {"index", 0},
+                            {"content_block", {{"type", "text"}, {"text", ""}}}
+                        };
+                        if (!write_sse_event(client_sink, "content_block_start", content_start)) {
+                            return false;
+                        }
+                        sent_text_content_start = true;
+                    }
+
+                    json content_delta = {
+                        {"type", "content_block_delta"},
+                        {"index", 0},
+                        {"delta", {{"type", "text_delta"}, {"text", "[Backend error: " + err_msg + "]"}}}
+                    };
+                    if (!write_sse_event(client_sink, "content_block_delta", content_delta)) {
+                        return false;
+                    }
+                    continue;
                 }
             }
 
