@@ -227,7 +227,12 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     // Internal endpoints are restricted to loopback regardless of API key
     if (is_internal_route) {
-        bool is_loopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
+        // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
+        // lemond uses to accept both IPv4 and IPv6 on the same port).
+        bool is_loopback = (req.remote_addr == "127.0.0.1" ||
+                            req.remote_addr == "::1" ||
+                            req.remote_addr == "::ffff:127.0.0.1");
         if (!is_loopback) {
             LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
                         << req.remote_addr << " " << req.path << std::endl;
@@ -379,6 +384,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post(R"(/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots_by_id(req, res);
+    });
+
+    // Tokenize endpoint (llama.cpp specific)
+    register_post("tokenize", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_tokenize(req, res);
     });
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
@@ -1185,7 +1195,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
             message += ". ";
         }
 
-        message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
+        message += "Use 'lemonade list' or GET /api/v1/models?show_all=true to see all available models.";
 
         // Add FLM hint for -FLM model names when FLM is not ready
         if (requested_model.size() > 4 &&
@@ -1963,6 +1973,53 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
     }
 }
 
+void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
+
+        // Parse request body as JSON (use empty object if body is empty)
+        json request_body;
+        if (!req.body.empty()) {
+            try {
+                request_body = json::parse(req.body);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
+                res.status = 400;
+                res.set_content("{\"error\": \"Invalid JSON in request body\"}", "application/json");
+                return;
+            }
+        } else {
+            request_body = json::object();
+        }
+
+        // Tokenize endpoint requires at least a valid "content" entry in the body
+        if (!request_body.contains("content") || !request_body["content"].is_string()) {
+            LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"'content' parameter is required\"}", "application/json");
+            return;
+        }
+
+        // Tokenization requires a model to be loaded
+        if (!router_->is_model_loaded()) {
+            LOG(ERROR, "Server") << "No model loaded for tokenization" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded for tokenization\"}", "application/json");
+            return;
+        }
+
+        // Forward request to router
+        auto response = router_->tokenize(request_body);
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_tokenize: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
 void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::Response& res) {
     try {
         LOG(INFO, "Server") << "POST /api/v1/audio/transcriptions" << std::endl;
@@ -2559,7 +2616,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
             // Honor explicit config first (e.g. sdcpp.backend = "rocm").
             // "auto" in config.json is mapped to "" by recipe_options().
-            auto recipe_opts = config_->recipe_options();
+            auto recipe_opts = config_->recipe_options("");
             if (recipe_opts.contains("sd-cpp_backend") &&
                 recipe_opts["sd-cpp_backend"].is_string()) {
                 backend = recipe_opts["sd-cpp_backend"].get<std::string>();

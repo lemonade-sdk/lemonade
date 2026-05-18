@@ -175,6 +175,14 @@ void VLLMServer::load(const std::string& model_name,
     // enable prompt caching
     args.push_back("--enable-prefix-caching");
 
+    // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
+    // Keep this overridable through vllm_args for users that want another limit.
+    if (vllm_args.find("--gpu-memory-utilization") == std::string::npos &&
+        vllm_args.find("--kv-cache-memory-bytes") == std::string::npos) {
+        args.push_back("--kv-cache-memory-bytes");
+        args.push_back("4G");
+    }
+
     // Append custom vllm_args if provided
     if (!vllm_args.empty()) {
         LOG(DEBUG, "vLLM") << "Adding custom arguments: " << vllm_args << std::endl;

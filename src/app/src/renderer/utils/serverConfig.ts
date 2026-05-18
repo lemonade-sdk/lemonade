@@ -211,7 +211,7 @@ class ServerConfig {
   }
 
   /**
-   * Discover the server port by calling lemonade-server --status
+   * Discover the server port via a UDP beacon from the local lemond instance.
    * Returns a promise that resolves with the discovered port, or null if discovery is disabled
    */
   async discoverPort(): Promise<number | null> {

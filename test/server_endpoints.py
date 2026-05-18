@@ -3,7 +3,7 @@ Inference-agnostic endpoint tests for Lemonade Server.
 
 Requires a Lemonade server to already be running on port 13305.
 This test module does not start the server, and its inherited
-`--server-binary` argument is not used here.
+`--cli-binary` argument is not used here.
 
 Tests endpoints that don't require specific inference backends:
 - /health
@@ -1091,7 +1091,7 @@ class EndpointTests(ServerTestBase):
                     "checkpoints": {
                         # Use a different main quant than USER_MODEL_NAME so this test's
                         # cleanup does not delete the same shared main file and poison
-                        # later reruns of test_021_pull_multi in server-per-test CI.
+                        # later reruns of test_021_pull_multi.
                         "main": SHARED_REPO_MODEL_B_CHECKPOINT,
                         "text_encoder": USER_MODEL_TE_CHECKPOINT,
                         "vae": USER_MODEL_VAE_CHECKPOINT,

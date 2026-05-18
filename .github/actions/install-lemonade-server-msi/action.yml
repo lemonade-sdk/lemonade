@@ -82,7 +82,6 @@ runs:
         # Check for key binaries
         $expectedBinaries = @(
             "bin\LemonadeServer.exe",
-            "bin\lemonade-server.exe",
             "bin\lemonade.exe"
         )
 
@@ -112,22 +111,19 @@ runs:
       run: |
         $ErrorActionPreference = "Stop"
         $installPath = "${{ inputs.install-path }}"
-        $serverExe = Join-Path $installPath "bin\lemonade-server.exe"
+        $cliExe = Join-Path $installPath "bin\lemonade.exe"
 
-        Write-Host "Checking lemonade-server version..." -ForegroundColor Cyan
+        Write-Host "Checking lemonade --version..." -ForegroundColor Cyan
 
         try {
-            # Capture output and exit code
-            $process = Start-Process -FilePath $serverExe -ArgumentList "--version" -NoNewWindow -Wait -PassThru
+            $process = Start-Process -FilePath $cliExe -ArgumentList "--version" -NoNewWindow -Wait -PassThru
 
             if ($process.ExitCode -ne 0) {
-                Write-Host "ERROR: lemonade-server --version exited with code $($process.ExitCode)" -ForegroundColor Red
+                Write-Host "ERROR: lemonade --version exited with code $($process.ExitCode)" -ForegroundColor Red
                 exit 1
             }
 
-            # Run again to capture output for display (Start-Process -PassThru doesn't easily capture stdout to variable without redirect)
-            # Simpler approach for display:
-            & $serverExe --version
+            & $cliExe --version
 
             Write-Host "Version check passed (Exit Code 0)" -ForegroundColor Green
 

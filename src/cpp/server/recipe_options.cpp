@@ -186,8 +186,8 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
             } else if (incoming_str.empty()) {
                 merged[it.key()] = target_str;
             } else {
-                auto target_tokens = lemon::utils::parse_custom_args(target_str);
-                auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str);
+                auto target_tokens = lemon::utils::parse_custom_args(target_str, true);
+                auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str, true);
 
                 auto target_map = lemon::utils::build_custom_args_map(target_tokens);
                 auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);

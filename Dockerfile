@@ -62,7 +62,6 @@ WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
-COPY --from=builder /app/build/lemonade-server ./lemonade-server
 COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
 
@@ -75,7 +74,7 @@ RUN FLM_VERSION=$(jq -r '.flm.npu' ./resources/backend_versions.json) && \
     rm fastflowlm.deb
 
 # Make executables executable
-RUN chmod +x ./lemond ./lemonade-server
+RUN chmod +x ./lemond ./lemonade
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
@@ -90,4 +89,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:13305/live || exit 1
 
 # Default command: start server in headless mode
-CMD ["./lemonade-server", "serve", "--no-tray", "--host", "0.0.0.0"]
+CMD ["./lemond", "--host", "0.0.0.0"]

@@ -8,10 +8,11 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
-#include <iostream>
-#include <filesystem>
-#include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <set>
 #ifdef __APPLE__
 #include <pwd.h>
@@ -320,6 +321,13 @@ void LlamaCppServer::load(const std::string& model_name,
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
 
+    if (std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end()) {
+        LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
+        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
+        push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
+        push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
+    }
+
     // Disable llamacpp webui by default
     push_overridable_arg(args, llamacpp_args, "--no-webui");
 
@@ -569,6 +577,47 @@ json LlamaCppServer::slots_action(int slot_id, const std::string& action, const 
         auto response = utils::HttpClient::post(url, request_body.dump(), headers);
         if (response.status_code == 200) {
             LOG(DEBUG, "LlamaCpp") << server_name_ << " received slots action response: " << response.body << std::endl;
+            return json::parse(response.body);
+        } else {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(
+            "HTTP request failed: " + std::string(e.what()),
+            ErrorType::NETWORK_ERROR
+        );
+    }
+}
+
+json LlamaCppServer::tokenize(const json& request_body) {
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    std::string url = get_base_url() + "/tokenize";
+    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
+
+    LOG(DEBUG, "LlamaCpp") << server_name_ << " POST request to /tokenize with body: " << request_body.dump() << std::endl;
+
+    try {
+        auto response = utils::HttpClient::post(url, request_body.dump(), headers);
+        if (response.status_code == 200) {
+            LOG(DEBUG, "LlamaCpp") << server_name_ << " received tokenize response: " << response.body << std::endl;
             return json::parse(response.body);
         } else {
             // Try to parse error response from backend

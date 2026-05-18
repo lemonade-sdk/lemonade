@@ -465,11 +465,24 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!backend_versions.contains(recipe)) {
         return "";
     }
+
+    // sd-cpp and llamacpp expose a single "rocm" backend but store per-channel
+    // version pins ("rocm-stable", "rocm-nightly") in backend_versions.json.
+    // Mirror the resolution done by BackendUtils::get_backend_version().
+    std::string resolved_backend = backend;
+    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        std::string channel = "stable";
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel_for_recipe(recipe);
+        }
+        resolved_backend = "rocm-" + channel;
+    }
+
     const auto& recipe_config = backend_versions[recipe];
-    if (!recipe_config.contains(backend) || !recipe_config[backend].is_string()) {
+    if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    return recipe_config[backend].get<std::string>();
+    return recipe_config[resolved_backend].get<std::string>();
 }
 
 // ============================================================================
