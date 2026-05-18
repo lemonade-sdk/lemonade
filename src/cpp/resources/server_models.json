@@ -1516,5 +1516,34 @@
             "reasoning"
         ],
         "size": 18.6
+    },
+    "FLUX.1-schnell-GGUF": {
+        "checkpoint": "unsloth/FLUX.1-schnell-GGUF",
+        "recipe": "diffusers",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 8.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 0.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SDXL-Turbo-Diffusers": {
+        "checkpoint": "stabilityai/sdxl-turbo",
+        "recipe": "diffusers",
+        "labels": [
+            "image"
+        ],
+        "size": 6.9,
+        "image_defaults": {
+            "steps": 1,
+            "cfg_scale": 0.0,
+            "width": 512,
+            "height": 512
+        }
     }
 }

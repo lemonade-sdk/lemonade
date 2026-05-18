@@ -197,6 +197,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"vllm", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
+
+    // Diffusers - ROCm backend for AMD GPUs (Linux only). Image (FLUX/SD3/SANA)
+    // and video (LTX-2, phase 2). Same gfx target matrix as vLLM.
+    {"diffusers", "rocm", {"linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+    }},
 };
 
 // ============================================================================
