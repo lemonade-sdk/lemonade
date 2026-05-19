@@ -1291,9 +1291,10 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
-    def test_021c_register_user_collection(self):
+    def test_021j_register_user_collection(self):
         """Register a user-defined collection via POST /pull."""
         canonical_name = f"user.TestColl-{uuid.uuid4().hex[:8]}"
+        # Unique `user.<name>` entries are exposed under the bare public name.
         public_name = canonical_name[5:]
 
         try:
@@ -1316,14 +1317,10 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(models_response.status_code, 200)
             entry = next(
-                (
-                    m
-                    for m in models_response.json()["data"]
-                    if m["id"] == canonical_name
-                ),
+                (m for m in models_response.json()["data"] if m["id"] == public_name),
                 None,
             )
-            self.assertIsNotNone(entry, f"{canonical_name} should appear in /models")
+            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
             self.assertEqual(entry.get("recipe"), "collection.omni-model")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
             self.assertTrue(
@@ -1342,7 +1339,7 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
-    def test_021d_register_collection_missing_components(self):
+    def test_021k_register_collection_missing_components(self):
         """Collections referencing unknown components are rejected with 400."""
         canonical_name = f"user.BadColl-{uuid.uuid4().hex[:8]}"
         response = requests.post(
@@ -1358,7 +1355,7 @@ class EndpointTests(ServerTestBase):
         self.assertIn("not registered", response.json().get("error", "").lower())
         print("[OK] Unknown component rejected with 400")
 
-    def test_021e_register_collection_empty_array(self):
+    def test_021l_register_collection_empty_array(self):
         """Empty components is rejected with 400."""
         canonical_name = f"user.EmptyColl-{uuid.uuid4().hex[:8]}"
         response = requests.post(
@@ -1374,7 +1371,7 @@ class EndpointTests(ServerTestBase):
         self.assertIn("components", response.json().get("error", ""))
         print("[OK] Empty components rejected with 400")
 
-    def test_021f_register_collection_no_user_prefix(self):
+    def test_021m_register_collection_no_user_prefix(self):
         """Collection name without user. prefix is rejected with 400."""
         response = requests.post(
             f"{self.base_url}/pull",
@@ -1389,7 +1386,7 @@ class EndpointTests(ServerTestBase):
         self.assertIn("user.", response.json().get("error", ""))
         print("[OK] Missing user. prefix rejected with 400")
 
-    def test_021g_register_collection_self_reference(self):
+    def test_021n_register_collection_self_reference(self):
         """A collection that lists itself in components is rejected."""
         canonical_name = f"user.SelfRef-{uuid.uuid4().hex[:8]}"
         response = requests.post(

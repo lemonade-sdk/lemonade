@@ -1984,10 +1984,9 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("reranking");
     }
 
+    // `recipe` already copied into `model_entry` by the USER_DEFINED_MODEL_PROPS
+    // loop above; this local is just for the label inference below.
     std::string recipe = model_data.value("recipe", "");
-    if (!recipe.empty()) {
-        model_entry["recipe"] = recipe;
-    }
 
     if (recipe == "sd-cpp") {
         labels.insert("image");
@@ -2226,6 +2225,15 @@ void ModelManager::download_model(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback) {
+    std::set<std::string> visited;
+    download_model(model_name, model_data, do_not_upgrade, progress_callback, visited);
+}
+
+void ModelManager::download_model(const std::string& model_name,
+                                 const json& model_data,
+                                 bool do_not_upgrade,
+                                 DownloadProgressCallback progress_callback,
+                                 std::set<std::string>& visited) {
     std::string actual_checkpoint;
 
     if (model_data.contains("checkpoints")) {
@@ -2341,6 +2349,18 @@ void ModelManager::download_model(const std::string& model_name,
 
     // Collections don't have their own backend — download each component instead
     if (is_collection_recipe(actual_recipe)) {
+        // Cycle guard: re-entering the same collection on the current call
+        // chain means the user registered a circular reference (e.g. user.A
+        // includes user.B which includes user.A). Without this, the fan-out
+        // would recurse until the stack or HTTP timeout gives out.
+        if (!visited.insert(model_name).second) {
+            throw std::runtime_error(
+                "Cycle detected in collection components: '" + model_name +
+                "' transitively references itself. Edit the offending collection "
+                "in user_models.json to remove the cycle."
+            );
+        }
+
         auto info = get_model_info(model_name);
         if (info.components.empty()) {
             throw std::runtime_error("Collection '" + model_name + "' has no components defined");
@@ -2378,7 +2398,7 @@ void ModelManager::download_model(const std::string& model_name,
             }
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
-            download_model(component, comp_data, do_not_upgrade, forward);
+            download_model(component, comp_data, do_not_upgrade, forward, visited);
         }
 
         // Emit a single completion event for the whole collection

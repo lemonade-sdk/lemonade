@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <optional>
+#include <set>
 #include <vector>
 #include <mutex>
 #include <functional>
@@ -183,6 +184,15 @@ public:
     void save_model_options(const ModelInfo& info);
 
 private:
+    // Cycle-detecting overload used by the collection fan-out in download_model.
+    // `visited` accumulates collection names already entered on the current
+    // call chain; re-entering one throws.
+    void download_model(const std::string& model_name,
+                       const json& model_data,
+                       bool do_not_upgrade,
+                       DownloadProgressCallback progress_callback,
+                       std::set<std::string>& visited);
+
     json load_server_models();
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);

@@ -8,12 +8,8 @@ namespace lemon {
 
 constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni-model";
 
-inline bool is_omni_model_recipe(const std::string& recipe) {
-    return recipe == COLLECTION_OMNI_MODEL_RECIPE;
-}
-
 inline bool is_collection_recipe(const std::string& recipe) {
-    return is_omni_model_recipe(recipe);
+    return recipe == COLLECTION_OMNI_MODEL_RECIPE;
 }
 
 // Model type classification for LRU cache management

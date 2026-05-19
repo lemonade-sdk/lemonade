@@ -2843,9 +2843,6 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         // Extract optional parameters
         std::string checkpoint = request_json.value("checkpoint", "");
         std::string recipe = request_json.value("recipe", "");
-        if (!recipe.empty()) {
-            request_json["recipe"] = recipe;
-        }
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
 
