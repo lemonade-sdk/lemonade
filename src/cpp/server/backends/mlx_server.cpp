@@ -95,14 +95,6 @@ static std::vector<std::string> tokenize_quoted_args(const std::string& input) {
     return tokens;
 }
 
-static json with_legacy_token_limit(const json& request) {
-    json modified = request;
-    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
-        modified["max_tokens"] = modified["max_completion_tokens"];
-    }
-    return modified;
-}
-
 InstallParams MlxServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
     params.repo = "lemonade-sdk/lemon-mlx-engine";
@@ -196,6 +188,7 @@ void MlxServer::load(const std::string& model_name,
     if (model_ref.empty()) {
         throw std::runtime_error("lemon-mlx: no model path or checkpoint provided");
     }
+    loaded_model_ref_ = model_ref;
 
     LOG(DEBUG, "MLX") << "Using model reference: " << model_ref << std::endl;
 
@@ -272,17 +265,29 @@ void MlxServer::unload() {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
+        loaded_model_ref_.clear();
     }
+}
+
+json MlxServer::prepare_request(const json& request) const {
+    json modified = request;
+    if (!loaded_model_ref_.empty()) {
+        modified["model"] = loaded_model_ref_;
+    }
+    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
+        modified["max_tokens"] = modified["max_completion_tokens"];
+    }
+    return modified;
 }
 
 json MlxServer::chat_completion(const json& request) {
     // OpenAI introduced `max_completion_tokens` to replace `max_tokens`
     // (Sep 2024). MLX only understands the older name.
-    return forward_request("/v1/chat/completions", with_legacy_token_limit(request));
+    return forward_request("/v1/chat/completions", prepare_request(request));
 }
 
 json MlxServer::completion(const json& request) {
-    return forward_request("/v1/completions", with_legacy_token_limit(request));
+    return forward_request("/v1/completions", prepare_request(request));
 }
 
 json MlxServer::responses(const json& request) {
@@ -298,7 +303,7 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
                                           long timeout_seconds) {
     try {
         json request = json::parse(request_body);
-        std::string modified_body = with_legacy_token_limit(request).dump();
+        std::string modified_body = prepare_request(request).dump();
         WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds);
     } catch (const json::exception&) {
         WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds);

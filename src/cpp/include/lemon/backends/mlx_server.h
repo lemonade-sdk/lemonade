@@ -43,6 +43,11 @@ public:
                                    httplib::DataSink& sink,
                                    bool sse = true,
                                    long timeout_seconds = 0) override;
+
+private:
+    json prepare_request(const json& request) const;
+
+    std::string loaded_model_ref_;
 };
 
 } // namespace backends
