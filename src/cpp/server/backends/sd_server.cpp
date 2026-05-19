@@ -91,7 +91,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
-        params.filename = "sd-" + short_version + "-bin-Darwin-arm64-metal.zip";
+        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.4-arm64.zip";
 #endif
     } else if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
