@@ -2,30 +2,44 @@ name: Runner Heartbeat
 
 on:
   schedule:
-    - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
+    - cron: "0 1 * * *"   # daily at 01:00 UTC
   workflow_dispatch:
 
 permissions:
   actions: write  # Required to upload artifacts
+  contents: read  # Required to checkout runners.json
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      runners: ${{ steps.load.outputs.runners }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/runners.json
+          sparse-checkout-cone-mode: false
+
+      - name: Load runner list from runners.json
+        id: load
+        run: |
+          set -euo pipefail
+          runners=$(jq -c '.runners' .github/runners.json)
+          echo "runners=$runners" >> "$GITHUB_OUTPUT"
+          echo "Loaded runners: $runners"
+
   heartbeat:
+    needs: setup
     strategy:
       matrix:
-        runner:
-          - jfowers-stx-01
-          - jfowers-stx-02
-          - sjlab-stx-halo-06
-          - sjlab-stx-halo-07
-          - sjlab-stx-halo-08
-          - sjlab-stx-halo-09
-          - sjlab-stx-halo-10
-          - sjlab-stx-halo-11
-          - sjlab-stx-halo-12
-          - sjlab-stx-halo-13
-          - sjlab-stx-0
+        runner: ${{ fromJSON(needs.setup.outputs.runners) }}
       fail-fast: false  # Continue even if one runner fails
     runs-on: [self-hosted, "${{ matrix.runner }}"]
+    # Fail fast if no runner is available to pick up this job, instead of
+    # waiting indefinitely in the queue.
+    timeout-minutes: 10
     steps:
       - name: Create heartbeat file (Windows)
         if: runner.os == 'Windows'
@@ -35,11 +49,11 @@ jobs:
           $runner = "${{ runner.name }}"
           "$timestamp" | Out-File -FilePath "heartbeat-$runner.txt" -Encoding utf8
 
-      - name: Create heartbeat file (Linux)
-        if: runner.os == 'Linux'
+      - name: Create heartbeat file (Linux/macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          timestamp=$(date -Iseconds)
+          timestamp=$(date -u -Iseconds)
           runner="${{ runner.name }}"
           echo "$timestamp" > "heartbeat-$runner.txt"
 
@@ -48,4 +62,4 @@ jobs:
         with:
           name: heartbeat-${{ runner.name }}
           path: heartbeat-${{ runner.name }}.txt
-          retention-days: 14
+          retention-days: 7
