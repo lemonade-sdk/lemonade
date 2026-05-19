@@ -73,21 +73,21 @@ Supported registration flags:
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni-model`. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
-| `--component-models MODEL [MODEL ...]` | Component model names for an omni-model (see below). Use with `--recipe collection.omni-model`. |
+| `--components MODEL [MODEL ...]` | Components for an omni-model (see below). Use with `--recipe collection.omni-model`. |
 
 ### Register an omni-model
 
-A collection is a meta-model made up of component models. An omni-model is the collection type used by OmniRouter, registered with `recipe: "collection.omni-model"`.
+A collection is a meta-model made up of components. An omni-model is the collection type used by OmniRouter, registered with `recipe: "collection.omni-model"`.
 
 Components must already be registered as built-in models or previously pulled `user.*` models. Components do not need to be downloaded already; missing component files are pulled by the same command.
 
 ```bash
 lemonade pull user.MyKit \
     --recipe collection.omni-model \
-    --component-models Qwen3-0.6B-GGUF Whisper-Tiny SD-Turbo
+    --components Qwen3-0.6B-GGUF Whisper-Tiny SD-Turbo
 ```
 
-`lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component model files stay on disk.
+`lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component files stay on disk.
 
 ### Register via API
 
@@ -119,7 +119,7 @@ curl -X POST http://localhost:13305/v1/pull \
     }'
 ```
 
-For an omni-model, send `component_models`:
+For an omni-model, send `components`:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -127,7 +127,7 @@ curl -X POST http://localhost:13305/v1/pull \
     -d '{
         "model_name": "user.MyKit",
         "recipe": "collection.omni-model",
-        "component_models": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
     }'
 ```
 
@@ -225,7 +225,7 @@ This file contains a JSON object where each key is a model name and each value d
 | `checkpoint` | Yes* | String | HuggingFace checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni-model`. |
-| `component_models` | Yes** | Array | Component model names for a collection. Required when `recipe: "collection.omni-model"`. See [Collections](#collections). |
+| `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni-model"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
@@ -276,12 +276,12 @@ A collection bundles several already-registered models so they can be loaded, pu
 {
     "MyKit": {
         "recipe": "collection.omni-model",
-        "component_models": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
     }
 }
 ```
 
-Component names must already be registered (built-in models, or other `user.*` entries earlier in this file). Self-references are rejected. Loading the collection (`lemonade load user.MyKit`) loads each component; deleting the collection removes only the collection entry, leaving components on disk.
+Components must already be registered (built-in models, or other `user.*` entries earlier in this file). Loading the collection (`lemonade load user.MyKit`) loads each component; deleting the collection removes only the collection entry, leaving components on disk.
 
 The equivalent CLI registration is shown in [Register an omni-model](#register-an-omni-model).
 

@@ -4,11 +4,11 @@ import { isCollectionRecipe } from './recipeNames';
 export const NON_LLM_LABELS = new Set(['image', 'tts', 'transcription', 'embeddings', 'embedding', 'reranking']);
 
 export const getCollectionComponents = (info?: ModelInfo): string[] => {
-  const componentModels = info?.component_models ?? info?.composite_models;
-  if (!Array.isArray(componentModels)) {
+  const components = info?.components;
+  if (!Array.isArray(components)) {
     return [];
   }
-  return componentModels.filter((name): name is string => typeof name === 'string' && name.length > 0);
+  return components.filter((name): name is string => typeof name === 'string' && name.length > 0);
 };
 
 export const isCollectionModel = (info?: ModelInfo): boolean => {

@@ -7,25 +7,13 @@
 namespace lemon {
 
 constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni-model";
-constexpr const char* LEGACY_COLLECTION_RECIPE = "collection";
-
-inline bool is_legacy_collection_recipe(const std::string& recipe) {
-    return recipe == LEGACY_COLLECTION_RECIPE;
-}
 
 inline bool is_omni_model_recipe(const std::string& recipe) {
-    return recipe == COLLECTION_OMNI_MODEL_RECIPE || is_legacy_collection_recipe(recipe);
+    return recipe == COLLECTION_OMNI_MODEL_RECIPE;
 }
 
 inline bool is_collection_recipe(const std::string& recipe) {
     return is_omni_model_recipe(recipe);
-}
-
-inline std::string canonicalize_recipe(const std::string& recipe) {
-    if (is_legacy_collection_recipe(recipe)) {
-        return COLLECTION_OMNI_MODEL_RECIPE;
-    }
-    return recipe;
 }
 
 // Model type classification for LRU cache management
@@ -151,7 +139,7 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;  // Kokoros runs on CPU
     } else if (is_collection_recipe(recipe)) {
-        return DEVICE_NONE;  // Collection recipes orchestrate multiple component models
+        return DEVICE_NONE;  // Collection recipes orchestrate multiple components
     }
     return DEVICE_NONE;
 }

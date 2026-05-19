@@ -1470,7 +1470,7 @@
         "checkpoint": "",
         "recipe": "collection.omni-model",
         "suggested": true,
-        "component_models": [
+        "components": [
             "Qwen3.5-35B-A3B-GGUF",
             "Flux-2-Klein-9B-GGUF",
             "Whisper-Large-v3-Turbo",
@@ -1481,7 +1481,7 @@
         "checkpoint": "",
         "recipe": "collection.omni-model",
         "suggested": true,
-        "component_models": [
+        "components": [
             "Qwen3.5-4B-GGUF",
             "SD-Turbo",
             "Whisper-Tiny",

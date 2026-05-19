@@ -1,4 +1,4 @@
-import { canonicalizeRecipe, isCollectionRecipe } from './recipeNames';
+import { isCollectionRecipe } from './recipeNames';
 
 export const USER_MODEL_PREFIX = 'user.';
 
@@ -18,8 +18,7 @@ export interface ModelInfo {
   suggested: boolean;
   size?: number;
   labels?: string[];
-  component_models?: string[];
-  composite_models?: string[];
+  components?: string[];
   max_prompt_length?: number;
   max_context_window?: number;
   mmproj?: string;
@@ -67,7 +66,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   }
 
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
-  const recipe = typeof info['recipe'] === 'string' ? canonicalizeRecipe(info['recipe']) : '';
+  const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
   if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
     return null;
@@ -110,9 +109,9 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.model_name = modelName;
   }
 
-  const componentModels = info['component_models'] ?? info['composite_models'];
-  if (Array.isArray(componentModels)) {
-    normalized.component_models = componentModels.filter((model): model is string => typeof model === 'string');
+  const components = info['components'];
+  if (Array.isArray(components)) {
+    normalized.components = components.filter((model): model is string => typeof model === 'string');
   }
 
   const reasoning = info['reasoning'];
@@ -147,7 +146,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 
       const modelInfo: ModelInfo = {
         checkpoint: model.checkpoint,
-        recipe: canonicalizeRecipe(model.recipe),
+        recipe: model.recipe,
         // Use the suggested field from the API response
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
@@ -181,9 +180,9 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.model_name = model.model_name;
       }
 
-      const componentModels = model.component_models ?? model.composite_models;
-      if (Array.isArray(componentModels)) {
-        modelInfo.component_models = componentModels.filter((component: unknown): component is string => typeof component === 'string');
+      const components = model.components;
+      if (Array.isArray(components)) {
+        modelInfo.components = components.filter((component: unknown): component is string => typeof component === 'string');
       }
 
       if (model.recipe_options && typeof model.recipe_options === 'object') {

@@ -19,8 +19,8 @@ const tests = [
       const source = normalizeWhitespace(readSource(COLLECTION_MODELS));
       assertMatches(
         source,
-        /getCollectionComponents[\s\S]*?componentModels[\s\S]*?Array\.isArray\(componentModels\)[\s\S]*?componentModels\.filter\(/,
-        'Collection components should only come from array-valued component_models.',
+        /getCollectionComponents[\s\S]*?components[\s\S]*?Array\.isArray\(components\)[\s\S]*?components\.filter\(/,
+        'Collection components should only come from array-valued components.',
       );
       assertIncludes(
         source,
