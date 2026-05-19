@@ -31,17 +31,18 @@ def _default_build_binary(name):
         return os.path.join(root, "build", name)
 
 
-def get_default_server_binary():
+def get_default_cli_binary():
     """
-    Get the default lemonade-server binary path from the CMake build directory.
+    Get the default lemonade CLI binary path from the CMake build directory.
 
-    This is the single source of truth for the default server binary path.
-    All test files should import this function rather than computing the path themselves.
+    This is the single source of truth for the default CLI binary path used by
+    tests that invoke `lemonade` commands. Tests that need the server daemon
+    directly should use `get_default_lemond_binary()` instead.
 
     Returns:
-        Path to lemonade-server binary in the build directory.
+        Path to lemonade CLI binary in the build directory.
     """
-    return _default_build_binary("lemonade-server")
+    return _default_build_binary("lemonade")
 
 
 def get_default_lemond_binary():
@@ -194,7 +195,9 @@ TEST_AUDIO_URL = (
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 
 # Stable Diffusion test configuration
-SD_MODEL = "SD-Turbo"
+# Allow CI to override with a smaller model (e.g. SD-Turbo-GGUF) on memory-
+# constrained runners like GitHub-hosted macos-latest.
+SD_MODEL = os.environ.get("LEMONADE_TEST_SD_MODEL", "SD-Turbo")
 
 # ESRGAN upscale model test configuration
 ESRGAN_MODEL = "RealESRGAN-x4plus"

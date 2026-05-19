@@ -34,10 +34,14 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
-  "rocm_channel": "preview",
+  "rocm_channel": "stable",
   "llamacpp": {
     "backend": "auto",
     "args": "",
+    "vulkan_args": "",
+    "rocm_args": "",
+    "cpu_args": "",
+	"device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
@@ -46,12 +50,17 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "whispercpp": {
     "backend": "auto",
     "args": "",
+    "cpu_args": "",
+    "npu_args": "",
     "cpu_bin": "builtin",
     "npu_bin": "builtin"
   },
   "sdcpp": {
     "backend": "auto",
     "args": "",
+    "cpu_args": "",
+    "rocm_args": "",
+    "vulkan_args": "",
     "steps": 20,
     "cfg_scale": 7.0,
     "width": 512,
@@ -89,7 +98,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
-| `rocm_channel` | string | "preview" | ROCm backend channel: "preview" (default), "stable", or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
+| `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 
 ### Backend Configuration
 
@@ -99,7 +108,9 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to llama-server |
+| `args` | "" | Custom arguments to pass to llama-server (fallback, unused when backend-specific args defined) |
+| `*_args` | "" | Backend-specific custom arguments to pass to llama-server |
+| `device` | "" | Comma-separated list of devices to use for offloading. Empty is auto. |
 | `prefer_system` | false | Prefer system-installed llama.cpp over bundled |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
@@ -107,14 +118,16 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to whisper-server |
+| `args` | "" | Custom arguments to pass to whisper-server (fallback, unused when backend-specific args defined) |
+| `*_args` | "" | Backend-specific custom arguments to pass to whisper-server |
 | `*_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
 **sdcpp** — Image generation:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `backend` | "auto" | Backend to use: "auto" means "choose for me" |
-| `args` | "" | Custom arguments to pass to `sd-server` |
+| `args` | "" | Custom arguments to pass to `sd-server` (fallback, unused when backend-specific args defined) |
+| `*_args` | "" | Backend-specific custom arguments to pass to `sd-server` |
 | `steps` | 20 | Number of inference steps |
 | `cfg_scale` | 7.0 | Classifier-free guidance scale |
 | `width` | 512 | Image width in pixels |
@@ -149,6 +162,8 @@ Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm
 | `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
 
 > Note: the `latest` setting is experimental.
+
+> **Important — `llamacpp.rocm_bin` version tags are channel-specific.** Each ROCm channel downloads from a different GitHub repository, so you must set the correct `rocm_channel` before pinning `rocm_bin` to a specific tag. See [Pinning to a Specific Version Tag](./llamacpp.md#pinning-to-a-specific-version-tag) for details.
 
 Examples:
 
@@ -230,7 +245,7 @@ If the server won't start and CLI arguments aren't sufficient, you can edit conf
 ```bash
 # Linux
 sudo nano /var/lib/lemonade/.cache/lemonade/config.json
-sudo systemctl restart lemonade-server
+sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
 # %USERPROFILE%\.cache\lemonade\config.json

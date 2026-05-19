@@ -65,7 +65,6 @@ runs:
         chmod 777 "$EXTRACT_PATH/usr/share/lemonade-server/llama"
 
         # Make binaries executable
-        chmod +x "$EXTRACT_PATH/usr/bin/lemonade-server"
         chmod +x "$EXTRACT_PATH/usr/bin/lemond"
         chmod +x "$EXTRACT_PATH/usr/bin/lemonade" 2>/dev/null || true
 
@@ -88,7 +87,7 @@ runs:
 
         # Test version commands
         "$EXTRACT_PATH/usr/bin/lemond" --version
-        "$EXTRACT_PATH/usr/bin/lemonade-server" --version
+        "$EXTRACT_PATH/usr/bin/lemonade" --version
 
         echo "Binaries verified successfully!"
 

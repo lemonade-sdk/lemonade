@@ -271,6 +271,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
+| `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
 
 **Setting Priority:**
 
@@ -279,6 +280,7 @@ When loading a model, settings are applied in this priority order:
 2. Per-model values configurable in `recipe_options.json` (see below for details)
 3. Values from environment variables or server startup arguments (see [Server Configuration](../guide/configuration/README.md))
 4. Default hardcoded values in `lemond` (lowest priority)
+
 
 ### Per-model options
 
@@ -459,6 +461,7 @@ curl http://localhost:13305/v1/health
       "type": "llm",
       "device": "gpu npu",
       "recipe": "ryzenai-llm",
+      "pid": 12345,
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -471,6 +474,7 @@ curl http://localhost:13305/v1/health
       "type": "embedding",
       "device": "gpu",
       "recipe": "llamacpp",
+      "pid": 12346,
       "recipe_options": {
         "ctx_size": 8192,
         "llamacpp_args": "--no-mmap",
@@ -480,7 +484,7 @@ curl http://localhost:13305/v1/health
     }
   ],
   "max_models": {
-    "audio":1,
+    "transcription":1,
     "embedding":1,
     "image":1,
     "llm":1,
@@ -499,16 +503,17 @@ curl http://localhost:13305/v1/health
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
   - `last_use` - Unix timestamp of last access (load or inference)
-  - `type` - Model type: `"llm"`, `"embedding"`, or `"reranking"`
+  - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
-  - `recipe`: - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
-  - `recipe_options`: - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+  - `pid` - The Process ID (PID) of the backend engine handling this model
+  - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
+  - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
-  - `audio` - Maximum speech-to-text models
+  - `transcription` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.

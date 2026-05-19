@@ -149,10 +149,8 @@ void VLLMServer::load(const std::string& model_name,
     // Serve using the Lemonade model name so forwarded requests match
     args.push_back("--served-model-name");
     args.push_back(model_name);
-    // Default args for consumer GPU inference
+    // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     args.push_back("--enforce-eager");
-    args.push_back("--dtype");
-    args.push_back("float16");
     // Pass ctx_size through to vllm-server's --max-model-len. Trust the
     // user's value verbatim; the global default lives in defaults.json
     // (same as llamacpp). Larger values raise KV-cache memory and Triton
@@ -172,6 +170,17 @@ void VLLMServer::load(const std::string& model_name,
     } else if (!quant_method.empty()) {
         LOG(DEBUG, "vLLM") << "Detected quantization '" << quant_method
                            << "'; letting vLLM auto-select kernel" << std::endl;
+    }
+
+    // enable prompt caching
+    args.push_back("--enable-prefix-caching");
+
+    // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
+    // Keep this overridable through vllm_args for users that want another limit.
+    if (vllm_args.find("--gpu-memory-utilization") == std::string::npos &&
+        vllm_args.find("--kv-cache-memory-bytes") == std::string::npos) {
+        args.push_back("--kv-cache-memory-bytes");
+        args.push_back("4G");
     }
 
     // Append custom vllm_args if provided

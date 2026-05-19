@@ -11,7 +11,7 @@ enum class ModelType {
     LLM,        // Chat/completion models
     EMBEDDING,  // Embedding models
     RERANKING,  // Reranking models
-    AUDIO,      // Audio models (speech-to-text transcription)
+    TRANSCRIPTION, // Transcription models (speech-to-text)
     IMAGE,      // Image generation models (text-to-image)
     TTS         // Text to speech models
 };
@@ -45,7 +45,7 @@ inline std::string model_type_to_string(ModelType type) {
         case ModelType::LLM: return "llm";
         case ModelType::EMBEDDING: return "embedding";
         case ModelType::RERANKING: return "reranking";
-        case ModelType::AUDIO: return "audio";
+        case ModelType::TRANSCRIPTION: return "transcription";
         case ModelType::IMAGE: return "image";
         case ModelType::TTS: return "tts";
         default: return "unknown";
@@ -75,17 +75,22 @@ inline std::string device_type_to_string(DeviceType device) {
 // Labels describe *capabilities* (what the model accepts or produces). ModelType
 // describes the *deployment mode* we spawn the backend subprocess in (LLM chat,
 // ASR, embedding, etc.) and the LRU bucket the router uses. These are different
-// concepts, and multimodal "any-to-text" chat models (e.g. Gemma 4 on FLM)
-// carry both chat indicators and modality labels like "audio" / "vision" to
-// signal which input modalities they accept. Those must still deploy as LLMs.
+// concepts.
 //
-// Resolution: chat-indicator labels win. Modality labels are only used to pick
-// a deployment mode when no chat indicator is present (pure Whisper = "audio",
-// pure embedding model = "embedding", etc.).
+// Label semantics:
+//   "transcription"          → model can serve /audio/transcriptions (functional)
+//   "realtime-transcription" → model supports WebSocket /realtime streaming
+//   "chat-transcription"     → model accepts audio input in /chat/completions
+//
+// Resolution: chat-indicator labels win. The "transcription" label triggers
+// ModelType::TRANSCRIPTION only when no chat indicator is present (pure Whisper).
+// "chat-transcription" is an LLM input-modality label and does not change the
+// deployment mode.
 inline ModelType get_model_type_from_labels(const std::vector<std::string>& labels) {
     for (const auto& label : labels) {
         if (label == "vision" || label == "reasoning" ||
-            label == "tool-calling" || label == "tools") {
+            label == "tool-calling" || label == "tools" ||
+            label == "chat-transcription") {
             return ModelType::LLM;
         }
     }
@@ -96,8 +101,8 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
         if (label == "reranking") {
             return ModelType::RERANKING;
         }
-        if (label == "audio") {
-            return ModelType::AUDIO;
+        if (label == "transcription") {
+            return ModelType::TRANSCRIPTION;
         }
         if (label == "image") {
             return ModelType::IMAGE;

@@ -38,6 +38,7 @@ public:
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
     std::string rocm_channel() const;
+    std::string rocm_channel_for_recipe(const std::string& recipe) const;
 
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
@@ -49,7 +50,7 @@ public:
     /// Returns recipe options in the flat format that RecipeOptions/backends expect.
     /// Maps nested config to flat keys: llamacpp.backend -> llamacpp_backend,
     /// sdcpp.steps -> steps, etc.
-    json recipe_options() const;
+    json recipe_options(const std::string& backend) const;
 
     // --- Unified setter ---
     // Validates and applies changes, then calls side_effect_cb (outside lock)

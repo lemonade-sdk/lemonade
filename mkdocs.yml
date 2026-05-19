@@ -74,6 +74,7 @@ nav:
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md
+    - Philosophy: dev/philosophy.md
     - Contribute: dev/contribute.md
     - C++: dev/getting-started.md
     - Desktop App: dev/app.md

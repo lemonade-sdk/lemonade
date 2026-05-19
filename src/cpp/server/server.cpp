@@ -227,7 +227,12 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     // Internal endpoints are restricted to loopback regardless of API key
     if (is_internal_route) {
-        bool is_loopback = (req.remote_addr == "127.0.0.1" || req.remote_addr == "::1");
+        // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
+        // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
+        // lemond uses to accept both IPv4 and IPv6 on the same port).
+        bool is_loopback = (req.remote_addr == "127.0.0.1" ||
+                            req.remote_addr == "::1" ||
+                            req.remote_addr == "::ffff:127.0.0.1");
         if (!is_loopback) {
             LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
                         << req.remote_addr << " " << req.path << std::endl;
@@ -379,6 +384,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post(R"(/v1/slots/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_slots_by_id(req, res);
+    });
+
+    // Tokenize endpoint (llama.cpp specific)
+    register_post("tokenize", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_tokenize(req, res);
     });
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
@@ -941,6 +951,13 @@ void Server::run() {
     }
 
     while (true) {
+        // Check for shutdown signal from the main thread
+        if (shutdown_requested_.load()) {
+            LOG(INFO, "Server") << "Shutdown requested, stopping server..." << std::endl;
+            stop();
+            break;
+        }
+
         std::atomic<bool> listener_started(false);
         std::atomic<bool> listener_start_failed(false);
 
@@ -1006,10 +1023,44 @@ void Server::run() {
                         << "or hostname that resolves to RFC1918 IPv4." << std::endl;
         }
 
-        if (http_v4_thread_.joinable())
-            http_v4_thread_.join();
-        if (http_v6_thread_.joinable())
-            http_v6_thread_.join();
+        // Wait for listener threads, but check periodically for shutdown or rebind signals.
+        // The threads are blocked in listen_after_bind(), which only returns when
+        // the server is stopped or an error occurs.
+        while ((http_v4_thread_.joinable() || http_v6_thread_.joinable()) &&
+               !shutdown_requested_.load() && !rebind_requested_.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        // If shutdown was requested while the server was running, stop it now
+        // to unblock the listener threads (they're stuck in listen_after_bind)
+        if (shutdown_requested_.load()) {
+            LOG(INFO, "Server") << "Shutdown requested, stopping server..." << std::endl;
+            stop();
+            // Join the threads (they should exit quickly after stop() is called)
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+            break;  // Exit the main loop
+        }
+
+        // If rebind was requested, stop() has already been called by apply_config_side_effects().
+        // Just join the threads so they can be restarted with new settings.
+        if (rebind_requested_.load()) {
+            // Wait for threads to finish (stop() was already called)
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+            // Continue to rebind logic below (don't break)
+        } else {
+            // Normal path: threads exited naturally (no shutdown, no rebind)
+            // Join the threads
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+        }
 
         if (!listener_started && listener_start_failed) {
             if (rebind_requested_) {
@@ -1039,6 +1090,19 @@ void Server::run() {
     }
 }
 
+
+bool Server::should_shutdown() const {
+    return shutdown_requested_.load();
+}
+
+void Server::set_shutdown_requested(bool requested) {
+    shutdown_requested_.store(requested);
+}
+
+bool Server::is_running() const {
+    return running_;
+}
+
 void Server::stop() {
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
@@ -1046,6 +1110,7 @@ void Server::stop() {
         http_server_v6_->stop();
         http_server_->stop();
         running_ = false;
+        shutdown_requested_ = false;  // Reset for potential future use
 
         // Stop WebSocket server
         if (websocket_server_) {
@@ -1068,10 +1133,6 @@ void Server::stop() {
     if (model_cache_warmup_thread_.joinable()) {
         model_cache_warmup_thread_.join();
     }
-}
-
-bool Server::is_running() const {
-    return running_;
 }
 
 // Generates an actionable error message for model loading failures.
@@ -1134,7 +1195,7 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
             message += ". ";
         }
 
-        message += "Use 'lemonade-server list' or GET /api/v1/models?show_all=true to see all available models.";
+        message += "Use 'lemonade list' or GET /api/v1/models?show_all=true to see all available models.";
 
         // Add FLM hint for -FLM model names when FLM is not ready
         if (requested_model.size() > 4 &&
@@ -1349,7 +1410,11 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
 
     if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
-        res.set_content(model_info_to_json(model_id, info).dump(), "application/json");
+        // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
+        // for shadowed sources), regardless of which form the client requested.
+        std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
+        std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
@@ -1902,6 +1967,53 @@ void Server::handle_slots_by_id(const httplib::Request& req, httplib::Response& 
 
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_slots_by_id: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_tokenize(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/tokenize" << std::endl;
+
+        // Parse request body as JSON (use empty object if body is empty)
+        json request_body;
+        if (!req.body.empty()) {
+            try {
+                request_body = json::parse(req.body);
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "Failed to parse request body: " << e.what() << std::endl;
+                res.status = 400;
+                res.set_content("{\"error\": \"Invalid JSON in request body\"}", "application/json");
+                return;
+            }
+        } else {
+            request_body = json::object();
+        }
+
+        // Tokenize endpoint requires at least a valid "content" entry in the body
+        if (!request_body.contains("content") || !request_body["content"].is_string()) {
+            LOG(ERROR, "Server") << "Tokenization failed: 'content' parameter is missing" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"'content' parameter is required\"}", "application/json");
+            return;
+        }
+
+        // Tokenization requires a model to be loaded
+        if (!router_->is_model_loaded()) {
+            LOG(ERROR, "Server") << "No model loaded for tokenization" << std::endl;
+            res.status = 400;
+            res.set_content("{\"error\": \"No model loaded for tokenization\"}", "application/json");
+            return;
+        }
+
+        // Forward request to router
+        auto response = router_->tokenize(request_body);
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_tokenize: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -2504,7 +2616,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
             // Honor explicit config first (e.g. sdcpp.backend = "rocm").
             // "auto" in config.json is mapped to "" by recipe_options().
-            auto recipe_opts = config_->recipe_options();
+            auto recipe_opts = config_->recipe_options("");
             if (recipe_opts.contains("sd-cpp_backend") &&
                 recipe_opts["sd-cpp_backend"].is_string()) {
                 backend = recipe_opts["sd-cpp_backend"].get<std::string>();
@@ -2562,9 +2674,9 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::string resolved_backend = backend;
         if (backend == "rocm") {
-            std::string channel = "preview";
+            std::string channel = "stable";
             if (config_) {
-                channel = config_->rocm_channel();
+                channel = config_->rocm_channel_for_recipe("sd-cpp");
             }
             resolved_backend = "rocm-" + channel;
         }
@@ -2572,13 +2684,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         std::string lib_path = cli_dir.string();
 
         if (resolved_backend == "rocm-stable") {
-            std::string runtime_dir = lemon::backends::BackendUtils::get_install_directory(
-                "rocm-stable-runtime", ""
-            );
-            if (std::filesystem::exists(runtime_dir)) {
-                lib_path = runtime_dir + ":" + lib_path;
-            }
-        } else if (resolved_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
@@ -2594,16 +2699,13 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
 #else
-        if (resolved_backend == "rocm-stable" || resolved_backend == "rocm-preview") {
+        if (resolved_backend == "rocm-stable") {
             std::string new_path = cli_dir.string();
-
-            if (resolved_backend == "rocm-preview") {
-                std::string rocm_arch = SystemInfo::get_rocm_arch();
-                if (!rocm_arch.empty()) {
-                    std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
-                    if (!therock_bin.empty()) {
-                        new_path = therock_bin + ";" + new_path;
-                    }
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
+                if (!therock_bin.empty()) {
+                    new_path = therock_bin + ";" + new_path;
                 }
             }
 
@@ -2752,7 +2854,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             LOG(INFO, "Server") << "   recipe: " << recipe << std::endl;
         }
 
-        // Validate: if checkpoint or recipe are provided, model name must have "user." prefix
+        // Reject reserved prefixes — extra.* / builtin.* cannot be created via
+        // /pull, and user.extra.* / user.builtin.* are also rejected because
+        // their bare-name part ("extra.X" / "builtin.X") would otherwise hijack
+        // the corresponding canonical alias slot. Then enforce the existing rule
+        // that explicit checkpoint/recipe requires the user.* prefix.
+        if (lemon::is_reserved_registration_name(model_name)) {
+            res.status = 400;
+            nlohmann::json error = {{"error",
+                "Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+                "including as bare-name parts of a 'user.' alias. "
+                "Use 'user.<name>' for registration where <name> does not begin "
+                "with 'extra.' or 'builtin.'. Received: " + model_name}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
         if (!checkpoint.empty() || !recipe.empty()) {
             if (model_name.substr(0, 5) != "user.") {
                 bad_request(

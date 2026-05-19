@@ -965,12 +965,58 @@ curl http://localhost:13305/v1/models?show_all=true
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `suggested` - Boolean indicating if the model is recommended for general use
-  - `labels` - Array of tags describing the model (e.g., `"hot"`, `"reasoning"`, `"vision"`, `"embeddings"`, `"reranking"`, `"coding"`, `"tool-calling"`, `"image"`)
+  - `labels` - Array of tags describing the model's capabilities and characteristics. See [Model Labels](#model-labels) for the full list.
   - `image_defaults` - (Image models only) Default generation parameters for the model:
     - `steps` - Number of inference steps (e.g., 4 for turbo models, 20 for standard models)
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
+
+
+### Model Labels
+
+Labels describe what a model can do. A model may carry multiple labels.
+
+**Deployment labels** — determine which backend endpoint the model is routed to:
+
+| Label | Endpoint | Description |
+|-------|----------|-------------|
+| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment. |
+| `embeddings` | `/embeddings` | Produces text embedding vectors. |
+| `reranking` | `/reranking` | Scores and reranks a list of passages given a query. |
+| `image` | `/images/generations` | Text-to-image generation model. |
+| `edit` | Image editing model; supports the `/images/edits` endpoint. |
+| `tts` | `/audio/speech` | Text-to-speech synthesis model. |
+
+**Input-modality labels** — the model is deployed as an LLM but accepts additional input types in `/chat/completions`:
+
+| Label | Description |
+|-------|-------------|
+| `vision` | Accepts image attachments in chat messages. |
+| `chat-transcription` | Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni). |
+
+**Streaming labels** — capability flags for real-time features:
+
+| Label | Description |
+|-------|-------------|
+| `realtime-transcription` | Supports the WebSocket `/realtime` endpoint for live microphone transcription. |
+
+**Runtime labels** — affect backend launch defaults:
+
+| Label | Description |
+|-------|-------------|
+| `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
+
+**Characteristic labels** — informational, do not affect routing:
+
+| Label | Description |
+|-------|-------------|
+| `hot` | Featured or popular model, highlighted in the UI. |
+| `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
+| `tool-calling` | Supports function/tool calling in chat completions. |
+| `coding` | Tuned for code generation and software tasks. |
+| `upscaling` | Image upscaling model (e.g. Real-ESRGAN). Used as a component in image pipelines. |
+| `experimental` | Not yet validated for production use. |
 
 
 ## `GET /v1/models/{model_id}`

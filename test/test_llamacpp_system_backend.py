@@ -6,7 +6,7 @@ manages its own server lifecycle independently of ServerTestBase.
 
 Usage:
     python test/test_llamacpp_system_backend.py
-    python test/test_llamacpp_system_backend.py --server-binary /path/to/lemonade-server
+    python test/test_llamacpp_system_backend.py --cli-binary /path/to/lemonade
 """
 
 import json
@@ -22,11 +22,12 @@ import unittest
 
 import requests
 from utils.server_base import (
-    wait_for_server,
+    _auth_headers,
+    get_cli_binary,
     parse_args,
-    get_server_binary,
-    set_server_config,
     PORT,
+    set_server_config,
+    wait_for_server,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -169,16 +170,25 @@ def _wait_for_server_stop(port=PORT, timeout=30):
     return False
 
 
+def _get_lemond_binary():
+    """Find the lemond binary in the same directory as the lemonade CLI."""
+    cli_binary = get_cli_binary()
+    if cli_binary:
+        build_dir = os.path.dirname(cli_binary)
+        name = "lemond.exe" if os.name == "nt" else "lemond"
+        candidate = os.path.join(build_dir, name)
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which("lemond") or "lemond"
+
+
 def _stop_server():
-    """Stop the server via CLI stop command."""
-    server_binary = get_server_binary()
+    """Stop the server via /internal/shutdown."""
     try:
-        subprocess.run(
-            [server_binary, "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
+        requests.post(
+            f"http://localhost:{PORT}/internal/shutdown",
+            headers=_auth_headers(),
+            timeout=5,
         )
         _wait_for_server_stop()
     except Exception as e:
@@ -186,16 +196,10 @@ def _stop_server():
 
 
 def _start_server(wrapped_server=None, backend=None, config_updates=None):
-    """Start the server and wait for it to be ready."""
-    server_binary = get_server_binary()
-    cmd = [server_binary, "serve", "--log-level", "debug"]
-
-    if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-        cmd.append("--no-tray")
-
-    # Add wrapped server / backend args if specified
-    if wrapped_server == "llamacpp" and backend:
-        cmd.extend(["--llamacpp", backend])
+    """Start lemond and wait for it to be ready."""
+    lemond_binary = _get_lemond_binary()
+    cache_dir = LlamaCppSystemBackendTests.cache_dir
+    cmd = [lemond_binary, cache_dir, "--port", str(PORT)]
 
     if sys.platform == "win32":
         subprocess.Popen(
@@ -214,8 +218,15 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
         )
 
     wait_for_server(timeout=60)
+
+    runtime_config = {}
+    if wrapped_server == "llamacpp" and backend:
+        runtime_config["llamacpp"] = {"backend": backend}
     if config_updates:
-        set_server_config(config_updates, port=PORT)
+        runtime_config.update(config_updates)
+    if runtime_config:
+        set_server_config(runtime_config, port=PORT)
+
     print("Server started successfully")
 
 
@@ -243,6 +254,12 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
             else DUMMY_LLAMA_SERVER_LINUX_MAC
         )
 
+        # Dedicated cache_dir so the test doesn't disturb the user's real cache.
+        # log_level=debug surfaces backend behavior in the logs.
+        cls.cache_dir = tempfile.mkdtemp(prefix="lemonade_llamacpp_test_")
+        with open(os.path.join(cls.cache_dir, "config.json"), "w") as cf:
+            json.dump({"log_level": "debug"}, cf)
+
         # Store original PATH to restore later
         cls.original_path = os.environ.get("PATH", "")
 
@@ -250,8 +267,9 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     def tearDownClass(cls):
         # Stop any server we started
         _stop_server()
-        # Clean up temporary directory and restore PATH
+        # Clean up temporary directories and restore PATH
         shutil.rmtree(cls.temp_bin_dir)
+        shutil.rmtree(cls.cache_dir, ignore_errors=True)
         os.environ["PATH"] = cls.original_path
         super().tearDownClass()
 

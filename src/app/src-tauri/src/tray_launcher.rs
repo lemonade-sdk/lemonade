@@ -1,6 +1,6 @@
-//! macOS-only helper that ensures the `lemonade-server tray` process is
-//! running when the desktop app launches. On Windows and Linux the tray is
-//! started by system autostart so there's nothing to do.
+//! macOS-only helper that ensures the `lemonade-tray` process is running
+//! when the desktop app launches. On Windows and Linux the tray is started
+//! by system autostart so there's nothing to do.
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -9,15 +9,18 @@ mod imp {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    const BINARY_PATH: &str = "/usr/local/bin/lemonade-server";
+    const BINARY_PATH: &str = "/usr/local/bin/lemonade-tray";
     const LOCK_FILE: &str = "/tmp/lemonade_Tray.lock";
     const KILL_TIMEOUT_SECS: u64 = 30;
 
     fn graceful_kill_tray() {
         // SIGTERM first; if anything is still running after KILL_TIMEOUT_SECS
         // fall back to SIGKILL. `pkill` returns non-zero when no process
-        // matches, which we treat as "already clean".
-        match Command::new("pkill").args(["-f", "lemonade-server tray"]).status() {
+        // matches, which we treat as "already clean". Match by exact process
+        // name (-x) rather than full command line (-f) to avoid false positives
+        // from editors, log paths, or debuggers whose argv happens to contain
+        // the string "lemonade-tray".
+        match Command::new("pkill").args(["-x", "lemonade-tray"]).status() {
             Ok(status) if status.success() => {}
             _ => return,
         }
@@ -25,7 +28,7 @@ mod imp {
         let deadline = Instant::now() + Duration::from_secs(KILL_TIMEOUT_SECS);
         while Instant::now() < deadline {
             let still_alive = Command::new("pgrep")
-                .args(["-f", "lemonade-server tray"])
+                .args(["-x", "lemonade-tray"])
                 .status()
                 .map(|s| s.success())
                 .unwrap_or(false);
@@ -35,7 +38,7 @@ mod imp {
             thread::sleep(Duration::from_secs(1));
         }
         let _ = Command::new("pkill")
-            .args(["-9", "-f", "lemonade-server tray"])
+            .args(["-9", "-x", "lemonade-tray"])
             .status();
     }
 
@@ -69,7 +72,6 @@ mod imp {
 
         log::info!("Spawning tray process...");
         match Command::new(BINARY_PATH)
-            .arg("tray")
             .env("PATH", path)
             .env("DYLD_LIBRARY_PATH", dyld)
             .stdin(Stdio::null())

@@ -44,6 +44,29 @@ json ConfigFile::get_defaults() {
     return defaults;
 }
 
+static bool migrate_deprecated_rocm_preview_channel(json& config) {
+    bool migrated = false;
+
+    if (config.contains("rocm") && config["rocm"].is_string() &&
+        config["rocm"].get<std::string>() == "preview") {
+        config.erase("rocm");
+        config["rocm_channel"] = "stable";
+        LOG(INFO) << "Migrated deprecated rocm=preview to rocm_channel=stable"
+                  << std::endl;
+        migrated = true;
+    }
+
+    if (config.contains("rocm_channel") && config["rocm_channel"].is_string() &&
+        config["rocm_channel"].get<std::string>() == "preview") {
+        config["rocm_channel"] = "stable";
+        LOG(INFO) << "Migrated deprecated rocm_channel=preview to rocm_channel=stable"
+                  << std::endl;
+        migrated = true;
+    }
+
+    return migrated;
+}
+
 json ConfigFile::load(const std::string& cache_dir) {
     json defaults = get_defaults();
     fs::path config_path = utils::path_from_utf8(cache_dir) / "config.json";
@@ -54,6 +77,7 @@ json ConfigFile::load(const std::string& cache_dir) {
             fs::create_directories(cache_path);
         }
         json config = migrate_from_env(defaults);
+        migrate_deprecated_rocm_preview_channel(config);
         save(cache_dir, config);
         return config;
     }
@@ -105,7 +129,11 @@ json ConfigFile::load(const std::string& cache_dir) {
         return defaults;
     }
 
-    return utils::JsonUtils::merge(defaults, loaded);
+    json merged = utils::JsonUtils::merge(defaults, loaded);
+    if (migrate_deprecated_rocm_preview_channel(merged)) {
+        save(cache_dir, merged);
+    }
+    return merged;
 }
 
 void ConfigFile::save(const std::string& cache_dir, const json& config) {
@@ -169,6 +197,10 @@ static const EnvMapping env_mappings[] = {
     // llamacpp
     {"LEMONADE_LLAMACPP",                "llamacpp",  "backend"},
     {"LEMONADE_LLAMACPP_ARGS",           "llamacpp",  "args"},
+    {"LEMONADE_LLAMACPP_ROCM_ARGS",      "llamacpp",  "rocm_args"},
+    {"LEMONADE_LLAMACPP_VULKAN_ARGS",    "llamacpp",  "vulkan_args"},
+    {"LEMONADE_LLAMACPP_CPU_ARGS",       "llamacpp",  "cpu_args"},
+    {"LEMONADE_LLAMACPP_DEVICE",         "llamacpp",  "device"},
     {"LEMONADE_LLAMACPP_PREFER_SYSTEM",  "llamacpp",  "prefer_system"},
     {"LEMONADE_LLAMACPP_ROCM_BIN",       "llamacpp",  "rocm_bin"},
     {"LEMONADE_LLAMACPP_VULKAN_BIN",     "llamacpp",  "vulkan_bin"},
@@ -176,11 +208,16 @@ static const EnvMapping env_mappings[] = {
     // whispercpp
     {"LEMONADE_WHISPERCPP",              "whispercpp", "backend"},
     {"LEMONADE_WHISPERCPP_ARGS",         "whispercpp", "args"},
+    {"LEMONADE_WHISPERCPP_CPU_ARGS",     "whispercpp", "cpu_args"},
+    {"LEMONADE_WHISPERCPP_NPU_ARGS",     "whispercpp", "npu_args"},
     {"LEMONADE_WHISPERCPP_CPU_BIN",      "whispercpp", "cpu_bin"},
     {"LEMONADE_WHISPERCPP_NPU_BIN",      "whispercpp", "npu_bin"},
     // sdcpp
     {"LEMONADE_SDCPP",                   "sdcpp", "backend"},
     {"LEMONADE_SDCPP_ARGS",              "sdcpp", "args"},
+    {"LEMONADE_SDCPP_CPU_ARGS",          "sdcpp", "cpu_args"},
+    {"LEMONADE_SDCPP_ROCM_ARGS",         "sdcpp", "rocm_args"},
+    {"LEMONADE_SDCPP_VULKAN_ARGS",       "sdcpp", "vulkan_args"},
     {"LEMONADE_STEPS",                   "sdcpp", "steps"},
     {"LEMONADE_CFG_SCALE",               "sdcpp", "cfg_scale"},
     {"LEMONADE_WIDTH",                   "sdcpp", "width"},
