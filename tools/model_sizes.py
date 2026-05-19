@@ -40,6 +40,8 @@ DIRECT_FILE_SUFFIXES = (
     ".bin",
     ".rai",
 )
+# Matches the `-NNNNN-of-NNNNN` shard suffix on GGUF filenames.
+SHARD_RE = re.compile(r"-\d{5}-of-\d{5}(?=\.gguf$|$)", re.IGNORECASE)
 
 
 def extract_quant(s: str):
@@ -105,7 +107,16 @@ def files_for_variant(files, variant: str):
             q = extract_quant(name)
             if q and q.upper() == target:
                 root.append((name, size))
-    return folder or root
+    if folder:
+        return folder
+    # Some repos publish both a single concat file (e.g. `model-q4_k_m.gguf`)
+    # and an equivalent shard set (e.g. `model-q4_k_m-00001-of-00003.gguf`)
+    # for the same quant. They represent the same logical variant, so pick
+    # whichever set is present — preferring the single file when both exist.
+    singles = [(n, s) for n, s in root if not SHARD_RE.search(n)]
+    if singles:
+        return singles
+    return root
 
 
 def parse_checkpoint(ckpt: str):

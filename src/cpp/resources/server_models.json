@@ -1114,7 +1114,7 @@
         "labels": [
             "coding"
         ],
-        "size": 39.7
+        "size": 19.9
     },
     "gpt-oss-120b-GGUF": {
         "checkpoint": "unsloth/gpt-oss-120b-GGUF:Q4_K_M",
