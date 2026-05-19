@@ -949,6 +949,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "vision",
             "tool-calling",
             "mtp"
         ],
@@ -983,6 +984,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "vision",
             "tool-calling",
             "mtp"
         ],
@@ -1005,6 +1007,7 @@
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
+            "vision",
             "tool-calling",
             "mtp",
             "hot"
