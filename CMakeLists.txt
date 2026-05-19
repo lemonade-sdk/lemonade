@@ -1372,6 +1372,12 @@ if(UNIX AND NOT APPLE)
         ")
     endif()
 
+    # Install sysusers.d snippet so the 'lemonade' system user is created
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
+        RENAME lemonade.conf
+    )
+
     # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
         DESTINATION /etc/lemonade/conf.d
