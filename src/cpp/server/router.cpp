@@ -197,7 +197,7 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         LOG(DEBUG, "Router") << "Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "lemon-mlx") {
-    LOG(DEBUG, "Router") << "Creating lemon-mlx backend" << std::endl;
+        LOG(DEBUG, "Router") << "Creating lemon-mlx backend" << std::endl;
         new_server = std::make_unique<backends::MlxServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "ryzenai-llm") {
         LOG(DEBUG, "Router") << "Creating RyzenAI-Server backend" << std::endl;
