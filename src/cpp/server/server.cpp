@@ -148,6 +148,15 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+bool is_quiet_polling_path(const std::string& path) {
+    return path == "/api/v0/downloads" || path == "/api/v1/downloads" ||
+           path == "/v0/downloads" || path == "/v1/downloads" ||
+           path == "/api/v0/system-stats" || path == "/api/v1/system-stats" ||
+           path == "/v0/system-stats" || path == "/v1/system-stats" ||
+           path == "/api/v0/stats" || path == "/api/v1/stats" ||
+           path == "/v0/stats" || path == "/v1/stats";
+}
+
 } // namespace
 
 
@@ -239,17 +248,15 @@ void Server::setup_http_servers() {
 }
 
 Server::~Server() {
+    cancel_download_jobs();
     stop();
 }
 
 void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
         req.path != "/v0/health" && req.path != "/v1/health" &&
-        req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
-        req.path != "/v0/system-stats" && req.path != "/v1/system-stats" &&
-        req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
-        req.path != "/v0/stats" && req.path != "/v1/stats" &&
-        req.path != "/live") {
+        req.path != "/live" &&
+        !is_quiet_polling_path(req.path)) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
 }
@@ -463,6 +470,15 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_get("pull/variants", [this](const httplib::Request& req, httplib::Response& res) {
         handle_pull_variants(req, res);
     });
+
+    register_get("downloads", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_downloads(req, res);
+    });
+
+    register_post("downloads/control", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_download_control(req, res);
+    });
+
 
     register_post("load", [this](const httplib::Request& req, httplib::Response& res) {
         handle_load(req, res);
@@ -929,10 +945,7 @@ void Server::setup_http_logger(httplib::Server &web_server) {
         // Skip logging health checks and stats endpoints to reduce log noise
         if (req.path == "/api/v0/health" || req.path == "/api/v1/health" ||
             req.path == "/v0/health" || req.path == "/v1/health" || req.path == "/live" ||
-            req.path == "/api/v0/system-stats" || req.path == "/api/v1/system-stats" ||
-            req.path == "/v0/system-stats" || req.path == "/v1/system-stats" ||
-            req.path == "/api/v0/stats" || req.path == "/api/v1/stats" ||
-            req.path == "/v0/stats" || req.path == "/v1/stats") {
+            is_quiet_polling_path(req.path)) {
             return;
         }
 
@@ -2886,6 +2899,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         std::string recipe = request_json.value("recipe", "");
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
+        bool subscribe = request_json.value("subscribe", true);
 
         LOG(INFO, "Server") << "Pulling model: " << model_name << std::endl;
         if (!checkpoint.empty()) {
@@ -2945,10 +2959,29 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
 
         if (stream) {
-            // SSE streaming mode - send progress events via shared helper
-            stream_download_operation(res, [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
+            auto operation = [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
                 model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
-            });
+            };
+
+            if (!subscribe) {
+                // Server-owned mode for desktop UI reload/new-tab recovery.
+                // Legacy streamed /pull behavior is unchanged.
+                auto job = start_download_job("model:" + model_name, "model", model_name, operation);
+                nlohmann::json response;
+                {
+                    // The worker can update the shared job immediately after
+                    // start_download_job returns, so copy the response while
+                    // holding the same mutex used by the progress callback.
+                    std::lock_guard<std::mutex> lock(downloads_mutex_);
+                    response = download_job_to_json(job);
+                }
+                res.set_content(response.dump(), "application/json");
+                return;
+            }
+
+            // Backward-compatible SSE streaming mode: tie the operation to this
+            // response exactly as before.
+            stream_download_operation(res, operation);
         } else {
             // Legacy synchronous mode - blocks until complete
             model_manager_->download_model(model_name, request_json, do_not_upgrade);
@@ -3866,6 +3899,7 @@ void Server::handle_shutdown(const httplib::Request& req, httplib::Response& res
     // Stop the HTTP listener and exit asynchronously (allows response to be sent first)
     std::thread([this]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        cancel_download_jobs();
         stop();
         std::exit(0);
     }).detach();
@@ -4090,6 +4124,248 @@ void Server::apply_config_side_effects(const json& applied_changes) {
     }
 }
 
+
+// ============================================================================
+// Server-owned Download Manager state
+// ============================================================================
+
+namespace {
+
+constexpr auto DOWNLOAD_TERMINAL_VISIBILITY = std::chrono::seconds(30);
+
+} // namespace
+
+nlohmann::json Server::download_progress_to_json(const DownloadProgress& p) {
+    nlohmann::json event_data;
+    event_data["file"] = p.file;
+    event_data["file_index"] = p.file_index;
+    event_data["total_files"] = p.total_files;
+    event_data["bytes_downloaded"] = static_cast<uint64_t>(p.bytes_downloaded);
+    event_data["bytes_total"] = static_cast<uint64_t>(p.bytes_total);
+    event_data["total_download_size"] = static_cast<uint64_t>(p.total_download_size);
+    event_data["bytes_previously_downloaded"] = static_cast<uint64_t>(p.bytes_previously_downloaded);
+    event_data["percent"] = p.percent;
+    event_data["complete"] = p.complete;
+    if (!p.error.empty()) {
+        event_data["error"] = p.error;
+    }
+    return event_data;
+}
+
+nlohmann::json Server::download_job_to_json(const std::shared_ptr<DownloadJob>& job) {
+    nlohmann::json item = job->progress.is_object() ? job->progress : nlohmann::json::object();
+    item["id"] = job->id;
+    item["type"] = job->type;
+    item["model_name"] = job->display_name;
+    item["status"] = job->status;
+    item["running"] = job->running;
+    if (!job->error.empty()) {
+        item["error"] = job->error;
+    }
+    return item;
+}
+
+bool Server::is_download_job_visible(const std::shared_ptr<DownloadJob>& job) const {
+    if (!job) return false;
+    if (job->running) {
+        return true;
+    }
+    if (job->status == "downloading" || job->status == "paused" || job->status == "error") {
+        return true;
+    }
+    if (job->status == "cancelled") {
+        // Cancelled downloads may still have partial files on disk. Keep them
+        // discoverable across reloads/restarts until the UI explicitly removes
+        // the row after cleanup, retry, or user dismissal.
+        return true;
+    }
+    if (job->status == "completed") {
+        return job->terminal_since.time_since_epoch().count() > 0 &&
+               std::chrono::steady_clock::now() - job->terminal_since < DOWNLOAD_TERMINAL_VISIBILITY;
+    }
+    return false;
+}
+
+void Server::join_download_job(const std::shared_ptr<DownloadJob>& job) {
+    // Download workers capture `this`, so they must never outlive Server. Move
+    // the thread out under the job-local mutex, then join without holding either
+    // worker_mutex or downloads_mutex_. This avoids both data races on
+    // std::thread and deadlocks with progress callbacks.
+    if (!job) return;
+
+    std::thread worker;
+    {
+        std::lock_guard<std::mutex> lock(job->worker_mutex);
+        if (!job->worker.joinable()) return;
+        if (job->worker.get_id() == std::this_thread::get_id()) return;
+        worker = std::move(job->worker);
+    }
+
+    worker.join();
+}
+
+std::shared_ptr<Server::DownloadJob> Server::start_download_job(
+    const std::string& download_id,
+    const std::string& download_type,
+    const std::string& display_name,
+    std::function<void(DownloadProgressCallback)> operation) {
+
+    std::shared_ptr<DownloadJob> old_job;
+    auto job = std::make_shared<DownloadJob>();
+    job->id = download_id;
+    job->type = download_type;
+    job->display_name = display_name;
+    job->status = "downloading";
+    job->running = true;
+    job->progress = {
+        {"id", download_id},
+        {"type", download_type},
+        {"model_name", display_name},
+        {"file", ""},
+        {"file_index", 0},
+        {"total_files", 0},
+        {"bytes_downloaded", 0},
+        {"bytes_total", 0},
+        {"total_download_size", 0},
+        {"bytes_previously_downloaded", 0},
+        {"completed_files_bytes", 0},
+        {"cumulative_bytes_downloaded", 0},
+        {"overall_bytes_downloaded", 0},
+        {"percent", 0},
+        {"complete", false}
+    };
+
+    std::unique_lock<std::mutex> worker_lock(job->worker_mutex);
+
+    {
+        std::lock_guard<std::mutex> lock(downloads_mutex_);
+        auto existing = download_jobs_.find(download_id);
+        if (existing != download_jobs_.end()) {
+            if (existing->second->running || existing->second->status == "downloading") {
+                return existing->second;
+            }
+            old_job = existing->second;
+        }
+        download_jobs_[download_id] = job;
+    }
+
+    join_download_job(old_job);
+
+    job->worker = std::thread([this, job, operation = std::move(operation)]() mutable {
+        try {
+            DownloadProgressCallback progress_cb = [this, job](const DownloadProgress& p) -> bool {
+                std::lock_guard<std::mutex> lock(downloads_mutex_);
+                // Completion wins over a very late pause/cancel request. If the
+                // downloader is reporting its final complete event, record it and
+                // let the operation return successfully instead of turning a fully
+                // written model into a cancelled/paused row.
+                if (job->cancel_requested && !p.complete) {
+                    job->stop_acknowledged = true;
+                    return false;
+                }
+
+                if (job->current_file_index != p.file_index) {
+                    if (job->current_file_index >= 0 && p.file_index > job->current_file_index) {
+                        job->completed_files_bytes += job->current_file_bytes_total;
+                    }
+                    job->current_file_index = p.file_index;
+                    job->current_file_bytes_total = 0;
+                }
+                if (p.bytes_total > 0) {
+                    job->current_file_bytes_total = std::max<uint64_t>(
+                        job->current_file_bytes_total,
+                        static_cast<uint64_t>(p.bytes_total));
+                }
+
+                const uint64_t total_download_size = static_cast<uint64_t>(p.total_download_size);
+                uint64_t cumulative_bytes = job->completed_files_bytes + static_cast<uint64_t>(p.bytes_downloaded);
+                if (p.complete && total_download_size > 0) {
+                    cumulative_bytes = total_download_size;
+                } else if (total_download_size > 0) {
+                    cumulative_bytes = std::min(cumulative_bytes, total_download_size);
+                }
+
+                job->progress = download_progress_to_json(p);
+                job->progress["completed_files_bytes"] = job->completed_files_bytes;
+                job->progress["cumulative_bytes_downloaded"] = cumulative_bytes;
+                job->progress["overall_bytes_downloaded"] = cumulative_bytes;
+                job->status = p.complete ? "completed" : "downloading";
+                // terminal_since is the time the worker has actually stopped, not
+                // the time a terminal status first becomes visible. Keeping it
+                // empty while running=true prevents /downloads from expiring the
+                // row before other tabs can observe that files are released.
+                job->terminal_since = std::chrono::steady_clock::time_point{};
+                job->error.clear();
+                return true;
+            };
+
+            operation(progress_cb);
+
+            std::lock_guard<std::mutex> lock(downloads_mutex_);
+            if (job->cancel_requested && job->stop_acknowledged) {
+                job->status = job->cancel_action == "cancel" ? "cancelled" : "paused";
+                job->progress["complete"] = false;
+            } else {
+                // The operation returned normally without acknowledging a stop
+                // request. Treat that as success; a late pause/cancel button must
+                // not erase or delete a completed download.
+                job->status = "completed";
+                job->progress["complete"] = true;
+                job->progress["percent"] = 100;
+                const uint64_t total_download_size = job->progress.value("total_download_size", uint64_t{0});
+                if (total_download_size > 0) {
+                    job->progress["cumulative_bytes_downloaded"] = total_download_size;
+                    job->progress["overall_bytes_downloaded"] = total_download_size;
+                }
+            }
+            job->running = false;
+            job->terminal_since = (job->status == "completed" || job->status == "cancelled")
+                ? std::chrono::steady_clock::now()
+                : std::chrono::steady_clock::time_point{};
+        } catch (const lemon::UnknownModelError& e) {
+            std::lock_guard<std::mutex> lock(downloads_mutex_);
+            LOG(ERROR, "DownloadManager") << "worker unknown-model error id=" << job->id
+                                           << " error=\"" << e.what() << "\"" << std::endl;
+            job->status = "error";
+            job->terminal_since = std::chrono::steady_clock::time_point{};
+            job->error = e.what();
+            job->progress["error"] = e.what();
+            job->progress["code"] = lemon::kUnknownModelErrorCode;
+            job->running = false;
+        } catch (const std::exception& e) {
+            bool cancel_requested = false;
+            {
+                std::lock_guard<std::mutex> lock(downloads_mutex_);
+                cancel_requested = job->cancel_requested;
+            }
+
+            if (!cancel_requested) {
+                LOG(ERROR, "DownloadManager") << "worker exception id=" << job->id
+                                               << " error=\"" << e.what() << "\"" << std::endl;
+            }
+
+            std::lock_guard<std::mutex> lock(downloads_mutex_);
+            if (job->cancel_requested) {
+                job->status = job->cancel_action == "cancel" ? "cancelled" : "paused";
+                job->error.clear();
+            } else {
+                job->status = "error";
+                job->terminal_since = std::chrono::steady_clock::time_point{};
+                job->error = e.what();
+                job->progress["error"] = e.what();
+            }
+            job->running = false;
+            if (job->status == "cancelled") {
+                job->terminal_since = std::chrono::steady_clock::now();
+            }
+        }
+    });
+    worker_lock.unlock();
+
+    return job;
+}
+
+
 // ============================================================================
 // Shared SSE streaming helper for download operations
 // ============================================================================
@@ -4165,6 +4441,144 @@ void Server::stream_download_operation(
             return false;
         });
 }
+
+
+
+void Server::handle_downloads(const httplib::Request&, httplib::Response& res) {
+    nlohmann::json response = nlohmann::json::array();
+    std::vector<std::shared_ptr<DownloadJob>> expired_jobs;
+    const auto now = std::chrono::steady_clock::now();
+
+    {
+        std::lock_guard<std::mutex> lock(downloads_mutex_);
+        for (auto it = download_jobs_.begin(); it != download_jobs_.end();) {
+            const auto& job = it->second;
+            if (is_download_job_visible(job)) {
+                response.push_back(download_job_to_json(job));
+                ++it;
+                continue;
+            }
+
+            const bool expired_terminal = job &&
+                !job->running &&
+                job->status == "completed" &&
+                job->terminal_since.time_since_epoch().count() > 0 &&
+                now - job->terminal_since >= DOWNLOAD_TERMINAL_VISIBILITY;
+
+            if (expired_terminal) {
+                expired_jobs.push_back(job);
+                it = download_jobs_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    for (auto& job : expired_jobs) {
+        join_download_job(job);
+    }
+
+    res.set_content(response.dump(), "application/json");
+}
+
+
+void Server::handle_download_control(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = nlohmann::json::parse(req.body);
+        std::string id = request_json.value("id", "");
+        std::string action = request_json.value("action", "");
+
+        if (id.empty() || action.empty()) {
+            res.status = 400;
+            res.set_content("{\"error\": \"Both 'id' and 'action' are required\"}", "application/json");
+            return;
+        }
+
+        nlohmann::json response_json;
+        std::shared_ptr<DownloadJob> job_to_join;
+
+        {
+            std::lock_guard<std::mutex> lock(downloads_mutex_);
+            auto it = download_jobs_.find(id);
+            if (it == download_jobs_.end()) {
+                if (action == "remove") {
+                    res.set_content("{\"status\": \"ok\", \"missing\": true}", "application/json");
+                    return;
+                }
+                res.status = 404;
+                res.set_content("{\"error\": \"Download not found\"}", "application/json");
+                return;
+            }
+
+            auto job = it->second;
+            if (action == "pause" || action == "cancel") {
+                const bool terminal = job->status == "completed" ||
+                    job->status == "cancelled" ||
+                    job->status == "error";
+
+                if (!terminal) {
+                    job->cancel_requested = true;
+                    job->cancel_action = action;
+                    job->status = action == "cancel" ? "cancelled" : "paused";
+                    // Paused jobs remain visible until resumed/removed. A cancel
+                    // request for an already-stopped job has no worker that will
+                    // later stamp terminal_since, so start the terminal visibility
+                    // window here to avoid leaving a stale hidden registry entry.
+                    job->terminal_since = (action == "cancel" && !job->running)
+                        ? std::chrono::steady_clock::now()
+                        : std::chrono::steady_clock::time_point{};
+                }
+
+                response_json = download_job_to_json(job);
+            } else if (action == "remove") {
+                if (job->running) {
+                    // A remove request must not make the job disappear while the
+                    // worker may still hold file handles. Convert it to a cancel
+                    // request and keep the job visible until running=false.
+                    job->cancel_requested = true;
+                    job->cancel_action = "cancel";
+                    if (job->status != "completed" && job->status != "error") {
+                        job->status = "cancelled";
+                        job->terminal_since = std::chrono::steady_clock::time_point{};
+                    }
+                    response_json = download_job_to_json(job);
+                } else {
+                    job_to_join = job;
+                    download_jobs_.erase(it);
+                    response_json = {{"status", "ok"}};
+                }
+            } else {
+                res.status = 400;
+                res.set_content("{\"error\": \"Unsupported download action\"}", "application/json");
+                return;
+            }
+        }
+
+        join_download_job(job_to_join);
+        res.set_content(response_json.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::cancel_download_jobs() {
+    std::vector<std::shared_ptr<DownloadJob>> jobs;
+    {
+        std::lock_guard<std::mutex> lock(downloads_mutex_);
+        for (auto& [id, job] : download_jobs_) {
+            job->cancel_requested = true;
+            job->cancel_action = "cancel";
+            jobs.push_back(job);
+        }
+    }
+
+    for (auto& job : jobs) {
+        join_download_job(job);
+    }
+}
+
 
 // ============================================================================
 // Backend management endpoints

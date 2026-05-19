@@ -10,6 +10,7 @@ import StatusBar from './StatusBar';
 import { ModelsProvider } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
+import { downloadTracker } from './utils/downloadTracker';
 import '../../styles/index.css';
 
 const LAYOUT_CONSTANTS = {
@@ -39,6 +40,10 @@ const AppContent: React.FC = () => {
   const startYRef = useRef(0);
   const startWidthRef = useRef(0);
   const startHeightRef = useRef(0);
+  // Auto-open the manager when a tab first discovers active downloads, but
+  // respect a user close while those same downloads are still active. Without
+  // this, the 2 s /downloads poll reopens the panel immediately.
+  const suppressDownloadAutoOpenRef = useRef(false);
 
   // Load saved layout settings on mount
   useEffect(() => {
@@ -107,32 +112,62 @@ const AppContent: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [saveLayoutSettings, layoutLoaded]);
 
-  // Listen for download start events to automatically open download manager
-  // and download completion events from chat to close it
+  // Listen for download events to automatically open the download manager.
   useEffect(() => {
+    const isVisibleStatus = (status?: string) =>
+      status === 'downloading' || status === 'paused' || status === 'error';
+
+    const openIfActive = (downloads = downloadTracker.getActiveDownloads()) => {
+      const hasVisibleDownload = downloads.some((d: any) => isVisibleStatus(d?.status));
+      if (!hasVisibleDownload) {
+        suppressDownloadAutoOpenRef.current = false;
+        return false;
+      }
+      if (!suppressDownloadAutoOpenRef.current) {
+        setIsDownloadManagerVisible(true);
+      }
+      return true;
+    };
+
     const handleDownloadStart = () => {
+      suppressDownloadAutoOpenRef.current = false;
       setIsDownloadManagerVisible(true);
     };
 
-    // When a chat-initiated download completes, minimize the download manager
+    const handleDownloadSignal = (e: any) => {
+      const downloads = Array.isArray(e.detail?.downloads) ? e.detail.downloads : downloadTracker.getActiveDownloads();
+      openIfActive(downloads);
+    };
+
     const handleChatDownloadComplete = () => {
+      suppressDownloadAutoOpenRef.current = true;
       setIsDownloadManagerVisible(false);
     };
 
+    downloadTracker.startServerPolling();
+
     window.addEventListener('download:started' as any, handleDownloadStart);
+    window.addEventListener('download:update' as any, handleDownloadSignal);
+    window.addEventListener('download:snapshot' as any, handleDownloadSignal);
     window.addEventListener('download:chatComplete' as any, handleChatDownloadComplete);
+
+    void downloadTracker.hydrateFromServer().then(() => openIfActive());
 
     const handleOpenExternalContent = (e: any) => {
       if (e.detail?.url) {
         setExternalContentUrl(e.detail.url);
         setIsChatVisible(true);
-        setIsDownloadManagerVisible(false);
+        if (!openIfActive()) {
+          setIsDownloadManagerVisible(false);
+        }
       }
     };
     window.addEventListener('open-external-content' as any, handleOpenExternalContent);
 
     return () => {
       window.removeEventListener('download:started' as any, handleDownloadStart);
+      window.removeEventListener('download:update' as any, handleDownloadSignal);
+      window.removeEventListener('download:snapshot' as any, handleDownloadSignal);
       window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
       window.removeEventListener('open-external-content' as any, handleOpenExternalContent);
     };
@@ -292,8 +327,21 @@ const AppContent: React.FC = () => {
   };
 
   const handleCloseDownloadManager = useCallback(() => {
+    suppressDownloadAutoOpenRef.current = true;
     setIsDownloadManagerVisible(false);
   }, []);
+
+  const handleToggleDownloadManager = useCallback(() => {
+    if (isDownloadManagerVisible) {
+      suppressDownloadAutoOpenRef.current = true;
+      setIsDownloadManagerVisible(false);
+      return;
+    }
+
+    suppressDownloadAutoOpenRef.current = false;
+    setIsDownloadManagerVisible(true);
+    void downloadTracker.hydrateFromServer();
+  }, [isDownloadManagerVisible]);
 
   return (
     <>
@@ -307,7 +355,7 @@ const AppContent: React.FC = () => {
         isLogsVisible={isLogsVisible}
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
         isDownloadManagerVisible={isDownloadManagerVisible}
-        onToggleDownloadManager={() => setIsDownloadManagerVisible(!isDownloadManagerVisible)}
+        onToggleDownloadManager={handleToggleDownloadManager}
       />
       <DownloadManager
         isVisible={isDownloadManagerVisible}
