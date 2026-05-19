@@ -1,6 +1,7 @@
 import { DownloadItem } from '../DownloadManager';
 import { serverFetch } from './serverConfig';
 
+const ACTIVE_SERVER_DOWNLOAD_POLL_INTERVAL_MS = 2000;
 const TERMINAL_DOWNLOAD_VISIBILITY_MS = 30000;
 
 export interface DownloadProgressEvent {
@@ -43,6 +44,7 @@ class DownloadTracker {
   private completedDownloadsFinalized = new Set<string>();
   private completedModelDownloadsNotified = new Set<string>();
   private serverPollStarted = false;
+  private serverPollTimer: number | undefined;
   private readonly tabId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   private readonly crossTabChannel?: BroadcastChannel;
 
@@ -120,6 +122,7 @@ class DownloadTracker {
       preExistingBytes: new Map(),
     });
     this.emitUpdate(downloadItem);
+    this.scheduleServerPoll(0);
     // Wake up other tabs immediately. They still hydrate from the server as the
     // source of truth, but no longer need a refresh or a full poll interval to
     // discover that a download has started elsewhere.
@@ -196,6 +199,11 @@ class DownloadTracker {
     const totalPreExistingBytes = Array.from(cumulative.preExistingBytes.values())
       .reduce((sum, bytes) => sum + bytes, 0);
 
+    // A restored tab should not treat bytes downloaded before the restore as
+    // bytes/sec for this renderer session. Preserve the restored baseline and
+    // still honor server-reported resume bytes for genuine resumed downloads.
+    const speedBaselineBytes = Math.max(download.bytesResumed || 0, totalPreExistingBytes);
+
     // Calculate overall percent
     let overallPercent: number;
     if (cumulativeBytesTotal > 0) {
@@ -230,7 +238,7 @@ class DownloadTracker {
       bytesDownloaded: displayBytesDownloaded,
       bytesTotal: cumulativeBytesTotal,
       percent: overallPercent,
-      bytesResumed: totalPreExistingBytes,
+      bytesResumed: speedBaselineBytes,
       status: progress.status ?? download.status,
       running: progress.running ?? download.running,
       error: progress.error ?? download.error,
@@ -250,6 +258,28 @@ class DownloadTracker {
 
   private isServerActive(progress: DownloadProgressEvent): boolean {
     return progress.running === true || progress.status === 'downloading';
+  }
+
+  private getProgressDownloadedBytes(progress: DownloadProgressEvent): number {
+    const serverCumulativeBytes = typeof progress.cumulative_bytes_downloaded === 'number'
+      ? progress.cumulative_bytes_downloaded
+      : (typeof progress.overall_bytes_downloaded === 'number' ? progress.overall_bytes_downloaded : undefined);
+    if (typeof serverCumulativeBytes === 'number') {
+      return Math.max(0, serverCumulativeBytes);
+    }
+
+    const completedFilesBytes = typeof progress.completed_files_bytes === 'number'
+      ? progress.completed_files_bytes
+      : 0;
+    const currentFileBytes = typeof progress.bytes_downloaded === 'number'
+      ? progress.bytes_downloaded
+      : 0;
+    return Math.max(0, completedFilesBytes + currentFileBytes);
+  }
+
+  private hasServerPollWork(downloads?: DownloadProgressEvent[]): boolean {
+    return (downloads ?? Array.from(this.activeDownloads.values()))
+      .some(download => this.isServerActive(download as DownloadProgressEvent));
   }
 
   private reopenIfServerActive(downloadId: string, progress: DownloadProgressEvent): void {
@@ -320,6 +350,9 @@ class DownloadTracker {
       }
 
       this.applyServerDownloads(downloads);
+      if (this.serverPollStarted && this.hasServerPollWork(downloads)) {
+        this.scheduleServerPoll(ACTIVE_SERVER_DOWNLOAD_POLL_INTERVAL_MS);
+      }
       return downloads;
     } catch (error) {
       if (options?.throwOnError) {
@@ -331,10 +364,25 @@ class DownloadTracker {
   }
 
   startServerPolling(): void {
-    if (this.serverPollStarted) return;
     this.serverPollStarted = true;
-    window.setInterval(() => void this.hydrateFromServer(), 2000);
-    void this.hydrateFromServer();
+    this.scheduleServerPoll(0);
+  }
+
+  private scheduleServerPoll(delayMs: number): void {
+    if (typeof window === 'undefined') return;
+    if (this.serverPollTimer !== undefined) return;
+
+    this.serverPollTimer = window.setTimeout(() => {
+      this.serverPollTimer = undefined;
+      void this.pollServerDownloads();
+    }, delayMs);
+  }
+
+  private async pollServerDownloads(): Promise<void> {
+    const downloads = await this.hydrateFromServer();
+    if (this.hasServerPollWork(downloads) || this.hasServerPollWork()) {
+      this.scheduleServerPoll(ACTIVE_SERVER_DOWNLOAD_POLL_INTERVAL_MS);
+    }
   }
 
   // Backwards-compatible name used by existing callers.
@@ -522,6 +570,7 @@ class DownloadTracker {
 
   private ensureDownload(downloadId: string, modelName: string, progress: DownloadProgressEvent): void {
     if (this.activeDownloads.has(downloadId)) return;
+    const restoredBytesDownloaded = this.getProgressDownloadedBytes(progress);
 
     this.activeDownloads.set(downloadId, {
       id: downloadId,
@@ -535,7 +584,7 @@ class DownloadTracker {
       status: progress.status ?? 'downloading',
       error: progress.error,
       startTime: Date.now(),
-      bytesResumed: 0,
+      bytesResumed: restoredBytesDownloaded,
       downloadType: progress.type,
       running: progress.running,
       updatedAt: Date.now(),

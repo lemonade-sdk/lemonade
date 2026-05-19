@@ -148,6 +148,15 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+bool is_quiet_polling_path(const std::string& path) {
+    return path == "/api/v0/downloads" || path == "/api/v1/downloads" ||
+           path == "/v0/downloads" || path == "/v1/downloads" ||
+           path == "/api/v0/system-stats" || path == "/api/v1/system-stats" ||
+           path == "/v0/system-stats" || path == "/v1/system-stats" ||
+           path == "/api/v0/stats" || path == "/api/v1/stats" ||
+           path == "/v0/stats" || path == "/v1/stats";
+}
+
 } // namespace
 
 
@@ -246,11 +255,8 @@ Server::~Server() {
 void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
         req.path != "/v0/health" && req.path != "/v1/health" &&
-        req.path != "/api/v0/system-stats" && req.path != "/api/v1/system-stats" &&
-        req.path != "/v0/system-stats" && req.path != "/v1/system-stats" &&
-        req.path != "/api/v0/stats" && req.path != "/api/v1/stats" &&
-        req.path != "/v0/stats" && req.path != "/v1/stats" &&
-        req.path != "/live") {
+        req.path != "/live" &&
+        !is_quiet_polling_path(req.path)) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
 }
@@ -939,10 +945,7 @@ void Server::setup_http_logger(httplib::Server &web_server) {
         // Skip logging health checks and stats endpoints to reduce log noise
         if (req.path == "/api/v0/health" || req.path == "/api/v1/health" ||
             req.path == "/v0/health" || req.path == "/v1/health" || req.path == "/live" ||
-            req.path == "/api/v0/system-stats" || req.path == "/api/v1/system-stats" ||
-            req.path == "/v0/system-stats" || req.path == "/v1/system-stats" ||
-            req.path == "/api/v0/stats" || req.path == "/api/v1/stats" ||
-            req.path == "/v0/stats" || req.path == "/v1/stats") {
+            is_quiet_polling_path(req.path)) {
             return;
         }
 

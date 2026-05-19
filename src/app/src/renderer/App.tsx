@@ -42,7 +42,7 @@ const AppContent: React.FC = () => {
   const startHeightRef = useRef(0);
   // Auto-open the manager when a tab first discovers active downloads, but
   // respect a user close while those same downloads are still active. Without
-  // this, the 750 ms /downloads poll reopens the panel immediately.
+  // this, the 2 s /downloads poll reopens the panel immediately.
   const suppressDownloadAutoOpenRef = useRef(false);
 
   // Load saved layout settings on mount
