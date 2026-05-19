@@ -1,5 +1,6 @@
 #include "lemon_cli/bench.h"
 #include "lemon_cli/lemonade_client.h"
+#include <CLI/CLI.hpp>
 #include <lemon/utils/path_utils.h>
 #include <algorithm>
 #include <chrono>
@@ -9,7 +10,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <numeric>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -378,15 +378,28 @@ std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client
 // Model Load/Unload
 // ============================================================
 
+// Map recipe name to the recipe_options key for custom args
+static const std::map<std::string, std::string> RECIPE_ARGS_KEY = {
+    {"llamacpp", "llamacpp_args"},
+    {"flm", "flm_args"},
+    {"vllm", "vllm_args"},
+    {"sd-cpp", "sdcpp_args"},
+    {"whispercpp", "whispercpp_args"},
+};
+
 bool load_model_for_backend(lemonade::LemonadeClient& client,
                             const std::string& model,
                             const std::string& recipe,
                             const std::string& backend,
-                            int ctx_size) {
+                            int ctx_size,
+                            const std::string& backend_args) {
     try {
         json request_body;
         request_body["model_name"] = model;
         request_body["save_options"] = false;
+
+        // Always disable merge_args so benchmark args fully override defaults
+        request_body["merge_args"] = false;
 
         // For llamacpp recipe, pass backend override
         if (recipe == "llamacpp") {
@@ -397,9 +410,18 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
             request_body["ctx_size"] = ctx_size;
         }
 
-        std::cout << "  Loading model with " << recipe << "/" << backend
-                  << (ctx_size > 0 ? " (ctx=" + std::to_string(ctx_size) + ")" : "")
-                  << "..." << std::flush;
+        // Pass backend-specific custom args if provided
+        if (!backend_args.empty()) {
+            auto it = RECIPE_ARGS_KEY.find(recipe);
+            if (it != RECIPE_ARGS_KEY.end()) {
+                request_body[it->second] = backend_args;
+            }
+        }
+
+        std::string label = recipe + "/" + backend;
+        if (ctx_size > 0) label += " (ctx=" + std::to_string(ctx_size) + ")";
+        if (!backend_args.empty()) label += " args=[" + backend_args + "]";
+        std::cout << "  Loading model with " << label << "..." << std::flush;
 
         // Long timeout for model loading
         client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
@@ -597,6 +619,9 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
         if (backend_result.ctx_size > 0) {
             backend_label += " (ctx=" + std::to_string(backend_result.ctx_size) + ")";
         }
+        if (!backend_result.backend_args.empty()) {
+            backend_label += " args=[" + backend_result.backend_args + "]";
+        }
         std::cout << "Backend: " << backend_label << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
@@ -661,6 +686,7 @@ json to_json(const std::vector<BenchBackendResult>& results,
         backend_json["recipe"] = backend_result.recipe;
         backend_json["backend"] = backend_result.backend;
         backend_json["ctx_size"] = backend_result.ctx_size;
+        backend_json["backend_args"] = backend_result.backend_args;
 
         json scenarios_json = json::array();
         for (const auto& scenario : backend_result.scenarios) {
@@ -994,43 +1020,59 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     std::vector<BenchBackendResult> all_results;
 
     for (const auto& [recipe, backend] : backends) {
+        // Look up backend-specific args for this recipe
+        // If none specified, use a single empty-string entry so we still iterate once
+        std::vector<std::string> recipe_args_list;
+        auto args_it = config.backend_args.find(recipe);
+        if (args_it != config.backend_args.end() && !args_it->second.empty()) {
+            recipe_args_list = args_it->second;
+        } else {
+            recipe_args_list = {""};  // default: no extra args
+        }
+
+        // Iterate all combinations of ctx_size × backend_args
         for (int ctx_size : ctx_sizes) {
-            std::cout << std::endl;
-            std::cout << "=== " << recipe << "/" << backend
-                      << (ctx_size > 0 ? " (ctx=" + std::to_string(ctx_size) + ")" : "")
-                      << " ===" << std::endl;
+            for (const auto& recipe_args : recipe_args_list) {
+                std::cout << std::endl;
+                std::string header = "=== " + recipe + "/" + backend;
+                if (ctx_size > 0) header += " (ctx=" + std::to_string(ctx_size) + ")";
+                if (!recipe_args.empty()) header += " args=[" + recipe_args + "]";
+                header += " ===";
+                std::cout << header << std::endl;
 
-            // Unload all models before loading
-            unload_all_models(client);
+                // Unload all models before loading
+                unload_all_models(client);
 
-            // Load model for this backend
-            if (!load_model_for_backend(client, config.model, recipe, backend, ctx_size)) {
-                std::cerr << "Warning: Skipping " << recipe << "/" << backend
-                          << " - model failed to load." << std::endl;
-                continue;
+                // Load model for this backend
+                if (!load_model_for_backend(client, config.model, recipe, backend, ctx_size, recipe_args)) {
+                    std::cerr << "Warning: Skipping " << recipe << "/" << backend
+                              << " - model failed to load." << std::endl;
+                    continue;
+                }
+
+                BenchBackendResult backend_result;
+                backend_result.recipe = recipe;
+                backend_result.backend = backend;
+                backend_result.ctx_size = ctx_size;
+                backend_result.backend_args = recipe_args;
+
+                for (const auto& scenario : scenarios) {
+                    std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
+
+                    int warmup = scenario.warmup_runs;
+                    int runs = scenario.measurement_runs;
+
+                    // Allow config overrides
+                    if (config.warmup_runs > 0) warmup = config.warmup_runs;
+                    if (config.measurement_runs > 0) runs = config.measurement_runs;
+
+                    auto scenario_result = run_scenario(client, config.model, scenario, warmup, runs,
+                                                        config.memory_tracking);
+                    backend_result.scenarios.push_back(scenario_result);
+                }
+
+                all_results.push_back(backend_result);
             }
-
-            BenchBackendResult backend_result;
-            backend_result.recipe = recipe;
-            backend_result.backend = backend;
-            backend_result.ctx_size = ctx_size;
-
-            for (const auto& scenario : scenarios) {
-                std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
-
-                int warmup = scenario.warmup_runs;
-                int runs = scenario.measurement_runs;
-
-                // Allow config overrides
-                if (config.warmup_runs > 0) warmup = config.warmup_runs;
-                if (config.measurement_runs > 0) runs = config.measurement_runs;
-
-                auto scenario_result = run_scenario(client, config.model, scenario, warmup, runs,
-                                                     config.memory_tracking);
-                backend_result.scenarios.push_back(scenario_result);
-            }
-
-            all_results.push_back(backend_result);
         }
     }
 
@@ -1111,6 +1153,104 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     unload_all_models(client);
 
     return 0;
+}
+
+// ============================================================
+// CLI helpers
+// ============================================================
+
+CLI::App* register_bench_command(CLI::App& parent,
+                                 std::string& model,
+                                 std::string& output_file,
+                                 BenchCliOptions& opts) {
+    CLI::App* cmd = parent.add_subcommand("bench", "Benchmark a model's chat completion performance")->group("Model management");
+    cmd->add_option("model", model, "Model name to benchmark")->required()->type_name("MODEL");
+    cmd->add_option("--backend", opts.backends, "Backend to test (e.g., vulkan, metal, cpu). Repeat for multiple.")
+        ->type_name("BACKEND")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--ctx-size", opts.ctx_sizes, "Context size to test. Repeat for multiple sizes.")
+        ->type_name("SIZE")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--runs", opts.runs, "Number of measurement runs per scenario (default: 3)")->type_name("N");
+    cmd->add_option("--warmup", opts.warmup, "Number of warmup runs per scenario (default: 1)")->type_name("N");
+    cmd->add_option("--scenarios", opts.scenario_names,
+        "Comma-separated scenario names to run. Default: all loaded scenarios.")
+        ->type_name("LIST")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--scenario-file", opts.scenario_file, "Load scenarios from a single JSON file")->type_name("FILE");
+    cmd->add_option("--scenario-dir", opts.scenario_dir, "Load all .json scenario files from a directory")->type_name("DIR");
+    cmd->add_flag("--json", opts.json_output, "Output results as JSON");
+    cmd->add_option("--output", output_file, "Write results to file (in addition to stdout)")->type_name("FILE");
+    cmd->add_option("--compare", opts.compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
+    cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
+    cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
+    cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--flm-args", opts.flm_args, "Custom args for flm serve. Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--vllm-args", opts.vllm_args, "Custom args for vllm-server. Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--sdcpp-args", opts.sdcpp_args, "Custom args for sd-server. Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    cmd->add_option("--whispercpp-args", opts.whispercpp_args, "Custom args for whisper-server. Repeat for multiple.")
+        ->type_name("ARGS")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    return cmd;
+}
+
+std::vector<std::string> split_scenario_names(const std::vector<std::string>& raw) {
+    std::vector<std::string> names;
+    for (const auto& entry : raw) {
+        std::string current = entry;
+        size_t pos = 0;
+        while ((pos = current.find(',')) != std::string::npos) {
+            std::string token = current.substr(0, pos);
+            size_t start = token.find_first_not_of(" \t");
+            size_t end = token.find_last_not_of(" \t");
+            if (start != std::string::npos) {
+                names.push_back(token.substr(start, end - start + 1));
+            }
+            current = current.substr(pos + 1);
+        }
+        if (!current.empty()) {
+            size_t start = current.find_first_not_of(" \t");
+            size_t end = current.find_last_not_of(" \t");
+            if (start != std::string::npos) {
+                names.push_back(current.substr(start, end - start + 1));
+            }
+        }
+    }
+    return names;
+}
+
+BenchConfig build_bench_config(const std::string& model,
+                               const std::string& output_file,
+                               const BenchCliOptions& cli) {
+    BenchConfig config;
+    config.model = model;
+    config.backends = cli.backends;
+    config.ctx_sizes = cli.ctx_sizes;
+    config.warmup_runs = cli.warmup;
+    config.measurement_runs = cli.runs;
+    config.json_output = cli.json_output;
+    config.output_file = output_file;
+    config.scenario_file = cli.scenario_file;
+    config.scenario_dir = cli.scenario_dir;
+    config.auto_pull = cli.auto_pull;
+    config.memory_tracking = !cli.no_memory;
+    config.compare_file = cli.compare_file;
+    config.scenario_names = split_scenario_names(cli.scenario_names);
+    // Populate backend-specific args map (only non-empty values)
+    if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
+    if (!cli.flm_args.empty()) config.backend_args["flm"] = cli.flm_args;
+    if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
+    if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
+    if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
+    return config;
 }
 
 } // namespace lemon_cli

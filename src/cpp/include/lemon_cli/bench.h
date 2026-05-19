@@ -1,6 +1,7 @@
 #ifndef LEMON_CLI_BENCH_H
 #define LEMON_CLI_BENCH_H
 
+#include <map>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -8,6 +9,8 @@
 namespace lemonade {
     class LemonadeClient;
 }
+
+namespace CLI { class App; }
 
 namespace lemon_cli {
 
@@ -61,6 +64,7 @@ struct BenchBackendResult {
     std::string recipe;         // e.g., "llamacpp"
     std::string backend;        // e.g., "vulkan", "metal", "cpu"
     int ctx_size = 0;
+    std::string backend_args;   // Custom args passed to the backend (e.g., "--threads 8")
     std::vector<BenchScenarioResult> scenarios;
 };
 
@@ -107,7 +111,8 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
                             const std::string& model,
                             const std::string& recipe,
                             const std::string& backend,
-                            int ctx_size);
+                            int ctx_size,
+                            const std::string& backend_args);
 
 // Unload all models
 bool unload_all_models(lemonade::LemonadeClient& client);
@@ -131,6 +136,30 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  bool memory_tracking);
 
 // ============================================================
+// CLI Options (raw values parsed by CLI11 in main.cpp)
+// ============================================================
+
+struct BenchCliOptions {
+    std::vector<std::string> backends;
+    std::vector<int> ctx_sizes;
+    int runs = 3;
+    int warmup = 1;
+    std::vector<std::string> scenario_names;
+    std::string scenario_file;
+    std::string scenario_dir;
+    bool json_output = false;
+    bool auto_pull = false;
+    bool no_memory = false;
+    std::string compare_file;
+    // Backend-specific custom args (repeatable for multiple comparisons)
+    std::vector<std::string> llamacpp_args;
+    std::vector<std::string> flm_args;
+    std::vector<std::string> vllm_args;
+    std::vector<std::string> sdcpp_args;
+    std::vector<std::string> whispercpp_args;
+};
+
+// ============================================================
 // Main Bench Handler
 // ============================================================
 
@@ -148,10 +177,28 @@ struct BenchConfig {
     bool auto_pull = false;
     bool memory_tracking = true;
     std::string compare_file;
+    // Backend-specific custom args (keyed by recipe name: "llamacpp", "flm", "vllm", "sd-cpp", "whispercpp")
+    // Each recipe can have multiple arg sets; all combinations are benchmarked.
+    std::map<std::string, std::vector<std::string>> backend_args;
 };
 
 // Main entry point for bench command
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config);
+
+// Build BenchConfig from raw CLI options and model name
+BenchConfig build_bench_config(const std::string& model,
+                               const std::string& output_file,
+                               const BenchCliOptions& cli);
+
+// Split comma-separated scenario names into a vector
+std::vector<std::string> split_scenario_names(const std::vector<std::string>& raw);
+
+// Register all bench subcommand options with CLI11.
+// Returns the created subcommand pointer.
+CLI::App* register_bench_command(CLI::App& parent,
+                                 std::string& model,
+                                 std::string& output_file,
+                                 BenchCliOptions& opts);
 
 // ============================================================
 // Output Formatting

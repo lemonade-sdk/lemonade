@@ -163,17 +163,7 @@ struct CliConfig {
     std::string agent_args;
 
     // Bench command options
-    std::vector<std::string> bench_backends;
-    std::vector<int> bench_ctx_sizes;
-    int bench_runs = 3;
-    int bench_warmup = 1;
-    std::vector<std::string> bench_scenario_names;
-    std::string bench_scenario_file;
-    std::string bench_scenario_dir;
-    bool bench_json_output = false;
-    bool bench_auto_pull = false;
-    bool bench_no_memory = false;
-    std::string bench_compare_file;
+    lemon_cli::BenchCliOptions bench;
 };
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
@@ -1180,27 +1170,7 @@ int main(int argc, char* argv[]) {
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
     // Bench command
-    CLI::App* bench_cmd = app.add_subcommand("bench", "Benchmark a model's chat completion performance")->group("Model management");
-    bench_cmd->add_option("model", config.model, "Model name to benchmark")->required()->type_name("MODEL");
-    bench_cmd->add_option("--backend", config.bench_backends, "Backend to test (e.g., vulkan, metal, cpu). Repeat for multiple.")
-        ->type_name("BACKEND")
-        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    bench_cmd->add_option("--ctx-size", config.bench_ctx_sizes, "Context size to test. Repeat for multiple sizes.")
-        ->type_name("SIZE")
-        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    bench_cmd->add_option("--runs", config.bench_runs, "Number of measurement runs per scenario (default: 3)")->type_name("N");
-    bench_cmd->add_option("--warmup", config.bench_warmup, "Number of warmup runs per scenario (default: 1)")->type_name("N");
-    bench_cmd->add_option("--scenarios", config.bench_scenario_names,
-        "Comma-separated scenario names to run. Default: all loaded scenarios.")
-        ->type_name("LIST")
-        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    bench_cmd->add_option("--scenario-file", config.bench_scenario_file, "Load scenarios from a single JSON file")->type_name("FILE");
-    bench_cmd->add_option("--scenario-dir", config.bench_scenario_dir, "Load all .json scenario files from a directory")->type_name("DIR");
-    bench_cmd->add_flag("--json", config.bench_json_output, "Output results as JSON");
-    bench_cmd->add_option("--output", config.output_file, "Write results to file (in addition to stdout)")->type_name("FILE");
-    bench_cmd->add_option("--compare", config.bench_compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
-    bench_cmd->add_flag("--auto-pull", config.bench_auto_pull, "Automatically pull the model if not downloaded");
-    bench_cmd->add_flag("--no-memory", config.bench_no_memory, "Disable VRAM/RAM tracking");
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.model, config.output_file, config.bench);
 
     // Parse arguments
     try {
@@ -1298,41 +1268,7 @@ int main(int argc, char* argv[]) {
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
     } else if (bench_cmd->count() > 0) {
-        lemon_cli::BenchConfig bench_config;
-        bench_config.model = config.model;
-        bench_config.backends = config.bench_backends;
-        bench_config.ctx_sizes = config.bench_ctx_sizes;
-        bench_config.warmup_runs = config.bench_warmup;
-        bench_config.measurement_runs = config.bench_runs;
-        bench_config.json_output = config.bench_json_output;
-        bench_config.output_file = config.output_file;
-        bench_config.scenario_file = config.bench_scenario_file;
-        bench_config.scenario_dir = config.bench_scenario_dir;
-        bench_config.auto_pull = config.bench_auto_pull;
-        bench_config.memory_tracking = !config.bench_no_memory;
-        bench_config.compare_file = config.bench_compare_file;
-        // Split comma-separated scenario names
-        for (const auto& entry : config.bench_scenario_names) {
-            std::string current = entry;
-            size_t pos = 0;
-            while ((pos = current.find(',')) != std::string::npos) {
-                std::string token = current.substr(0, pos);
-                // Trim whitespace
-                size_t start = token.find_first_not_of(" \t");
-                size_t end = token.find_last_not_of(" \t");
-                if (start != std::string::npos) {
-                    bench_config.scenario_names.push_back(token.substr(start, end - start + 1));
-                }
-                current = current.substr(pos + 1);
-            }
-            if (!current.empty()) {
-                size_t start = current.find_first_not_of(" \t");
-                size_t end = current.find_last_not_of(" \t");
-                if (start != std::string::npos) {
-                    bench_config.scenario_names.push_back(current.substr(start, end - start + 1));
-                }
-            }
-        }
+        auto bench_config = lemon_cli::build_bench_config(config.model, config.output_file, config.bench);
         return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
