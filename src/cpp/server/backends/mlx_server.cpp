@@ -3,6 +3,7 @@
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <cctype>
@@ -94,6 +95,14 @@ static std::vector<std::string> tokenize_quoted_args(const std::string& input) {
     return tokens;
 }
 
+static json with_legacy_token_limit(const json& request) {
+    json modified = request;
+    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
+        modified["max_tokens"] = modified["max_completion_tokens"];
+    }
+    return modified;
+}
+
 InstallParams MlxServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
     params.repo = "lemonade-sdk/lemon-mlx-engine";
@@ -176,8 +185,8 @@ void MlxServer::load(const std::string& model_name,
     // model argument onto huggingface.co/api/models/, so an absolute
     // filesystem path produces a 404 like
     //   huggingface.co/api/models//home/.../hf-cache/...
-    // HF_HOME is honored by the lemon-mlx process, so a previously
-    // downloaded model is still resolved from the local cache. The
+    // The configured Hugging Face cache is passed to the lemon-mlx process
+    // below, so a previously downloaded model is still resolved locally. The
     // resolved_path remains as a fallback for setups where the checkpoint
     // field is empty (rare; future custom-model recipes).
     std::string model_ref = model_info.checkpoint();
@@ -217,6 +226,11 @@ void MlxServer::load(const std::string& model_name,
     LOG(INFO, "MLX") << "Starting lemon-mlx server..." << std::endl;
 
     std::vector<std::pair<std::string, std::string>> env_vars;
+    std::string hf_cache_dir = get_hf_cache_dir();
+    if (!hf_cache_dir.empty()) {
+        env_vars.push_back({"HF_HUB_CACHE", hf_cache_dir});
+        LOG(DEBUG, "MLX") << "Setting HF_HUB_CACHE=" << hf_cache_dir << std::endl;
+    }
 #ifdef __linux__
     // Both Linux variants bundle their runtime libs next to the server binary
     // and the binary has no DT_RUNPATH, so without LD_LIBRARY_PATH the loader
@@ -264,25 +278,31 @@ void MlxServer::unload() {
 json MlxServer::chat_completion(const json& request) {
     // OpenAI introduced `max_completion_tokens` to replace `max_tokens`
     // (Sep 2024). MLX only understands the older name.
-    json modified = request;
-    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
-        modified["max_tokens"] = modified["max_completion_tokens"];
-    }
-    return forward_request("/v1/chat/completions", modified);
+    return forward_request("/v1/chat/completions", with_legacy_token_limit(request));
 }
 
 json MlxServer::completion(const json& request) {
-    json modified = request;
-    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
-        modified["max_tokens"] = modified["max_completion_tokens"];
-    }
-    return forward_request("/v1/completions", modified);
+    return forward_request("/v1/completions", with_legacy_token_limit(request));
 }
 
 json MlxServer::responses(const json& request) {
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "lemon-mlx")
     );
+}
+
+void MlxServer::forward_streaming_request(const std::string& endpoint,
+                                          const std::string& request_body,
+                                          httplib::DataSink& sink,
+                                          bool sse,
+                                          long timeout_seconds) {
+    try {
+        json request = json::parse(request_body);
+        std::string modified_body = with_legacy_token_limit(request).dump();
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds);
+    } catch (const json::exception&) {
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds);
+    }
 }
 
 } // namespace backends
