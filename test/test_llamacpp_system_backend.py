@@ -275,6 +275,8 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         print(f"\n=== Starting test: {self._testMethodName} ===")
         _stop_server()
         os.environ.pop("MOCK_LLAMA_REQUEST_PATH", None)
+        os.environ.pop("MOCK_LLAMA_ERROR_STATUS", None)
+        os.environ.pop("MOCK_LLAMA_ERROR_RESPONSE", None)
         os.environ["PATH"] = self.original_path  # Ensure PATH is clean before each test
         self._write_llama_server(
             DUMMY_LLAMA_SERVER_WINDOWS
