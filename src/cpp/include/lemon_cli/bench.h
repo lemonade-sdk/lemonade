@@ -66,6 +66,9 @@ struct BenchBackendResult {
     int ctx_size = 0;
     std::string backend_args;   // Custom args passed to the backend (e.g., "--threads 8")
     std::vector<BenchScenarioResult> scenarios;
+
+    // Human-readable label: "recipe/backend (ctx=N) args=[...]"
+    std::string label() const;
 };
 
 // ============================================================
@@ -189,9 +192,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 BenchConfig build_bench_config(const std::string& model,
                                const std::string& output_file,
                                const BenchCliOptions& cli);
-
-// Split comma-separated scenario names into a vector
-std::vector<std::string> split_scenario_names(const std::vector<std::string>& raw);
 
 // Register all bench subcommand options with CLI11.
 // Returns the created subcommand pointer.

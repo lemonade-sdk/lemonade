@@ -143,6 +143,13 @@ int BenchScenarioResult::output_tokens() const {
     return runs.empty() ? 0 : runs[0].output_tokens;
 }
 
+std::string BenchBackendResult::label() const {
+    std::string s = recipe + "/" + backend;
+    if (ctx_size > 0) s += " (ctx=" + std::to_string(ctx_size) + ")";
+    if (!backend_args.empty()) s += " args=[" + backend_args + "]";
+    return s;
+}
+
 // ============================================================
 // Scenario Loading
 // ============================================================
@@ -418,10 +425,12 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
             }
         }
 
-        std::string label = recipe + "/" + backend;
-        if (ctx_size > 0) label += " (ctx=" + std::to_string(ctx_size) + ")";
-        if (!backend_args.empty()) label += " args=[" + backend_args + "]";
-        std::cout << "  Loading model with " << label << "..." << std::flush;
+        BenchBackendResult tmp;
+        tmp.recipe = recipe;
+        tmp.backend = backend;
+        tmp.ctx_size = ctx_size;
+        tmp.backend_args = backend_args;
+        std::cout << "  Loading model with " << tmp.label() << "..." << std::flush;
 
         // Long timeout for model loading
         client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
@@ -596,6 +605,20 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
 // Output Formatting
 // ============================================================
 
+// Write JSON to file. Returns true on success, false on error (with stderr message).
+// If error_fatal is true, the error message says "Error"; otherwise "Warning".
+static bool write_json_file(const std::string& path, const std::string& json_str, bool error_fatal) {
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        std::cerr << (error_fatal ? "Error" : "Warning")
+                  << ": Could not write to " << path << std::endl;
+        return false;
+    }
+    out << json_str;
+    out.close();
+    return true;
+}
+
 static std::string fmt_double(double val, int precision = 1) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(precision) << val;
@@ -607,6 +630,33 @@ static std::string fmt_vram(double val) {
     return fmt_double(val, 1);
 }
 
+static std::string fmt_pct_change(double pct) {
+    std::ostringstream oss;
+    oss << (pct >= 0 ? "+" : "") << std::fixed << std::setprecision(1) << pct << "%";
+    return oss.str();
+}
+
+static std::string fmt_vram_change(double val) {
+    if (val < 0) return "-";
+    return "+" + fmt_double(val) + " GB";
+}
+
+static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles) {
+    double ttft_1 = use_percentiles ? scenario.ttft_p50_ms() : scenario.ttft_min_ms();
+    double ttft_2 = use_percentiles ? scenario.ttft_p95_ms() : scenario.ttft_max_ms();
+    double tps_1 = use_percentiles ? scenario.tps_p50() : scenario.tps_min();
+    double tps_2 = use_percentiles ? scenario.tps_p95() : scenario.tps_max();
+    std::cout << std::left << std::setw(20) << scenario.scenario_name
+              << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
+              << std::setw(8) << fmt_double(ttft_1)
+              << std::setw(8) << fmt_double(ttft_2)
+              << std::setw(8) << fmt_double(scenario.tps_mean())
+              << std::setw(8) << fmt_double(tps_1)
+              << std::setw(8) << fmt_double(tps_2)
+              << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
+              << std::endl;
+}
+
 void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
                  bool use_percentiles) {
     std::cout << std::endl;
@@ -615,52 +665,22 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
 
     for (const auto& backend_result : results) {
         std::cout << std::endl;
-        std::string backend_label = backend_result.recipe + "/" + backend_result.backend;
-        if (backend_result.ctx_size > 0) {
-            backend_label += " (ctx=" + std::to_string(backend_result.ctx_size) + ")";
-        }
-        if (!backend_result.backend_args.empty()) {
-            backend_label += " args=[" + backend_result.backend_args + "]";
-        }
-        std::cout << "Backend: " << backend_label << std::endl;
+        std::cout << "Backend: " << backend_result.label() << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
         // Header — show min/max by default, switch to p50/p95 when runs >= 10
-        if (use_percentiles) {
-            std::cout << std::left << std::setw(20) << "Scenario"
-                      << std::setw(8) << "TTFT" << std::setw(8) << "p50" << std::setw(8) << "p95"
-                      << std::setw(8) << "TPS" << std::setw(8) << "p50" << std::setw(8) << "p95"
-                      << std::setw(8) << "VRAM (GB)" << std::endl;
-        } else {
-            std::cout << std::left << std::setw(20) << "Scenario"
-                      << std::setw(8) << "TTFT" << std::setw(8) << "min" << std::setw(8) << "max"
-                      << std::setw(8) << "TPS" << std::setw(8) << "min" << std::setw(8) << "max"
-                      << std::setw(8) << "VRAM (GB)" << std::endl;
-        }
+        std::cout << std::left << std::setw(20) << "Scenario"
+                  << std::setw(8) << "TTFT"
+                  << std::setw(8) << (use_percentiles ? "p50" : "min")
+                  << std::setw(8) << (use_percentiles ? "p95" : "max")
+                  << std::setw(8) << "TPS"
+                  << std::setw(8) << (use_percentiles ? "p50" : "min")
+                  << std::setw(8) << (use_percentiles ? "p95" : "max")
+                  << std::setw(8) << "VRAM (GB)" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
         for (const auto& scenario : backend_result.scenarios) {
-            if (use_percentiles) {
-                std::cout << std::left << std::setw(20) << scenario.scenario_name
-                          << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
-                          << std::setw(8) << fmt_double(scenario.ttft_p50_ms())
-                          << std::setw(8) << fmt_double(scenario.ttft_p95_ms())
-                          << std::setw(8) << fmt_double(scenario.tps_mean())
-                          << std::setw(8) << fmt_double(scenario.tps_p50())
-                          << std::setw(8) << fmt_double(scenario.tps_p95())
-                          << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
-                          << std::endl;
-            } else {
-                std::cout << std::left << std::setw(20) << scenario.scenario_name
-                          << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
-                          << std::setw(8) << fmt_double(scenario.ttft_min_ms())
-                          << std::setw(8) << fmt_double(scenario.ttft_max_ms())
-                          << std::setw(8) << fmt_double(scenario.tps_mean())
-                          << std::setw(8) << fmt_double(scenario.tps_min())
-                          << std::setw(8) << fmt_double(scenario.tps_max())
-                          << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
-                          << std::endl;
-            }
+            print_scenario_row(scenario, use_percentiles);
         }
     }
 
@@ -868,26 +888,11 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
         std::cout << std::string(80, '-') << std::endl;
 
         for (const auto* d : backend_deltas) {
-            std::string ttft_str, tps_str, vram_str;
+            std::string ttft_str = "-", tps_str = "-", vram_str = "-";
             if (d->status == "matched") {
-                std::ostringstream ttft_oss, tps_oss;
-                ttft_oss << (d->ttft_pct_change >= 0 ? "+" : "") << std::fixed << std::setprecision(1)
-                         << d->ttft_pct_change << "%";
-                tps_oss << (d->tps_pct_change >= 0 ? "+" : "") << std::fixed << std::setprecision(1)
-                        << d->tps_pct_change << "%";
-                ttft_str = ttft_oss.str();
-                tps_str = tps_oss.str();
-                vram_str = d->vram_gb_change >= 0
-                    ? ((d->vram_gb_change >= 0) ? "+" : "") + fmt_double(d->vram_gb_change) + " GB"
-                    : "-";
-            } else if (d->status == "new") {
-                ttft_str = "-";
-                tps_str = "-";
-                vram_str = "-";
-            } else {
-                ttft_str = "-";
-                tps_str = "-";
-                vram_str = "-";
+                ttft_str = fmt_pct_change(d->ttft_pct_change);
+                tps_str = fmt_pct_change(d->tps_pct_change);
+                vram_str = fmt_vram_change(d->vram_gb_change);
             }
 
             std::cout << std::left << std::setw(22) << d->scenario
@@ -1033,12 +1038,12 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         // Iterate all combinations of ctx_size × backend_args
         for (int ctx_size : ctx_sizes) {
             for (const auto& recipe_args : recipe_args_list) {
-                std::cout << std::endl;
-                std::string header = "=== " + recipe + "/" + backend;
-                if (ctx_size > 0) header += " (ctx=" + std::to_string(ctx_size) + ")";
-                if (!recipe_args.empty()) header += " args=[" + recipe_args + "]";
-                header += " ===";
-                std::cout << header << std::endl;
+                BenchBackendResult tmp;
+                tmp.recipe = recipe;
+                tmp.backend = backend;
+                tmp.ctx_size = ctx_size;
+                tmp.backend_args = recipe_args;
+                std::cout << "\n=== " << tmp.label() << " ===" << std::endl;
 
                 // Unload all models before loading
                 unload_all_models(client);
@@ -1088,15 +1093,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             json output = to_json(all_results, config.model, config);
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
-                std::ofstream out(config.output_file);
-                if (out.is_open()) {
-                    out << json_str;
-                    out.close();
-                    std::cout << "Results written to " << config.output_file << std::endl;
-                } else {
-                    std::cerr << "Error: Could not write to " << config.output_file << std::endl;
-                    return 1;
-                }
+                if (!write_json_file(config.output_file, json_str, true)) return 1;
+                std::cout << "Results written to " << config.output_file << std::endl;
             } else {
                 std::cout << json_str << std::endl;
             }
@@ -1104,13 +1102,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             print_table(all_results, config.model, config.measurement_runs >= 10);
             if (!config.output_file.empty()) {
                 json output = to_json(all_results, config.model, config);
-                std::ofstream out(config.output_file);
-                if (out.is_open()) {
-                    out << output.dump(2);
-                    out.close();
+                if (write_json_file(config.output_file, output.dump(2), false)) {
                     std::cout << "JSON results also written to " << config.output_file << std::endl;
-                } else {
-                    std::cerr << "Warning: Could not write JSON to " << config.output_file << std::endl;
                 }
             }
         }
@@ -1129,15 +1122,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                                                  previous_results, deltas);
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
-                std::ofstream out(config.output_file);
-                if (out.is_open()) {
-                    out << json_str;
-                    out.close();
-                    std::cout << "Results written to " << config.output_file << std::endl;
-                } else {
-                    std::cerr << "Error: Could not write to " << config.output_file << std::endl;
-                    return 1;
-                }
+                if (!write_json_file(config.output_file, json_str, true)) return 1;
+                std::cout << "Results written to " << config.output_file << std::endl;
             } else {
                 std::cout << json_str << std::endl;
             }
@@ -1174,8 +1160,8 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--runs", opts.runs, "Number of measurement runs per scenario (default: 3)")->type_name("N");
     cmd->add_option("--warmup", opts.warmup, "Number of warmup runs per scenario (default: 1)")->type_name("N");
     cmd->add_option("--scenarios", opts.scenario_names,
-        "Comma-separated scenario names to run. Default: all loaded scenarios.")
-        ->type_name("LIST")
+        "Scenario name(s) to run. Repeat for multiple. Default: all loaded scenarios.")
+        ->type_name("NAME")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--scenario-file", opts.scenario_file, "Load scenarios from a single JSON file")->type_name("FILE");
     cmd->add_option("--scenario-dir", opts.scenario_dir, "Load all .json scenario files from a directory")->type_name("DIR");
@@ -1202,31 +1188,6 @@ CLI::App* register_bench_command(CLI::App& parent,
     return cmd;
 }
 
-std::vector<std::string> split_scenario_names(const std::vector<std::string>& raw) {
-    std::vector<std::string> names;
-    for (const auto& entry : raw) {
-        std::string current = entry;
-        size_t pos = 0;
-        while ((pos = current.find(',')) != std::string::npos) {
-            std::string token = current.substr(0, pos);
-            size_t start = token.find_first_not_of(" \t");
-            size_t end = token.find_last_not_of(" \t");
-            if (start != std::string::npos) {
-                names.push_back(token.substr(start, end - start + 1));
-            }
-            current = current.substr(pos + 1);
-        }
-        if (!current.empty()) {
-            size_t start = current.find_first_not_of(" \t");
-            size_t end = current.find_last_not_of(" \t");
-            if (start != std::string::npos) {
-                names.push_back(current.substr(start, end - start + 1));
-            }
-        }
-    }
-    return names;
-}
-
 BenchConfig build_bench_config(const std::string& model,
                                const std::string& output_file,
                                const BenchCliOptions& cli) {
@@ -1243,7 +1204,7 @@ BenchConfig build_bench_config(const std::string& model,
     config.auto_pull = cli.auto_pull;
     config.memory_tracking = !cli.no_memory;
     config.compare_file = cli.compare_file;
-    config.scenario_names = split_scenario_names(cli.scenario_names);
+    config.scenario_names = cli.scenario_names;
     // Populate backend-specific args map (only non-empty values)
     if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
     if (!cli.flm_args.empty()) config.backend_args["flm"] = cli.flm_args;
