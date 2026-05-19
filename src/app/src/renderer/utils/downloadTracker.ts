@@ -43,6 +43,7 @@ class DownloadTracker {
   private dismissedDownloads = new Set<string>();
   private completedDownloadsFinalized = new Set<string>();
   private completedModelDownloadsNotified = new Set<string>();
+  private completedBackendDownloadsNotified = new Set<string>();
   private serverPollStarted = false;
   private serverPollTimer: number | undefined;
   private readonly tabId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -88,7 +89,7 @@ class DownloadTracker {
       }
     }
 
-    const downloadId = downloadType === 'model'
+    const downloadId = downloadType === 'model' || downloadType === 'backend'
       ? this.getStableDownloadId(modelName, downloadType)
       : `${modelName}-${Date.now()}`;
 
@@ -109,13 +110,14 @@ class DownloadTracker {
       collectionComponents,
       declaredTotalBytes,
       bytesTotalIsLowerBound: false,
-      running: downloadType === 'model' ? true : undefined,
+      running: downloadType === 'model' || downloadType === 'backend' ? true : undefined,
       updatedAt: Date.now(),
     };
 
     this.dismissedDownloads.delete(downloadId);
     this.completedDownloadsFinalized.delete(downloadId);
     this.completedModelDownloadsNotified.delete(downloadId);
+    this.completedBackendDownloadsNotified.delete(downloadId);
     this.activeDownloads.set(downloadId, downloadItem);
     this.cumulativeData.set(downloadId, {
       completedFilesBytes: 0,
@@ -331,6 +333,7 @@ class DownloadTracker {
 
     if ((progress.status === 'completed' || progress.complete) && progress.running !== true) {
       this.emitModelsUpdatedOnce(downloadId, progress);
+      this.emitBackendUpdatedOnce(downloadId, progress);
       this.completeDownload(downloadId);
     }
   }
@@ -344,7 +347,7 @@ class DownloadTracker {
     downloads.forEach(download => this.applyServerDownload(download));
 
     for (const [id, download] of Array.from(this.activeDownloads.entries())) {
-      if (!id.startsWith('model:') || serverIds.has(id)) continue;
+      if (!(id.startsWith('model:') || id.startsWith('backend:')) || serverIds.has(id)) continue;
 
       const localOwnerIsGone = !download.abortController || download.abortController.signal.aborted;
       const localRowIsNotActivelyDownloading = download.status !== 'downloading';
@@ -587,6 +590,14 @@ class DownloadTracker {
     window.dispatchEvent(new CustomEvent('modelsUpdated'));
   }
 
+  private emitBackendUpdatedOnce(downloadId: string, progress: DownloadProgressEvent): void {
+    const downloadType = progress.type ?? this.activeDownloads.get(downloadId)?.downloadType;
+    if (downloadType !== 'backend' || this.completedBackendDownloadsNotified.has(downloadId)) return;
+
+    this.completedBackendDownloadsNotified.add(downloadId);
+    window.dispatchEvent(new CustomEvent('backendsUpdated'));
+  }
+
   private ensureDownload(downloadId: string, modelName: string, progress: DownloadProgressEvent): void {
     if (this.activeDownloads.has(downloadId)) return;
     const restoredBytesDownloaded = this.getProgressDownloadedBytes(progress);
@@ -643,6 +654,7 @@ class DownloadTracker {
     this.cumulativeData.delete(downloadId);
     this.completedDownloadsFinalized.delete(downloadId);
     this.completedModelDownloadsNotified.delete(downloadId);
+    this.completedBackendDownloadsNotified.delete(downloadId);
     if (broadcast) {
       this.postCrossTabMessage({ type: 'remove', id: downloadId, modelName });
     }

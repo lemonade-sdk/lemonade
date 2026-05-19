@@ -240,7 +240,22 @@ namespace lemon::backends {
         if (backend == "system") {
             return "";
         }
-        std::string install_dir = get_install_directory(spec.recipe, backend);
+
+        // Normalize the public rocm backend name to the configured channel before
+        // reading version.txt. get_backend_binary_path() already does this when
+        // locating the executable; version detection must use the same install
+        // directory or ROCm backends remain stuck in update_required after a
+        // successful install.
+        std::string resolved_backend = backend;
+        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+            std::string channel = "stable";
+            if (auto* cfg = RuntimeConfig::global()) {
+                channel = cfg->rocm_channel_for_recipe(spec.recipe);
+            }
+            resolved_backend = "rocm-" + channel;
+        }
+
+        std::string install_dir = get_install_directory(spec.recipe, resolved_backend);
         return get_version_file(install_dir);
     }
 
@@ -301,6 +316,15 @@ namespace lemon::backends {
                     needs_install = true;
                     fs::remove_all(install_dir);
                 }
+            } else if (!needs_install && !expected_version.empty()) {
+                // If the executable exists but version.txt is missing, SystemInfo
+                // reports update_required because it cannot prove the installed
+                // binary matches the current Lemonade baseline. Treat this like a
+                // version mismatch rather than a 0B no-op completion.
+                LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
+                        << spec.binary << " version " << expected_version << std::endl;
+                needs_install = true;
+                fs::remove_all(install_dir);
             }
         }
 

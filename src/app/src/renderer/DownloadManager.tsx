@@ -171,11 +171,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
   };
 
-  const isModelDownloadId = (downloadId?: string): boolean => downloadId?.startsWith('model:') === true;
+  const isServerDownloadId = (downloadId?: string): boolean =>
+    downloadId?.startsWith('model:') === true || downloadId?.startsWith('backend:') === true;
 
   const usesServerDownloadControl = (download: DownloadItem | undefined, downloadId?: string): boolean => {
-    // TODO: Backend downloads remain renderer-owned until the follow-up PR wires them into the server registry.
-    return download?.downloadType === 'model' || isModelDownloadId(download?.id ?? downloadId);
+    return download?.downloadType === 'model' ||
+      download?.downloadType === 'backend' ||
+      isServerDownloadId(download?.id ?? downloadId);
   };
 
   const hasLocalDownloadOwner = (download: DownloadItem): boolean => {
