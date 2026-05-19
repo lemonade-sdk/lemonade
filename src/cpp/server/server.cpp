@@ -112,6 +112,42 @@ bool prepend_no_think_to_last_user_message(json& request_json) {
     return false;
 }
 
+bool valid_error_status(int status_code) {
+    return status_code >= 400 && status_code <= 599;
+}
+
+int get_error_status_code(const json& response, int default_status_code = 500) {
+    if (!response.contains("error") || !response["error"].is_object()) {
+        return default_status_code;
+    }
+
+    const auto& error = response["error"];
+    if (error.contains("status_code") && error["status_code"].is_number_integer()) {
+        int status_code = error["status_code"].get<int>();
+        if (valid_error_status(status_code)) {
+            return status_code;
+        }
+    }
+
+    if (error.contains("details") && error["details"].is_object()) {
+        const auto& details = error["details"];
+        if (details.contains("status_code") && details["status_code"].is_number_integer()) {
+            int status_code = details["status_code"].get<int>();
+            if (valid_error_status(status_code)) {
+                return status_code;
+            }
+        }
+    }
+
+    return default_status_code;
+}
+
+void set_error_response(const json& response, httplib::Response& res,
+                        int default_status_code = 500) {
+    res.status = get_error_status_code(response, default_status_code);
+    res.set_content(response.dump(), "application/json");
+}
+
 } // namespace
 
 
@@ -1525,6 +1561,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
             auto response = router_->chat_completion(request_json);
 
+            if (response.contains("error")) {
+                LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
+                set_error_response(response, res);
+                return;
+            }
+
             // Debug: Check if response contains tool_calls
             if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                 auto& first_choice = response["choices"][0];
@@ -1712,8 +1754,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             // Check if response contains an error
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
-                res.status = 500;
-                res.set_content(response.dump(), "application/json");
+                set_error_response(response, res);
                 return;
             }
 
@@ -2813,6 +2854,12 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             LOG(INFO, "Server") << "POST /api/v1/responses - Non-streaming" << std::endl;
 
             auto response = router_->responses(request_json);
+
+            if (response.contains("error")) {
+                LOG(ERROR, "Server") << "Responses backend error: " << response["error"].dump() << std::endl;
+                set_error_response(response, res);
+                return;
+            }
 
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
