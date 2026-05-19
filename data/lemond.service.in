@@ -1,12 +1,15 @@
 [Unit]
 Description=Lemonade Server
+Documentation=https://lemonade-server.ai/docs/
 After=network-online.target
 
 [Service]
 Type=simple
 User=lemonade
 Group=lemonade
-WorkingDirectory=@CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/lemonade
+StateDirectory=lemonade
+StateDirectoryMode=0750
+WorkingDirectory=%S/lemonade
 # Server settings (port, host, models_dir, …) live in config.json, not env vars.
 # The env-file drop-in is kept for the few env vars lemond still reads:
 #   HF_TOKEN                 — HuggingFace authentication token
@@ -25,7 +28,6 @@ PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=yes
-ReadWritePaths=@CMAKE_INSTALL_FULL_LOCALSTATEDIR@/lib/lemonade
 RestrictRealtime=yes
 RestrictNamespaces=yes
 LockPersonality=yes
