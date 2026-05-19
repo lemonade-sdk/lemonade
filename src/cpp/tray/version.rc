@@ -17,9 +17,9 @@ BEGIN
             VALUE "CompanyName", "AMD"
             VALUE "FileDescription", "Lemonade Server"
             VALUE "FileVersion", LEMON_VERSION_RC_STRING
-            VALUE "InternalName", "lemonade-server"
+            VALUE "InternalName", "LemonadeServer"
             VALUE "LegalCopyright", "Copyright (C) 2024 AMD"
-            VALUE "OriginalFilename", "lemonade-server.exe"
+            VALUE "OriginalFilename", "LemonadeServer.exe"
             VALUE "ProductName", "Lemonade Server"
             VALUE "ProductVersion", LEMON_VERSION_RC_STRING
             VALUE "Comments", "System tray interface for Lemonade AI Server"

@@ -4,6 +4,8 @@
 
 Use the [install](./install/README.md) guide to get set up.
 
+Follow the AMD [Lemonade getting started guide](https://developer.amd.com/playbooks/lemonade-getting-started/) for a guided walkthrough.
+
 ### Service
 
 Lemonade runs as a [lightweight local service](./concepts.md) on your computer at all times. It makes models available to your apps over an [HTTP API](../api/README.md).

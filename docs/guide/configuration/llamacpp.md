@@ -25,8 +25,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Use Case**: AMD GPU-optimized inference
 - **Performance**: Optimized for AMD hardware, may outperform Vulkan on supported GPUs
 - **Channel Options**:
-  - **Preview** (default): Custom builds with latest optimizations from lemonade-sdk
-  - **Stable**: Upstream llama.cpp releases with AMD ROCm support
+  - **Stable** (default): Custom builds with latest optimizations from lemonade-sdk
   - **Nightly**: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)
 - **Installation**: Varies by channel (see below)
 
@@ -49,10 +48,10 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 
 The ROCm backend supports three channels to balance stability, performance, and access to latest features:
 
-### Preview Channel (Default)
+### Stable Channel (Default)
 ```json
 {
-  "rocm_channel": "preview"
+  "rocm_channel": "stable"
 }
 ```
 - **Source**: Custom builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
@@ -61,23 +60,6 @@ The ROCm backend supports three channels to balance stability, performance, and 
 - **Platform**: Windows and Linux
 - **Runtime**: Requires runtime for both Windows and Linux to be installed separately.
 - **Best For**: Users who want the latest performance optimizations
-
-### Stable Channel
-```json
-{
-  "rocm_channel": "stable"
-}
-```
-- **Source**: Upstream [llama.cpp](https://github.com/ggerganov/llama.cpp) releases
-- **Binaries**:
-  - **Windows**: Self-contained HIP binaries (no separate runtime needed)
-  - **Linux**: Binaries built against ROCm 7.2 runtime
-- **Updates**: Follows upstream llama.cpp release cycle
-- **Platform**: Windows and Linux
-- **Runtime**:
-  - Windows: Self-contained, no runtime installation required
-  - Linux: Downloads AMD ROCm 7.2.1 runtime if not present at `/opt/rocm`
-- **Best For**: Users who prefer stable, tested releases aligned with upstream
 
 ### Nightly Channel
 ```json
@@ -107,8 +89,8 @@ Or use the Lemonade CLI:
 # Switch to stable channel
 lemonade config set rocm_channel=stable
 
-# Switch to preview channel (default)
-lemonade config set rocm_channel=preview
+# Switch to stable channel (default)
+lemonade config set rocm_channel=stable
 
 # Switch to nightly channel (experimental)
 lemonade config set rocm_channel=nightly
@@ -125,8 +107,7 @@ You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"bui
 
 | Channel | Repository | Tag format |
 |---|---|---|
-| `preview` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
-| `stable` | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | Upstream tags, e.g. `b4888` |
+| `stable` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
 | `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
 
 > **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.
@@ -161,11 +142,6 @@ lemonade config set llamacpp.rocm_bin=b1260
    - Use **CPU**
 
 ### ROCm Channel Selection
-
-- **Use Preview** if you:
-  - Want the best performance on AMD hardware
-  - Are comfortable with frequent updates
-  - Are testing new models or features
 
 - **Use Stable** if you:
   - Prefer stability over latest features

@@ -15,7 +15,7 @@ Models are categorized into these types:
 - **LLM** - Chat and completion models (default type)
 - **Embedding** - Models for generating text embeddings (identified by the `embeddings` label)
 - **Reranking** - Models for document reranking (identified by the `reranking` label)
-- **Audio** - Models for audio transcription using Whisper (identified by the `audio` label)
+- **Transcription** - Models for audio transcription using Whisper (identified by the `transcription` label)
 - **Image** - Models for image generation (identified by the `image` label)
 
 Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models`.

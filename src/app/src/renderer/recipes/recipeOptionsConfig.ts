@@ -36,6 +36,7 @@ export interface LlamaOptions {
   ctxSize: NumericOption;
   llamacppBackend: StringOption;
   llamacppArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -43,6 +44,7 @@ export interface WhisperOptions {
   recipe: 'whispercpp';
   whispercppBackend: StringOption;
   whispercppArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -51,12 +53,14 @@ export interface LemonMlxOptions {
   ctxSize: NumericOption;
   lemonMlxBackend: StringOption;
   lemonMlxArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
 export interface FlmOptions {
   recipe: 'flm';
   ctxSize: NumericOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -75,6 +79,7 @@ export interface StableDiffusionOptions {
   cfgScale: NumericOption;
   width: NumericOption;
   height: NumericOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -83,6 +88,7 @@ export interface VLLMOptions {
   ctxSize: NumericOption;
   vllmBackend: StringOption;
   vllmArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -150,6 +156,14 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     step: 1,
     label: 'Context Size',
     description: 'Context size for the model',
+  },
+
+  // Launch argument merging option
+  mergeArgs: {
+    type: 'boolean',
+    default: true,
+    label: 'Merge arguments',
+    description: 'Global and model arguments will be merged on model load',
   },
 
   // LlamaCpp-specific options
@@ -282,13 +296,13 @@ export type RecipeName = 'llamacpp' | 'whispercpp' | 'lemon-mlx' | 'flm' | 'ryze
  * This mirrors the C++ get_keys_for_recipe() function in recipe_options.cpp
  */
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
-  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'saveOptions'],
-  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'saveOptions'],
-  'lemon-mlx': ['ctxSize', 'lemonMlxBackend', 'lemonMlxArgs', 'saveOptions'],
-  'flm': ['ctxSize', 'saveOptions'],
+  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'saveOptions'],
+  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'saveOptions'],
+  'lemon-mlx': ['ctxSize', 'lemonMlxBackend', 'lemonMlxArgs', 'mergeArgs', 'saveOptions'],
+  'flm': ['ctxSize', 'mergeArgs', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
-  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'saveOptions'],
+  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'saveOptions'],
 };
 
 /**
@@ -314,6 +328,7 @@ export function getOptionDefinition(key: string): OptionDef | undefined {
 
 const FRONTEND_TO_API_MAP: Record<string, string> = {
   ctxSize: 'ctx_size',
+  mergeArgs: 'merge_args',
   llamacppBackend: 'llamacpp_backend',
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',

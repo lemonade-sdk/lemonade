@@ -187,7 +187,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     // Construct flm serve command based on model type
     // Bind to localhost only for security
     std::vector<std::string> args;
-    if (model_type_ == ModelType::AUDIO) {
+    if (model_type_ == ModelType::TRANSCRIPTION) {
         // ASR mode: flm serve --asr 1
         args = {
             "serve",
@@ -294,7 +294,7 @@ bool FastFlowLMServer::wait_for_ready() {
 }
 
 json FastFlowLMServer::chat_completion(const json& request) {
-    if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
+    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Chat completion", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -309,7 +309,7 @@ json FastFlowLMServer::chat_completion(const json& request) {
 }
 
 json FastFlowLMServer::completion(const json& request) {
-    if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
+    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Text completion", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -324,7 +324,7 @@ json FastFlowLMServer::completion(const json& request) {
 }
 
 json FastFlowLMServer::embeddings(const json& request) {
-    if (model_type_ == ModelType::AUDIO) {
+    if (model_type_ == ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Embeddings", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -342,7 +342,7 @@ json FastFlowLMServer::reranking(const json& request) {
 }
 
 json FastFlowLMServer::audio_transcriptions(const json& request) {
-    if (model_type_ != ModelType::AUDIO) {
+    if (model_type_ != ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Audio transcription", "FLM " + model_type_to_string(model_type_) + " model")
         );
@@ -420,7 +420,7 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   bool sse,
                                                   long timeout_seconds) {
     // Streaming is only supported for LLM models
-    if (model_type_ == ModelType::AUDIO || model_type_ == ModelType::EMBEDDING) {
+    if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
             + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());

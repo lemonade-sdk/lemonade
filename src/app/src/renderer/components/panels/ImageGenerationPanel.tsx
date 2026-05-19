@@ -587,7 +587,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
             disabled={isBusy}>
             <option value="">Off</option>
             {Object.entries(modelsData)
-              .filter(([_, info]) => info.labels?.includes('esrgan'))
+              .filter(([_, info]) => info.labels?.includes('upscaling'))
               .map(([name]) => (
                 <option key={name} value={name}>{name}</option>
               ))}

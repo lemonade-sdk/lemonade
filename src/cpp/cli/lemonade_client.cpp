@@ -49,6 +49,27 @@ static std::regex build_name_filter_regex(const std::string& name_filter) {
     return std::regex(regex_pattern, std::regex_constants::ECMAScript | std::regex_constants::icase);
 }
 
+static bool starts_with(const std::string& value, const std::string& prefix) {
+    return value.rfind(prefix, 0) == 0;
+}
+
+static std::string strip_canonical_prefix(const std::string& model_name) {
+    static const std::vector<std::string> prefixes = {"user.", "extra.", "builtin."};
+    for (const auto& prefix : prefixes) {
+        if (starts_with(model_name, prefix)) {
+            return model_name.substr(prefix.size());
+        }
+    }
+    return model_name;
+}
+
+static int model_source_sort_rank(const std::string& model_name) {
+    if (starts_with(model_name, "user.")) return 1;
+    if (starts_with(model_name, "extra.")) return 2;
+    if (starts_with(model_name, "builtin.")) return 3;
+    return 0;
+}
+
 HttpError::HttpError(int status, std::string body, const std::string& message)
     : std::runtime_error(message), status_code_(status), response_body_(std::move(body)) {}
 
@@ -341,9 +362,25 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             const std::regex filter_regex = build_name_filter_regex(name_filter);
             models.erase(
                 std::remove_if(models.begin(), models.end(),
-                    [&](const ModelInfo& m) { return !std::regex_search(m.id, filter_regex); }),
+                    [&](const ModelInfo& m) {
+                        return !std::regex_search(m.id, filter_regex) &&
+                               !std::regex_search(strip_canonical_prefix(m.id), filter_regex);
+                    }),
                 models.end());
         }
+
+        std::sort(models.begin(), models.end(),
+            [](const ModelInfo& a, const ModelInfo& b) {
+                const std::string bare_a = strip_canonical_prefix(a.id);
+                const std::string bare_b = strip_canonical_prefix(b.id);
+                const int bare_compare = bare_a.compare(bare_b);
+                if (bare_compare != 0) return bare_compare < 0;
+
+                const int source_compare = model_source_sort_rank(a.id) - model_source_sort_rank(b.id);
+                if (source_compare != 0) return source_compare < 0;
+
+                return a.id < b.id;
+            });
 
         if (models.empty()) {
             std::cout << "No models available" << std::endl;
@@ -355,6 +392,12 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
                   << "Details" << std::endl;
         std::cout << std::string(100, '-') << std::endl;
 
+        // Model Name is the API id emitted verbatim by `/v1/models`. For each
+        // bare name, the precedence-winning source (registered > imported >
+        // builtin) shows as the bare name; any shadowed sources show as their
+        // canonical id (user.NAME / extra.NAME / builtin.NAME). Either form is
+        // valid input to `lemonade load`, `lemonade delete`, etc., so the
+        // column is always copy-paste-safe.
         for (const auto& model : models) {
             std::string downloaded = model.downloaded ? "Yes" : "No";
             std::string details = model.recipe.empty() ? "-" : model.recipe;
@@ -488,7 +531,7 @@ static bool parse_sse_progress(const std::string& event_data, StreamingRequestSt
     }
 }
 
-int LemonadeClient::pull_model(const json& model_data) {
+int LemonadeClient::pull_model(const json& model_data, const std::string& display_name) {
     try {
         // Validate that model field exists in model_data
         if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
@@ -497,7 +540,8 @@ int LemonadeClient::pull_model(const json& model_data) {
         }
 
         std::string model_name = model_data["model_name"].get<std::string>();
-        std::cout << "Pulling model: " << model_name << std::endl;
+        std::string output_name = display_name.empty() ? model_name : display_name;
+        std::cout << "Pulling model: " << output_name << std::endl;
 
         json request_body = model_data;
         request_body["stream"] = true;
@@ -545,7 +589,7 @@ int LemonadeClient::pull_model(const json& model_data) {
             throw std::runtime_error("Model pull failed");
         }
 
-        std::cout << "Model pulled successfully: " << model_name << std::endl;
+        std::cout << "Model pulled successfully: " << output_name << std::endl;
         return 0;
     } catch (const HttpError& e) {
         std::cerr << "Error pulling model: " << extract_server_error_message(e) << std::endl;

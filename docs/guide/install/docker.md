@@ -231,11 +231,11 @@ WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
-COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
-RUN chmod +x ./lemond ./lemonade-server
+RUN chmod +x ./lemond ./lemonade
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
@@ -292,7 +292,7 @@ docker-compose build
 
 This will:
 
-- Compile Lemonade C++ (lemonade-server and lemond)
+- Compile Lemonade C++ (lemond server and lemonade CLI)
 - Prepare a runtime image with all dependencies
 
 ### 3. Run the Container

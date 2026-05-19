@@ -50,8 +50,8 @@ struct DownloadOptions {
     int initial_retry_delay_ms = 1000; // Initial delay between retries (doubles each time)
     int max_retry_delay_ms = 60000;   // Maximum delay between retries (1 minute)
     bool resume_partial = true;       // Resume partial downloads if possible
-    int low_speed_limit = 1000;       // Minimum bytes/sec before timeout (1KB/s)
-    int low_speed_time = 60;          // Seconds below low_speed_limit before timeout
+    int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
+    int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
 };
 

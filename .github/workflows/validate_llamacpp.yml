@@ -32,7 +32,7 @@ jobs:
     outputs:
       llamacpp_release: ${{ steps.llamacpp.outputs.release }}
       llamacpp_rocm_release: ${{ steps.llamacpp_rocm.outputs.release }}
-      llamacpp_rocm_preview_release: ${{ steps.llamacpp_rocm_preview.outputs.release }}
+      llamacpp_lemonade_release: ${{ steps.llamacpp_lemonade.outputs.release }}
     steps:
       - name: Get latest llama.cpp release
         id: llamacpp
@@ -52,13 +52,13 @@ jobs:
           echo "Latest llamacpp-rocm release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
-      - name: Get latest llamacpp-rocm-preview release
-        id: llamacpp_rocm_preview
+      - name: Get latest lemonade-sdk/llama.cpp release
+        id: llamacpp_lemonade
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RELEASE=$(gh api repos/lemonade-sdk/llama.cpp/releases/latest --jq '.tag_name')
-          echo "Latest llamacpp-rocm-preview release: $RELEASE"
+          echo "Latest lemonade-sdk/llama.cpp release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
   # ========================================================================
@@ -81,7 +81,7 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
           $ErrorActionPreference = "Stop"
           $path = "src/cpp/resources/backend_versions.json"
@@ -101,17 +101,11 @@ jobs:
           $data.llamacpp.'rocm-nightly' = $rocm
           Write-Host "  llamacpp.rocm-nightly: $old -> $rocm"
 
-          $rocmStable = $env:LLAMACPP_RELEASE
+          $rocmStable = $env:LLAMACPP_LEMONADE_RELEASE
           Write-Host "Updating llamacpp rocm-stable to $rocmStable" -ForegroundColor Cyan
           $old = $data.llamacpp.'rocm-stable'
           $data.llamacpp.'rocm-stable' = $rocmStable
           Write-Host "  llamacpp.rocm-stable: $old -> $rocmStable"
-
-          $rocmPreview = $env:LLAMACPP_ROCM_PREVIEW_RELEASE
-          Write-Host "Updating llamacpp rocm-preview to $rocmPreview" -ForegroundColor Cyan
-          $old = $data.llamacpp.'rocm-preview'
-          $data.llamacpp.'rocm-preview' = $rocmPreview
-          Write-Host "  llamacpp.rocm-preview: $old -> $rocmPreview"
 
           $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
 
@@ -156,9 +150,6 @@ jobs:
             runner: [self-hosted, Windows, 128gb, vulkan]
           - backend: rocm
             channel: stable
-            runner: [self-hosted, Windows, 128gb, rocm]
-          - backend: rocm
-            channel: preview
             runner: [self-hosted, Windows, 128gb, rocm]
           - backend: rocm
             channel: nightly
@@ -296,7 +287,7 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
           python3 -c "
           import json, os
@@ -304,18 +295,17 @@ jobs:
           with open(path, 'r') as f:
               data = json.load(f)
           llamacpp = os.environ['LLAMACPP_RELEASE']
-          rocm_preview = os.environ['LLAMACPP_ROCM_PREVIEW_RELEASE']
+          rocm_stable = os.environ['LLAMACPP_LEMONADE_RELEASE']
           rocm_nightly = os.environ['LLAMACPP_ROCM_RELEASE']
           data['llamacpp']['vulkan'] = llamacpp
           data['llamacpp']['cpu'] = llamacpp
           data['llamacpp']['metal'] = llamacpp
-          data['llamacpp']['rocm-stable'] = llamacpp
+          data['llamacpp']['rocm-stable'] = rocm_stable
           data['llamacpp']['rocm-nightly'] = rocm_nightly
-          data['llamacpp']['rocm-preview'] = rocm_preview
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          print(f'Updated: vulkan/cpu/metal/rocm-stable={llamacpp}, rocm-nightly={rocm_nightly}, rocm-preview={rocm_preview}')
+          print(f'Updated: vulkan/cpu/metal={llamacpp}, rocm-stable={rocm_stable}, rocm-nightly={rocm_nightly}')
           "
 
       - name: Generate PR body
@@ -323,7 +313,7 @@ jobs:
         env:
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
           python3 << 'PYEOF'
           import json, os
@@ -331,20 +321,20 @@ jobs:
           body_lines = []
           llamacpp = os.environ.get("LLAMACPP_RELEASE", "unknown")
           rocm_nightly = os.environ.get("LLAMACPP_ROCM_RELEASE", "unknown")
-          rocm_preview = os.environ.get("LLAMACPP_ROCM_PREVIEW_RELEASE", "unknown")
+          rocm_stable = os.environ.get("LLAMACPP_LEMONADE_RELEASE", "unknown")
 
           body_lines.append("## Auto-update llama.cpp backends")
           body_lines.append("")
-          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal/rocm-stable): `{llamacpp}`")
+          body_lines.append(f"- **llama.cpp** (vulkan/cpu/metal): `{llamacpp}`")
+          body_lines.append(f"- **lemonade-sdk/llama.cpp** (rocm-stable): `{rocm_stable}`")
           body_lines.append(f"- **llamacpp-rocm** (rocm-nightly): `{rocm_nightly}`")
-          body_lines.append(f"- **llamacpp-rocm-preview**: `{rocm_preview}`")
           body_lines.append("")
           body_lines.append("## Validation Results")
           body_lines.append("")
           body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
           body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          for backend in ["vulkan", "rocm-stable", "rocm-preview", "rocm-nightly"]:
+          for backend in ["vulkan", "rocm-stable", "rocm-nightly"]:
               # Labels match the artifact names produced by the validate job
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
@@ -382,9 +372,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
-          LLAMACPP_ROCM_PREVIEW_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_preview_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
         run: |
-          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_ROCM_RELEASE}-${LLAMACPP_ROCM_PREVIEW_RELEASE}"
+          BRANCH="auto/llamacpp-update-${LLAMACPP_RELEASE}-${LLAMACPP_LEMONADE_RELEASE}-${LLAMACPP_ROCM_RELEASE}"
 
           # Check if a PR already exists for this update
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
@@ -404,7 +394,7 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}, rocm-preview to ${LLAMACPP_ROCM_PREVIEW_RELEASE}"
+          git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 
           gh pr create \

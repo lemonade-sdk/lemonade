@@ -12,6 +12,10 @@
 #include "backend_manager.h"
 #include "runtime_config.h"
 
+// 5 seconds is generous enough for inference to complete but prevents
+// indefinite blocking if a backend is stuck.
+#define EVICTION_TIMEOUT 5
+
 namespace lemon {
 
 using json = nlohmann::json;
@@ -70,6 +74,7 @@ public:
     json reranking(const json& request);
     json get_slots();
     json slots_action(int slot_id, const std::string& action, const json& request_body);
+    json tokenize(const json& request);
     json responses(const json& request);
 
     // Audio endpoints (OpenAI /v1/audio/* compatible)
