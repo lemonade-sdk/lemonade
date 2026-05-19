@@ -3,6 +3,9 @@
   "runners": [
     "jfowers-stx-01",
     "jfowers-stx-02",
+    "jfowers-phx-rtx-00",
+    "jfowers-stx-rtx-00",
+    "sjlab-stx-0",
     "sjlab-stx-halo-06",
     "sjlab-stx-halo-07",
     "sjlab-stx-halo-08",
@@ -11,6 +14,6 @@
     "sjlab-stx-halo-11",
     "sjlab-stx-halo-12",
     "sjlab-stx-halo-13",
-    "sjlab-stx-0"
+    "sjlab-stx-halo-17"
   ]
 }
