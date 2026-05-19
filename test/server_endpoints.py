@@ -1301,8 +1301,8 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/pull",
                 json={
                     "model_name": canonical_name,
-                    "recipe": "collection",
-                    "composite_models": [ENDPOINT_TEST_MODEL],
+                    "recipe": "collection.omni-model",
+                    "component_models": [ENDPOINT_TEST_MODEL],
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
@@ -1324,14 +1324,14 @@ class EndpointTests(ServerTestBase):
                 None,
             )
             self.assertIsNotNone(entry, f"{canonical_name} should appear in /models")
-            self.assertEqual(entry.get("recipe"), "collection")
-            self.assertEqual(entry.get("composite_models"), [ENDPOINT_TEST_MODEL])
+            self.assertEqual(entry.get("recipe"), "collection.omni-model")
+            self.assertEqual(entry.get("component_models"), [ENDPOINT_TEST_MODEL])
             self.assertTrue(
                 entry.get("downloaded"),
                 "Collection should report downloaded=true when all components are downloaded",
             )
 
-            print(f"[OK] Registered user collection: {public_name}")
+            print(f"[OK] Registered omni-model: {public_name}")
         finally:
             try:
                 requests.post(
@@ -1349,8 +1349,8 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/pull",
             json={
                 "model_name": canonical_name,
-                "recipe": "collection",
-                "composite_models": [f"user.does-not-exist-{uuid.uuid4().hex[:6]}"],
+                "recipe": "collection.omni-model",
+                "component_models": [f"user.does-not-exist-{uuid.uuid4().hex[:6]}"],
             },
             timeout=TIMEOUT_DEFAULT,
         )
@@ -1358,21 +1358,65 @@ class EndpointTests(ServerTestBase):
         self.assertIn("not registered", response.json().get("error", "").lower())
         print("[OK] Unknown component rejected with 400")
 
+    def test_021d_legacy_collection_recipe_and_field_are_accepted(self):
+        """Legacy collection recipe and composite_models are normalized."""
+        canonical_name = f"user.LegacyColl-{uuid.uuid4().hex[:8]}"
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection",
+                    "composite_models": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (
+                    m
+                    for m in models_response.json()["data"]
+                    if m["id"] == canonical_name
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{canonical_name} should appear in /models")
+            self.assertEqual(entry.get("recipe"), "collection.omni-model")
+            self.assertEqual(entry.get("component_models"), [ENDPOINT_TEST_MODEL])
+            self.assertNotIn("composite_models", entry)
+            print("[OK] Legacy collection recipe and field normalized")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_021e_register_collection_empty_array(self):
-        """Empty composite_models is rejected with 400."""
+        """Empty component_models is rejected with 400."""
         canonical_name = f"user.EmptyColl-{uuid.uuid4().hex[:8]}"
         response = requests.post(
             f"{self.base_url}/pull",
             json={
                 "model_name": canonical_name,
-                "recipe": "collection",
-                "composite_models": [],
+                "recipe": "collection.omni-model",
+                "component_models": [],
             },
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 400, response.text)
-        self.assertIn("composite_models", response.json().get("error", ""))
-        print("[OK] Empty composite_models rejected with 400")
+        self.assertIn("component_models", response.json().get("error", ""))
+        print("[OK] Empty component_models rejected with 400")
 
     def test_021f_register_collection_no_user_prefix(self):
         """Collection name without user. prefix is rejected with 400."""
@@ -1380,8 +1424,8 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/pull",
             json={
                 "model_name": f"NoPrefixColl-{uuid.uuid4().hex[:8]}",
-                "recipe": "collection",
-                "composite_models": [ENDPOINT_TEST_MODEL],
+                "recipe": "collection.omni-model",
+                "component_models": [ENDPOINT_TEST_MODEL],
             },
             timeout=TIMEOUT_DEFAULT,
         )
@@ -1390,14 +1434,14 @@ class EndpointTests(ServerTestBase):
         print("[OK] Missing user. prefix rejected with 400")
 
     def test_021g_register_collection_self_reference(self):
-        """A collection that lists itself in composite_models is rejected."""
+        """A collection that lists itself in component_models is rejected."""
         canonical_name = f"user.SelfRef-{uuid.uuid4().hex[:8]}"
         response = requests.post(
             f"{self.base_url}/pull",
             json={
                 "model_name": canonical_name,
-                "recipe": "collection",
-                "composite_models": [canonical_name],
+                "recipe": "collection.omni-model",
+                "component_models": [canonical_name],
             },
             timeout=TIMEOUT_DEFAULT,
         )

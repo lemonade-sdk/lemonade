@@ -69,7 +69,7 @@ struct ModelInfo {
     std::map<std::string, std::string> resolved_paths; // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
-    std::vector<std::string> composite_models;
+    std::vector<std::string> component_models;
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
@@ -147,7 +147,7 @@ public:
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
 
-    // Validate a collection (recipe="collection") registration request.
+    // Validate a collection (recipe="collection.omni-model") registration request.
     // Returns nullopt on success, or a user-facing error message on failure.
     // Used by /pull request validation and as a defensive guard in download_model.
     std::optional<std::string> validate_collection_request(

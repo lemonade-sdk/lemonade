@@ -536,7 +536,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"composite_models", info.composite_models},
+                {"component_models", info.component_models},
                 {"mmproj", info.mmproj()}
             };
 
@@ -1374,7 +1374,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
         {"labels", info.labels},
-        {"composite_models", info.composite_models},
+        {"component_models", info.component_models},
         {"recipe_options", info.recipe_options.to_json()},
     };
 
@@ -2842,7 +2842,10 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
 
         // Extract optional parameters
         std::string checkpoint = request_json.value("checkpoint", "");
-        std::string recipe = request_json.value("recipe", "");
+        std::string recipe = canonicalize_recipe(request_json.value("recipe", ""));
+        if (!recipe.empty()) {
+            request_json["recipe"] = recipe;
+        }
         bool do_not_upgrade = request_json.value("do_not_upgrade", false);
         bool stream = request_json.value("stream", false);
 
@@ -2878,7 +2881,7 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             }
         }
 
-        if (recipe == "collection") {
+        if (is_collection_recipe(recipe)) {
             if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
                 bad_request(*err);
                 return;
@@ -3011,10 +3014,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Experience models: load each component model instead
-        if (info.recipe == "collection" && !info.composite_models.empty()) {
+        // Collection models: load each component model instead
+        if (is_collection_recipe(info.recipe) && !info.component_models.empty()) {
             LOG(INFO, "Server") << "Loading collection components for: " << model_name << std::endl;
-            for (const auto& component : info.composite_models) {
+            for (const auto& component : info.component_models) {
                 if (!model_manager_->model_exists(component)) {
                     LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
                     continue;
@@ -3038,7 +3041,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
-                {"recipe", "collection"}
+                {"recipe", info.recipe}
             };
             res.set_content(response.dump(), "application/json");
         } else {
@@ -3264,7 +3267,7 @@ void Server::resolve_and_register_local_model(
     const json& model_data,
     const std::string& hf_cache) {
     std::string mmproj = model_data.value("mmproj", "");
-    std::string recipe = model_data.value("recipe", "");
+    std::string recipe = canonicalize_recipe(model_data.value("recipe", ""));
     bool vision = model_data.value("vision", false);
 
     std::string resolved_checkpoint;

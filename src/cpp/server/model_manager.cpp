@@ -54,7 +54,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "composite_models"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "component_models"};
 
 // Helper functions for string operations
 static std::string to_lower(const std::string& str) {
@@ -946,7 +946,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // Collections are virtual entries with no direct checkpoint to resolve
-    if (info.recipe == "collection") {
+    if (is_collection_recipe(info.recipe)) {
         return "";
     }
 
@@ -1273,23 +1273,34 @@ static void parse_legacy_mmproj(ModelInfo& info, const json& model_json) {
     }
 }
 
-static void parse_composite_models(ModelInfo& info, const json& model_json) {
-    if (!model_json.contains("composite_models") || !model_json["composite_models"].is_array()) {
+static const json* get_component_models_array(const json& model_json) {
+    if (model_json.contains("component_models") && model_json["component_models"].is_array()) {
+        return &model_json["component_models"];
+    }
+    if (model_json.contains("composite_models") && model_json["composite_models"].is_array()) {
+        return &model_json["composite_models"];
+    }
+    return nullptr;
+}
+
+static void parse_component_models(ModelInfo& info, const json& model_json) {
+    const json* component_models = get_component_models_array(model_json);
+    if (component_models == nullptr) {
         return;
     }
 
-    for (const auto& component : model_json["composite_models"]) {
+    for (const auto& component : *component_models) {
         if (component.is_string()) {
-            info.composite_models.push_back(component.get<std::string>());
+            info.component_models.push_back(component.get<std::string>());
         }
     }
 }
 
 // Check if all component models of a collection model are downloaded.
-static bool check_composite_downloaded(const ModelInfo& info,
+static bool check_component_downloaded(const ModelInfo& info,
                                         const std::map<std::string, ModelInfo>& model_map) {
-    if (info.composite_models.empty()) return false;
-    for (const auto& component_name : info.composite_models) {
+    if (info.component_models.empty()) return false;
+    for (const auto& component_name : info.component_models) {
         auto it = model_map.find(component_name);
         if (it == model_map.end() || !it->second.downloaded) {
             return false;
@@ -1318,8 +1329,8 @@ void ModelManager::build_cache() {
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
         parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
-        parse_composite_models(info, value);
-        info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
+        parse_component_models(info, value);
+        info.recipe = canonicalize_recipe(JsonUtils::get_or_default<std::string>(value, "recipe", ""));
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
@@ -1356,8 +1367,8 @@ void ModelManager::build_cache() {
         info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(value, "checkpoint", "");
         parse_legacy_mmproj(info, value);
         load_checkpoints(info, value);
-        parse_composite_models(info, value);
-        info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
+        parse_component_models(info, value);
+        info.recipe = canonicalize_recipe(JsonUtils::get_or_default<std::string>(value, "recipe", ""));
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", true);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
@@ -1433,7 +1444,7 @@ void ModelManager::build_cache() {
     int downloaded_count = 0;
     // First pass: determine download status for non-collection models
     for (auto& [name, info] : all_models) {
-        if (info.recipe == "collection") {
+        if (is_collection_recipe(info.recipe)) {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
@@ -1485,8 +1496,8 @@ void ModelManager::build_cache() {
     // Second pass: determine download status for collection models
     // (must happen after component models have their downloaded status set)
     for (auto& [name, info] : all_models) {
-        if (info.recipe != "collection") continue;
-        info.downloaded = check_composite_downloaded(info, all_models);
+        if (!is_collection_recipe(info.recipe)) continue;
+        info.downloaded = check_component_downloaded(info, all_models);
         if (info.downloaded) {
             downloaded_count++;
         }
@@ -1537,8 +1548,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
-    parse_composite_models(info, *model_json);
-    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    parse_component_models(info, *model_json);
+    info.recipe = canonicalize_recipe(JsonUtils::get_or_default<std::string>(*model_json, "recipe", ""));
 
     parse_image_defaults(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
@@ -1571,8 +1582,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     // Check download status
-    if (info.recipe == "collection") {
-        info.downloaded = check_composite_downloaded(info, models_cache_);
+    if (is_collection_recipe(info.recipe)) {
+        info.downloaded = check_component_downloaded(info, models_cache_);
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
@@ -1662,12 +1673,12 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // depend on this model, so the collection reflects component changes
         // without requiring a full cache rebuild.
         for (auto& [name, entry] : models_cache_) {
-            if (entry.recipe != "collection") continue;
-            if (std::find(entry.composite_models.begin(), entry.composite_models.end(),
-                          model_name) == entry.composite_models.end()) {
+            if (!is_collection_recipe(entry.recipe)) continue;
+            if (std::find(entry.component_models.begin(), entry.component_models.end(),
+                          model_name) == entry.component_models.end()) {
                 continue;
             }
-            bool new_state = check_composite_downloaded(entry, models_cache_);
+            bool new_state = check_component_downloaded(entry, models_cache_);
             if (entry.downloaded != new_state) {
                 entry.downloaded = new_state;
                 LOG(INFO, "ModelManager") << "Collection '" << name
@@ -1715,7 +1726,7 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded && info.recipe != "collection") {
+        if (info.downloaded && !is_collection_recipe(info.recipe)) {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;
@@ -1896,7 +1907,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Collections are UI-level entries that orchestrate component models.
         // They should always be visible if present in the registry.
-        if (recipe == "collection") {
+        if (is_collection_recipe(recipe)) {
             filtered[name] = info;
             continue;
         }
@@ -1966,6 +1977,9 @@ void ModelManager::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
+    if (!model_entry.contains("component_models") && model_data.contains("composite_models")) {
+        model_entry["component_models"] = model_data["composite_models"];
+    }
 
     std::set<std::string> labels = {"custom"};
     std::vector<std::string> extra_labels = model_data.value("labels", std::vector<std::string>{});
@@ -1985,7 +1999,10 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("reranking");
     }
 
-    std::string recipe = model_data.value("recipe", "");
+    std::string recipe = canonicalize_recipe(model_data.value("recipe", ""));
+    if (!recipe.empty()) {
+        model_entry["recipe"] = recipe;
+    }
 
     if (recipe == "sd-cpp") {
         labels.insert("image");
@@ -2237,7 +2254,7 @@ void ModelManager::download_model(const std::string& model_name,
         actual_checkpoint = model_data.value("checkpoint", "");
     }
 
-    std::string actual_recipe = model_data.value("recipe", "");
+    std::string actual_recipe = canonicalize_recipe(model_data.value("recipe", ""));
 
     // If checkpoint or recipe are provided, this is a model registration
     // and the model name must have the "user." prefix
@@ -2276,11 +2293,11 @@ void ModelManager::download_model(const std::string& model_name,
             );
         }
 
-        if (actual_recipe == "collection") {
+        if (is_collection_recipe(actual_recipe)) {
             if (auto err = validate_collection_request(model_name, model_data)) {
                 throw std::runtime_error(*err);
             }
-            LOG(INFO, "ModelManager") << "Registering new user collection: " << model_name << std::endl;
+            LOG(INFO, "ModelManager") << "Registering new omni-model: " << model_name << std::endl;
         } else {
             // Check that required arguments are provided
             if (actual_checkpoint.empty() || actual_recipe.empty()) {
@@ -2333,18 +2350,18 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Register collections early — the fan-out below calls get_model_info().
-    if (actual_recipe == "collection" && is_user_model_name(model_name) && !model_registered) {
+    if (is_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
         model_registered = true;
     }
 
     // Collections don't have their own backend — download each component model instead
-    if (actual_recipe == "collection") {
+    if (is_collection_recipe(actual_recipe)) {
         auto info = get_model_info(model_name);
-        if (info.composite_models.empty()) {
-            throw std::runtime_error("Collection '" + model_name + "' has no composite_models defined");
+        if (info.component_models.empty()) {
+            throw std::runtime_error("Collection '" + model_name + "' has no component_models defined");
         }
-        LOG(INFO, "ModelManager") << "Downloading " << info.composite_models.size()
+        LOG(INFO, "ModelManager") << "Downloading " << info.component_models.size()
                                   << " component(s) for collection: " << model_name << std::endl;
 
         // Wrap the callback so recursive per-component downloads don't each
@@ -2365,7 +2382,7 @@ void ModelManager::download_model(const std::string& model_name,
             };
         }
 
-        for (const auto& component : info.composite_models) {
+        for (const auto& component : info.component_models) {
             if (!model_exists(component)) {
                 LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
                 continue;
@@ -3537,14 +3554,13 @@ bool ModelManager::model_exists(const std::string& model_name) {
 
 std::optional<std::string> ModelManager::validate_collection_request(
     const std::string& model_name, const json& model_data) {
-    if (!model_data.contains("composite_models") ||
-        !model_data["composite_models"].is_array() ||
-        model_data["composite_models"].empty()) {
-        return std::string("recipe='collection' requires a non-empty 'composite_models' array");
+    const json* component_models = get_component_models_array(model_data);
+    if (component_models == nullptr || component_models->empty()) {
+        return std::string("recipe='collection.omni-model' requires a non-empty 'component_models' array");
     }
-    for (const auto& component : model_data["composite_models"]) {
+    for (const auto& component : *component_models) {
         if (!component.is_string()) {
-            return std::string("composite_models entries must be strings");
+            return std::string("component_models entries must be strings");
         }
         std::string component_name = component.get<std::string>();
         if (component_name == model_name) {
@@ -3636,8 +3652,8 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(*model_json, "checkpoint", "");
     parse_legacy_mmproj(info, *model_json);
     load_checkpoints(info, *model_json);
-    parse_composite_models(info, *model_json);
-    info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    parse_component_models(info, *model_json);
+    info.recipe = canonicalize_recipe(JsonUtils::get_or_default<std::string>(*model_json, "recipe", ""));
     info.suggested = JsonUtils::get_or_default<bool>(*model_json, "suggested", false);
     info.hf_load = JsonUtils::get_or_default<bool>(*model_json, "hf_load", false);
     info.source = JsonUtils::get_or_default<std::string>(*model_json, "source", "");

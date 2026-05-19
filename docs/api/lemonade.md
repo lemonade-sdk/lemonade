@@ -106,15 +106,15 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
-**Register a Collection**
+**Register an Omni-Model**
 
-A collection bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection"` with a `composite_models` array instead of `checkpoint`.
+An omni-model is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni-model"` with a `component_models` array instead of `checkpoint`.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
-| `recipe` | Yes | Must be `"collection"`. |
-| `composite_models` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). Self-references are rejected. |
+| `recipe` | Yes | Must be `"collection.omni-model"`. |
+| `component_models` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). Self-references are rejected. |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; component models stay on disk.
 
@@ -125,8 +125,8 @@ curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
     "model_name": "user.MyKit",
-    "recipe": "collection",
-    "composite_models": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+    "recipe": "collection.omni-model",
+    "component_models": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
   }'
 ```
 
@@ -220,7 +220,7 @@ curl 'http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
 
 Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.
 
-> Note: deleting a collection (`recipe: "collection"`) removes only the collection entry from `user_models.json`; its component models stay on disk. Delete the components individually if you want to free their disk space.
+> Note: deleting a collection (`recipe: "collection.omni-model"`) removes only the collection entry from `user_models.json`; its component models stay on disk. Delete the components individually if you want to free their disk space.
 
 ### Parameters
 
@@ -254,7 +254,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
 
-> Note: loading a collection (`recipe: "collection"`) loads each of its component models in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component model's own `recipe_options.json` entry instead.
+> Note: loading a collection (`recipe: "collection.omni-model"`) loads each of its component models in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component model's own `recipe_options.json` entry instead.
 
 ### Parameters
 

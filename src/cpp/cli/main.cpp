@@ -3,6 +3,7 @@
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
 #include <lemon_cli/agent_config_file.h>
+#include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
@@ -143,7 +144,7 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
-    std::vector<std::string> composite_models;
+    std::vector<std::string> component_models;
     nlohmann::json recipe_options;
     bool save_options = false;
     std::string backend_spec;  // Format: "recipe:backend"
@@ -266,7 +267,7 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
 
     // Build model_data JSON from command line options
     model_data["model_name"] = config.model;
-    model_data["recipe"] = config.recipe;
+    model_data["recipe"] = lemon::canonicalize_recipe(config.recipe);
 
     if (!config.checkpoints.empty()) {
         nlohmann::json checkpoints = nlohmann::json::object();
@@ -276,8 +277,8 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
-    if (!config.composite_models.empty()) {
-        model_data["composite_models"] = config.composite_models;
+    if (!config.component_models.empty()) {
+        model_data["component_models"] = config.component_models;
     }
 
     if (!config.labels.empty()) {
@@ -289,14 +290,14 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
 
 static bool has_manual_pull_options(const CliConfig& config) {
     return !config.checkpoints.empty() || !config.recipe.empty() ||
-           !config.labels.empty() || !config.composite_models.empty();
+           !config.labels.empty() || !config.component_models.empty();
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
-        if (config.recipe == "collection") {
-            if (config.composite_models.empty()) {
-                std::cerr << "Error: collection pull requires --composite-models MODEL [MODEL ...]."
+        if (lemon::is_collection_recipe(config.recipe)) {
+            if (config.component_models.empty()) {
+                std::cerr << "Error: omni-model pull requires --component-models MODEL [MODEL ...]."
                           << std::endl;
                 std::cerr << "       See 'lemonade pull --help'." << std::endl;
                 return 1;
@@ -1092,7 +1093,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni-model)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1101,12 +1102,16 @@ int main(int argc, char* argv[]) {
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
-    pull_cmd->add_option("--composite-models", config.composite_models,
-        "Component model names for a user.* collection (use with --recipe collection). "
+    pull_cmd->add_option("--component-models", config.component_models,
+        "Component model names for a user.* omni-model (use with --recipe collection.omni-model). "
         "Components must already be registered (built-in or previously pulled user.* models).")
         ->group("Manual Configuration Options")
         ->type_name("MODEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    hide_option(pull_cmd->add_option("--composite-models", config.component_models,
+        "Deprecated alias for --component-models")
+        ->type_name("MODEL")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll));
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
         "  https://lemonade-server.ai/docs/server/custom-models/");
