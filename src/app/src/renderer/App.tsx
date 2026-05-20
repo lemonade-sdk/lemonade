@@ -19,8 +19,8 @@ import {
   CustomCollectionDraft,
   buildCustomCollectionPullRequest,
   buildCustomCollectionsExportPayload,
+  buildCustomModelPullRequest,
   importCustomCollections,
-  modelEntryToCustomCollection,
 } from './utils/customCollections';
 import '../../styles/index.css';
 
@@ -347,8 +347,7 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  const registerCustomCollection = async (collection: CustomCollectionDraft) => {
-    const requestBody = buildCustomCollectionPullRequest(collection);
+  const postPullRegistration = async (requestBody: object) => {
     const response = await serverFetch('/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -359,7 +358,11 @@ const AppContent: React.FC = () => {
       const errorText = await response.text();
       throw new Error(errorText || response.statusText);
     }
+  };
 
+  const registerCustomCollection = async (collection: CustomCollectionDraft) => {
+    const requestBody = buildCustomCollectionPullRequest(collection);
+    await postPullRegistration(requestBody);
     window.dispatchEvent(new CustomEvent('modelsUpdated'));
     return requestBody.model_name;
   };
@@ -376,23 +379,22 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleExportCustomCollection = (collectionId: string) => {
-    const collection = modelEntryToCustomCollection(collectionId, modelsData[collectionId], modelsData);
-    if (!collection) {
-      showError('Failed to export collection: collection not found.');
-      return;
+  const handleExportCustomCollection = (collection: CustomCollectionDraft) => {
+    try {
+      const payload = buildCustomCollectionsExportPayload([collection], modelsData);
+      const request = buildCustomCollectionPullRequest(collection);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = request.model_name + '.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (exportError) {
+      showError(exportError instanceof Error ? exportError.message : 'Failed to export collection.');
     }
-
-    const payload = buildCustomCollectionsExportPayload([collection]);
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = collection.id + '.json';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
   };
 
   const handleImportCustomCollectionFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -405,6 +407,11 @@ const AppContent: React.FC = () => {
       try {
         const parsed = JSON.parse(String(loadEvent.target?.result ?? ''));
         const result = importCustomCollections(parsed, modelsData);
+        for (const model of result.models) {
+          if (!modelsData[model.model_name]) {
+            await postPullRegistration(buildCustomModelPullRequest(model));
+          }
+        }
         for (const collection of result.collections) {
           await registerCustomCollection(collection);
         }

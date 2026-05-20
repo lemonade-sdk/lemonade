@@ -13,6 +13,7 @@ const MODEL_DATA = 'src/app/src/renderer/utils/modelData.ts';
 const MODEL_MANAGER = 'src/app/src/renderer/ModelManager.tsx';
 const MODEL_SELECTOR = 'src/app/src/renderer/components/ModelSelector.tsx';
 const APP = 'src/app/src/renderer/App.tsx';
+const PANEL = 'src/app/src/renderer/components/CustomCollectionPanel.tsx';
 
 function skipIfMissing() {
   if (!hasFile(CUSTOM_COLLECTIONS)) {
@@ -23,15 +24,14 @@ function skipIfMissing() {
 
 const tests = [
   {
-    name: 'custom collection registration uses the PR 1842 server contract',
+    name: 'custom collection constants use server-side user namespace and export versioning',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = readSource(CUSTOM_COLLECTIONS);
-      assertIncludes(source, "CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX", 'Custom collection ids should use server user.* ids.');
-      assertIncludes(source, 'COLLECTION_OMNI_MODEL_RECIPE', 'Custom collection registration should use recipe=collection.omni.');
-      assertIncludes(source, 'model_name:', 'Custom collection registration should build a /pull model_name payload.');
-      assertIncludes(source, 'components:', 'Custom collection registration should send components to /pull.');
+      assertIncludes(source, 'CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX', 'Custom collections should use the server user.* namespace.');
+      assertIncludes(source, 'CUSTOM_COLLECTIONS_EXPORT_VERSION = 3', 'Export format should be versioned.');
+      assertIncludes(source, 'COLLECTION_OMNI_MODEL_RECIPE', 'Custom collections should use the collection.omni recipe constant.');
     },
   },
   {
@@ -40,64 +40,60 @@ const tests = [
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
-      assertMatches(
-        source,
-        /getCustomCollectionComponentList[\s\S]*?Array\.from\(new Set\(\[[\s\S]*?components\.llm[\s\S]*?components\.vision[\s\S]*?components\.image[\s\S]*?components\.edit[\s\S]*?components\.transcription[\s\S]*?components\.speech[\s\S]*?\]\.filter/,
-        'Component lists should preserve semantic role order and remove duplicates through Set insertion order.',
-      );
+      assertIncludes(source, 'getCustomCollectionComponentList', 'Component list helper should exist.');
+      assertIncludes(source, 'const ordered = [ components.llm, components.vision, components.image, components.edit, components.transcription, components.speech', 'Component lists should preserve semantic role order.');
+      assertIncludes(source, 'return Array.from(new Set(ordered))', 'Component lists should deduplicate through Set insertion order.');
     },
   },
   {
-    name: 'custom collection import validates stale collections before server registration',
+    name: 'custom collection export includes endpoint collections and component model checkpoints',
+    run() {
+      const skip = skipIfMissing();
+      if (skip) return skip;
+      const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
+      assertMatches(source, /collections: collections\.map\(buildCustomCollectionPullRequest\)/, 'Collection export should keep endpoint-compatible collection entries.');
+      assertMatches(source, /modelInfoToExportEntry[\s\S]*?checkpoint[\s\S]*?checkpoints[\s\S]*?return entry/, 'Component exports should include checkpoint and checkpoints metadata.');
+      assertIncludes(source, 'models: Array.from(modelEntries.values())', 'Export payload should include component model records.');
+    },
+  },
+  {
+    name: 'custom collection import registers exported component models before collections',
+    run() {
+      const skip = skipIfMissing();
+      if (skip) return skip;
+      const app = normalizeWhitespace(readSource(APP));
+      assertMatches(app, /for \(const model of result\.models\)[\s\S]*?postPullRegistration\(buildCustomModelPullRequest\(model\)[\s\S]*?for \(const collection of result\.collections\)/, 'Import should register missing component model definitions before collection definitions.');
+    },
+  },
+  {
+    name: 'custom collection panel can edit custom collections and clone built-in collection templates',
+    run() {
+      const skip = skipIfMissing();
+      if (skip) return skip;
+      const panel = normalizeWhitespace(readSource(PANEL));
+      assertIncludes(panel, 'isTemplateEdit', 'Panel should distinguish built-in templates from editable user collections.');
+      assertIncludes(panel, 'modified draft', 'Panel checkpoint summary should flag modified component drafts.');
+      assertIncludes(panel, 'collection.omni components', 'Panel should show the collection.omni checkpoint summary.');
+      assertIncludes(panel, 'Checkpoint: {selectedSourceLabel}', 'Panel should show the selected component checkpoint source when available.');
+      assertIncludes(panel, 'Available locally', 'Panel dropdowns should distinguish downloaded components.');
+      assertIncludes(panel, 'Registered - will download when pulled', 'Panel dropdowns should distinguish registered components that still need download.');
+      assert.ok(!panel.includes('collection-delete-button'), 'Panel should not keep a redundant red delete button in the footer.');
+    },
+  },
+  {
+    name: 'custom collection role options include registered concrete compatible models',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
       assertMatches(
         source,
-        /normalizeCustomCollection[\s\S]*?componentList\.every\(\(component\) => !!modelsData\[component\]\)[\s\S]*?return null/,
-        'Imported collections should be rejected until every referenced component exists.',
-      );
-    },
-  },
-  {
-    name: 'custom collection metadata is server-shaped',
-    run() {
-      const skip = skipIfMissing();
-      if (skip) return skip;
-      const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
-      assertMatches(source, /recipe: COLLECTION_OMNI_MODEL_RECIPE/, 'Custom collections should use recipe=collection.omni.');
-      assertMatches(source, /const components = getCustomCollectionComponentList/, 'Custom collection pull payloads should keep server components.');
-      assert.ok(!/collection_components|collection_source|composite_models/.test(source), 'Custom collection helpers should not recreate pre-1842 synthetic metadata.');
-    },
-  },
-  {
-    name: 'custom collection role options include only downloaded concrete compatible models',
-    run() {
-      const skip = skipIfMissing();
-      if (skip) return skip;
-      const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
-      assertMatches(
-        source,
-        /isCollectionEligibleModel[\s\S]*?!info \|\| isCollectionRecipe\(info\.recipe\) \|\| info\.downloaded !== true[\s\S]*?return false/,
-        'Role options must exclude missing, server collection, and not-downloaded models.',
+        /isCollectionEligibleModel[\s\S]*?!info \|\| isCollectionRecipe\(info\.recipe\)[\s\S]*?return false/,
+        'Role options must exclude missing models and collections, while allowing registered components that can be pulled later.',
       );
       for (const label of ['vision', 'image', 'edit', 'transcription', 'speech']) {
         assertIncludes(source, label, `Role filtering should mention ${label}.`);
       }
-    },
-  },
-  {
-    name: 'custom collection refresh uses server model refresh path',
-    run() {
-      const skip = skipIfMissing();
-      if (skip) return skip;
-      const app = readSource(APP);
-      const modelData = readSource(MODEL_DATA);
-      assertIncludes(app, "serverFetch('/pull'", 'Saving collections should register them through /pull.');
-      assertIncludes(app, "window.dispatchEvent(new CustomEvent('modelsUpdated'))", 'Saving collections should trigger the shared server-model refresh event.');
-      assertIncludes(modelData, "serverFetch('/models?show_all=true')", 'Model data should use the server as the source of truth after PR 1842.');
-      assert.ok(!modelData.includes('mergeCustomCollectionsIntoModelsData'), 'Model data should not inject local synthetic collections after PR 1842.');
     },
   },
   {
@@ -107,12 +103,18 @@ const tests = [
       if (skip) return skip;
       const app = readSource(APP);
       const manager = readSource(MODEL_MANAGER);
-      assertIncludes(app, "openCustomCollection", 'App should listen for custom collection creation/import events.');
-      assertIncludes(app, "editCustomCollection", 'App should listen for custom collection edit events.');
-      assertIncludes(manager, 'renderCustomCollectionOptionsButton', 'ModelManager should expose an edit/options action for custom collections.');
+      assertIncludes(app, 'openCustomCollection', 'App should listen for custom collection creation/import events.');
+      assertIncludes(app, 'editCustomCollection', 'App should listen for custom collection edit events.');
+      assertIncludes(manager, 'renderCustomCollectionOptionsButton', 'ModelManager should expose an edit/options action for collections.');
+      assertIncludes(manager, 'canDeleteFromRow', 'ModelManager should keep a row delete action for custom collections.');
+      assertIncludes(manager, 'const canDeleteFromRow = !isCollection || isUserCollection', 'Custom collection rows should be deletable while built-in collection rows stay protected.');
+      assertIncludes(manager, "info?.source === 'user'", 'ModelManager should detect user collections even if the server strips the user. prefix from the visible id.');
+      assertIncludes(manager, "(info?.labels ?? []).includes('custom')", 'ModelManager should fall back to custom label detection for user collection rows.');
+      assertIncludes(manager, 'canDeleteFromRow && renderDeleteButton(modelName,', 'Custom collection rows should render the row delete action.');
+      assertIncludes(manager, 'isCollectionEditableAsCustom', 'ModelManager should expose settings for collection templates and custom collections.');
       if (hasFile(MODEL_SELECTOR)) {
         const selector = readSource(MODEL_SELECTOR);
-        assertIncludes(selector, 'isCustomCollectionModel', 'Model selector should display custom collections intentionally.');
+        assertIncludes(selector, 'isCustomCollectionModel', 'Model selector should mark server-side custom collections intentionally.');
       }
     },
   },

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
-import { getCollectionDisplayName, isCustomCollectionModel } from '../utils/customCollections';
+import { isCustomCollectionModel } from '../utils/customCollections';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
@@ -29,7 +29,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     if (!isCollectionModel(model.info)) {
       return true;
     }
-    return model.info.suggested === true || isCustomCollectionModel(model.id, model.info);
+    return model.info.suggested === true;
   });
 
   const allModels: SelectorModel[] = isDefaultModelPending
@@ -37,9 +37,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     : visibleDownloadedModels;
 
   const renderModelLabel = (id: string, info?: SelectorModel['info']) => {
-    if (isCustomCollectionModel(id, info)) {
-      return getCollectionDisplayName(id);
-    }
     if (isCollectionModel(info)) {
       return info?.model_name ?? getModelDisplayName(id);
     }

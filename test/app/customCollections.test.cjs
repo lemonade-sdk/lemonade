@@ -41,7 +41,7 @@ if (originalTsLoader) {
   delete require.extensions['.ts'];
 }
 
-function model(labels, downloaded = true, recipe = 'llamacpp') {
+function model(labels, downloaded = true, recipe = 'llamacpp', extra = {}) {
   return {
     checkpoint: `${labels.join('-') || 'chat'}.gguf`,
     recipe,
@@ -49,6 +49,7 @@ function model(labels, downloaded = true, recipe = 'llamacpp') {
     labels,
     downloaded,
     max_prompt_length: 4096,
+    ...extra,
   };
 }
 
@@ -58,12 +59,12 @@ function defineTest(name, fn) {
   tests.push({ name, fn });
 }
 
-defineTest('custom collection pull payload uses PR 1842 server collection contract', () => {
-  const payload = collectionUtils.buildCustomCollectionPullRequest({
-    name: 'My Omni Collection',
+defineTest('buildCustomCollectionPullRequest uses user namespace, collection.omni, and deduped role order', () => {
+  const request = collectionUtils.buildCustomCollectionPullRequest({
+    name: 'My Kit',
     components: {
-      llm: 'chat-llm',
-      vision: 'chat-llm',
+      llm: 'planner',
+      vision: 'planner',
       image: 'image-model',
       edit: 'image-model',
       transcription: 'asr-model',
@@ -71,78 +72,101 @@ defineTest('custom collection pull payload uses PR 1842 server collection contra
     },
   });
 
-  assert.equal(payload.model_name, 'user.My-Omni-Collection');
-  assert.equal(payload.recipe, 'collection.omni');
-  assert.deepEqual(payload.components, ['chat-llm', 'image-model', 'asr-model', 'tts-model']);
+  assert.equal(request.model_name, 'user.My-Kit');
+  assert.equal(request.recipe, 'collection.omni');
+  assert.deepEqual(request.components, ['planner', 'image-model', 'asr-model', 'tts-model']);
 });
 
-defineTest('import accepts collection payloads and skips invalid entries', () => {
-  const result = collectionUtils.importCustomCollections({
-    version: 2,
-    collections: [
-      { name: 'Imported Collection', components: { llm: 'new-llm' } },
-      { model_name: 'user.ExplicitCollection', components: ['explicit-llm', 'image-model'] },
-      { name: 'Invalid Collection', components: { image: 'missing-llm' } },
-    ],
-  }, {
-    'new-llm': model(['tool-calling']),
-    'explicit-llm': model(['tool-calling']),
-    'image-model': model(['image']),
-  });
-
-  assert.equal(result.imported, 2);
-  assert.equal(result.skipped, 1);
-  assert.deepEqual(result.collections.map((collection) => collection.id), [
-    undefined,
-    'user.ExplicitCollection',
-  ]);
-  assert.deepEqual(result.collections[1].components, {
-    llm: 'explicit-llm',
-    image: 'image-model',
-  });
-});
-
-defineTest('model entries convert back to editable custom collection drafts', () => {
+defineTest('modelEntryToCustomCollection reads server-side user collections and built-in templates', () => {
   const modelsData = {
-    'user.CreatorStudio': {
-      checkpoint: '',
-      recipe: 'collection.omni',
-      suggested: true,
-      downloaded: true,
-      components: ['chat-llm', 'vision-llm', 'image-model', 'asr-model', 'tts-model'],
-      labels: ['custom'],
-    },
-    'chat-llm': model(['tool-calling']),
-    'vision-llm': model(['vision']),
+    'planner': model(['tool-calling']),
     'image-model': model(['image']),
-    'asr-model': model(['transcription']),
-    'tts-model': model(['tts']),
+    'user.MyKit': model(['collection'], true, 'collection.omni', {
+      components: ['planner', 'image-model'],
+    }),
+    'Lite Collection': model(['collection'], true, 'collection.omni', {
+      components: ['planner', 'image-model'],
+    }),
   };
 
-  const collection = collectionUtils.modelEntryToCustomCollection('user.CreatorStudio', modelsData['user.CreatorStudio'], modelsData);
-  assert.equal(collection.id, 'user.CreatorStudio');
-  assert.equal(collection.name, 'CreatorStudio');
-  assert.deepEqual(collection.components, {
-    llm: 'chat-llm',
-    vision: 'vision-llm',
-    image: 'image-model',
-    transcription: 'asr-model',
-    speech: 'tts-model',
+  const custom = collectionUtils.modelEntryToCustomCollection('user.MyKit', modelsData['user.MyKit'], modelsData);
+  assert.equal(custom.id, 'user.MyKit');
+  assert.equal(custom.name, 'MyKit');
+  assert.equal(custom.components.llm, 'planner');
+  assert.equal(custom.components.image, 'image-model');
+
+  const template = collectionUtils.modelEntryToCustomCollection('Lite Collection', modelsData['Lite Collection'], modelsData);
+  assert.equal(template.id, 'Lite Collection');
+  assert.equal(template.name, 'Lite Collection');
+});
+
+defineTest('export includes endpoint collection entries plus component checkpoint metadata', () => {
+  const modelsData = {
+    'planner': model(['tool-calling'], true, 'llamacpp', { checkpoint: 'org/planner:Q4_K_M' }),
+    'image-model': model(['image'], true, 'sd-cpp', {
+      checkpoint: 'org/image:image.gguf',
+      image_defaults: { width: 512, height: 512 },
+    }),
+    'multi-file': model(['edit'], true, 'sd-cpp', {
+      checkpoint: '',
+      checkpoints: { main: 'org/edit:model.safetensors', vae: 'org/edit:vae.safetensors' },
+    }),
+  };
+
+  const payload = collectionUtils.buildCustomCollectionsExportPayload([{
+    id: 'user.CreatorStudio',
+    name: 'CreatorStudio',
+    components: { llm: 'planner', image: 'image-model', edit: 'multi-file' },
+  }], modelsData);
+
+  assert.equal(payload.version, 3);
+  assert.deepEqual(payload.collections, [{
+    model_name: 'user.CreatorStudio',
+    recipe: 'collection.omni',
+    components: ['planner', 'image-model', 'multi-file'],
+  }]);
+  assert.deepEqual(payload.models.map((entry) => entry.model_name), ['planner', 'image-model', 'multi-file']);
+  assert.equal(payload.models.find((entry) => entry.model_name === 'planner').checkpoint, 'org/planner:Q4_K_M');
+  assert.deepEqual(payload.models.find((entry) => entry.model_name === 'multi-file').checkpoints, {
+    main: 'org/edit:model.safetensors',
+    vae: 'org/edit:vae.safetensors',
   });
 });
 
-defineTest('role options include only downloaded compatible concrete models', () => {
+defineTest('import uses exported component model metadata to validate collections before registration', () => {
+  const payload = {
+    version: 3,
+    collections: [{
+      model_name: 'user.ImportedKit',
+      recipe: 'collection.omni',
+      components: ['planner', 'image-model'],
+    }],
+    models: [
+      { model_name: 'planner', recipe: 'llamacpp', checkpoint: 'org/planner:Q4_K_M', labels: ['tool-calling'] },
+      { model_name: 'image-model', recipe: 'sd-cpp', checkpoint: 'org/image:image.gguf', labels: ['image'] },
+    ],
+  };
+
+  const result = collectionUtils.importCustomCollections(payload, {});
+  assert.equal(result.imported, 1);
+  assert.equal(result.skipped, 0);
+  assert.equal(result.models.length, 2);
+  assert.equal(result.collections[0].id, 'user.ImportedKit');
+  assert.equal(result.collections[0].components.llm, 'planner');
+  assert.equal(result.collections[0].components.image, 'image-model');
+});
+
+defineTest('role options include registered concrete compatible models', () => {
   const modelsData = {
-    'plain-chat': model([]),
-    'vision-chat': model(['vision']),
+    'plain-chat': model(['tool-calling']),
+    'vision-chat': model(['vision', 'tool-calling']),
     'image-model': model(['image']),
     'edit-model': model(['edit']),
     'asr-model': model(['transcription']),
     'tts-model': model(['speech']),
-    'not-downloaded-image': model(['image'], false),
-    'user.Collection': model(['custom'], true, 'collection.omni'),
+    'registered-image': model(['image'], false),
+    'user.Collection': model(['collection'], true, 'collection.omni', { components: ['plain-chat'] }),
   };
-  modelsData['user.Collection'].components = ['plain-chat', 'image-model'];
 
   assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'llm').map((entry) => entry.id), [
     'plain-chat',
@@ -150,6 +174,7 @@ defineTest('role options include only downloaded compatible concrete models', ()
   ]);
   assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'image').map((entry) => entry.id), [
     'image-model',
+    'registered-image',
   ]);
   assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'edit').map((entry) => entry.id), [
     'edit-model',

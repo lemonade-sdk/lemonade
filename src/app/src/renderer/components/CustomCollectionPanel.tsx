@@ -7,6 +7,9 @@ import {
   CustomCollectionRole,
   getCollectionRoleOptions,
   getCustomCollectionRoleLabel,
+  getCustomCollectionComponentList,
+  getCollectionDisplayName,
+  isCustomCollectionId,
   modelEntryToCustomCollection,
 } from '../utils/customCollections';
 
@@ -15,7 +18,7 @@ interface CustomCollectionPanelProps {
   collectionId?: string;
   onClose: () => void;
   onSave: (collection: CustomCollectionDraft) => void | Promise<void>;
-  onExport: (collectionId: string) => void;
+  onExport: (collection: CustomCollectionDraft) => void;
 }
 
 const DEFAULT_NAME = 'MyOmniCollection';
@@ -33,6 +36,7 @@ const roleDescriptions: Record<CustomCollectionRole, string> = {
 
 const emptyDraft = () => ({
   selectedCollectionId: '',
+  sourceCollectionId: '',
   name: DEFAULT_NAME,
   llm: '',
   vision: '',
@@ -45,17 +49,37 @@ const emptyDraft = () => ({
 
 type CollectionForm = ReturnType<typeof emptyDraft>;
 
-const draftFromCollection = (collection: CustomCollection): CollectionForm => ({
-  selectedCollectionId: collection.id,
-  name: collection.name,
-  llm: collection.components.llm,
-  vision: collection.components.vision ?? '',
-  image: collection.components.image ?? '',
-  edit: collection.components.edit ?? '',
-  transcription: collection.components.transcription ?? '',
-  speech: collection.components.speech ?? '',
-  createdAt: collection.createdAt,
+const draftFromCollection = (collection: CustomCollection, sourceId: string): CollectionForm => {
+  const isCustom = isCustomCollectionId(sourceId);
+  return {
+    selectedCollectionId: isCustom ? collection.id : '',
+    sourceCollectionId: sourceId,
+    name: isCustom ? collection.name : `${getCollectionDisplayName(sourceId)} Custom`,
+    llm: collection.components.llm,
+    vision: collection.components.vision ?? '',
+    image: collection.components.image ?? '',
+    edit: collection.components.edit ?? '',
+    transcription: collection.components.transcription ?? '',
+    speech: collection.components.speech ?? '',
+    createdAt: collection.createdAt,
+  };
+};
+
+const formToDraft = (form: CollectionForm): CustomCollectionDraft => ({
+  id: form.selectedCollectionId || undefined,
+  name: form.name.trim(),
+  createdAt: form.createdAt,
+  components: {
+    llm: form.llm,
+    vision: form.vision || undefined,
+    image: form.image || undefined,
+    edit: form.edit || undefined,
+    transcription: form.transcription || undefined,
+    speech: form.speech || undefined,
+  },
 });
+
+const componentListForForm = (form: CollectionForm): string[] => getCustomCollectionComponentList(formToDraft(form));
 
 const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   mode,
@@ -66,6 +90,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
 }) => {
   const { modelsData } = useModels();
   const [form, setForm] = useState<CollectionForm>(() => emptyDraft());
+  const [originalComponents, setOriginalComponents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const options = useMemo(() => ({
@@ -79,20 +104,35 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
 
   const selectedLlmLabels = form.llm ? (modelsData[form.llm]?.labels ?? []) : [];
   const selectedLlmHasToolCalling = selectedLlmLabels.includes('tool-calling') || selectedLlmLabels.includes('tools');
-  const isEditing = mode === 'edit' && !!form.selectedCollectionId;
+  const currentComponents = componentListForForm(form);
+  const hasExistingCustomCollection = mode === 'edit' && !!form.selectedCollectionId;
+  const isTemplateEdit = mode === 'edit' && !!form.sourceCollectionId && !form.selectedCollectionId;
+  const hasComponentChanges = originalComponents.length > 0 && (
+    originalComponents.length !== currentComponents.length ||
+    originalComponents.some((component, index) => component !== currentComponents[index])
+  );
+  const checkpointValue = `collection.omni components (${currentComponents.length})${hasComponentChanges ? ' — modified draft' : ''}`;
 
   useEffect(() => {
     setError(null);
     if (mode !== 'edit' || !collectionId) {
-      setForm(emptyDraft());
+      const next = emptyDraft();
+      setForm(next);
+      setOriginalComponents([]);
       return;
     }
 
     const collection = modelEntryToCustomCollection(collectionId, modelsData[collectionId], modelsData);
-    setForm(collection ? draftFromCollection(collection) : emptyDraft());
     if (!collection) {
-      setError('This custom collection could not be found.');
+      setForm(emptyDraft());
+      setOriginalComponents([]);
+      setError('This collection could not be found. Refresh models and try again.');
+      return;
     }
+
+    const next = draftFromCollection(collection, collectionId);
+    setForm(next);
+    setOriginalComponents(getCustomCollectionComponentList(collection));
   }, [mode, collectionId, modelsData]);
 
   const updateForm = (patch: Partial<CollectionForm>) => {
@@ -128,14 +168,38 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
 
   const valueForRole = (role: CustomCollectionRole): string => form[role];
 
+  const getComponentSourceLabel = (modelId: string): string | null => {
+    const info = modelsData[modelId];
+    if (!info) return null;
+    if (typeof info.checkpoint === 'string' && info.checkpoint.length > 0) {
+      return info.checkpoint;
+    }
+    const checkpoints = info.checkpoints;
+    if (checkpoints && typeof checkpoints === 'object' && !Array.isArray(checkpoints)) {
+      const main = checkpoints.main;
+      if (typeof main === 'string' && main.length > 0) return main;
+      const first = Object.values(checkpoints).find((value): value is string => typeof value === 'string' && value.length > 0);
+      if (first) return first;
+    }
+    return null;
+  };
+
   const renderRoleSelect = (role: CustomCollectionRole, required = false) => {
     const selectedValue = valueForRole(role);
     const roleOptions = options[role];
+    const selectedSourceLabel = selectedValue ? getComponentSourceLabel(selectedValue) : null;
     const optionIds = new Set(roleOptions.map((model) => model.id));
     const selectedFallback = selectedValue && !optionIds.has(selectedValue) && modelsData[selectedValue]
       ? [{ id: selectedValue, info: modelsData[selectedValue] }]
       : [];
     const selectOptions = selectedFallback.concat(roleOptions);
+    const availableOptions = selectOptions.filter((model) => model.info.downloaded === true);
+    const registeredOptions = selectOptions.filter((model) => model.info.downloaded !== true);
+    const renderModelOption = (model: (typeof selectOptions)[number]) => {
+      const label = model.info.model_name ?? getModelDisplayName(model.id);
+      const stateLabel = model.info.downloaded === true ? 'downloaded' : 'registered - will download';
+      return <option key={model.id} value={model.id}>{label} ({stateLabel})</option>;
+    };
 
     return (
       <div className="form-section collection-role-row" key={role}>
@@ -150,47 +214,56 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
         >
           {!required && <option value="">None</option>}
           {required && <option value="">Select a model...</option>}
-          {selectOptions.map((model) => (
-            <option key={model.id} value={model.id}>{model.info.model_name ?? getModelDisplayName(model.id)}</option>
-          ))}
+          {availableOptions.length > 0 && (
+            <optgroup label="Available locally">
+              {availableOptions.map(renderModelOption)}
+            </optgroup>
+          )}
+          {registeredOptions.length > 0 && (
+            <optgroup label="Registered - will download when pulled">
+              {registeredOptions.map(renderModelOption)}
+            </optgroup>
+          )}
         </select>
+        {selectedSourceLabel && (
+          <div className="collection-role-source">Checkpoint: {selectedSourceLabel}</div>
+        )}
         {roleOptions.length === 0 && (
-          <div className="collection-role-empty">No downloaded compatible model found.</div>
+          <div className="collection-role-empty">No registered compatible model found. Add a custom model first so its checkpoint can be pulled as a component.</div>
         )}
       </div>
     );
   };
 
-  const handleSave = async () => {
+  const validateDraft = (): CustomCollectionDraft | null => {
     const cleanName = form.name.trim();
     if (!cleanName) {
       setError('Collection name is required.');
-      return;
+      return null;
     }
     if (!form.llm) {
       setError('Select an LLM model for the collection.');
-      return;
+      return null;
     }
+    return formToDraft({ ...form, name: cleanName });
+  };
 
-    await onSave({
-      id: form.selectedCollectionId || undefined,
-      name: cleanName,
-      createdAt: form.createdAt,
-      components: {
-        llm: form.llm,
-        vision: form.vision || undefined,
-        image: form.image || undefined,
-        edit: form.edit || undefined,
-        transcription: form.transcription || undefined,
-        speech: form.speech || undefined,
-      },
-    });
+  const handleSave = async () => {
+    const draft = validateDraft();
+    if (!draft) return;
+    await onSave(draft);
+  };
+
+  const handleExport = () => {
+    const draft = validateDraft();
+    if (!draft) return;
+    onExport(draft);
   };
 
   return (
     <>
       <div className="settings-header">
-        <h3>{isEditing ? 'Collection Options' : 'New Collection'}</h3>
+        <h3>{hasExistingCustomCollection ? 'Collection Options' : 'New Collection'}</h3>
         <button className="settings-close-button" onClick={onClose} title="Close">
           <svg width="14" height="14" viewBox="0 0 14 14">
             <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -199,6 +272,23 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       </div>
 
       <div className="settings-content custom-collection-content">
+        <div className="collection-options-summary">
+          <div className="model-info-row">
+            <span className="model-info-label">Name</span>
+            <span className="model-info-value">{form.selectedCollectionId || `user.${form.name || DEFAULT_NAME}`}</span>
+          </div>
+          <div className="model-info-row">
+            <span className="model-info-label">Checkpoint</span>
+            <span className="model-info-value">{checkpointValue}</span>
+          </div>
+          {isTemplateEdit && (
+            <div className="collection-warning">You are using an existing Omni collection as a template. Saving creates a new user collection; the original collection is unchanged.</div>
+          )}
+          {hasComponentChanges && hasExistingCustomCollection && (
+            <div className="collection-warning">Components have changed. Saving re-registers this collection through /pull with recipe collection.omni and the updated components list.</div>
+          )}
+        </div>
+
         <div className="form-section">
           <label className="form-label" title="Registered user collection name">Collection Name</label>
           <div className="input-with-prefix">
@@ -209,7 +299,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
               value={form.name}
               onChange={(e) => updateForm({ name: e.target.value })}
               placeholder="CreatorStudio"
-              disabled={isEditing}
+              disabled={hasExistingCustomCollection}
             />
           </div>
         </div>
@@ -226,13 +316,9 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       </div>
 
       <div className="settings-footer custom-collection-footer">
-        {isEditing && (
-          <button className="settings-reset-button" onClick={() => onExport(form.selectedCollectionId)}>
-            Export Collection
-          </button>
-        )}
+        <button className="settings-reset-button" onClick={handleExport}>Export Collection</button>
         <button className="settings-reset-button" onClick={onClose}>Cancel</button>
-        <button className="settings-save-button" onClick={handleSave}>Save</button>
+        <button className="settings-save-button" onClick={handleSave}>{hasExistingCustomCollection ? 'Save' : 'Create'}</button>
       </div>
     </>
   );

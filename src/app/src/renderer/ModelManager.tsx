@@ -20,7 +20,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
-import { isCustomCollectionModel } from './utils/customCollections';
+import { isCollectionEditableAsCustom } from './utils/customCollections';
 
 interface ModelFamily {
   displayName: string;
@@ -678,7 +678,7 @@ const [searchQuery, setSearchQuery] = useState('');
   // Merge loaded and loading models so the list shows components as they
   // start loading, not just after /health confirms them. Loading entries
   // get an `isLoading` flag so the UI can render a pending indicator.
-  // Skip collection entries themselves — only show components.
+  // Skip collection entries themselves — only show component models.
   const loadedModelEntries = (() => {
     const entries: Array<{ modelName: string; isLoading: boolean }> = [];
     const seen = new Set<string>();
@@ -1054,7 +1054,7 @@ const [searchQuery, setSearchQuery] = useState('');
       if (isCollectionModel(modelData)) {
         const components = getCollectionComponents(modelData);
         if (components.length === 0) {
-          showError(`Omni-model "${modelName}" has no components.`);
+          showError(`Experience model "${modelName}" has no component models.`);
           return;
         }
 
@@ -1068,7 +1068,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
         for (const component of components) {
           if (!modelsData[component]) {
-            throw new Error(`Missing component "${component}" for ${modelName}.`);
+            throw new Error(`Missing component model "${component}" for ${modelName}.`);
           }
           await ensureModelReady(component, modelsData, {
             onModelLoading: () => {},
@@ -1321,11 +1321,11 @@ const [searchQuery, setSearchQuery] = useState('');
     </button>
   );
 
-  const renderDeleteButton = (modelName: string) => (
+  const renderDeleteButton = (modelName: string, title = 'Delete model') => (
     <button
       className="model-action-btn delete-btn"
       onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
-      title="Delete model"
+      title={title}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="3 6 5 6 21 6" />
@@ -1338,12 +1338,16 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
-    const isCustomCollection = isCustomCollectionModel(modelName, info);
-
-    const renderSettingsButton = () => isCustomCollection
-      ? renderCustomCollectionOptionsButton(modelName)
-      : renderLoadOptionsButton(modelName);
-
+    const isCollection = isCollectionModel(info);
+    const isUserCollection = isCollection && (
+      modelName.startsWith(USER_MODEL_PREFIX) ||
+      info?.source === 'user' ||
+      info?.source === 'user_models' ||
+      info?.source === 'custom' ||
+      (info?.labels ?? []).includes('custom')
+    );
+    const isEditableCollection = isCollectionEditableAsCustom(info);
+    const canDeleteFromRow = !isCollection || isUserCollection;
     return (
       <>
         {!isDownloaded && (
@@ -1359,8 +1363,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
             </button>
-            {isCustomCollection && renderDeleteButton(modelName)}
-            {isCustomCollection && renderSettingsButton()}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete collection' : 'Delete model')}
+            {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
           </>
         )}
         {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
@@ -1379,8 +1383,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {renderDeleteButton(modelName)}
-            {renderSettingsButton()}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete collection' : 'Delete model')}
+            {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
+            {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1396,8 +1401,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {renderDeleteButton(modelName)}
-            {renderSettingsButton()}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete collection' : 'Delete model')}
+            {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
+            {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
