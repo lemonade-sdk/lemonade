@@ -150,7 +150,7 @@ lemonade list [options]
 
 ## Options for pull
 
-The `pull` command downloads and installs models. It can also register a custom `user.*` model when paired with manual configuration flags. For the full end-to-end custom model workflow, including checkpoint formats, omni-models, and `user_models.json`, see [Custom Model Configuration](./configuration/custom-models.md).
+The `pull` command downloads and installs models. It can also register a custom `user.*` model when paired with manual configuration flags. For the full end-to-end custom model workflow, including checkpoint formats, omni collections, and `user_models.json`, see [Custom Model Configuration](./configuration/custom-models.md).
 
 Common forms:
 
@@ -176,9 +176,9 @@ lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
-| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni-model`) | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
-| `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni-model`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
+| `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
 
 ## Options for import
 

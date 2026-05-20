@@ -563,8 +563,8 @@ sys.exit(0)
             f"Pull should not report errors: {result.stdout}",
         )
 
-    def test_055_pull_components_omni_model(self):
-        """Test pull command with --components flag registers an omni-model."""
+    def test_055_pull_components_omni_collection(self):
+        """Test pull command with --components flag registers an omni collection."""
         collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
         # Unique user.<name> entries surface under the bare public name.
         public_name = collection_name[5:]
@@ -574,7 +574,7 @@ sys.exit(0)
                     "pull",
                     collection_name,
                     "--recipe",
-                    "collection.omni-model",
+                    "collection.omni",
                     "--components",
                     ENDPOINT_TEST_MODEL,
                 ],
@@ -598,7 +598,7 @@ sys.exit(0)
                 None,
             )
             self.assertIsNotNone(entry, f"{public_name} should appear in /models")
-            self.assertEqual(entry.get("recipe"), "collection.omni-model")
+            self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
         finally:
             try:
@@ -612,13 +612,13 @@ sys.exit(0)
                 pass
 
     def test_056_pull_components_missing_for_omni_recipe(self):
-        """`--recipe collection.omni-model` without --components is rejected by the CLI."""
+        """`--recipe collection.omni` without --components is rejected by the CLI."""
         result = self.assertCommandFails(
             [
                 "pull",
                 f"user.MissingComps-{uuid.uuid4().hex[:8]}",
                 "--recipe",
-                "collection.omni-model",
+                "collection.omni",
             ],
             timeout=TIMEOUT_DEFAULT,
         )

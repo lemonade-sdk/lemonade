@@ -2290,7 +2290,7 @@ void ModelManager::download_model(const std::string& model_name,
             if (auto err = validate_collection_request(model_name, model_data)) {
                 throw std::runtime_error(*err);
             }
-            LOG(INFO, "ModelManager") << "Registering new omni-model: " << model_name << std::endl;
+            LOG(INFO, "ModelManager") << "Registering new omni collection: " << model_name << std::endl;
         } else {
             // Check that required arguments are provided
             if (actual_checkpoint.empty() || actual_recipe.empty()) {
@@ -3561,7 +3561,7 @@ std::optional<std::string> ModelManager::validate_collection_request(
     if (!model_data.contains("components") ||
         !model_data["components"].is_array() ||
         model_data["components"].empty()) {
-        return std::string("recipe='collection.omni-model' requires a non-empty 'components' array");
+        return std::string("recipe='collection.omni' requires a non-empty 'components' array");
     }
     for (const auto& component : model_data["components"]) {
         if (!component.is_string()) {

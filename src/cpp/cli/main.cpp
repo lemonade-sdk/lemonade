@@ -297,7 +297,7 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     if (has_manual_pull_options(config)) {
         if (lemon::is_collection_recipe(config.recipe)) {
             if (config.components.empty()) {
-                std::cerr << "Error: omni-model pull requires --components MODEL [MODEL ...]."
+                std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
                           << std::endl;
                 std::cerr << "       See 'lemonade pull --help'." << std::endl;
                 return 1;
@@ -1093,7 +1093,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni-model)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1103,7 +1103,7 @@ int main(int argc, char* argv[]) {
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
     pull_cmd->add_option("--components", config.components,
-        "Components for a user.* omni-model (use with --recipe collection.omni-model). "
+        "Components for a user.* omni collection (use with --recipe collection.omni). "
         "Components must already be registered (built-in or previously pulled user.* models).")
         ->group("Manual Configuration Options")
         ->type_name("MODEL")

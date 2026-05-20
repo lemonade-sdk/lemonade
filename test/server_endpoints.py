@@ -1302,7 +1302,7 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/pull",
                 json={
                     "model_name": canonical_name,
-                    "recipe": "collection.omni-model",
+                    "recipe": "collection.omni",
                     "components": [ENDPOINT_TEST_MODEL],
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
@@ -1321,14 +1321,14 @@ class EndpointTests(ServerTestBase):
                 None,
             )
             self.assertIsNotNone(entry, f"{public_name} should appear in /models")
-            self.assertEqual(entry.get("recipe"), "collection.omni-model")
+            self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
             self.assertTrue(
                 entry.get("downloaded"),
                 "Collection should report downloaded=true when all components are downloaded",
             )
 
-            print(f"[OK] Registered omni-model: {public_name}")
+            print(f"[OK] Registered omni collection: {public_name}")
         finally:
             try:
                 requests.post(
@@ -1346,7 +1346,7 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/pull",
             json={
                 "model_name": canonical_name,
-                "recipe": "collection.omni-model",
+                "recipe": "collection.omni",
                 "components": [f"user.does-not-exist-{uuid.uuid4().hex[:6]}"],
             },
             timeout=TIMEOUT_DEFAULT,
@@ -1362,7 +1362,7 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/pull",
             json={
                 "model_name": canonical_name,
-                "recipe": "collection.omni-model",
+                "recipe": "collection.omni",
                 "components": [],
             },
             timeout=TIMEOUT_DEFAULT,
@@ -1377,7 +1377,7 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/pull",
             json={
                 "model_name": f"NoPrefixColl-{uuid.uuid4().hex[:8]}",
-                "recipe": "collection.omni-model",
+                "recipe": "collection.omni",
                 "components": [ENDPOINT_TEST_MODEL],
             },
             timeout=TIMEOUT_DEFAULT,
@@ -1393,7 +1393,7 @@ class EndpointTests(ServerTestBase):
             f"{self.base_url}/pull",
             json={
                 "model_name": canonical_name,
-                "recipe": "collection.omni-model",
+                "recipe": "collection.omni",
                 "components": [canonical_name],
             },
             timeout=TIMEOUT_DEFAULT,

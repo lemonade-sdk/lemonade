@@ -15,7 +15,7 @@ This is the standard OpenAI tool-calling loop. The tool schemas OmniRouter provi
 
 ## Collections
 
-A **Collection** is a meta-model made up of components. An **omni-model** is the collection type used by OmniRouter, registered with `recipe: "collection.omni-model"`. Selecting an omni-model collection in the Lemonade desktop app loads one LLM + one image model + one ASR + one TTS — all the pieces OmniRouter's tools need in a single click.
+A **Collection** is a meta-model made up of components. An **omni collection** is the collection type used by OmniRouter, registered with `recipe: "collection.omni"`. Selecting an omni collection collection in the Lemonade desktop app loads one LLM + one image model + one ASR + one TTS — all the pieces OmniRouter's tools need in a single click.
 
 | Collection | LLM | Image | ASR | TTS |
 |-----------|-----|-------|-----|-----|
