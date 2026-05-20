@@ -1,113 +1,21 @@
 #include "lemon/backends/vllm_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/vllm_arg_resolver.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/utils/custom_args.h"
-#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <cstdint>
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <sstream>
 
-namespace fs = std::filesystem;
 using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
 
 static constexpr int64_t ANTHROPIC_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
-
-// Parse quantization_config.quant_method from a config.json body.
-static std::string parse_quant_method(const std::string& config_json) {
-    try {
-        json j = json::parse(config_json);
-        if (j.contains("quantization_config")) {
-            const auto& qc = j["quantization_config"];
-            if (qc.contains("quant_method") && qc["quant_method"].is_string()) {
-                return qc["quant_method"].get<std::string>();
-            }
-        }
-    } catch (const std::exception&) {
-        // fall through
-    }
-    return "";
-}
-
-static bool parse_positive_int(const std::string& value, int64_t& result) {
-    char* end = nullptr;
-    long long parsed = std::strtoll(value.c_str(), &end, 10);
-    if (end == value.c_str() || *end != '\0' || parsed <= 0) {
-        return false;
-    }
-    result = static_cast<int64_t>(parsed);
-    return true;
-}
-
-static int64_t resolve_max_model_len(int ctx_size, const std::string& vllm_args) {
-    int64_t max_model_len = ctx_size;
-    auto tokens = lemon::utils::parse_custom_args(vllm_args);
-
-    for (size_t i = 0; i < tokens.size(); ++i) {
-        const std::string& token = tokens[i];
-        int64_t parsed = 0;
-        const std::string flag = "--max-model-len";
-
-        if (token == flag && i + 1 < tokens.size() && parse_positive_int(tokens[i + 1], parsed)) {
-            max_model_len = parsed;
-            ++i;
-        } else if (token.rfind(flag + "=", 0) == 0 &&
-                   parse_positive_int(token.substr(flag.size() + 1), parsed)) {
-            max_model_len = parsed;
-        }
-    }
-
-    return max_model_len;
-}
-
-// Returns quantization_config.quant_method for the model, or empty string.
-// First checks the HuggingFace hub cache; if config.json isn't there yet,
-// fetches it over HTTP from huggingface.co directly. This ensures detection
-// works on first load before vLLM has downloaded anything.
-static std::string detect_quant_method(const std::string& model_id) {
-    // 1. Check HF cache first (fast path)
-    std::string hf_dir = "models--";
-    for (char c : model_id) {
-        if (c == '/') hf_dir += "--";
-        else hf_dir += c;
-    }
-
-    const char* home = std::getenv("HOME");
-    if (home) {
-        fs::path snapshots = fs::path(home) / ".cache" / "huggingface" / "hub" / hf_dir / "snapshots";
-        if (fs::exists(snapshots)) {
-            for (const auto& entry : fs::directory_iterator(snapshots)) {
-                if (!entry.is_directory()) continue;
-                fs::path cfg = entry.path() / "config.json";
-                if (!fs::exists(cfg)) continue;
-                std::ifstream f(cfg);
-                std::stringstream buf;
-                buf << f.rdbuf();
-                std::string result = parse_quant_method(buf.str());
-                if (!result.empty()) return result;
-            }
-        }
-    }
-
-    // 2. Fetch directly from HF
-    std::string url = "https://huggingface.co/" + model_id + "/resolve/main/config.json";
-    auto resp = HttpClient::get(url);
-    if (resp.status_code == 200) {
-        return parse_quant_method(resp.body);
-    }
-
-    LOG(DEBUG, "vLLM") << "Could not fetch config.json for " << model_id
-                       << " (http " << resp.status_code << "); skipping quant detection" << std::endl;
-    return "";
-}
 
 InstallParams VLLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
@@ -153,12 +61,9 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_backend = options.get_option("vllm_backend");
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
-    max_model_len_ = resolve_max_model_len(ctx_size, vllm_args);
+    max_model_len_ = ctx_size;
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
-
-    // Install vllm-server if needed
-    backend_manager_->install_backend(SPEC.recipe, vllm_backend);
 
     // vLLM uses HuggingFace model names, not local file paths.
     // The checkpoint field in server_models.json is the HF model ID.
@@ -168,6 +73,13 @@ void VLLMServer::load(const std::string& model_name,
     }
 
     LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
+
+    json vllm_model_config =
+        JsonUtils::load_from_file(utils::get_resource_path("resources/vllm_model_config.json"));
+    VLLMArgResolution resolved_vllm_args = resolve_vllm_args(model_name, model_id, vllm_model_config, vllm_args);
+
+    // Install vllm-server if needed
+    backend_manager_->install_backend(SPEC.recipe, vllm_backend);
 
     // Choose port
     port_ = choose_port();
@@ -197,40 +109,16 @@ void VLLMServer::load(const std::string& model_name,
 
     args.push_back("--enable-prefix-caching");
 
-    // Detect the actual quantization method from config.json rather than guessing
-    // from the model name. Repos named "...-AWQ" sometimes use compressed-tensors,
-    // GPTQ, etc. and forcing --quantization awq would fail the load.
-    // For AWQ specifically we force the 'awq' kernel because vLLM's default
-    // awq_marlin is very slow on consumer GPUs (2 tok/s -> 12 tok/s).
-    std::string quant_method = detect_quant_method(model_id);
-    if (quant_method == "awq") {
-        LOG(DEBUG, "vLLM") << "Detected AWQ; forcing --quantization awq" << std::endl;
-        args.push_back("--quantization");
-        args.push_back("awq");
-    } else if (!quant_method.empty()) {
-        LOG(DEBUG, "vLLM") << "Detected quantization '" << quant_method
-                           << "'; letting vLLM auto-select kernel" << std::endl;
-    }
-
-    // enable prompt caching
-    args.push_back("--enable-prefix-caching");
-
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
-    // Keep this overridable through vllm_args for users that want another limit.
-    if (vllm_args.find("--gpu-memory-utilization") == std::string::npos &&
-        vllm_args.find("--kv-cache-memory-bytes") == std::string::npos) {
+    // User-provided memory-budget args deliberately suppress this code default.
+    if (!resolved_vllm_args.user_has_memory_budget_arg) {
         args.push_back("--kv-cache-memory-bytes");
         args.push_back("4G");
     }
 
-    // Append custom vllm_args if provided
-    if (!vllm_args.empty()) {
-        LOG(DEBUG, "vLLM") << "Adding custom arguments: " << vllm_args << std::endl;
-        std::istringstream iss(vllm_args);
-        std::string arg;
-        while (iss >> arg) {
-            args.push_back(arg);
-        }
+    if (!resolved_vllm_args.args.empty()) {
+        LOG(DEBUG, "vLLM") << "Adding model/user arguments from vLLM resolver" << std::endl;
+        args.insert(args.end(), resolved_vllm_args.args.begin(), resolved_vllm_args.args.end());
     }
 
     LOG(INFO, "vLLM") << "Starting vllm-server on port " << port_ << "..." << std::endl;
