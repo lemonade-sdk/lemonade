@@ -1,0 +1,211 @@
+#include "lemon/backends/vllm_arg_resolver.h"
+#include "lemon/utils/custom_args.h"
+
+#include <algorithm>
+#include <regex>
+#include <set>
+#include <stdexcept>
+
+namespace lemon {
+namespace backends {
+namespace {
+
+struct ParsedArg {
+    std::string flag;
+    std::vector<std::string> values;
+};
+
+const std::set<std::string>& protected_flags() {
+    static const std::set<std::string> flags = {
+        "--enable-prefix-caching",
+        "--enforce-eager",
+        "--host",
+        "--max-model-len",
+        "--model",
+        "--port",
+        "--served-model-name",
+    };
+    return flags;
+}
+
+std::string conflict_key(const std::string& flag) {
+    if (flag == "--tool-call-parser") return "tool_parser";
+    if (flag == "--enable-auto-tool-choice" || flag == "--disable-auto-tool-choice") return "tool_choice";
+    if (flag == "--quantization") return "quantization";
+    if (flag == "--kv-cache-memory-bytes" || flag == "--gpu-memory-utilization") return "memory_budget";
+    return "flag:" + flag;
+}
+
+bool is_memory_budget_arg(const ParsedArg& arg) {
+    return conflict_key(arg.flag) == "memory_budget";
+}
+
+std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::string& source) {
+    std::vector<ParsedArg> parsed;
+    std::vector<std::string> tokens = lemon::utils::parse_custom_args(arg_string);
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::string token = tokens[i];
+        if (token.empty()) {
+            continue;
+        }
+        if (token[0] != '-') {
+            throw std::runtime_error("Invalid vLLM argument '" + token + "' in " + source +
+                                     ": expected a flag beginning with '-'");
+        }
+
+        ParsedArg arg;
+        size_t eq_pos = token.find('=');
+        if (eq_pos != std::string::npos) {
+            arg.flag = token.substr(0, eq_pos);
+            arg.values.push_back(token.substr(eq_pos + 1));
+        } else {
+            arg.flag = token;
+            while (i + 1 < tokens.size() && (tokens[i + 1].empty() || tokens[i + 1][0] != '-')) {
+                if (!tokens[i + 1].empty()) {
+                    arg.values.push_back(tokens[i + 1]);
+                }
+                ++i;
+            }
+        }
+
+        if (protected_flags().count(arg.flag)) {
+            throw std::runtime_error("vLLM argument '" + arg.flag + "' in " + source +
+                                     " is managed by Lemonade and cannot be overridden");
+        }
+
+        parsed.push_back(std::move(arg));
+    }
+
+    return parsed;
+}
+
+void append_layer(std::vector<ParsedArg>& target, const std::vector<ParsedArg>& incoming) {
+    for (const auto& arg : incoming) {
+        std::string key = conflict_key(arg.flag);
+        target.erase(std::remove_if(target.begin(), target.end(),
+                                    [&](const ParsedArg& existing) {
+                                        return conflict_key(existing.flag) == key;
+                                    }),
+                     target.end());
+        target.push_back(arg);
+    }
+}
+
+std::vector<std::string> flatten_args(const std::vector<ParsedArg>& parsed) {
+    std::vector<std::string> result;
+    for (const auto& arg : parsed) {
+        result.push_back(arg.flag);
+        result.insert(result.end(), arg.values.begin(), arg.values.end());
+    }
+    return result;
+}
+
+const nlohmann::json* find_family(const nlohmann::json& config,
+                                  const std::string& family_name) {
+    if (!config.contains("families") || !config["families"].is_object()) {
+        return nullptr;
+    }
+    const auto& families = config["families"];
+    if (!families.contains(family_name) || !families[family_name].is_object()) {
+        throw std::runtime_error("vllm_model_config.json references unknown family '" + family_name + "'");
+    }
+    return &families[family_name];
+}
+
+const nlohmann::json* match_family_by_checkpoint(const nlohmann::json& config,
+                                                 const std::string& checkpoint) {
+    if (!config.contains("families") || !config["families"].is_object()) {
+        return nullptr;
+    }
+
+    for (const auto& item : config["families"].items()) {
+        const auto& family = item.value();
+        if (!family.is_object() || !family.contains("match") || !family["match"].is_array()) {
+            continue;
+        }
+
+        for (const auto& matcher : family["match"]) {
+            if (!matcher.is_object() ||
+                !matcher.contains("checkpoint_regex") ||
+                !matcher["checkpoint_regex"].is_string()) {
+                continue;
+            }
+
+            const std::string pattern = matcher["checkpoint_regex"].get<std::string>();
+            try {
+                if (std::regex_search(checkpoint, std::regex(pattern))) {
+                    return &family;
+                }
+            } catch (const std::regex_error& e) {
+                throw std::runtime_error("Invalid checkpoint_regex '" + pattern +
+                                         "' in vllm_model_config.json: " + e.what());
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void append_config_args(std::vector<ParsedArg>& target,
+                        const nlohmann::json& node,
+                        const std::string& source) {
+    if (!node.contains("args")) {
+        return;
+    }
+    if (!node["args"].is_string()) {
+        throw std::runtime_error(source + " args must be a string");
+    }
+    append_layer(target, parse_args(node["args"].get<std::string>(), source));
+}
+
+} // namespace
+
+VLLMArgResolution resolve_vllm_args(const std::string& model_name,
+                                    const std::string& checkpoint,
+                                    const nlohmann::json& config,
+                                    const std::string& user_vllm_args) {
+    if (!config.is_object()) {
+        throw std::runtime_error("vllm_model_config.json must contain a JSON object");
+    }
+    if (config.contains("schema_version") && config["schema_version"] != 1) {
+        throw std::runtime_error("Unsupported vllm_model_config.json schema_version");
+    }
+
+    std::vector<ParsedArg> resolved;
+    const nlohmann::json* model_entry = nullptr;
+    if (config.contains("models") && config["models"].is_object() &&
+        config["models"].contains(model_name) && config["models"][model_name].is_object()) {
+        model_entry = &config["models"][model_name];
+    }
+
+    bool disable_family_match = model_entry &&
+                                model_entry->value("disable_family_match", false);
+
+    const nlohmann::json* family = nullptr;
+    if (model_entry && model_entry->contains("family")) {
+        if (!(*model_entry)["family"].is_string()) {
+            throw std::runtime_error("vllm_model_config.json model '" + model_name +
+                                     "' family must be a string");
+        }
+        family = find_family(config, (*model_entry)["family"].get<std::string>());
+    } else if (!disable_family_match) {
+        family = match_family_by_checkpoint(config, checkpoint);
+    }
+
+    if (family) {
+        append_config_args(resolved, *family, "vllm_model_config.json family");
+    }
+    if (model_entry) {
+        append_config_args(resolved, *model_entry, "vllm_model_config.json model '" + model_name + "'");
+    }
+
+    std::vector<ParsedArg> user_args = parse_args(user_vllm_args, "vllm_args");
+    bool user_has_memory_budget_arg = std::any_of(user_args.begin(), user_args.end(), is_memory_budget_arg);
+    append_layer(resolved, user_args);
+
+    return {flatten_args(resolved), user_has_memory_budget_arg};
+}
+
+} // namespace backends
+} // namespace lemon

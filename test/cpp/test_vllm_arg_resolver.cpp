@@ -1,0 +1,142 @@
+// Standalone test for lemon::backends::resolve_vllm_args().
+// Compile with:
+// g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
+//   test/cpp/test_vllm_arg_resolver.cpp src/cpp/server/backends/vllm_arg_resolver.cpp \
+//   -o /tmp/test_vllm_arg_resolver
+
+#include "lemon/backends/vllm_arg_resolver.h"
+
+#include <cstdio>
+#include <exception>
+#include <string>
+#include <vector>
+
+using lemon::backends::VLLMArgResolution;
+using lemon::backends::resolve_vllm_args;
+using nlohmann::json;
+
+static json test_config() {
+    return json::parse(R"({
+        "schema_version": 1,
+        "families": {
+            "qwen3": {
+                "match": [{"checkpoint_regex": "^Qwen/Qwen3"}],
+                "args": "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq"
+            }
+        },
+        "models": {
+            "Qwen3.5-4B-vLLM": {
+                "family": "qwen3"
+            },
+            "Qwen3.5-2B-vLLM": {
+                "family": "qwen3",
+                "args": "--tool-call-parser hermes --quantization gptq"
+            },
+            "NoFamily-vLLM": {
+                "disable_family_match": true,
+                "args": "--tool-call-parser hermes"
+            }
+        }
+    })");
+}
+
+static std::string join(const std::vector<std::string>& values) {
+    std::string out;
+    for (const auto& value : values) {
+        if (!out.empty()) out += " ";
+        out += value;
+    }
+    return out;
+}
+
+static bool expect_args(const char* name,
+                        const VLLMArgResolution& actual,
+                        const std::string& expected,
+                        bool expected_memory = false) {
+    std::string actual_args = join(actual.args);
+    bool ok = actual_args == expected && actual.user_has_memory_budget_arg == expected_memory;
+    std::printf("[%s] %s\n  got:  %s memory=%s\n  want: %s memory=%s\n",
+                ok ? "PASS" : "FAIL",
+                name,
+                actual_args.c_str(),
+                actual.user_has_memory_budget_arg ? "true" : "false",
+                expected.c_str(),
+                expected_memory ? "true" : "false");
+    return ok;
+}
+
+static bool expect_error(const char* name,
+                         const std::string& arg_string,
+                         const std::string& expected_substring) {
+    try {
+        (void)resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), arg_string);
+    } catch (const std::exception& e) {
+        std::string message = e.what();
+        bool ok = message.find(expected_substring) != std::string::npos;
+        std::printf("[%s] %s\n  error: %s\n", ok ? "PASS" : "FAIL", name, message.c_str());
+        return ok;
+    }
+
+    std::printf("[FAIL] %s\n  expected error containing: %s\n", name, expected_substring.c_str());
+    return false;
+}
+
+int main() {
+    int failures = 0;
+
+    failures += !expect_args(
+        "checkpoint regex applies family args",
+        resolve_vllm_args("Unlisted-vLLM", "Qwen/Qwen3.5-4B", test_config(), ""),
+        "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq");
+
+    failures += !expect_args(
+        "disable_family_match prevents regex family args",
+        resolve_vllm_args("NoFamily-vLLM", "Qwen/Qwen3.5-4B", test_config(), ""),
+        "--tool-call-parser hermes");
+
+    failures += !expect_args(
+        "exact model args override family args",
+        resolve_vllm_args("Qwen3.5-2B-vLLM", "Qwen/Qwen3.5-2B", test_config(), ""),
+        "--enable-auto-tool-choice --tool-call-parser hermes --quantization gptq");
+
+    failures += !expect_args(
+        "user tool parser overrides config",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--tool-call-parser hermes"),
+        "--enable-auto-tool-choice --quantization awq --tool-call-parser hermes");
+
+    failures += !expect_args(
+        "user quantization overrides config",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--quantization gptq"),
+        "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization gptq");
+
+    failures += !expect_args(
+        "user memory arg is detected",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--gpu-memory-utilization 0.9"),
+        "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq --gpu-memory-utilization 0.9",
+        true);
+
+    failures += !expect_error("user --port fails", "--port 12345", "--port");
+    failures += !expect_error("user --model fails", "--model Qwen/Qwen3", "--model");
+    failures += !expect_error("user --host fails", "--host 0.0.0.0", "--host");
+
+    json invalid_config = test_config();
+    invalid_config["models"]["BadConfig-vLLM"] = {{"args", "--port=12345"}};
+    try {
+        (void)resolve_vllm_args("BadConfig-vLLM", "Other/Model", invalid_config, "");
+        std::printf("[FAIL] config --port fails\n  expected error\n");
+        ++failures;
+    } catch (const std::exception& e) {
+        std::string message = e.what();
+        bool ok = message.find("--port") != std::string::npos;
+        std::printf("[%s] config --port fails\n  error: %s\n", ok ? "PASS" : "FAIL", message.c_str());
+        failures += !ok;
+    }
+
+    failures += !expect_args(
+        "--flag=value canonicalizes like --flag value",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--tool-call-parser=hermes"),
+        "--enable-auto-tool-choice --quantization awq --tool-call-parser hermes");
+
+    std::printf("\n%d failures\n", failures);
+    return failures == 0 ? 0 : 1;
+}
