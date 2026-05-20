@@ -1,0 +1,177 @@
+name: Validate vLLM (reusable / Tier 3)
+
+# Reusable Tier 3 of the vLLM-ROCm build qualification suite.
+#
+# It is the single source of truth for "does this vllm-rocm bundle work as a
+# lemonade backend": it builds lemond with backend_versions.json pointed at a
+# candidate vllm-rocm release tag, then runs the lemonade integration test
+# (test/validate_vllm.py) against the hot vLLM models on a gfx1151 runner.
+#
+# Invoked from vllm-rocm's build workflow with the freshly-built (prerelease)
+# candidate tag. The candidate must already exist as a (pre)release so
+# lemonade's install_from_github can download its split-archive assets.
+#
+# The validation results JSON is uploaded as an artifact so the caller can fold
+# it into the qualification record/dashboard.
+
+on:
+  workflow_call:
+    inputs:
+      candidate_tag:
+        description: 'vllm-rocm release tag to qualify (e.g. vllm0.21.0-rocm7.13.0-gfx1151)'
+        required: true
+        type: string
+      lemonade_ref:
+        description: 'lemonade ref to build/test against'
+        required: false
+        type: string
+        default: 'main'
+      lite:
+        description: 'Lite mode: only the smallest hot model'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      passed:
+        description: 'true if every hot vLLM model passed'
+        value: ${{ jobs.validate.outputs.passed }}
+
+env:
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  build:
+    name: Build lemond (candidate ${{ inputs.candidate_tag }})
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: lemonade-sdk/lemonade
+          ref: ${{ inputs.lemonade_ref }}
+          clean: true
+          fetch-depth: 0
+
+      - name: Pin backend_versions.json to candidate
+        env:
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: |
+          python3 - << 'PY'
+          import json, os
+          path = "src/cpp/resources/backend_versions.json"
+          with open(path) as f:
+              data = json.load(f)
+          tag = os.environ["CANDIDATE_TAG"]
+          old = data["vllm"].get("rocm", "")
+          data["vllm"]["rocm"] = tag
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          print(f"vllm.rocm: {old} -> {tag}")
+          PY
+
+      - name: Build lemonade server
+        run: |
+          set -e
+          ./setup.sh
+          cmake -DBUILD_WEB_APP=OFF --preset default
+          cmake --build --preset default
+          test -f build/lemond || { echo "lemond not found!"; exit 1; }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: vllm-candidate-build
+          path: |
+            build/lemond
+            build/lemonade
+            build/resources/
+          retention-days: 7
+
+  validate:
+    name: Validate (gfx1151)
+    needs: build
+    runs-on: [self-hosted, stx-halo, Linux]
+    outputs:
+      passed: ${{ steps.result.outputs.passed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: lemonade-sdk/lemonade
+          ref: ${{ inputs.lemonade_ref }}
+          clean: true
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: vllm-candidate-build
+          path: build
+
+      - name: Verify binaries
+        run: |
+          set -e
+          chmod +x build/lemond build/lemonade
+          ./build/lemond --version
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation with lemond
+        id: result
+        run: |
+          set -e
+          CACHE_DIR="$(pwd)/ci-cache-vllm"
+          LOGS_DIR="$(pwd)/server-logs-rocm"
+          mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+
+          ./build/lemond "$CACHE_DIR" --port 13305 --host 127.0.0.1 \
+            > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
+          LEMOND_PID=$!
+
+          EXIT_CODE=0
+          ARGS=(test/validate_vllm.py --backend rocm
+                --output vllm_validation_rocm.json --logs-dir "$LOGS_DIR")
+          if [ "${{ inputs.lite }}" = "true" ]; then
+            ARGS+=(--lite)
+          fi
+          .venv/bin/python "${ARGS[@]}" || EXIT_CODE=$?
+
+          curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
+          sleep 2
+          kill $LEMOND_PID 2>/dev/null || true
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit $EXIT_CODE
+
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-results-rocm
+          path: vllm_validation_rocm.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-logs-rocm
+          path: server-logs-rocm/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        run: |
+          pkill -9 -f lemond 2>/dev/null || true
+          pkill -9 -f "vllm" 2>/dev/null || true
+          pkill -9 -f "resource_tracker" 2>/dev/null || true
