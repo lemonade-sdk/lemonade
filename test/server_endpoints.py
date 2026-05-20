@@ -1402,6 +1402,49 @@ class EndpointTests(ServerTestBase):
         self.assertIn("itself", response.json().get("error", "").lower())
         print("[OK] Self-reference rejected with 400")
 
+    def test_021o_load_collection_routes_through_component_branch(self):
+        """POST /load on a collection must not route the collection itself
+        through the generic HF download path (collections have no checkpoint).
+        Component cascading is the only legitimate download path."""
+        canonical_name = f"user.LoadColl-{uuid.uuid4().hex[:8]}"
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": canonical_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200, load_response.text)
+            self.assertEqual(load_response.json().get("recipe"), "collection.omni")
+            print("[OK] Load on collection succeeded via component branch")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_021f_naming_spec_unique_registered(self):
         """Naming spec: a unique user.<name> with no built-in collision emits as bare."""
         bare = f"NameSpec-Unique-{uuid.uuid4().hex[:8]}"

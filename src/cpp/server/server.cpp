@@ -3004,8 +3004,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             model_manager_->save_model_options(info);
         }
 
-        // Download model if needed (first-time use)
-        if (!info.downloaded) {
+        // Download model if needed (first-time use). Collections have no
+        // checkpoint of their own, so skip the generic HF download path here
+        // and let the per-component branch below cascade any missing pieces.
+        if (!info.downloaded && !is_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
