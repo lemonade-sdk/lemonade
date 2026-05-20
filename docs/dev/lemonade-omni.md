@@ -17,7 +17,7 @@ This is the standard OpenAI tool-calling loop. The tool schemas OmniRouter provi
 
 ## The omni models
 
-An **omni model** is a meta-model made up of components, registered with `recipe: "collection.omni"`. Selecting one in the Lemonade desktop app loads every component in a single click. Lemonade ships two by default:
+An **omni model** is a meta-model made up of components, registered with `recipe: "collection.omni"`. Selecting one in the Lemonade desktop app loads every component in a single click. Lemonade these:
 
 | Omni model | LLM | Image | ASR | TTS |
 |-----------|-----|-------|-----|-----|
@@ -26,7 +26,22 @@ An **omni model** is a meta-model made up of components, registered with `recipe
 
 Omni models are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "LMN-Halo-Omni-52B" as if it were a real model. They surface with `?show_all=true` and appear in the desktop app's model list under the **Lemonade Omni** category.
 
-Use an omni model. Every part of this doc assumes one is loaded — the desktop app, [`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py), and the tools themselves were all validated against the two omni models above.
+### Naming scheme decoder ring
+
+Omni model names follow the pattern `LMN-<class>-Omni-<xB>`:
+
+| Component | Value | Meaning |
+|-----------|-------|---------|
+| Org prefix | `LMN` | Lemonade org. |
+| Class | `Halo` | Based on a large MoE LLM (e.g., targeted at Strix Halo). |
+|  | `Lite` | Based on small models targeted at 32 GB APUs. |
+|  | `Dense` | Based on a dense LLM targeted at 32 GB dGPUs (none shipped yet). |
+| Modality | `Omni` | True all-to-all omni-modal bundle. |
+| Size | `xB` | Total parameter count across all component models. |
+
+### Use an omni model
+
+Every part of this doc assumes one is loaded — the desktop app, [`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py), and the tools themselves were all validated against the two omni models above.
 
 If you're the developer wiring OmniRouter into your own agent and you want to substitute models, you can, but you take on the compatibility work: any LLM you swap in must carry the `tool-calling` label, and each tool you want to call needs one downloaded model whose `labels` include the row's "Needs a model with label" entry from the tools table below. That's a developer-path discovery step, not a user configuration; the simple answer for everyone else is "install an omni model."
 
