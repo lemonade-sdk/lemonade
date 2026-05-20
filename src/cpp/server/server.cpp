@@ -4614,6 +4614,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
+        bool subscribe = request_json.value("subscribe", true);
         bool force = request_json.value("force", false);
 
         if (recipe.empty() || backend.empty()) {
@@ -4666,11 +4667,27 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            stream_download_operation(res, [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+            auto operation = [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
                 backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();
-            });
+            };
+
+            if (!subscribe) {
+                // Server-owned mode for desktop UI reload/new-tab recovery.
+                // Legacy streamed /install behavior is unchanged.
+                const std::string display_name = recipe + ":" + backend;
+                auto job = start_download_job("backend:" + display_name, "backend", display_name, operation);
+                nlohmann::json response;
+                {
+                    std::lock_guard<std::mutex> lock(downloads_mutex_);
+                    response = download_job_to_json(job);
+                }
+                res.set_content(response.dump(), "application/json");
+                return;
+            }
+
+            stream_download_operation(res, operation);
         } else {
             backend_manager_->install_backend(recipe, backend, force);
             SystemInfoCache::invalidate_recipes();
