@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { deleteModel, uninstallBackend } from './utils/backendInstaller';
 
+const SPEED_WINDOW_MS = 5000;
+
+type SpeedSample = {
+  time: number;
+  bytes: number;
+};
+
 export interface DownloadItem {
   id: string;
   modelName: string;
@@ -34,7 +41,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const [deletingModels, setDeletingModels] = useState<Set<string>>(new Set());
 
   // Sliding window speed tracking: stores recent {timestamp, bytes} samples per download
-  const speedSamples = useRef<Map<string, Array<{ time: number; bytes: number }>>>(new Map());
+  const speedSamples = useRef<Map<string, SpeedSample[]>>(new Map());
+
+  const clearSpeedSamples = (downloadId: string) => {
+    speedSamples.current.delete(downloadId);
+  };
 
   useEffect(() => {
     // Listen for download events from the global download tracker
@@ -43,15 +54,14 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
       // Record speed sample for sliding window calculation
       const now = Date.now();
-      const sessionBytes = downloadItem.bytesDownloaded - (downloadItem.bytesResumed || 0);
+      const sessionBytes = Math.max(0, downloadItem.bytesDownloaded - (downloadItem.bytesResumed || 0));
       if (!speedSamples.current.has(downloadItem.id)) {
         speedSamples.current.set(downloadItem.id, []);
       }
       const samples = speedSamples.current.get(downloadItem.id)!;
       samples.push({ time: now, bytes: sessionBytes });
       // Keep only samples from the last 5 seconds
-      const windowMs = 5000;
-      while (samples.length > 0 && samples[0].time < now - windowMs) {
+      while (samples.length > 0 && samples[0].time < now - SPEED_WINDOW_MS) {
         samples.shift();
       }
 
@@ -63,7 +73,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
           return newDownloads;
         } else {
           // Remove any previous downloads for this model before adding the new one
-          const filtered = prev.filter(d => d.modelName !== downloadItem.modelName);
+          const filtered = prev.filter(d => {
+            const shouldKeep = d.modelName !== downloadItem.modelName;
+            if (!shouldKeep) {
+              clearSpeedSamples(d.id);
+            }
+            return shouldKeep;
+          });
           return [downloadItem, ...filtered];
         }
       });
@@ -71,7 +87,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
     const handleDownloadComplete = (event: CustomEvent<{ id: string }>) => {
       const { id } = event.detail;
-      speedSamples.current.delete(id);
+      clearSpeedSamples(id);
       setDownloads(prev => prev.map(d =>
         d.id === id ? { ...d, status: 'completed' as const, percent: 100 } : d
       ));
@@ -79,7 +95,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
     const handleDownloadError = (event: CustomEvent<{ id: string; error: string }>) => {
       const { id, error } = event.detail;
-      speedSamples.current.delete(id);
+      clearSpeedSamples(id);
       setDownloads(prev => prev.map(d =>
         d.id === id ? { ...d, status: 'error' as const, error } : d
       ));
@@ -93,6 +109,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       window.removeEventListener('download:update' as any, handleDownloadUpdate);
       window.removeEventListener('download:complete' as any, handleDownloadComplete);
       window.removeEventListener('download:error' as any, handleDownloadError);
+      speedSamples.current.clear();
     };
   }, []);
 
@@ -112,8 +129,14 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     const samples = speedSamples.current.get(download.id);
     if (!samples || samples.length < 2) return 0;
 
-    const oldest = samples[0];
     const newest = samples[samples.length - 1];
+    const cutoff = Date.now() - SPEED_WINDOW_MS;
+    if (newest.time < cutoff) return 0;
+
+    const oldestIndex = samples.findIndex(sample => sample.time >= cutoff);
+    if (oldestIndex === -1 || oldestIndex === samples.length - 1) return 0;
+
+    const oldest = samples[oldestIndex];
     const elapsedSeconds = (newest.time - oldest.time) / 1000;
     if (elapsedSeconds <= 0) return 0;
 
@@ -149,6 +172,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     if (download.abortController) {
       download.abortController.abort();
     }
+    clearSpeedSamples(download.id);
     setDownloads(prev => prev.map(d =>
       d.id === download.id ? { ...d, status: 'paused' as const } : d
     ));
@@ -162,6 +186,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const handleCancelDownload = async (download: DownloadItem) => {
     // Mark as deleting to prevent retry during cleanup
     setDeletingModels(prev => new Set(prev).add(download.modelName));
+    clearSpeedSamples(download.id);
 
     // First, abort the download to stop any active streams
     if (download.abortController) {
@@ -229,6 +254,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const handleDeleteDownload = async (download: DownloadItem) => {
     // Mark as deleting to prevent retry during cleanup
     setDeletingModels(prev => new Set(prev).add(download.modelName));
+    clearSpeedSamples(download.id);
 
     // Update UI to show deleting status
     setDownloads(prev => prev.map(d =>
@@ -307,13 +333,22 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const handleRemoveDownload = (downloadId: string) => {
+    clearSpeedSamples(downloadId);
     setDownloads(prev => prev.filter(d => d.id !== downloadId));
   };
 
   const handleClearCompleted = () => {
-    setDownloads(prev => prev.filter(d =>
-      d.status !== 'completed' && d.status !== 'error' && d.status !== 'cancelled' && d.status !== 'paused'
-    ));
+    setDownloads(prev => prev.filter(d => {
+      const shouldKeep =
+        d.status !== 'completed' &&
+        d.status !== 'error' &&
+        d.status !== 'cancelled' &&
+        d.status !== 'paused';
+      if (!shouldKeep) {
+        clearSpeedSamples(d.id);
+      }
+      return shouldKeep;
+    }));
   };
 
   const toggleExpanded = (downloadId: string) => {
