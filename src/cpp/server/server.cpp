@@ -499,6 +499,7 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_live(req, res);
     });
 
+    // Prometheus scrape endpoint for Lemonade, model, backend, and system metrics.
     web_server.Get("/metrics", [this](const httplib::Request& req, httplib::Response& res) {
         handle_metrics(req, res);
     });
@@ -3550,6 +3551,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
     try {
         PrometheusBuilder metrics;
 
+        // Server liveness and build metadata.
         metrics.describe("lemonade_server_up", "Whether the Lemonade server is running.", "gauge");
         metrics.sample("lemonade_server_up", {}, 1.0);
 
@@ -3559,6 +3561,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
         json snapshot = router_->get_metrics_snapshot();
         const json loaded_models = snapshot.value("loaded_models", json::array());
 
+        // Loaded model inventory and latest per-model inference telemetry.
         metrics.describe("lemonade_loaded_models", "Number of models currently loaded in Lemonade.", "gauge");
         metrics.sample("lemonade_loaded_models", {}, static_cast<double>(loaded_models.size()));
 
@@ -3636,6 +3639,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
             metrics.sample_uint("lemonade_model_prompt_tokens_total", labels,
                                 telemetry.value("prompt_tokens_total", 0ULL));
 
+            // Include llama.cpp backend metrics, rewritten under the Lemonade namespace.
             if (model.value("recipe", "") == "llamacpp") {
                 int backend_port = 0;
                 if (parse_backend_port(model.value("backend_url", ""), backend_port)) {
@@ -3671,6 +3675,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
             }
         }
 
+        // Configured model-cache limits by model type.
         json max_models = router_->get_max_model_limits();
         metrics.describe("lemonade_max_loaded_models", "Configured loaded model limit per model type.", "gauge");
         for (auto it = max_models.begin(); it != max_models.end(); ++it) {
@@ -3680,6 +3685,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
             }
         }
 
+        // Server-wide cumulative inference counters.
         const json totals = snapshot.value("totals", json::object());
         metrics.describe("lemonade_requests_total", "Cumulative inference requests observed by Lemonade.", "counter");
         metrics.describe("lemonade_input_tokens_total", "Cumulative input tokens observed by Lemonade.", "counter");
@@ -3690,6 +3696,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
         metrics.sample_uint("lemonade_output_tokens_total", {}, totals.value("output_tokens", 0ULL));
         metrics.sample_uint("lemonade_prompt_tokens_total", {}, totals.value("prompt_tokens", 0ULL));
 
+        // Host CPU and memory utilization.
         metrics.describe("lemonade_cpu_usage_percent", "System CPU utilization percentage.", "gauge");
         double cpu_percent = get_cpu_usage();
         if (cpu_percent >= 0 && std::isfinite(cpu_percent)) {
@@ -3731,6 +3738,7 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
         }
 #endif
 
+        // Accelerator utilization and memory usage when available.
         metrics.describe("lemonade_gpu_usage_percent", "GPU utilization percentage.", "gauge");
         double gpu_percent = get_gpu_usage();
         if (gpu_percent >= 0 && std::isfinite(gpu_percent)) {
