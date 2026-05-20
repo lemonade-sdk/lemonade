@@ -3,6 +3,7 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/sd_server.h"
+#include "lemon/backends/ryzenai_sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/vllm_server.h"
@@ -38,6 +39,7 @@ namespace lemon::backends {
         if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
         if (recipe == "whispercpp") return &WhisperServer::SPEC;
         if (recipe == "sd-cpp") return &SDServer::SPEC;
+        if (recipe == "sd-npu") return &SDNPUServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
         if (recipe == "vllm") return &VLLMServer::SPEC;

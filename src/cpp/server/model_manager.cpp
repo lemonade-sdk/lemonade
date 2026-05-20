@@ -956,6 +956,18 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return model_cache_path;  // Return directory even if index not found
     }
 
+    // For sd-npu, find the snapshot directory containing ONNX component subdirectories
+    if (info.recipe == "sd-npu") {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
+                if (entry.is_directory() && entry.path().filename() == "unet") {
+                    return path_to_utf8(entry.path().parent_path());
+                }
+            }
+        }
+        return model_cache_path;
+    }
+
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
@@ -1267,6 +1279,7 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
+        info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
 
         if (value.contains("labels") && value["labels"].is_array()) {
@@ -2160,6 +2173,9 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
+    } else if (info.source == "local_path" || info.source == "local_upload") {
+        // Local models don't need downloading - files are already on disk
+        return;
     } else {
         download_from_huggingface(info, progress_callback);
     }

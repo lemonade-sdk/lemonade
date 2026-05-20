@@ -1505,5 +1505,117 @@
             "reasoning"
         ],
         "size": 18.6
+    },
+    "SD-Turbo-NPU": {
+        "checkpoint": "amd/stable-diffusion-turbo-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 2.0,
+        "image_defaults": {
+            "steps": 1,
+            "cfg_scale": 1.0,
+            "width": 512,
+            "height": 512
+        }
+    },
+    "SDXL-Turbo-NPU": {
+        "checkpoint": "amd/stable-diffusion-sdxl-turbo-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 6.0,
+        "image_defaults": {
+            "steps": 1,
+            "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD-1.5-NPU": {
+        "checkpoint": "amd/stable-diffusion-1.5-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 3.5,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 512,
+            "height": 512
+        }
+    },
+    "SDXL-Base-NPU": {
+        "checkpoint": "amd/stable-diffusion-sdxl-base-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 6.9,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Segmind-Vega-NPU": {
+        "checkpoint": "amd/stable-diffusion-segmind-vega-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 3.4,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD3-Medium-NPU": {
+        "checkpoint": "amd/stable-diffusion-3-medium-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 5.0,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 7.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD3.5-Medium-NPU": {
+        "checkpoint": "amd/stable-diffusion-3.5-medium-amdnpu-onnx",
+        "recipe": "sd-npu",
+        "suggested": false,
+        "labels": [
+            "image",
+            "npu"
+        ],
+        "size": 5.0,
+        "image_defaults": {
+            "steps": 8,
+            "cfg_scale": 7.0,
+            "width": 1024,
+            "height": 1024
+        }
     }
 }

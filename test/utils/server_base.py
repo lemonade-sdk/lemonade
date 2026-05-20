@@ -203,6 +203,8 @@ def _build_runtime_config(additional_server_args=None):
         config["llamacpp"] = {"backend": backend}
     elif wrapped_server == "sd-cpp" and backend:
         config["sdcpp"] = {"backend": backend}
+    elif wrapped_server == "sd-npu" and backend:
+        config["sd-npu"] = {"backend": backend}
     elif wrapped_server == "whispercpp" and backend:
         config["whispercpp"] = {"backend": backend}
 
@@ -222,6 +224,9 @@ def _build_runtime_config(additional_server_args=None):
             i += 2
         elif arg == "--sdcpp" and i + 1 < len(additional):
             config["sdcpp"] = {"backend": additional[i + 1]}
+            i += 2
+        elif arg == "--sd-npu" and i + 1 < len(additional):
+            config["sd-npu"] = {"backend": additional[i + 1]}
             i += 2
         elif arg == "--whispercpp" and i + 1 < len(additional):
             config["whispercpp"] = {"backend": additional[i + 1]}

@@ -196,6 +196,9 @@ VISION_MODEL = "Qwen3.5-0.8B-GGUF"
 # Stable Diffusion test configuration
 SD_MODEL = "SD-Turbo"
 
+# SD NPU test configuration
+SD_NPU_MODEL = "SD-Turbo-NPU"
+
 # ESRGAN upscale model test configuration
 ESRGAN_MODEL = "RealESRGAN-x4plus"
 

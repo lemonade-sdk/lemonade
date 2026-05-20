@@ -22,6 +22,8 @@ static const json DEFAULTS = {
     {"sdcpp_args", ""},
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
+    // sd-npu backend selection ("npu" or "cpu")
+    {"sd-npu_backend", "npu"},
     // Image generation defaults (for sd-cpp recipe)
     // These are recipe-level defaults only, not CLI arguments — per reviewer guidance,
     // there are too many image gen params for CLI flags, and no universal defaults.
@@ -53,7 +55,8 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"whispercpp_args", "--whispercpp-args"},
     {"flm_args", "--flm-args"},
     {"vllm_backend", "--vllm"},
-    {"vllm_args", "--vllm-args"}
+    {"vllm_args", "--vllm-args"},
+    {"sd-npu_backend", "--sd-npu"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
@@ -69,6 +72,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift"};
     } else if (recipe == "vllm") {
         return {"ctx_size", "vllm_backend", "vllm_args"};
+    } else if (recipe == "sd-npu") {
+        return {"sd-npu_backend", "steps", "cfg_scale", "width", "height"};
     } else {
         return {};
     }

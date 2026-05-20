@@ -167,6 +167,16 @@ CAPABILITIES = {
                 "image": "SD-Turbo",
             },
         },
+        "sd-npu": {
+            "backends": ["npu", "cpu"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+            },
+            "test_models": {
+                "image": "SD-Turbo-NPU",
+            },
+        },
     },
 }
 

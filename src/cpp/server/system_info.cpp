@@ -172,6 +172,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
+    // ryzenai-sd-server - NPU backend for AMD XDNA2
+    {"sd-npu", "npu", {"windows"}, {
+        {"amd_npu", {"XDNA2"}},
+    }},
+
     // FLM - NPU (XDNA2)
     {"flm", "npu", {"windows", "linux"}, {
         {"amd_npu", {"XDNA2"}},

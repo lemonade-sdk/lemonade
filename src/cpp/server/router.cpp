@@ -6,6 +6,7 @@
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/vllm_server.h"
+#include "lemon/backends/ryzenai_sd_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
@@ -192,6 +193,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     } else if (model_info.recipe == "sd-cpp") {
     LOG(DEBUG, "Router") << "Creating SDServer backend" << std::endl;
         new_server = std::make_unique<backends::SDServer>(log_level, model_manager_, backend_manager_);
+    } else if (model_info.recipe == "sd-npu") {
+    LOG(DEBUG, "Router") << "Creating SDNPUServer backend" << std::endl;
+        new_server = std::make_unique<backends::SDNPUServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "flm") {
     LOG(DEBUG, "Router") << "Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level, model_manager_, backend_manager_);
@@ -276,8 +280,9 @@ void Router::load_model(const std::string& model_name,
         // NPU EXCLUSIVITY CHECK (recipe-aware rules)
         // FLM can run up to 3 concurrent NPU processes (1 LLM + 1 audio + 1 embedding)
         // RyzenAI and WhisperCpp lock the entire NPU exclusively
+        // SD-NPU and SD-CPP can share max_loaded_models slots like FLM
         if (device_type & DEVICE_NPU) {
-            if (model_info.recipe == "ryzenai-llm" || model_info.recipe == "whispercpp") {
+            if (model_info.recipe == "ryzenai-llm" || model_info.recipe == "whispercpp" || model_info.recipe == "sd-npu") {
                 // Exclusive NPU recipes - evict ALL NPU servers
                 if (has_npu_server()) {
                     LOG(INFO, "Router") << model_info.recipe
@@ -287,7 +292,7 @@ void Router::load_model(const std::string& model_name,
             } else if (model_info.recipe == "flm") {
                 // FLM can coexist with other FLM types, but not with exclusive-NPU recipes
                 // 1. Evict any exclusive-NPU server (mutually exclusive)
-                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp"}) {
+                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp", "sd-npu"}) {
                     WrappedServer* exclusive_server = find_npu_server_by_recipe(exclusive_recipe);
                     if (exclusive_server) {
                         LOG(INFO, "Router") << "FLM cannot coexist with " << exclusive_recipe
@@ -303,6 +308,18 @@ void Router::load_model(const std::string& model_name,
                               << ", evicting..." << std::endl;
                     evict_server(same_type_flm);
                 }
+            } else if (model_info.recipe == "sd-cpp") {
+                // SD-CPP can coexist following normal max_loaded_models rules (handled below)
+                // Evict any exclusive-NPU server first
+                for (const std::string& exclusive_recipe : {"ryzenai-llm", "whispercpp", "sd-npu"}) {
+                    WrappedServer* exclusive_server = find_npu_server_by_recipe(exclusive_recipe);
+                    if (exclusive_server) {
+                        LOG(INFO, "Router") << "SD model cannot coexist with " << exclusive_recipe
+                                  << ", evicting: " << exclusive_server->get_model_name() << std::endl;
+                        evict_server(exclusive_server);
+                    }
+                }
+                // Normal LRU eviction will handle max_loaded_models for images
             } else {
                 // Unknown NPU recipe - default to exclusive access
                 if (has_npu_server()) {
