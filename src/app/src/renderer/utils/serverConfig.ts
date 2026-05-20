@@ -64,10 +64,9 @@ class ServerConfig {
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
+          this.initialized = true;
+          return;
         }
-
-        this.initialized = true;
-        return;
       }
 
       // No explicit URL - use localhost with port discovery
