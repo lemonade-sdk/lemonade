@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSystem } from './hooks/useSystem';
-import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
+import { COLLECTION_OMNI_MODEL_RECIPE, RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 
 export interface AddModelInitialValues {
   name: string;
@@ -32,7 +32,7 @@ interface AddModelPanelProps {
 }
 
 const FALLBACK_RECIPE_OPTIONS = ['llamacpp', 'flm', 'ryzenai-llm'];
-const HIDDEN_RECIPE_OPTIONS = new Set(['collection']);
+const HIDDEN_RECIPE_OPTIONS = new Set([COLLECTION_OMNI_MODEL_RECIPE]);
 
 const getRecipeLabel = (recipe: string): string => RECIPE_DISPLAY_NAMES[recipe] ?? recipe;
 
@@ -163,7 +163,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       return;
     }
     if (recipe === 'sd-cpp' && hasSdComponents && (!textEncoderCheckpoint || !vaeCheckpoint)) {
-      setError('Provide both text encoder and VAE checkpoints for sd-cpp component models.');
+      setError('Provide both text encoder and VAE checkpoints for sd-cpp components.');
       return;
     }
     if (recipe === 'sd-cpp' && ((textEncoderCheckpoint && !hasRepoRelativeFilePath(textEncoderCheckpoint)) || (vaeCheckpoint && !hasRepoRelativeFilePath(vaeCheckpoint)))) {

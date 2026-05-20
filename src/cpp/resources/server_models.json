@@ -1468,9 +1468,9 @@
     },
     "Ultra Collection": {
         "checkpoint": "",
-        "recipe": "collection",
+        "recipe": "collection.omni",
         "suggested": true,
-        "composite_models": [
+        "components": [
             "Qwen3.5-35B-A3B-GGUF",
             "Flux-2-Klein-9B-GGUF",
             "Whisper-Large-v3-Turbo",
@@ -1479,9 +1479,9 @@
     },
     "Lite Collection": {
         "checkpoint": "",
-        "recipe": "collection",
+        "recipe": "collection.omni",
         "suggested": true,
-        "composite_models": [
+        "components": [
             "Qwen3.5-4B-GGUF",
             "SD-Turbo",
             "Whisper-Tiny",

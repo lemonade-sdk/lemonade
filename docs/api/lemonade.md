@@ -109,6 +109,30 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+**Register an Omni-Model**
+
+An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
+| `recipe` | Yes | Must be `"collection.omni"`. |
+| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+
+Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.MyKit",
+    "recipe": "collection.omni",
+    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+  }'
+```
+
 ### Streaming Response (stream=true)
 
 When `stream=true`, the endpoint returns Server-Sent Events with real-time download progress:
@@ -362,6 +386,8 @@ curl 'http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
 
 Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.
 
+> Note: deleting a collection (`recipe: "collection.omni"`) removes only the collection entry from `user_models.json`; its components stay on disk. Delete the components individually if you want to free their disk space.
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -393,6 +419,8 @@ In case of an error, the status will be `error` and the message will contain the
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
+
+> Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
 ### Parameters
 

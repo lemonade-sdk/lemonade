@@ -65,7 +65,7 @@ const tests = [
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
-      assertMatches(source, /recipe: 'collection'/, 'Synthetic custom collections should use recipe=collection.');
+      assertMatches(source, /recipe: 'collection\.omni'/, 'Synthetic custom collections should use recipe=collection.omni.');
       assertMatches(source, /source: 'custom-collection'/, 'Synthetic custom collections should retain a source marker.');
       assertMatches(source, /collection_source: 'custom'/, 'Synthetic custom collections should retain collection_source=custom.');
       assertMatches(source, /collection_components: collection\.components/, 'Synthetic metadata should keep original role assignments.');
@@ -79,7 +79,7 @@ const tests = [
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
       assertMatches(
         source,
-        /isCollectionEligibleModel[\s\S]*?!info \|\| isCustomCollectionId\(modelId\) \|\| info\.recipe === 'collection' \|\| info\.downloaded !== true[\s\S]*?return false/,
+        /isCollectionEligibleModel[\s\S]*?!info \|\| isCustomCollectionId\(modelId\) \|\| isCollectionRecipe\(info\.recipe\) \|\| info\.downloaded !== true[\s\S]*?return false/,
         'Role options must exclude missing, synthetic collection, and not-downloaded models.',
       );
       for (const label of ['vision', 'image', 'edit', 'transcription', 'speech']) {

@@ -17,7 +17,7 @@ export interface DownloadItem {
   bytesResumed: number;  // Bytes already on disk at session start (for accurate speed)
   abortController?: AbortController;
   downloadType?: 'model' | 'backend';
-  // Component model names when this download is a collection.
+  // Components when this download is a collection.
   // UI uses this to explain the collection is made up of separate models.
   collectionComponents?: string[];
   // Declared size from the model registry (bytes). Used as the total when the

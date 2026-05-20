@@ -689,7 +689,7 @@ async function ensureModelReadyInternal(
       const components = getCollectionComponents(modelInfo);
       for (const component of components) {
         if (!modelsData[component]) {
-          throw new Error(`Experience model "${modelName}" references missing component "${component}".`);
+          throw new Error(`Omni-model "${modelName}" references missing component "${component}".`);
         }
         await ensureModelReadyInternal(component, modelsData, {
           onModelLoading: options?.onModelLoading,
