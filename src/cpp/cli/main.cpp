@@ -1088,7 +1088,7 @@ int main(int argc, char* argv[]) {
         ->check(CLI::IsMember(VALID_LABELS));
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
-        "  https://lemonade-server.ai/docs/server/custom-models/");
+        "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
