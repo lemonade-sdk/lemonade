@@ -3032,8 +3032,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                     comp_info = model_manager_->get_model_info(component);
                 }
                 LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-                RecipeOptions comp_options = RecipeOptions(comp_info.recipe, request_json);
-                router_->load_model(component, comp_info, comp_options, true,
+                // Per the documented contract, per-model options like ctx_size
+                // or llamacpp_backend are NOT forwarded from the collection's
+                // load request to its components. Each component uses its own
+                // saved recipe_options.json entry.
+                router_->load_model(component, comp_info, comp_info.recipe_options, true,
                                     /*allow_reload_on_option_change=*/true);
             }
 
