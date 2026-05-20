@@ -77,7 +77,7 @@ Supported registration flags:
 
 ### Register an omni collection
 
-A collection is a meta-model made up of components. An omni collection is the collection type used by OmniRouter, registered with `recipe: "collection.omni"`.
+A collection is a meta-model made up of components. An **omni collection** is the recipe type behind [Lemonade Omni Models](../../dev/lemonade-omni.md) — registered with `recipe: "collection.omni"`.
 
 Components must already be registered as built-in models or previously pulled `user.*` models. Components do not need to be downloaded already; missing component files are pulled by the same command.
 
@@ -270,7 +270,7 @@ Supported checkpoint keys:
 
 ### Collections
 
-A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An omni collection is a collection type registered with `recipe: "collection.omni"`.
+A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An **omni collection** is a collection type registered with `recipe: "collection.omni"` — this is the recipe behind [Lemonade Omni Models](../../dev/lemonade-omni.md).
 
 ```json
 {
