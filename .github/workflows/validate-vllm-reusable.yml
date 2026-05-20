@@ -173,5 +173,7 @@ jobs:
         if: always()
         run: |
           pkill -9 -f lemond 2>/dev/null || true
-          pkill -9 -f "vllm" 2>/dev/null || true
-          pkill -9 -f "resource_tracker" 2>/dev/null || true
+          # Case-insensitive sweep: vLLM children are titled "VLLM::EngineCore"
+          # and won't match a lowercase "vllm" pattern; leaving one orphaned
+          # holds VRAM and OOMs the next run.
+          pkill -9 -if "vllm|enginecore|resource_tracker" 2>/dev/null || true
