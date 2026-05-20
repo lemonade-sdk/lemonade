@@ -2321,8 +2321,19 @@ void ModelManager::download_model(const std::string& model_name,
         }
     } else {
         // Model is registered - if checkpoint not provided, look up from registry
-        // otherwise overwrite registration
-        if (actual_checkpoint.empty()) {
+        // otherwise overwrite registration. Collections have no checkpoint, so
+        // the "components in request" flag distinguishes a real overwrite from
+        // a cascade pull that should reuse the registered components.
+        bool is_collection_overwrite = is_collection_recipe(actual_recipe) &&
+                                        model_data.contains("components");
+        if (is_collection_overwrite) {
+            if (auto err = validate_collection_request(model_name, model_data)) {
+                throw std::runtime_error(*err);
+            }
+            model_registered = false;
+            LOG(INFO, "ModelManager") << "Overwriting collection: "
+                                      << model_name << std::endl;
+        } else if (actual_checkpoint.empty()) {
             auto info = get_model_info(model_name);
             actual_checkpoint = info.checkpoint();
             actual_recipe = info.recipe;

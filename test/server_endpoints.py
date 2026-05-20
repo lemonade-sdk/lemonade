@@ -1514,6 +1514,78 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021q_collection_repull_overwrites_components(self):
+        """Re-pulling an existing collection with a new components array must
+        overwrite the stored entry, not silently reuse the old components."""
+        suffix = uuid.uuid4().hex[:8]
+        extra_component = f"user.RepullExtra-{suffix}"
+        collection_name = f"user.RepullColl-{suffix}"
+        try:
+            extra_pull = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": extra_component,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(extra_pull.status_code, 200, extra_pull.text)
+
+            first = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+
+            second = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL, extra_component],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(second.status_code, 200, second.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (
+                    m
+                    for m in models_response.json()["data"]
+                    if m["id"] == collection_name[5:]
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(
+                sorted(entry.get("components", [])),
+                sorted([ENDPOINT_TEST_MODEL, extra_component]),
+                "Re-pull must persist the new components list",
+            )
+            print("[OK] Collection re-pull overwrote components")
+        finally:
+            for name in (collection_name, extra_component):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+
     def test_021f_naming_spec_unique_registered(self):
         """Naming spec: a unique user.<name> with no built-in collision emits as bare."""
         bare = f"NameSpec-Unique-{uuid.uuid4().hex[:8]}"
