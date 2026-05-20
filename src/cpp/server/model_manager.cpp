@@ -525,6 +525,120 @@ static void cleanup_empty_parents(const fs::path& file_path, const fs::path& sto
     }
 }
 
+
+static std::string normalized_relative_path(const fs::path& path, const fs::path& root) {
+    std::string rel = path_to_utf8(path.lexically_relative(root));
+    std::replace(rel.begin(), rel.end(), '\\', '/');
+    return rel;
+}
+
+static void remove_file_or_throw(const fs::path& path, const std::string& description) {
+    if (!safe_exists(path)) {
+        return;
+    }
+
+    LOG(INFO, "ModelManager") << "Removing " << description << ": "
+                              << path_to_utf8(path) << std::endl;
+    std::error_code ec;
+    fs::remove(path, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to remove " + description + " '" +
+                                 path_to_utf8(path) + "': " + ec.message());
+    }
+}
+
+static void remove_stale_manifest_for_partial(const fs::path& partial_path,
+                                              const fs::path& stop_dir) {
+    fs::path parent = partial_path.parent_path();
+    for (int i = 0; i < 8 && !parent.empty() && parent != stop_dir; ++i) {
+        fs::path manifest_path = parent / ".download_manifest.json";
+        if (safe_exists(manifest_path)) {
+            remove_file_or_throw(manifest_path, "stale download manifest");
+            cleanup_empty_parents(manifest_path, stop_dir);
+            return;
+        }
+        parent = parent.parent_path();
+    }
+}
+
+static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
+                                              const std::string& canonical_model_name,
+                                              const std::map<std::string, ModelInfo>& models_cache) {
+    const std::string main_checkpoint = info.checkpoint("main");
+    const std::string main_repo = checkpoint_to_repo_id(main_checkpoint);
+    if (main_repo.empty()) {
+        return false;
+    }
+
+    fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo);
+    if (!safe_exists(model_cache_path)) {
+        return false;
+    }
+
+    // If no other model references this HF repo, delete the whole incomplete
+    // repo cache. That removes .partial files, stale manifests, any files that
+    // finished before cancellation, refs, and blobs in one atomic intent.
+    if (!is_repo_shared(main_repo, canonical_model_name, models_cache)) {
+        LOG(INFO, "ModelManager") << "Removing incomplete model cache: "
+                                  << path_to_utf8(model_cache_path) << std::endl;
+        std::error_code ec;
+        fs::remove_all(model_cache_path, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to remove incomplete model cache '" +
+                                     path_to_utf8(model_cache_path) + "': " + ec.message());
+        }
+        return true;
+    }
+
+    // Shared repos must not be removed wholesale. Remove only the resumable
+    // partial for this model's requested variant, plus the manifest that made
+    // that partial visible as an incomplete download.
+    const std::string variant = checkpoint_to_variant(main_checkpoint);
+    if (variant.empty()) {
+        LOG(INFO, "ModelManager") << "Keeping shared incomplete cache for " << main_repo
+                                  << " because the model has no exact variant" << std::endl;
+        return false;
+    }
+
+    fs::path snapshots_dir = model_cache_path / "snapshots";
+    if (!safe_exists(snapshots_dir)) {
+        return false;
+    }
+
+    std::string normalized_variant = variant;
+    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
+
+    bool removed_any = false;
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(snapshots_dir, safe_dir_options, ec)) {
+        if (ec) break;
+
+        const fs::path partial_path = entry.path();
+        const std::string rel = normalized_relative_path(partial_path, snapshots_dir);
+        const std::string filename = partial_path.filename().string();
+        const bool matches_variant_partial =
+            filename == variant + ".partial" ||
+            rel == normalized_variant + ".partial" ||
+            rel.rfind("/" + normalized_variant + ".partial") != std::string::npos;
+
+        if (!matches_variant_partial) {
+            continue;
+        }
+
+        remove_file_or_throw(partial_path, "incomplete model download partial");
+        remove_stale_manifest_for_partial(partial_path, model_cache_path);
+        cleanup_empty_parents(partial_path, model_cache_path);
+        removed_any = true;
+    }
+
+    if (!removed_any) {
+        LOG(INFO, "ModelManager") << "No incomplete cache artifacts found for shared repo "
+                                  << main_repo << std::endl;
+    }
+
+    return removed_any;
+}
+
 // Structure to hold identified GGUF files
 struct GGUFFiles {
     std::map<std::string, std::string> core_files;  // {"variant": "file.gguf", "mmproj": "file.mmproj"}
@@ -3297,11 +3411,20 @@ void ModelManager::delete_model(const std::string& model_name) {
         return;
     }
 
-    // Use resolved_path to find the model directory to delete
+    // Use resolved_path to find the model directory to delete.
+    // Cancelled or interrupted downloads may not have a resolved model path yet,
+    // but they can still leave resumable .partial files and manifests in the HF
+    // cache. Clean those artifacts before falling back to registry-only cleanup.
     if (info.resolved_path().empty()) {
-        // Model exists in registry but has no downloaded files
-        // Just remove from user_models.json and cache
-        LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
+        bool removed_incomplete_cache = cleanup_incomplete_hf_model_cache(
+            info,
+            canonical_model_name,
+            models_cache_
+        );
+
+        if (!removed_incomplete_cache) {
+            LOG(INFO, "ModelManager") << "Model not downloaded, removing from registry only" << std::endl;
+        }
 
         if (is_user_model_name(canonical_model_name)) {
             json updated_user_models = user_models_;
