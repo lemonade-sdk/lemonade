@@ -195,9 +195,6 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back("--max-model-len");
     args.push_back(std::to_string(ctx_size));
 
-    args.push_back("--enable-auto-tool-choice");
-    args.push_back("--tool-call-parser");
-    args.push_back("qwen3_coder");
     args.push_back("--enable-prefix-caching");
 
     // Detect the actual quantization method from config.json rather than guessing
