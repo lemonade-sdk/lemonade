@@ -89,10 +89,12 @@ if(WIN32)
         _UNICODE
     )
 
-    # Link with networking and system libraries
+    # Link with networking and system libraries. bcrypt is required by
+    # utils/http_client.cpp for SHA digest verification on Windows.
     target_link_libraries(lemonade PRIVATE
         ws2_32
         wsock32
+        bcrypt
     )
 
     # Embed manifest file if MSVC
@@ -115,11 +117,22 @@ if(APPLE)
 endif()
 
 if(UNIX AND NOT APPLE)
-    # On Linux, link with pthread
+    # On Linux, link with pthread and libcrypto. The CLI target builds
+    # ../server/utils/http_client.cpp directly instead of linking through
+    # lemonade-server-core, so libcrypto must be linked here too.
+    # Keep this find_package local: callers may apply only the src/ tree file
+    # updates, in which case the root CMake OpenSSL target has not been created.
     find_package(Threads REQUIRED)
-    target_link_libraries(lemonade PRIVATE
-        Threads::Threads
-    )
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(lemonade PRIVATE Threads::Threads)
+    if(TARGET OpenSSL::Crypto)
+        target_link_libraries(lemonade PRIVATE OpenSSL::Crypto)
+    elseif(OPENSSL_CRYPTO_LIBRARY)
+        target_link_libraries(lemonade PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+        target_include_directories(lemonade PRIVATE ${OPENSSL_INCLUDE_DIR})
+    else()
+        message(FATAL_ERROR "OpenSSL libcrypto was not found; required by utils/http_client.cpp digest verification")
+    endif()
 endif()
 
 # Install target (only on non-macOS platforms where main CMakeLists doesn't handle it)

@@ -10,12 +10,20 @@
 #include <chrono>
 #include <filesystem>
 #include <algorithm>
-#include <array>
 #include <cctype>
-#include <cstdint>
 #include <fstream>
+#include <memory>
 #include <vector>
 #include <lemon/utils/hash_digest.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <bcrypt.h>
+#elif defined(__APPLE__)
+#include <CommonCrypto/CommonDigest.h>
+#else
+#include <openssl/evp.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -51,15 +59,7 @@ static bool is_hex_digest(const std::string& value, size_t expected_len) {
     });
 }
 
-static uint32_t rotl32(uint32_t value, uint32_t count) {
-    return (value << count) | (value >> (32 - count));
-}
-
-static uint32_t rotr32(uint32_t value, uint32_t count) {
-    return (value >> count) | (value << (32 - count));
-}
-
-static std::string bytes_to_hex(const uint8_t* bytes, size_t len) {
+static std::string bytes_to_hex(const unsigned char* bytes, size_t len) {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
     for (size_t i = 0; i < len; ++i) {
@@ -67,244 +67,6 @@ static std::string bytes_to_hex(const uint8_t* bytes, size_t len) {
     }
     return oss.str();
 }
-
-class Sha1Context {
-public:
-    Sha1Context() {
-        state_[0] = 0x67452301;
-        state_[1] = 0xefcdab89;
-        state_[2] = 0x98badcfe;
-        state_[3] = 0x10325476;
-        state_[4] = 0xc3d2e1f0;
-    }
-
-    void update(const uint8_t* data, size_t len) {
-        bit_len_ += static_cast<uint64_t>(len) * 8;
-        while (len > 0) {
-            const size_t take = (std::min)(len, block_.size() - block_len_);
-            std::copy(data, data + take, block_.begin() + block_len_);
-            block_len_ += take;
-            data += take;
-            len -= take;
-            if (block_len_ == block_.size()) {
-                transform(block_.data());
-                block_len_ = 0;
-            }
-        }
-    }
-
-    void update(const std::string& data) {
-        update(reinterpret_cast<const uint8_t*>(data.data()), data.size());
-    }
-
-    std::string final_hex() {
-        block_[block_len_++] = 0x80;
-        if (block_len_ > 56) {
-            while (block_len_ < 64) block_[block_len_++] = 0;
-            transform(block_.data());
-            block_len_ = 0;
-        }
-        while (block_len_ < 56) block_[block_len_++] = 0;
-
-        for (int i = 7; i >= 0; --i) {
-            block_[block_len_++] = static_cast<uint8_t>((bit_len_ >> (i * 8)) & 0xff);
-        }
-        transform(block_.data());
-
-        uint8_t digest[20];
-        for (size_t i = 0; i < 5; ++i) {
-            digest[i * 4 + 0] = static_cast<uint8_t>((state_[i] >> 24) & 0xff);
-            digest[i * 4 + 1] = static_cast<uint8_t>((state_[i] >> 16) & 0xff);
-            digest[i * 4 + 2] = static_cast<uint8_t>((state_[i] >> 8) & 0xff);
-            digest[i * 4 + 3] = static_cast<uint8_t>(state_[i] & 0xff);
-        }
-        return bytes_to_hex(digest, sizeof(digest));
-    }
-
-private:
-    void transform(const uint8_t* chunk) {
-        uint32_t w[80];
-        for (int i = 0; i < 16; ++i) {
-            w[i] = (static_cast<uint32_t>(chunk[i * 4 + 0]) << 24) |
-                   (static_cast<uint32_t>(chunk[i * 4 + 1]) << 16) |
-                   (static_cast<uint32_t>(chunk[i * 4 + 2]) << 8) |
-                   (static_cast<uint32_t>(chunk[i * 4 + 3]));
-        }
-        for (int i = 16; i < 80; ++i) {
-            w[i] = rotl32(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
-        }
-
-        uint32_t a = state_[0];
-        uint32_t b = state_[1];
-        uint32_t c = state_[2];
-        uint32_t d = state_[3];
-        uint32_t e = state_[4];
-
-        for (int i = 0; i < 80; ++i) {
-            uint32_t f = 0;
-            uint32_t k = 0;
-            if (i < 20) {
-                f = (b & c) | ((~b) & d);
-                k = 0x5a827999;
-            } else if (i < 40) {
-                f = b ^ c ^ d;
-                k = 0x6ed9eba1;
-            } else if (i < 60) {
-                f = (b & c) | (b & d) | (c & d);
-                k = 0x8f1bbcdc;
-            } else {
-                f = b ^ c ^ d;
-                k = 0xca62c1d6;
-            }
-            uint32_t temp = rotl32(a, 5) + f + e + k + w[i];
-            e = d;
-            d = c;
-            c = rotl32(b, 30);
-            b = a;
-            a = temp;
-        }
-
-        state_[0] += a;
-        state_[1] += b;
-        state_[2] += c;
-        state_[3] += d;
-        state_[4] += e;
-    }
-
-    std::array<uint8_t, 64> block_{};
-    size_t block_len_ = 0;
-    uint64_t bit_len_ = 0;
-    uint32_t state_[5];
-};
-
-class Sha256Context {
-public:
-    Sha256Context() {
-        state_[0] = 0x6a09e667;
-        state_[1] = 0xbb67ae85;
-        state_[2] = 0x3c6ef372;
-        state_[3] = 0xa54ff53a;
-        state_[4] = 0x510e527f;
-        state_[5] = 0x9b05688c;
-        state_[6] = 0x1f83d9ab;
-        state_[7] = 0x5be0cd19;
-    }
-
-    void update(const uint8_t* data, size_t len) {
-        bit_len_ += static_cast<uint64_t>(len) * 8;
-        while (len > 0) {
-            const size_t take = (std::min)(len, block_.size() - block_len_);
-            std::copy(data, data + take, block_.begin() + block_len_);
-            block_len_ += take;
-            data += take;
-            len -= take;
-            if (block_len_ == block_.size()) {
-                transform(block_.data());
-                block_len_ = 0;
-            }
-        }
-    }
-
-    std::string final_hex() {
-        block_[block_len_++] = 0x80;
-        if (block_len_ > 56) {
-            while (block_len_ < 64) block_[block_len_++] = 0;
-            transform(block_.data());
-            block_len_ = 0;
-        }
-        while (block_len_ < 56) block_[block_len_++] = 0;
-
-        for (int i = 7; i >= 0; --i) {
-            block_[block_len_++] = static_cast<uint8_t>((bit_len_ >> (i * 8)) & 0xff);
-        }
-        transform(block_.data());
-
-        uint8_t digest[32];
-        for (size_t i = 0; i < 8; ++i) {
-            digest[i * 4 + 0] = static_cast<uint8_t>((state_[i] >> 24) & 0xff);
-            digest[i * 4 + 1] = static_cast<uint8_t>((state_[i] >> 16) & 0xff);
-            digest[i * 4 + 2] = static_cast<uint8_t>((state_[i] >> 8) & 0xff);
-            digest[i * 4 + 3] = static_cast<uint8_t>(state_[i] & 0xff);
-        }
-        return bytes_to_hex(digest, sizeof(digest));
-    }
-
-private:
-    void transform(const uint8_t* chunk) {
-        static constexpr uint32_t k[64] = {
-            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-            0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-            0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-            0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-            0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-            0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-            0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-            0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-            0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-        };
-
-        uint32_t w[64];
-        for (int i = 0; i < 16; ++i) {
-            w[i] = (static_cast<uint32_t>(chunk[i * 4 + 0]) << 24) |
-                   (static_cast<uint32_t>(chunk[i * 4 + 1]) << 16) |
-                   (static_cast<uint32_t>(chunk[i * 4 + 2]) << 8) |
-                   (static_cast<uint32_t>(chunk[i * 4 + 3]));
-        }
-        for (int i = 16; i < 64; ++i) {
-            const uint32_t s0 = rotr32(w[i - 15], 7) ^ rotr32(w[i - 15], 18) ^ (w[i - 15] >> 3);
-            const uint32_t s1 = rotr32(w[i - 2], 17) ^ rotr32(w[i - 2], 19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-        }
-
-        uint32_t a = state_[0];
-        uint32_t b = state_[1];
-        uint32_t c = state_[2];
-        uint32_t d = state_[3];
-        uint32_t e = state_[4];
-        uint32_t f = state_[5];
-        uint32_t g = state_[6];
-        uint32_t h = state_[7];
-
-        for (int i = 0; i < 64; ++i) {
-            const uint32_t s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
-            const uint32_t ch = (e & f) ^ ((~e) & g);
-            const uint32_t temp1 = h + s1 + ch + k[i] + w[i];
-            const uint32_t s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
-            const uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
-            const uint32_t temp2 = s0 + maj;
-
-            h = g;
-            g = f;
-            f = e;
-            e = d + temp1;
-            d = c;
-            c = b;
-            b = a;
-            a = temp1 + temp2;
-        }
-
-        state_[0] += a;
-        state_[1] += b;
-        state_[2] += c;
-        state_[3] += d;
-        state_[4] += e;
-        state_[5] += f;
-        state_[6] += g;
-        state_[7] += h;
-    }
-
-    std::array<uint8_t, 64> block_{};
-    size_t block_len_ = 0;
-    uint64_t bit_len_ = 0;
-    uint32_t state_[8];
-};
 
 struct ExpectedHash {
     std::string algorithm;
@@ -352,10 +114,219 @@ static ExpectedHash parse_expected_hash(const DownloadOptions& options) {
     return {algorithm, value};
 }
 
-static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedHash& expected) {
+#if defined(_WIN32)
+
+struct BCryptAlgorithmHandle {
+    BCRYPT_ALG_HANDLE handle = nullptr;
+    ~BCryptAlgorithmHandle() {
+        if (handle) {
+            BCryptCloseAlgorithmProvider(handle, 0);
+        }
+    }
+};
+
+struct BCryptHashHandle {
+    BCRYPT_HASH_HANDLE handle = nullptr;
+    ~BCryptHashHandle() {
+        if (handle) {
+            BCryptDestroyHash(handle);
+        }
+    }
+};
+
+static HashCheckResult digest_file_with_library(const fs::path& path,
+                                                const ExpectedHash& expected,
+                                                const std::string& git_blob_prefix) {
     HashCheckResult result;
-    if (!expected.present()) {
-        result.ok = true;
+
+    const wchar_t* algorithm_id = nullptr;
+    size_t expected_digest_len = 0;
+    if (expected.algorithm == "sha256") {
+        algorithm_id = BCRYPT_SHA256_ALGORITHM;
+        expected_digest_len = 32;
+    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
+        algorithm_id = BCRYPT_SHA1_ALGORITHM;
+        expected_digest_len = 20;
+    } else {
+        result.error = "unsupported hash algorithm: " + expected.algorithm;
+        return result;
+    }
+
+    BCryptAlgorithmHandle alg;
+    NTSTATUS status = BCryptOpenAlgorithmProvider(&alg.handle, algorithm_id, nullptr, 0);
+    if (status < 0) {
+        result.error = "failed to initialize Windows BCrypt provider";
+        return result;
+    }
+
+    DWORD object_len = 0;
+    DWORD bytes_written = 0;
+    status = BCryptGetProperty(alg.handle, BCRYPT_OBJECT_LENGTH,
+                               reinterpret_cast<PUCHAR>(&object_len), sizeof(object_len),
+                               &bytes_written, 0);
+    if (status < 0 || object_len == 0) {
+        result.error = "failed to query Windows BCrypt hash object length";
+        return result;
+    }
+
+    DWORD digest_len = 0;
+    status = BCryptGetProperty(alg.handle, BCRYPT_HASH_LENGTH,
+                               reinterpret_cast<PUCHAR>(&digest_len), sizeof(digest_len),
+                               &bytes_written, 0);
+    if (status < 0 || digest_len != expected_digest_len) {
+        result.error = "failed to query Windows BCrypt digest length";
+        return result;
+    }
+
+    std::vector<unsigned char> hash_object(object_len);
+    BCryptHashHandle hash;
+    status = BCryptCreateHash(alg.handle, &hash.handle, hash_object.data(), object_len,
+                              nullptr, 0, 0);
+    if (status < 0) {
+        result.error = "failed to create Windows BCrypt hash";
+        return result;
+    }
+
+    if (!git_blob_prefix.empty()) {
+        status = BCryptHashData(hash.handle,
+                                reinterpret_cast<PUCHAR>(const_cast<char*>(git_blob_prefix.data())),
+                                static_cast<ULONG>(git_blob_prefix.size()), 0);
+        if (status < 0) {
+            result.error = "failed to hash Git blob prefix";
+            return result;
+        }
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        result.error = "failed to open file for hash verification";
+        return result;
+    }
+
+    constexpr size_t buffer_size = 1024 * 1024;
+    std::vector<unsigned char> buffer(buffer_size);
+    while (file.good()) {
+        file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize count = file.gcount();
+        if (count > 0) {
+            status = BCryptHashData(hash.handle, buffer.data(), static_cast<ULONG>(count), 0);
+            if (status < 0) {
+                result.error = "failed while hashing file with Windows BCrypt";
+                return result;
+            }
+        }
+    }
+    if (file.bad()) {
+        result.error = "failed while reading file for hash verification";
+        return result;
+    }
+
+    std::vector<unsigned char> digest(digest_len);
+    status = BCryptFinishHash(hash.handle, digest.data(), digest_len, 0);
+    if (status < 0) {
+        result.error = "failed to finalize Windows BCrypt hash";
+        return result;
+    }
+
+    result.actual = bytes_to_hex(digest.data(), digest.size());
+    result.ok = (lower_copy(result.actual) == expected.value);
+    return result;
+}
+
+#elif defined(__APPLE__)
+
+static HashCheckResult digest_file_with_library(const fs::path& path,
+                                                const ExpectedHash& expected,
+                                                const std::string& git_blob_prefix) {
+    HashCheckResult result;
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        result.error = "failed to open file for hash verification";
+        return result;
+    }
+
+    constexpr size_t buffer_size = 1024 * 1024;
+    std::vector<unsigned char> buffer(buffer_size);
+
+    if (expected.algorithm == "sha256") {
+        CC_SHA256_CTX ctx;
+        CC_SHA256_Init(&ctx);
+        while (file.good()) {
+            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize count = file.gcount();
+            if (count > 0) {
+                CC_SHA256_Update(&ctx, buffer.data(), static_cast<CC_LONG>(count));
+            }
+        }
+        if (file.bad()) {
+            result.error = "failed while reading file for hash verification";
+            return result;
+        }
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        CC_SHA256_Final(digest, &ctx);
+        result.actual = bytes_to_hex(digest, sizeof(digest));
+    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
+        CC_SHA1_CTX ctx;
+        CC_SHA1_Init(&ctx);
+        if (!git_blob_prefix.empty()) {
+            CC_SHA1_Update(&ctx, git_blob_prefix.data(), static_cast<CC_LONG>(git_blob_prefix.size()));
+        }
+        while (file.good()) {
+            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize count = file.gcount();
+            if (count > 0) {
+                CC_SHA1_Update(&ctx, buffer.data(), static_cast<CC_LONG>(count));
+            }
+        }
+        if (file.bad()) {
+            result.error = "failed while reading file for hash verification";
+            return result;
+        }
+        unsigned char digest[CC_SHA1_DIGEST_LENGTH];
+        CC_SHA1_Final(digest, &ctx);
+        result.actual = bytes_to_hex(digest, sizeof(digest));
+    } else {
+        result.error = "unsupported hash algorithm: " + expected.algorithm;
+        return result;
+    }
+
+    result.ok = (lower_copy(result.actual) == expected.value);
+    return result;
+}
+
+#else
+
+struct EvpMdCtxDeleter {
+    void operator()(EVP_MD_CTX* ctx) const {
+        EVP_MD_CTX_free(ctx);
+    }
+};
+
+static HashCheckResult digest_file_with_library(const fs::path& path,
+                                                const ExpectedHash& expected,
+                                                const std::string& git_blob_prefix) {
+    HashCheckResult result;
+
+    const EVP_MD* md = nullptr;
+    if (expected.algorithm == "sha256") {
+        md = EVP_sha256();
+    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
+        md = EVP_sha1();
+    } else {
+        result.error = "unsupported hash algorithm: " + expected.algorithm;
+        return result;
+    }
+
+    std::unique_ptr<EVP_MD_CTX, EvpMdCtxDeleter> ctx(EVP_MD_CTX_new());
+    if (!ctx || EVP_DigestInit_ex(ctx.get(), md, nullptr) != 1) {
+        result.error = "failed to initialize OpenSSL EVP digest context";
+        return result;
+    }
+
+    if (!git_blob_prefix.empty() &&
+        EVP_DigestUpdate(ctx.get(), git_blob_prefix.data(), git_blob_prefix.size()) != 1) {
+        result.error = "failed to hash Git blob prefix with OpenSSL EVP";
         return result;
     }
 
@@ -366,49 +337,55 @@ static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedH
     }
 
     constexpr size_t buffer_size = 1024 * 1024;
-    std::vector<uint8_t> buffer(buffer_size);
-
-    if (expected.algorithm == "sha256") {
-        Sha256Context ctx;
-        while (file.good()) {
-            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
-            const std::streamsize count = file.gcount();
-            if (count > 0) {
-                ctx.update(buffer.data(), static_cast<size_t>(count));
-            }
+    std::vector<unsigned char> buffer(buffer_size);
+    while (file.good()) {
+        file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize count = file.gcount();
+        if (count > 0 &&
+            EVP_DigestUpdate(ctx.get(), buffer.data(), static_cast<size_t>(count)) != 1) {
+            result.error = "failed while hashing file with OpenSSL EVP";
+            return result;
         }
-        result.actual = ctx.final_hex();
-    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
-        Sha1Context ctx;
-        if (expected.algorithm == "git-sha1") {
-            std::error_code ec;
-            const auto size = fs::file_size(path, ec);
-            if (ec) {
-                result.error = "failed to get file size for git-sha1 verification: " + ec.message();
-                return result;
-            }
-            ctx.update("blob " + std::to_string(size) + std::string(1, '\0'));
-        }
-        while (file.good()) {
-            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
-            const std::streamsize count = file.gcount();
-            if (count > 0) {
-                ctx.update(buffer.data(), static_cast<size_t>(count));
-            }
-        }
-        result.actual = ctx.final_hex();
-    } else {
-        result.error = "unsupported hash algorithm: " + expected.algorithm;
-        return result;
     }
-
     if (file.bad()) {
         result.error = "failed while reading file for hash verification";
         return result;
     }
 
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_len = 0;
+    if (EVP_DigestFinal_ex(ctx.get(), digest, &digest_len) != 1) {
+        result.error = "failed to finalize OpenSSL EVP digest";
+        return result;
+    }
+
+    result.actual = bytes_to_hex(digest, digest_len);
     result.ok = (lower_copy(result.actual) == expected.value);
-    if (!result.ok) {
+    return result;
+}
+
+#endif
+
+static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    HashCheckResult result;
+    if (!expected.present()) {
+        result.ok = true;
+        return result;
+    }
+
+    std::string git_blob_prefix;
+    if (expected.algorithm == "git-sha1") {
+        std::error_code ec;
+        const auto size = fs::file_size(path, ec);
+        if (ec) {
+            result.error = "failed to get file size for git-sha1 verification: " + ec.message();
+            return result;
+        }
+        git_blob_prefix = "blob " + std::to_string(size) + std::string(1, '\0');
+    }
+
+    result = digest_file_with_library(path, expected, git_blob_prefix);
+    if (!result.ok && result.error.empty()) {
         result.error = "hash mismatch: expected " + expected.algorithm + ":" + expected.value +
                        ", got " + expected.algorithm + ":" + result.actual;
     }

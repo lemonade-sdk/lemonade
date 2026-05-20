@@ -926,6 +926,9 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
+        // TheRock asset verification stays metadata-driven. Once upstream publishes
+        // per-asset checksums, backend_versions.json can provide them without
+        // changing download code. Until then this remains an optional lookup.
         utils::DownloadOptions therock_download_opts;
         therock_download_opts.expected_hash = lookup_expected_asset_hash(
             "therock", arch, version, "", filename);
