@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
-import { CUSTOM_COLLECTION_PREFIX } from '../utils/customCollections';
+import { getCollectionDisplayName, isCustomCollectionModel } from '../utils/customCollections';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
@@ -29,7 +29,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     if (!isCollectionModel(model.info)) {
       return true;
     }
-    return model.info.suggested === true;
+    return model.info.suggested === true || isCustomCollectionModel(model.id, model.info);
   });
 
   const allModels: SelectorModel[] = isDefaultModelPending
@@ -37,8 +37,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     : visibleDownloadedModels;
 
   const renderModelLabel = (id: string, info?: SelectorModel['info']) => {
+    if (isCustomCollectionModel(id, info)) {
+      return getCollectionDisplayName(id);
+    }
     if (isCollectionModel(info)) {
-      return info?.collection_name ?? getModelDisplayName(id);
+      return info?.model_name ?? getModelDisplayName(id);
     }
 
     return getModelDisplayName(id);
@@ -100,7 +103,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${model.id.startsWith(CUSTOM_COLLECTION_PREFIX) ? ' collection-option' : ''}`}
+                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}`}
                 onClick={() => handleSelect(model.id)}
                 title={model.id}
               >

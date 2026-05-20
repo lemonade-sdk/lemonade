@@ -23,14 +23,15 @@ function skipIfMissing() {
 
 const tests = [
   {
-    name: 'custom collection storage constants use collection terminology and localStorage versioning',
+    name: 'custom collection registration uses the PR 1842 server contract',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = readSource(CUSTOM_COLLECTIONS);
-      assertIncludes(source, "CUSTOM_COLLECTION_PREFIX = 'collection.'", 'Custom collection ids should use collection.* ids.');
-      assertIncludes(source, "CUSTOM_COLLECTIONS_STORAGE_KEY = 'lemonade.customCollections.v1'", 'Storage key should be versioned.');
-      assertIncludes(source, 'CUSTOM_COLLECTIONS_EXPORT_VERSION = 1', 'Export format should be versioned.');
+      assertIncludes(source, "CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX", 'Custom collection ids should use server user.* ids.');
+      assertIncludes(source, 'COLLECTION_OMNI_MODEL_RECIPE', 'Custom collection registration should use recipe=collection.omni.');
+      assertIncludes(source, 'model_name:', 'Custom collection registration should build a /pull model_name payload.');
+      assertIncludes(source, 'components:', 'Custom collection registration should send components to /pull.');
     },
   },
   {
@@ -41,34 +42,33 @@ const tests = [
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
       assertMatches(
         source,
-        /getCustomCollectionComponentList[\s\S]*?const ordered = \[[\s\S]*?llm[\s\S]*?vision[\s\S]*?image[\s\S]*?edit[\s\S]*?transcription[\s\S]*?speech[\s\S]*?return Array\.from\(new Set\(ordered\)\)/,
+        /getCustomCollectionComponentList[\s\S]*?Array\.from\(new Set\(\[[\s\S]*?components\.llm[\s\S]*?components\.vision[\s\S]*?components\.image[\s\S]*?components\.edit[\s\S]*?components\.transcription[\s\S]*?components\.speech[\s\S]*?\]\.filter/,
         'Component lists should preserve semantic role order and remove duplicates through Set insertion order.',
       );
     },
   },
   {
-    name: 'custom collection merge hides stale collections until every component is present',
+    name: 'custom collection import validates stale collections before server registration',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
       assertMatches(
         source,
-        /mergeCustomCollectionsIntoModelsData[\s\S]*?components\.every\(\(component\) => merged\[component\]\)[\s\S]*?continue[\s\S]*?merged\[collection\.id\] = customCollectionToModelInfo/,
-        'Synthetic collection models should only be inserted when all referenced components exist.',
+        /normalizeCustomCollection[\s\S]*?componentList\.every\(\(component\) => !!modelsData\[component\]\)[\s\S]*?return null/,
+        'Imported collections should be rejected until every referenced component exists.',
       );
     },
   },
   {
-    name: 'custom collection synthetic model metadata remains collection-shaped',
+    name: 'custom collection metadata is server-shaped',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
-      assertMatches(source, /recipe: 'collection\.omni'/, 'Synthetic custom collections should use recipe=collection.omni.');
-      assertMatches(source, /source: 'custom-collection'/, 'Synthetic custom collections should retain a source marker.');
-      assertMatches(source, /collection_source: 'custom'/, 'Synthetic custom collections should retain collection_source=custom.');
-      assertMatches(source, /collection_components: collection\.components/, 'Synthetic metadata should keep original role assignments.');
+      assertMatches(source, /recipe: COLLECTION_OMNI_MODEL_RECIPE/, 'Custom collections should use recipe=collection.omni.');
+      assertMatches(source, /const components = getCustomCollectionComponentList/, 'Custom collection pull payloads should keep server components.');
+      assert.ok(!/collection_components|collection_source|composite_models/.test(source), 'Custom collection helpers should not recreate pre-1842 synthetic metadata.');
     },
   },
   {
@@ -79,8 +79,8 @@ const tests = [
       const source = normalizeWhitespace(readSource(CUSTOM_COLLECTIONS));
       assertMatches(
         source,
-        /isCollectionEligibleModel[\s\S]*?!info \|\| isCustomCollectionId\(modelId\) \|\| isCollectionRecipe\(info\.recipe\) \|\| info\.downloaded !== true[\s\S]*?return false/,
-        'Role options must exclude missing, synthetic collection, and not-downloaded models.',
+        /isCollectionEligibleModel[\s\S]*?!info \|\| isCollectionRecipe\(info\.recipe\) \|\| info\.downloaded !== true[\s\S]*?return false/,
+        'Role options must exclude missing, server collection, and not-downloaded models.',
       );
       for (const label of ['vision', 'image', 'edit', 'transcription', 'speech']) {
         assertIncludes(source, label, `Role filtering should mention ${label}.`);
@@ -88,14 +88,16 @@ const tests = [
     },
   },
   {
-    name: 'custom collection refresh event is wired into model data refresh',
+    name: 'custom collection refresh uses server model refresh path',
     run() {
       const skip = skipIfMissing();
       if (skip) return skip;
-      const customSource = readSource(CUSTOM_COLLECTIONS);
+      const app = readSource(APP);
       const modelData = readSource(MODEL_DATA);
-      assertIncludes(customSource, "window.dispatchEvent(new CustomEvent('customCollectionsUpdated'))", 'Saving collections should dispatch refresh event.');
-      assertIncludes(modelData, 'mergeCustomCollectionsIntoModelsData', 'Model data should merge custom collections into server models.');
+      assertIncludes(app, "serverFetch('/pull'", 'Saving collections should register them through /pull.');
+      assertIncludes(app, "window.dispatchEvent(new CustomEvent('modelsUpdated'))", 'Saving collections should trigger the shared server-model refresh event.');
+      assertIncludes(modelData, "serverFetch('/models?show_all=true')", 'Model data should use the server as the source of truth after PR 1842.');
+      assert.ok(!modelData.includes('mergeCustomCollectionsIntoModelsData'), 'Model data should not inject local synthetic collections after PR 1842.');
     },
   },
   {
@@ -110,7 +112,7 @@ const tests = [
       assertIncludes(manager, 'renderCustomCollectionOptionsButton', 'ModelManager should expose an edit/options action for custom collections.');
       if (hasFile(MODEL_SELECTOR)) {
         const selector = readSource(MODEL_SELECTOR);
-        assertIncludes(selector, 'CUSTOM_COLLECTION_PREFIX', 'Model selector should display custom collections intentionally.');
+        assertIncludes(selector, 'isCustomCollectionModel', 'Model selector should display custom collections intentionally.');
       }
     },
   },

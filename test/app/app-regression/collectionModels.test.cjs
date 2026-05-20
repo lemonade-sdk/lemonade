@@ -19,7 +19,7 @@ const tests = [
       const source = normalizeWhitespace(readSource(COLLECTION_MODELS));
       assertMatches(
         source,
-        /getCollectionComponents[\s\S]*?components[\s\S]*?Array\.isArray\(components\)[\s\S]*?components\.filter\(/,
+        /getCollectionComponents[\s\S]*?const components = info\?\.components[\s\S]*?Array\.isArray\(components\)[\s\S]*?components\.filter\(/,
         'Collection components should only come from array-valued components.',
       );
       assertIncludes(
@@ -32,7 +32,7 @@ const tests = [
     },
   },
   {
-    name: 'collection identity depends on a collection recipe and at least one component',
+    name: 'collection identity depends on collection recipe and at least one component',
     run() {
       const source = normalizeWhitespace(readSource(COLLECTION_MODELS));
       assertMatches(

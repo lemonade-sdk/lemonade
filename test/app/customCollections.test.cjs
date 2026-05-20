@@ -41,58 +41,6 @@ if (originalTsLoader) {
   delete require.extensions['.ts'];
 }
 
-class MemoryStorage {
-  constructor() {
-    this.values = new Map();
-  }
-
-  get length() {
-    return this.values.size;
-  }
-
-  clear() {
-    this.values.clear();
-  }
-
-  getItem(key) {
-    return this.values.has(key) ? this.values.get(key) : null;
-  }
-
-  key(index) {
-    return Array.from(this.values.keys())[index] ?? null;
-  }
-
-  removeItem(key) {
-    this.values.delete(key);
-  }
-
-  setItem(key, value) {
-    this.values.set(key, String(value));
-  }
-}
-
-const storage = new MemoryStorage();
-const dispatchedEvents = [];
-
-global.CustomEvent = class CustomEvent {
-  constructor(type) {
-    this.type = type;
-  }
-};
-
-global.window = {
-  localStorage: storage,
-  dispatchEvent(event) {
-    dispatchedEvents.push(event.type);
-    return true;
-  },
-};
-
-function resetStorage() {
-  storage.clear();
-  dispatchedEvents.length = 0;
-}
-
 function model(labels, downloaded = true, recipe = 'llamacpp') {
   return {
     checkpoint: `${labels.join('-') || 'chat'}.gguf`,
@@ -110,111 +58,77 @@ function defineTest(name, fn) {
   tests.push({ name, fn });
 }
 
-defineTest('save, edit, delete, and export custom collections', () => {
-  const first = collectionUtils.saveCustomCollection({
-    name: 'My Collection',
-    components: { llm: 'llm-a', image: 'image-a' },
+defineTest('custom collection pull payload uses PR 1842 server collection contract', () => {
+  const payload = collectionUtils.buildCustomCollectionPullRequest({
+    name: 'My Omni Collection',
+    components: {
+      llm: 'chat-llm',
+      vision: 'chat-llm',
+      image: 'image-model',
+      edit: 'image-model',
+      transcription: 'asr-model',
+      speech: 'tts-model',
+    },
   });
 
-  assert.equal(first.id, 'collection.my-collection');
-  assert.equal(first.name, 'My Collection');
-  assert.equal(first.components.llm, 'llm-a');
-  assert.match(first.createdAt, /^\d{4}-\d{2}-\d{2}T/);
-
-  const duplicate = collectionUtils.saveCustomCollection({
-    name: 'My Collection',
-    components: { llm: 'llm-b' },
-  });
-
-  assert.equal(duplicate.id, 'collection.my-collection-2');
-
-  const edited = collectionUtils.saveCustomCollection({
-    id: first.id,
-    name: 'Renamed Collection',
-    components: { llm: 'llm-a', speech: 'tts-a' },
-  });
-
-  assert.equal(edited.id, first.id);
-  assert.equal(edited.createdAt, first.createdAt);
-  assert.equal(edited.components.speech, 'tts-a');
-
-  const exported = collectionUtils.buildCustomCollectionsExportPayload();
-  assert.equal(exported.version, 1);
-  assert.equal(exported.collections.length, 2);
-  assert.deepEqual(exported.collections.map((collection) => collection.id), [
-    'collection.my-collection-2',
-    'collection.my-collection',
-  ]);
-
-  collectionUtils.deleteCustomCollection(first.id);
-
-  assert.deepEqual(collectionUtils.loadCustomCollections().map((collection) => collection.id), [
-    'collection.my-collection-2',
-  ]);
-  assert.ok(dispatchedEvents.every((eventType) => eventType === 'customCollectionsUpdated'));
+  assert.equal(payload.model_name, 'user.My-Omni-Collection');
+  assert.equal(payload.recipe, 'collection.omni');
+  assert.deepEqual(payload.components, ['chat-llm', 'image-model', 'asr-model', 'tts-model']);
 });
 
-defineTest('import accepts collection and legacy workflow payloads', () => {
-  collectionUtils.saveCustomCollection({
-    name: 'Imported Collection',
-    components: { llm: 'existing-llm' },
-  });
-
+defineTest('import accepts collection payloads and skips invalid entries', () => {
   const result = collectionUtils.importCustomCollections({
-    version: 1,
-    workflows: [
+    version: 2,
+    collections: [
       { name: 'Imported Collection', components: { llm: 'new-llm' } },
-      { id: 'collection.explicit', name: 'Explicit Collection', components: { llm: 'explicit-llm' } },
+      { model_name: 'user.ExplicitCollection', components: ['explicit-llm', 'image-model'] },
       { name: 'Invalid Collection', components: { image: 'missing-llm' } },
     ],
+  }, {
+    'new-llm': model(['tool-calling']),
+    'explicit-llm': model(['tool-calling']),
+    'image-model': model(['image']),
   });
 
   assert.equal(result.imported, 2);
   assert.equal(result.skipped, 1);
-
-  const collections = collectionUtils.loadCustomCollections();
-  assert.deepEqual(collections.map((collection) => collection.id), [
-    'collection.explicit',
-    'collection.imported-collection',
-    'collection.imported-collection-2',
+  assert.deepEqual(result.collections.map((collection) => collection.id), [
+    undefined,
+    'user.ExplicitCollection',
   ]);
-
-  const generatedImport = collections.find((collection) => collection.id === 'collection.imported-collection-2');
-  assert.equal(generatedImport.components.llm, 'new-llm');
+  assert.deepEqual(result.collections[1].components, {
+    llm: 'explicit-llm',
+    image: 'image-model',
+  });
 });
 
-defineTest('mergeCustomCollectionsIntoModelsData creates synthetic collection models and hides stale collections', () => {
-  collectionUtils.saveCustomCollection({
-    name: 'Usable Collection',
-    components: {
-      llm: 'chat-llm',
-      vision: 'vision-llm',
-      image: 'image-model',
-      speech: 'speech-model',
+defineTest('model entries convert back to editable custom collection drafts', () => {
+  const modelsData = {
+    'user.CreatorStudio': {
+      checkpoint: '',
+      recipe: 'collection.omni',
+      suggested: true,
+      downloaded: true,
+      components: ['chat-llm', 'vision-llm', 'image-model', 'asr-model', 'tts-model'],
+      labels: ['custom'],
     },
-  });
-  collectionUtils.saveCustomCollection({
-    name: 'Stale Collection',
-    components: { llm: 'chat-llm', image: 'missing-image-model' },
-  });
-
-  const merged = collectionUtils.mergeCustomCollectionsIntoModelsData({
     'chat-llm': model(['tool-calling']),
     'vision-llm': model(['vision']),
     'image-model': model(['image']),
-    'speech-model': model(['tts']),
-  });
+    'asr-model': model(['transcription']),
+    'tts-model': model(['tts']),
+  };
 
-  const collection = merged['collection.usable-collection'];
-  assert.equal(collection.recipe, 'collection');
-  assert.equal(collection.source, 'custom-collection');
-  assert.equal(collection.collection_name, 'Usable Collection');
-  assert.deepEqual(collection.composite_models, ['chat-llm', 'vision-llm', 'image-model', 'speech-model']);
-  assert.ok(collection.labels.includes('collection'));
-  assert.ok(collection.labels.includes('vision'));
-  assert.ok(collection.labels.includes('image'));
-  assert.ok(collection.labels.includes('speech'));
-  assert.equal(merged['collection.stale-collection'], undefined);
+  const collection = collectionUtils.modelEntryToCustomCollection('user.CreatorStudio', modelsData['user.CreatorStudio'], modelsData);
+  assert.equal(collection.id, 'user.CreatorStudio');
+  assert.equal(collection.name, 'CreatorStudio');
+  assert.deepEqual(collection.components, {
+    llm: 'chat-llm',
+    vision: 'vision-llm',
+    image: 'image-model',
+    transcription: 'asr-model',
+    speech: 'tts-model',
+  });
 });
 
 defineTest('role options include only downloaded compatible concrete models', () => {
@@ -226,9 +140,9 @@ defineTest('role options include only downloaded compatible concrete models', ()
     'asr-model': model(['transcription']),
     'tts-model': model(['speech']),
     'not-downloaded-image': model(['image'], false),
-    'collection-model': model([], true, 'collection'),
-    'collection.fake': model(['collection']),
+    'user.Collection': model(['custom'], true, 'collection.omni'),
   };
+  modelsData['user.Collection'].components = ['plain-chat', 'image-model'];
 
   assert.deepEqual(collectionUtils.getCollectionRoleOptions(modelsData, 'llm').map((entry) => entry.id), [
     'plain-chat',
@@ -251,7 +165,6 @@ defineTest('role options include only downloaded compatible concrete models', ()
 let passed = 0;
 
 for (const { name, fn } of tests) {
-  resetStorage();
   try {
     fn();
     passed += 1;

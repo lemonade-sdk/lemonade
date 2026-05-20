@@ -20,7 +20,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
-import { isCustomCollectionId } from './utils/customCollections';
+import { isCustomCollectionModel } from './utils/customCollections';
 
 interface ModelFamily {
   displayName: string;
@@ -131,7 +131,7 @@ type ModelListItem =
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
 
 const isUserDefinedModelName = (modelName: string): boolean => {
-  return modelName.startsWith(USER_MODEL_PREFIX) || isCustomCollectionId(modelName);
+  return modelName.startsWith(USER_MODEL_PREFIX);
 };
 
 const getModelListItemSortName = (item: ModelListItem): string => {
@@ -1169,8 +1169,8 @@ const [searchQuery, setSearchQuery] = useState('');
     const isCollection = collectionComponents.length > 0;
 
     const message = isCollection
-      ? `"${modelName}" is a collection. Deleting it will remove the following ${collectionComponents.length} models from disk:\n\n${collectionComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
-      : `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`;
+      ? '"' + modelName + '" is a collection. Deleting it removes only the collection entry; its ' + collectionComponents.length + ' component models stay on disk:\n\n' + collectionComponents.map((c) => '• ' + c).join('\n')
+      : 'Are you sure you want to delete the model "' + modelName + '"? This action cannot be undone.';
 
     const confirmed = await confirm({
       title: isCollection ? 'Delete Collection' : 'Delete Model',
@@ -1185,23 +1185,14 @@ const [searchQuery, setSearchQuery] = useState('');
     }
 
     try {
-      if (isCollection) {
-        for (const component of collectionComponents) {
-          try {
-            await deleteModel(component);
-          } catch (err) {
-            console.error(`Failed to delete component ${component}:`, err);
-          }
-        }
-        showSuccess(`Collection "${modelName}" deleted (${collectionComponents.length} models removed).`);
-      } else {
-        await deleteModel(modelName);
-        showSuccess(`Model "${modelName}" deleted successfully.`);
-      }
+      await deleteModel(modelName);
+      showSuccess(isCollection
+        ? 'Collection "' + modelName + '" deleted. Component models were kept.'
+        : 'Model "' + modelName + '" deleted successfully.');
       await fetchCurrentLoadedModel();
     } catch (error) {
       console.error('Error deleting model:', error);
-      showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError('Failed to delete model: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -1347,21 +1338,30 @@ const [searchQuery, setSearchQuery] = useState('');
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
-    const isCollection = isCollectionModel(info);
+    const isCustomCollection = isCustomCollectionModel(modelName, info);
+
+    const renderSettingsButton = () => isCustomCollection
+      ? renderCustomCollectionOptionsButton(modelName)
+      : renderLoadOptionsButton(modelName);
+
     return (
       <>
         {!isDownloaded && (
-          <button
-            className="model-action-btn download-btn"
-            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName); }}
-            title="Download model"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </button>
+          <>
+            <button
+              className="model-action-btn download-btn"
+              onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName); }}
+              title="Download model"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
+            {isCustomCollection && renderDeleteButton(modelName)}
+            {isCustomCollection && renderSettingsButton()}
+          </>
         )}
         {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
           <>
@@ -1379,9 +1379,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {isCustomCollectionId(modelName) && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && renderDeleteButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {renderDeleteButton(modelName)}
+            {renderSettingsButton()}
           </>
         )}
         {isLoaded && (
@@ -1397,9 +1396,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {isCustomCollectionId(modelName) && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && renderDeleteButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {renderDeleteButton(modelName)}
+            {renderSettingsButton()}
           </>
         )}
       </>

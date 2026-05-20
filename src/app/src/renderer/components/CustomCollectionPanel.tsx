@@ -7,7 +7,7 @@ import {
   CustomCollectionRole,
   getCollectionRoleOptions,
   getCustomCollectionRoleLabel,
-  loadCustomCollections,
+  modelEntryToCustomCollection,
 } from '../utils/customCollections';
 
 interface CustomCollectionPanelProps {
@@ -15,11 +15,10 @@ interface CustomCollectionPanelProps {
   collectionId?: string;
   onClose: () => void;
   onSave: (collection: CustomCollectionDraft) => void | Promise<void>;
-  onDelete: (collectionId: string) => void | Promise<void>;
   onExport: (collectionId: string) => void;
 }
 
-const DEFAULT_NAME = 'My Omni Collection';
+const DEFAULT_NAME = 'MyOmniCollection';
 
 const OPTIONAL_ROLES: CustomCollectionRole[] = ['vision', 'image', 'edit', 'transcription', 'speech'];
 
@@ -63,7 +62,6 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   collectionId,
   onClose,
   onSave,
-  onDelete,
   onExport,
 }) => {
   const { modelsData } = useModels();
@@ -90,12 +88,12 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       return;
     }
 
-    const collection = loadCustomCollections().find((item) => item.id === collectionId);
+    const collection = modelEntryToCustomCollection(collectionId, modelsData[collectionId], modelsData);
     setForm(collection ? draftFromCollection(collection) : emptyDraft());
     if (!collection) {
       setError('This custom collection could not be found.');
     }
-  }, [mode, collectionId]);
+  }, [mode, collectionId, modelsData]);
 
   const updateForm = (patch: Partial<CollectionForm>) => {
     setForm((prev) => ({ ...prev, ...patch }));
@@ -131,7 +129,14 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   const valueForRole = (role: CustomCollectionRole): string => form[role];
 
   const renderRoleSelect = (role: CustomCollectionRole, required = false) => {
+    const selectedValue = valueForRole(role);
     const roleOptions = options[role];
+    const optionIds = new Set(roleOptions.map((model) => model.id));
+    const selectedFallback = selectedValue && !optionIds.has(selectedValue) && modelsData[selectedValue]
+      ? [{ id: selectedValue, info: modelsData[selectedValue] }]
+      : [];
+    const selectOptions = selectedFallback.concat(roleOptions);
+
     return (
       <div className="form-section collection-role-row" key={role}>
         <label className="form-label" title={roleDescriptions[role]}>
@@ -139,13 +144,13 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
         </label>
         <select
           className="form-input form-select collection-model-select"
-          value={valueForRole(role)}
+          value={selectedValue}
           onChange={(e) => setRole(role, e.target.value)}
           title={roleDescriptions[role]}
         >
           {!required && <option value="">None</option>}
           {required && <option value="">Select a model...</option>}
-          {roleOptions.map((model) => (
+          {selectOptions.map((model) => (
             <option key={model.id} value={model.id}>{model.info.model_name ?? getModelDisplayName(model.id)}</option>
           ))}
         </select>
@@ -182,11 +187,6 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
     });
   };
 
-  const handleDelete = async () => {
-    if (!form.selectedCollectionId) return;
-    await onDelete(form.selectedCollectionId);
-  };
-
   return (
     <>
       <div className="settings-header">
@@ -200,15 +200,16 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
 
       <div className="settings-content custom-collection-content">
         <div className="form-section">
-          <label className="form-label" title="A friendly name shown in the model picker">Collection Name</label>
+          <label className="form-label" title="Registered user collection name">Collection Name</label>
           <div className="input-with-prefix">
-            <span className="input-prefix">collection.</span>
+            <span className="input-prefix">user.</span>
             <input
               type="text"
               className="form-input with-prefix"
               value={form.name}
               onChange={(e) => updateForm({ name: e.target.value })}
-              placeholder="Creator Studio"
+              placeholder="CreatorStudio"
+              disabled={isEditing}
             />
           </div>
         </div>
@@ -225,11 +226,6 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       </div>
 
       <div className="settings-footer custom-collection-footer">
-        {isEditing && (
-          <button className="collection-delete-button" onClick={handleDelete}>
-            Delete
-          </button>
-        )}
         {isEditing && (
           <button className="settings-reset-button" onClick={() => onExport(form.selectedCollectionId)}>
             Export Collection

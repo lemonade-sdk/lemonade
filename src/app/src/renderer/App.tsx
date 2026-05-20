@@ -14,13 +14,13 @@ import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import { downloadTracker } from './utils/downloadTracker';
 import CustomCollectionPanel from './components/CustomCollectionPanel';
 import { ToastContainer, useToast } from './Toast';
+import { serverFetch } from './utils/serverConfig';
 import {
   CustomCollectionDraft,
+  buildCustomCollectionPullRequest,
   buildCustomCollectionsExportPayload,
-  deleteCustomCollection,
   importCustomCollections,
-  loadCustomCollections,
-  saveCustomCollection,
+  modelEntryToCustomCollection,
 } from './utils/customCollections';
 import '../../styles/index.css';
 
@@ -48,7 +48,7 @@ const AppContent: React.FC = () => {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [customCollectionModal, setCustomCollectionModal] = useState<{ mode: 'create' | 'edit'; collectionId?: string } | null>(null);
   const importCollectionFileRef = useRef<HTMLInputElement>(null);
-  const { selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
+  const { modelsData, selectedModel, setSelectedModel, setUserHasSelectedModel, refresh: refreshModels } = useModels();
   const { toasts, removeToast, showError, showSuccess } = useToast();
   const isDraggingRef = useRef<'left' | 'right' | 'bottom' | null>(null);
   const startXRef = useRef(0);
@@ -347,44 +347,43 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
+  const registerCustomCollection = async (collection: CustomCollectionDraft) => {
+    const requestBody = buildCustomCollectionPullRequest(collection);
+    const response = await serverFetch('/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || response.statusText);
+    }
+
+    window.dispatchEvent(new CustomEvent('modelsUpdated'));
+    return requestBody.model_name;
+  };
+
   const handleSaveCustomCollection = async (collection: CustomCollectionDraft) => {
     try {
-      const saved = saveCustomCollection(collection);
+      const modelName = await registerCustomCollection(collection);
       setCustomCollectionModal(null);
       await refreshModels();
-      setSelectedModel(saved.id);
+      setSelectedModel(modelName);
       setUserHasSelectedModel(true);
     } catch (error) {
       showError('Failed to save collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
-  const handleDeleteCustomCollection = async (collectionId: string) => {
-    try {
-      deleteCustomCollection(collectionId);
-      setCustomCollectionModal(null);
-      await refreshModels();
-      if (selectedModel === collectionId) {
-        setSelectedModel('');
-        setUserHasSelectedModel(false);
-      }
-    } catch (error) {
-      showError('Failed to delete collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    }
-  };
-
   const handleExportCustomCollection = (collectionId: string) => {
-    const collection = loadCustomCollections().find((item) => item.id === collectionId);
+    const collection = modelEntryToCustomCollection(collectionId, modelsData[collectionId], modelsData);
     if (!collection) {
       showError('Failed to export collection: collection not found.');
       return;
     }
 
-    const payload = {
-      version: buildCustomCollectionsExportPayload().version,
-      exportedAt: new Date().toISOString(),
-      collections: [collection],
-    };
+    const payload = buildCustomCollectionsExportPayload([collection]);
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -405,7 +404,10 @@ const AppContent: React.FC = () => {
     reader.onload = async (loadEvent) => {
       try {
         const parsed = JSON.parse(String(loadEvent.target?.result ?? ''));
-        const result = importCustomCollections(parsed);
+        const result = importCustomCollections(parsed, modelsData);
+        for (const collection of result.collections) {
+          await registerCustomCollection(collection);
+        }
         await refreshModels();
         const skipped = result.skipped > 0 ? '; skipped ' + result.skipped + ' invalid entr' + (result.skipped === 1 ? 'y' : 'ies') : '';
         showSuccess('Imported ' + result.imported + ' custom collection' + (result.imported === 1 ? '' : 's') + skipped + '.');
@@ -535,7 +537,6 @@ const AppContent: React.FC = () => {
               collectionId={customCollectionModal.collectionId}
               onClose={() => setCustomCollectionModal(null)}
               onSave={handleSaveCustomCollection}
-              onDelete={handleDeleteCustomCollection}
               onExport={handleExportCustomCollection}
             />
           </div>

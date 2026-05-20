@@ -1,6 +1,6 @@
 import { serverFetch } from './serverConfig';
 import { ModelsData } from './modelData';
-import { hasAnyModelLabel, isChatPlannerCandidate } from './modelLabels';
+import { isChatPlannerCandidate } from './modelLabels';
 import { getCollectionComponents } from './collectionModels';
 import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
@@ -50,9 +50,8 @@ export function buildLemonadeTools(
 ): LemonadeToolsResult {
   const info = modelsData[collectionName];
   const components = getCollectionComponents(info);
-  const customCollectionComponents = info?.collection_source === 'custom'
-    ? info.collection_components
-    : undefined;
+
+  const llmModel = components.find(c => isChatPlannerCandidate(modelsData[c])) || components[0] || '';
 
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};
@@ -74,44 +73,16 @@ export function buildLemonadeTools(
     function: { ...def.function, parameters: substituteParams(def.function.parameters) },
   });
 
-  const componentHasAnyLabel = (component: string, requiredLabels: string[]): boolean => {
-    return hasAnyModelLabel(modelsData[component], requiredLabels);
-  };
-
-  const getCustomCollectionToolModel = (def: ToolDefinitionEntry): string | undefined => {
-    if (!customCollectionComponents) return undefined;
-
-    const explicitToolModels: Record<string, string | undefined> = {
-      generate_image: customCollectionComponents.image,
-      edit_image: customCollectionComponents.edit ?? customCollectionComponents.image,
-      text_to_speech: customCollectionComponents.speech,
-      transcribe_audio: customCollectionComponents.transcription,
-      analyze_image: customCollectionComponents.vision ?? customCollectionComponents.llm,
-    };
-
-    const candidate = explicitToolModels[def.function.name];
-    if (!candidate || !components.includes(candidate)) return undefined;
-
-    const requiredLabels = def.requires_labels ?? def.requires_llm_labels;
-    if (requiredLabels && !componentHasAnyLabel(candidate, requiredLabels)) return undefined;
-
-    return candidate;
-  };
-
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
     const requiresLabels = def.requires_labels;
     const requiresLlmLabels = def.requires_llm_labels;
 
-    if (customCollectionComponents) {
-      const match = getCustomCollectionToolModel(def);
-      if (!match) continue;
-      tools.push(materialize(def));
-      models[def.function.name] = match;
-      continue;
-    }
-
     if (requiresLabels) {
-      const match = components.find((component) => componentHasAnyLabel(component, requiresLabels));
+      const labelSet = new Set(requiresLabels);
+      const match = components.find(c => {
+        const labels = modelsData[c]?.labels ?? [];
+        return labels.some(l => labelSet.has(l));
+      });
       if (!match) continue;
       tools.push(materialize(def));
       models[def.function.name] = match;
@@ -119,12 +90,11 @@ export function buildLemonadeTools(
     }
 
     if (requiresLlmLabels) {
-      const match = components.find((component) =>
-        componentHasAnyLabel(component, requiresLlmLabels) && isChatPlannerCandidate(modelsData[component]),
-      );
-      if (!match) continue;
+      const labelSet = new Set(requiresLlmLabels);
+      const llmLabels = modelsData[llmModel]?.labels ?? [];
+      if (!llmLabels.some(l => labelSet.has(l))) continue;
       tools.push(materialize(def));
-      models[def.function.name] = match;
+      models[def.function.name] = llmModel;
     }
   }
 
@@ -133,7 +103,6 @@ export function buildLemonadeTools(
 
   return { tools, systemPrompt, models };
 }
-
 /**
  * Execute a single Lemonade tool call.
  */

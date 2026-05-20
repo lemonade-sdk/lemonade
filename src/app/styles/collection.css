@@ -49,23 +49,6 @@
     gap: 8px;
 }
 
-.collection-delete-button {
-    margin-right: auto;
-    padding: 8px 16px;
-    background: transparent;
-    border: 1px solid var(--border-primary);
-    color: #ff6b6b;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-}
-
-.collection-delete-button:hover {
-    background: rgba(255, 107, 107, 0.1);
-    border-color: rgba(255, 107, 107, 0.45);
-}
 
 .collection-import-input {
     display: none;

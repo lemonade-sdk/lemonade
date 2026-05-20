@@ -1,6 +1,5 @@
-import { ModelInfo, ModelsData } from './modelData';
-import { isCollectionRecipe } from './recipeNames';
 import type { ModelInfo, ModelsData } from './modelData';
+import { isCollectionRecipe } from './recipeNames';
 import { isChatPlannerCandidate } from './modelLabels';
 
 export { NON_LLM_LABELS, NON_CHAT_PLANNER_LABELS, isChatPlannerCandidate } from './modelLabels';
@@ -67,19 +66,10 @@ export const getCollectionImageModel = (selectedModel: string, modelsData: Model
 export const getCollectionPrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
   const components = getCollectionComponents(info);
-  const customCollectionLLM = info?.collection_source === 'custom'
-    ? info.collection_components?.llm
-    : undefined;
-
-  if (customCollectionLLM && (components.length === 0 || components.includes(customCollectionLLM))) {
-    return customCollectionLLM;
-  }
-
   if (components.length === 0) {
     return selectedModel;
   }
 
   const explicitLLM = components.find((component) => isChatPlannerCandidate(modelsData[component]));
-
   return explicitLLM || components[0];
 };

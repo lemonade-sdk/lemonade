@@ -1,6 +1,4 @@
 import { isCollectionRecipe } from './recipeNames';
-import type { CustomCollectionComponents } from './customCollections';
-import { mergeCustomCollectionsIntoModelsData } from './customCollections';
 
 export const USER_MODEL_PREFIX = 'user.';
 
@@ -30,9 +28,6 @@ export interface ModelInfo {
   vision?: boolean;
   downloaded?: boolean;
   image_defaults?: ImageDefaults;
-  collection_source?: 'custom';
-  collection_components?: CustomCollectionComponents;
-  collection_name?: string;
   [key: string]: unknown;
 }
 
@@ -224,10 +219,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 };
 
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  // Server is the source of truth for all models (including user models).
-  // Client-side custom collections are lightweight synthetic collection models
-  // layered on top of the server model list so the OmniRouter UI can compose
-  // already-downloaded models without requiring a server registry write.
-  const serverModels = await fetchBuiltInModelsFromAPI();
-  return mergeCustomCollectionsIntoModelsData(serverModels);
+  // Server is the source of truth for all models (including user models)
+  // The /models?show_all=true endpoint returns both built-in and user models
+  return fetchBuiltInModelsFromAPI();
 };
