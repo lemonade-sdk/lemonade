@@ -36,6 +36,7 @@ Each archive has the following contents:
 - `resources/`
     - `server_models.json`: customizable list of models that `lemond` will show on the `models` endpoint.
     - `backend_versions.json`: customizable list that determines which versions of llama.cpp, FastFlowLM, etc. will be used as backends for `lemond`.
+    - `vllm_model_config.json`: vLLM model-family launch options, matched by model name or checkpoint regex.
     - `defaults.json`: default values for `lemond`'s `config.json` file. Safe to delete after `config.json` has been initialized.
 
 ## Customization Overview
@@ -73,6 +74,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
     resources\
         |- server_models.json       # Customized lemond models list
         |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+        |- vllm_model_config.json   # vLLM family launch options
 
     bin\                            # Pre-downloaded backends bundled into app
         |- llamacpp\                # GPU LLMs, embedding, and reranking
@@ -103,6 +105,7 @@ Once you've finished customization, you'll have a portable Lemonade folder ready
     resources/
         |- server_models.json       # Customized lemond models list
         |- backend_versions.json    # Customized version numbers for llamacpp, etc.
+        |- vllm_model_config.json   # vLLM family launch options
 
     bin/                            # Pre-downloaded backends bundled into app
         |- llamacpp/                # GPU LLMs, embedding, and reranking

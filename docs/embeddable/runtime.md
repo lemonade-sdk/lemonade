@@ -162,7 +162,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `whispercpp_backend` | string |
 | `whispercpp_args` | string |
 | `vllm_backend` | string |
-| `vllm_args` | string |
+| `vllm_args` | string. Applied after built-in `resources/vllm_model_config.json` model-family args. Lemonade-managed vLLM process args cannot be overridden. |
 | `steps` | int (positive) |
 | `cfg_scale` | number |
 | `width` | int (positive) |

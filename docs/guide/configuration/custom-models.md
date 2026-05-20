@@ -268,6 +268,8 @@ When loading a model, settings are resolved in this order (highest to lowest pri
 
 **`*_args` merge behavior:** For options ending in `_args` (e.g., `llamacpp_args`, `whispercpp_args`, `sdcpp_args`, `flm_args`, `vllm_args`), the CLI/API arguments are **merged** rather than replaced. The merge works at the flag level with higher priority settings taking priority.
 
+For vLLM, the merged `vllm_args` are applied after Lemonade's built-in `resources/vllm_model_config.json` model-family args. They may override config-file args such as `--tool-call-parser` or `--quantization`, but Lemonade-managed process args such as `--model`, `--port`, `--host`, `--served-model-name`, `--max-model-len`, and `--enable-prefix-caching` remain protected.
+
 For full details, see the [load endpoint documentation](../../api/lemonade.md#post-v1load).
 
 ## See Also

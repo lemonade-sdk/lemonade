@@ -196,6 +196,10 @@
         <File Id="backend_versions.json" Source="$(var.BuildDir)\Release\resources\backend_versions.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="VllmModelConfigJson" Directory="ResourcesDir" Guid="4f6a8c2e-931b-4d1f-8f3b-29c5f7e1a604">
+        <File Id="vllm_model_config.json" Source="$(var.BuildDir)\Release\resources\vllm_model_config.json" KeyPath="yes" />
+      </Component>
+
       <Component Id="DefaultsJson" Directory="ResourcesDir" Guid="0b2d4f6a-7c8e-49f1-a2b3-c4d5e6f70819">
         <File Id="defaults.json" Source="$(var.BuildDir)\Release\resources\defaults.json" KeyPath="yes" />
       </Component>

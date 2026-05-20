@@ -400,7 +400,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
-| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm, vllm | Context size for the model. Overrides the default value. For vLLM, Lemonade passes this as the managed `--max-model-len` argument. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
@@ -410,6 +410,8 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
 | `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
+| `vllm_backend` | No | vllm | vLLM backend to use, currently `rocm` on supported Linux systems. |
+| `vllm_args` | No | vllm | Custom arguments applied after `resources/vllm_model_config.json` model-family args. The following are NOT allowed: `--model`, `--port`, `--host`, `--served-model-name`, `--enforce-eager`, `--max-model-len`, `--enable-prefix-caching`. User memory-budget args such as `--kv-cache-memory-bytes` or `--gpu-memory-utilization` suppress Lemonade's default `--kv-cache-memory-bytes 4G`. |
 
 **Setting Priority:**
 

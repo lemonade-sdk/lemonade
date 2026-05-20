@@ -457,6 +457,7 @@ src/cpp/
 ├── resources/                  # Configuration and data files (self-contained)
 │   ├── backend_versions.json   # llama.cpp/whisper version configuration
 │   ├── server_models.json      # Model registry (available models)
+│   ├── vllm_model_config.json  # vLLM model-family launch options
 │   └── static/                 # Web UI assets
 │       ├── index.html          # Server landing page (with template variables)
 │       └── favicon.ico         # Site icon
@@ -855,6 +856,7 @@ See the `.github/workflows/` directory for CI/CD test configurations.
 - **Model Registry:** `src/cpp/resources/server_models.json`
 - **Web UI Files:** `src/cpp/resources/static/`
 - **Backend Versions:** `src/cpp/resources/backend_versions.json`
+- **vLLM Model Config:** `src/cpp/resources/vllm_model_config.json`
 
 ## License
 

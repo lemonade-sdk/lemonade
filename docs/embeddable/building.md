@@ -86,4 +86,5 @@ Each archive contains:
 - `LICENSE`
 - `resources/server_models.json`
 - `resources/backend_versions.json`
+- `resources/vllm_model_config.json`
 - `resources/defaults.json`

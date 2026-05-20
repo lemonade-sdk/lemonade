@@ -47,12 +47,24 @@ Standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/completions`)
 
 ## Tuning
 
-Free-form CLI args can be appended to `vllm-server` via `vllm_args`:
+Lemonade builds the `vllm-server` command line in layers:
+
+1. Lemonade-managed process and universal behavior args in code: model id, private port, host, served model name, eager execution, max model length, and prefix caching.
+2. Built-in model-family args from `resources/vllm_model_config.json`.
+3. User `vllm_args`.
+
+User `vllm_args` can replace config-file args by flag or conflict group, such as `--tool-call-parser`, auto-tool-choice enable/disable flags, `--quantization`, and memory-budget flags. They cannot override Lemonade-managed args such as `--model`, `--port`, `--host`, `--served-model-name`, `--enforce-eager`, `--max-model-len`, or `--enable-prefix-caching`.
+
+The shared-memory default `--kv-cache-memory-bytes 4G` is added unless user `vllm_args` contains `--kv-cache-memory-bytes` or `--gpu-memory-utilization`.
+
+Free-form CLI args can be provided via `vllm_args`:
 
 ```bash
-# Allow more concurrent sequences and turn on prefix caching
-lemonade config set vllm_args="--max-num-seqs 128 --enable-prefix-caching"
+# Allow more concurrent sequences and choose a memory budget
+lemonade config set vllm_args="--max-num-seqs 128 --gpu-memory-utilization 0.9"
 ```
+
+`vllm_model_config.json` supports model-family entries matched by checkpoint regex and exact model entries. Exact model args apply after family args. Set `"disable_family_match": true` on a model entry to opt out of checkpoint-regex family matching and use only that model's explicit args.
 
 ## Known gotchas
 
