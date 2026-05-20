@@ -1402,6 +1402,75 @@ class EndpointTests(ServerTestBase):
         self.assertIn("itself", response.json().get("error", "").lower())
         print("[OK] Self-reference rejected with 400")
 
+    def test_021p_collection_components_canonicalized(self):
+        """Component names passed as public aliases must be stored in canonical
+        form so downstream cache-key lookups
+        (check_component_downloaded / update_model_in_cache) match."""
+        suffix = uuid.uuid4().hex[:8]
+        component_canonical = f"user.AliasComp-{suffix}"
+        # Unique user.<name> entries surface under the bare public alias.
+        component_alias = component_canonical[5:]
+        collection_name = f"user.AliasColl-{suffix}"
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": component_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            # Register collection using the bare alias for the component.
+            coll_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection_name,
+                    "recipe": "collection.omni",
+                    "components": [component_alias],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(coll_response.status_code, 200, coll_response.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (
+                    m
+                    for m in models_response.json()["data"]
+                    if m["id"] == collection_name[5:]
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(
+                entry.get("components"),
+                [component_canonical],
+                "Aliased component must be stored canonically",
+            )
+            self.assertTrue(
+                entry.get("downloaded"),
+                "Cache-key lookups must find the canonical component",
+            )
+            print("[OK] Aliased component canonicalized at registration")
+        finally:
+            for name in (collection_name, component_canonical):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+
     def test_021o_load_collection_routes_through_component_branch(self):
         """POST /load on a collection must not route the collection itself
         through the generic HF download path (collections have no checkpoint).

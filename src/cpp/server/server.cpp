@@ -2883,6 +2883,13 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 bad_request(*err);
                 return;
             }
+            // Canonicalize components so downstream cache lookups
+            // (check_component_downloaded, update_model_in_cache) succeed
+            // even when the client passed a public alias (bare name) rather
+            // than the canonical `user.X` / `builtin.X` form.
+            for (auto& c : request_json["components"]) {
+                c = model_manager_->resolve_model_name(c.get<std::string>());
+            }
         }
 
         // Local import mode: CLI has already copied files to HF cache, just resolve and register
