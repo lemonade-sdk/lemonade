@@ -2408,6 +2408,10 @@ void ModelManager::download_model(const std::string& model_name,
             progress.percent = 100;
             (void)progress_callback(progress);
         }
+        // Scope cycle detection to the current recursion stack: a sibling branch
+        // that legitimately revisits this collection (DAG, e.g. A->{B,C}->D
+        // where D is itself a collection) must not be misread as a cycle.
+        visited.erase(model_name);
         return;
     }
 
