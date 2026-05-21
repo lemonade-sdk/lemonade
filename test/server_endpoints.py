@@ -1403,9 +1403,11 @@ class EndpointTests(ServerTestBase):
         print("[OK] Self-reference rejected with 400")
 
     def test_021p_collection_components_canonicalized(self):
-        """Component names passed as public aliases must be stored in canonical
-        form so downstream cache-key lookups
-        (check_component_downloaded / update_model_in_cache) match."""
+        """Client may register a collection using a component's public alias.
+        Storage must canonicalize so downstream cache-key lookups
+        (check_component_downloaded / update_model_in_cache) match; the wire
+        format then re-emits components under their public names for
+        consistency with the `id` field."""
         suffix = uuid.uuid4().hex[:8]
         component_canonical = f"user.AliasComp-{suffix}"
         # Unique user.<name> entries surface under the bare public alias.
@@ -1452,14 +1454,17 @@ class EndpointTests(ServerTestBase):
             self.assertIsNotNone(entry)
             self.assertEqual(
                 entry.get("components"),
-                [component_canonical],
-                "Aliased component must be stored canonically",
+                [component_alias],
+                "Wire-format components must use public names (same namespace as `id`)",
             )
+            # `downloaded` can only be True if the internal cache-key lookup
+            # found the component under its canonical name — this is the real
+            # proof that storage canonicalized the aliased input.
             self.assertTrue(
                 entry.get("downloaded"),
-                "Cache-key lookups must find the canonical component",
+                "Cache-key lookups must find the canonically-stored component",
             )
-            print("[OK] Aliased component canonicalized at registration")
+            print("[OK] Aliased component canonicalized in storage, public on wire")
         finally:
             for name in (collection_name, component_canonical):
                 try:
