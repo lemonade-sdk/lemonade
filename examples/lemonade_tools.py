@@ -12,7 +12,7 @@ Prerequisites:
 
 Running the Lemonade server with the models referenced below already
 downloaded is easiest — install LMX-Omni-5.5B-Lite from the desktop app
-(Model Manager > Lemonade Omni > LMX-Omni-5.5B-Lite > Download) and
+(Model Manager > Lemonade > LMX-Omni-5.5B-Lite > Download) and
 you'll have everything in one click. Otherwise, pull the models below
 individually via `lemonade pull <name>`.
 
