@@ -880,14 +880,24 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      // Don't start a second download if one is already running for this
-      // model. Without this guard, downloadTracker.startDownload would abort
-      // the in-flight request, which surfaces as "Download cancelled" in the
-      // first call's catch block.
+      // Do not start a second download if this renderer owns a live request or
+      // the server-owned download registry reports one. A restored UI row alone
+      // is not authoritative after reload, because it has no fetch stream or
+      // AbortController.
       if (downloadTracker.isActive(modelName)) {
         showWarning(`Download for "${modelName}" is already in progress.`);
         return;
       }
+
+      const serverDownloadActive = await downloadTracker.hasActiveServerDownload(modelName);
+      if (serverDownloadActive) {
+        showWarning(`Download for "${modelName}" is already in progress.`);
+        return;
+      }
+
+      // If the only thing left is a stale renderer-local row, remove it so the
+      // real /pull request can be sent and the server can resume from disk.
+      downloadTracker.clearStaleModelDownload(modelName);
 
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
