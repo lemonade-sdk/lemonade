@@ -30,6 +30,7 @@ export interface ModelRegistrationData {
   components?: string[];
   recipe: string;
   mmproj?: string;
+  labels?: string[];
   reasoning?: boolean;
   vision?: boolean;
   embedding?: boolean;

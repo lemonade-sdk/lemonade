@@ -1,4 +1,5 @@
 #include "lemon/hf_variants.h"
+#include "lemon/gguf_capabilities.h"
 
 #include <algorithm>
 #include <cctype>
@@ -6,6 +7,7 @@
 #include <map>
 #include <regex>
 #include <stdexcept>
+#include <sstream>
 #include <unordered_map>
 
 #include "lemon/utils/http_client.h"
@@ -75,6 +77,32 @@ int quant_priority(const std::string& q) {
     };
     auto it = priority.find(q);
     return it == priority.end() ? 100 : it->second;
+}
+
+GgufCapabilities fetch_remote_gguf_capabilities(
+    const std::string& checkpoint,
+    const std::string& filename,
+    const std::map<std::string, std::string>& base_headers) {
+    if (filename.empty()) return {};
+
+    auto headers = base_headers;
+    headers["Accept-Encoding"] = "identity";
+    headers["Range"] = "bytes=0-4194303";
+
+    try {
+        std::string url = "https://huggingface.co/" + checkpoint + "/resolve/main/" + filename;
+        auto response = HttpClient::get(url, headers);
+        if (response.status_code != 206 && response.status_code != 200) return {};
+
+        std::istringstream in(response.body, std::ios::binary);
+        return read_gguf_capabilities(in);
+    } catch (...) {
+        return {};
+    }
+}
+
+void add_label(std::vector<std::string>& labels, const std::string& label) {
+    add_label_once(labels, label);
 }
 
 }  // namespace
@@ -285,11 +313,16 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
     // Suggested labels.
     std::vector<std::string> labels;
-    if (!vset.mmproj_files.empty()) labels.push_back("vision");
+    if (!vset.mmproj_files.empty()) add_label(labels, "vision");
+    if (!vset.variants.empty()) {
+        apply_gguf_capability_labels(
+            labels,
+            fetch_remote_gguf_capabilities(checkpoint, vset.variants.front().primary_file, headers));
+    }
     {
         std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) labels.push_back("embeddings");
-        if (id_lower.find("rerank") != std::string::npos) labels.push_back("reranking");
+        if (id_lower.find("embed") != std::string::npos) add_label(labels, "embeddings");
+        if (id_lower.find("rerank") != std::string::npos) add_label(labels, "reranking");
     }
 
     nlohmann::json out;

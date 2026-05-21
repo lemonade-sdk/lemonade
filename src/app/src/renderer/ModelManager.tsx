@@ -222,6 +222,7 @@ interface DetectedBackend {
   suggestedName?: string;
   quantizations?: GGUFQuantization[];
   mmprojFiles?: string[];
+  suggestedLabels?: string[];
 }
 
 // Strip the canonical prefix (if any) to get the bare model name. Used for
@@ -795,6 +796,7 @@ const [searchQuery, setSearchQuery] = useState('');
               mmproj_files: string[];
               recipe: string;
               suggested_name?: string;
+              suggested_labels?: string[];
             } = await variantsRes.json();
             if (payload.variants && payload.variants.length > 0) {
               const quantizations: GGUFQuantization[] = payload.variants.map(v => ({
@@ -802,6 +804,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 quantization: v.name,
                 size: v.size_bytes || undefined,
               }));
+              const suggestedLabels = Array.isArray(payload.suggested_labels)
+                ? payload.suggested_labels.filter((label): label is string => typeof label === 'string')
+                : [];
               setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
                 ...prev,
                 [modelId]: {
@@ -810,6 +815,7 @@ const [searchQuery, setSearchQuery] = useState('');
                   suggestedName: payload.suggested_name,
                   quantizations,
                   mmprojFiles: payload.mmproj_files && payload.mmproj_files.length > 0 ? payload.mmproj_files : undefined,
+                  suggestedLabels,
                 },
               }));
               if (!hfSelectedQuantizations[modelId]) {
@@ -986,7 +992,15 @@ const [searchQuery, setSearchQuery] = useState('');
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
     const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
-    handleDownloadModel(modelName, { checkpoint, recipe: backend.recipe });
+    const labels = backend.suggestedLabels ?? [];
+    handleDownloadModel(modelName, {
+      checkpoint,
+      recipe: backend.recipe,
+      labels,
+      vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,
+      embedding: labels.includes('embeddings'),
+      reranking: labels.includes('reranking'),
+    });
   }, [hfModelBackends, resolveGgufCheckpoint, resolveHfModelName, handleDownloadModel]);
 
   // Debounced HF search effect - to avoid HF API rate limit error
@@ -1859,6 +1873,7 @@ const [searchQuery, setSearchQuery] = useState('');
                                     ? resolveGgufCheckpoint(hfModel.id, backend)
                                     : hfModel.id;
                                   const idLower = hfModel.id.toLowerCase();
+                                  const labels = backend.suggestedLabels ?? [];
                                   window.dispatchEvent(new CustomEvent('openAddModel', {
                                     detail: {
                                       initialValues: {
@@ -1866,9 +1881,10 @@ const [searchQuery, setSearchQuery] = useState('');
                                         checkpoint,
                                         recipe: backend.recipe,
                                         mmprojOptions: backend.mmprojFiles,
-                                        vision: (backend.mmprojFiles?.length ?? 0) > 0,
-                                        reranking: idLower.includes('rerank'),
-                                        embedding: idLower.includes('embed'),
+                                        labels,
+                                        vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,
+                                        reranking: labels.includes('reranking') || idLower.includes('rerank'),
+                                        embedding: labels.includes('embeddings') || idLower.includes('embed'),
                                       },
                                     },
                                   }));
