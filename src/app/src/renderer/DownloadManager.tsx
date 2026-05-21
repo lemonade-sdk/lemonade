@@ -10,6 +10,9 @@ export interface DownloadItem {
   totalFiles: number;
   bytesDownloaded: number;
   bytesTotal: number;
+  // True when bytesTotal is only the amount known so far, not the real final total.
+  // Used for backend split archives or runtime follow-up steps whose later sizes are not known yet.
+  bytesTotalIsLowerBound?: boolean;
   percent: number;
   status: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | 'deleting';
   error?: string;
@@ -27,6 +30,11 @@ export interface DownloadItem {
   // Server-owned jobs can be terminal from the UI point of view while the
   // worker is still unwinding. Keep this so resume waits until pause is real.
   running?: boolean;
+  // Smoothed/last-sample speed from the tracker. Calculated from byte deltas
+  // between progress snapshots so restored/skipped bytes do not inflate speed.
+  speedBytesPerSecond?: number;
+  speedSampleTime?: number;
+  speedSampleBytes?: number;
   updatedAt?: number;
 }
 
@@ -116,15 +124,30 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const formatTotalBytes = (download: DownloadItem): string => {
+    if (download.bytesTotalIsLowerBound && download.bytesTotal > 0) {
+      return `${formatBytes(download.bytesTotal)}+`;
+    }
+    return formatBytes(download.bytesTotal);
   };
 
   const formatSpeed = (bytesPerSecond: number): string => {
     return `${formatBytes(bytesPerSecond)}/s`;
   };
 
+  const getDownloadDisplayName = (modelName: string): string => {
+    return modelName.startsWith('user.') ? modelName.slice('user.'.length) : modelName;
+  };
+
   const calculateSpeed = (download: DownloadItem): number => {
+    if (typeof download.speedBytesPerSecond === 'number') {
+      return Math.max(0, download.speedBytesPerSecond);
+    }
+
     const elapsedSeconds = (Date.now() - download.startTime) / 1000;
     if (elapsedSeconds === 0) return 0;
     // Only count bytes downloaded in this session, not bytes already on disk from a prior run
@@ -134,6 +157,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   const calculateETA = (download: DownloadItem): string => {
     if (download.status !== 'downloading' || download.bytesDownloaded === 0) {
+      return '--';
+    }
+
+    // Unknown lower-bound totals cannot produce a meaningful remaining-time estimate.
+    if (download.bytesTotalIsLowerBound) {
       return '--';
     }
 
@@ -156,11 +184,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
   };
 
-  const isModelDownloadId = (downloadId?: string): boolean => downloadId?.startsWith('model:') === true;
+  const isServerDownloadId = (downloadId?: string): boolean =>
+    downloadId?.startsWith('model:') === true || downloadId?.startsWith('backend:') === true;
 
   const usesServerDownloadControl = (download: DownloadItem | undefined, downloadId?: string): boolean => {
-    // TODO: Backend downloads remain renderer-owned until the follow-up PR wires them into the server registry.
-    return download?.downloadType === 'model' || isModelDownloadId(download?.id ?? downloadId);
+    return download?.downloadType === 'model' ||
+      download?.downloadType === 'backend' ||
+      isServerDownloadId(download?.id ?? downloadId);
   };
 
   const hasLocalDownloadOwner = (download: DownloadItem): boolean => {
@@ -578,8 +608,8 @@ Partial files may remain on disk.`);
                         <div className="download-item-text">
                           <span className="download-model-name">
                             {download.collectionComponents && download.collectionComponents.length > 0
-                              ? `Setting up ${download.modelName}`
-                              : download.modelName}
+                              ? `Setting up ${getDownloadDisplayName(download.modelName)}`
+                              : getDownloadDisplayName(download.modelName)}
                           </span>
                           {download.collectionComponents && download.collectionComponents.length > 0 && (
                             <span
@@ -587,22 +617,22 @@ Partial files may remain on disk.`);
                               style={{ fontStyle: 'italic', opacity: 0.8 }}
                               title={download.collectionComponents.join('\n')}
                             >
-                              {download.collectionComponents.length} models: {download.collectionComponents.join(', ')}
+                              {download.collectionComponents.length} models: {download.collectionComponents.map(getDownloadDisplayName).join(', ')}
                             </span>
                           )}
                           <span className="download-file-info">
                             {download.status === 'downloading' && (
                               <>
-                                File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatBytes(download.bytesTotal)}
+                                File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}
                               </>
                             )}
                             {download.status === 'paused' && (
                               <>
-                                {download.running === true ? 'Pausing' : 'Paused'} • File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatBytes(download.bytesTotal)}
+                                {download.running === true ? 'Pausing' : 'Paused'} • File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}
                               </>
                             )}
                             {download.status === 'completed' && (
-                              <>Completed • {formatBytes(download.bytesTotal)}</>
+                              <>Completed • {formatTotalBytes(download)}</>
                             )}
                             {download.status === 'error' && (
                               <>Error: {download.error || 'Unknown error'}</>
@@ -775,7 +805,7 @@ Partial files may remain on disk.`);
                             </div>
                             <div className="download-detail-row">
                               <span className="download-detail-label">Total Size:</span>
-                              <span className="download-detail-value">{formatBytes(download.bytesTotal)}</span>
+                              <span className="download-detail-value">{formatTotalBytes(download)}</span>
                             </div>
                             <div className="download-detail-row">
                               <span className="download-detail-label">Speed:</span>
