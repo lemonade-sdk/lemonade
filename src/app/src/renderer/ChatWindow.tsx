@@ -224,6 +224,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
           checkpoints: data.checkpoints,
           recipe: data.recipe,
           mmproj: data.mmproj,
+          labels: data.labels,
           reasoning: data.reasoning,
           vision: data.vision,
           embedding: data.embedding,

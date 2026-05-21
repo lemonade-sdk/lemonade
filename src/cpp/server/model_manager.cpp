@@ -1,6 +1,7 @@
 #include <lemon/model_manager.h>
 #include <lemon/runtime_config.h>
 #include <lemon/hf_variants.h>
+#include <lemon/gguf_capabilities.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/http_client.h>
 #include <lemon/utils/process_manager.h>
@@ -342,6 +343,17 @@ static void populate_static_max_context_window(ModelInfo& info) {
         std::string gguf_path = info.resolved_path();
         if (!gguf_path.empty() && ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
             info.max_context_window = read_gguf_context_length(gguf_path);
+
+            // GGUF vision/tool metadata are LLM capabilities. Do not apply
+            // them to embedding/reranking models, otherwise labels such as
+            // tool-calling would reclassify the model away from its endpoint
+            // type and break /embeddings or /rerank.
+            if (info.type == ModelType::LLM) {
+                std::ifstream in(path_from_utf8(gguf_path), std::ios::binary);
+                if (in) {
+                    apply_gguf_capability_labels(info.labels, read_gguf_capabilities(in));
+                }
+            }
         }
     } else if (info.recipe == "flm") {
         info.max_context_window = read_flm_max_context_window(info);
