@@ -992,14 +992,17 @@ const [searchQuery, setSearchQuery] = useState('');
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
     const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
-    const labels = backend.suggestedLabels ?? [];
+    const labels = new Set(backend.suggestedLabels ?? []);
+    const mmproj = backend.mmprojFiles?.[0];
+    if (mmproj) labels.add('vision');
     handleDownloadModel(modelName, {
       checkpoint,
       recipe: backend.recipe,
-      labels,
-      vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,
-      embedding: labels.includes('embeddings'),
-      reranking: labels.includes('reranking'),
+      mmproj,
+      labels: Array.from(labels),
+      vision: labels.has('vision'),
+      embedding: labels.has('embeddings'),
+      reranking: labels.has('reranking'),
     });
   }, [hfModelBackends, resolveGgufCheckpoint, resolveHfModelName, handleDownloadModel]);
 
