@@ -35,7 +35,7 @@ LEMONADE_URL = "http://localhost:13305/v1"
 
 # Edit these to match models you have installed. Defaults are small so
 # they fit on most hardware (and match LMN-Lite-Omni-5.5B).
-LLM_MODEL = "Qwen3-4B-Instruct-2507-GGUF"  # any model with the "tool-calling" label
+LLM_MODEL = "Qwen3.5-4B-MTP-GGUF"  # any model with the "tool-calling" label
 IMAGE_MODEL = "SD-Turbo"  # any model with the "image" label
 TTS_MODEL = "kokoro-v1"  # any model with the "tts" label
 
