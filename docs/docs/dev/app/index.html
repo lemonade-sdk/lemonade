@@ -1117,6 +1117,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testing-custom-omni-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Testing custom Omni Models
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing custom Omni Models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#automated-unit-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Automated unit test
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-desktop-smoke-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual desktop smoke test
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#testing-the-rust-host" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1171,14 +1210,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../omni-router/" class="md-nav__link">
+      <a href="../lemonade-omni/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    OmniRouter (tools for agents)
+    Lemonade Omni Models
   
 
     
@@ -1761,6 +1800,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#testing-custom-omni-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Testing custom Omni Models
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Testing custom Omni Models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#automated-unit-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Automated unit test
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-desktop-smoke-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual desktop smoke test
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#testing-the-rust-host" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1901,6 +1979,27 @@ npm<span class="w"> </span>run<span class="w"> </span>build:renderer<span class=
 npm<span class="w"> </span>run<span class="w"> </span>build:renderer:prod<span class="w">    </span><span class="c1"># Build just the renderer (webpack, production)</span>
 npm<span class="w"> </span>run<span class="w"> </span>watch:renderer<span class="w">         </span><span class="c1"># Webpack watch mode for the renderer only</span>
 </code></pre></div>
+<h2 id="testing-custom-omni-models">Testing custom Omni Models</h2>
+<p>The custom Omni Model UI (see <a href="../../guide/configuration/custom-models/#register-a-custom-omni-model-from-the-desktop-app">Register a custom Omni Model from the desktop app</a>) has both an automated smoke test and a manual checklist.</p>
+<h3 id="automated-unit-test">Automated unit test</h3>
+<p>A focused Node-based smoke test exercises the custom Omni Model utility layer without starting Tauri or the Lemonade server:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>src/app
+npm<span class="w"> </span>run<span class="w"> </span>test:custom-collections
+</code></pre></div>
+<p>It uses the helpers in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/customCollections.ts"><code>src/app/src/renderer/utils/customCollections.ts</code></a> to verify that Omni Models can be saved, edited, imported, exported, and filtered by compatible component role.</p>
+<h3 id="manual-desktop-smoke-test">Manual desktop smoke test</h3>
+<p>Use the desktop app to verify the user-facing flow end to end:</p>
+<ol>
+<li>Start the Lemonade desktop app.</li>
+<li>Download at least one chat-capable LLM in <strong>Model Manager</strong>.</li>
+<li>Optionally download one image model, one edit-capable image model, one vision model, one transcription model, and one speech model.</li>
+<li>From the menu bar, choose <strong>File &gt; New Omni Model &gt; Manually</strong>.</li>
+<li>Save an Omni Model with only an LLM and verify it appears as <code>user.&lt;name&gt;</code> in the chat model picker.</li>
+<li>Edit the Omni Model to add optional role models and save again.</li>
+<li>Select the Omni Model in chat and run prompts that trigger the configured tools, such as image generation, speech synthesis, audio transcription, or image analysis.</li>
+<li>Export the Omni Model JSON, delete the Omni Model, import the JSON, and verify it reappears.</li>
+<li>Delete one component model and verify the now-stale Omni Model is hidden from the picker until the component is registered again.</li>
+</ol>
 <h2 id="testing-the-rust-host">Testing the Rust host</h2>
 <p>Unit tests live alongside the Rust modules and cover settings sanitization, beacon parsing, and deep-link URL parsing:</p>
 <div class="highlight"><pre><span></span><code>cargo<span class="w"> </span><span class="nb">test</span><span class="w"> </span>--manifest-path<span class="w"> </span>src-tauri/Cargo.toml

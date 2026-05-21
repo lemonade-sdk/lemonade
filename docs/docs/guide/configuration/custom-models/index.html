@@ -27,7 +27,7 @@
     
     
       
-        <title>Custom Model Configuration - Lemonade Server Documentation</title>
+        <title>Add a Custom Model - Lemonade Server Documentation</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#custom-model-configuration" class="md-skip">
+        <a href="#add-a-custom-model" class="md-skip">
           Skip to content
         </a>
       
@@ -117,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Custom Model Configuration
+              Add a Custom Model
             
           </span>
         </div>
@@ -728,6 +728,89 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#choose-a-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Choose a Workflow
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choose a Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pull-a-hugging-face-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Pull a Hugging Face model
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-with-explicit-cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register with explicit CLI flags
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-an-omni-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register an omni collection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-a-custom-omni-model-from-the-desktop-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register a custom Omni Model from the desktop app
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-via-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register via API
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-json-files-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Edit JSON files directly
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -849,6 +932,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Multi-file models
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Collections
       </span>
     </span>
   </a>
@@ -1340,14 +1434,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/omni-router/" class="md-nav__link">
+      <a href="../../../dev/lemonade-omni/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    OmniRouter (tools for agents)
+    Lemonade Omni Models
   
 
     
@@ -1853,6 +1947,89 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#choose-a-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Choose a Workflow
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choose a Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pull-a-hugging-face-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Pull a Hugging Face model
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-with-explicit-cli-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register with explicit CLI flags
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-an-omni-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register an omni collection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-a-custom-omni-model-from-the-desktop-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register a custom Omni Model from the desktop app
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-via-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register via API
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-json-files-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Edit JSON files directly
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1974,6 +2151,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Multi-file models
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Collections
       </span>
     </span>
   </a>
@@ -2125,21 +2313,175 @@
   
 
 
-<h1 id="custom-model-configuration">Custom Model Configuration</h1>
-<p>This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.</p>
-<blockquote>
-<p><strong>Tip:</strong> For most Hugging Face GGUFs, the easiest way to add a custom model is just:
+<h1 id="add-a-custom-model">Add a Custom Model</h1>
+<p>This guide explains every supported way to add a custom model to Lemonade Server. Start with the CLI workflows below unless you specifically need to hand-edit <code>user_models.json</code> or <code>recipe_options.json</code>.</p>
+<h2 id="choose-a-workflow">Choose a Workflow</h2>
+<h3 id="pull-a-hugging-face-model">Pull a Hugging Face model</h3>
+<p>For most Hugging Face GGUFs, use the repo id directly:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo
 </code></pre></div>
-Lemonade fetches the repo, lists the available quantizations (and any sharded folder variants), auto-detects <code>mmproj-*.gguf</code> files for vision models, infers labels (<code>vision</code>/<code>embeddings</code>/<code>reranking</code>) from the repo id, and presents an interactive variant menu. To skip the menu, append <code>:VARIANT</code>:
+<p>Lemonade fetches the repo, lists the available quantizations and sharded folder variants, auto-detects <code>mmproj-*.gguf</code> files for vision models, infers labels (<code>vision</code>/<code>embeddings</code>/<code>reranking</code>) from the repo id, and presents an interactive variant menu.</p>
+<p>To skip the menu, append a variant:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>org/repo:Q4_K_M
 </code></pre></div>
-The desktop app's "Search Hugging Face" panel calls the same <a href="../../../api/lemonade/#get-v1pullvariants"><code>/api/v1/pull/variants</code></a> endpoint under the hood.</p>
-<p>If you need full control — multiple checkpoints (<code>main</code> + <code>mmproj</code> + <code>vae</code> + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on <a href="../../cli/#options-for-pull"><code>lemonade pull</code></a>:
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">&quot;org/repo:file.gguf&quot;</span><span class="w"> </span>--recipe<span class="w"> </span>llamacpp
+<p>Examples:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Interactive GGUF variant menu</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF
+
+<span class="c1"># Specific GGUF variant</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF:Q4_K_M
+
+<span class="c1"># Vision model with mmproj auto-detection</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
+
+<span class="c1"># Sharded variant</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
 </code></pre></div>
-This guide covers the underlying JSON files for users who need manual control beyond what the CLI exposes.</p>
-</blockquote>
+<h3 id="register-with-explicit-cli-flags">Register with explicit CLI flags</h3>
+<p>Use a <code>user.*</code> name plus <code>--checkpoint</code> and <code>--recipe</code> when you need full control: multiple checkpoints, a non-default recipe, or custom labels.</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.NAME<span class="w"> </span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="w"> </span>--recipe<span class="w"> </span>RECIPE<span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="w"> </span>...<span class="o">]</span>
+</code></pre></div>
+<p>Examples:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Register and pull a custom GGUF model with a main checkpoint</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.Phi-4-Mini-GGUF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span>llamacpp
+
+<span class="c1"># Register and pull a vision model with main + mmproj</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.Gemma-3-4b<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint<span class="w"> </span>mmproj<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span>llamacpp
+
+<span class="c1"># Register a model with multiple labels</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_0<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--label<span class="w"> </span>coding<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--label<span class="w"> </span>tool-calling
+</code></pre></div>
+<p>Supported registration flags:</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--checkpoint TYPE CHECKPOINT</code></td>
+<td>Add a checkpoint entry. Repeat for multi-file models such as <code>main</code> + <code>mmproj</code> or <code>main</code> + <code>vae</code>.</td>
+</tr>
+<tr>
+<td><code>--recipe RECIPE</code></td>
+<td>Recipe to associate with the new <code>user.*</code> model. Common values: <code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>whispercpp</code>, <code>sd-cpp</code>, <code>kokoro</code>, <code>collection.omni</code>.</td>
+</tr>
+<tr>
+<td><code>--label LABEL</code></td>
+<td>Add a label to the new model. Repeatable. Valid labels include <code>coding</code>, <code>embeddings</code>, <code>hot</code>, <code>mtp</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code>.</td>
+</tr>
+<tr>
+<td><code>--components MODEL [MODEL ...]</code></td>
+<td>Components for an omni collection (see below). Use with <code>--recipe collection.omni</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="register-an-omni-collection">Register an omni collection</h3>
+<p>A collection is a meta-model made up of components. An <strong>omni collection</strong> is the recipe type behind <a href="../../../dev/lemonade-omni/">Lemonade Omni Models</a> — registered with <code>recipe: "collection.omni"</code>.</p>
+<p>Components must already be registered as built-in models or previously pulled <code>user.*</code> models. Components do not need to be downloaded already; missing component files are pulled by the same command.</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyKit<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span>collection.omni<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--components<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>Whisper-Tiny<span class="w"> </span>SD-Turbo
+</code></pre></div>
+<p><code>lemonade load user.MyKit</code> loads every component. <code>lemonade delete user.MyKit</code> removes only the collection entry; component files stay on disk.</p>
+<h3 id="register-a-custom-omni-model-from-the-desktop-app">Register a custom Omni Model from the desktop app</h3>
+<p>The desktop app offers a UI-driven path to register the same <code>recipe: "collection.omni"</code> entry — useful when you want to swap in a different planner LLM or a different image/ASR/TTS backbone without waiting for a new built-in <a href="../../../dev/lemonade-omni/">Lemonade Omni Model</a> to ship.</p>
+<ol>
+<li>Register or download the concrete models you want to use in <strong>Model Manager</strong>.</li>
+<li>In the desktop app menu bar, open <strong>File &gt; New Omni Model &gt; Manually</strong> (or <strong>From JSON</strong> to import an exported one).</li>
+<li>Pick one planner LLM and any optional models for image generation, image editing, vision analysis, speech-to-text, and text-to-speech.</li>
+<li>Save the Omni Model.</li>
+<li>Select the new <code>user.&lt;name&gt;</code> entry in the chat model picker — it appears alongside the built-in omni models under the <strong>Lemonade</strong> category.</li>
+</ol>
+<p>Custom Omni Models are registered through the same <code>POST /v1/pull</code> path with <code>recipe: "collection.omni"</code> that the built-ins and the CLI flow above use. They live under the server's <code>user.*</code> namespace, so a custom Omni Model named <code>MyKit</code> is addressable as <code>user.MyKit</code>. They behave like built-in omni models for routing purposes: the selected planner LLM remains the loop driver that decides when to call tools, and optional role models are only loaded/used when their corresponding tool is called.</p>
+<p>The Omni Model editor only offers already-registered compatible models for each role:</p>
+<table>
+<thead>
+<tr>
+<th>Omni Model role</th>
+<th>Tool unlocked</th>
+<th>Required model capability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLM</td>
+<td>Chat loop and tool calls</td>
+<td>Concrete chat model, preferably tool-calling capable</td>
+</tr>
+<tr>
+<td>Vision / image analysis</td>
+<td><code>analyze_image</code></td>
+<td><code>vision</code> label</td>
+</tr>
+<tr>
+<td>Image generation</td>
+<td><code>generate_image</code></td>
+<td><code>image</code> label</td>
+</tr>
+<tr>
+<td>Image editing</td>
+<td><code>edit_image</code></td>
+<td><code>edit</code> label</td>
+</tr>
+<tr>
+<td>Speech-to-text</td>
+<td><code>transcribe_audio</code></td>
+<td><code>audio</code> or <code>transcription</code> label</td>
+</tr>
+<tr>
+<td>Text-to-speech</td>
+<td><code>text_to_speech</code></td>
+<td><code>tts</code> or <code>speech</code> label</td>
+</tr>
+</tbody>
+</table>
+<p>If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.</p>
+<h3 id="register-via-api">Register via API</h3>
+<p>The <code>/v1/pull</code> endpoint accepts the same model registration fields as the CLI. Use this when integrating Lemonade into another app or script:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model_name&quot;: &quot;user.MyModel&quot;,</span>
+<span class="s1">        &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
+<span class="s1">        &quot;checkpoint&quot;: &quot;org/repo:Q4_0&quot;</span>
+<span class="s1">    }&#39;</span>
+</code></pre></div>
+<p>For multi-file models, send <code>checkpoints</code>:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model_name&quot;: &quot;user.Gemma-3-4b&quot;,</span>
+<span class="s1">        &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
+<span class="s1">        &quot;checkpoints&quot;: {</span>
+<span class="s1">            &quot;main&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;,</span>
+<span class="s1">            &quot;mmproj&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf&quot;</span>
+<span class="s1">        },</span>
+<span class="s1">        &quot;labels&quot;: [&quot;vision&quot;]</span>
+<span class="s1">    }&#39;</span>
+</code></pre></div>
+<p>For an omni collection, send <code>components</code>:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">        &quot;model_name&quot;: &quot;user.MyKit&quot;,</span>
+<span class="s1">        &quot;recipe&quot;: &quot;collection.omni&quot;,</span>
+<span class="s1">        &quot;components&quot;: [&quot;Qwen3-0.6B-GGUF&quot;, &quot;Whisper-Tiny&quot;, &quot;SD-Turbo&quot;]</span>
+<span class="s1">    }&#39;</span>
+</code></pre></div>
+<h3 id="edit-json-files-directly">Edit JSON files directly</h3>
+<p>Advanced users can edit <code>user_models.json</code> and <code>recipe_options.json</code> directly. The rest of this guide documents those files and gives complete examples.</p>
 <h2 id="overview">Overview</h2>
 <p>Custom model configuration involves two files, both located in the Lemonade cache directory:</p>
 <table>
@@ -2160,7 +2502,30 @@ This guide covers the underlying JSON files for users who need manual control be
 </tr>
 </tbody>
 </table>
-<p>See <a href=".././">configuration.md</a> for more information about finding the cache directory.</p>
+<p>If you used an installer from a Lemonade release, the cache directory is typically:</p>
+<table>
+<thead>
+<tr>
+<th>OS</th>
+<th>Cache directory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux systemd install</td>
+<td><code>/var/lib/lemonade/.cache/lemonade</code></td>
+</tr>
+<tr>
+<td>Windows</td>
+<td><code>%USERPROFILE%\.cache\lemonade</code></td>
+</tr>
+<tr>
+<td>macOS system install</td>
+<td><code>/Library/Application Support/lemonade/.cache</code></td>
+</tr>
+</tbody>
+</table>
+<p>For a standalone <code>lemond</code> executable, the default is <code>~/.cache/lemonade</code> unless you pass an explicit <code>cache_dir</code> argument or set <code>LEMONADE_CACHE_DIR</code>.</p>
 <h2 id="model-naming-spec">Model naming spec</h2>
 <p>Lemonade tracks three sources of models. Every model has a <strong>canonical ID</strong> of the form <code>&lt;source&gt;.&lt;bare-name&gt;</code>:</p>
 <table>
@@ -2280,7 +2645,13 @@ This guide covers the underlying JSON files for users who need manual control be
 <td><code>recipe</code></td>
 <td>Yes</td>
 <td>String</td>
-<td>Backend engine to use. One of: <code>llamacpp</code>, <code>whispercpp</code>, <code>sd-cpp</code>, <code>kokoro</code>, <code>ryzenai-llm</code>, <code>flm</code>.</td>
+<td>Backend engine to use. One of: <code>llamacpp</code>, <code>whispercpp</code>, <code>sd-cpp</code>, <code>kokoro</code>, <code>ryzenai-llm</code>, <code>flm</code>, <code>collection.omni</code>.</td>
+</tr>
+<tr>
+<td><code>components</code></td>
+<td>Yes**</td>
+<td>Array</td>
+<td>Components for a collection. Required when <code>recipe: "collection.omni"</code>. See <a href="#collections">Collections</a>.</td>
 </tr>
 <tr>
 <td><code>size</code></td>
@@ -2302,7 +2673,8 @@ This guide covers the underlying JSON files for users who need manual control be
 </tr>
 </tbody>
 </table>
-<p>* Either <code>checkpoint</code> or <code>checkpoints</code> is required, but not both.</p>
+<p>* Either <code>checkpoint</code> or <code>checkpoints</code> is required, but not both.
+** Required only when <code>recipe: "collection.omni"</code>. Collections do not use <code>checkpoint</code>/<code>checkpoints</code>.</p>
 <h3 id="checkpoint-format">Checkpoint format</h3>
 <p>The <code>checkpoint</code> field uses the format <code>org/repo:variant</code>:</p>
 <ul>
@@ -2356,6 +2728,17 @@ This guide covers the underlying JSON files for users who need manual control be
 </tr>
 </tbody>
 </table>
+<h3 id="collections">Collections</h3>
+<p>A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An <strong>omni collection</strong> is a collection type registered with <code>recipe: "collection.omni"</code> — this is the recipe behind <a href="../../../dev/lemonade-omni/">Lemonade Omni Models</a>.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;MyKit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;collection.omni&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;SD-Turbo&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Components must already be registered (built-in models, or other <code>user.*</code> entries earlier in this file). Loading the collection (<code>lemonade load user.MyKit</code>) loads each component; deleting the collection removes only the collection entry, leaving components on disk.</p>
+<p>The equivalent CLI registration is shown in <a href="#register-an-omni-collection">Register an omni collection</a>.</p>
 <h3 id="image-defaults">Image defaults</h3>
 <p>For <code>sd-cpp</code> recipe models, you can specify default image generation parameters:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>

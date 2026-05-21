@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/dev/omni-router/">
+        <link rel="canonical" href="https://lemonade-server.ai/dev/lemonade-omni/">
       
       
         <link rel="prev" href="../web-ui/">
@@ -27,7 +27,7 @@
     
     
       
-        <title>OmniRouter - Lemonade Server Documentation</title>
+        <title>Lemonade Omni Models - Lemonade Server Documentation</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#omnirouter" class="md-skip">
+        <a href="#lemonade-omni-models" class="md-skip">
           Skip to content
         </a>
       
@@ -117,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              OmniRouter
+              Lemonade Omni Models
             
           </span>
         </div>
@@ -1051,7 +1051,7 @@
   <span class="md-ellipsis">
     
   
-    OmniRouter (tools for agents)
+    Lemonade Omni Models
   
 
     
@@ -1069,7 +1069,7 @@
   <span class="md-ellipsis">
     
   
-    OmniRouter (tools for agents)
+    Lemonade Omni Models
   
 
     
@@ -1096,10 +1096,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#how-omnirouter-works" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        How it works
+        How OmniRouter works
       </span>
     </span>
   </a>
@@ -1107,10 +1107,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#collections" class="md-nav__link">
+  <a href="#the-omni-models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Collections
+        The omni models
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The omni models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#naming-scheme" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Naming scheme
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-an-omni-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use an omni model
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-omni-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Custom Omni Models
       </span>
     </span>
   </a>
@@ -1651,10 +1690,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#how-omnirouter-works" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        How it works
+        How OmniRouter works
       </span>
     </span>
   </a>
@@ -1662,10 +1701,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#collections" class="md-nav__link">
+  <a href="#the-omni-models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Collections
+        The omni models
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The omni models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#naming-scheme" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Naming scheme
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-an-omni-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use an omni model
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-omni-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Custom Omni Models
       </span>
     </span>
   </a>
@@ -1723,23 +1801,25 @@
   
 
 
-<h1 id="omnirouter">OmniRouter</h1>
-<p>OmniRouter is Lemonade's approach to multimodal agentic workflows. Instead of building a proprietary agent runtime into Lemonade, we expose each modality as an <strong>OpenAI-compatible tool</strong> that any existing LLM agent (Continue, OpenHands, Claude Code, your own app) can call against Lemonade's endpoints.</p>
-<p>You bring the LLM loop. Lemonade brings the tools.</p>
-<h2 id="how-it-works">How it works</h2>
+<h1 id="lemonade-omni-models">Lemonade Omni Models</h1>
+<p><strong>Lemonade Omni Models</strong> provide true all-to-all omni-modality to users and apps. They accomplish this by unifying the capabilities of a collection of an LLM, an image model, an ASR model, and a TTS model — everything a multimodal agent needs to chat, generate images, transcribe audio, and speak responses out loud.</p>
+<p>Under the hood, Lemonade Omni Models are powered by <strong>OmniRouter</strong> — Lemonade's pattern for exposing each modality as an OpenAI-compatible tool that an existing LLM agent can call against Lemonade's endpoints.</p>
+<p>You bring the LLM loop. Lemonade brings the local tools.</p>
+<h2 id="how-omnirouter-works">How OmniRouter works</h2>
 <ol>
-<li>You describe the tools to your LLM in OpenAI tool-calling format.</li>
+<li>Describe the tools to your LLM in OpenAI tool-calling format.</li>
 <li>The LLM decides which tool to call and with what arguments.</li>
-<li>Your client code executes each <code>tool_call</code> against the corresponding Lemonade endpoint (<code>/v1/images/generations</code>, <code>/v1/audio/speech</code>, etc.) and feeds the result back as a <code>tool</code> message.</li>
-<li>The LLM continues, calling more tools or producing a final response.</li>
+<li>Your client executes each <code>tool_call</code> against the corresponding Lemonade endpoint, such as <code>/v1/images/generations</code> or <code>/v1/audio/speech</code>.</li>
+<li>The client sends the tool result back to the LLM as a <code>tool</code> message.</li>
+<li>The LLM continues until it either calls another tool or returns a final response.</li>
 </ol>
-<p>This is the standard OpenAI tool-calling loop. The tool schemas OmniRouter provides are plain JSON (no Lemonade-specific client library required), the endpoints they target are OpenAI-compatible, and the server returns standard response shapes.</p>
-<h2 id="collections">Collections</h2>
-<p>A <strong>Collection</strong> is a preconfigured bundle of models sized for a hardware tier. Selecting a collection in the Lemonade desktop app loads one LLM + one image model + one ASR + one TTS — all the pieces OmniRouter's tools need in a single click.</p>
+<p>The tool schemas OmniRouter provides are plain JSON. They do not require a Lemonade-specific client library, and the endpoints they target use OpenAI-compatible request and response shapes.</p>
+<h2 id="the-omni-models">The omni models</h2>
+<p>An <strong>omni model</strong> is a virtual model made up of components, registered with <code>recipe: "collection.omni"</code>. Lemonade ships these:</p>
 <table>
 <thead>
 <tr>
-<th>Collection</th>
+<th>Omni model</th>
 <th>LLM</th>
 <th>Image</th>
 <th>ASR</th>
@@ -1748,24 +1828,70 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Ultra Collection</strong></td>
-<td>Qwen3.5-35B-A3B-GGUF</td>
+<td><strong>LMX-Omni-52B-Halo</strong></td>
+<td>Qwen3.6-35B-A3B-MTP-GGUF</td>
 <td>Flux-2-Klein-9B-GGUF (gen + edit)</td>
 <td>Whisper-Large-v3-Turbo</td>
 <td>kokoro-v1</td>
 </tr>
 <tr>
-<td><strong>Lite Collection</strong></td>
-<td>Qwen3.5-4B-GGUF</td>
+<td><strong>LMX-Omni-5.5B-Lite</strong></td>
+<td>Qwen3.5-4B-MTP-GGUF</td>
 <td>SD-Turbo (gen only)</td>
 <td>Whisper-Tiny</td>
 <td>kokoro-v1</td>
 </tr>
 </tbody>
 </table>
-<p>Collections are hidden from the default <code>/v1/models</code> listing so OpenAI-compatible clients don't see "Ultra Collection" as if it were a real model. They surface with <code>?show_all=true</code> and appear in the desktop app's model list.</p>
-<p>Use a Collection. Every part of this doc assumes one is loaded — the desktop app, <a href="https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py"><code>examples/lemonade_tools.py</code></a>, and the tools themselves were all validated against the Ultra and Lite Collections above.</p>
-<p>If you're the developer wiring OmniRouter into your own agent and you want to substitute models, you can, but you take on the compatibility work: any LLM you swap in must carry the <code>tool-calling</code> label, and each tool you want to call needs one downloaded model whose <code>labels</code> include the row's "Needs a model with label" entry from the tools table below. That's a developer-path discovery step, not a user configuration; the simple answer for everyone else is "install a Collection."</p>
+<p>Omni models are hidden from the default <code>/v1/models</code> listing so OpenAI-compatible clients don't see "LMX-Omni-52B-Halo" as if it were an LLM. They surface with <code>?show_all=true</code> and appear in the Lemonade desktop app's Model Manager under the <strong>Lemonade</strong> category.</p>
+<h3 id="naming-scheme">Naming scheme</h3>
+<p>Omni model names follow the pattern <code>LMX-Omni-&lt;xB&gt;-&lt;class&gt;</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Value</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Org prefix</td>
+<td><code>LMX</code></td>
+<td>Lemonade Mix.</td>
+</tr>
+<tr>
+<td>Modality</td>
+<td><code>Omni</code></td>
+<td>True all-to-all omni-modal bundle.</td>
+</tr>
+<tr>
+<td>Size</td>
+<td><code>xB</code></td>
+<td>Total parameter count across all component models.</td>
+</tr>
+<tr>
+<td>Class</td>
+<td><code>Halo</code></td>
+<td>Based on a large MoE LLM (e.g., targeted at Strix Halo).</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Lite</code></td>
+<td>Based on small models targeted at 32 GB APUs.</td>
+</tr>
+<tr>
+<td></td>
+<td><code>Dense</code></td>
+<td>Based on a dense LLM targeted at 32 GB dGPUs (none shipped yet).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="use-an-omni-model">Use an omni model</h3>
+<p>Every part of this doc assumes one is loaded — the desktop app, <a href="https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py"><code>examples/lemonade_tools.py</code></a>, and the tools themselves were all validated against the two omni models above.</p>
+<p>If you're the developer wiring OmniRouter into your own agent and you want to substitute models, you can, but you take on the compatibility work: any LLM you swap in must carry the <code>tool-calling</code> label, and each tool you want to call needs one downloaded model whose <code>labels</code> include the row's "Needs a model with label" entry from the tools table below. That's a developer-path discovery step, not a user configuration; the simple answer for everyone else is "install an omni model."</p>
+<h2 id="custom-omni-models">Custom Omni Models</h2>
+<p>You can build your own omni model from registered models — see <a href="../../guide/configuration/custom-models/#register-a-custom-omni-model-from-the-desktop-app">Register a custom Omni Model from the desktop app</a> in the custom models guide.</p>
 <h2 id="available-tools">Available tools</h2>
 <p>The canonical definitions live in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/toolDefinitions.json"><code>src/app/src/renderer/utils/toolDefinitions.json</code></a> — a single source of truth used by the desktop app and this documentation.</p>
 <table>
@@ -1817,7 +1943,7 @@ python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span>
 <li>Point your OpenAI-compatible client at <code>http://localhost:13305/v1</code>.</li>
 <li>Copy the tool entries from <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/toolDefinitions.json"><code>src/app/src/renderer/utils/toolDefinitions.json</code></a> into your agent's tool list (or load the JSON directly).</li>
 <li>When your agent receives a <code>tool_call</code> for one of these tools, POST to the corresponding endpoint from the table above and feed the response back to the LLM as a <code>tool</code> message.</li>
-<li>If you want to pick models programmatically rather than rely on a Collection being loaded, query <code>GET /v1/models?show_all=true</code> and match the <code>labels</code> array against the "Needs a model with label" column above.</li>
+<li>If you want to pick models programmatically rather than rely on an omni model being loaded, query <code>GET /v1/models?show_all=true</code> and match the <code>labels</code> array against the "Needs a model with label" column above.</li>
 </ol>
 <p>The example script implements all four steps end-to-end against the <code>generate_image</code> and <code>text_to_speech</code> tools.</p>
 

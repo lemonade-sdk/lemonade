@@ -1343,14 +1343,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dev/omni-router/" class="md-nav__link">
+      <a href="../../dev/lemonade-omni/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    OmniRouter (tools for agents)
+    Lemonade Omni Models
   
 
     
@@ -2360,13 +2360,21 @@ lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> <
 </tbody>
 </table>
 <h2 id="options-for-pull">Options for pull</h2>
-<p>The <code>pull</code> command downloads and installs models. The single positional argument can be either:</p>
-<ol>
-<li><strong>A registered model name</strong> from the <a href="https://lemonade-server.ai/models.html">Lemonade Server registry</a>, e.g. <code>Qwen3-0.6B-GGUF</code>.</li>
-<li><strong>A Hugging Face checkpoint</strong> of the form <code>owner/repo</code>, with an optional <code>:variant</code> suffix, e.g. <code>unsloth/Qwen3-8B-GGUF</code> or <code>unsloth/Qwen3-8B-GGUF:Q4_K_M</code>. When the variant is omitted (or doesn't match), Lemonade fetches the repository, lists the available quantizations (including sharded folder variants), auto-detects any <code>mmproj-*.gguf</code> files for vision models, infers labels from the repo id (<code>embed</code>/<code>rerank</code>), and presents an interactive menu.</li>
-<li><strong>A custom <code>user.*</code> model name</strong> when you want to manually register a model with explicit checkpoints, recipe, and optional labels.</li>
-</ol>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>MODEL_OR_CHECKPOINT<span class="w"> </span><span class="o">[</span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="o">]</span><span class="w"> </span><span class="o">[</span>--recipe<span class="w"> </span>RECIPE<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="o">]</span>
+<p>The <code>pull</code> command downloads and installs models. It can also register a custom <code>user.*</code> model when paired with manual configuration flags. For the full end-to-end custom model workflow, including checkpoint formats, omni collections, and <code>user_models.json</code>, see <a href=".././configuration/custom-models/">Custom Model Configuration</a>.</p>
+<p>Common forms:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>MODEL_OR_CHECKPOINT<span class="w"> </span><span class="o">[</span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="o">]</span><span class="w"> </span><span class="o">[</span>--recipe<span class="w"> </span>RECIPE<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="o">]</span><span class="w"> </span><span class="o">[</span>--components<span class="w"> </span>MODEL<span class="w"> </span>...<span class="o">]</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="c1"># Pull a registered model</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>Qwen3-0.6B-GGUF
+
+<span class="c1"># Pull a Hugging Face repo and choose a variant interactively</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF
+
+<span class="c1"># Pull a specific Hugging Face variant</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF:Q4_K_M
+
+<span class="c1"># Register and pull a custom model</span>
+lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyModel<span class="w"> </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_0<span class="w"> </span>--recipe<span class="w"> </span>llamacpp
 </code></pre></div>
 <table>
 <thead>
@@ -2389,7 +2397,7 @@ lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> <
 </tr>
 <tr>
 <td><code>--recipe RECIPE</code></td>
-<td>Manual registration: recipe to associate with the new <code>user.*</code> model (<code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>whispercpp</code>, <code>sd-cpp</code>, <code>kokoro</code>)</td>
+<td>Manual registration: recipe to associate with the new <code>user.*</code> model (<code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>whispercpp</code>, <code>sd-cpp</code>, <code>kokoro</code>, <code>collection.omni</code>)</td>
 <td>No</td>
 </tr>
 <tr>
@@ -2397,47 +2405,13 @@ lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> <
 <td>Manual registration: add a label to the new model. Repeatable. Valid: <code>coding</code>, <code>embeddings</code>, <code>hot</code>, <code>mtp</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code></td>
 <td>No</td>
 </tr>
+<tr>
+<td><code>--components MODEL [MODEL ...]</code></td>
+<td>Omni-model registration: component names to bundle. Use with <code>--recipe collection.omni</code>. Components must already be registered (built-in or previously pulled <code>user.*</code>); any not-yet-downloaded components are pulled by the same call.</td>
+<td>No</td>
+</tr>
 </tbody>
 </table>
-<p><strong>Happy path</strong></p>
-<p>Most users only need one of these:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Pull a registered model from the Lemonade Server registry</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>Qwen3-0.6B-GGUF
-
-<span class="c1"># Pull a Hugging Face GGUF — interactive variant menu appears</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF
-
-<span class="c1"># Pull a specific variant directly (no menu)</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-8B-GGUF:Q4_K_M
-
-<span class="c1"># Vision model — mmproj is auto-detected and the `vision` label is auto-applied</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
-
-<span class="c1"># Sharded variant — all shards in the matching folder are downloaded</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
-</code></pre></div>
-<p><strong>Manual registration from the same command</strong></p>
-<p>When you need explicit multi-file checkpoints, a non-default recipe, or custom labels, use the same <code>pull</code> command with a <code>user.*</code> model name plus <code>--checkpoint</code> and <code>--recipe</code>:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.NAME<span class="w"> </span>--checkpoint<span class="w"> </span>TYPE<span class="w"> </span>CHECKPOINT<span class="w"> </span><span class="o">[</span>--recipe<span class="w"> </span>RECIPE<span class="o">]</span><span class="w"> </span><span class="o">[</span>--label<span class="w"> </span>LABEL<span class="o">]</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="c1"># Register and pull a custom GGUF model with main checkpoint</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>user.Phi-4-Mini-GGUF<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--recipe<span class="w"> </span>llamacpp
-
-<span class="c1"># Register and pull a vision model with main + mmproj</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>user.Gemma-3-4b<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:Q4_K_M<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>mmproj<span class="w"> </span>ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--recipe<span class="w"> </span>llamacpp
-
-<span class="c1"># Register a model with multiple labels</span>
-lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--checkpoint<span class="w"> </span>main<span class="w"> </span>org/model:Q4_0<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--label<span class="w"> </span>coding<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--label<span class="w"> </span>tool-calling
-</code></pre></div>
 <h2 id="options-for-import">Options for import</h2>
 <p>The <code>import</code> command supports two flows:
 - Import from a local JSON file.
