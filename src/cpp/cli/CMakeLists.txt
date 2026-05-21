@@ -21,33 +21,57 @@ if(NOT TARGET lemonade-digest-crypto)
 
     if(MBEDCRYPTO_FOUND)
         message(STATUS "Using system mbedcrypto for download digest verification")
-        target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_INCLUDE_DIRS})
-        target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY_DIRS})
+        if(MBEDCRYPTO_INCLUDE_DIRS)
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_INCLUDE_DIRS})
+        endif()
+        if(MBEDCRYPTO_LIBRARY_DIRS)
+            target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY_DIRS})
+        endif()
         target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARIES})
-        target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_CFLAGS_OTHER})
+        if(MBEDCRYPTO_CFLAGS_OTHER)
+            target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_CFLAGS_OTHER})
+        endif()
     else()
-        message(STATUS "System mbedcrypto not found; fetching mbedTLS for download digest verification")
-        include(FetchContent)
-        FetchContent_Declare(mbedtls
-            GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
-            GIT_TAG v3.6.2
-            GIT_SHALLOW TRUE
-            EXCLUDE_FROM_ALL
-        )
-        set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
-        set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-        set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
-        set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
-        set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
-        FetchContent_MakeAvailable(mbedtls)
+        # Some distro packages do not ship a pkg-config file for mbedcrypto.
+        # Keep the system-library path working for Debian/PPA builds, where
+        # FetchContent is intentionally fully disconnected.
+        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/md.h)
+        find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
 
-        target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
-        if(TARGET MbedTLS::mbedcrypto)
-            target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedcrypto)
-        elseif(TARGET mbedcrypto)
-            target_link_libraries(lemonade-digest-crypto INTERFACE mbedcrypto)
+        if(MBEDTLS_INCLUDE_DIR AND MBEDCRYPTO_LIBRARY)
+            message(STATUS "Using system mbedcrypto for download digest verification")
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIR})
+            target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY})
         else()
-            message(FATAL_ERROR "mbedTLS FetchContent did not create an mbedcrypto target")
+            if(FETCHCONTENT_FULLY_DISCONNECTED AND NOT FETCHCONTENT_SOURCE_DIR_MBEDTLS)
+                message(FATAL_ERROR
+                    "System mbedcrypto was not found and FetchContent is fully disconnected. "
+                    "Install the distro development package (for Debian/Ubuntu: libmbedtls-dev) "
+                    "or provide FETCHCONTENT_SOURCE_DIR_MBEDTLS.")
+            endif()
+
+            message(STATUS "System mbedcrypto not found; fetching mbedTLS for download digest verification")
+            include(FetchContent)
+            FetchContent_Declare(mbedtls
+                GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+                GIT_TAG 107ea89daaefb9867ea9121002fbbdf926780e98
+                EXCLUDE_FROM_ALL
+            )
+            set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+            set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+            set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+            set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+            set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+            FetchContent_MakeAvailable(mbedtls)
+
+            target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
+            if(TARGET MbedTLS::mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedcrypto)
+            elseif(TARGET mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE mbedcrypto)
+            else()
+                message(FATAL_ERROR "mbedTLS FetchContent did not create an mbedcrypto target")
+            endif()
         endif()
     endif()
 endif()

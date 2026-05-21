@@ -52,6 +52,120 @@ runs:
 
         echo "Extracting .deb package: $DEB_FILE"
 
+        add_runtime_library_path() {
+            local dep_root="$1"
+            local paths=()
+            local candidate
+
+            for candidate in \
+                "$dep_root/lib" \
+                "$dep_root/usr/lib" \
+                "$dep_root/lib/x86_64-linux-gnu" \
+                "$dep_root/usr/lib/x86_64-linux-gnu"; do
+                if [ -d "$candidate" ]; then
+                    paths+=("$(pwd)/$candidate")
+                fi
+            done
+
+            if [ "${#paths[@]}" -gt 0 ]; then
+                local joined
+                joined=$(IFS=:; echo "${paths[*]}")
+                export LD_LIBRARY_PATH="${joined}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+                echo "Added local runtime dependency library paths: $joined"
+            fi
+        }
+
+        dep_name_from_expr() {
+            # Strip version constraints and architecture/profile qualifiers from one
+            # dependency alternative, then print the package name.
+            echo "$1" \
+                | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+                | sed -E 's/[[:space:]]*\([^)]*\)//g; s/[[:space:]]*\[[^]]*\]//g; s/[[:space:]]*<[^>]*>//g' \
+                | awk '{print $1}'
+        }
+
+        extract_runtime_deps_locally() {
+            local dep_string="$1"
+            local dep_root="$EXTRACT_PATH/.deb-runtime-deps"
+            local download_dir="$EXTRACT_PATH/.deb-runtime-downloads"
+            local dep_expr alt pkg selected dep_deb
+
+            if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg-query >/dev/null 2>&1; then
+                echo "ERROR: Cannot install or locally extract .deb runtime dependencies: apt-get/dpkg-query missing."
+                exit 1
+            fi
+
+            mkdir -p "$dep_root" "$download_dir"
+
+            echo "No root/passwordless sudo available; locally extracting missing .deb runtime dependencies."
+            echo "This mirrors the package dependency metadata for this extract-only CI action."
+
+            while IFS= read -r dep_expr; do
+                dep_expr=$(echo "$dep_expr" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+                [ -z "$dep_expr" ] && continue
+
+                selected=""
+                IFS='|' read -ra alternatives <<< "$dep_expr"
+                for alt in "${alternatives[@]}"; do
+                    pkg=$(dep_name_from_expr "$alt")
+                    [ -z "$pkg" ] && continue
+                    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+                        selected="$pkg"
+                        break
+                    fi
+                    if [ -z "$selected" ]; then
+                        selected="$pkg"
+                    fi
+                done
+
+                [ -z "$selected" ] && continue
+                if dpkg-query -W -f='${Status}' "$selected" 2>/dev/null | grep -q "install ok installed"; then
+                    echo "Runtime dependency already installed: $selected"
+                    continue
+                fi
+
+                echo "Downloading missing runtime dependency: $selected"
+                (cd "$download_dir" && apt-get download "$selected")
+            done < <(echo "$dep_string" | tr ',' '\n')
+
+            shopt -s nullglob
+            for dep_deb in "$download_dir"/*.deb; do
+                echo "Extracting runtime dependency locally: $(basename "$dep_deb")"
+                dpkg-deb -x "$dep_deb" "$dep_root"
+            done
+            shopt -u nullglob
+
+            add_runtime_library_path "$dep_root"
+        }
+
+        install_runtime_deps() {
+            local dep_string="$1"
+            [ -z "$dep_string" ] && return 0
+
+            echo "Resolving .deb runtime dependencies: $dep_string"
+
+            if [ "$(id -u)" -eq 0 ]; then
+                apt-get update
+                apt-get satisfy -y "$dep_string"
+                return 0
+            fi
+
+            if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get satisfy -y "$dep_string"
+                return 0
+            fi
+
+            extract_runtime_deps_locally "$dep_string"
+        }
+
+        # This action intentionally extracts the .deb into a test directory rather than
+        # installing it system-wide, because downstream test jobs run the staged binary
+        # directly. Respect the package's real Depends metadata before executing it.
+        DEB_DEPENDS=$(dpkg-deb -f "$DEB_FILE" Depends 2>/dev/null || true)
+        install_runtime_deps "$DEB_DEPENDS"
+
         # Extract the .deb package
         mkdir -p "$EXTRACT_PATH"
         dpkg-deb -x "$DEB_FILE" "$EXTRACT_PATH"
