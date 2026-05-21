@@ -1163,14 +1163,38 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   };
 
+  const hasActiveDownloadForModel = (modelName: string): boolean => {
+    const relatedNames = new Set<string>([modelName]);
+    const info = modelsData[modelName];
+    if (isCollectionModel(info)) {
+      getCollectionComponents(info).forEach((component) => relatedNames.add(component));
+    }
+
+    return downloadTracker.getActiveDownloads().some((download) => {
+      if (download.status === 'completed' || download.status === 'error') return false;
+      const downloadNames = [download.modelName, ...(download.collectionComponents ?? [])];
+      return downloadNames.some((name) => relatedNames.has(name));
+    });
+  };
+
   const handleDeleteModel = async (modelName: string) => {
+    setHoveredModel(null);
+
+    await downloadTracker.hydrateFromServer().catch(() => undefined);
+
+    if (hasActiveDownloadForModel(modelName)) {
+      showWarning('A download or setup involving this model is still active. Cancel or delete it from the Download Manager first.');
+      return;
+    }
+
     const info = modelsData[modelName];
     const collectionComponents = isCollectionModel(info) ? getCollectionComponents(info) : [];
     const isCollection = collectionComponents.length > 0;
+    const displayName = isCollection ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName);
 
     const message = isCollection
-      ? '"' + getCollectionDisplayName(modelName) + '" isan Omni Model. Deleting it removes only the Omni Model entry; its ' + collectionComponents.length + ' component models stay on disk:\n\n' + collectionComponents.map((c) => '• ' + c).join('\n')
-      : 'Are you sure you want to delete the model "' + modelName + '"? This action cannot be undone.';
+      ? `"${displayName}" is an Omni Model. Deleting it removes only the Omni Model entry. Its ${collectionComponents.length} component model${collectionComponents.length === 1 ? '' : 's'} stay on disk.`
+      : `Are you sure you want to delete the model "${displayName}"? This action cannot be undone.`;
 
     const confirmed = await confirm({
       title: isCollection ? 'Delete Omni Model' : 'Delete Model',
@@ -1184,11 +1208,16 @@ const [searchQuery, setSearchQuery] = useState('');
       return;
     }
 
+    if (hasActiveDownloadForModel(modelName)) {
+      showWarning('A download or setup involving this model is still active. Cancel or delete it from the Download Manager first.');
+      return;
+    }
+
     try {
       await deleteModel(modelName);
       showSuccess(isCollection
-        ? 'Omni Model "' + getCollectionDisplayName(modelName) + '" deleted. Component models were kept.'
-        : 'Model "' + modelName + '" deleted successfully.');
+        ? `Omni Model "${displayName}" deleted. Component models were kept.`
+        : `Model "${displayName}" deleted successfully.`);
       await fetchCurrentLoadedModel();
     } catch (error) {
       console.error('Error deleting model:', error);
@@ -1321,18 +1350,29 @@ const [searchQuery, setSearchQuery] = useState('');
     </button>
   );
 
-  const renderDeleteButton = (modelName: string, title = 'Delete model') => (
-    <button
-      className="model-action-btn delete-btn"
-      onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
-      title={title}
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="3 6 5 6 21 6" />
-        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-      </svg>
-    </button>
-  );
+  const renderDeleteButton = (modelName: string, title = 'Delete model') => {
+    const blockedByDownload = hasActiveDownloadForModel(modelName);
+    return (
+      <button
+        className="model-action-btn delete-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (blockedByDownload) {
+            showWarning('A download or setup involving this model is still active. Cancel or delete it from the Download Manager first.');
+            return;
+          }
+          handleDeleteModel(modelName);
+        }}
+        title={blockedByDownload ? 'Cancel or delete the active download first' : title}
+        disabled={blockedByDownload}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+      </button>
+    );
+  };
 
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);

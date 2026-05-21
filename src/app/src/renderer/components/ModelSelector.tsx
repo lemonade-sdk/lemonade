@@ -8,11 +8,12 @@ interface ModelSelectorProps {
   disabled: boolean;
 }
 
-type SelectorModel = { id: string; info?: ReturnType<typeof useModels>['downloadedModels'][number]['info'] };
+type SelectorModel = { id: string; info?: ReturnType<typeof useModels>['downloadedModels'][number]['info']; unavailable?: boolean };
 
 const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
   const {
     downloadedModels,
+    modelsData,
     selectedModel,
     setSelectedModel,
     isDefaultModelPending,
@@ -29,12 +30,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     if (!isCollectionModel(model.info)) {
       return true;
     }
-    return model.info.suggested === true;
+    return model.info.suggested === true || isCustomCollectionModel(model.id, model.info);
   });
+
+  const visibleDownloadedModelIds = new Set(visibleDownloadedModels.map((model) => model.id));
+
+  const unavailableCustomCollections: SelectorModel[] = Object.entries(modelsData)
+    .filter(([id, info]) => isCollectionModel(info) && isCustomCollectionModel(id, info) && !visibleDownloadedModelIds.has(id))
+    .map(([id, info]) => ({ id, info, unavailable: true }));
 
   const allModels: SelectorModel[] = isDefaultModelPending
     ? [{ id: DEFAULT_MODEL_ID }]
-    : visibleDownloadedModels;
+    : [...visibleDownloadedModels, ...unavailableCustomCollections];
 
   const renderModelLabel = (id: string, info?: SelectorModel['info']) => {
     if (isCollectionModel(info)) {
@@ -69,9 +76,10 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
     }
   }, [isOpen]);
 
-  const handleSelect = (id: string) => {
+  const handleSelect = (model: SelectorModel) => {
+    if (model.unavailable) return;
     setUserHasSelectedModel(true);
-    setSelectedModel(id);
+    setSelectedModel(model.id);
     setIsOpen(false);
   };
 
@@ -100,11 +108,13 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}`}
-                onClick={() => handleSelect(model.id)}
-                title={model.id}
+                className={`model-selector-option${model.id === selectedModel ? ' selected' : ''}${isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
+                onClick={() => handleSelect(model)}
+                title={model.unavailable ? `${model.id} is not available until all component models are downloaded.` : model.id}
+                aria-disabled={model.unavailable ? true : undefined}
+                style={model.unavailable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
               >
-                {renderModelLabel(model.id, model.info)}
+                {renderModelLabel(model.id, model.info)}{model.unavailable ? ' (not available)' : ''}
               </div>
             )) : (
               <div className="model-selector-empty">No models match</div>

@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useModels } from '../hooks/useModels';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 import type { ModelInfo } from '../utils/modelData';
-import { isChatPlannerCandidate } from '../utils/collectionModels';
 import {
   CustomCollection,
   CustomCollectionDraft,
@@ -111,7 +110,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   const imageProvidesEdit = form.image.length > 0 && modelHasLabel(form.image, 'edit');
   const selectedLlmInfo = form.llm ? modelsData[form.llm] : undefined;
   const selectedLlmLabels = selectedLlmInfo?.labels ?? [];
-  const selectedLlmHasToolCalling = selectedLlmLabels.includes('tool-calling') || selectedLlmLabels.includes('tools') || isChatPlannerCandidate(selectedLlmInfo);
+  const selectedLlmHasToolCalling = selectedLlmLabels.includes('tool-calling') || selectedLlmLabels.includes('tools');
   const currentComponents = componentListForForm(form);
   const hasExistingCustomCollection = mode === 'edit' && !!form.selectedCollectionId;
   const isTemplateEdit = mode === 'edit' && !!form.sourceCollectionId && !form.selectedCollectionId;
@@ -270,7 +269,7 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   const handleSave = async () => {
     const draft = validateDraft();
     if (!draft) return;
-    await onSave(draft);
+    void onSave(draft);
   };
 
   const handleExport = () => {

@@ -12,6 +12,7 @@ import { ModelsProvider, useModels } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import { downloadTracker } from './utils/downloadTracker';
+import { serverFetch } from './utils/serverConfig';
 import CustomCollectionPanel from './components/CustomCollectionPanel';
 import { ToastContainer, useToast } from './Toast';
 import { pullModel, type ModelRegistrationData } from './utils/backendInstaller';
@@ -22,6 +23,7 @@ import {
   buildCustomModelPullRequest,
   importCustomCollections,
 } from './utils/customCollections';
+import { isModelEffectivelyDownloaded } from './utils/collectionModels';
 import '../../styles/index.css';
 
 type PullRegistrationPayload = {
@@ -167,6 +169,7 @@ const AppContent: React.FC = () => {
     const handleDownloadSignal = (e: any) => {
       const downloads = Array.isArray(e.detail?.downloads) ? e.detail.downloads : downloadTracker.getActiveDownloads();
       openIfActive(downloads);
+      void refreshModels();
     };
 
     const handleChatDownloadComplete = () => {
@@ -201,7 +204,7 @@ const AppContent: React.FC = () => {
       window.removeEventListener('download:chatComplete' as any, handleChatDownloadComplete);
       window.removeEventListener('open-external-content' as any, handleOpenExternalContent);
     };
-  }, []);
+  }, [refreshModels]);
 
   // Handle lemonade:// protocol navigation from main process.
   // Must await tauriReady because window.api is installed asynchronously
@@ -366,6 +369,25 @@ const AppContent: React.FC = () => {
     const collectionComponents = Array.isArray(requestBody.components)
       ? requestBody.components
       : undefined;
+    const collectionNeedsDownload = requestBody.recipe === 'collection.omni' &&
+      (collectionComponents ?? []).some((component) =>
+        !isModelEffectivelyDownloaded(component, modelsData[component], modelsData)
+      );
+
+    if (requestBody.recipe === 'collection.omni' && !collectionNeedsDownload) {
+      const response = await serverFetch('/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, stream: false, subscribe: false }),
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || response.statusText);
+      }
+      return;
+    }
 
     await pullModel(requestBody.model_name, {
       registrationData: requestBody as ModelRegistrationData,
@@ -382,9 +404,9 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveCustomCollection = async (collection: CustomCollectionDraft) => {
+    setCustomCollectionModal(null);
     try {
       const modelName = await registerCustomCollection(collection);
-      setCustomCollectionModal(null);
       await refreshModels();
       setSelectedModel(modelName);
       setUserHasSelectedModel(true);
