@@ -150,71 +150,35 @@ lemonade list [options]
 
 ## Options for pull
 
-The `pull` command downloads and installs models. The single positional argument can be either:
+The `pull` command downloads and installs models. It can also register a custom `user.*` model when paired with manual configuration flags. For the full end-to-end custom model workflow, including checkpoint formats, omni collections, and `user_models.json`, see [Custom Model Configuration](./configuration/custom-models.md).
 
-1. **A registered model name** from the [Lemonade Server registry](https://lemonade-server.ai/models.html), e.g. `Qwen3-0.6B-GGUF`.
-2. **A Hugging Face checkpoint** of the form `owner/repo`, with an optional `:variant` suffix, e.g. `unsloth/Qwen3-8B-GGUF` or `unsloth/Qwen3-8B-GGUF:Q4_K_M`. When the variant is omitted (or doesn't match), Lemonade fetches the repository, lists the available quantizations (including sharded folder variants), auto-detects any `mmproj-*.gguf` files for vision models, infers labels from the repo id (`embed`/`rerank`), and presents an interactive menu.
-3. **A custom `user.*` model name** when you want to manually register a model with explicit checkpoints, recipe, and optional labels.
+Common forms:
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL]
+lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
+```
+
+```bash
+# Pull a registered model
+lemonade pull Qwen3-0.6B-GGUF
+
+# Pull a Hugging Face repo and choose a variant interactively
+lemonade pull unsloth/Qwen3-8B-GGUF
+
+# Pull a specific Hugging Face variant
+lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
+
+# Register and pull a custom model
+lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face checkpoint | Yes |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
-| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`) | No |
+| `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
-
-**Happy path**
-
-Most users only need one of these:
-
-```bash
-# Pull a registered model from the Lemonade Server registry
-lemonade pull Qwen3-0.6B-GGUF
-
-# Pull a Hugging Face GGUF — interactive variant menu appears
-lemonade pull unsloth/Qwen3-8B-GGUF
-
-# Pull a specific variant directly (no menu)
-lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
-
-# Vision model — mmproj is auto-detected and the `vision` label is auto-applied
-lemonade pull ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
-
-# Sharded variant — all shards in the matching folder are downloaded
-lemonade pull unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
-```
-
-**Manual registration from the same command**
-
-When you need explicit multi-file checkpoints, a non-default recipe, or custom labels, use the same `pull` command with a `user.*` model name plus `--checkpoint` and `--recipe`:
-
-```bash
-lemonade pull user.NAME --checkpoint TYPE CHECKPOINT [--recipe RECIPE] [--label LABEL]
-```
-
-```bash
-# Register and pull a custom GGUF model with main checkpoint
-lemonade pull user.Phi-4-Mini-GGUF \
-  --checkpoint main unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M \
-  --recipe llamacpp
-
-# Register and pull a vision model with main + mmproj
-lemonade pull user.Gemma-3-4b \
-  --checkpoint main ggml-org/gemma-3-4b-it-GGUF:Q4_K_M \
-  --checkpoint mmproj ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf \
-  --recipe llamacpp
-
-# Register a model with multiple labels
-lemonade pull user.MyCodingModel \
-  --checkpoint main org/model:Q4_0 \
-  --recipe llamacpp \
-  --label coding \
-  --label tool-calling
-```
+| `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
 
 ## Options for import
 

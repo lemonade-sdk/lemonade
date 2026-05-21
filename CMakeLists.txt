@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.5.1)
+project(lemon_cpp VERSION 10.6.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -1371,6 +1371,23 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
+
+    # Install sysusers.d snippet so the 'lemonade' system user is created
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
+        RENAME lemonade.conf
+    )
+
+    # Configure + install the user-mode systemd unit
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemond-user.service.in
+        ${CMAKE_BINARY_DIR}/lemond-user.service
+        @ONLY
+    )
+    install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
+        RENAME lemond.service
+    )
 
     # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf

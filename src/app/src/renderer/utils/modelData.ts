@@ -1,3 +1,5 @@
+import { isCollectionRecipe } from './recipeNames';
+
 export const USER_MODEL_PREFIX = 'user.';
 
 export interface ImageDefaults {
@@ -11,12 +13,12 @@ export interface ImageDefaults {
 
 export interface ModelInfo {
   checkpoint: string;
-  checkpoints?: string[];
+  checkpoints?: Record<string, string>;
   recipe: string;
   suggested: boolean;
   size?: number;
   labels?: string[];
-  composite_models?: string[];
+  components?: string[];
   max_prompt_length?: number;
   max_context_window?: number;
   mmproj?: string;
@@ -66,7 +68,7 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
   const checkpoint = typeof info['checkpoint'] === 'string' ? info['checkpoint'] : '';
   const recipe = typeof info['recipe'] === 'string' ? info['recipe'] : '';
 
-  if (!recipe || (!checkpoint && recipe !== 'collection')) {
+  if (!recipe || (!checkpoint && !isCollectionRecipe(recipe))) {
     return null;
   }
 
@@ -107,9 +109,19 @@ const normalizeModelInfo = (info: unknown): ModelInfo | null => {
     normalized.model_name = modelName;
   }
 
-  const compositeModels = info['composite_models'];
-  if (Array.isArray(compositeModels)) {
-    normalized.composite_models = compositeModels.filter((model): model is string => typeof model === 'string');
+  const components = info['components'];
+  if (Array.isArray(components)) {
+    normalized.components = components.filter((model): model is string => typeof model === 'string');
+  }
+
+  const checkpoints = info['checkpoints'];
+  if (isRecord(checkpoints)) {
+    const normalizedCheckpoints = Object.fromEntries(
+      Object.entries(checkpoints).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    );
+    if (Object.keys(normalizedCheckpoints).length > 0) {
+      normalized.checkpoints = normalizedCheckpoints;
+    }
   }
 
   const reasoning = info['reasoning'];
@@ -178,8 +190,18 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.model_name = model.model_name;
       }
 
-      if (Array.isArray(model.composite_models)) {
-        modelInfo.composite_models = model.composite_models.filter((component: unknown): component is string => typeof component === 'string');
+      const components = model.components;
+      if (Array.isArray(components)) {
+        modelInfo.components = components.filter((component: unknown): component is string => typeof component === 'string');
+      }
+
+      if (model.checkpoints && typeof model.checkpoints === 'object' && !Array.isArray(model.checkpoints)) {
+        const checkpoints = Object.fromEntries(
+          Object.entries(model.checkpoints).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+        );
+        if (Object.keys(checkpoints).length > 0) {
+          modelInfo.checkpoints = checkpoints;
+        }
       }
 
       if (model.recipe_options && typeof model.recipe_options === 'object') {

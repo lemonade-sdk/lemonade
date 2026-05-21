@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -96,25 +96,27 @@ export const useConfirmDialog = () => {
   });
   const resolveRef = useRef<((value: boolean) => void) | null>(null);
 
-  const confirm = (opts: ConfirmOptions): Promise<boolean> => {
+  const confirm = useCallback((opts: ConfirmOptions): Promise<boolean> => {
     return new Promise((resolve) => {
       setOptions(opts);
       setIsOpen(true);
       resolveRef.current = resolve;
     });
-  };
+  }, []);
 
-  const handleConfirm = () => {
+  const handleConfirm = useCallback(() => {
     setIsOpen(false);
     resolveRef.current?.(true);
-  };
+    resolveRef.current = null;
+  }, []);
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setIsOpen(false);
     resolveRef.current?.(false);
-  };
+    resolveRef.current = null;
+  }, []);
 
-  const ConfirmDialogComponent = () => (
+  const ConfirmDialogComponent = useCallback(() => (
     <ConfirmDialog
       isOpen={isOpen}
       title={options.title}
@@ -125,7 +127,7 @@ export const useConfirmDialog = () => {
       onConfirm={handleConfirm}
       onCancel={handleCancel}
     />
-  );
+  ), [isOpen, options, handleConfirm, handleCancel]);
 
   return {
     confirm,

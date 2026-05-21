@@ -11,7 +11,8 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:nobundle": "tauri build --no-bundle",
-    "build:mac": "tauri build --bundles app"
+    "build:mac": "tauri build --bundles app",
+    "test:custom-collections": "node ../../test/app/customCollections.test.cjs"
   },
   "keywords": [
     "tauri",

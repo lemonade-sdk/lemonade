@@ -1,22 +1,164 @@
-# Custom Model Configuration
+# Add a Custom Model
 
-This guide explains how to manually register custom models in Lemonade Server using the JSON configuration files. This is useful for adding any HuggingFace model that isn't in the built-in model list.
+This guide explains every supported way to add a custom model to Lemonade Server. Start with the CLI workflows below unless you specifically need to hand-edit `user_models.json` or `recipe_options.json`.
 
-> **Tip:** For most Hugging Face GGUFs, the easiest way to add a custom model is just:
-> ```bash
-> lemonade pull org/repo
-> ```
-> Lemonade fetches the repo, lists the available quantizations (and any sharded folder variants), auto-detects `mmproj-*.gguf` files for vision models, infers labels (`vision`/`embeddings`/`reranking`) from the repo id, and presents an interactive variant menu. To skip the menu, append `:VARIANT`:
-> ```bash
-> lemonade pull org/repo:Q4_K_M
-> ```
-> The desktop app's "Search Hugging Face" panel calls the same [`/api/v1/pull/variants`](../../api/lemonade.md#get-v1pullvariants) endpoint under the hood.
->
-> If you need full control — multiple checkpoints (`main` + `mmproj` + `vae` + ...), a non-llamacpp recipe, or custom labels — use the advanced flags on [`lemonade pull`](../cli.md#options-for-pull):
-> ```bash
-> lemonade pull user.MyModel --checkpoint main "org/repo:file.gguf" --recipe llamacpp
-> ```
-> This guide covers the underlying JSON files for users who need manual control beyond what the CLI exposes.
+## Choose a Workflow
+
+### Pull a Hugging Face model
+
+For most Hugging Face GGUFs, use the repo id directly:
+
+```bash
+lemonade pull org/repo
+```
+
+Lemonade fetches the repo, lists the available quantizations and sharded folder variants, auto-detects `mmproj-*.gguf` files for vision models, infers labels (`vision`/`embeddings`/`reranking`) from the repo id, and presents an interactive variant menu.
+
+To skip the menu, append a variant:
+
+```bash
+lemonade pull org/repo:Q4_K_M
+```
+
+Examples:
+
+```bash
+# Interactive GGUF variant menu
+lemonade pull unsloth/Qwen3-8B-GGUF
+
+# Specific GGUF variant
+lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
+
+# Vision model with mmproj auto-detection
+lemonade pull ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
+
+# Sharded variant
+lemonade pull unsloth/Qwen3-30B-A3B-GGUF:Q4_K_M
+```
+
+### Register with explicit CLI flags
+
+Use a `user.*` name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
+
+```bash
+lemonade pull user.NAME --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
+```
+
+Examples:
+
+```bash
+# Register and pull a custom GGUF model with a main checkpoint
+lemonade pull user.Phi-4-Mini-GGUF \
+    --checkpoint main unsloth/Phi-4-mini-instruct-GGUF:Q4_K_M \
+    --recipe llamacpp
+
+# Register and pull a vision model with main + mmproj
+lemonade pull user.Gemma-3-4b \
+    --checkpoint main ggml-org/gemma-3-4b-it-GGUF:Q4_K_M \
+    --checkpoint mmproj ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf \
+    --recipe llamacpp
+
+# Register a model with multiple labels
+lemonade pull user.MyCodingModel \
+    --checkpoint main org/model:Q4_0 \
+    --recipe llamacpp \
+    --label coding \
+    --label tool-calling
+```
+
+Supported registration flags:
+
+| Flag | Description |
+|------|-------------|
+| `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: `llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`. |
+| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
+| `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
+
+### Register an omni collection
+
+A collection is a meta-model made up of components. An **omni collection** is the recipe type behind [Lemonade Omni Models](../../dev/lemonade-omni.md) — registered with `recipe: "collection.omni"`.
+
+Components must already be registered as built-in models or previously pulled `user.*` models. Components do not need to be downloaded already; missing component files are pulled by the same command.
+
+```bash
+lemonade pull user.MyKit \
+    --recipe collection.omni \
+    --components Qwen3-0.6B-GGUF Whisper-Tiny SD-Turbo
+```
+
+`lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component files stay on disk.
+
+### Register a custom Omni Model from the desktop app
+
+The desktop app offers a UI-driven path to register the same `recipe: "collection.omni"` entry — useful when you want to swap in a different planner LLM or a different image/ASR/TTS backbone without waiting for a new built-in [Lemonade Omni Model](../../dev/lemonade-omni.md) to ship.
+
+1. Register or download the concrete models you want to use in **Model Manager**.
+2. In the desktop app menu bar, open **File > New Omni Model > Manually** (or **From JSON** to import an exported one).
+3. Pick one planner LLM and any optional models for image generation, image editing, vision analysis, speech-to-text, and text-to-speech.
+4. Save the Omni Model.
+5. Select the new `user.<name>` entry in the chat model picker — it appears alongside the built-in omni models under the **Lemonade** category.
+
+Custom Omni Models are registered through the same `POST /v1/pull` path with `recipe: "collection.omni"` that the built-ins and the CLI flow above use. They live under the server's `user.*` namespace, so a custom Omni Model named `MyKit` is addressable as `user.MyKit`. They behave like built-in omni models for routing purposes: the selected planner LLM remains the loop driver that decides when to call tools, and optional role models are only loaded/used when their corresponding tool is called.
+
+The Omni Model editor only offers already-registered compatible models for each role:
+
+| Omni Model role | Tool unlocked | Required model capability |
+|---------------|---------------|---------------------------|
+| LLM | Chat loop and tool calls | Concrete chat model, preferably tool-calling capable |
+| Vision / image analysis | `analyze_image` | `vision` label |
+| Image generation | `generate_image` | `image` label |
+| Image editing | `edit_image` | `edit` label |
+| Speech-to-text | `transcribe_audio` | `audio` or `transcription` label |
+| Text-to-speech | `text_to_speech` | `tts` or `speech` label |
+
+If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
+
+### Register via API
+
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Use this when integrating Lemonade into another app or script:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.MyModel",
+        "recipe": "llamacpp",
+        "checkpoint": "org/repo:Q4_0"
+    }'
+```
+
+For multi-file models, send `checkpoints`:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.Gemma-3-4b",
+        "recipe": "llamacpp",
+        "checkpoints": {
+            "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+            "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+        },
+        "labels": ["vision"]
+    }'
+```
+
+For an omni collection, send `components`:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.MyKit",
+        "recipe": "collection.omni",
+        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+    }'
+```
+
+### Edit JSON files directly
+
+Advanced users can edit `user_models.json` and `recipe_options.json` directly. The rest of this guide documents those files and gives complete examples.
 
 ## Overview
 
@@ -27,7 +169,15 @@ Custom model configuration involves two files, both located in the Lemonade cach
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-See [configuration.md](./README.md) for more information about finding the cache directory.
+If you used an installer from a Lemonade release, the cache directory is typically:
+
+| OS | Cache directory |
+|----|-----------------|
+| Linux systemd install | `/var/lib/lemonade/.cache/lemonade` |
+| Windows | `%USERPROFILE%\.cache\lemonade` |
+| macOS system install | `/Library/Application Support/lemonade/.cache` |
+
+For a standalone `lemond` executable, the default is `~/.cache/lemonade` unless you pass an explicit `cache_dir` argument or set `LEMONADE_CACHE_DIR`.
 
 ## Model naming spec
 
@@ -99,12 +249,14 @@ This file contains a JSON object where each key is a model name and each value d
 |-------|----------|------|-------------|
 | `checkpoint` | Yes* | String | HuggingFace checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
-| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`. |
+| `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
+| `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same HuggingFace repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
+\*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
 
 ### Checkpoint format
 
@@ -140,6 +292,23 @@ Supported checkpoint keys:
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
+
+### Collections
+
+A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An **omni collection** is a collection type registered with `recipe: "collection.omni"` — this is the recipe behind [Lemonade Omni Models](../../dev/lemonade-omni.md).
+
+```json
+{
+    "MyKit": {
+        "recipe": "collection.omni",
+        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+    }
+}
+```
+
+Components must already be registered (built-in models, or other `user.*` entries earlier in this file). Loading the collection (`lemonade load user.MyKit`) loads each component; deleting the collection removes only the collection entry, leaving components on disk.
+
+The equivalent CLI registration is shown in [Register an omni collection](#register-an-omni-collection).
 
 ### Image defaults
 

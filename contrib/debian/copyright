@@ -18,6 +18,12 @@ Files: docs/assets/favicon.ico
        docs/assets/logo.png
        docs/assets/logo_512.png
        docs/favicon.ico
+       src/app/src-tauri/icons/32x32.png
+       src/app/src-tauri/icons/128x128.png
+       src/app/src-tauri/icons/128x128@2x.png
+       src/app/src-tauri/icons/icon.ico
+       src/app/src-tauri/icons/icon.icns
+       src/app/src-tauri/icons/icon.png
        src/cpp/resources/static/favicon.ico
 Copyright: Microsoft Corporation
 License: Expat
@@ -25,15 +31,25 @@ Comment: Icons derived from Microsoft Fluent Emoji (lemon emoji)
  Source: https://github.com/microsoft/fluentui-emoji
 
 Files: src/app/*
+       src/cpp/installer/installer_banner_wix.bmp
+       src/cpp/installer/top_banner.bmp
 Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
-License: Expat
-Comment: Electron application with dependencies:
+License: Apache-2.0
+Comment: Tauri application and installer artwork with dependencies:
  - axios (MIT)
  - highlight.js (BSD-3-Clause)
  - katex (MIT)
  - markdown-it (MIT)
  - markdown-it-texmath (MIT)
  - react and react-dom (MIT)
+
+Files: src/cpp/server/backends/fastflowlm_server.cpp
+       src/cpp/include/lemon/backends/fastflowlm_server.h
+Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
+License: Apache-2.0
+Comment: FastFlowLM integration code shipped in this source package is Apache-2.0.
+ The FastFlowLM runtime itself is not shipped in Debian source and may be
+ distributed under separate terms.
 
 Files: src/app/src/renderer/components/Icons.tsx
 Copyright: Cole Bemis 2013-2022, Lucide Contributors 2022

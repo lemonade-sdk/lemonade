@@ -77,6 +77,12 @@ int quant_priority(const std::string& q) {
     return it == priority.end() ? 100 : it->second;
 }
 
+void add_label(std::vector<std::string>& labels, const std::string& label) {
+    if (std::find(labels.begin(), labels.end(), label) == labels.end()) {
+        labels.push_back(label);
+    }
+}
+
 }  // namespace
 
 GgufVariantSet enumerate_gguf_variants(
@@ -285,11 +291,11 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
     // Suggested labels.
     std::vector<std::string> labels;
-    if (!vset.mmproj_files.empty()) labels.push_back("vision");
+    if (!vset.mmproj_files.empty()) add_label(labels, "vision");
     {
         std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) labels.push_back("embeddings");
-        if (id_lower.find("rerank") != std::string::npos) labels.push_back("reranking");
+        if (id_lower.find("embed") != std::string::npos) add_label(labels, "embeddings");
+        if (id_lower.find("rerank") != std::string::npos) add_label(labels, "reranking");
     }
 
     nlohmann::json out;
