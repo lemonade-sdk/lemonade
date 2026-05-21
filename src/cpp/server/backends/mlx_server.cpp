@@ -241,6 +241,14 @@ void MlxServer::load(const std::string& model_name,
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "MLX") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
+
+    if (mlx_backend == "cpu") {
+        // The MLX CPU JIT emits generated C++ that can be rejected by newer
+        // Linux GCC/libstdc++ combinations for _FloatN redeclarations. Disable
+        // MLX compile for the CPU fallback; GPU backends keep their fast path.
+        env_vars.push_back({"MLX_DISABLE_COMPILE", "1"});
+        LOG(DEBUG, "MLX") << "Setting MLX_DISABLE_COMPILE=1 for CPU backend" << std::endl;
+    }
 #endif
 
     bool inherit = (log_level_ == "info") || is_debug();
