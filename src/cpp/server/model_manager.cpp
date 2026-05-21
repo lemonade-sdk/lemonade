@@ -2357,6 +2357,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     std::string canonical_model_name = resolve_model_name(info.model_name);
     if (is_user_model_name(canonical_model_name))
     {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
         auto it = models_cache_.find(info.model_name);
         if (it != models_cache_.end())
         {
