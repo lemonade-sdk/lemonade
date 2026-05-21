@@ -1524,6 +1524,8 @@ class EndpointTests(ServerTestBase):
         overwrite the stored entry, not silently reuse the old components."""
         suffix = uuid.uuid4().hex[:8]
         extra_component = f"user.RepullExtra-{suffix}"
+        # Unique user.<name> entries surface under the bare public alias on the wire.
+        extra_component_alias = extra_component[5:]
         collection_name = f"user.RepullColl-{suffix}"
         try:
             extra_pull = requests.post(
@@ -1576,7 +1578,7 @@ class EndpointTests(ServerTestBase):
             self.assertIsNotNone(entry)
             self.assertEqual(
                 sorted(entry.get("components", [])),
-                sorted([ENDPOINT_TEST_MODEL, extra_component]),
+                sorted([ENDPOINT_TEST_MODEL, extra_component_alias]),
                 "Re-pull must persist the new components list",
             )
             print("[OK] Collection re-pull overwrote components")
