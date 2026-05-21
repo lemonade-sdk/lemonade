@@ -25,7 +25,7 @@ An **omni model** is a virtual model made up of components, registered with `rec
 | **LMX-Omni-52B-Halo** | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
 | **LMX-Omni-5.5B-Lite** | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
 
-Omni models are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "LMX-Omni-52B-Halo" as if it were an LLM. They surface with `?show_all=true` and appear in the Lemonade desktop app's Model Manager under the **Lemonade Omni** category.
+Omni models are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "LMX-Omni-52B-Halo" as if it were an LLM. They surface with `?show_all=true` and appear in the Lemonade desktop app's Model Manager under the **Lemonade** category.
 
 ### Naming scheme
 

@@ -97,7 +97,7 @@ The desktop app offers a UI-driven path to register the same `recipe: "collectio
 2. In the desktop app menu bar, open **File > New Omni Model > Manually** (or **From JSON** to import an exported one).
 3. Pick one planner LLM and any optional models for image generation, image editing, vision analysis, speech-to-text, and text-to-speech.
 4. Save the Omni Model.
-5. Select the new `user.<name>` entry in the chat model picker — it appears alongside the built-in omni models under the **Lemonade Omni** category.
+5. Select the new `user.<name>` entry in the chat model picker — it appears alongside the built-in omni models under the **Lemonade** category.
 
 Custom Omni Models are registered through the same `POST /v1/pull` path with `recipe: "collection.omni"` that the built-ins and the CLI flow above use. They live under the server's `user.*` namespace, so a custom Omni Model named `MyKit` is addressable as `user.MyKit`. They behave like built-in omni models for routing purposes: the selected planner LLM remains the loop driver that decides when to call tools, and optional role models are only loaded/used when their corresponding tool is called.
 

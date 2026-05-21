@@ -649,7 +649,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
-      'collection': 'Lemonade Omni',
+      'collection': 'Lemonade',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
