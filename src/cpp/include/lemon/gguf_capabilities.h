@@ -72,29 +72,40 @@ inline uint64_t scalar_size(uint32_t type) {
     }
 }
 
+inline bool is_stable_vision_metadata_key(const std::string& key) {
+    return key == "general.architecture" || key == "general.basename" ||
+           key == "general.name" || key == "general.finetune" ||
+           contains(key, "clip.vision") || contains(key, "mmproj");
+}
+
+inline bool is_chat_template_key(const std::string& key) {
+    return key == "tokenizer.chat_template" || contains(key, ".chat_template");
+}
+
 inline void inspect_string(const std::string& key, const std::string& value, GgufCapabilities& caps) {
     const std::string k = to_lower(key);
     const std::string v = to_lower(value);
-    const std::string combined = k + "\n" + v;
 
-    if (contains(k, "vision") || contains(k, "image") || contains(k, "mmproj") || contains(k, "clip.vision")) {
+    // Vision is intentionally inferred only from stable metadata keys. Avoid
+    // scanning arbitrary strings such as prompts or chat templates; those can
+    // mention images/tools even for text-only or embedding models.
+    if (is_stable_vision_metadata_key(k) &&
+        (contains(v, "vision") || contains(v, "image") || contains(v, "mmproj") ||
+         contains(v, "multimodal") || contains(v, "multi-modal") ||
+         contains(v, "qwen2vl") || contains(v, "qwen2_5_vl") || contains(v, "qwen3vl") ||
+         contains(v, "mllama") || contains(v, "llava") || contains(v, "pixtral") ||
+         contains(v, "paligemma"))) {
         caps.vision = true;
     }
 
-    if (contains(v, "vision") || contains(v, "image") || contains(v, "mmproj") ||
-        contains(v, "multimodal") || contains(v, "multi-modal") ||
-        contains(v, "qwen2vl") || contains(v, "qwen2_5_vl") || contains(v, "qwen3vl") ||
-        contains(v, "mllama") || contains(v, "llava") || contains(v, "pixtral") ||
-        contains(v, "paligemma")) {
-        caps.vision = true;
-    }
-
-    if ((contains(k, "chat_template") || contains(k, "tool")) &&
-        (contains(combined, "tool_call") || contains(combined, "tool-call") ||
-         contains(combined, "function_call") || contains(combined, "function-call") ||
-         contains(combined, "<tool") || contains(combined, "</tool") ||
-         contains(combined, " tools") || contains(combined, "\"tools\"") ||
-         contains(combined, "'tools'"))) {
+    // Tool support belongs in tokenizer.chat_template. Do not infer it from
+    // arbitrary GGUF metadata keys or values.
+    if (is_chat_template_key(k) &&
+        (contains(v, "tool_call") || contains(v, "tool-call") ||
+         contains(v, "function_call") || contains(v, "function-call") ||
+         contains(v, "<tool") || contains(v, "</tool") ||
+         contains(v, " tools") || contains(v, "\"tools\"") ||
+         contains(v, "'tools'"))) {
         caps.tool_calling = true;
     }
 }

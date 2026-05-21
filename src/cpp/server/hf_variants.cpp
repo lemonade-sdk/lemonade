@@ -1,5 +1,4 @@
 #include "lemon/hf_variants.h"
-#include "lemon/gguf_capabilities.h"
 
 #include <algorithm>
 #include <cctype>
@@ -79,7 +78,9 @@ int quant_priority(const std::string& q) {
 }
 
 void add_label(std::vector<std::string>& labels, const std::string& label) {
-    add_label_once(labels, label);
+    if (std::find(labels.begin(), labels.end(), label) == labels.end()) {
+        labels.push_back(label);
+    }
 }
 
 }  // namespace
@@ -290,9 +291,6 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
 
     // Suggested labels.
     std::vector<std::string> labels;
-    // Keep /pull/variants lightweight: this endpoint is called repeatedly while
-    // users type in the model search UI, so do not fetch or parse GGUF bytes here.
-    // Runtime labels from GGUF metadata are applied after the model is downloaded.
     if (!vset.mmproj_files.empty()) add_label(labels, "vision");
     {
         std::string id_lower = to_lower(checkpoint);
