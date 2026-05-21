@@ -30,6 +30,11 @@ export interface DownloadItem {
   // Server-owned jobs can be terminal from the UI point of view while the
   // worker is still unwinding. Keep this so resume waits until pause is real.
   running?: boolean;
+  // Smoothed/last-sample speed from the tracker. Calculated from byte deltas
+  // between progress snapshots so restored/skipped bytes do not inflate speed.
+  speedBytesPerSecond?: number;
+  speedSampleTime?: number;
+  speedSampleBytes?: number;
   updatedAt?: number;
 }
 
@@ -134,7 +139,15 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     return `${formatBytes(bytesPerSecond)}/s`;
   };
 
+  const getDownloadDisplayName = (modelName: string): string => {
+    return modelName.startsWith('user.') ? modelName.slice('user.'.length) : modelName;
+  };
+
   const calculateSpeed = (download: DownloadItem): number => {
+    if (typeof download.speedBytesPerSecond === 'number') {
+      return Math.max(0, download.speedBytesPerSecond);
+    }
+
     const elapsedSeconds = (Date.now() - download.startTime) / 1000;
     if (elapsedSeconds === 0) return 0;
     // Only count bytes downloaded in this session, not bytes already on disk from a prior run
@@ -595,8 +608,8 @@ Partial files may remain on disk.`);
                         <div className="download-item-text">
                           <span className="download-model-name">
                             {download.collectionComponents && download.collectionComponents.length > 0
-                              ? `Setting up ${download.modelName}`
-                              : download.modelName}
+                              ? `Setting up ${getDownloadDisplayName(download.modelName)}`
+                              : getDownloadDisplayName(download.modelName)}
                           </span>
                           {download.collectionComponents && download.collectionComponents.length > 0 && (
                             <span
@@ -604,7 +617,7 @@ Partial files may remain on disk.`);
                               style={{ fontStyle: 'italic', opacity: 0.8 }}
                               title={download.collectionComponents.join('\n')}
                             >
-                              {download.collectionComponents.length} models: {download.collectionComponents.join(', ')}
+                              {download.collectionComponents.length} models: {download.collectionComponents.map(getDownloadDisplayName).join(', ')}
                             </span>
                           )}
                           <span className="download-file-info">
