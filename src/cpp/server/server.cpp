@@ -582,13 +582,18 @@ void Server::setup_static_files(httplib::Server &web_server) {
         // Convert map to JSON
         json filtered_models = json::object();
         for (const auto& [model_name, info] : models_map) {
+            std::vector<std::string> public_components;
+            public_components.reserve(info.components.size());
+            for (const auto& component : info.components) {
+                public_components.push_back(model_manager_->get_public_model_name(component));
+            }
             filtered_models[model_name] = {
                 {"model_name", model_name},
                 {"checkpoint", info.checkpoint()},
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"components", info.components},
+                {"components", public_components},
                 {"mmproj", info.mmproj()}
             };
 
@@ -1412,6 +1417,11 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
 }
 
 nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+    std::vector<std::string> public_components;
+    public_components.reserve(info.components.size());
+    for (const auto& component : info.components) {
+        public_components.push_back(model_manager_->get_public_model_name(component));
+    }
     nlohmann::json model_json = {
         {"id", model_id},
         {"object", "model"},
@@ -1423,7 +1433,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
         {"labels", info.labels},
-        {"components", info.components},
+        {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
     };
 

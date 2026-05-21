@@ -132,6 +132,35 @@ npm run build:renderer:prod    # Build just the renderer (webpack, production)
 npm run watch:renderer         # Webpack watch mode for the renderer only
 ```
 
+## Testing custom Omni Models
+
+The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app)) has both an automated smoke test and a manual checklist.
+
+### Automated unit test
+
+A focused Node-based smoke test exercises the custom Omni Model utility layer without starting Tauri or the Lemonade server:
+
+```bash
+cd src/app
+npm run test:custom-collections
+```
+
+It uses the helpers in [`src/app/src/renderer/utils/customCollections.ts`](https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/customCollections.ts) to verify that Omni Models can be saved, edited, imported, exported, and filtered by compatible component role.
+
+### Manual desktop smoke test
+
+Use the desktop app to verify the user-facing flow end to end:
+
+1. Start the Lemonade desktop app.
+2. Download at least one chat-capable LLM in **Model Manager**.
+3. Optionally download one image model, one edit-capable image model, one vision model, one transcription model, and one speech model.
+4. From the menu bar, choose **File > New Omni Model > Manually**.
+5. Save an Omni Model with only an LLM and verify it appears as `user.<name>` in the chat model picker.
+6. Edit the Omni Model to add optional role models and save again.
+7. Select the Omni Model in chat and run prompts that trigger the configured tools, such as image generation, speech synthesis, audio transcription, or image analysis.
+8. Export the Omni Model JSON, delete the Omni Model, import the JSON, and verify it reappears.
+9. Delete one component model and verify the now-stale Omni Model is hidden from the picker until the component is registered again.
+
 ## Testing the Rust host
 
 Unit tests live alongside the Rust modules and cover settings sanitization, beacon parsing, and deep-link URL parsing:
