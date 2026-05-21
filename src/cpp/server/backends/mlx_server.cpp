@@ -125,6 +125,11 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
 #endif
     } else if (resolved == "cpu") {
 #ifdef __linux__
+#if !defined(__x86_64__) && !defined(_M_X64)
+        throw std::runtime_error(
+            "CPU lemon-mlx is only supported on Linux x86_64; "
+            "no Linux arm64 build of lemon-mlx-engine is available");
+#endif
         params.filename = "mlx-engine-" + version + "-ubuntu-cpu-x64.zip";
 #elif defined(__APPLE__)
         // On macOS the "cpu" build is served by the macos-arm64 asset
