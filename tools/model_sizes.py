@@ -91,17 +91,21 @@ def extract_quant(s: str):
     return m.group(1).upper() if m else None
 
 
+def hf_headers(extra=None):
+    headers = dict(extra or {})
+    tok = os.environ.get("HF_TOKEN")
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    return headers
+
+
 def fetch_repo(repo_id: str, cache: dict):
     """Return {files: [(name, size)], params: int|None} for a repo, or None on failure."""
     if repo_id in cache:
         return cache[repo_id]
     url = f"https://huggingface.co/api/models/{repo_id}?blobs=true"
-    headers = {}
-    tok = os.environ.get("HF_TOKEN")
-    if tok:
-        headers["Authorization"] = f"Bearer {tok}"
     try:
-        req = urllib.request.Request(url, headers=headers)
+        req = urllib.request.Request(url, headers=hf_headers())
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
@@ -125,7 +129,10 @@ def fetch_repo(repo_id: str, cache: dict):
 def fetch_range(repo_id: str, filename: str, start: int, end: int):
     quoted_name = urllib.parse.quote(filename)
     url = f"https://huggingface.co/{repo_id}/resolve/main/{quoted_name}"
-    req = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end}"})
+    req = urllib.request.Request(
+        url,
+        headers=hf_headers({"Range": f"bytes={start}-{end}"}),
+    )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return resp.read()
 
