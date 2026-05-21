@@ -84,7 +84,7 @@ defineTest('modelEntryToCustomCollection reads server-side user collections and 
     'user.MyKit': model(['collection'], true, 'collection.omni', {
       components: ['planner', 'image-model'],
     }),
-    'Lite Collection': model(['collection'], true, 'collection.omni', {
+    'LMX-Omni-5.5B-Lite': model(['collection'], true, 'collection.omni', {
       components: ['planner', 'image-model'],
     }),
   };
@@ -95,9 +95,9 @@ defineTest('modelEntryToCustomCollection reads server-side user collections and 
   assert.equal(custom.components.llm, 'planner');
   assert.equal(custom.components.image, 'image-model');
 
-  const template = collectionUtils.modelEntryToCustomCollection('Lite Collection', modelsData['Lite Collection'], modelsData);
-  assert.equal(template.id, 'Lite Collection');
-  assert.equal(template.name, 'Lite Collection');
+  const template = collectionUtils.modelEntryToCustomCollection('LMX-Omni-5.5B-Lite', modelsData['LMX-Omni-5.5B-Lite'], modelsData);
+  assert.equal(template.id, 'LMX-Omni-5.5B-Lite');
+  assert.equal(template.name, 'LMX-Omni-5.5B-Lite');
 });
 
 defineTest('export includes endpoint collection entries plus component checkpoint metadata', () => {

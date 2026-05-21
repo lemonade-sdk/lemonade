@@ -167,10 +167,10 @@ const TitleBar: React.FC<TitleBarProps> = ({
                     <span>New Omni Model</span>
                     <span className="submenu-arrow">›</span>
                     <div className="menu-submenu">
-                      <div className="menu-option new-model-submenu-option" title="Createan Omni Model from registered models" onClick={() => { window.dispatchEvent(new CustomEvent('openCustomCollection')); setActiveMenu(null); }}>
+                      <div className="menu-option new-model-submenu-option" title="Create an Omni Model from registered models" onClick={() => { window.dispatchEvent(new CustomEvent('openCustomCollection')); setActiveMenu(null); }}>
                         <span>Manually</span>
                       </div>
-                      <div className="menu-option new-model-submenu-option" title="Importan Omni Model JSON file" onClick={() => { window.dispatchEvent(new CustomEvent('openCustomCollectionFromJSON')); setActiveMenu(null); }}>
+                      <div className="menu-option new-model-submenu-option" title="Import an Omni Model JSON file" onClick={() => { window.dispatchEvent(new CustomEvent('openCustomCollectionFromJSON')); setActiveMenu(null); }}>
                         <span>From JSON</span>
                       </div>
                     </div>
