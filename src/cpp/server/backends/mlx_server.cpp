@@ -125,10 +125,16 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
 #endif
     } else if (resolved == "cpu") {
 #ifdef __linux__
-#if !defined(__x86_64__) && !defined(_M_X64)
+#if defined(__aarch64__) || defined(_M_ARM64)
+        throw std::runtime_error(
+            "CPU lemon-mlx is not supported on Linux arm64; "
+            "no Linux arm64 build of lemon-mlx-engine is available");
+#elif defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        // Supported Linux CPU asset: ubuntu-cpu-x64.
+#else
         throw std::runtime_error(
             "CPU lemon-mlx is only supported on Linux x86_64; "
-            "no Linux arm64 build of lemon-mlx-engine is available");
+            "no Linux CPU build is available for this architecture");
 #endif
         params.filename = "mlx-engine-" + version + "-ubuntu-cpu-x64.zip";
 #elif defined(__APPLE__)
