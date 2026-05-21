@@ -77,7 +77,7 @@ Supported registration flags:
 
 ### Register an omni collection
 
-A collection is a meta-model made up of components. An omni collection is the collection type used by OmniRouter, registered with `recipe: "collection.omni"`.
+A collection is a meta-model made up of components. An **omni collection** is the recipe type behind [Lemonade Omni Models](../../dev/lemonade-omni.md) — registered with `recipe: "collection.omni"`.
 
 Components must already be registered as built-in models or previously pulled `user.*` models. Components do not need to be downloaded already; missing component files are pulled by the same command.
 
@@ -88,6 +88,31 @@ lemonade pull user.MyKit \
 ```
 
 `lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component files stay on disk.
+
+### Register a custom Omni Model from the desktop app
+
+The desktop app offers a UI-driven path to register the same `recipe: "collection.omni"` entry — useful when you want to swap in a different planner LLM or a different image/ASR/TTS backbone without waiting for a new built-in [Lemonade Omni Model](../../dev/lemonade-omni.md) to ship.
+
+1. Register or download the concrete models you want to use in **Model Manager**.
+2. In the desktop app menu bar, open **File > New Omni Model > Manually** (or **From JSON** to import an exported one).
+3. Pick one planner LLM and any optional models for image generation, image editing, vision analysis, speech-to-text, and text-to-speech.
+4. Save the Omni Model.
+5. Select the new `user.<name>` entry in the chat model picker — it appears alongside the built-in omni models under the **Lemonade** category.
+
+Custom Omni Models are registered through the same `POST /v1/pull` path with `recipe: "collection.omni"` that the built-ins and the CLI flow above use. They live under the server's `user.*` namespace, so a custom Omni Model named `MyKit` is addressable as `user.MyKit`. They behave like built-in omni models for routing purposes: the selected planner LLM remains the loop driver that decides when to call tools, and optional role models are only loaded/used when their corresponding tool is called.
+
+The Omni Model editor only offers already-registered compatible models for each role:
+
+| Omni Model role | Tool unlocked | Required model capability |
+|---------------|---------------|---------------------------|
+| LLM | Chat loop and tool calls | Concrete chat model, preferably tool-calling capable |
+| Vision / image analysis | `analyze_image` | `vision` label |
+| Image generation | `generate_image` | `image` label |
+| Image editing | `edit_image` | `edit` label |
+| Speech-to-text | `transcribe_audio` | `audio` or `transcription` label |
+| Text-to-speech | `text_to_speech` | `tts` or `speech` label |
+
+If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
 
 ### Register via API
 
@@ -270,7 +295,7 @@ Supported checkpoint keys:
 
 ### Collections
 
-A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An omni collection is a collection type registered with `recipe: "collection.omni"`.
+A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An **omni collection** is a collection type registered with `recipe: "collection.omni"` — this is the recipe behind [Lemonade Omni Models](../../dev/lemonade-omni.md).
 
 ```json
 {

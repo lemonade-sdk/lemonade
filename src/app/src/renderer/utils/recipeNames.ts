@@ -5,7 +5,7 @@ export const isCollectionRecipe = (recipe?: string): boolean => {
 };
 
 export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
-  [COLLECTION_OMNI_MODEL_RECIPE]: 'OmniRouter',
+  [COLLECTION_OMNI_MODEL_RECIPE]: 'Lemonade',
   'flm': 'FastFlowLM NPU',
   'llamacpp': 'Llama.cpp GPU',
   'ryzenai-llm': 'Ryzen AI LLM',

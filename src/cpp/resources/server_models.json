@@ -910,6 +910,18 @@
         ],
         "size": 3.58
     },
+    "Qwen3.5-4B-MTP-GGUF": {
+        "checkpoint": "unsloth/Qwen3.5-4B-MTP-GGUF:Qwen3.5-4B-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "vision",
+            "tool-calling",
+            "mtp"
+        ],
+        "size": 3.66
+    },
     "Qwen3.5-9B-GGUF": {
         "checkpoint": "unsloth/Qwen3.5-9B-GGUF:Qwen3.5-9B-UD-Q4_K_XL.gguf",
         "mmproj": "mmproj-F16.gguf",
@@ -1466,10 +1478,32 @@
             "height": 1024
         }
     },
-    "Ultra Collection": {
+    "LMX-Omni-52B-Halo": {
         "checkpoint": "",
         "recipe": "collection.omni",
         "suggested": true,
+        "components": [
+            "Qwen3.6-35B-A3B-MTP-GGUF",
+            "Flux-2-Klein-9B-GGUF",
+            "Whisper-Large-v3-Turbo",
+            "kokoro-v1"
+        ]
+    },
+    "LMX-Omni-5.5B-Lite": {
+        "checkpoint": "",
+        "recipe": "collection.omni",
+        "suggested": true,
+        "components": [
+            "Qwen3.5-4B-MTP-GGUF",
+            "SD-Turbo",
+            "Whisper-Tiny",
+            "kokoro-v1"
+        ]
+    },
+    "Ultra Collection": {
+        "checkpoint": "",
+        "recipe": "collection.omni",
+        "suggested": false,
         "components": [
             "Qwen3.5-35B-A3B-GGUF",
             "Flux-2-Klein-9B-GGUF",
@@ -1480,7 +1514,7 @@
     "Lite Collection": {
         "checkpoint": "",
         "recipe": "collection.omni",
-        "suggested": true,
+        "suggested": false,
         "components": [
             "Qwen3.5-4B-GGUF",
             "SD-Turbo",
