@@ -11,8 +11,8 @@ Prerequisites:
     pip install openai
 
 Running the Lemonade server with the models referenced below already
-downloaded is easiest — install LMN-Lite-Omni-5.5B from the desktop app
-(Lemonade > Models > Lemonade Omni > LMN-Lite-Omni-5.5B > Download) and
+downloaded is easiest — install LMX-Omni-5.5B-Lite from the desktop app
+(Lemonade > Models > Lemonade Omni > LMX-Omni-5.5B-Lite > Download) and
 you'll have everything in one click. Otherwise, pull the models below
 individually via `lemonade pull <name>`.
 
@@ -34,7 +34,7 @@ if hasattr(sys.stdout, "reconfigure"):
 LEMONADE_URL = "http://localhost:13305/v1"
 
 # Edit these to match models you have installed. Defaults are small so
-# they fit on most hardware (and match LMN-Lite-Omni-5.5B).
+# they fit on most hardware (and match LMX-Omni-5.5B-Lite).
 LLM_MODEL = "Qwen3.5-4B-MTP-GGUF"  # any model with the "tool-calling" label
 IMAGE_MODEL = "SD-Turbo"  # any model with the "image" label
 TTS_MODEL = "kokoro-v1"  # any model with the "tts" label
@@ -135,7 +135,7 @@ def preflight_models():
     if missing:
         print(f"Required models not installed: {', '.join(missing)}", file=sys.stderr)
         print(
-            "Fix: open the desktop app and download LMN-Lite-Omni-5.5B,",
+            "Fix: open the desktop app and download LMX-Omni-5.5B-Lite,",
             file=sys.stderr,
         )
         print(

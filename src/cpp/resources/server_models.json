@@ -1478,7 +1478,7 @@
             "height": 1024
         }
     },
-    "LMN-Halo-Omni-52B": {
+    "LMX-Omni-52B-Halo": {
         "checkpoint": "",
         "recipe": "collection.omni",
         "suggested": true,
@@ -1489,7 +1489,7 @@
             "kokoro-v1"
         ]
     },
-    "LMN-Lite-Omni-5.5B": {
+    "LMX-Omni-5.5B-Lite": {
         "checkpoint": "",
         "recipe": "collection.omni",
         "suggested": true,

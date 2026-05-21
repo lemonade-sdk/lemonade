@@ -22,23 +22,23 @@ An **omni model** is a virtual model made up of components, registered with `rec
 
 | Omni model | LLM | Image | ASR | TTS |
 |-----------|-----|-------|-----|-----|
-| **LMN-Halo-Omni-52B** | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
-| **LMN-Lite-Omni-5.5B** | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
+| **LMX-Omni-52B-Halo** | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
+| **LMX-Omni-5.5B-Lite** | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
 
-Omni models are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "LMN-Halo-Omni-52B" as if it were an LLM. They surface with `?show_all=true` and appear in Lemonade's desktop apps model list under the **Lemonade Omni** category.
+Omni models are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "LMX-Omni-52B-Halo" as if it were an LLM. They surface with `?show_all=true` and appear in Lemonade's desktop apps model list under the **Lemonade Omni** category.
 
 ### Naming scheme
 
-Omni model names follow the pattern `LMN-<class>-Omni-<xB>`:
+Omni model names follow the pattern `LMX-Omni-<xB>-<class>`:
 
 | Component | Value | Meaning |
 |-----------|-------|---------|
-| Org prefix | `LMN` | Lemonade org. |
+| Org prefix | `LMX` | Lemonade Mix. |
+| Modality | `Omni` | True all-to-all omni-modal bundle. |
+| Size | `xB` | Total parameter count across all component models. |
 | Class | `Halo` | Based on a large MoE LLM (e.g., targeted at Strix Halo). |
 |  | `Lite` | Based on small models targeted at 32 GB APUs. |
 |  | `Dense` | Based on a dense LLM targeted at 32 GB dGPUs (none shipped yet). |
-| Modality | `Omni` | True all-to-all omni-modal bundle. |
-| Size | `xB` | Total parameter count across all component models. |
 
 ### Use an omni model
 

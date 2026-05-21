@@ -11,7 +11,7 @@ new value is in gigabytes, decimal).
 
 Usage:
   tools/model_sizes.py src/cpp/resources/server_models.json --all
-  tools/model_sizes.py src/cpp/resources/server_models.json --models Qwen3.5-4B-MTP-GGUF LMN-Halo-Omni-52B
+  tools/model_sizes.py src/cpp/resources/server_models.json --models Qwen3.5-4B-MTP-GGUF LMX-Omni-52B-Halo
   tools/model_sizes.py src/cpp/resources/server_models.json --all --update
 """
 
