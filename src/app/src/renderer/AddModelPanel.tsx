@@ -8,6 +8,7 @@ export interface AddModelInitialValues {
   recipe: string;
   checkpoints?: Record<string, string>;
   mmprojOptions?: string[];
+  labels?: string[];
   vision?: boolean;
   reranking?: boolean;
   embedding?: boolean;
@@ -19,6 +20,7 @@ export interface ModelInstallData {
   recipe: string;
   checkpoints?: Record<string, string>;
   mmproj?: string;
+  labels?: string[];
   reasoning?: boolean;
   vision?: boolean;
   embedding?: boolean;
@@ -175,6 +177,8 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
       return;
     }
 
+    const labels = (initialValues?.labels ?? []).filter(label => label !== 'vision');
+
     onInstall({
       name,
       checkpoint,
@@ -183,6 +187,7 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
         : undefined,
       recipe,
       mmproj: !isSdCpp ? (form.mmproj.trim() || undefined) : undefined,
+      labels,
       reasoning: form.reasoning,
       vision: !isSdCpp ? form.vision : false,
       embedding: !isSdCpp ? form.embedding : false,
