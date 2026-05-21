@@ -43,6 +43,7 @@ class DownloadTracker {
   private dismissedDownloads = new Set<string>();
   private completedDownloadsFinalized = new Set<string>();
   private completedModelDownloadsNotified = new Set<string>();
+  private completedBackendDownloadsNotified = new Set<string>();
   private serverPollStarted = false;
   private serverPollTimer: number | undefined;
   private readonly tabId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -88,7 +89,7 @@ class DownloadTracker {
       }
     }
 
-    const downloadId = downloadType === 'model'
+    const downloadId = downloadType === 'model' || downloadType === 'backend'
       ? this.getStableDownloadId(modelName, downloadType)
       : `${modelName}-${Date.now()}`;
 
@@ -108,13 +109,15 @@ class DownloadTracker {
       downloadType,
       collectionComponents,
       declaredTotalBytes,
-      running: downloadType === 'model' ? true : undefined,
+      bytesTotalIsLowerBound: false,
+      running: downloadType === 'model' || downloadType === 'backend' ? true : undefined,
       updatedAt: Date.now(),
     };
 
     this.dismissedDownloads.delete(downloadId);
     this.completedDownloadsFinalized.delete(downloadId);
     this.completedModelDownloadsNotified.delete(downloadId);
+    this.completedBackendDownloadsNotified.delete(downloadId);
     this.activeDownloads.set(downloadId, downloadItem);
     this.cumulativeData.set(downloadId, {
       completedFilesBytes: 0,
@@ -183,16 +186,24 @@ class DownloadTracker {
     // 1. Server-reported total (covers all files) — best option
     // 2. Declared size from the model registry — honest number, honors what the
     //    bar shows elsewhere, no extrapolation artifacts
-    // 3. Local sum of known file sizes — only accurate once every file's total
-    //    has been observed
+    // 3. Local sum of known file sizes — only accurate after every file's total
+    //    has been observed. Before then, keep byte-level progress as a known
+    //    lower bound for display, and use file-count progress for percentage.
     let cumulativeBytesTotal: number;
+    let bytesTotalIsLowerBound = false;
+    const knownSizes = Array.from(cumulative.fileSizes.values());
+    const knownSizesTotal = knownSizes.reduce((sum, size) => sum + size, 0);
+    const knownBytesLowerBound = Math.max(cumulativeBytesDownloaded, knownSizesTotal);
+
     if (progress.total_download_size && progress.total_download_size > 0) {
       cumulativeBytesTotal = progress.total_download_size;
     } else if (download.declaredTotalBytes && download.declaredTotalBytes > 0) {
       cumulativeBytesTotal = download.declaredTotalBytes;
     } else {
-      const knownSizes = Array.from(cumulative.fileSizes.values());
-      cumulativeBytesTotal = knownSizes.reduce((sum, size) => sum + size, 0);
+      const knowEveryFileSize =
+        progress.total_files > 0 && cumulative.fileSizes.size >= progress.total_files;
+      cumulativeBytesTotal = knowEveryFileSize ? knownSizesTotal : knownBytesLowerBound;
+      bytesTotalIsLowerBound = !knowEveryFileSize && knownBytesLowerBound > 0;
     }
 
     // Sum all pre-existing bytes across files for accurate speed calculation
@@ -206,8 +217,8 @@ class DownloadTracker {
 
     // Calculate overall percent
     let overallPercent: number;
-    if (cumulativeBytesTotal > 0) {
-      // Have byte-level data: calculate from cumulative bytes
+    if (cumulativeBytesTotal > 0 && !bytesTotalIsLowerBound) {
+      // Have byte-level data against a real total: calculate from cumulative bytes
       overallPercent = Math.round((cumulativeBytesDownloaded / cumulativeBytesTotal) * 100);
     } else if (progress.total_files > 0) {
       // No byte data at all: estimate from file count + intra-file percent from server
@@ -218,8 +229,17 @@ class DownloadTracker {
       overallPercent = 0;
     }
 
-    // Cap percentage at 100% to handle edge cases where byte tracking is incomplete
+    // Cap percentage at 100% to handle edge cases where byte tracking is incomplete.
     overallPercent = Math.min(overallPercent, 100);
+
+    // Do not display a live download as 100% until the terminal completion signal arrives.
+    // Backend installs can spend time extracting or installing runtime follow-up artifacts
+    // after the last byte of the current file has arrived.
+    const progressIsTerminal = progress.complete === true ||
+      (progress.status === 'completed' && progress.running !== true);
+    if (!progressIsTerminal && progress.status !== 'error' && progress.status !== 'cancelled' && overallPercent >= 100) {
+      overallPercent = 99;
+    }
 
     // Cap bytesDownloaded to not exceed bytesTotal for display consistency
     const displayBytesDownloaded = cumulativeBytesTotal > 0
@@ -237,6 +257,7 @@ class DownloadTracker {
       totalFiles: progress.total_files,
       bytesDownloaded: displayBytesDownloaded,
       bytesTotal: cumulativeBytesTotal,
+      bytesTotalIsLowerBound,
       percent: overallPercent,
       bytesResumed: speedBaselineBytes,
       status: progress.status ?? download.status,
@@ -312,6 +333,7 @@ class DownloadTracker {
 
     if ((progress.status === 'completed' || progress.complete) && progress.running !== true) {
       this.emitModelsUpdatedOnce(downloadId, progress);
+      this.emitBackendUpdatedOnce(downloadId, progress);
       this.completeDownload(downloadId);
     }
   }
@@ -325,7 +347,7 @@ class DownloadTracker {
     downloads.forEach(download => this.applyServerDownload(download));
 
     for (const [id, download] of Array.from(this.activeDownloads.entries())) {
-      if (!id.startsWith('model:') || serverIds.has(id)) continue;
+      if (!(id.startsWith('model:') || id.startsWith('backend:')) || serverIds.has(id)) continue;
 
       const localOwnerIsGone = !download.abortController || download.abortController.signal.aborted;
       const localRowIsNotActivelyDownloading = download.status !== 'downloading';
@@ -568,6 +590,14 @@ class DownloadTracker {
     window.dispatchEvent(new CustomEvent('modelsUpdated'));
   }
 
+  private emitBackendUpdatedOnce(downloadId: string, progress: DownloadProgressEvent): void {
+    const downloadType = progress.type ?? this.activeDownloads.get(downloadId)?.downloadType;
+    if (downloadType !== 'backend' || this.completedBackendDownloadsNotified.has(downloadId)) return;
+
+    this.completedBackendDownloadsNotified.add(downloadId);
+    window.dispatchEvent(new CustomEvent('backendsUpdated'));
+  }
+
   private ensureDownload(downloadId: string, modelName: string, progress: DownloadProgressEvent): void {
     if (this.activeDownloads.has(downloadId)) return;
     const restoredBytesDownloaded = this.getProgressDownloadedBytes(progress);
@@ -580,6 +610,7 @@ class DownloadTracker {
       totalFiles: progress.total_files,
       bytesDownloaded: 0,
       bytesTotal: progress.total_download_size ?? progress.bytes_total ?? 0,
+      bytesTotalIsLowerBound: false,
       percent: progress.percent ?? 0,
       status: progress.status ?? 'downloading',
       error: progress.error,
@@ -623,6 +654,7 @@ class DownloadTracker {
     this.cumulativeData.delete(downloadId);
     this.completedDownloadsFinalized.delete(downloadId);
     this.completedModelDownloadsNotified.delete(downloadId);
+    this.completedBackendDownloadsNotified.delete(downloadId);
     if (broadcast) {
       this.postCrossTabMessage({ type: 'remove', id: downloadId, modelName });
     }

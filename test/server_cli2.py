@@ -563,6 +563,72 @@ sys.exit(0)
             f"Pull should not report errors: {result.stdout}",
         )
 
+    def test_055_pull_components_omni_collection(self):
+        """Test pull command with --components flag registers an omni collection."""
+        collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
+        # Unique user.<name> entries surface under the bare public name.
+        public_name = collection_name[5:]
+        try:
+            result = self.assertCommandSucceeds(
+                [
+                    "pull",
+                    collection_name,
+                    "--recipe",
+                    "collection.omni",
+                    "--components",
+                    ENDPOINT_TEST_MODEL,
+                ],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertFalse(
+                "error" in output and "failed" in output,
+                f"Pull should not report errors: {result.stdout}",
+            )
+
+            # Verify the collection landed in /models with components populated.
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/models?show_all=true",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200)
+            entry = next(
+                (m for m in response.json()["data"] if m["id"] == public_name),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertEqual(entry.get("recipe"), "collection.omni")
+            self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+        finally:
+            try:
+                requests.post(
+                    f"http://localhost:{PORT}/api/v1/delete",
+                    json={"model_name": collection_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_056_pull_components_missing_for_omni_recipe(self):
+        """`--recipe collection.omni` without --components is rejected by the CLI."""
+        result = self.assertCommandFails(
+            [
+                "pull",
+                f"user.MissingComps-{uuid.uuid4().hex[:8]}",
+                "--recipe",
+                "collection.omni",
+            ],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = (result.stdout + result.stderr).lower()
+        self.assertIn(
+            "--components",
+            output,
+            f"Error should point at the missing --components flag: {output}",
+        )
+
     # =============================================================================
     # Import Tests
     # =============================================================================

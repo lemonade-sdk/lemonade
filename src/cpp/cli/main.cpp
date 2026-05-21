@@ -3,6 +3,7 @@
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
 #include <lemon_cli/agent_config_file.h>
+#include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
@@ -143,6 +144,7 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
+    std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
     std::string backend_spec;  // Format: "recipe:backend"
@@ -275,6 +277,10 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
+    if (!config.components.empty()) {
+        model_data["components"] = config.components;
+    }
+
     if (!config.labels.empty()) {
         model_data["labels"] = config.labels;
     }
@@ -283,11 +289,21 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
 }
 
 static bool has_manual_pull_options(const CliConfig& config) {
-    return !config.checkpoints.empty() || !config.recipe.empty() || !config.labels.empty();
+    return !config.checkpoints.empty() || !config.recipe.empty() ||
+           !config.labels.empty() || !config.components.empty();
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
+        if (lemon::is_collection_recipe(config.recipe)) {
+            if (config.components.empty()) {
+                std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
+                          << std::endl;
+                std::cerr << "       See 'lemonade pull --help'." << std::endl;
+                return 1;
+            }
+            return handle_manual_pull_command(client, config);
+        }
         if (config.checkpoints.empty()) {
             std::cerr << "Error: manual pull requires at least one --checkpoint TYPE CHECKPOINT."
                       << std::endl;
@@ -1077,7 +1093,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1086,9 +1102,15 @@ int main(int argc, char* argv[]) {
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+    pull_cmd->add_option("--components", config.components,
+        "Components for a user.* omni collection (use with --recipe collection.omni). "
+        "Components must already be registered (built-in or previously pulled user.* models).")
+        ->group("Manual Configuration Options")
+        ->type_name("MODEL")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
-        "  https://lemonade-server.ai/docs/server/custom-models/");
+        "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");

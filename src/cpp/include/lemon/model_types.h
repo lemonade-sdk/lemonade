@@ -6,6 +6,12 @@
 
 namespace lemon {
 
+constexpr const char* COLLECTION_OMNI_MODEL_RECIPE = "collection.omni";
+
+inline bool is_collection_recipe(const std::string& recipe) {
+    return recipe == COLLECTION_OMNI_MODEL_RECIPE;
+}
+
 // Model type classification for LRU cache management
 enum class ModelType {
     LLM,        // Chat/completion models
@@ -130,8 +136,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;  // Kokoros runs on CPU
     } else if (recipe == "lemon-mlx") {
         return DEVICE_GPU;  // Default; MlxServer::load() overrides to DEVICE_CPU for the cpu backend
-    } else if (recipe == "collection") {
-        return DEVICE_NONE;  // Collection recipes orchestrate multiple component models
+    } else if (is_collection_recipe(recipe)) {
+        return DEVICE_NONE;  // Collection recipes orchestrate multiple components
     }
     return DEVICE_NONE;
 }

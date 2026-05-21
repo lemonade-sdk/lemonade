@@ -1,16 +1,18 @@
 import { ModelInfo, ModelsData } from './modelData';
+import { isCollectionRecipe } from './recipeNames';
 
 export const NON_LLM_LABELS = new Set(['image', 'tts', 'transcription', 'embeddings', 'embedding', 'reranking']);
 
 export const getCollectionComponents = (info?: ModelInfo): string[] => {
-  if (!info || !Array.isArray(info.composite_models)) {
+  const components = info?.components;
+  if (!Array.isArray(components)) {
     return [];
   }
-  return info.composite_models.filter((name): name is string => typeof name === 'string' && name.length > 0);
+  return components.filter((name): name is string => typeof name === 'string' && name.length > 0);
 };
 
 export const isCollectionModel = (info?: ModelInfo): boolean => {
-  return !!info && info.recipe === 'collection' && getCollectionComponents(info).length > 0;
+  return !!info && isCollectionRecipe(info.recipe) && getCollectionComponents(info).length > 0;
 };
 
 export const isModelEffectivelyDownloaded = (modelName: string, info: ModelInfo | undefined, modelsData: ModelsData): boolean => {

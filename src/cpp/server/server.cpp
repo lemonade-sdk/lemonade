@@ -588,7 +588,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"composite_models", info.composite_models},
+                {"components", info.components},
                 {"mmproj", info.mmproj()}
             };
 
@@ -1423,7 +1423,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"suggested", info.suggested},
         {"labels", info.labels},
-        {"composite_models", info.composite_models},
+        {"components", info.components},
         {"recipe_options", info.recipe_options.to_json()},
     };
 
@@ -2887,6 +2887,12 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 }
 
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        nlohmann::json error = {{"error", message}};
+        res.set_content(error.dump(), "application/json");
+    };
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
@@ -2926,12 +2932,24 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         }
         if (!checkpoint.empty() || !recipe.empty()) {
             if (model_name.substr(0, 5) != "user.") {
-                res.status = 400;
-                nlohmann::json error = {{"error",
+                bad_request(
                     "When providing 'checkpoint' or 'recipe', the model name must include the "
-                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name}};
-                res.set_content(error.dump(), "application/json");
+                    "`user.` prefix, for example `user.Phi-4-Mini-GGUF`. Received: " + model_name);
                 return;
+            }
+        }
+
+        if (is_collection_recipe(recipe)) {
+            if (auto err = model_manager_->validate_collection_request(model_name, request_json)) {
+                bad_request(*err);
+                return;
+            }
+            // Canonicalize components so downstream cache lookups
+            // (check_component_downloaded, update_model_in_cache) succeed
+            // even when the client passed a public alias (bare name) rather
+            // than the canonical `user.X` / `builtin.X` form.
+            for (auto& c : request_json["components"]) {
+                c = model_manager_->resolve_model_name(c.get<std::string>());
             }
         }
 
@@ -3073,17 +3091,19 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             model_manager_->save_model_options(info);
         }
 
-        // Download model if needed (first-time use)
-        if (!info.downloaded) {
+        // Download model if needed (first-time use). Collections have no
+        // checkpoint of their own, so skip the generic HF download path here
+        // and let the per-component branch below cascade any missing pieces.
+        if (!info.downloaded && !is_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Experience models: load each component model instead
-        if (info.recipe == "collection" && !info.composite_models.empty()) {
+        // Collection models: load each component instead
+        if (is_collection_recipe(info.recipe) && !info.components.empty()) {
             LOG(INFO, "Server") << "Loading collection components for: " << model_name << std::endl;
-            for (const auto& component : info.composite_models) {
+            for (const auto& component : info.components) {
                 if (!model_manager_->model_exists(component)) {
                     LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
                     continue;
@@ -3099,15 +3119,18 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
                     comp_info = model_manager_->get_model_info(component);
                 }
                 LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-                RecipeOptions comp_options = RecipeOptions(comp_info.recipe, request_json);
-                router_->load_model(component, comp_info, comp_options, true,
+                // Per the documented contract, per-model options like ctx_size
+                // or llamacpp_backend are NOT forwarded from the collection's
+                // load request to its components. Each component uses its own
+                // saved recipe_options.json entry.
+                router_->load_model(component, comp_info, comp_info.recipe_options, true,
                                     /*allow_reload_on_option_change=*/true);
             }
 
             nlohmann::json response = {
                 {"status", "success"},
                 {"model_name", model_name},
-                {"recipe", "collection"}
+                {"recipe", info.recipe}
             };
             res.set_content(response.dump(), "application/json");
         } else {
@@ -4591,6 +4614,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
+        bool subscribe = request_json.value("subscribe", true);
         bool force = request_json.value("force", false);
 
         if (recipe.empty() || backend.empty()) {
@@ -4643,11 +4667,27 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            stream_download_operation(res, [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+            auto operation = [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
                 backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();
-            });
+            };
+
+            if (!subscribe) {
+                // Server-owned mode for desktop UI reload/new-tab recovery.
+                // Legacy streamed /install behavior is unchanged.
+                const std::string display_name = recipe + ":" + backend;
+                auto job = start_download_job("backend:" + display_name, "backend", display_name, operation);
+                nlohmann::json response;
+                {
+                    std::lock_guard<std::mutex> lock(downloads_mutex_);
+                    response = download_job_to_json(job);
+                }
+                res.set_content(response.dump(), "application/json");
+                return;
+            }
+
+            stream_download_operation(res, operation);
         } else {
             backend_manager_->install_backend(recipe, backend, force);
             SystemInfoCache::invalidate_recipes();

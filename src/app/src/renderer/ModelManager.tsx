@@ -664,7 +664,7 @@ const [searchQuery, setSearchQuery] = useState('');
   // Merge loaded and loading models so the list shows components as they
   // start loading, not just after /health confirms them. Loading entries
   // get an `isLoading` flag so the UI can render a pending indicator.
-  // Skip collection entries themselves — only show component models.
+  // Skip collection entries themselves — only show components.
   const loadedModelEntries = (() => {
     const entries: Array<{ modelName: string; isLoading: boolean }> = [];
     const seen = new Set<string>();
@@ -1040,7 +1040,7 @@ const [searchQuery, setSearchQuery] = useState('');
       if (isCollectionModel(modelData)) {
         const components = getCollectionComponents(modelData);
         if (components.length === 0) {
-          showError(`Experience model "${modelName}" has no component models.`);
+          showError(`Omni-model "${modelName}" has no components.`);
           return;
         }
 
@@ -1054,7 +1054,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
         for (const component of components) {
           if (!modelsData[component]) {
-            throw new Error(`Missing component model "${component}" for ${modelName}.`);
+            throw new Error(`Missing component "${component}" for ${modelName}.`);
           }
           await ensureModelReady(component, modelsData, {
             onModelLoading: () => {},
