@@ -455,7 +455,7 @@ namespace lemon::backends {
                                         << exe_path << std::endl;
         } else {
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
-             const bool has_executable = !exe_path.empty();
+            const bool has_executable = !exe_path.empty();
             const bool has_version_file = fs::exists(version_file);
             std::string installed_version;
 

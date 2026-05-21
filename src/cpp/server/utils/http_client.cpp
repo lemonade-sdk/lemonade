@@ -14,16 +14,7 @@
 #include <fstream>
 #include <memory>
 #include <vector>
-#include <lemon/utils/hash_digest.h>
-
-#if defined(_WIN32)
-#include <windows.h>
-#include <bcrypt.h>
-#elif defined(__APPLE__)
-#include <CommonCrypto/CommonDigest.h>
-#else
-#include <openssl/evp.h>
-#endif
+#include <mbedtls/md.h>
 
 namespace fs = std::filesystem;
 
@@ -57,15 +48,6 @@ static bool is_hex_digest(const std::string& value, size_t expected_len) {
     return std::all_of(value.begin(), value.end(), [](unsigned char c) {
         return std::isxdigit(c) != 0;
     });
-}
-
-static std::string bytes_to_hex(const unsigned char* bytes, size_t len) {
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for (size_t i = 0; i < len; ++i) {
-        oss << std::setw(2) << static_cast<unsigned int>(bytes[i]);
-    }
-    return oss.str();
 }
 
 struct ExpectedHash {
@@ -114,224 +96,63 @@ static ExpectedHash parse_expected_hash(const DownloadOptions& options) {
     return {algorithm, value};
 }
 
-#if defined(_WIN32)
 
-struct BCryptAlgorithmHandle {
-    BCRYPT_ALG_HANDLE handle = nullptr;
-    ~BCryptAlgorithmHandle() {
-        if (handle) {
-            BCryptCloseAlgorithmProvider(handle, 0);
-        }
+static std::string bytes_to_hex(const unsigned char* bytes, size_t len) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; ++i) {
+        oss << std::setw(2) << static_cast<unsigned int>(bytes[i]);
     }
-};
-
-struct BCryptHashHandle {
-    BCRYPT_HASH_HANDLE handle = nullptr;
-    ~BCryptHashHandle() {
-        if (handle) {
-            BCryptDestroyHash(handle);
-        }
-    }
-};
-
-static HashCheckResult digest_file_with_library(const fs::path& path,
-                                                const ExpectedHash& expected,
-                                                const std::string& git_blob_prefix) {
-    HashCheckResult result;
-
-    const wchar_t* algorithm_id = nullptr;
-    size_t expected_digest_len = 0;
-    if (expected.algorithm == "sha256") {
-        algorithm_id = BCRYPT_SHA256_ALGORITHM;
-        expected_digest_len = 32;
-    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
-        algorithm_id = BCRYPT_SHA1_ALGORITHM;
-        expected_digest_len = 20;
-    } else {
-        result.error = "unsupported hash algorithm: " + expected.algorithm;
-        return result;
-    }
-
-    BCryptAlgorithmHandle alg;
-    NTSTATUS status = BCryptOpenAlgorithmProvider(&alg.handle, algorithm_id, nullptr, 0);
-    if (status < 0) {
-        result.error = "failed to initialize Windows BCrypt provider";
-        return result;
-    }
-
-    DWORD object_len = 0;
-    DWORD bytes_written = 0;
-    status = BCryptGetProperty(alg.handle, BCRYPT_OBJECT_LENGTH,
-                               reinterpret_cast<PUCHAR>(&object_len), sizeof(object_len),
-                               &bytes_written, 0);
-    if (status < 0 || object_len == 0) {
-        result.error = "failed to query Windows BCrypt hash object length";
-        return result;
-    }
-
-    DWORD digest_len = 0;
-    status = BCryptGetProperty(alg.handle, BCRYPT_HASH_LENGTH,
-                               reinterpret_cast<PUCHAR>(&digest_len), sizeof(digest_len),
-                               &bytes_written, 0);
-    if (status < 0 || digest_len != expected_digest_len) {
-        result.error = "failed to query Windows BCrypt digest length";
-        return result;
-    }
-
-    std::vector<unsigned char> hash_object(object_len);
-    BCryptHashHandle hash;
-    status = BCryptCreateHash(alg.handle, &hash.handle, hash_object.data(), object_len,
-                              nullptr, 0, 0);
-    if (status < 0) {
-        result.error = "failed to create Windows BCrypt hash";
-        return result;
-    }
-
-    if (!git_blob_prefix.empty()) {
-        status = BCryptHashData(hash.handle,
-                                reinterpret_cast<PUCHAR>(const_cast<char*>(git_blob_prefix.data())),
-                                static_cast<ULONG>(git_blob_prefix.size()), 0);
-        if (status < 0) {
-            result.error = "failed to hash Git blob prefix";
-            return result;
-        }
-    }
-
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        result.error = "failed to open file for hash verification";
-        return result;
-    }
-
-    constexpr size_t buffer_size = 1024 * 1024;
-    std::vector<unsigned char> buffer(buffer_size);
-    while (file.good()) {
-        file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
-        const std::streamsize count = file.gcount();
-        if (count > 0) {
-            status = BCryptHashData(hash.handle, buffer.data(), static_cast<ULONG>(count), 0);
-            if (status < 0) {
-                result.error = "failed while hashing file with Windows BCrypt";
-                return result;
-            }
-        }
-    }
-    if (file.bad()) {
-        result.error = "failed while reading file for hash verification";
-        return result;
-    }
-
-    std::vector<unsigned char> digest(digest_len);
-    status = BCryptFinishHash(hash.handle, digest.data(), digest_len, 0);
-    if (status < 0) {
-        result.error = "failed to finalize Windows BCrypt hash";
-        return result;
-    }
-
-    result.actual = bytes_to_hex(digest.data(), digest.size());
-    result.ok = (lower_copy(result.actual) == expected.value);
-    return result;
+    return oss.str();
 }
 
-#elif defined(__APPLE__)
-
 static HashCheckResult digest_file_with_library(const fs::path& path,
                                                 const ExpectedHash& expected,
                                                 const std::string& git_blob_prefix) {
     HashCheckResult result;
 
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        result.error = "failed to open file for hash verification";
-        return result;
-    }
+    const mbedtls_md_type_t md_type =
+        (expected.algorithm == "sha256") ? MBEDTLS_MD_SHA256 :
+        (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") ? MBEDTLS_MD_SHA1 :
+        MBEDTLS_MD_NONE;
 
-    constexpr size_t buffer_size = 1024 * 1024;
-    std::vector<unsigned char> buffer(buffer_size);
-
-    if (expected.algorithm == "sha256") {
-        CC_SHA256_CTX ctx;
-        CC_SHA256_Init(&ctx);
-        while (file.good()) {
-            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
-            const std::streamsize count = file.gcount();
-            if (count > 0) {
-                CC_SHA256_Update(&ctx, buffer.data(), static_cast<CC_LONG>(count));
-            }
-        }
-        if (file.bad()) {
-            result.error = "failed while reading file for hash verification";
-            return result;
-        }
-        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-        CC_SHA256_Final(digest, &ctx);
-        result.actual = bytes_to_hex(digest, sizeof(digest));
-    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
-        CC_SHA1_CTX ctx;
-        CC_SHA1_Init(&ctx);
-        if (!git_blob_prefix.empty()) {
-            CC_SHA1_Update(&ctx, git_blob_prefix.data(), static_cast<CC_LONG>(git_blob_prefix.size()));
-        }
-        while (file.good()) {
-            file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
-            const std::streamsize count = file.gcount();
-            if (count > 0) {
-                CC_SHA1_Update(&ctx, buffer.data(), static_cast<CC_LONG>(count));
-            }
-        }
-        if (file.bad()) {
-            result.error = "failed while reading file for hash verification";
-            return result;
-        }
-        unsigned char digest[CC_SHA1_DIGEST_LENGTH];
-        CC_SHA1_Final(digest, &ctx);
-        result.actual = bytes_to_hex(digest, sizeof(digest));
-    } else {
+    if (md_type == MBEDTLS_MD_NONE) {
         result.error = "unsupported hash algorithm: " + expected.algorithm;
         return result;
     }
 
-    result.ok = (lower_copy(result.actual) == expected.value);
-    return result;
-}
-
-#else
-
-struct EvpMdCtxDeleter {
-    void operator()(EVP_MD_CTX* ctx) const {
-        EVP_MD_CTX_free(ctx);
-    }
-};
-
-static HashCheckResult digest_file_with_library(const fs::path& path,
-                                                const ExpectedHash& expected,
-                                                const std::string& git_blob_prefix) {
-    HashCheckResult result;
-
-    const EVP_MD* md = nullptr;
-    if (expected.algorithm == "sha256") {
-        md = EVP_sha256();
-    } else if (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") {
-        md = EVP_sha1();
-    } else {
-        result.error = "unsupported hash algorithm: " + expected.algorithm;
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(md_type);
+    if (!md_info) {
+        result.error = "mbedTLS digest algorithm is unavailable: " + expected.algorithm;
         return result;
     }
 
-    std::unique_ptr<EVP_MD_CTX, EvpMdCtxDeleter> ctx(EVP_MD_CTX_new());
-    if (!ctx || EVP_DigestInit_ex(ctx.get(), md, nullptr) != 1) {
-        result.error = "failed to initialize OpenSSL EVP digest context";
+    mbedtls_md_context_t ctx;
+    mbedtls_md_init(&ctx);
+
+    auto cleanup = [&ctx]() {
+        mbedtls_md_free(&ctx);
+    };
+
+    if (mbedtls_md_setup(&ctx, md_info, 0) != 0 ||
+        mbedtls_md_starts(&ctx) != 0) {
+        cleanup();
+        result.error = "failed to initialize mbedTLS digest context";
         return result;
     }
 
     if (!git_blob_prefix.empty() &&
-        EVP_DigestUpdate(ctx.get(), git_blob_prefix.data(), git_blob_prefix.size()) != 1) {
-        result.error = "failed to hash Git blob prefix with OpenSSL EVP";
+        mbedtls_md_update(&ctx,
+                          reinterpret_cast<const unsigned char*>(git_blob_prefix.data()),
+                          git_blob_prefix.size()) != 0) {
+        cleanup();
+        result.error = "failed to hash Git blob prefix with mbedTLS";
         return result;
     }
 
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
+        cleanup();
         result.error = "failed to open file for hash verification";
         return result;
     }
@@ -342,29 +163,32 @@ static HashCheckResult digest_file_with_library(const fs::path& path,
         file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
         const std::streamsize count = file.gcount();
         if (count > 0 &&
-            EVP_DigestUpdate(ctx.get(), buffer.data(), static_cast<size_t>(count)) != 1) {
-            result.error = "failed while hashing file with OpenSSL EVP";
+            mbedtls_md_update(&ctx, buffer.data(), static_cast<size_t>(count)) != 0) {
+            cleanup();
+            result.error = "failed while hashing file with mbedTLS";
             return result;
         }
     }
     if (file.bad()) {
+        cleanup();
         result.error = "failed while reading file for hash verification";
         return result;
     }
 
-    unsigned char digest[EVP_MAX_MD_SIZE];
-    unsigned int digest_len = 0;
-    if (EVP_DigestFinal_ex(ctx.get(), digest, &digest_len) != 1) {
-        result.error = "failed to finalize OpenSSL EVP digest";
+    unsigned char digest[MBEDTLS_MD_MAX_SIZE] = {};
+    if (mbedtls_md_finish(&ctx, digest) != 0) {
+        cleanup();
+        result.error = "failed to finalize mbedTLS digest";
         return result;
     }
+
+    const size_t digest_len = static_cast<size_t>(mbedtls_md_get_size(md_info));
+    cleanup();
 
     result.actual = bytes_to_hex(digest, digest_len);
     result.ok = (lower_copy(result.actual) == expected.value);
     return result;
 }
-
-#endif
 
 static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedHash& expected) {
     HashCheckResult result;

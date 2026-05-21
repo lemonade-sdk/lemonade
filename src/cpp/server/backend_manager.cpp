@@ -534,7 +534,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     try {
         backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb, force);
 
         const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
         for (size_t i = 0; i < runtime_steps.size(); ++i) {

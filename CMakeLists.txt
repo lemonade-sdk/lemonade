@@ -755,20 +755,6 @@ endif()
 # lemond inherits all deps from lemonade-server-core
 target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 
-# http_client.cpp is compiled into the lemonade-server-core OBJECT library and
-# uses platform crypto APIs for digest verification.  OBJECT-library link
-# dependencies are not reliably propagated to the final executable link line on
-# all generators, so link the final lemond executable explicitly as well.
-if(WIN32)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE bcrypt)
-elseif(UNIX AND NOT APPLE)
-    # Use the absolute libcrypto path instead of OpenSSL::Crypto here.  This
-    # avoids CMake scope/imported-target issues that can otherwise turn the
-    # imported target name into a bad linker flag such as -lOpenSSL::Crypto.
-    find_library(LEMONADE_CRYPTO_LIBRARY NAMES crypto libcrypto REQUIRED)
-    target_link_libraries(${EXECUTABLE_NAME} PRIVATE ${LEMONADE_CRYPTO_LIBRARY})
-endif()
-
 # ============================================================
 # Resources
 # ============================================================

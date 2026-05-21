@@ -2,6 +2,60 @@
 # Note: This is included from parent CMakeLists.txt via add_subdirectory(cli)
 # Parent project already sets C++ standard and fetches dependencies
 
+
+# ============================================================
+# Download digest verification dependency
+# ============================================================
+# http_client.cpp is compiled into both lemonade-server-core and the lemonade
+# CLI.  Digest verification must therefore be wired to both targets from here.
+# Prefer a distro-provided mbedcrypto package, but fall back to FetchContent so
+# local Lemonade builds do not require developers to install a new package.
+if(NOT TARGET lemonade-digest-crypto)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(MBEDCRYPTO QUIET mbedcrypto)
+    endif()
+
+    add_library(lemonade-digest-crypto INTERFACE)
+    target_compile_definitions(lemonade-digest-crypto INTERFACE LEMONADE_USE_MBEDTLS_DIGEST)
+
+    if(MBEDCRYPTO_FOUND)
+        message(STATUS "Using system mbedcrypto for download digest verification")
+        target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_INCLUDE_DIRS})
+        target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY_DIRS})
+        target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARIES})
+        target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_CFLAGS_OTHER})
+    else()
+        message(STATUS "System mbedcrypto not found; fetching mbedTLS for download digest verification")
+        include(FetchContent)
+        FetchContent_Declare(mbedtls
+            GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+            GIT_TAG v3.6.2
+            GIT_SHALLOW TRUE
+            EXCLUDE_FROM_ALL
+        )
+        set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+        set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+        set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+        set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+        set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(mbedtls)
+
+        target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
+        if(TARGET MbedTLS::mbedcrypto)
+            target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedcrypto)
+        elseif(TARGET mbedcrypto)
+            target_link_libraries(lemonade-digest-crypto INTERFACE mbedcrypto)
+        else()
+            message(FATAL_ERROR "mbedTLS FetchContent did not create an mbedcrypto target")
+        endif()
+    endif()
+endif()
+
+if(TARGET lemonade-server-core)
+    target_link_libraries(lemonade-server-core PUBLIC lemonade-digest-crypto)
+endif()
+
 # Common sources
 set(COMMON_SOURCES
     main.cpp
@@ -29,6 +83,7 @@ add_executable(lemonade
 
 target_link_libraries(lemonade PRIVATE
     nlohmann_json::nlohmann_json
+    lemonade-digest-crypto
 )
 
 # Link httplib based on what's available (set by parent CMakeLists.txt)
@@ -89,12 +144,10 @@ if(WIN32)
         _UNICODE
     )
 
-    # Link with networking and system libraries. bcrypt is required by
-    # utils/http_client.cpp for SHA digest verification on Windows.
+    # Link with networking and system libraries
     target_link_libraries(lemonade PRIVATE
         ws2_32
         wsock32
-        bcrypt
     )
 
     # Embed manifest file if MSVC
@@ -117,22 +170,11 @@ if(APPLE)
 endif()
 
 if(UNIX AND NOT APPLE)
-    # On Linux, link with pthread and libcrypto. The CLI target builds
-    # ../server/utils/http_client.cpp directly instead of linking through
-    # lemonade-server-core, so libcrypto must be linked here too.
-    # Keep this find_package local: callers may apply only the src/ tree file
-    # updates, in which case the root CMake OpenSSL target has not been created.
+    # On Linux, link with pthread
     find_package(Threads REQUIRED)
-    find_package(OpenSSL REQUIRED)
-    target_link_libraries(lemonade PRIVATE Threads::Threads)
-    if(TARGET OpenSSL::Crypto)
-        target_link_libraries(lemonade PRIVATE OpenSSL::Crypto)
-    elseif(OPENSSL_CRYPTO_LIBRARY)
-        target_link_libraries(lemonade PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
-        target_include_directories(lemonade PRIVATE ${OPENSSL_INCLUDE_DIR})
-    else()
-        message(FATAL_ERROR "OpenSSL libcrypto was not found; required by utils/http_client.cpp digest verification")
-    endif()
+    target_link_libraries(lemonade PRIVATE
+        Threads::Threads
+    )
 endif()
 
 # Install target (only on non-macOS platforms where main CMakeLists doesn't handle it)
