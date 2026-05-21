@@ -70,7 +70,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
     "vulkan_bin": "builtin"
   },
   "flm": {
-    "args": "",
+    "args": ""
   },
   "ryzenai": {
     "server_bin": "builtin"
