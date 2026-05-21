@@ -30,6 +30,11 @@ export interface DownloadItem {
   // Server-owned jobs can be terminal from the UI point of view while the
   // worker is still unwinding. Keep this so resume waits until pause is real.
   running?: boolean;
+  // Smoothed/last-sample speed from the tracker. Calculated from byte deltas
+  // between progress snapshots so restored/skipped bytes do not inflate speed.
+  speedBytesPerSecond?: number;
+  speedSampleTime?: number;
+  speedSampleBytes?: number;
   updatedAt?: number;
 }
 
@@ -135,6 +140,10 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const calculateSpeed = (download: DownloadItem): number => {
+    if (typeof download.speedBytesPerSecond === 'number') {
+      return Math.max(0, download.speedBytesPerSecond);
+    }
+
     const elapsedSeconds = (Date.now() - download.startTime) / 1000;
     if (elapsedSeconds === 0) return 0;
     // Only count bytes downloaded in this session, not bytes already on disk from a prior run

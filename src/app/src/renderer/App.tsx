@@ -14,7 +14,7 @@ import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import { downloadTracker } from './utils/downloadTracker';
 import CustomCollectionPanel from './components/CustomCollectionPanel';
 import { ToastContainer, useToast } from './Toast';
-import { serverFetch } from './utils/serverConfig';
+import { pullModel, type ModelRegistrationData } from './utils/backendInstaller';
 import {
   CustomCollectionDraft,
   buildCustomCollectionPullRequest,
@@ -23,6 +23,21 @@ import {
   importCustomCollections,
 } from './utils/customCollections';
 import '../../styles/index.css';
+
+type PullRegistrationPayload = {
+  model_name: string;
+  recipe: string;
+  checkpoint?: string;
+  checkpoints?: Record<string, string>;
+  components?: string[];
+  labels?: string[];
+  mmproj?: string;
+  size?: number;
+  image_defaults?: unknown;
+  reasoning?: boolean;
+  vision?: boolean;
+};
+
 
 const LAYOUT_CONSTANTS = {
   modelManagerMinWidth: 200,
@@ -347,22 +362,21 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  const postPullRegistration = async (requestBody: object) => {
-    const response = await serverFetch('/pull', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+  const pullRegistration = async (requestBody: PullRegistrationPayload) => {
+    const collectionComponents = Array.isArray(requestBody.components)
+      ? requestBody.components
+      : undefined;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || response.statusText);
-    }
+    await pullModel(requestBody.model_name, {
+      registrationData: requestBody as ModelRegistrationData,
+      collectionComponents,
+      declaredSizeGB: typeof requestBody.size === 'number' ? requestBody.size : undefined,
+    });
   };
 
   const registerCustomCollection = async (collection: CustomCollectionDraft) => {
     const requestBody = buildCustomCollectionPullRequest(collection);
-    await postPullRegistration(requestBody);
+    await pullRegistration(requestBody);
     window.dispatchEvent(new CustomEvent('modelsUpdated'));
     return requestBody.model_name;
   };
@@ -375,7 +389,7 @@ const AppContent: React.FC = () => {
       setSelectedModel(modelName);
       setUserHasSelectedModel(true);
     } catch (error) {
-      showError('Failed to save collection: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      showError('Failed to save Omni Model: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -393,7 +407,7 @@ const AppContent: React.FC = () => {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (exportError) {
-      showError(exportError instanceof Error ? exportError.message : 'Failed to export collection.');
+      showError(exportError instanceof Error ? exportError.message : 'Failed to export Omni Model.');
     }
   };
 
@@ -409,7 +423,7 @@ const AppContent: React.FC = () => {
         const result = importCustomCollections(parsed, modelsData);
         for (const model of result.models) {
           if (!modelsData[model.model_name]) {
-            await postPullRegistration(buildCustomModelPullRequest(model));
+            await pullRegistration(buildCustomModelPullRequest(model));
           }
         }
         for (const collection of result.collections) {
@@ -417,9 +431,9 @@ const AppContent: React.FC = () => {
         }
         await refreshModels();
         const skipped = result.skipped > 0 ? '; skipped ' + result.skipped + ' invalid entr' + (result.skipped === 1 ? 'y' : 'ies') : '';
-        showSuccess('Imported ' + result.imported + ' custom collection' + (result.imported === 1 ? '' : 's') + skipped + '.');
+        showSuccess('Imported ' + result.imported + ' Omni Model' + (result.imported === 1 ? '' : 's') + skipped + '.');
       } catch (importError) {
-        showError(importError instanceof Error ? importError.message : 'Failed to import custom collections.');
+        showError(importError instanceof Error ? importError.message : 'Failed to import Omni Models.');
       }
     };
     reader.onerror = () => showError('Failed to read the selected file.');

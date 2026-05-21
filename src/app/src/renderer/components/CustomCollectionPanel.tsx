@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useModels } from '../hooks/useModels';
 import { getModelDisplayName } from '../utils/modelDisplayName';
+import type { ModelInfo } from '../utils/modelData';
+import { isChatPlannerCandidate } from '../utils/collectionModels';
 import {
   CustomCollection,
   CustomCollectionDraft,
@@ -9,7 +11,7 @@ import {
   getCustomCollectionRoleLabel,
   getCustomCollectionComponentList,
   getCollectionDisplayName,
-  isCustomCollectionId,
+  isCustomCollectionModel,
   modelEntryToCustomCollection,
 } from '../utils/customCollections';
 
@@ -21,7 +23,7 @@ interface CustomCollectionPanelProps {
   onExport: (collection: CustomCollectionDraft) => void;
 }
 
-const DEFAULT_NAME = 'MyOmniCollection';
+const DEFAULT_NAME = 'MyOmniModel';
 
 const OPTIONAL_ROLES: CustomCollectionRole[] = ['vision', 'image', 'edit', 'transcription', 'speech'];
 
@@ -49,8 +51,7 @@ const emptyDraft = () => ({
 
 type CollectionForm = ReturnType<typeof emptyDraft>;
 
-const draftFromCollection = (collection: CustomCollection, sourceId: string): CollectionForm => {
-  const isCustom = isCustomCollectionId(sourceId);
+const draftFromCollection = (collection: CustomCollection, sourceId: string, isCustom: boolean): CollectionForm => {
   return {
     selectedCollectionId: isCustom ? collection.id : '',
     sourceCollectionId: sourceId,
@@ -102,8 +103,15 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
     speech: getCollectionRoleOptions(modelsData, 'speech'),
   }), [modelsData]);
 
-  const selectedLlmLabels = form.llm ? (modelsData[form.llm]?.labels ?? []) : [];
-  const selectedLlmHasToolCalling = selectedLlmLabels.includes('tool-calling') || selectedLlmLabels.includes('tools');
+  const modelHasLabel = (modelId: string, label: string): boolean => {
+    return (modelsData[modelId]?.labels ?? []).includes(label);
+  };
+
+  const plannerProvidesVision = form.llm.length > 0 && modelHasLabel(form.llm, 'vision');
+  const imageProvidesEdit = form.image.length > 0 && modelHasLabel(form.image, 'edit');
+  const selectedLlmInfo = form.llm ? modelsData[form.llm] : undefined;
+  const selectedLlmLabels = selectedLlmInfo?.labels ?? [];
+  const selectedLlmHasToolCalling = selectedLlmLabels.includes('tool-calling') || selectedLlmLabels.includes('tools') || isChatPlannerCandidate(selectedLlmInfo);
   const currentComponents = componentListForForm(form);
   const hasExistingCustomCollection = mode === 'edit' && !!form.selectedCollectionId;
   const isTemplateEdit = mode === 'edit' && !!form.sourceCollectionId && !form.selectedCollectionId;
@@ -111,7 +119,6 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
     originalComponents.length !== currentComponents.length ||
     originalComponents.some((component, index) => component !== currentComponents[index])
   );
-  const checkpointValue = `collection.omni components (${currentComponents.length})${hasComponentChanges ? ' — modified draft' : ''}`;
 
   useEffect(() => {
     setError(null);
@@ -126,11 +133,17 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
     if (!collection) {
       setForm(emptyDraft());
       setOriginalComponents([]);
-      setError('This collection could not be found. Refresh models and try again.');
+      setError('This Omni Model could not be found. Refresh models and try again.');
       return;
     }
 
-    const next = draftFromCollection(collection, collectionId);
+    const next = draftFromCollection(collection, collectionId, isCustomCollectionModel(collectionId, modelsData[collectionId]));
+    if (!next.vision && next.llm && (modelsData[next.llm]?.labels ?? []).includes('vision')) {
+      next.vision = next.llm;
+    }
+    if (!next.edit && next.image && (modelsData[next.image]?.labels ?? []).includes('edit')) {
+      next.edit = next.image;
+    }
     setForm(next);
     setOriginalComponents(getCustomCollectionComponentList(collection));
   }, [mode, collectionId, modelsData]);
@@ -140,25 +153,30 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
     setError(null);
   };
 
-  const modelHasVision = (modelId: string): boolean => {
-    return (modelsData[modelId]?.labels ?? []).includes('vision');
-  };
-
   const setRole = (role: CustomCollectionRole, value: string) => {
-    if (role !== 'llm') {
-      updateForm({ [role]: value } as Partial<CollectionForm>);
-      return;
-    }
-
     setForm((prev) => {
-      const patch: Partial<CollectionForm> = { llm: value };
-      const selectedPlannerHasVision = value.length > 0 && modelHasVision(value);
-      const visionWasEmptyOrPlannerDefault = !prev.vision || prev.vision === prev.llm;
+      const patch: Partial<CollectionForm> = { [role]: value } as Partial<CollectionForm>;
 
-      if (selectedPlannerHasVision && visionWasEmptyOrPlannerDefault) {
-        patch.vision = value;
-      } else if (!selectedPlannerHasVision && prev.vision === prev.llm) {
-        patch.vision = '';
+      if (role === 'llm') {
+        const selectedPlannerHasVision = value.length > 0 && modelHasLabel(value, 'vision');
+        const visionWasEmptyOrPlannerDefault = !prev.vision || prev.vision === prev.llm;
+
+        if (selectedPlannerHasVision && visionWasEmptyOrPlannerDefault) {
+          patch.vision = value;
+        } else if (!selectedPlannerHasVision && prev.vision === prev.llm) {
+          patch.vision = '';
+        }
+      }
+
+      if (role === 'image') {
+        const selectedImageHasEdit = value.length > 0 && modelHasLabel(value, 'edit');
+        const editWasEmptyOrImageDefault = !prev.edit || prev.edit === prev.image;
+
+        if (selectedImageHasEdit && editWasEmptyOrImageDefault) {
+          patch.edit = value;
+        } else if (!selectedImageHasEdit && prev.edit === prev.image) {
+          patch.edit = '';
+        }
       }
 
       return { ...prev, ...patch };
@@ -168,38 +186,45 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
 
   const valueForRole = (role: CustomCollectionRole): string => form[role];
 
-  const getComponentSourceLabel = (modelId: string): string | null => {
+  const displayNameForOption = (modelId: string): string => {
     const info = modelsData[modelId];
-    if (!info) return null;
-    if (typeof info.checkpoint === 'string' && info.checkpoint.length > 0) {
-      return info.checkpoint;
-    }
-    const checkpoints = info.checkpoints;
-    if (checkpoints && typeof checkpoints === 'object' && !Array.isArray(checkpoints)) {
-      const main = checkpoints.main;
-      if (typeof main === 'string' && main.length > 0) return main;
-      const first = Object.values(checkpoints).find((value): value is string => typeof value === 'string' && value.length > 0);
-      if (first) return first;
-    }
-    return null;
+    const name = info?.model_name ?? getModelDisplayName(modelId);
+    return `${name} (${info?.downloaded === true ? 'downloaded' : 'registered - will download'})`;
+  };
+
+  const renderOptionsGroup = (roleOptions: Array<{ id: string; info: ModelInfo }>, downloaded: boolean) => {
+    const filtered = roleOptions.filter((model) => (model.info.downloaded === true) === downloaded);
+    if (filtered.length === 0) return null;
+    return (
+      <optgroup label={downloaded ? 'Available locally' : 'Registered - will download when pulled'}>
+        {filtered.map((model) => (
+          <option key={model.id} value={model.id}>{displayNameForOption(model.id)}</option>
+        ))}
+      </optgroup>
+    );
   };
 
   const renderRoleSelect = (role: CustomCollectionRole, required = false) => {
     const selectedValue = valueForRole(role);
     const roleOptions = options[role];
-    const selectedSourceLabel = selectedValue ? getComponentSourceLabel(selectedValue) : null;
     const optionIds = new Set(roleOptions.map((model) => model.id));
     const selectedFallback = selectedValue && !optionIds.has(selectedValue) && modelsData[selectedValue]
       ? [{ id: selectedValue, info: modelsData[selectedValue] }]
       : [];
-    const selectOptions = selectedFallback.concat(roleOptions);
-    const availableOptions = selectOptions.filter((model) => model.info.downloaded === true);
-    const registeredOptions = selectOptions.filter((model) => model.info.downloaded !== true);
-    const renderModelOption = (model: (typeof selectOptions)[number]) => {
-      const label = model.info.model_name ?? getModelDisplayName(model.id);
-      const stateLabel = model.info.downloaded === true ? 'downloaded' : 'registered - will download';
-      return <option key={model.id} value={model.id}>{label} ({stateLabel})</option>;
-    };
+    const autoProviderModel = role === 'vision' ? form.llm : role === 'edit' ? form.image : '';
+    const autoProvided = (role === 'vision' && plannerProvidesVision) || (role === 'edit' && imageProvidesEdit);
+    const isUsingAutoProvider = autoProvided && selectedValue === autoProviderModel;
+    const autoProviderOption = autoProvided && autoProviderModel && modelsData[autoProviderModel]
+      ? { id: autoProviderModel, info: modelsData[autoProviderModel] }
+      : null;
+
+    const seenOptions = new Set<string>();
+    const selectOptions = selectedFallback.concat(roleOptions).filter((model) => {
+      if (model.id === autoProviderModel) return false;
+      if (seenOptions.has(model.id)) return false;
+      seenOptions.add(model.id);
+      return true;
+    });
 
     return (
       <div className="form-section collection-role-row" key={role}>
@@ -207,28 +232,22 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
           {getCustomCollectionRoleLabel(role)}{required ? ' *' : ''}
         </label>
         <select
-          className="form-input form-select collection-model-select"
+          className={`form-input form-select collection-model-select${isUsingAutoProvider ? ' auto-provided' : ''}`}
           value={selectedValue}
           onChange={(e) => setRole(role, e.target.value)}
-          title={roleDescriptions[role]}
+          title={autoProvided ? 'Automatically provided by the selected model. Select another compatible model to override.' : roleDescriptions[role]}
         >
-          {!required && <option value="">None</option>}
+          {autoProviderOption && (
+            <option className="collection-auto-provided-option" value={autoProviderOption.id}>
+              {displayNameForOption(autoProviderOption.id)} (automatic)
+            </option>
+          )}
+          {!required && !autoProvided && <option value="">None</option>}
           {required && <option value="">Select a model...</option>}
-          {availableOptions.length > 0 && (
-            <optgroup label="Available locally">
-              {availableOptions.map(renderModelOption)}
-            </optgroup>
-          )}
-          {registeredOptions.length > 0 && (
-            <optgroup label="Registered - will download when pulled">
-              {registeredOptions.map(renderModelOption)}
-            </optgroup>
-          )}
+          {renderOptionsGroup(selectOptions, true)}
+          {renderOptionsGroup(selectOptions, false)}
         </select>
-        {selectedSourceLabel && (
-          <div className="collection-role-source">Checkpoint: {selectedSourceLabel}</div>
-        )}
-        {roleOptions.length === 0 && (
+        {roleOptions.length === 0 && !autoProvided && (
           <div className="collection-role-empty">No registered compatible model found. Add a custom model first so its checkpoint can be pulled as a component.</div>
         )}
       </div>
@@ -238,11 +257,11 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   const validateDraft = (): CustomCollectionDraft | null => {
     const cleanName = form.name.trim();
     if (!cleanName) {
-      setError('Collection name is required.');
+      setError('Omni Model name is required.');
       return null;
     }
     if (!form.llm) {
-      setError('Select an LLM model for the collection.');
+      setError('Select a planner LLM for the Omni Model.');
       return null;
     }
     return formToDraft({ ...form, name: cleanName });
@@ -263,8 +282,8 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
   return (
     <>
       <div className="settings-header">
-        <h3>{hasExistingCustomCollection ? 'Collection Options' : 'New Collection'}</h3>
-        <button className="settings-close-button" onClick={onClose} title="Close">
+        <h3>{hasExistingCustomCollection ? 'Omni Model Options' : 'New Omni Model'}</h3>
+        <button type="button" className="settings-close-button" onClick={onClose} title="Close">
           <svg width="14" height="14" viewBox="0 0 14 14">
             <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
           </svg>
@@ -272,42 +291,29 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       </div>
 
       <div className="settings-content custom-collection-content">
-        <div className="collection-options-summary">
-          <div className="model-info-row">
-            <span className="model-info-label">Name</span>
-            <span className="model-info-value">{form.selectedCollectionId || `user.${form.name || DEFAULT_NAME}`}</span>
-          </div>
-          <div className="model-info-row">
-            <span className="model-info-label">Checkpoint</span>
-            <span className="model-info-value">{checkpointValue}</span>
-          </div>
-          {isTemplateEdit && (
-            <div className="collection-warning">You are using an existing Omni collection as a template. Saving creates a new user collection; the original collection is unchanged.</div>
-          )}
-          {hasComponentChanges && hasExistingCustomCollection && (
-            <div className="collection-warning">Components have changed. Saving re-registers this collection through /pull with recipe collection.omni and the updated components list.</div>
-          )}
-        </div>
+        {isTemplateEdit && (
+          <div className="collection-warning">You are using an existing Omni Model as a template. Saving creates a new user Omni Model; the original stays unchanged.</div>
+        )}
+        {hasComponentChanges && hasExistingCustomCollection && (
+          <div className="collection-warning">Components have changed. Saving re-registers this Omni Model through /pull with recipe collection.omni and the updated components list.</div>
+        )}
 
         <div className="form-section">
-          <label className="form-label" title="Registered user collection name">Collection Name</label>
-          <div className="input-with-prefix">
-            <span className="input-prefix">user.</span>
-            <input
-              type="text"
-              className="form-input with-prefix"
-              value={form.name}
-              onChange={(e) => updateForm({ name: e.target.value })}
-              placeholder="CreatorStudio"
-              disabled={hasExistingCustomCollection}
-            />
-          </div>
+          <label className="form-label" title="Registered user Omni Model name">Omni Model Name</label>
+          <input
+            type="text"
+            className="form-input"
+            value={form.name}
+            onChange={(e) => updateForm({ name: e.target.value.replace(/^user\./, '') })}
+            placeholder="MyOmniModel"
+            disabled={hasExistingCustomCollection}
+          />
         </div>
 
         <div className="collection-role-list">
           {renderRoleSelect('llm', true)}
           {form.llm && !selectedLlmHasToolCalling && (
-            <div className="collection-warning">This LLM is not labeled as tool-calling. The collection can still be saved, but OmniRouter tools may be unreliable with this model.</div>
+            <div className="collection-warning">This planner LLM may not support tool calling. The Omni Model can still be saved, but OmniRouter tools may be unreliable with this model.</div>
           )}
           {OPTIONAL_ROLES.map((role) => renderRoleSelect(role))}
         </div>
@@ -316,9 +322,9 @@ const CustomCollectionPanel: React.FC<CustomCollectionPanelProps> = ({
       </div>
 
       <div className="settings-footer custom-collection-footer">
-        <button className="settings-reset-button" onClick={handleExport}>Export Collection</button>
-        <button className="settings-reset-button" onClick={onClose}>Cancel</button>
-        <button className="settings-save-button" onClick={handleSave}>{hasExistingCustomCollection ? 'Save' : 'Create'}</button>
+        <button type="button" className="settings-reset-button" onClick={handleExport}>Export Omni Model</button>
+        <button type="button" className="settings-reset-button" onClick={onClose}>Cancel</button>
+        <button type="button" className="settings-save-button" onClick={handleSave}>{hasExistingCustomCollection ? 'Save' : 'Create'}</button>
       </div>
     </>
   );

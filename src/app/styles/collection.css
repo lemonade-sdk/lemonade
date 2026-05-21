@@ -102,3 +102,12 @@
     line-height: 1.35;
     overflow-wrap: anywhere;
 }
+
+.collection-model-select.auto-provided {
+    color: var(--text-tertiary);
+    background: var(--bg-secondary);
+}
+
+.collection-auto-provided-option {
+    color: var(--text-tertiary);
+}

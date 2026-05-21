@@ -20,7 +20,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
-import { isCollectionEditableAsCustom } from './utils/customCollections';
+import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
 
 interface ModelFamily {
   displayName: string;
@@ -492,7 +492,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
     // Filter by downloaded status
     if (showDownloadedOnly) {
-      filtered = filtered.filter(model => modelsData[model.name]?.downloaded);
+      filtered = filtered.filter(model => isModelEffectivelyDownloaded(model.name, modelsData[model.name], modelsData));
     }
 
     // Filter by search query
@@ -1169,11 +1169,11 @@ const [searchQuery, setSearchQuery] = useState('');
     const isCollection = collectionComponents.length > 0;
 
     const message = isCollection
-      ? '"' + modelName + '" is a collection. Deleting it removes only the collection entry; its ' + collectionComponents.length + ' component models stay on disk:\n\n' + collectionComponents.map((c) => '• ' + c).join('\n')
+      ? '"' + getCollectionDisplayName(modelName) + '" isan Omni Model. Deleting it removes only the Omni Model entry; its ' + collectionComponents.length + ' component models stay on disk:\n\n' + collectionComponents.map((c) => '• ' + c).join('\n')
       : 'Are you sure you want to delete the model "' + modelName + '"? This action cannot be undone.';
 
     const confirmed = await confirm({
-      title: isCollection ? 'Delete Collection' : 'Delete Model',
+      title: isCollection ? 'Delete Omni Model' : 'Delete Model',
       message,
       confirmText: 'Delete',
       cancelText: 'Cancel',
@@ -1187,7 +1187,7 @@ const [searchQuery, setSearchQuery] = useState('');
     try {
       await deleteModel(modelName);
       showSuccess(isCollection
-        ? 'Collection "' + modelName + '" deleted. Component models were kept.'
+        ? 'Omni Model "' + getCollectionDisplayName(modelName) + '" deleted. Component models were kept.'
         : 'Model "' + modelName + '" deleted successfully.');
       await fetchCurrentLoadedModel();
     } catch (error) {
@@ -1307,7 +1307,7 @@ const [searchQuery, setSearchQuery] = useState('');
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent('editCustomCollection', { detail: { collectionId: modelName } }));
       }}
-      title="Collection options"
+      title="Omni Model options"
     >
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
            xmlns="http://www.w3.org/2000/svg">
@@ -1339,15 +1339,12 @@ const [searchQuery, setSearchQuery] = useState('');
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
     const isCollection = isCollectionModel(info);
-    const isUserCollection = isCollection && (
-      modelName.startsWith(USER_MODEL_PREFIX) ||
-      info?.source === 'user' ||
-      info?.source === 'user_models' ||
-      info?.source === 'custom' ||
-      (info?.labels ?? []).includes('custom')
-    );
     const isEditableCollection = isCollectionEditableAsCustom(info);
-    const canDeleteFromRow = !isCollection || isUserCollection;
+    const isBuiltInCollection = isCollection && info?.suggested === true &&
+      !(info?.labels ?? []).includes('custom') &&
+      !modelName.startsWith(USER_MODEL_PREFIX) &&
+      info?.source !== 'user' && info?.source !== 'user_models' && info?.source !== 'custom';
+    const canDeleteFromRow = !isCollection || !isBuiltInCollection;
     return (
       <>
         {!isDownloaded && (
@@ -1363,7 +1360,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete collection' : 'Delete model')}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
           </>
         )}
@@ -1383,7 +1380,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete collection' : 'Delete model')}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
             {!isCollection && renderLoadOptionsButton(modelName)}
           </>
@@ -1401,7 +1398,7 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete collection' : 'Delete model')}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
             {!isCollection && renderLoadOptionsButton(modelName)}
           </>
@@ -1435,7 +1432,7 @@ const [searchQuery, setSearchQuery] = useState('');
         const s = modelsData[c]?.size;
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
-      nameTooltip = `Collection of ${components.length} models:\n${lines.join('\n')}`;
+      nameTooltip = `Omni Model with ${components.length} component models:\n${lines.join('\n')}`;
     } else if (displayName || getModelDisplayName(modelName) !== modelName) {
       nameTooltip = modelName;
     }
@@ -1450,7 +1447,7 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? getModelDisplayName(modelName)}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName))}</span>
             <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>

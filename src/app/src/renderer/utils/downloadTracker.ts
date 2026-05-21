@@ -111,6 +111,9 @@ class DownloadTracker {
       declaredTotalBytes,
       bytesTotalIsLowerBound: false,
       running: downloadType === 'model' || downloadType === 'backend' ? true : undefined,
+      speedBytesPerSecond: 0,
+      speedSampleTime: Date.now(),
+      speedSampleBytes: 0,
       updatedAt: Date.now(),
     };
 
@@ -246,6 +249,26 @@ class DownloadTracker {
       ? Math.min(cumulativeBytesDownloaded, cumulativeBytesTotal)
       : cumulativeBytesDownloaded;
 
+    const now = Date.now();
+    const speedEligibleBytes = Math.max(0, displayBytesDownloaded - speedBaselineBytes);
+    const previousSpeedSampleBytes = download.speedSampleBytes;
+    const previousSpeedSampleTime = download.speedSampleTime;
+    const baselineChanged = speedBaselineBytes !== (download.bytesResumed || 0);
+    let speedBytesPerSecond = download.speedBytesPerSecond ?? 0;
+
+    if ((progress.status && progress.status !== 'downloading') || progress.complete) {
+      speedBytesPerSecond = 0;
+    } else if (
+      !baselineChanged &&
+      typeof previousSpeedSampleBytes === 'number' &&
+      typeof previousSpeedSampleTime === 'number' &&
+      now > previousSpeedSampleTime
+    ) {
+      const elapsedSeconds = (now - previousSpeedSampleTime) / 1000;
+      const deltaBytes = Math.max(0, speedEligibleBytes - previousSpeedSampleBytes);
+      speedBytesPerSecond = elapsedSeconds > 0 ? deltaBytes / elapsedSeconds : 0;
+    }
+
     const shouldReleaseLocalOwner = progress.status != null &&
       progress.status !== 'downloading' &&
       progress.running !== true;
@@ -260,6 +283,9 @@ class DownloadTracker {
       bytesTotalIsLowerBound,
       percent: overallPercent,
       bytesResumed: speedBaselineBytes,
+      speedBytesPerSecond,
+      speedSampleTime: now,
+      speedSampleBytes: speedEligibleBytes,
       status: progress.status ?? download.status,
       running: progress.running ?? download.running,
       error: progress.error ?? download.error,
@@ -618,6 +644,9 @@ class DownloadTracker {
       bytesResumed: restoredBytesDownloaded,
       downloadType: progress.type,
       running: progress.running,
+      speedBytesPerSecond: 0,
+      speedSampleTime: Date.now(),
+      speedSampleBytes: 0,
       updatedAt: Date.now(),
     });
     this.cumulativeData.set(downloadId, {

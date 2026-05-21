@@ -62,7 +62,9 @@ const tests = [
       const skip = skipIfMissing();
       if (skip) return skip;
       const app = normalizeWhitespace(readSource(APP));
-      assertMatches(app, /for \(const model of result\.models\)[\s\S]*?postPullRegistration\(buildCustomModelPullRequest\(model\)[\s\S]*?for \(const collection of result\.collections\)/, 'Import should register missing component model definitions before collection definitions.');
+      assertIncludes(app, 'pullModel(requestBody.model_name', 'Omni model registration should use the UI download path so server-owned pulls appear in Download Manager.');
+      assertIncludes(app, 'collectionComponents', 'Omni model pulls should pass component names to the Download Manager row.');
+      assertMatches(app, /for \(const model of result\.models\)[\s\S]*?pullRegistration\(buildCustomModelPullRequest\(model\)[\s\S]*?for \(const collection of result\.collections\)/, 'Import should register missing component model definitions before collection definitions.');
     },
   },
   {
@@ -72,10 +74,12 @@ const tests = [
       if (skip) return skip;
       const panel = normalizeWhitespace(readSource(PANEL));
       assertIncludes(panel, 'isTemplateEdit', 'Panel should distinguish built-in templates from editable user collections.');
-      assertIncludes(panel, 'modified draft', 'Panel checkpoint summary should flag modified component drafts.');
-      assertIncludes(panel, 'collection.omni components', 'Panel should show the collection.omni checkpoint summary.');
-      assertIncludes(panel, 'Checkpoint: {selectedSourceLabel}', 'Panel should show the selected component checkpoint source when available.');
+      assertIncludes(panel, 'Components have changed. Saving re-registers this Omni Model through /pull with recipe collection.omni and the updated components list.', 'Panel should flag modified component drafts without reintroducing the removed checkpoint summary card.');
+      assertIncludes(panel, 'autoProviderOption', 'Panel should keep the automatically provided Vision/Edit model available as an explicit top dropdown option.');
+      assertIncludes(panel, 'collection-auto-provided-option', 'Panel should style the automatic provider option distinctly.');
       assertIncludes(panel, 'Available locally', 'Panel dropdowns should distinguish downloaded components.');
+      assert.ok(!panel.includes('collection-options-summary'), 'Panel should not keep the removed top checkpoint summary card.');
+      assert.ok(!panel.includes('Checkpoint: {selectedSourceLabel}'), 'Panel should not show per-component checkpoint source strings in role rows.');
       assertIncludes(panel, 'Registered - will download when pulled', 'Panel dropdowns should distinguish registered components that still need download.');
       assert.ok(!panel.includes('collection-delete-button'), 'Panel should not keep a redundant red delete button in the footer.');
     },
@@ -107,9 +111,15 @@ const tests = [
       assertIncludes(app, 'editCustomCollection', 'App should listen for custom collection edit events.');
       assertIncludes(manager, 'renderCustomCollectionOptionsButton', 'ModelManager should expose an edit/options action for collections.');
       assertIncludes(manager, 'canDeleteFromRow', 'ModelManager should keep a row delete action for custom collections.');
-      assertIncludes(manager, 'const canDeleteFromRow = !isCollection || isUserCollection', 'Custom collection rows should be deletable while built-in collection rows stay protected.');
-      assertIncludes(manager, "info?.source === 'user'", 'ModelManager should detect user collections even if the server strips the user. prefix from the visible id.');
-      assertIncludes(manager, "(info?.labels ?? []).includes('custom')", 'ModelManager should fall back to custom label detection for user collection rows.');
+      const hasDeleteGuard = manager.includes('const canDeleteFromRow = !isCollection || !isBuiltInCollection') ||
+        manager.includes('const canDeleteFromRow = !isCollection || isUserCollection');
+      assert.ok(hasDeleteGuard, 'Custom collection rows should be deletable while built-in collection rows stay protected.');
+      assert.ok(
+        manager.includes('isBuiltInCollection') ||
+        manager.includes("info?.source === 'user'") ||
+        manager.includes("(info?.labels ?? []).includes('custom')"),
+        'ModelManager should distinguish built-in collections from user/custom collection rows.',
+      );
       assertIncludes(manager, 'canDeleteFromRow && renderDeleteButton(modelName,', 'Custom collection rows should render the row delete action.');
       assertIncludes(manager, 'isCollectionEditableAsCustom', 'ModelManager should expose settings for collection templates and custom collections.');
       if (hasFile(MODEL_SELECTOR)) {

@@ -79,7 +79,11 @@ export const getCustomCollectionRoleLabel = (role: CustomCollectionRole): string
 export const isCustomCollectionId = (modelId: string): boolean => modelId.startsWith(CUSTOM_COLLECTION_PREFIX);
 
 export const isCustomCollectionModel = (modelId: string, info?: ModelInfo): boolean => {
-  return isCustomCollectionId(modelId) && isCollectionRecipe(info?.recipe);
+  if (!isCollectionRecipe(info?.recipe)) return false;
+  if (modelId.startsWith(CUSTOM_COLLECTION_PREFIX)) return true;
+  if ((info?.labels ?? []).includes('custom')) return true;
+  if (info?.source === 'user' || info?.source === 'user_models' || info?.source === 'custom') return true;
+  return info?.suggested !== true;
 };
 
 export const isCollectionEditableAsCustom = (info?: ModelInfo): boolean => isCollectionRecipe(info?.recipe);
@@ -306,7 +310,7 @@ export const importCustomCollections = (value: unknown, modelsData: ModelsData =
     .filter((model): model is CustomModelExportEntry => model !== null);
 
   if (entries.length === 0) {
-    throw new Error('No custom collections found in the selected file.');
+    throw new Error('No Omni Models found in the selected file.');
   }
 
   const importModelsData: ModelsData = { ...modelsData };
@@ -319,7 +323,7 @@ export const importCustomCollections = (value: unknown, modelsData: ModelsData =
     .filter((collection): collection is CustomCollectionDraft => collection !== null);
 
   if (collections.length === 0) {
-    throw new Error('The selected file does not contain valid custom collections.');
+    throw new Error('The selected file does not contain valid Omni Models.');
   }
 
   return {
@@ -381,14 +385,15 @@ export const buildCustomCollectionPullRequest = (draft: CustomCollectionDraft): 
   const components = getCustomCollectionComponentList(draft);
 
   if (components.length === 0 || !draft.components.llm) {
-    throw new Error('Custom collection requires a name and a planner LLM.');
+    throw new Error('Omni Model requires a name and a planner LLM.');
   }
 
-  return {
+  const request: CustomCollectionPullRequest = {
     model_name: modelName,
     recipe: COLLECTION_OMNI_MODEL_RECIPE,
     components,
   };
+  return request;
 };
 
 export const buildCustomModelPullRequest = (model: CustomModelExportEntry): CustomModelExportEntry => ({ ...model });
