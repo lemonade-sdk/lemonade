@@ -94,7 +94,7 @@ lemonade pull user.MyKit \
 The desktop app offers a UI-driven path to register the same `recipe: "collection.omni"` entry — useful when you want to swap in a different planner LLM or a different image/ASR/TTS backbone without waiting for a new built-in [Lemonade Omni Model](../../dev/lemonade-omni.md) to ship.
 
 1. Register or download the concrete models you want to use in **Model Manager**.
-2. In the desktop app menu, open **Lemonade > New Omni Model > Manually** (or **From JSON** to import an exported one).
+2. In the desktop app menu bar, open **File > New Omni Model > Manually** (or **From JSON** to import an exported one).
 3. Pick one planner LLM and any optional models for image generation, image editing, vision analysis, speech-to-text, and text-to-speech.
 4. Save the Omni Model.
 5. Select the new `user.<name>` entry in the chat model picker — it appears alongside the built-in omni models under the **Lemonade Omni** category.

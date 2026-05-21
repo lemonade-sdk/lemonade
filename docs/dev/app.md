@@ -154,7 +154,7 @@ Use the desktop app to verify the user-facing flow end to end:
 1. Start the Lemonade desktop app.
 2. Download at least one chat-capable LLM in **Model Manager**.
 3. Optionally download one image model, one edit-capable image model, one vision model, one transcription model, and one speech model.
-4. Open the **Lemonade** menu and choose **New Omni Model > Manually**.
+4. From the menu bar, choose **File > New Omni Model > Manually**.
 5. Save an Omni Model with only an LLM and verify it appears as `user.<name>` in the chat model picker.
 6. Edit the Omni Model to add optional role models and save again.
 7. Select the Omni Model in chat and run prompts that trigger the configured tools, such as image generation, speech synthesis, audio transcription, or image analysis.
