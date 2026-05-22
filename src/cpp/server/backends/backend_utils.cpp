@@ -341,8 +341,6 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            // Download archive to Lemonade-managed cache directory.
-            // Avoid shared system temp directories (e.g. /tmp).
             fs::path cache_dir = get_backend_download_cache_dir();
             std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
