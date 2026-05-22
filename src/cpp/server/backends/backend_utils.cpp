@@ -124,6 +124,12 @@ namespace lemon::backends {
         return (filename.size() > 7) && (filename.substr(filename.size() - 7) == ".tar.gz");
     }
 
+    static fs::path get_backend_download_cache_dir() {
+        fs::path cache_dir = fs::path(utils::get_downloaded_bin_dir()) / ".downloads";
+        fs::create_directories(cache_dir);
+        return cache_dir;
+    }
+
     // Helper to extract archive files based on extension
     bool BackendUtils::extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // Check if it's a tar.gz file
@@ -335,9 +341,7 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            // Download ZIP to cache directory
-            fs::path cache_dir = fs::temp_directory_path();
-            fs::create_directories(cache_dir);
+            fs::path cache_dir = get_backend_download_cache_dir();
             std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
@@ -704,7 +708,7 @@ namespace lemon::backends {
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
         std::string url = "https://repo.amd.com/rocm/tarball/" + filename;
 
-        fs::path cache_dir = fs::temp_directory_path();
+        fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();
 
         LOG(DEBUG, "BackendUtils") << "Downloading TheRock from: " << url << std::endl;
