@@ -405,9 +405,6 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
         request_body["model_name"] = model;
         request_body["save_options"] = false;
 
-        // Always disable merge_args so benchmark args fully override defaults
-        request_body["merge_args"] = false;
-
         // For llamacpp recipe, pass backend override
         if (recipe == "llamacpp") {
             request_body["llamacpp_backend"] = backend;
@@ -422,6 +419,8 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
             auto it = RECIPE_ARGS_KEY.find(recipe);
             if (it != RECIPE_ARGS_KEY.end()) {
                 request_body[it->second] = backend_args;
+                // Disable merge so explicit benchmark args fully override defaults
+                request_body["merge_args"] = false;
             }
         }
 
@@ -520,6 +519,7 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const BenchScenario& scenario,
                                 bool memory_tracking) {
     BenchRunResult result;
+    result.success = false;  // assume failure until proven otherwise
 
     // Warmup memory stats query (discard — we take post-run snapshot)
     if (memory_tracking) {
@@ -569,6 +569,7 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
         result.memory_gb = mem_after;
     }
 
+    result.success = true;
     return result;
 }
 
@@ -593,6 +594,11 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
     for (int i = 0; i < runs; ++i) {
         std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
         auto run_result = run_single_bench(client, model, scenario, memory_tracking);
+        if (!run_result.success) {
+            result.failed_runs++;
+            std::cout << " FAILED (excluded from stats)" << std::endl;
+            continue;
+        }
         std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms << "ms"
                   << " TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
         result.runs.push_back(run_result);
@@ -636,9 +642,10 @@ static std::string fmt_pct_change(double pct) {
     return oss.str();
 }
 
-static std::string fmt_vram_change(double val) {
-    if (val < 0) return "-";
-    return "+" + fmt_double(val) + " GB";
+static std::string fmt_vram_change(std::optional<double> val) {
+    if (!val.has_value()) return "-";
+    if (*val >= 0) return "+" + fmt_double(*val) + " GB";
+    return fmt_double(*val) + " GB";
 }
 
 static void print_scenario_row(const BenchScenarioResult& scenario, bool use_percentiles) {
@@ -646,15 +653,32 @@ static void print_scenario_row(const BenchScenarioResult& scenario, bool use_per
     double ttft_2 = use_percentiles ? scenario.ttft_p95_ms() : scenario.ttft_max_ms();
     double tps_1 = use_percentiles ? scenario.tps_p50() : scenario.tps_min();
     double tps_2 = use_percentiles ? scenario.tps_p95() : scenario.tps_max();
-    std::cout << std::left << std::setw(20) << scenario.scenario_name
-              << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
-              << std::setw(8) << fmt_double(ttft_1)
-              << std::setw(8) << fmt_double(ttft_2)
-              << std::setw(8) << fmt_double(scenario.tps_mean())
-              << std::setw(8) << fmt_double(tps_1)
-              << std::setw(8) << fmt_double(tps_2)
-              << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
-              << std::endl;
+    std::string name = scenario.scenario_name;
+    if (scenario.failed_runs > 0) {
+        name += " *" + std::to_string(scenario.failed_runs) + "f";
+    }
+    if (scenario.runs.empty()) {
+        // All runs failed — show dashes
+        std::cout << std::left << std::setw(20) << name
+                  << std::setw(8) << "-"
+                  << std::setw(8) << "-"
+                  << std::setw(8) << "-"
+                  << std::setw(8) << "-"
+                  << std::setw(8) << "-"
+                  << std::setw(8) << "-"
+                  << std::setw(8) << "-"
+                  << std::endl;
+    } else {
+        std::cout << std::left << std::setw(20) << name
+                  << std::setw(8) << fmt_double(scenario.ttft_mean_ms())
+                  << std::setw(8) << fmt_double(ttft_1)
+                  << std::setw(8) << fmt_double(ttft_2)
+                  << std::setw(8) << fmt_double(scenario.tps_mean())
+                  << std::setw(8) << fmt_double(tps_1)
+                  << std::setw(8) << fmt_double(tps_2)
+                  << std::setw(8) << fmt_vram(scenario.vram_peak_gb())
+                  << std::endl;
+    }
 }
 
 void print_table(const std::vector<BenchBackendResult>& results, const std::string& model,
@@ -684,6 +708,8 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
         }
     }
 
+    std::cout << std::endl;
+    std::cout << "(*Nf = N failed runs excluded from stats)" << std::endl;
     std::cout << std::endl;
 }
 
@@ -736,6 +762,7 @@ json to_json(const std::vector<BenchBackendResult>& results,
             if (vram_peak >= 0) s_json["vram_peak_gb"] = vram_peak;
             double mem_peak = scenario.memory_peak_gb();
             if (mem_peak >= 0) s_json["memory_peak_gb"] = mem_peak;
+            s_json["failed_runs"] = scenario.failed_runs;
 
             scenarios_json.push_back(s_json);
         }
@@ -773,12 +800,19 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
     // Build lookup map from previous results
     struct PrevKey {
         std::string backend;
+        int ctx_size = 0;
+        std::string backend_args;
         std::string scenario;
-        bool operator==(const PrevKey& o) const { return backend == o.backend && scenario == o.scenario; }
+        bool operator==(const PrevKey& o) const {
+            return backend == o.backend && ctx_size == o.ctx_size && backend_args == o.backend_args && scenario == o.scenario;
+        }
     };
     struct PrevKeyHash {
         size_t operator()(const PrevKey& k) const {
-            return std::hash<std::string>()(k.backend) ^ (std::hash<std::string>()(k.scenario) << 1);
+            return std::hash<std::string>()(k.backend)
+                 ^ (std::hash<int>()(k.ctx_size) << 1)
+                 ^ (std::hash<std::string>()(k.backend_args) << 2)
+                 ^ (std::hash<std::string>()(k.scenario) << 3);
         }
     };
     std::unordered_map<PrevKey, json, PrevKeyHash> prev_map;
@@ -789,11 +823,13 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
             std::string recipe = prev_backend.value("recipe", "");
             std::string backend = prev_backend.value("backend", "");
             std::string backend_label = recipe + "/" + backend;
+            int prev_ctx_size = prev_backend.value("ctx_size", 0);
+            std::string prev_backend_args = prev_backend.value("backend_args", "");
 
             if (prev_backend.contains("scenarios") && prev_backend["scenarios"].is_array()) {
                 for (const auto& prev_scenario : prev_backend["scenarios"]) {
                     std::string name = prev_scenario.value("name", "");
-                    PrevKey key{backend_label, name};
+                    PrevKey key{backend_label, prev_ctx_size, prev_backend_args, name};
                     prev_map[key] = prev_scenario;
                     prev_keys.insert(key);
                 }
@@ -809,11 +845,13 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
         std::string backend_label = backend_result.recipe + "/" + backend_result.backend;
 
         for (const auto& scenario : backend_result.scenarios) {
-            PrevKey key{backend_label, scenario.scenario_name};
+            PrevKey key{backend_label, backend_result.ctx_size, backend_result.backend_args, scenario.scenario_name};
             auto it = prev_map.find(key);
 
             BenchComparisonDelta delta;
             delta.backend = backend_label;
+            delta.ctx_size = backend_result.ctx_size;
+            delta.backend_args = backend_result.backend_args;
             delta.scenario = scenario.scenario_name;
 
             if (it != prev_map.end()) {
@@ -830,12 +868,12 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
 
                 delta.ttft_pct_change = (prev_ttft > 0) ? ((curr_ttft - prev_ttft) / prev_ttft * 100.0) : 0.0;
                 delta.tps_pct_change = (prev_tps > 0) ? ((curr_tps - prev_tps) / prev_tps * 100.0) : 0.0;
-                delta.vram_gb_change = (prev_vram >= 0 && curr_vram >= 0) ? (curr_vram - prev_vram) : -1.0;
+                delta.vram_gb_change = (prev_vram >= 0 && curr_vram >= 0) ? std::optional<double>(curr_vram - prev_vram) : std::nullopt;
             } else {
                 delta.status = "new";
                 delta.ttft_pct_change = 0.0;
                 delta.tps_pct_change = 0.0;
-                delta.vram_gb_change = -1.0;
+                delta.vram_gb_change = std::nullopt;
             }
 
             deltas.push_back(delta);
@@ -847,11 +885,13 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
         if (matched_prev.find(prev_key) == matched_prev.end()) {
             BenchComparisonDelta delta;
             delta.backend = prev_key.backend;
+            delta.ctx_size = prev_key.ctx_size;
+            delta.backend_args = prev_key.backend_args;
             delta.scenario = prev_key.scenario;
             delta.status = "removed";
             delta.ttft_pct_change = 0.0;
             delta.tps_pct_change = 0.0;
-            delta.vram_gb_change = -1.0;
+            delta.vram_gb_change = std::nullopt;
             deltas.push_back(delta);
         }
     }
@@ -870,15 +910,18 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
     std::cout << "Current:  " << get_timestamp_iso() << std::endl;
     std::cout << std::string(100, '=') << std::endl;
 
-    // Group by backend
+    // Group by backend + ctx_size + backend_args
     std::map<std::string, std::vector<const BenchComparisonDelta*>> by_backend;
     for (const auto& d : deltas) {
-        by_backend[d.backend].push_back(&d);
+        std::string label = d.backend;
+        if (d.ctx_size > 0) label += " (ctx=" + std::to_string(d.ctx_size) + ")";
+        if (!d.backend_args.empty()) label += " args=[" + d.backend_args + "]";
+        by_backend[label].push_back(&d);
     }
 
-    for (const auto& [backend, backend_deltas] : by_backend) {
+    for (const auto& [label, backend_deltas] : by_backend) {
         std::cout << std::endl;
-        std::cout << "Backend: " << backend << std::endl;
+        std::cout << "Backend: " << label << std::endl;
         std::cout << std::string(80, '-') << std::endl;
         std::cout << std::left << std::setw(22) << "Scenario"
                   << std::setw(14) << "TTFT change"
@@ -925,10 +968,13 @@ json build_comparison_json(const std::vector<BenchBackendResult>& results,
     for (const auto& d : deltas) {
         json d_json;
         d_json["backend"] = d.backend;
+        d_json["ctx_size"] = d.ctx_size;
+        d_json["backend_args"] = d.backend_args;
         d_json["scenario"] = d.scenario;
         d_json["ttft_pct_change"] = d.ttft_pct_change;
         d_json["tps_pct_change"] = d.tps_pct_change;
-        d_json["vram_gb_change"] = d.vram_gb_change;
+        if (d.vram_gb_change.has_value()) d_json["vram_gb_change"] = *d.vram_gb_change;
+        else d_json["vram_gb_change"] = nullptr;
         d_json["status"] = d.status;
         comparison_json.push_back(d_json);
     }

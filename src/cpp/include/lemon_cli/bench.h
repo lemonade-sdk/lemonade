@@ -2,6 +2,7 @@
 #define LEMON_CLI_BENCH_H
 
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -37,12 +38,14 @@ struct BenchRunResult {
     double total_time_ms = 0.0;
     double vram_gb = -1.0;      // -1 means not available
     double memory_gb = -1.0;    // -1 means not available
+    bool success = true;        // false if the run failed (exception, HTTP error, etc.)
 };
 
 struct BenchScenarioResult {
     std::string scenario_name;
     std::string category;
     std::vector<BenchRunResult> runs;
+    int failed_runs = 0;        // number of runs that failed and were excluded from stats
 
     double ttft_mean_ms() const;
     double ttft_min_ms() const;
@@ -220,10 +223,12 @@ json to_json(const std::vector<BenchBackendResult>& results,
 
 struct BenchComparisonDelta {
     std::string backend;
+    int ctx_size = 0;
+    std::string backend_args;
     std::string scenario;
     double ttft_pct_change;    // Positive = slower, negative = faster
     double tps_pct_change;     // Positive = faster, negative = slower
-    double vram_gb_change;     // Positive = more VRAM used
+    std::optional<double> vram_gb_change; // Positive = more VRAM used, nullopt = no data
     std::string status;        // "matched", "new", "removed"
 };
 
