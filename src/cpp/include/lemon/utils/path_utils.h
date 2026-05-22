@@ -116,7 +116,8 @@ std::string get_hf_cache_dir();
  * Returns a per-user runtime directory for lemonade's PID/lock/log files.
  * On Unix, uses $XDG_RUNTIME_DIR/lemonade when $XDG_RUNTIME_DIR is set,
  * exists, and is writable (creates the subdirectory if needed).
- * Falls back to /tmp when XDG_RUNTIME_DIR is unset or unusable (e.g. CI).
+ * Falls back to the system temporary directory when XDG_RUNTIME_DIR is
+ * unset or unusable (e.g. CI).
  * On Windows, returns the system temp directory.
  */
 std::string get_runtime_dir();

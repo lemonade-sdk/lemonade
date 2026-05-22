@@ -8,6 +8,7 @@ based on the current wrapped server and backend.
 
 import os
 import platform
+import tempfile
 
 
 def _workspace_root():
@@ -82,7 +83,7 @@ def get_hf_cache_dir():
     if platform.system() == "Windows":
         userprofile = os.environ.get("USERPROFILE", "C:\\")
         return os.path.join(userprofile, ".cache", "huggingface", "hub")
-    home = os.environ.get("HOME", "/tmp")
+    home = os.environ.get("HOME", tempfile.gettempdir())
     return os.path.join(home, ".cache", "huggingface", "hub")
 
 
@@ -91,7 +92,7 @@ def get_default_hf_cache_dir():
     if platform.system() == "Windows":
         userprofile = os.environ.get("USERPROFILE", "C:\\")
         return os.path.join(userprofile, ".cache", "huggingface", "hub")
-    home = os.environ.get("HOME", "/tmp")
+    home = os.environ.get("HOME", tempfile.gettempdir())
     return os.path.join(home, ".cache", "huggingface", "hub")
 
 

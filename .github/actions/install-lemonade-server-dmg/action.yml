@@ -84,7 +84,7 @@ runs:
       shell: bash
       run: |
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
-        LOG_FILE="/tmp/lemond.log"
+        LOG_FILE="$RUNNER_TEMP/lemond.log"
 
         # The .pkg postflight script starts the server via launchd.
         # Give it a few seconds to come up before checking.

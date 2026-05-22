@@ -367,7 +367,12 @@ std::string default_hf_cache_dir() {
     if (!home.empty()) {
         return home + "/.cache/huggingface/hub";
     }
-    return "/tmp/.cache/huggingface/hub";
+    std::error_code ec;
+    fs::path temp_dir = fs::temp_directory_path(ec);
+    if (!ec && !temp_dir.empty()) {
+        return path_to_utf8(temp_dir / ".cache" / "huggingface" / "hub");
+    }
+    return ".cache/huggingface/hub";
 #endif
 }
 
@@ -428,8 +433,19 @@ std::string get_runtime_dir() {
             }
         }
     }
-    // Fallback: /tmp for CI runners and systems without XDG session support
-    return "/tmp";
+    std::error_code ec;
+    fs::path temp_dir = fs::temp_directory_path(ec);
+    if (!ec && !temp_dir.empty()) {
+        fs::path lemon_dir = temp_dir / "lemonade";
+        ec.clear();
+        fs::create_directory(lemon_dir, ec);
+        std::error_code ec2;
+        if (!ec || fs::is_directory(lemon_dir, ec2)) {
+            return lemon_dir.string();
+        }
+        return temp_dir.string();
+    }
+    return ".";
 #endif
 }
 

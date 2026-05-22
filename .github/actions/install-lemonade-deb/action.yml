@@ -100,7 +100,7 @@ runs:
         EXTRACT_PATH="${{ inputs.extract-path }}"
         SERVER_BIN="$EXTRACT_PATH/usr/bin/lemond"
         CACHE_DIR="./"
-        LOG_FILE="/tmp/lemonade-server.log"
+        LOG_FILE="$RUNNER_TEMP/lemonade-server.log"
 
         echo "Starting lemonade server with cache dir $CACHE_DIR (logging to $LOG_FILE)..."
         "$SERVER_BIN" "$CACHE_DIR" > "$LOG_FILE" 2>&1 &
