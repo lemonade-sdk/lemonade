@@ -26,7 +26,7 @@ struct BenchScenario {
     std::string category;
     std::vector<json> messages;  // Chat messages (system + user/assistant turns)
     int max_tokens;
-    int warmup_runs = 1;
+    int warmup_runs = 0;
     int measurement_runs = 3;
 };
 
@@ -133,13 +133,19 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const BenchScenario& scenario,
                                 bool memory_tracking);
 
-// Run a full scenario (warmup + measurement runs)
+// Run a full scenario (warmup + measurement runs).
+// When reload=true, unloads+loads the model before each measurement run to clear prompt cache.
 BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& model,
                                  const BenchScenario& scenario,
                                  int warmup,
                                  int runs,
-                                 bool memory_tracking);
+                                 bool memory_tracking,
+                                 bool reload,
+                                 const std::string& recipe,
+                                 const std::string& backend,
+                                 int ctx_size,
+                                 const std::string& backend_args);
 
 // ============================================================
 // CLI Options (raw values parsed by CLI11 in main.cpp)
@@ -149,13 +155,14 @@ struct BenchCliOptions {
     std::vector<std::string> backends;
     std::vector<int> ctx_sizes;
     int runs = 3;
-    int warmup = 1;
+    int warmup = 0;
     std::vector<std::string> scenario_names;
     std::string scenario_file;
     std::string scenario_dir;
     bool json_output = false;
     bool auto_pull = false;
     bool no_memory = false;
+    bool no_reload = false;  // disable reload between runs
     std::string compare_file;
     // Backend-specific custom args (repeatable for multiple comparisons)
     std::vector<std::string> llamacpp_args;
@@ -173,7 +180,7 @@ struct BenchConfig {
     std::string model;
     std::vector<std::string> backends;
     std::vector<int> ctx_sizes;
-    int warmup_runs = 1;
+    int warmup_runs = 0;
     int measurement_runs = 3;
     bool json_output = false;
     std::string output_file;
@@ -182,6 +189,7 @@ struct BenchConfig {
     std::string scenario_dir;
     bool auto_pull = false;
     bool memory_tracking = true;
+    bool reload = true;  // unload+reload model between runs to clear prompt cache
     std::string compare_file;
     // Backend-specific custom args (keyed by recipe name: "llamacpp", "flm", "vllm", "sd-cpp", "whispercpp")
     // Each recipe can have multiple arg sets; all combinations are benchmarked.

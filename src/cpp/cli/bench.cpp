@@ -233,7 +233,7 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         scenario.messages = item["messages"].get<std::vector<json>>();
 
         scenario.max_tokens = item.value("max_tokens", 128);
-        scenario.warmup_runs = item.value("warmup_runs", 1);
+        scenario.warmup_runs = item.value("warmup_runs", 0);
         scenario.measurement_runs = item.value("measurement_runs", 3);
 
         // Handle context expansion for long-context scenarios
@@ -569,6 +569,15 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
         result.memory_gb = mem_after;
     }
 
+    // Validate: if all key metrics are zero the run failed server-side
+    // (e.g. context size mismatch, model error). VRAM is excluded — it's
+    // always reported correctly even for failed runs.
+    if (result.ttft_ms <= 0 && result.tps <= 0 &&
+        result.input_tokens <= 0 && result.output_tokens <= 0) {
+        std::cerr << "    Benchmark run failed (all metrics zero)" << std::endl;
+        return result;  // success stays false
+    }
+
     result.success = true;
     return result;
 }
@@ -578,13 +587,36 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const BenchScenario& scenario,
                                  int warmup,
                                  int runs,
-                                 bool memory_tracking) {
+                                 bool memory_tracking,
+                                 bool reload,
+                                 const std::string& recipe,
+                                 const std::string& backend,
+                                 int ctx_size,
+                                 const std::string& backend_args) {
     BenchScenarioResult result;
     result.scenario_name = scenario.name;
     result.category = scenario.category;
 
+    // Load model (once if not reloading, or before each run if reloading)
+    bool loaded = false;
+    if (!reload) {
+        unload_all_models(client);
+        loaded = load_model_for_backend(client, model, recipe, backend, ctx_size, backend_args);
+        if (!loaded) {
+            std::cerr << "    Model failed to load, skipping scenario." << std::endl;
+            return result;
+        }
+    }
+
     // Warmup runs
     for (int i = 0; i < warmup; ++i) {
+        if (reload) {
+            unload_all_models(client);
+            if (!load_model_for_backend(client, model, recipe, backend, ctx_size, backend_args)) {
+                result.failed_runs++;
+                continue;
+            }
+        }
         std::cout << "    Warmup " << (i + 1) << "/" << warmup << "..." << std::flush;
         run_single_bench(client, model, scenario, false);
         std::cout << " done" << std::endl;
@@ -592,6 +624,15 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
 
     // Measurement runs
     for (int i = 0; i < runs; ++i) {
+        if (reload) {
+            unload_all_models(client);
+            if (!load_model_for_backend(client, model, recipe, backend, ctx_size, backend_args)) {
+                std::cerr << "    Run " << (i + 1) << "/" << runs << "... FAILED to load model" << std::endl;
+                result.failed_runs++;
+                continue;
+            }
+        }
+
         std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
         auto run_result = run_single_bench(client, model, scenario, memory_tracking);
         if (!run_result.success) {
@@ -1091,16 +1132,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 tmp.backend_args = recipe_args;
                 std::cout << "\n=== " << tmp.label() << " ===" << std::endl;
 
-                // Unload all models before loading
-                unload_all_models(client);
-
-                // Load model for this backend
-                if (!load_model_for_backend(client, config.model, recipe, backend, ctx_size, recipe_args)) {
-                    std::cerr << "Warning: Skipping " << recipe << "/" << backend
-                              << " - model failed to load." << std::endl;
-                    continue;
-                }
-
                 BenchBackendResult backend_result;
                 backend_result.recipe = recipe;
                 backend_result.backend = backend;
@@ -1118,11 +1149,14 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                     if (config.measurement_runs > 0) runs = config.measurement_runs;
 
                     auto scenario_result = run_scenario(client, config.model, scenario, warmup, runs,
-                                                        config.memory_tracking);
+                                                        config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args);
                     backend_result.scenarios.push_back(scenario_result);
                 }
 
-                all_results.push_back(backend_result);
+                // Only add results if at least one scenario ran
+                if (!backend_result.scenarios.empty()) {
+                    all_results.push_back(backend_result);
+                }
             }
         }
     }
@@ -1204,7 +1238,7 @@ CLI::App* register_bench_command(CLI::App& parent,
         ->type_name("SIZE")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--runs", opts.runs, "Number of measurement runs per scenario (default: 3)")->type_name("N");
-    cmd->add_option("--warmup", opts.warmup, "Number of warmup runs per scenario (default: 1)")->type_name("N");
+    cmd->add_option("--warmup", opts.warmup, "Number of warmup runs per scenario (default: 0)")->type_name("N");
     cmd->add_option("--scenarios", opts.scenario_names,
         "Scenario name(s) to run. Repeat for multiple. Default: all loaded scenarios.")
         ->type_name("NAME")
@@ -1216,6 +1250,7 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--compare", opts.compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
     cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
     cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
+    cmd->add_flag("--no-reload", opts.no_reload, "Skip model reload between scenarios (faster but prompt cache may skew results)");
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1249,6 +1284,7 @@ BenchConfig build_bench_config(const std::string& model,
     config.scenario_dir = cli.scenario_dir;
     config.auto_pull = cli.auto_pull;
     config.memory_tracking = !cli.no_memory;
+    config.reload = !cli.no_reload;
     config.compare_file = cli.compare_file;
     config.scenario_names = cli.scenario_names;
     // Populate backend-specific args map (only non-empty values)
