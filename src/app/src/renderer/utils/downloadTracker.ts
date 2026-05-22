@@ -3,6 +3,7 @@ import { serverFetch } from './serverConfig';
 
 const ACTIVE_SERVER_DOWNLOAD_POLL_INTERVAL_MS = 2000;
 const TERMINAL_DOWNLOAD_VISIBILITY_MS = 30000;
+const SPEED_SMOOTHING_ALPHA = 0.35;
 
 export interface DownloadProgressEvent {
   id?: string;
@@ -258,15 +259,20 @@ class DownloadTracker {
 
     if ((progress.status && progress.status !== 'downloading') || progress.complete) {
       speedBytesPerSecond = 0;
+    } else if (baselineChanged) {
+      speedBytesPerSecond = 0;
     } else if (
-      !baselineChanged &&
       typeof previousSpeedSampleBytes === 'number' &&
       typeof previousSpeedSampleTime === 'number' &&
       now > previousSpeedSampleTime
     ) {
       const elapsedSeconds = (now - previousSpeedSampleTime) / 1000;
       const deltaBytes = Math.max(0, speedEligibleBytes - previousSpeedSampleBytes);
-      speedBytesPerSecond = elapsedSeconds > 0 ? deltaBytes / elapsedSeconds : 0;
+      const instantSpeedBytesPerSecond = elapsedSeconds > 0 ? deltaBytes / elapsedSeconds : 0;
+      speedBytesPerSecond = speedBytesPerSecond > 0
+        ? (speedBytesPerSecond * (1 - SPEED_SMOOTHING_ALPHA)) +
+          (instantSpeedBytesPerSecond * SPEED_SMOOTHING_ALPHA)
+        : instantSpeedBytesPerSecond;
     }
 
     const shouldReleaseLocalOwner = progress.status != null &&
@@ -452,6 +458,7 @@ class DownloadTracker {
       status: 'completed',
       running: false,
       percent: 100,
+      speedBytesPerSecond: 0,
       updatedAt: Date.now(),
     };
 
@@ -482,6 +489,7 @@ class DownloadTracker {
       status: 'error',
       running: false,
       error,
+      speedBytesPerSecond: 0,
       updatedAt: Date.now(),
     };
 
@@ -509,6 +517,7 @@ class DownloadTracker {
       status: 'paused',
       running: abort ? false : download.running,
       abortController: abort ? undefined : download.abortController,
+      speedBytesPerSecond: 0,
       updatedAt: Date.now(),
     };
 
