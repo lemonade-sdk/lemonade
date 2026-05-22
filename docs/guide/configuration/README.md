@@ -262,6 +262,24 @@ lemond [cache_dir] [--port PORT] [--host HOST]
 - **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
 - **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
 
+## Environment Variables
+
+Lemonade reads a small set of environment variables on **every** launch. They cover API-key authentication and Hugging Face cache/auth.
+
+> **Server settings are not configured through environment variables.** Port, host, backends, and the other `config.json` settings are read from `config.json` only — there is no `LEMONADE_*` override for them. To change a setting, use `lemonade config set` (recommended), edit `config.json`, or use the `lemond --port`/`--host` fallback. See [Editing Configuration](#editing-configuration).
+
+| Environment variable | Purpose |
+|----------------------|---------|
+| `LEMONADE_API_KEY` | API key required on regular API endpoints. See [API Key and Security](#api-key-and-security). |
+| `LEMONADE_ADMIN_API_KEY` | Admin API key that also unlocks internal endpoints; takes precedence over `LEMONADE_API_KEY`. See [API Key and Security](#api-key-and-security). |
+| `HF_HUB_CACHE` | Direct path to the Hugging Face hub cache. Used to locate downloaded models when `models_dir` is `"auto"`. |
+| `HF_HOME` | Base Hugging Face directory; the cache is taken to be `$HF_HOME/hub`. Used when `HF_HUB_CACHE` is unset and `models_dir` is `"auto"`. |
+| `HF_TOKEN` | Hugging Face access token used to download gated or private model repositories. |
+
+> When `models_dir` is `"auto"`, the model cache is resolved in this order: `HF_HUB_CACHE`, then `$HF_HOME/hub`, then the platform default (`~/.cache/huggingface/hub`). Setting `models_dir` to an explicit path in `config.json` overrides all three.
+
+> The `lemonade` CLI client (not `lemond`) additionally reads `LEMONADE_HOST`, `LEMONADE_PORT`, and `LEMONADE_API_KEY`/`LEMONADE_ADMIN_API_KEY` at runtime to choose which server to connect to. See [CLI → Global Options](../cli.md#global-options).
+
 ## API Key and Security
 
 ### Regular API Key
