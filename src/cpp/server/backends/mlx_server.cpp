@@ -119,7 +119,11 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
                 SystemInfo::get_unsupported_backend_error("lemon-mlx", "rocm")
             );
         }
-        params.filename = "mlx-engine-" + version + "-ubuntu-rocm-stable-" + arch + "-x64.zip";
+        if (version.find("-preview") != std::string::npos) {
+            params.filename = "mlx-engine-" + version + "-ubuntu-rocm-preview-" + arch + "-x64.zip";
+        } else {
+            params.filename = "mlx-engine-" + version + "-ubuntu-rocm-x64.zip";
+        }
 #else
         throw std::runtime_error("ROCm lemon-mlx is only supported on Linux");
 #endif
