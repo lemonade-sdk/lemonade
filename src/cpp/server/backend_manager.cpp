@@ -10,6 +10,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <functional>
+#include <map>
+#include <vector>
 #include <thread>
 #include <lemon/utils/aixlog.hpp>
 
@@ -170,6 +173,24 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
     }
 
     return true;
+}
+
+bool is_therock_installed_for_current_arch(const json& backend_versions) {
+    if (!backend_versions.contains("therock") ||
+        !backend_versions["therock"].contains("version")) {
+        return false;
+    }
+
+    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+    if (rocm_arch.empty()) {
+        return false;
+    }
+
+    const std::string version = backend_versions["therock"]["version"].get<std::string>();
+    const fs::path version_file =
+        fs::path(backends::BackendUtils::get_therock_install_dir(rocm_arch, version)) / "version.txt";
+
+    return read_version_file(version_file) == version;
 }
 
 void install_therock_if_needed(const std::string& os, const json& backend_versions,
@@ -425,34 +446,169 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
-    // Check if we need to install additional runtime components after the main backend
-    bool needs_therock = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                         resolved_backend == "rocm-stable" &&
-                         will_install_therock(get_current_os(), backend_versions_);
+    // Check if we need to download additional runtime components after the main backend.
+    // `will_install_therock` intentionally answers whether TheRock is applicable
+    // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
+    // Do that here before inflating the install to a multi-file UX flow.
+    const bool needs_therock_download = (recipe == "llamacpp" || recipe == "sd-cpp") &&
+                                        resolved_backend == "rocm-stable" &&
+                                        will_install_therock(get_current_os(), backend_versions_) &&
+                                        !is_therock_installed_for_current_arch(backend_versions_);
 
-    // Wrap the progress callback to adjust file indices if runtime download follows
-    DownloadProgressCallback wrapped_progress_cb;
-    if (progress_cb && (needs_therock)) {
-        wrapped_progress_cb = [progress_cb](const DownloadProgress& p) -> bool {
-            DownloadProgress adjusted = p;
-            // Adjust to indicate this is file 1 of 2
-            adjusted.file_index = 1;
-            adjusted.total_files = 2;
-            // Suppress the completion event - we'll send it after the runtime download
-            if (p.complete) {
-                adjusted.complete = false;
+    struct RuntimeInstallStep {
+        std::string name;
+        std::function<void(DownloadProgressCallback)> install;
+    };
+
+    std::vector<RuntimeInstallStep> runtime_steps;
+    if (needs_therock_download) {
+        const std::string os = get_current_os();
+        runtime_steps.push_back({
+            "TheRock runtime",
+            [this, os](DownloadProgressCallback runtime_progress_cb) {
+                install_therock_if_needed(os, backend_versions_, runtime_progress_cb);
             }
-            return progress_cb(adjusted);
-        };
-    } else {
-        wrapped_progress_cb = progress_cb;
+        });
     }
 
-    backends::BackendUtils::install_from_github(
-        *spec, params.version, params.repo, params.filename, resolved_backend, wrapped_progress_cb);
+    // Track known logical file sizes. total_download_size is only forwarded
+    // once it is the real total across every logical file. This prevents a
+    // runtime-follow-up install from inheriting a backend-only total size.
+    std::map<int, size_t> logical_file_sizes;
+    auto known_total_download_size = [&logical_file_sizes](int total_files) -> size_t {
+        size_t total = 0;
+        for (int index = 1; index <= total_files; ++index) {
+            auto it = logical_file_sizes.find(index);
+            if (it == logical_file_sizes.end() || it->second == 0) {
+                return 0;
+            }
+            total += it->second;
+        }
+        return total;
+    };
 
-    if (needs_therock) {
-        install_therock_if_needed(get_current_os(), backend_versions_, progress_cb);
+    auto normalize_progress = [&logical_file_sizes, &known_total_download_size](
+                                  const DownloadProgress& p,
+                                  int logical_file_index,
+                                  int logical_total_files,
+                                  bool allow_complete) -> DownloadProgress {
+        DownloadProgress adjusted = p;
+        adjusted.file_index = logical_file_index;
+        adjusted.total_files = logical_total_files;
+
+        if (adjusted.bytes_total > 0) {
+            logical_file_sizes[logical_file_index] = adjusted.bytes_total;
+        }
+
+        // Only set total_download_size when it is the true full total.
+        adjusted.total_download_size = known_total_download_size(logical_total_files);
+
+        if (!allow_complete && adjusted.complete) {
+            adjusted.complete = false;
+        }
+
+        return adjusted;
+    };
+
+    int backend_total_files = 1;
+    DownloadProgressCallback backend_progress_cb = progress_cb;
+    if (progress_cb && !runtime_steps.empty()) {
+        const int runtime_file_count = static_cast<int>(runtime_steps.size());
+        backend_progress_cb = [progress_cb,
+                               runtime_file_count,
+                               &backend_total_files,
+                               &normalize_progress](const DownloadProgress& p) -> bool {
+            backend_total_files = p.total_files > 0 ? p.total_files : 1;
+            const int logical_file_index = p.file_index > 0 ? p.file_index : 1;
+            const int logical_total_files = backend_total_files + runtime_file_count;
+            return progress_cb(normalize_progress(
+                p, logical_file_index, logical_total_files, /*allow_complete=*/false));
+        };
+    }
+
+    const std::string backend_install_dir =
+        backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
+    const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
+
+    bool completion_reported = false;
+
+    try {
+        backends::BackendUtils::install_from_github(
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+
+        const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
+        for (size_t i = 0; i < runtime_steps.size(); ++i) {
+            const int logical_file_index = backend_total_files + static_cast<int>(i) + 1;
+            const bool is_last_runtime_step = (i + 1 == runtime_steps.size());
+            bool runtime_reported_progress = false;
+            bool runtime_reported_completion = false;
+            DownloadProgress last_runtime_progress;
+
+            DownloadProgressCallback runtime_progress_cb;
+            if (progress_cb) {
+                runtime_progress_cb = [progress_cb,
+                                       logical_file_index,
+                                       logical_total_files,
+                                       is_last_runtime_step,
+                                       &completion_reported,
+                                       &runtime_reported_progress,
+                                       &runtime_reported_completion,
+                                       &last_runtime_progress,
+                                       &normalize_progress](const DownloadProgress& p) -> bool {
+                    runtime_reported_progress = true;
+                    DownloadProgress adjusted = normalize_progress(
+                        p, logical_file_index, logical_total_files, is_last_runtime_step);
+                    if (adjusted.complete) {
+                        runtime_reported_completion = true;
+                        completion_reported = true;
+                    }
+                    last_runtime_progress = adjusted;
+                    return progress_cb(adjusted);
+                };
+            }
+
+            runtime_steps[i].install(runtime_progress_cb);
+
+            if (!progress_cb) {
+                continue;
+            }
+
+            if (!runtime_reported_progress) {
+                DownloadProgress skipped;
+                skipped.file = runtime_steps[i].name;
+                skipped.file_index = logical_file_index;
+                skipped.total_files = logical_total_files;
+                skipped.percent = 100;
+                skipped.complete = is_last_runtime_step;
+                completion_reported = completion_reported || skipped.complete;
+                progress_cb(skipped);
+            } else if (is_last_runtime_step && !runtime_reported_completion) {
+                last_runtime_progress.file_index = logical_file_index;
+                last_runtime_progress.total_files = logical_total_files;
+                last_runtime_progress.percent = 100;
+                last_runtime_progress.complete = true;
+                completion_reported = true;
+                progress_cb(last_runtime_progress);
+            }
+        }
+
+        if (progress_cb && !runtime_steps.empty() && !completion_reported) {
+            DownloadProgress complete_progress;
+            complete_progress.file = runtime_steps.back().name;
+            complete_progress.file_index = logical_total_files;
+            complete_progress.total_files = logical_total_files;
+            complete_progress.percent = 100;
+            complete_progress.complete = true;
+            progress_cb(complete_progress);
+        }
+    } catch (...) {
+        // If the backend was newly created and a required runtime fails, roll
+        // back the backend so the status does not look ready with missing deps.
+        if (!backend_install_dir_existed_before) {
+            std::error_code cleanup_ec;
+            fs::remove_all(backend_install_dir, cleanup_ec);
+        }
+        throw;
     }
 }
 

@@ -1,4 +1,5 @@
 import { downloadTracker } from './downloadTracker';
+import type { DownloadProgressEvent } from './downloadTracker';
 import { serverFetch } from './serverConfig';
 import { fetchSystemInfoData, Recipes } from './systemData';
 import { ModelsData } from './modelData';
@@ -26,8 +27,10 @@ function extractServerErrorMessage(errorText: string, fallback: string): string 
 export interface ModelRegistrationData {
   checkpoint?: string;
   checkpoints?: Record<string, string>;
+  components?: string[];
   recipe: string;
   mmproj?: string;
+  labels?: string[];
   reasoning?: boolean;
   vision?: boolean;
   embedding?: boolean;
@@ -50,6 +53,264 @@ export class DownloadAbortError extends Error {
 /** @deprecated Use DownloadAbortError instead */
 export const PullModelAbortError = DownloadAbortError;
 
+const SERVER_DOWNLOAD_POLL_INTERVAL_MS = 500;
+const SERVER_DOWNLOAD_SNAPSHOT_ERROR_TIMEOUT_MS = 300_000;
+
+export async function controlDownload(downloadId: string, action: 'pause' | 'cancel' | 'remove'): Promise<DownloadProgressEvent | undefined> {
+  const response = await serverFetch('/downloads/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: downloadId, action }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(extractServerErrorMessage(errorText, response.statusText));
+  }
+
+  if (action === 'remove') return undefined;
+  return await response.json().catch(() => undefined);
+}
+
+function serverSnapshotMatchesDownloadId(item: DownloadProgressEvent, downloadId: string): boolean {
+  return item.id === downloadId ||
+    (!item.id && item.model_name != null && downloadId === `model:${item.model_name}`) ||
+    (!item.id && item.model_name != null && downloadId === `backend:${item.model_name}`);
+}
+
+export async function waitForDownloadStatus(
+  downloadId: string,
+  statuses: Array<'paused' | 'cancelled' | 'completed' | 'error'>,
+  timeoutMs = 15000,
+  allowMissing = true,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await serverFetch('/downloads');
+      if (response.ok) {
+        const downloads = await response.json();
+        const download = Array.isArray(downloads)
+          ? downloads.find((item: DownloadProgressEvent) => serverSnapshotMatchesDownloadId(item, downloadId))
+          : undefined;
+        if (!download) {
+          if (allowMissing) return;
+        } else if (statuses.includes(download.status) && download.running !== true) {
+          return;
+        }
+      }
+    } catch {
+      // Keep waiting. This is only used as a cleanup barrier.
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out waiting for download ${downloadId} to reach ${statuses.join(', ')}`);
+}
+
+
+
+async function isModelDownloadedOnServer(modelName: string): Promise<boolean> {
+  try {
+    const response = await serverFetch('/models?show_all=true', { cache: 'no-store' });
+    if (!response.ok) return false;
+
+    const data = await response.json();
+    const modelList = Array.isArray(data) ? data : data.data || [];
+    const model = modelList.find((m: any) => m.id === modelName || m.name === modelName);
+    return model?.downloaded === true;
+  } catch {
+    return false;
+  }
+}
+
+async function isBackendInstalledOnServer(recipe: string, backend: string): Promise<boolean> {
+  try {
+    const systemData = await fetchSystemInfoData();
+    const backendState = systemData.info?.recipes?.[recipe]?.backends?.[backend]?.state;
+    return backendState === 'installed' || backendState === 'update_available';
+  } catch {
+    return false;
+  }
+}
+
+async function waitForServerDownloadTerminal(
+  downloadId: string,
+  modelName: string,
+  abortController: AbortController,
+  getAbortReason: () => 'paused' | 'cancelled' | undefined,
+  initialJobSeen = false,
+): Promise<void> {
+  let sawServerJob = initialJobSeen;
+  let consecutiveMissingSnapshots = 0;
+  let snapshotErrorsStartedAt: number | undefined;
+
+  while (true) {
+    if (abortController.signal.aborted) {
+      throw new DownloadAbortError(getAbortReason() ?? 'paused');
+    }
+
+    let snapshot: DownloadProgressEvent | undefined;
+    try {
+      snapshot = (await downloadTracker.hydrateFromServer({ throwOnError: true }))
+        .find(item => item.id === downloadId || item.model_name === modelName);
+    } catch (error) {
+      const now = Date.now();
+      snapshotErrorsStartedAt ??= now;
+      if (now - snapshotErrorsStartedAt >= SERVER_DOWNLOAD_SNAPSHOT_ERROR_TIMEOUT_MS) {
+        throw new Error(`Timed out refreshing server download state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      console.warn('Failed to refresh server download snapshot; keeping current state:', error);
+      await new Promise(resolve => setTimeout(resolve, SERVER_DOWNLOAD_POLL_INTERVAL_MS));
+      continue;
+    }
+
+    snapshotErrorsStartedAt = undefined;
+
+    if (!snapshot) {
+      if (sawServerJob) {
+        consecutiveMissingSnapshots += 1;
+        if (consecutiveMissingSnapshots >= 10) {
+          // Terminal jobs are intentionally short-lived server-side. If a tab was
+          // asleep or briefly disconnected, a successful job may have expired
+          // before this waiter saw its completed snapshot. Verify the model state
+          // before treating a missing row as cancellation.
+          if (await isModelDownloadedOnServer(modelName)) {
+            downloadTracker.completeDownload(downloadId);
+            window.dispatchEvent(new CustomEvent('modelsUpdated'));
+            return;
+          }
+          downloadTracker.removeDownload(downloadId);
+          throw new DownloadAbortError(getAbortReason() ?? 'cancelled');
+        }
+      }
+    } else {
+      sawServerJob = true;
+      consecutiveMissingSnapshots = 0;
+      const stopped = snapshot.running !== true;
+      if (snapshot.status === 'completed' && stopped) return;
+      if (snapshot.status === 'paused' && stopped) throw new DownloadAbortError('paused');
+      if (snapshot.status === 'cancelled' && stopped) throw new DownloadAbortError('cancelled');
+      if (snapshot.status === 'error' && stopped) throw new Error(snapshot.error || 'Unknown download error');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, SERVER_DOWNLOAD_POLL_INTERVAL_MS));
+  }
+}
+
+
+async function waitForBackendDownloadTerminal(
+  downloadId: string,
+  displayName: string,
+  recipe: string,
+  backend: string,
+  abortController: AbortController,
+): Promise<void> {
+  let sawServerJob = false;
+  let consecutiveMissingSnapshots = 0;
+  let snapshotErrorsStartedAt: number | undefined;
+
+  while (true) {
+    if (abortController.signal.aborted) {
+      throw new DownloadAbortError('paused');
+    }
+
+    let snapshot: DownloadProgressEvent | undefined;
+    try {
+      snapshot = (await downloadTracker.hydrateFromServer({ throwOnError: true }))
+        .find(item => item.id === downloadId || item.model_name === displayName);
+    } catch (error) {
+      const now = Date.now();
+      snapshotErrorsStartedAt ??= now;
+      if (now - snapshotErrorsStartedAt >= SERVER_DOWNLOAD_SNAPSHOT_ERROR_TIMEOUT_MS) {
+        throw new Error(`Timed out refreshing backend download state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      console.warn('Failed to refresh backend download snapshot; keeping current state:', error);
+      await new Promise(resolve => setTimeout(resolve, SERVER_DOWNLOAD_POLL_INTERVAL_MS));
+      continue;
+    }
+
+    snapshotErrorsStartedAt = undefined;
+
+    if (!snapshot) {
+      if (sawServerJob) {
+        consecutiveMissingSnapshots += 1;
+        if (consecutiveMissingSnapshots >= 10) {
+          if (await isBackendInstalledOnServer(recipe, backend)) {
+            downloadTracker.completeDownload(downloadId);
+            window.dispatchEvent(new CustomEvent('backendsUpdated'));
+            return;
+          }
+          downloadTracker.removeDownload(downloadId);
+          throw new DownloadAbortError('cancelled');
+        }
+      }
+    } else {
+      sawServerJob = true;
+      consecutiveMissingSnapshots = 0;
+      const stopped = snapshot.running !== true;
+      if (snapshot.status === 'completed' && stopped) return;
+      if (snapshot.status === 'paused' && stopped) throw new DownloadAbortError('paused');
+      if (snapshot.status === 'cancelled' && stopped) throw new DownloadAbortError('cancelled');
+      if (snapshot.status === 'error' && stopped) throw new Error(snapshot.error || 'Unknown backend install error');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, SERVER_DOWNLOAD_POLL_INTERVAL_MS));
+  }
+}
+
+async function consumeLegacyPullStream(response: Response, downloadId: string): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEventType = 'progress';
+  let downloadCompleted = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          currentEventType = line.substring(6).trim();
+        } else if (line.startsWith('data:')) {
+          try {
+            const data = JSON.parse(line.substring(5).trim());
+            if (currentEventType === 'progress') {
+              downloadTracker.updateProgress(downloadId, data);
+            } else if (currentEventType === 'complete') {
+              downloadTracker.completeDownload(downloadId);
+              downloadCompleted = true;
+            } else if (currentEventType === 'error') {
+              throw new Error(data.error || 'Unknown download error');
+            }
+          } catch (parseError) {
+            if (!(parseError instanceof SyntaxError)) throw parseError;
+            console.error('Failed to parse SSE data:', line, parseError);
+          }
+        } else if (line.trim() === '') {
+          currentEventType = 'progress';
+        }
+      }
+    }
+  } catch (streamError) {
+    if (!downloadCompleted) throw streamError;
+  }
+
+  if (!downloadCompleted) {
+    downloadTracker.completeDownload(downloadId);
+  }
+}
+
 /**
  * Install a backend with Download Manager integration.
  * Calls POST /api/v1/install with SSE streaming and tracks progress.
@@ -62,42 +323,21 @@ export async function installBackend(
 ): Promise<string | void> {
   const displayName = `${recipe}:${backend}`;
   const abortController = new AbortController();
+  const downloadId = downloadTracker.getStableDownloadId(displayName, 'backend');
 
-  let downloadId: string | undefined;
   if (showInDownloadManager) {
-    downloadId = downloadTracker.startDownload(displayName, abortController, 'backend');
-    window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName: displayName } }));
+    downloadTracker.startDownload(displayName, abortController, 'backend');
+    downloadTracker.startServerPolling();
+    window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName: displayName, downloadType: 'backend' } }));
   }
-
-  let isPaused = false;
-  let isCancelled = false;
-  let downloadCompleted = false;
-
-  // Listen for pause/cancel events from Download Manager UI
-  const handleCancel = (event: Event) => {
-    const detail = (event as CustomEvent).detail;
-    if (detail.modelName === displayName) {
-      isCancelled = true;
-      abortController.abort();
-    }
-  };
-  const handlePause = (event: Event) => {
-    const detail = (event as CustomEvent).detail;
-    if (detail.modelName === displayName) {
-      isPaused = true;
-      abortController.abort();
-    }
-  };
-
-  window.addEventListener('download:cancelled', handleCancel);
-  window.addEventListener('download:paused', handlePause);
 
   try {
     const response = await serverFetch('/install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipe, backend, stream: true }),
+      body: JSON.stringify({ recipe, backend, stream: true, subscribe: false }),
       signal: abortController.signal,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -105,114 +345,37 @@ export async function installBackend(
       throw new Error(`Failed: ${errorText || response.statusText}`);
     }
 
-    // Server returns JSON with an action URL when manual setup is needed
-    const contentType = response.headers.get('Content-Type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      if (data.action) {
-        if (downloadId) {
-          downloadTracker.completeDownload(downloadId);
-        }
-        window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: data.action } }));
-        return 'action';
+    const data = await response.json();
+    if (data.action) {
+      if (showInDownloadManager) {
+        downloadTracker.completeDownload(downloadId);
       }
+      window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: data.action } }));
+      return 'action';
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
+    if (showInDownloadManager) {
+      downloadTracker.applyServerDownload(data);
+      await waitForBackendDownloadTerminal(downloadId, displayName, recipe, backend, abortController);
+      // Backend completion is applied through the server snapshot; downloadTracker
+      // emits backendsUpdated once for backend jobs when the terminal snapshot arrives.
+    } else {
+      await waitForBackendDownloadTerminal(downloadId, displayName, recipe, backend, abortController);
     }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let currentEventType = 'progress';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('event:')) {
-            currentEventType = line.substring(6).trim();
-          } else if (line.startsWith('data:')) {
-            try {
-              const data = JSON.parse(line.substring(5).trim());
-
-              if (currentEventType === 'progress' && downloadId) {
-                downloadTracker.updateProgress(downloadId, data);
-              } else if (currentEventType === 'complete') {
-                if (downloadId) {
-                  downloadTracker.completeDownload(downloadId);
-                }
-                downloadCompleted = true;
-              } else if (currentEventType === 'error') {
-                const errorMsg = data.error || 'Unknown error';
-                if (downloadId) {
-                  downloadTracker.failDownload(downloadId, errorMsg);
-                }
-                throw new Error(errorMsg);
-              }
-            } catch (parseError) {
-              // Re-throw application errors (e.g. from 'error' events); only
-              // swallow JSON parse failures so the stream can continue.
-              if (!(parseError instanceof SyntaxError)) {
-                throw parseError;
-              }
-              console.error('Failed to parse SSE data:', line, parseError);
-            }
-          } else if (line.trim() === '') {
-            currentEventType = 'progress';
-          }
-        }
-      }
-    } catch (streamError) {
-      // If we already got the complete event, ignore stream errors
-      if (!downloadCompleted) {
-        throw streamError;
-      }
-    }
-
-    if (!downloadCompleted && downloadId) {
-      downloadTracker.completeDownload(downloadId);
-    }
-
-    // Notify system context so BackendManager updates its status
-    window.dispatchEvent(new CustomEvent('backendsUpdated'));
   } catch (error: any) {
-    // If download completed successfully, ignore any connection-close errors
-    if (downloadCompleted) {
-      window.dispatchEvent(new CustomEvent('backendsUpdated'));
-      return;
+    if (error instanceof DownloadAbortError) {
+      throw error;
     }
 
     if (error.name === 'AbortError') {
-      if (isPaused && downloadId) {
-        downloadTracker.pauseDownload(downloadId);
-        throw new DownloadAbortError('paused');
-      } else {
-        if (downloadId) {
-          downloadTracker.cancelDownload(downloadId);
-        }
-        // Signal that file handles are released so DownloadManager can clean up
-        window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
-          detail: { id: downloadId, modelName: displayName }
-        }));
-        throw new DownloadAbortError('cancelled');
-      }
-    } else {
-      if (downloadId) {
-        downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
-      }
-      throw error;
+      downloadTracker.pauseDownload(downloadId, false);
+      throw new DownloadAbortError('paused');
     }
-  } finally {
-    window.removeEventListener('download:cancelled', handleCancel);
-    window.removeEventListener('download:paused', handlePause);
+
+    if (showInDownloadManager) {
+      downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
+    }
+    throw error;
   }
 }
 
@@ -325,27 +488,26 @@ export async function pullModel(
 ): Promise<void> {
   const showInDownloadManager = options?.showInDownloadManager ?? true;
   const abortController = new AbortController();
+  const declaredTotalBytes = options?.declaredSizeGB
+    ? Math.round(options.declaredSizeGB * 1024 * 1024 * 1024)
+    : undefined;
+  const downloadId = downloadTracker.getStableDownloadId(modelName, 'model');
 
-  let downloadId: string | undefined;
   if (showInDownloadManager) {
-    const declaredTotalBytes = options?.declaredSizeGB
-      ? Math.round(options.declaredSizeGB * 1024 * 1024 * 1024)
-      : undefined;
-    downloadId = downloadTracker.startDownload(
+    downloadTracker.startDownload(
       modelName,
       abortController,
       'model',
       options?.collectionComponents,
       declaredTotalBytes,
     );
+    downloadTracker.startServerPolling();
     window.dispatchEvent(new CustomEvent('download:started', { detail: { modelName } }));
   }
 
-  let downloadCompleted = false;
   let isPaused = false;
   let isCancelled = false;
 
-  // Listen for pause/cancel events from Download Manager UI
   const handleCancel = (event: Event) => {
     const detail = (event as CustomEvent).detail;
     if (detail.modelName === modelName) {
@@ -353,6 +515,7 @@ export async function pullModel(
       abortController.abort();
     }
   };
+
   const handlePause = (event: Event) => {
     const detail = (event as CustomEvent).detail;
     if (detail.modelName === modelName) {
@@ -365,10 +528,13 @@ export async function pullModel(
   window.addEventListener('download:paused', handlePause);
 
   try {
-    // Build request body — include registration data for custom models
-    let requestBody: Record<string, unknown> = { model_name: modelName, stream: true };
+    const requestBody: Record<string, unknown> = {
+      model_name: modelName,
+      stream: true,
+      subscribe: false,
+    };
 
-    if(options?.registrationData) {
+    if (options?.registrationData) {
       Object.assign(requestBody, options.registrationData);
     }
 
@@ -377,6 +543,7 @@ export async function pullModel(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
       signal: abortController.signal,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -384,96 +551,48 @@ export async function pullModel(
       throw new Error(`Failed to download model: ${errorText || response.statusText}`);
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let currentEventType = 'progress';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('event:')) {
-            currentEventType = line.substring(6).trim();
-          } else if (line.startsWith('data:')) {
-            // Parse JSON separately so server errors aren't swallowed
-            let data;
-            try {
-              data = JSON.parse(line.substring(5).trim());
-            } catch {
-              console.error('Failed to parse SSE data:', line);
-              continue;
-            }
-
-            if (currentEventType === 'progress' && downloadId) {
-              downloadTracker.updateProgress(downloadId, data);
-            } else if (currentEventType === 'complete') {
-              if (downloadId) {
-                downloadTracker.completeDownload(downloadId);
-              }
-              downloadCompleted = true;
-            } else if (currentEventType === 'error') {
-              const errorMsg = data.error || 'Unknown error';
-              if (downloadId) {
-                downloadTracker.failDownload(downloadId, errorMsg);
-              }
-              throw new Error(errorMsg);
-            }
-          } else if (line.trim() === '') {
-            currentEventType = 'progress';
-          }
-        }
-      }
-    } catch (streamError) {
-      // If we already got the complete event, ignore stream errors
-      if (!downloadCompleted) {
-        throw streamError;
-      }
-    }
-
-    if (!downloadCompleted && downloadId) {
-      downloadTracker.completeDownload(downloadId);
-    }
-
-    // Notify all components that models have been updated
-    window.dispatchEvent(new CustomEvent('modelsUpdated'));
-  } catch (error: any) {
-    // If download completed successfully, ignore any connection-close errors
-    if (downloadCompleted) {
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('text/event-stream')) {
+      await consumeLegacyPullStream(response, downloadId);
       window.dispatchEvent(new CustomEvent('modelsUpdated'));
       return;
     }
 
+    const startedSnapshot = await response.json();
+    downloadTracker.applyServerDownload(startedSnapshot);
+
+    await waitForServerDownloadTerminal(
+      downloadId,
+      modelName,
+      abortController,
+      () => isCancelled ? 'cancelled' : (isPaused ? 'paused' : undefined),
+      true,
+    );
+
+    // The terminal server snapshot is applied inside waitForServerDownloadTerminal,
+    // which emits modelsUpdated once. Avoid a second local completion/update here.
+  } catch (error: any) {
+    if (error instanceof DownloadAbortError) {
+      throw error;
+    }
+
     if (error.name === 'AbortError') {
-      if (isPaused && downloadId) {
-        downloadTracker.pauseDownload(downloadId);
+      if (isPaused) {
+        downloadTracker.pauseDownload(downloadId, false);
         throw new DownloadAbortError('paused');
-      } else {
-        if (downloadId) {
-          downloadTracker.cancelDownload(downloadId);
-        }
-        // Signal that file handles are released so DownloadManager can clean up
+      }
+      if (isCancelled) {
+        downloadTracker.cancelDownload(downloadId, false);
         window.dispatchEvent(new CustomEvent('download:cleanup-complete', {
           detail: { id: downloadId, modelName }
         }));
         throw new DownloadAbortError('cancelled');
       }
-    } else {
-      if (downloadId) {
-        downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
-      }
-      throw error;
+      return;
     }
+
+    downloadTracker.failDownload(downloadId, error.message || 'Unknown error');
+    throw error;
   } finally {
     window.removeEventListener('download:cancelled', handleCancel);
     window.removeEventListener('download:paused', handlePause);
@@ -547,7 +666,7 @@ async function ensureModelReadyInternal(
       const components = getCollectionComponents(modelInfo);
       for (const component of components) {
         if (!modelsData[component]) {
-          throw new Error(`Experience model "${modelName}" references missing component "${component}".`);
+          throw new Error(`Omni-model "${modelName}" references missing component "${component}".`);
         }
         await ensureModelReadyInternal(component, modelsData, {
           onModelLoading: options?.onModelLoading,

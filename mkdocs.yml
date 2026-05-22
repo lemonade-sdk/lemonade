@@ -79,7 +79,7 @@ nav:
     - C++: dev/getting-started.md
     - Desktop App: dev/app.md
     - Web UI: dev/web-ui.md
-    - OmniRouter (tools for agents): dev/omni-router.md
+    - Lemonade Omni Models: dev/lemonade-omni.md
     - Infrastructure: dev/self-hosted-runners.md
   - API Spec:
       - Overview: api/README.md

@@ -1,6 +1,7 @@
 import { serverFetch } from './serverConfig';
 import { ModelsData } from './modelData';
-import { getCollectionComponents, NON_LLM_LABELS } from './collectionModels';
+import { isChatPlannerCandidate } from './modelLabels';
+import { getCollectionComponents } from './collectionModels';
 import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
 
@@ -50,10 +51,7 @@ export function buildLemonadeTools(
   const info = modelsData[collectionName];
   const components = getCollectionComponents(info);
 
-  const llmModel = components.find(c => {
-    const labels = modelsData[c]?.labels ?? [];
-    return !labels.some(l => NON_LLM_LABELS.has(l));
-  }) || components[0] || '';
+  const llmModel = components.find(c => isChatPlannerCandidate(modelsData[c])) || components[0] || '';
 
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};

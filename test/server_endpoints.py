@@ -1291,6 +1291,308 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_021j_register_user_collection(self):
+        """Register a user-defined collection via POST /pull."""
+        canonical_name = f"user.TestColl-{uuid.uuid4().hex[:8]}"
+        # Unique `user.<name>` entries are exposed under the bare public name.
+        public_name = canonical_name[5:]
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+
+            # Show all so user.* models are visible
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (m for m in models_response.json()["data"] if m["id"] == public_name),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertEqual(entry.get("recipe"), "collection.omni")
+            self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+            self.assertTrue(
+                entry.get("downloaded"),
+                "Collection should report downloaded=true when all components are downloaded",
+            )
+
+            print(f"[OK] Registered omni collection: {public_name}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021k_register_collection_missing_components(self):
+        """Collections referencing unknown components are rejected with 400."""
+        canonical_name = f"user.BadColl-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": canonical_name,
+                "recipe": "collection.omni",
+                "components": [f"user.does-not-exist-{uuid.uuid4().hex[:6]}"],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("not registered", response.json().get("error", "").lower())
+        print("[OK] Unknown component rejected with 400")
+
+    def test_021l_register_collection_empty_array(self):
+        """Empty components is rejected with 400."""
+        canonical_name = f"user.EmptyColl-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": canonical_name,
+                "recipe": "collection.omni",
+                "components": [],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("components", response.json().get("error", ""))
+        print("[OK] Empty components rejected with 400")
+
+    def test_021m_register_collection_no_user_prefix(self):
+        """Collection name without user. prefix is rejected with 400."""
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": f"NoPrefixColl-{uuid.uuid4().hex[:8]}",
+                "recipe": "collection.omni",
+                "components": [ENDPOINT_TEST_MODEL],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("user.", response.json().get("error", ""))
+        print("[OK] Missing user. prefix rejected with 400")
+
+    def test_021n_register_collection_self_reference(self):
+        """A collection that lists itself in components is rejected."""
+        canonical_name = f"user.SelfRef-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": canonical_name,
+                "recipe": "collection.omni",
+                "components": [canonical_name],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("itself", response.json().get("error", "").lower())
+        print("[OK] Self-reference rejected with 400")
+
+    def test_021p_collection_components_canonicalized(self):
+        """Client may register a collection using a component's public alias.
+        Storage must canonicalize so downstream cache-key lookups
+        (check_component_downloaded / update_model_in_cache) match; the wire
+        format then re-emits components under their public names for
+        consistency with the `id` field."""
+        suffix = uuid.uuid4().hex[:8]
+        component_canonical = f"user.AliasComp-{suffix}"
+        # Unique user.<name> entries surface under the bare public alias.
+        component_alias = component_canonical[5:]
+        collection_name = f"user.AliasColl-{suffix}"
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": component_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            # Register collection using the bare alias for the component.
+            coll_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection_name,
+                    "recipe": "collection.omni",
+                    "components": [component_alias],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(coll_response.status_code, 200, coll_response.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (
+                    m
+                    for m in models_response.json()["data"]
+                    if m["id"] == collection_name[5:]
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(
+                entry.get("components"),
+                [component_alias],
+                "Wire-format components must use public names (same namespace as `id`)",
+            )
+            # `downloaded` can only be True if the internal cache-key lookup
+            # found the component under its canonical name — this is the real
+            # proof that storage canonicalized the aliased input.
+            self.assertTrue(
+                entry.get("downloaded"),
+                "Cache-key lookups must find the canonically-stored component",
+            )
+            print("[OK] Aliased component canonicalized in storage, public on wire")
+        finally:
+            for name in (collection_name, component_canonical):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+
+    def test_021o_load_collection_routes_through_component_branch(self):
+        """POST /load on a collection must not route the collection itself
+        through the generic HF download path (collections have no checkpoint).
+        Component cascading is the only legitimate download path."""
+        canonical_name = f"user.LoadColl-{uuid.uuid4().hex[:8]}"
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": canonical_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200, load_response.text)
+            self.assertEqual(load_response.json().get("recipe"), "collection.omni")
+            print("[OK] Load on collection succeeded via component branch")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_021q_collection_repull_overwrites_components(self):
+        """Re-pulling an existing collection with a new components array must
+        overwrite the stored entry, not silently reuse the old components."""
+        suffix = uuid.uuid4().hex[:8]
+        extra_component = f"user.RepullExtra-{suffix}"
+        # Unique user.<name> entries surface under the bare public alias on the wire.
+        extra_component_alias = extra_component[5:]
+        collection_name = f"user.RepullColl-{suffix}"
+        try:
+            extra_pull = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": extra_component,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(extra_pull.status_code, 200, extra_pull.text)
+
+            first = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+
+            second = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": collection_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL, extra_component],
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(second.status_code, 200, second.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200)
+            entry = next(
+                (
+                    m
+                    for m in models_response.json()["data"]
+                    if m["id"] == collection_name[5:]
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry)
+            self.assertEqual(
+                sorted(entry.get("components", [])),
+                sorted([ENDPOINT_TEST_MODEL, extra_component_alias]),
+                "Re-pull must persist the new components list",
+            )
+            print("[OK] Collection re-pull overwrote components")
+        finally:
+            for name in (collection_name, extra_component):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+
     def test_021f_naming_spec_unique_registered(self):
         """Naming spec: a unique user.<name> with no built-in collision emits as bare."""
         bare = f"NameSpec-Unique-{uuid.uuid4().hex[:8]}"

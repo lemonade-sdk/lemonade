@@ -33,8 +33,8 @@ const tests = [
       if (source.includes('renderCustomCollectionOptionsButton')) {
         assertMatches(
           source,
-          /isCustomCollectionId\(modelName\) && renderCustomCollectionOptionsButton\(modelName\)[\s\S]*?!isCollection && renderLoadOptionsButton\(modelName\)/,
-          'Custom collection options may be added, but normal concrete model options must remain available.',
+          /isEditableCollection && renderCustomCollectionOptionsButton\(modelName\)[\s\S]*?!isCollection && renderLoadOptionsButton\(modelName\)/,
+          'Collection options may be added, but normal concrete model options must remain available.',
         );
       }
     },

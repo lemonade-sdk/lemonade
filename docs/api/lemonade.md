@@ -10,6 +10,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
+| `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
+| `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
 | `GET` | [`/v1/pull/variants`](#get-v1pullvariants) | Enumerate GGUF variants for a Hugging Face checkpoint |
 | `POST` | [`/v1/delete`](#post-v1delete) | Delete a model |
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
@@ -36,6 +38,7 @@ The Lemonade Server built-in model registry has a collection of model names that
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `stream` | No | If `true`, returns Server-Sent Events (SSE) with download progress. Defaults to `false`. |
+| `subscribe` | No | Only applies when `stream=true`. If `false`, the server starts a background model download job and returns a JSON snapshot immediately instead of keeping the HTTP response subscribed to SSE progress. Defaults to `true` for backwards compatibility. |
 
 **Install a Model that is Already Registered**
 
@@ -106,6 +109,30 @@ Response format:
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+**Register an Omni-Model**
+
+An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
+| `recipe` | Yes | Must be `"collection.omni"`. |
+| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+
+Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "user.MyKit",
+    "recipe": "collection.omni",
+    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+  }'
+```
+
 ### Streaming Response (stream=true)
 
 When `stream=true`, the endpoint returns Server-Sent Events with real-time download progress:
@@ -128,6 +155,169 @@ data: {"file_index":2,"total_files":2,"percent":100}
 | `progress` | Sent during download with current file and byte progress |
 | `complete` | Sent when all files are downloaded successfully |
 | `error` | Sent if download fails, with `error` field containing the message |
+
+### Server-owned download mode (`stream=true`, `subscribe=false`)
+
+By default, `stream=true` keeps the `/v1/pull` HTTP response subscribed to Server-Sent Events until the download finishes. Clients that need download state to survive a renderer reload, tab close, or reconnect can also send `subscribe=false`.
+
+When `stream=true` and `subscribe=false`, `/v1/pull` starts a server-owned model download job and returns a JSON snapshot immediately. The job continues on the server. Clients can poll [`GET /v1/downloads`](#get-v1downloads) to restore progress and can use [`POST /v1/downloads/control`](#post-v1downloadscontrol) to pause, cancel, or remove the job.
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+    "stream": true,
+    "subscribe": false
+  }'
+```
+
+Example response:
+
+```json
+{
+  "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+  "type": "model",
+  "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+  "status": "downloading",
+  "running": true,
+  "file": "",
+  "file_index": 0,
+  "total_files": 0,
+  "bytes_downloaded": 0,
+  "bytes_total": 0,
+  "total_download_size": 0,
+  "bytes_previously_downloaded": 0,
+  "completed_files_bytes": 0,
+  "cumulative_bytes_downloaded": 0,
+  "overall_bytes_downloaded": 0,
+  "percent": 0,
+  "complete": false
+}
+```
+
+## `GET /v1/downloads`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+List server-owned model download jobs that were started with `POST /v1/pull` using `stream=true` and `subscribe=false`.
+
+This endpoint is intended for clients that need to restore download-manager state after a reload or reconnect. Active, paused, cancelled, and errored jobs remain visible until the client removes them. Completed jobs remain visible briefly so clients can observe completion and refresh model state.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/downloads
+```
+
+### Response format
+
+```json
+[
+  {
+    "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+    "type": "model",
+    "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+    "status": "downloading",
+    "running": true,
+    "file": "model.gguf",
+    "file_index": 1,
+    "total_files": 2,
+    "bytes_downloaded": 1073741824,
+    "bytes_total": 2684354560,
+    "total_download_size": 2684355584,
+    "bytes_previously_downloaded": 0,
+    "completed_files_bytes": 0,
+    "cumulative_bytes_downloaded": 1073741824,
+    "overall_bytes_downloaded": 1073741824,
+    "percent": 40,
+    "complete": false
+  }
+]
+```
+
+### Download job fields
+
+| Field | Description |
+|-------|-------------|
+| `id` | Stable download id. Model downloads use `model:<model_name>`. |
+| `type` | Download type. Currently `model` for server-owned jobs. |
+| `model_name` | Lemonade model name associated with the job. |
+| `status` | Current state: `downloading`, `paused`, `cancelled`, `completed`, or `error`. |
+| `running` | Whether the download worker is still active. A terminal-looking status may still have `running=true` while the worker is releasing resources. |
+| `file`, `file_index`, `total_files` | Current file progress within the download. |
+| `bytes_downloaded`, `bytes_total`, `percent` | Current-file byte progress as reported by the downloader. |
+| `total_download_size` | Total expected bytes across all files when known. |
+| `bytes_previously_downloaded` | Bytes already present on disk for the current file when resuming or skipping existing data. |
+| `completed_files_bytes` | Bytes from files completed before the current file. |
+| `cumulative_bytes_downloaded`, `overall_bytes_downloaded` | Total bytes downloaded across the whole job. `overall_bytes_downloaded` is kept as a compatibility alias. |
+| `complete` | `true` when the download completed successfully. |
+| `error` | Error message, present only for failed jobs. |
+
+## `POST /v1/downloads/control`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Control a server-owned model download job.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example `model:Qwen2.5-0.5B-Instruct-CPU`. |
+| `action` | Yes | One of `pause`, `cancel`, or `remove`. |
+
+### Actions
+
+| Action | Description |
+|--------|-------------|
+| `pause` | Requests the worker to stop and keeps the job visible as `paused`. The worker may briefly report `running=true` while it unwinds. |
+| `cancel` | Requests the worker to stop and marks the job as `cancelled`. Clients should wait for `running=false` before deleting partial files. |
+| `remove` | Removes a stopped job from the server registry. If the worker is still running, the server keeps the job visible and treats the request as a cancel request until the worker stops. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/downloads/control \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+    "action": "pause"
+  }'
+```
+
+### Response format
+
+For `pause` and `cancel`, the endpoint returns the latest job snapshot:
+
+```json
+{
+  "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+  "type": "model",
+  "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+  "status": "paused",
+  "running": false,
+  "file": "model.gguf",
+  "file_index": 1,
+  "total_files": 2,
+  "bytes_downloaded": 1073741824,
+  "bytes_total": 2684354560,
+  "percent": 40,
+  "complete": false
+}
+```
+
+For `remove`, the endpoint returns:
+
+```json
+{"status":"ok"}
+```
+
+If the job is already missing and `action` is `remove`, the endpoint returns:
+
+```json
+{"status":"ok","missing":true}
+```
 
 ## `GET /v1/pull/variants`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -196,6 +386,8 @@ curl 'http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
 
 Delete a model by removing it from local storage. If the model is currently loaded, it will be unloaded first.
 
+> Note: deleting a collection (`recipe: "collection.omni"`) removes only the collection entry from `user_models.json`; its components stay on disk. Delete the components individually if you want to free their disk space.
+
 ### Parameters
 
 | Parameter | Required | Description |
@@ -227,6 +419,8 @@ In case of an error, the status will be `error` and the message will contain the
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
 Explicitly load a registered model into memory. This is useful to ensure that the model is loaded before you make a request. Installs the model if necessary.
+
+> Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
 ### Parameters
 

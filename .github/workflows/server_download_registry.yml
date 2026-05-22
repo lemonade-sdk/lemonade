@@ -1,0 +1,94 @@
+name: Server Download Registry Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+  HF_HOME: ${{ github.workspace }}/hf-cache
+  LEMONADE_CACHE_DIR: ${{ github.workspace }}/ci-cache
+
+jobs:
+  server-download-registry-tests:
+    name: Server download registry tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Configure CMake
+        run: cmake --preset default -DBUILD_WEB_APP=OFF
+
+      - name: Build server binaries
+        run: cmake --build --preset default --target lemond lemonade
+
+      - name: Install Python test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r test/requirements.txt
+
+      - name: Start lemond
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build/lemond > /tmp/lemond-download-registry.log 2>&1 &
+          echo "$!" > /tmp/lemond-download-registry.pid
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "lemond is healthy"
+              exit 0
+            fi
+            echo "Waiting for lemond... ($i/30)"
+            sleep 2
+          done
+
+          echo "ERROR: lemond did not become healthy"
+          cat /tmp/lemond-download-registry.log || true
+          exit 1
+
+      - name: Run server download registry tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python test/server_downloads.py --cli-binary ./build/lemonade
+
+      - name: Show lemond logs on failure
+        if: failure()
+        run: cat /tmp/lemond-download-registry.log || true
+
+      - name: Stop lemond
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/lemond-download-registry.pid ]; then
+            kill "$(cat /tmp/lemond-download-registry.pid)" 2>/dev/null || true
+          fi
+          pkill -f lemond 2>/dev/null || true
