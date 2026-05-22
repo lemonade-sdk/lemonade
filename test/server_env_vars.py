@@ -1,8 +1,11 @@
 """
 Environment variable tests for lemond.
 
-Verifies that legacy LEMONADE_* environment variables are picked up by lemond
-(migrated into config.json on first startup) and reflected in the runtime config.
+Covers the runtime environment variables lemond reads on every launch
+(LEMONADE_API_KEY, LEMONADE_ADMIN_API_KEY, HF_HUB_CACHE) and verifies that the
+legacy LEMONADE_* config-seeding variables are now ignored. Server settings are
+seeded directly into config.json, since the env-var -> config.json migration
+path was removed (see https://github.com/lemonade-sdk/lemonade/issues/1981).
 
 Usage:
     # Build lemond first, then:
@@ -11,8 +14,8 @@ Usage:
 """
 
 import argparse
+import json
 import os
-import platform
 import subprocess
 import sys
 import tempfile
@@ -27,8 +30,6 @@ from utils.server_base import wait_for_server
 BASE = f"http://localhost:{PORT}"
 HEALTH = f"{BASE}/v1/health"
 CONFIG = f"{BASE}/internal/config"
-
-IS_MACOS = platform.system() == "Darwin"
 
 _lemond_binary = get_default_lemond_binary()
 
@@ -48,8 +49,14 @@ def shutdown_existing_server():
             break
 
 
-def start_server(env_overrides=None):
-    """Start lemond with given env overrides in an isolated temp cache dir.
+def start_server(env_overrides=None, config_overrides=None):
+    """Start lemond in an isolated temp cache dir with a seeded config.json.
+
+    The env-var -> config.json migration path was removed, so server settings
+    (port, host, broadcast) are seeded directly into config.json via
+    ``config_overrides``. ``env_overrides`` still applies to the process
+    environment for the runtime variables lemond reads on every launch (e.g.
+    LEMONADE_API_KEY, HF_HUB_CACHE).
 
     Returns (subprocess.Popen, cache_dir).
     """
@@ -61,11 +68,15 @@ def start_server(env_overrides=None):
             del env[k]
     cache_dir = tempfile.mkdtemp(prefix="lemon_test_")
     env["LEMONADE_CACHE_DIR"] = cache_dir
-    env["LEMONADE_PORT"] = str(PORT)
-    env["LEMONADE_HOST"] = "localhost"
-    env["LEMONADE_NO_BROADCAST"] = "1"
     if env_overrides:
         env.update(env_overrides)
+
+    # Seed config.json so the server binds to the test port without broadcasting.
+    config = {"port": PORT, "host": "localhost", "no_broadcast": True}
+    if config_overrides:
+        config.update(config_overrides)
+    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump(config, f)
 
     proc = subprocess.Popen(
         [_lemond_binary],
@@ -101,46 +112,26 @@ def get_config():
 
 
 # ---------------------------------------------------------------------------
-# Test: server config env vars reflected in /internal/config
+# Test: config.json settings reflected in /internal/config
 # ---------------------------------------------------------------------------
 
 
-class TestConfigEnvVars(unittest.TestCase):
-    """Start lemond once with all config-based env vars set, verify snapshot."""
+class TestConfigJsonSeeding(unittest.TestCase):
+    """Server settings come from config.json, verified in the runtime snapshot."""
 
     proc = None
 
     @classmethod
     def setUpClass(cls):
-        cls.env = {
-            "LEMONADE_PORT": str(PORT),
-            "LEMONADE_HOST": "localhost",
-            "LEMONADE_LOG_LEVEL": "debug",
-            "LEMONADE_EXTRA_MODELS_DIR": "/tmp/lemon_extra_models_test",
-            "LEMONADE_GLOBAL_TIMEOUT": "999",
-            "LEMONADE_MAX_LOADED_MODELS": "3",
-            # Recipe-option env vars
-            "LEMONADE_CTX_SIZE": "2048",
-        }
-        if IS_MACOS:
-            # On macOS the platform defaults are metal for llamacpp/whispercpp
-            cls.env.update(
-                {
-                    "LEMONADE_LLAMACPP": "metal",
-                    "LEMONADE_WHISPERCPP": "metal",
-                }
-            )
-        else:
-            cls.env.update(
-                {
-                    "LEMONADE_LLAMACPP": "cpu",
-                    "LEMONADE_LLAMACPP_ARGS": "--flash-attn on",
-                    "LEMONADE_WHISPERCPP": "cpu",
-                    "LEMONADE_WHISPERCPP_ARGS": "--convert",
-                    "LEMONADE_FLM_ARGS": "--socket 20",
-                }
-            )
-        cls.proc, cls.cache_dir = start_server(cls.env)
+        cls.proc, cls.cache_dir = start_server(
+            config_overrides={
+                "log_level": "debug",
+                "extra_models_dir": "/tmp/lemon_extra_models_test",
+                "global_timeout": 999,
+                "max_loaded_models": 3,
+                "ctx_size": 2048,
+            }
+        )
         wait_for_server(port=PORT)
         cls.snapshot = get_config()
 
@@ -178,26 +169,54 @@ class TestConfigEnvVars(unittest.TestCase):
     def test_ctx_size(self):
         self.assertEqual(self.snapshot["ctx_size"], 2048)
 
-    def test_llamacpp_backend(self):
-        expected = "metal" if IS_MACOS else "cpu"
-        self.assertEqual(self.snapshot["llamacpp"]["backend"], expected)
 
-    @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
-    def test_llamacpp_args(self):
-        self.assertEqual(self.snapshot["llamacpp"]["args"], "--flash-attn on")
+# ---------------------------------------------------------------------------
+# Test: legacy config-seeding env vars are ignored (migration removed)
+# ---------------------------------------------------------------------------
 
-    def test_whispercpp_backend(self):
-        # On macOS the default is metal; on other platforms it's cpu
-        expected = "metal" if IS_MACOS else "cpu"
-        self.assertEqual(self.snapshot["whispercpp"]["backend"], expected)
 
-    @unittest.skipIf(IS_MACOS, "whispercpp args not applicable on macOS")
-    def test_whispercpp_args(self):
-        self.assertEqual(self.snapshot["whispercpp"]["args"], "--convert")
+class TestLegacySeedingEnvVarsIgnored(unittest.TestCase):
+    """Legacy LEMONADE_* config-seeding vars must no longer affect config.
 
-    @unittest.skipIf(IS_MACOS, "FLM is NPU-only, not available on macOS")
-    def test_flm_args(self):
-        self.assertEqual(self.snapshot["flm"]["args"], "--socket 20")
+    The env-var -> config.json migration was removed (issue #1981). Setting the
+    old seeding variables must have no effect; the runtime config keeps its
+    defaults. Only config.json and the documented runtime variables apply.
+    """
+
+    proc = None
+
+    @classmethod
+    def setUpClass(cls):
+        # These previously would have been migrated into config.json on first
+        # run. They must now be ignored. config.json is left at defaults for the
+        # keys under test (start_server only seeds port/host/no_broadcast).
+        cls.proc, cls.cache_dir = start_server(
+            env_overrides={
+                "LEMONADE_LOG_LEVEL": "debug",
+                "LEMONADE_GLOBAL_TIMEOUT": "999",
+                "LEMONADE_MAX_LOADED_MODELS": "7",
+                "LEMONADE_CTX_SIZE": "2048",
+            }
+        )
+        wait_for_server(port=PORT)
+        cls.snapshot = get_config()
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            stop_server(cls.proc)
+
+    def test_log_level_default(self):
+        self.assertEqual(self.snapshot["log_level"], "info")
+
+    def test_global_timeout_default(self):
+        self.assertEqual(self.snapshot["global_timeout"], 300)
+
+    def test_max_loaded_models_default(self):
+        self.assertEqual(self.snapshot["max_loaded_models"], 1)
+
+    def test_ctx_size_default(self):
+        self.assertEqual(self.snapshot["ctx_size"], 4096)
 
 
 # ---------------------------------------------------------------------------

@@ -25,14 +25,24 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
   ./lemond --host 0.0.0.0 --port 5000
 ```
 
 > This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
 
-### Docker Run with CPU backend
+### Selecting a backend
+
+The server auto-detects a llama.cpp backend and falls back to CPU when no GPU is available, so most deployments need no extra configuration. To pin a specific backend (or change any other setting), use `config.json` in the cache directory — the `lemonade-recipe` volume above persists it across restarts. Server settings are **not** read from environment variables.
+
+Start the container, then set the backend with the bundled CLI and restart so it takes effect:
+
+```bash
+docker exec lemonade-server ./lemonade config set llamacpp.backend=cpu
+docker restart lemonade-server
+```
+
+Alternatively, bind-mount a prepared `config.json` over the cache directory at startup:
 
 ```bash
 docker run -d \
@@ -41,10 +51,19 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP=cpu \
+  -v "$(pwd)/config.json:/root/.cache/lemonade/config.json:ro" \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
+where `config.json` selects the backend:
+
+```json
+{
+  "llamacpp": {
+    "backend": "cpu"
+  }
+}
+```
 
 ### Docker Run with AMD GPU Passthrough using ROCm
 
@@ -55,13 +74,12 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP=rocm \
   --device=/dev/kfd \
   --device=/dev/dri \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-> This will run the server using the ROCm backend as the default for llama.cpp.
+> This passes the AMD GPU devices into the container. Select the ROCm backend with `lemonade config set llamacpp.backend=rocm` (see [Selecting a backend](#selecting-a-backend)).
 
 ### Other Docker Methods
 
@@ -84,8 +102,6 @@ services:
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
-    environment:
-      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
@@ -94,7 +110,7 @@ volumes:
   lemonade-recipe:
 ```
 
-> You can add more services as needed, or add host devices for the ROCM backend.
+> You can add more services as needed, or add host devices for the ROCM backend. To pin a backend or change other settings, see [Selecting a backend](#selecting-a-backend).
 
 3. Run the following command in the directory containing your docker-compose.yml:
 
@@ -273,8 +289,6 @@ services:
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
-    environment:
-      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:

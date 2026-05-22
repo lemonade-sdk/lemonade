@@ -27,10 +27,6 @@ public:
     static void save(const std::string& cache_dir, const json& config);
 
 private:
-    /// When config.json doesn't exist yet, read legacy LEMONADE_* environment
-    /// variables and overlay them on top of defaults.  Returns the merged config.
-    static json migrate_from_env(const json& defaults);
-
     static std::shared_mutex file_mutex_;
 };
 
