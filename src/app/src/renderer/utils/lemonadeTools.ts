@@ -5,6 +5,32 @@ import { getCollectionComponents } from './collectionModels';
 import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
 
+// Neutral fallback used for actual image API requests. Do not use the old
+// collection canvas default here; otherwise missing planner args still generate
+// 512x256 / 256x512-looking images.
+const DEFAULT_IMAGE_SIZE = '512x512';
+const MAX_IMAGE_DIMENSION = 2048;
+
+const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
+  '1:1': '512x512',
+  '16:9': '1024x576',
+  '9:16': '576x1024',
+  '4:3': '768x576',
+  '3:4': '576x768',
+  '3:2': '768x512',
+  '2:3': '512x768',
+};
+
+const ORIENTATION_TO_SIZE: Record<string, string> = {
+  square: '512x512',
+  landscape: '768x512',
+  wide: '768x512',
+  horizontal: '768x512',
+  portrait: '512x768',
+  vertical: '512x768',
+  tall: '512x768',
+};
+
 // Types
 export interface LemonadeToolDef {
   type: 'function';
@@ -63,7 +89,7 @@ export function buildLemonadeTools(
     const newProps: Record<string, any> = {};
     for (const [key, prop] of Object.entries(props)) {
       newProps[key] = typeof prop?.description === 'string' && prop.description.includes('{image_size}')
-        ? { ...prop, description: prop.description.replaceAll('{image_size}', COLLECTION_IMAGE_SIZE) }
+        ? { ...prop, description: prop.description.replace(/\{image_size\}/g, COLLECTION_IMAGE_SIZE) }
         : prop;
     }
     return { ...params, properties: newProps };
@@ -162,6 +188,7 @@ async function executeImageTool(
   context: ToolExecutionContext,
   signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
+  const imageSize = resolveImageSize(args);
   const isEdit = effectiveName === 'edit_image';
 
   if (isEdit) {
@@ -171,7 +198,8 @@ async function executeImageTool(
     formData.append('prompt', args.prompt || '');
     formData.append('response_format', 'b64_json');
     formData.append('n', '1');
-    formData.append('size', COLLECTION_IMAGE_SIZE);
+    formData.append('size', imageSize);
+    appendOptionalImageFormArgs(args, formData);
 
     // Attach the most recent image as the source file
     const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
@@ -203,8 +231,9 @@ async function executeImageTool(
     prompt: args.prompt || '',
     response_format: 'b64_json',
     n: 1,
-    size: COLLECTION_IMAGE_SIZE,
+    size: imageSize,
   };
+  copyOptionalImageArgs(args, body);
 
   const response = await serverFetch('/images/generations', {
     method: 'POST',
@@ -218,6 +247,112 @@ async function executeImageTool(
     return { type: 'image', data: data.data[0].b64_json, mime: 'image/png' };
   }
   throw new Error(data.error?.message || 'Image generation failed');
+}
+
+function resolveImageSize(args: Record<string, any>): string {
+  const explicitSize = parseSizeFromText(typeof args.size === 'string' ? args.size : '');
+  if (explicitSize) return explicitSize;
+
+  const width = coerceInteger(args.width);
+  const height = coerceInteger(args.height);
+  const widthHeightSize = width !== null && height !== null ? formatImageSize(width, height) : '';
+  if (widthHeightSize) return widthHeightSize;
+
+  const promptSize = parseSizeFromText(typeof args.prompt === 'string' ? args.prompt : '');
+  if (promptSize) return promptSize;
+
+  const inferredSize = inferSizeFromRatioOrOrientation(args);
+  if (inferredSize) return inferredSize;
+
+  return DEFAULT_IMAGE_SIZE;
+}
+
+function parseSizeFromText(text: string): string {
+  if (!text) return '';
+  const match = text.match(/(?<!\d)(\d{2,4})\s*(?:x|×|by)\s*(\d{2,4})(?!\d)/i);
+  if (match) {
+    return formatImageSize(Number(match[1]), Number(match[2]));
+  }
+
+  const widthMatch = text.match(/\bwidth\s*[:=]?\s*(\d{2,4})\b/i);
+  const heightMatch = text.match(/\bheight\s*[:=]?\s*(\d{2,4})\b/i);
+  if (widthMatch && heightMatch) {
+    return formatImageSize(Number(widthMatch[1]), Number(heightMatch[1]));
+  }
+
+  return '';
+}
+
+function inferSizeFromRatioOrOrientation(args: Record<string, any>): string {
+  const textParts = ['aspect_ratio', 'orientation', 'size', 'prompt']
+    .map(key => typeof args[key] === 'string' ? args[key] : '')
+    .filter(Boolean);
+  const text = textParts.join(' ').toLowerCase();
+
+  if (typeof args.aspect_ratio === 'string') {
+    const ratio = args.aspect_ratio.trim().toLowerCase().replace(/\s+/g, '').replace(/\//g, ':');
+    if (ASPECT_RATIO_TO_SIZE[ratio]) return ASPECT_RATIO_TO_SIZE[ratio];
+  }
+
+  for (const [ratio, size] of Object.entries(ASPECT_RATIO_TO_SIZE)) {
+    const [left, right] = ratio.split(':');
+    const pattern = new RegExp(`(?<!\\d)${left}\\s*[:/]\\s*${right}(?!\\d)`);
+    if (pattern.test(text)) return size;
+  }
+
+  if (typeof args.orientation === 'string') {
+    const orientation = args.orientation.trim().toLowerCase();
+    if (ORIENTATION_TO_SIZE[orientation]) return ORIENTATION_TO_SIZE[orientation];
+  }
+
+  if (/\b(square)\b|(?<!\d)1\s*[:/]\s*1(?!\d)/.test(text)) return '512x512';
+  if (/\b(portrait|vertical|tall)\b/.test(text)) return '512x768';
+  if (/\b(landscape|wide|widescreen|horizontal|banner)\b/.test(text)) return '768x512';
+
+  return '';
+}
+
+function formatImageSize(width: number, height: number): string {
+  if (isValidImageDimension(width) && isValidImageDimension(height)) {
+    return `${width}x${height}`;
+  }
+  return '';
+}
+
+function isValidImageDimension(value: number): boolean {
+  return Number.isInteger(value) && value >= 64 && value <= MAX_IMAGE_DIMENSION;
+}
+
+function coerceInteger(value: any): number | null {
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
+  return null;
+}
+
+function copyOptionalImageArgs(args: Record<string, any>, body: Record<string, any>): void {
+  const steps = coerceInteger(args.steps);
+  if (steps !== null && steps > 0) body.steps = steps;
+
+  const cfgScale = Number(args.cfg_scale);
+  if (Number.isFinite(cfgScale) && cfgScale > 0) body.cfg_scale = cfgScale;
+
+  const seed = coerceInteger(args.seed);
+  if (seed !== null) body.seed = seed;
+
+  if (typeof args.sample_method === 'string' && args.sample_method.trim()) {
+    body.sample_method = args.sample_method.trim();
+  }
+
+  const flowShift = Number(args.flow_shift);
+  if (Number.isFinite(flowShift) && flowShift > 0) body.flow_shift = flowShift;
+}
+
+function appendOptionalImageFormArgs(args: Record<string, any>, formData: FormData): void {
+  const body: Record<string, any> = {};
+  copyOptionalImageArgs(args, body);
+  for (const [key, value] of Object.entries(body)) {
+    formData.append(key, String(value));
+  }
 }
 
 async function executeTTSTool(

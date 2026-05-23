@@ -3,16 +3,76 @@
   "system_prompt": "You are a helpful multimodal AI assistant with access to the following tools:\n\n{tool_list}\n\nWhen the user asks you to perform an action that matches one of these tools, use the appropriate tool. You may call multiple tools if the request requires it. After using a tool, describe what you did to the user in a brief, friendly response. If the user's request does not require any tool, respond normally with text.{tool_guidance}",
   "tools": [
     {
-      "requires_labels": ["image"],
+      "requires_labels": [
+        "image"
+      ],
       "function": {
         "name": "generate_image",
-        "description": "Generate a NEW image from scratch based on a text description. Use this ONLY when the user asks you to create an entirely new image. Do NOT use this to modify or change an existing image — use edit_image instead.",
+        "description": "Generate a NEW image from scratch based on a text description. Use this ONLY when the user asks you to create an entirely new image. Do NOT use this to modify or change an existing image — use edit_image instead. Always provide size; default to 512x512 if unspecified.",
         "parameters": {
           "type": "object",
           "properties": {
-            "prompt": { "type": "string", "description": "A detailed description of the image to generate. Output size is fixed at {image_size}." }
+            "prompt": {
+              "type": "string",
+              "description": "A detailed description of the image to generate. Do not put size-only instructions here when a size argument can be used."
+            },
+            "size": {
+              "type": "string",
+              "description": "Output image size as WIDTHxHEIGHT pixels. Always set this for image generation/editing. Use exact user dimensions when provided. Default to 512x512 when no size/orientation is specified. Recommended supported examples: 512x512, 768x512, 512x768, 1024x576, 576x1024, 768x576, 576x768."
+            },
+            "width": {
+              "type": "integer",
+              "description": "Optional output width in pixels. Use together with height only when dimensions are provided separately.",
+              "minimum": 64
+            },
+            "height": {
+              "type": "integer",
+              "description": "Optional output height in pixels. Use together with width only when dimensions are provided separately.",
+              "minimum": 64
+            },
+            "aspect_ratio": {
+              "type": "string",
+              "description": "Optional requested aspect ratio when no exact size is provided, for example 1:1, 16:9, 9:16, 4:3, or 3:4. The executor maps this to a concrete size."
+            },
+            "orientation": {
+              "type": "string",
+              "enum": [
+                "square",
+                "landscape",
+                "portrait"
+              ],
+              "description": "Optional orientation when no exact size is provided. The executor maps this to a concrete size."
+            },
+            "steps": {
+              "type": "integer",
+              "description": "Optional sampling/denoising step count. Use only when the user asks for speed, quality, detail, or a specific step count.",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "cfg_scale": {
+              "type": "number",
+              "description": "Optional text guidance scale. Higher values follow the prompt more strongly; lower values allow more variation. Use only when requested or clearly implied.",
+              "minimum": 0
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Optional random seed for reproducible generation. Use when the user provides a seed or asks for reproducibility."
+            },
+            "sample_method": {
+              "type": "string",
+              "description": "Optional sampler name/method. Use only when the user explicitly requests a sampler."
+            },
+            "flow_shift": {
+              "type": "number",
+              "description": "Optional flow shift value for models/backends that support it. Use only when requested or model guidance requires it.",
+              "minimum": 0
+            }
           },
-          "required": ["prompt"]
+          "required": [
+            "prompt",
+            "size"
+          ],
+          "additionalProperties": false
         }
       }
     },
@@ -21,28 +81,97 @@
       "prompt_guidance": "IMPORTANT: When an image has already been generated in this conversation and the user wants to add something, remove something, change, modify, or adjust the image in any way, you MUST use the edit_image tool — NOT generate_image. Only use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source.",
       "function": {
         "name": "edit_image",
-        "description": "Edit or modify a previously generated image. Use this when the user wants to add, remove, change, modify, update, fix, or adjust anything in an existing image from this conversation. The most recently generated image is used automatically as the source. Always prefer this over generate_image when an image already exists in the conversation.",
+        "description": "Edit or modify a previously generated image. Use this when the user wants to add, remove, change, modify, update, fix, or adjust anything in an existing image from this conversation. The most recently generated image is used automatically as the source. Always prefer this over generate_image when an image already exists in the conversation. Always provide size; default to 512x512 if unspecified.",
         "parameters": {
           "type": "object",
           "properties": {
-            "prompt": { "type": "string", "description": "A description of the desired edit or modification to apply to the image. Output size is fixed at {image_size}." }
+            "prompt": {
+              "type": "string",
+              "description": "A description of the desired edit or modification to apply to the image. Do not put size-only instructions here when a size argument can be used."
+            },
+            "size": {
+              "type": "string",
+              "description": "Output image size as WIDTHxHEIGHT pixels. Always set this for image generation/editing. Use exact user dimensions when provided. Default to 512x512 when no size/orientation is specified. Recommended supported examples: 512x512, 768x512, 512x768, 1024x576, 576x1024, 768x576, 576x768."
+            },
+            "width": {
+              "type": "integer",
+              "description": "Optional output width in pixels. Use together with height only when dimensions are provided separately.",
+              "minimum": 64
+            },
+            "height": {
+              "type": "integer",
+              "description": "Optional output height in pixels. Use together with width only when dimensions are provided separately.",
+              "minimum": 64
+            },
+            "aspect_ratio": {
+              "type": "string",
+              "description": "Optional requested aspect ratio when no exact size is provided, for example 1:1, 16:9, 9:16, 4:3, or 3:4. The executor maps this to a concrete size."
+            },
+            "orientation": {
+              "type": "string",
+              "enum": [
+                "square",
+                "landscape",
+                "portrait"
+              ],
+              "description": "Optional orientation when no exact size is provided. The executor maps this to a concrete size."
+            },
+            "steps": {
+              "type": "integer",
+              "description": "Optional sampling/denoising step count. Use only when the user asks for speed, quality, detail, or a specific step count.",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "cfg_scale": {
+              "type": "number",
+              "description": "Optional text guidance scale. Higher values follow the prompt more strongly; lower values allow more variation. Use only when requested or clearly implied.",
+              "minimum": 0
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Optional random seed for reproducible generation. Use when the user provides a seed or asks for reproducibility."
+            },
+            "sample_method": {
+              "type": "string",
+              "description": "Optional sampler name/method. Use only when the user explicitly requests a sampler."
+            },
+            "flow_shift": {
+              "type": "number",
+              "description": "Optional flow shift value for models/backends that support it. Use only when requested or model guidance requires it.",
+              "minimum": 0
+            }
           },
-          "required": ["prompt"]
+          "required": [
+            "prompt",
+            "size"
+          ],
+          "additionalProperties": false
         }
       }
     },
     {
-      "requires_labels": ["tts"],
+      "requires_labels": [
+        "tts"
+      ],
       "function": {
         "name": "text_to_speech",
         "description": "Convert text to spoken audio. Use this when the user asks you to speak, say, read aloud, or convert text to speech.",
         "parameters": {
           "type": "object",
           "properties": {
-            "input": { "type": "string", "description": "The text to convert to speech" },
-            "voice": { "type": "string", "description": "Voice to use for speech synthesis", "default": "af_heart" }
+            "input": {
+              "type": "string",
+              "description": "The text to convert to speech"
+            },
+            "voice": {
+              "type": "string",
+              "description": "Voice to use for speech synthesis",
+              "default": "af_heart"
+            }
           },
-          "required": ["input"]
+          "required": [
+            "input"
+          ]
         }
       }
     },
@@ -55,7 +184,11 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "language": { "type": "string", "description": "Language of the audio (ISO 639-1 code, e.g. 'en', 'es', 'fr')", "default": "en" }
+            "language": {
+              "type": "string",
+              "description": "Language of the audio (ISO 639-1 code, e.g. 'en', 'es', 'fr')",
+              "default": "en"
+            }
           },
           "required": []
         }
@@ -70,10 +203,19 @@
         "parameters": {
           "type": "object",
           "properties": {
-            "image_url": { "type": "string", "description": "The URL or base64 data URI of the image to analyze" },
-            "question": { "type": "string", "description": "The question to answer about the image, or 'describe' for a general description" }
+            "image_url": {
+              "type": "string",
+              "description": "The URL or base64 data URI of the image to analyze"
+            },
+            "question": {
+              "type": "string",
+              "description": "The question to answer about the image, or 'describe' for a general description"
+            }
           },
-          "required": ["image_url", "question"]
+          "required": [
+            "image_url",
+            "question"
+          ]
         }
       }
     }
