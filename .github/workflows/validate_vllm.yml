@@ -129,8 +129,13 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       - name: Run validation with lemond
+        env:
+          HOME: ${{ github.workspace }}/.home
         run: |
           set -e
+          mkdir -p "$HOME"
+          echo "HOME=$HOME" >> "$GITHUB_ENV"
+
           CACHE_DIR="$(pwd)/ci-cache-vllm"
           LOGS_DIR="$(pwd)/server-logs-rocm"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
