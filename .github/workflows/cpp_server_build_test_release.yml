@@ -439,7 +439,11 @@ jobs:
 
           # Launchd may not start reliably in CI. Fall back to manual start.
           echo "Server not reachable after 30s — starting manually..."
-          ./build/lemond > /tmp/lemond.log 2>&1 &
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
@@ -452,7 +456,7 @@ jobs:
             sleep 2
           done
           echo "ERROR: Server did not start within 60 seconds"
-          cat /tmp/lemond.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
           exit 1
 
       - name: Setup Python and virtual environment (unsigned path)
@@ -547,7 +551,11 @@ jobs:
             pkill -f lemond 2>/dev/null || true
             sleep 2
             # Start lemond directly from build/ (avoid legacy shim health-check timeout)
-            ./build/lemond > /tmp/lemond-whisper-pre.log 2>&1 &
+            mkdir -p "$RUNNER_TEMP/xdg-runtime"
+            chmod 700 "$RUNNER_TEMP/xdg-runtime"
+            echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+            export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+            ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
             LEMOND_PID=$!
             disown "$LEMOND_PID"
             # Wait for server to become healthy
@@ -560,7 +568,7 @@ jobs:
               sleep 2
             done
             echo "ERROR: Server did not start within 60 seconds"
-            cat /tmp/lemond-whisper-pre.log 2>/dev/null || true
+            cat "$RUNNER_TEMP/lemond-whisper-pre.log" 2>/dev/null || true
             exit 1
           fi
 
@@ -952,25 +960,26 @@ jobs:
           set -e
           FLM_VERSION=$(jq -r '.flm.npu' src/cpp/resources/backend_versions.json)
           FLM_VERSION_NUM=$(echo $FLM_VERSION | sed 's/^v//')
+          FLM_TEMP_DIR="$RUNNER_TEMP/flm-extract"
+          mkdir -p "$FLM_TEMP_DIR"
           echo "Installing FLM ${FLM_VERSION} for CI inference tests..."
-          curl -L -o /tmp/fastflowlm.deb "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
-          mkdir -p /tmp/flm-extract
-          dpkg-deb -x /tmp/fastflowlm.deb /tmp/flm-extract
+          curl -L -o "$RUNNER_TEMP/fastflowlm.deb" "https://github.com/FastFlowLM/FastFlowLM/releases/download/${FLM_VERSION}/fastflowlm_${FLM_VERSION_NUM}_ubuntu24.04_amd64.deb"
+          dpkg-deb -x "$RUNNER_TEMP/fastflowlm.deb" "$FLM_TEMP_DIR"
           # FLM resolves xclbins under bin/xclbins in this CI layout, while the
           # package stores them under share/flm/xclbins. Create a compat link.
-          if [ ! -e /tmp/flm-extract/opt/fastflowlm/bin/xclbins ] && [ -d /tmp/flm-extract/opt/fastflowlm/share/flm/xclbins ]; then
-            mkdir -p /tmp/flm-extract/opt/fastflowlm/bin
-            ln -s ../share/flm/xclbins /tmp/flm-extract/opt/fastflowlm/bin/xclbins
+          if [ ! -e "$FLM_TEMP_DIR/opt/fastflowlm/bin/xclbins" ] && [ -d "$FLM_TEMP_DIR/opt/fastflowlm/share/flm/xclbins" ]; then
+            mkdir -p "$FLM_TEMP_DIR/opt/fastflowlm/bin"
+            ln -s ../share/flm/xclbins "$FLM_TEMP_DIR/opt/fastflowlm/bin/xclbins"
           fi
           # Add extracted FLM binary to PATH (Linux uses system PATH for FLM discovery)
-          FLM_BIN=$(find /tmp/flm-extract -name flm -type f | head -1)
-          FLM_CONFIG=$(find /tmp/flm-extract -name "model_list.json" -type f | head -1)
+          FLM_BIN=$(find "$FLM_TEMP_DIR" -name flm -type f | head -1)
+          FLM_CONFIG=$(find "$FLM_TEMP_DIR" -name "model_list.json" -type f | head -1)
           chmod +x "$FLM_BIN"
           echo "$(dirname "$FLM_BIN")" >> $GITHUB_PATH
           echo "FLM_CONFIG_PATH=$FLM_CONFIG" >> $GITHUB_ENV
           export PATH="$(dirname "$FLM_BIN"):$PATH"
           export FLM_CONFIG_PATH="$FLM_CONFIG"
-          rm /tmp/fastflowlm.deb
+          rm "$RUNNER_TEMP/fastflowlm.deb"
           flm version
 
       - name: Install Lemonade (.deb)
@@ -1140,6 +1149,10 @@ jobs:
           set -e
           DIR="lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}"
           cd "$DIR"
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
           ./lemond ./ &
           LEMOND_PID=$!
@@ -1362,7 +1375,11 @@ jobs:
         run: |
           set -e
           echo "Starting server from build/ before matrix tests..."
-          ./build/lemond > /tmp/lemond.log 2>&1 &
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
 
@@ -1375,7 +1392,7 @@ jobs:
             sleep 2
           done
           echo "ERROR: Server did not start within 60 seconds"
-          cat /tmp/lemond.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
           exit 1
 
       - name: Setup Python and virtual environment

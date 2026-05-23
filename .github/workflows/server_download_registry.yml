@@ -58,8 +58,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./build/lemond > /tmp/lemond-download-registry.log 2>&1 &
-          echo "$!" > /tmp/lemond-download-registry.pid
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond > "$RUNNER_TEMP/lemond-download-registry.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/lemond-download-registry.pid"
 
           for i in $(seq 1 30); do
             if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
@@ -71,7 +75,7 @@ jobs:
           done
 
           echo "ERROR: lemond did not become healthy"
-          cat /tmp/lemond-download-registry.log || true
+          cat "$RUNNER_TEMP/lemond-download-registry.log" || true
           exit 1
 
       - name: Run server download registry tests
@@ -82,13 +86,13 @@ jobs:
 
       - name: Show lemond logs on failure
         if: failure()
-        run: cat /tmp/lemond-download-registry.log || true
+        run: cat "$RUNNER_TEMP/lemond-download-registry.log" || true
 
       - name: Stop lemond
         if: always()
         shell: bash
         run: |
-          if [ -f /tmp/lemond-download-registry.pid ]; then
-            kill "$(cat /tmp/lemond-download-registry.pid)" 2>/dev/null || true
+          if [ -f "$RUNNER_TEMP/lemond-download-registry.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/lemond-download-registry.pid")" 2>/dev/null || true
           fi
           pkill -f lemond 2>/dev/null || true

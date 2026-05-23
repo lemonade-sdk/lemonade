@@ -117,8 +117,6 @@ std::string get_executable_dir() {
         fs::path exe_path(buffer);
         return exe_path.parent_path().string();
     }
-    // Fallback: return current directory
-    return ".";
 #elif defined(__APPLE__)
     char buffer[PATH_MAX];
     uint32_t size = sizeof(buffer);
@@ -126,12 +124,8 @@ std::string get_executable_dir() {
         fs::path exe_path(buffer);
         return exe_path.parent_path().string();
     }
-    // Fallback: return current directory
-    return ".";
-#else
-    // Generic Unix fallback
-    return ".";
 #endif
+    throw std::runtime_error("Unable to resolve executable directory");
 }
 
 std::string get_resource_path(const std::string& relative_path) {
@@ -315,6 +309,7 @@ std::string get_cache_dir() {
     if (!userprofile.empty()) {
         return userprofile + "\\.cache\\lemonade";
     }
+    throw std::runtime_error("USERPROFILE is not set; cannot resolve Lemonade cache directory");
 #elif defined(__APPLE__)
     if (geteuid() != 0) {
         std::string home = get_environment_variable_utf8("HOME");
@@ -350,9 +345,8 @@ std::string get_cache_dir() {
     if (!home.empty()) {
         return home + "/.cache/lemonade";
     }
+    throw std::runtime_error("HOME is not set; cannot resolve Lemonade cache directory");
 #endif
-
-    return ".cache/lemonade";
 }
 
 std::string default_hf_cache_dir() {
@@ -361,13 +355,13 @@ std::string default_hf_cache_dir() {
     if (!userprofile.empty()) {
         return userprofile + "\\.cache\\huggingface\\hub";
     }
-    return "C:\\.cache\\huggingface\\hub";
+    throw std::runtime_error("USERPROFILE is not set; cannot resolve HuggingFace cache directory");
 #else
     std::string home = get_environment_variable_utf8("HOME");
     if (!home.empty()) {
         return home + "/.cache/huggingface/hub";
     }
-    return "/tmp/.cache/huggingface/hub";
+    throw std::runtime_error("HOME is not set; cannot resolve HuggingFace cache directory");
 #endif
 }
 
@@ -407,11 +401,19 @@ std::string get_runtime_dir() {
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
     return std::string(temp_path);
+#elif defined(__APPLE__)
+    std::error_code ec;
+    fs::path base = fs::temp_directory_path(ec);
+    if (!ec && !base.empty()) {
+        fs::path lemon_dir = base / "lemonade";
+        ec.clear();
+        fs::create_directory(lemon_dir, ec);
+        if (!ec || fs::is_directory(lemon_dir)) {
+            return lemon_dir.string();
+        }
+    }
+    throw std::runtime_error("Unable to resolve writable runtime directory on macOS");
 #else
-    // Use $XDG_RUNTIME_DIR/lemonade only when the base directory is set,
-    // actually exists on disk, and is writable by the current process.
-    // This guards against CI environments, containers, or minimal systems
-    // where the variable might be set but the directory is absent/unwritable.
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
     if (xdg && xdg[0] != '\0') {
         std::error_code ec;
@@ -420,16 +422,13 @@ std::string get_runtime_dir() {
             fs::path lemon_dir = base / "lemonade";
             ec.clear();
             fs::create_directory(lemon_dir, ec);
-            // Treat "already exists as a directory" as success: some platforms
-            // set ec to EEXIST even though the standard says they shouldn't.
             std::error_code ec2;
             if (!ec || fs::is_directory(lemon_dir, ec2)) {
                 return lemon_dir.string();
             }
         }
     }
-    // Fallback: /tmp for CI runners and systems without XDG session support
-    return "/tmp";
+    throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR");
 #endif
 }
 

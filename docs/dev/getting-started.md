@@ -182,7 +182,7 @@ If not found, the "Open app" menu option is hidden but everything else works.
   - Installed binaries: `/opt/bin`
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
-  - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
+  - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` on Linux when set and writable; on macOS, `lemonade` uses the per-user temporary directory
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
