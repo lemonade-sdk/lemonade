@@ -1,5 +1,4 @@
 {
-  "$schema": "bench-scenarios",
   "scenarios": [
     {
       "name": "chat-short",
