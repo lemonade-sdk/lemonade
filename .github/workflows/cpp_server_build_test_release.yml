@@ -927,6 +927,11 @@ jobs:
             extra_args: "--wrapped-server flm"
             backends: "npu"
             runner: [Linux, xdna2]
+          - name: lemon-mlx
+            script: server_llm.py
+            extra_args: "--wrapped-server lemon-mlx"
+            backends: "cpu"
+            runner: [self-hosted, Linux]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""

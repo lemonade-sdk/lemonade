@@ -5,6 +5,7 @@
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
+#include "lemon/backends/mlx_server.h"
 #include "lemon/backends/vllm_server.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
@@ -195,6 +196,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     } else if (model_info.recipe == "flm") {
         LOG(DEBUG, "Router") << "Creating FastFlowLM backend" << std::endl;
         new_server = std::make_unique<backends::FastFlowLMServer>(log_level, model_manager_, backend_manager_);
+    } else if (model_info.recipe == "lemon-mlx") {
+        LOG(DEBUG, "Router") << "Creating lemon-mlx backend" << std::endl;
+        new_server = std::make_unique<backends::MlxServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "ryzenai-llm") {
         LOG(DEBUG, "Router") << "Creating RyzenAI-Server backend" << std::endl;
 

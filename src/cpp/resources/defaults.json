@@ -34,6 +34,13 @@
     "cpu_bin": "builtin",
     "npu_bin": "builtin"
   },
+  "lemon-mlx": {
+    "backend": "auto",
+    "args": "",
+    "metal_bin": "builtin",
+    "rocm_bin": "builtin",
+    "cpu_bin": "builtin"
+  },
   "sdcpp": {
     "backend": "auto",
     "args": "",

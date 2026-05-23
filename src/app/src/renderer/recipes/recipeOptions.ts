@@ -14,6 +14,7 @@ export {
   // Recipe-specific interfaces
   LlamaOptions,
   WhisperOptions,
+  LemonMlxOptions,
   FlmOptions,
   RyzenAIOptions,
   RyzenAIRecipe,

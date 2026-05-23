@@ -30,7 +30,7 @@ RuntimeConfig* RuntimeConfig::global() {
 }
 
 static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
+    "llamacpp", "whispercpp", "sdcpp", "flm", "vllm", "ryzenai", "kokoro", "lemon-mlx"
 };
 
 static bool is_backend_name(const std::string& key) {
@@ -39,7 +39,7 @@ static bool is_backend_name(const std::string& key) {
 
 // Backends that have a selectable "backend" key
 static const std::vector<std::string> s_selectable_backends = {
-    "llamacpp", "whispercpp", "sdcpp", "vllm"
+    "llamacpp", "whispercpp", "sdcpp", "lemon-mlx", "vllm"
 };
 
 static bool has_backend_selection(const std::string& config_section) {
@@ -307,6 +307,12 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         } else if (wc.contains("args")) {
             result["whispercpp_args"] = wc["args"];
         }
+    }
+
+    if (config_.contains("lemon-mlx")) {
+        const auto& mlx = config_["lemon-mlx"];
+        if (mlx.contains("backend")) result["lemon-mlx_backend"] = resolve_auto(mlx["backend"]);
+        if (mlx.contains("args")) result["lemon-mlx_args"] = mlx["args"];
     }
 
     if (config_.contains("sdcpp")) {

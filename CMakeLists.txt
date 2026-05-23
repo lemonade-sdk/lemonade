@@ -581,6 +581,7 @@ set(SOURCES_CORE
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
+    src/cpp/server/backends/mlx_server.cpp
     src/cpp/server/backends/vllm_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
