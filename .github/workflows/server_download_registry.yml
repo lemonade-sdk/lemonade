@@ -58,6 +58,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond > "$RUNNER_TEMP/lemond-download-registry.log" 2>&1 &
           echo "$!" > "$RUNNER_TEMP/lemond-download-registry.pid"
 

@@ -133,6 +133,9 @@ jobs:
           LEMONADE_CI_MODE: "True"
         run: |
           echo "Starting lemond in background..."
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond --port 13305 > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
 
           echo "Waiting for server to be ready..."
