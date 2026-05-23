@@ -11,17 +11,6 @@
       "max_tokens": 20
     },
     {
-      "name": "chat-medium",
-      "category": "chat",
-      "messages": [
-        { "role": "system", "content": "You are a helpful coding assistant." },
-        { "role": "user", "content": "What are the main differences between Python and Rust for systems programming?" },
-        { "role": "assistant", "content": "Python is an interpreted, dynamically-typed language focused on developer productivity, while Rust is a compiled, statically-typed language designed for memory safety and performance. Key differences include memory management (GC vs. ownership), type systems, and execution model." },
-        { "role": "user", "content": "Can you give me a concrete example of how Rust's ownership model prevents bugs that Python might have?" }
-      ],
-      "max_tokens": 80
-    },
-    {
       "name": "chat-long-output",
       "category": "chat",
       "messages": [
@@ -61,11 +50,11 @@
       "max_tokens": 100
     },
     {
-      "name": "context-2k",
+      "name": "context-32k",
       "category": "long-context",
       "context": {
         "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
-        "target_tokens": 2000,
+        "target_tokens": 32000,
         "position": "end"
       },
       "messages": [
@@ -74,11 +63,24 @@
       "max_tokens": 20
     },
     {
-      "name": "context-8k",
+      "name": "context-64k",
       "category": "long-context",
       "context": {
         "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
-        "target_tokens": 8000,
+        "target_tokens": 64000,
+        "position": "end"
+      },
+      "messages": [
+        { "role": "user", "content": "Question: What is the capital of France? Answer in one word." }
+      ],
+      "max_tokens": 20
+    },
+    {
+      "name": "context-128k",
+      "category": "long-context",
+      "context": {
+        "filler": "The quick brown fox jumps over the lazy dog. This sentence is repeated to build up a large context window for benchmarking purposes. Each repetition adds approximately 20 tokens to the total input. The pangram contains every letter of the English alphabet at least once, making it useful for testing typewriters and fonts historically. ",
+        "target_tokens": 128000,
         "position": "end"
       },
       "messages": [
@@ -103,9 +105,21 @@
         { "role": "assistant", "content": "Key decomposition patterns:\n\n1. **Strangler Fig Pattern** - Gradually replace specific functionalities with new services, routing traffic to either old or new system\n2. **Domain-Driven Design** - Use bounded contexts to identify natural service boundaries\n3. **Database-per-Service** - Each service owns its data, communicating via APIs\n4. **API Gateway** - Single entry point that routes requests to appropriate services\n5. **Event Sourcing** - Capture state changes as events, replay for new services\n6. **CQRS (Command Query Responsibility Segregation)** - Separate read and write models\n\nThe Strangler Fig pattern is the safest approach because it allows gradual migration without big-bang rewrites." },
         { "role": "user", "content": "Can you explain the Strangler Fig pattern in more detail with a practical example?" },
         { "role": "assistant", "content": "The Strangler Fig Pattern:\n\nNamed after the strangler fig tree that gradually envelops and replaces its host tree, this pattern works similarly for software:\n\n1. **Set up an API Gateway** in front of your monolith\n2. **Identify a bounded capability** to extract (e.g., user authentication)\n3. **Build the new microservice** for that capability\n4. **Update the gateway** to route relevant requests to the new service\n5. **Keep the monolith running** for everything else\n6. **Repeat** for other capabilities until the monolith is empty\n\n**Practical example:** An e-commerce monolith\n\n- Week 1-2: Extract Product Catalog service (read-heavy, stable API)\n- Week 3-4: Extract User/Authentication service (clear boundaries)\n- Week 5-6: Extract Order Processing service (complex business logic)\n- Week 7-8: Extract Payment service (regulatory boundaries)\n- Week 9-10: Extract Notification service (async, event-driven)\n\nEach extraction is independently deployable and can be rolled back if needed." },
-        { "role": "user", "content": "Summarize the key takeaway from our discussion." }
+        { "role": "user", "content": "Now let's switch gears. What are the main database consistency models?" },
+        { "role": "assistant", "content": "The main database consistency models include:\n\n1. **Strong Consistency** - All reads see the most recent write (linearizability)\n2. **Eventual Consistency** - Reads eventually converge to the latest write, but may see stale data temporarily\n3. **Session Consistency** - Within a single session, reads see prior writes; no guarantee across sessions\n4. **Read-Your-Writes Consistency** - A process always sees its own writes\n5. **Monotonic Read Consistency** - Once a value is read, subsequent reads never return an older value\n6. **Monotonic Write Consistency** - Writes from a single process are delivered in order\n7. **Bounded Staleness** - Reads are at most N versions or T time units behind the latest write" },
+        { "role": "user", "content": "How do consistency models relate to the CAP theorem?" },
+        { "role": "assistant", "content": "The CAP theorem states that a distributed system can guarantee at most two of three properties:\n\n- **Consistency (C)** - Every read receives the most recent write or an error\n- **Availability (A)** - Every request receives a response (no guarantee it's the latest)\n- **Partition Tolerance (P)** - The system continues operating despite network partitions\n\nSince network partitions are inevitable in distributed systems, you effectively choose between CP (Consistency + Partition tolerance) and AP (Availability + Partition tolerance):\n\n- **CP systems** (e.g., ZooKeeper, Spanner, etcd): Block reads during partitions to maintain consistency\n- **AP systems** (e.g., Dynamo, Cassandra, CouchDB): Serve potentially stale data during partitions, reconcile later\n\nThe consistency models I listed earlier are ways to tune between pure CP and pure AP. For example, session consistency gives you strong consistency within a session (CP-like) while allowing eventual consistency across sessions (AP-like)." },
+        { "role": "user", "content": "Going back to our e-commerce example from earlier, which services would you design as CP vs AP?" },
+        { "role": "assistant", "content": "For the e-commerce services we discussed:\n\n**CP (strong consistency needed):**\n- **Payment service** - Financial transactions must be exact; you can't have double-spending or lost payments\n- **User/Authentication service** - Account state (balances, permissions) must be accurate\n- **Order Processing service** - Order state transitions must be consistent to avoid shipping issues\n\n**AP (availability preferred):**\n- **Product Catalog service** - Seeing a slightly stale price or inventory count is acceptable; users can retry\n- **Notification service** - If a notification is delayed or duplicated, it's not critical\n\n**Hybrid approach:**\n- Use CP for the critical path (payment, order creation) and AP for read-heavy paths (catalog browsing, recommendations)\n- This is exactly why CQRS (which we mentioned as a decomposition pattern) is useful here: the write side can be CP while the read side is AP" },
+        { "role": "user", "content": "What about data synchronization between CP and AP services?" },
+        { "role": "assistant", "content": "Data synchronization between CP and AP services typically uses:\n\n1. **Change Data Capture (CDC)** - Read the write-ahead log from the CP database and stream changes to AP stores\n2. **Event Sourcing** - Publish domain events from CP services that AP services consume asynchronously\n3. **Outbox Pattern** - Write events to an outbox table in the same transaction as the main data, then a separate process publishes them\n\nKey challenges:\n- **Exactly-once vs at-least-once delivery**: Most systems guarantee at-least-once, so consumers must be idempotent\n- **Schema evolution**: When the CP service changes its data model, AP consumers need to adapt\n- **Monitoring lag**: You need visibility into how stale the AP data is compared to the CP source\n- **Recovery**: If the sync pipeline fails, you need a way to replay missed events or do a full resync" },
+        { "role": "user", "content": "Let me test your memory: how many decomposition patterns did you list, and what was the name of the tree the Strangler Fig pattern is named after?" },
+        { "role": "assistant", "content": "You listed 6 decomposition patterns:\n1. Strangler Fig Pattern\n2. Domain-Driven Design\n3. Database-per-Service\n4. API Gateway\n5. Event Sourcing\n6. CQRS\n\nThe Strangler Fig pattern is named after the **strangler fig tree**, which gradually envelops and replaces its host tree." },
+        { "role": "user", "content": "And what were the 5 services in the e-commerce extraction timeline, in order?" },
+        { "role": "assistant", "content": "The 5 services extracted in order:\n1. Product Catalog (Week 1-2)\n2. User/Authentication (Week 3-4)\n3. Order Processing (Week 5-6)\n4. Payment (Week 7-8)\n5. Notification (Week 9-10)" },
+        { "role": "user", "content": "Summarize the key takeaway from our discussion, referencing both topics we covered." }
       ],
-      "max_tokens": 50
+      "max_tokens": 100
     }
   ]
 }
