@@ -9,8 +9,8 @@
 INSTALL_ROOT="${2%/}"
 
 # Define Labels
-DAEMON_LABEL="com.lemonade.server"
-AGENT_LABEL="com.lemonade.tray"
+DAEMON_LABEL="ai.lemonade_server.server"
+AGENT_LABEL="ai.lemonade_server.tray"
 
 # Define Paths
 DAEMON_PLIST="${INSTALL_ROOT}/Library/LaunchDaemons/${DAEMON_LABEL}.plist"
