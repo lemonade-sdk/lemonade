@@ -95,7 +95,7 @@ std::string LemonadeClient::normalize_host(const std::string& host) const {
 
 // Helper to create and configure httplib::Client (timeouts in milliseconds)
 static httplib::Client make_client(const std::string& host, int port, const std::string& api_key,
-                                    int connection_timeout_ms = DEFAULT_CONNECTION_TIMEOUT_MS, int read_timeout_ms = DEFAULT_READ_TIMEOUT_MS) {
+                                    time_t connection_timeout_ms = DEFAULT_CONNECTION_TIMEOUT_MS, time_t read_timeout_ms = DEFAULT_READ_TIMEOUT_MS) {
     httplib::Client cli(host, port);
     cli.set_connection_timeout(connection_timeout_ms / 1000, (connection_timeout_ms % 1000) * 1000);
     cli.set_read_timeout(read_timeout_ms / 1000, (read_timeout_ms % 1000) * 1000);
@@ -135,7 +135,7 @@ std::string extract_server_error_message(const HttpError& error) {
 // Overloaded make_request with configurable timeouts (in milliseconds)
 std::string LemonadeClient::make_request(const std::string& path, const std::string& method,
                                           const std::string& body, const std::string& content_type,
-                                          int connection_timeout_ms, int read_timeout_ms) const {
+                                          time_t connection_timeout_ms, time_t read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
@@ -210,7 +210,7 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
 bool LemonadeClient::make_request(const std::string& path, const std::string& method,
                                    const std::string& body, const std::string& content_type,
                                    std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                                   int connection_timeout_ms, int read_timeout_ms) const {
+                                   time_t connection_timeout_ms, time_t read_timeout_ms) const {
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 

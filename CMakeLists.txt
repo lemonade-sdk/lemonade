@@ -746,6 +746,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
+#   - bench_scenarios.json (benchmark scenarios)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1597,6 +1598,9 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/bench_scenarios.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive

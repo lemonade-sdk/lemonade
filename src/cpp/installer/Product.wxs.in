@@ -200,6 +200,10 @@
         <File Id="defaults.json" Source="$(var.BuildDir)\Release\resources\defaults.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="BenchScenariosJson" Directory="ResourcesDir" Guid="1c3e5a7b-9d0f-4e2a-8b1c-3d5e7f9a0b2c">
+        <File Id="bench_scenarios.json" Source="$(var.BuildDir)\Release\resources\bench_scenarios.json" KeyPath="yes" />
+      </Component>
+
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
         <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>
