@@ -80,12 +80,8 @@ jobs:
 
       - name: Run server download registry tests
         shell: bash
-        env:
-          HOME: ${{ github.workspace }}/.home
         run: |
           set -euo pipefail
-          mkdir -p "$HOME"
-          echo "HOME=$HOME" >> "$GITHUB_ENV"
           .venv/bin/python test/server_downloads.py --cli-binary ./build/lemonade
 
       - name: Show lemond logs on failure

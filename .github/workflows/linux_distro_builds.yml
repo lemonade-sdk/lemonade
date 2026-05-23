@@ -155,10 +155,8 @@ jobs:
         env:
           LEMONADE_CI_MODE: "True"
           PYTHONIOENCODING: utf-8
-          HOME: ${{ github.workspace }}/.home
         run: |
           set -e
-          mkdir -p "$HOME"
 
           . .venv/bin/activate
           CLI_BINARY="$(pwd)/build/lemonade"
@@ -172,10 +170,8 @@ jobs:
         env:
           LEMONADE_CI_MODE: "True"
           PYTHONIOENCODING: utf-8
-          HOME: ${{ github.workspace }}/.home
         run: |
           set -e
-          mkdir -p "$HOME"
 
           . .venv/bin/activate
           CLI_BINARY="$(pwd)/build/lemonade"
