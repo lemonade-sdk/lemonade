@@ -576,7 +576,7 @@ lemonade bench [options] MODEL_NAME
 | `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model's default context size |
 | `--runs N` | Number of measurement runs per scenario | `3` |
 | `--warmup N` | Number of warmup runs per scenario (not included in stats) | `0` |
-| `--scenarios NAME` | Scenario name(s) to run. Repeat for multiple. | All loaded scenarios |
+| `--scenarios NAME\|CATEGORY` | Scenario name(s) or category (e.g. `chat`, `coding`, `long-context`). Use `all` to include every scenario. Repeat for multiple. | All scenarios except `long-context` |
 | `--scenario-file FILE` | Load scenarios from a single JSON file | Default bundled scenarios |
 | `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
 | `--json` | Output results as JSON instead of a table | Table output |
@@ -623,6 +623,8 @@ Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering
 - **Long-context** — 32K, 64K, 128K context windows and multi-turn conversation memory
 
 You can override these with `--scenario-file` or `--scenario-dir`.
+
+**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them, or `--scenarios all` to run every scenario.
 
 ### Output
 
@@ -680,8 +682,14 @@ lemonade bench --backend vulkan --backend cpu --ctx-size 4096 8192 Qwen3-0.6B-GG
 # Run with custom scenarios
 lemonade bench --scenario-file my-scenarios.json Qwen3-0.6B-GGUF
 
-# Run only specific scenarios from the default set
-lemonade bench --scenarios chat-short code-debug Qwen3-0.6B-GGUF
+# Run only specific scenarios by name
+lemonade bench --scenarios chat-short --scenarios code-debug Qwen3-0.6B-GGUF
+
+# Run all scenarios in a category
+lemonade bench --scenarios coding Qwen3-0.6B-GGUF
+
+# Include long-context scenarios (excluded by default)
+lemonade bench --scenarios all Qwen3-0.6B-GGUF
 
 # Benchmark with custom backend arguments (e.g., different batch sizes)
 lemonade bench --llamacpp-args "-b 1024" "-b 2048" Qwen3-0.6B-GGUF

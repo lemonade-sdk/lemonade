@@ -310,13 +310,37 @@ std::string resolve_default_scenario_file() {
     return "bench_scenarios.json";
 }
 
+// Check if a scenario matches a filter token.
+// A token matches if it equals the scenario name, equals the scenario category,
+// or equals "all" (matches every scenario).
+static bool scenario_matches_filter(const BenchScenario& s, const std::string& token) {
+    if (token == "all") return true;
+    if (s.name == token) return true;
+    if (s.category == token) return true;
+    return false;
+}
+
 std::vector<BenchScenario> filter_scenarios(const std::vector<BenchScenario>& all,
-                                            const std::vector<std::string>& names) {
-    if (names.empty()) return all;
-    std::unordered_set<std::string> name_set(names.begin(), names.end());
+                                            const std::vector<std::string>& tokens) {
+    if (tokens.empty()) return all;
     std::vector<BenchScenario> filtered;
     for (const auto& s : all) {
-        if (name_set.count(s.name)) {
+        for (const auto& token : tokens) {
+            if (scenario_matches_filter(s, token)) {
+                filtered.push_back(s);
+                break;  // avoid duplicates if multiple tokens match
+            }
+        }
+    }
+    return filtered;
+}
+
+// Return scenarios excluding the given category (e.g. "long-context").
+static std::vector<BenchScenario> exclude_category(const std::vector<BenchScenario>& all,
+                                                    const std::string& category) {
+    std::vector<BenchScenario> filtered;
+    for (const auto& s : all) {
+        if (s.category != category) {
             filtered.push_back(s);
         }
     }
@@ -433,7 +457,7 @@ bool load_model_for_backend(lemonade::LemonadeClient& client,
 
         // Long timeout for model loading
         client.make_request("/api/v1/load", "POST", request_body.dump(), "application/json",
-                            300000, 3000000);
+                            86400000, 86400000);
 
         std::cout << " done" << std::endl;
         return true;
@@ -1103,8 +1127,15 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         return 1;
     }
 
-    // Filter by name
-    scenarios = filter_scenarios(scenarios, config.scenario_names);
+    // Filter scenarios
+    // When no --scenarios filter is given, exclude long-context by default
+    // (they run very long and fail on many systems).
+    // When --scenarios is provided, match by name, category, or "all".
+    if (config.scenario_names.empty()) {
+        scenarios = exclude_category(scenarios, "long-context");
+    } else {
+        scenarios = filter_scenarios(scenarios, config.scenario_names);
+    }
     if (scenarios.empty()) {
         std::cerr << "Error: No scenarios matched the filter." << std::endl;
         return 1;
@@ -1263,8 +1294,10 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--runs", opts.runs, "Number of measurement runs per scenario (default: 3)")->type_name("N");
     cmd->add_option("--warmup", opts.warmup, "Number of warmup runs per scenario (default: 0)")->type_name("N");
     cmd->add_option("--scenarios", opts.scenario_names,
-        "Scenario name(s) to run. Repeat for multiple. Default: all loaded scenarios.")
-        ->type_name("NAME")
+        "Scenario name(s) or category to run (e.g. chat, coding, long-context). "
+        "Use 'all' to include every scenario including long-context. "
+        "Default: all scenarios except long-context.")
+        ->type_name("NAME|CATEGORY")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--scenario-file", opts.scenario_file, "Load scenarios from a single JSON file")->type_name("FILE");
     cmd->add_option("--scenario-dir", opts.scenario_dir, "Load all .json scenario files from a directory")->type_name("DIR");

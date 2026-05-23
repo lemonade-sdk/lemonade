@@ -87,9 +87,10 @@ std::vector<BenchScenario> load_scenarios_from_dir(const std::string& path);
 // Resolve the bundled default scenario file path
 std::string resolve_default_scenario_file();
 
-// Filter scenarios by name (empty = return all)
+// Filter scenarios by name, category, or "all" (empty = return all).
+// Each token matches if it equals a scenario's name, its category, or is "all".
 std::vector<BenchScenario> filter_scenarios(const std::vector<BenchScenario>& all,
-                                            const std::vector<std::string>& names);
+                                            const std::vector<std::string>& tokens);
 
 // Expand context filler text to target token count
 std::string expand_context(const json& context_block, const std::vector<json>& messages);
