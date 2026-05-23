@@ -360,7 +360,7 @@ std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client
 
             for (const auto& [backend_name, backend_data] : recipe_data["backends"].items()) {
                 std::string state = backend_data.value("state", "unknown");
-                if (state != "installed" && state != "update_required") continue;
+                if (state != "installed" && state != "update_required" && state != "update_available") continue;
 
                 // If specific backends requested, filter
                 if (!requested.empty()) {
@@ -783,26 +783,32 @@ json to_json(const std::vector<BenchBackendResult>& results,
             s_json["input_tokens"] = scenario.input_tokens();
             s_json["output_tokens"] = scenario.output_tokens();
 
-            json ttft_stats;
-            ttft_stats["mean"] = scenario.ttft_mean_ms();
-            ttft_stats["min"] = scenario.ttft_min_ms();
-            ttft_stats["max"] = scenario.ttft_max_ms();
-            ttft_stats["p50"] = scenario.ttft_p50_ms();
-            ttft_stats["p95"] = scenario.ttft_p95_ms();
-            s_json["ttft_ms"] = ttft_stats;
+            if (scenario.runs.empty()) {
+                // All runs failed — omit metric blocks so the result is clearly
+                // distinguishable from a valid 0ms/0tps measurement.
+                s_json["all_runs_failed"] = true;
+            } else {
+                json ttft_stats;
+                ttft_stats["mean"] = scenario.ttft_mean_ms();
+                ttft_stats["min"] = scenario.ttft_min_ms();
+                ttft_stats["max"] = scenario.ttft_max_ms();
+                ttft_stats["p50"] = scenario.ttft_p50_ms();
+                ttft_stats["p95"] = scenario.ttft_p95_ms();
+                s_json["ttft_ms"] = ttft_stats;
 
-            json tps_stats;
-            tps_stats["mean"] = scenario.tps_mean();
-            tps_stats["min"] = scenario.tps_min();
-            tps_stats["max"] = scenario.tps_max();
-            tps_stats["p50"] = scenario.tps_p50();
-            tps_stats["p95"] = scenario.tps_p95();
-            s_json["tps"] = tps_stats;
+                json tps_stats;
+                tps_stats["mean"] = scenario.tps_mean();
+                tps_stats["min"] = scenario.tps_min();
+                tps_stats["max"] = scenario.tps_max();
+                tps_stats["p50"] = scenario.tps_p50();
+                tps_stats["p95"] = scenario.tps_p95();
+                s_json["tps"] = tps_stats;
 
-            double vram_peak = scenario.vram_peak_gb();
-            if (vram_peak >= 0) s_json["vram_peak_gb"] = vram_peak;
-            double mem_peak = scenario.memory_peak_gb();
-            if (mem_peak >= 0) s_json["memory_peak_gb"] = mem_peak;
+                double vram_peak = scenario.vram_peak_gb();
+                if (vram_peak >= 0) s_json["vram_peak_gb"] = vram_peak;
+                double mem_peak = scenario.memory_peak_gb();
+                if (mem_peak >= 0) s_json["memory_peak_gb"] = mem_peak;
+            }
             s_json["failed_runs"] = scenario.failed_runs;
 
             scenarios_json.push_back(s_json);
@@ -895,21 +901,36 @@ std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendR
             delta.backend_args = backend_result.backend_args;
             delta.scenario = scenario.scenario_name;
 
-            if (it != prev_map.end()) {
-                delta.status = "matched";
+            if (scenario.runs.empty()) {
+                // All runs failed — no meaningful delta to compute
+                delta.status = "failed";
+                delta.ttft_pct_change = 0.0;
+                delta.tps_pct_change = 0.0;
+                delta.vram_gb_change = std::nullopt;
+            } else if (it != prev_map.end()) {
                 matched_prev.insert(key);
 
-                double curr_ttft = scenario.ttft_mean_ms();
-                double curr_tps = scenario.tps_mean();
-                double curr_vram = scenario.vram_peak_gb();
+                if (it->second.value("all_runs_failed", false)) {
+                    // Previous run failed — current succeeded but no baseline to compare
+                    delta.status = "prev_failed";
+                    delta.ttft_pct_change = 0.0;
+                    delta.tps_pct_change = 0.0;
+                    delta.vram_gb_change = std::nullopt;
+                } else {
+                    delta.status = "matched";
 
-                double prev_ttft = it->second.value("ttft_ms", json::object()).value("mean", 0.0);
-                double prev_tps = it->second.value("tps", json::object()).value("mean", 0.0);
-                double prev_vram = it->second.value("vram_peak_gb", -1.0);
+                    double curr_ttft = scenario.ttft_mean_ms();
+                    double curr_tps = scenario.tps_mean();
+                    double curr_vram = scenario.vram_peak_gb();
 
-                delta.ttft_pct_change = (prev_ttft > 0) ? ((curr_ttft - prev_ttft) / prev_ttft * 100.0) : 0.0;
-                delta.tps_pct_change = (prev_tps > 0) ? ((curr_tps - prev_tps) / prev_tps * 100.0) : 0.0;
-                delta.vram_gb_change = (prev_vram >= 0 && curr_vram >= 0) ? std::optional<double>(curr_vram - prev_vram) : std::nullopt;
+                    double prev_ttft = it->second.value("ttft_ms", json::object()).value("mean", 0.0);
+                    double prev_tps = it->second.value("tps", json::object()).value("mean", 0.0);
+                    double prev_vram = it->second.value("vram_peak_gb", -1.0);
+
+                    delta.ttft_pct_change = (prev_ttft > 0) ? ((curr_ttft - prev_ttft) / prev_ttft * 100.0) : 0.0;
+                    delta.tps_pct_change = (prev_tps > 0) ? ((curr_tps - prev_tps) / prev_tps * 100.0) : 0.0;
+                    delta.vram_gb_change = (prev_vram >= 0 && curr_vram >= 0) ? std::optional<double>(curr_vram - prev_vram) : std::nullopt;
+                }
             } else {
                 delta.status = "new";
                 delta.ttft_pct_change = 0.0;
@@ -978,6 +999,7 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
                 tps_str = fmt_pct_change(d->tps_pct_change);
                 vram_str = fmt_vram_change(d->vram_gb_change);
             }
+            // "failed" and "new" statuses keep the default "-" values
 
             std::cout << std::left << std::setw(22) << d->scenario
                       << std::setw(14) << ttft_str
@@ -989,6 +1011,7 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
 
     std::cout << std::endl;
     std::cout << "Legend: TTFT change > 0 means slower (worse). TPS change > 0 means faster (better)." << std::endl;
+    std::cout << "Status: matched = compared against previous, new = no previous data, removed = not in current run, failed = all runs errored, prev_failed = previous run errored" << std::endl;
     std::cout << std::endl;
 }
 
