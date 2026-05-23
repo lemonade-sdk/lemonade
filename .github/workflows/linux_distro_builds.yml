@@ -135,6 +135,7 @@ jobs:
           echo "Starting lemond in background..."
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond --port 13305 > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
 

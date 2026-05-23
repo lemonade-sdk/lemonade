@@ -439,6 +439,10 @@ jobs:
 
           # Launchd may not start reliably in CI. Fall back to manual start.
           echo "Server not reachable after 30s — starting manually..."
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"
@@ -547,6 +551,10 @@ jobs:
             pkill -f lemond 2>/dev/null || true
             sleep 2
             # Start lemond directly from build/ (avoid legacy shim health-check timeout)
+            mkdir -p "$RUNNER_TEMP/xdg-runtime"
+            chmod 700 "$RUNNER_TEMP/xdg-runtime"
+            echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+            export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
             ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
             LEMOND_PID=$!
             disown "$LEMOND_PID"
@@ -1141,6 +1149,10 @@ jobs:
           set -e
           DIR="lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}"
           cd "$DIR"
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
           ./lemond ./ &
           LEMOND_PID=$!
@@ -1363,6 +1375,10 @@ jobs:
         run: |
           set -e
           echo "Starting server from build/ before matrix tests..."
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
           ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
           LEMOND_PID=$!
           disown "$LEMOND_PID"

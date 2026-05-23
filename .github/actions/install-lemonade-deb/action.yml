@@ -105,6 +105,7 @@ runs:
         echo "Starting lemonade server with cache dir $CACHE_DIR (logging to $LOG_FILE)..."
         mkdir -p "$RUNNER_TEMP/xdg-runtime"
         chmod 700 "$RUNNER_TEMP/xdg-runtime"
+        echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
         export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
         "$SERVER_BIN" "$CACHE_DIR" > "$LOG_FILE" 2>&1 &
         SERVER_PID=$!
