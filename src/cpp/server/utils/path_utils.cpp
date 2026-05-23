@@ -401,6 +401,18 @@ std::string get_runtime_dir() {
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
     return std::string(temp_path);
+#elif defined(__APPLE__)
+    std::error_code ec;
+    fs::path base = fs::temp_directory_path(ec);
+    if (!ec && !base.empty()) {
+        fs::path lemon_dir = base / "lemonade";
+        ec.clear();
+        fs::create_directory(lemon_dir, ec);
+        if (!ec || fs::is_directory(lemon_dir)) {
+            return lemon_dir.string();
+        }
+    }
+    throw std::runtime_error("Unable to resolve writable runtime directory on macOS");
 #else
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
     if (xdg && xdg[0] != '\0') {
