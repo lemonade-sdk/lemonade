@@ -25,6 +25,8 @@
   <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
 </h3>
 
+**→ [Project Wiki](docs/wiki/README.md)** — architecture, decisions, gotchas, and agent onboarding.
+
 Lemonade is the local AI server that gives you the same capabilities as cloud APIs, except 100% free and private. Use the latest models for chat, coding, speech, and image generation on your own NPU and GPU.
 
 Lemonade comes in two flavors:
