@@ -1,0 +1,81 @@
+name: gemini-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Gemini Flash PR review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Cap at 50 KB — Gemini Flash has a 1 M-token context but PR diffs
+          # this large are rarely useful in a review comment.
+          gh pr diff "$PR_NUMBER" --repo "$REPO" | head -c 51200 > /tmp/pr.diff
+
+      - name: Review with Gemini Flash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, urllib.request, pathlib, subprocess
+
+          api_key = os.environ["GEMINI_API_KEY"]
+          diff = pathlib.Path("/tmp/pr.diff").read_text(errors="replace")
+
+          prompt = (
+              "You are a careful code reviewer. Review the following pull request diff "
+              "and give concise, actionable feedback. Focus on correctness, security, "
+              "test coverage, and edge cases. If there are no significant issues, say "
+              "so briefly. Format your response as GitHub Markdown.\n\n"
+              "```diff\n" + diff + "\n```"
+          )
+
+          payload = json.dumps({
+              "contents": [{"parts": [{"text": prompt}]}],
+              "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024}
+          }).encode()
+
+          url = (
+              "https://generativelanguage.googleapis.com/v1beta/models/"
+              "gemini-2.0-flash:generateContent?key=" + api_key
+          )
+          req = urllib.request.Request(
+              url, data=payload, headers={"Content-Type": "application/json"}
+          )
+          with urllib.request.urlopen(req, timeout=60) as r:
+              data = json.load(r)
+
+          review = data["candidates"][0]["content"]["parts"][0]["text"]
+
+          body = (
+              "### Gemini Flash review\n\n"
+              + review
+              + "\n\n---\n"
+              "*Automated review via gemini-review workflow*"
+          )
+
+          pr = os.environ["PR_NUMBER"]
+          repo = os.environ["REPO"]
+          subprocess.run(
+              ["gh", "pr", "comment", pr, "--repo", repo, "--body", body],
+              check=True,
+          )
+          PYEOF
