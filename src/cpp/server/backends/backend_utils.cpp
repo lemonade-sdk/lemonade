@@ -143,9 +143,8 @@ namespace lemon::backends {
     }
 
     bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
-        // Windows ships bsdtar (libarchive) as `tar.exe` since Windows 11 22H2,
-        // which transparently reads .7z. On Linux, GNU tar cannot open .7z, so
-        // we require either `bsdtar` (libarchive-tools) or `7z`/`7za` (p7zip).
+        // CUDA Windows release assets are .7z and use the existing native tar.exe path.
+        // Linux CUDA assets are .tar.xz, so Linux should not require bsdtar/7z/p7zip.
         std::string command;
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting 7z to " << dest_dir << std::endl;
@@ -167,19 +166,8 @@ namespace lemon::backends {
         }
         command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\" --strip-components=1";
 #else
-        // Prefer bsdtar (libarchive) — handles .7z natively. Fall back to 7z/7za.
-        if (system("command -v bsdtar > /dev/null 2>&1") == 0) {
-            command = "bsdtar -xf \"" + archive_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
-        } else if (system("command -v 7z > /dev/null 2>&1") == 0) {
-            // 7z does not support --strip-components; binaries are found via
-            // recursive search in find_executable_in_install_dir regardless.
-            command = "7z x -y -o\"" + dest_dir + "\" \"" + archive_path + "\" > /dev/null";
-        } else if (system("command -v 7za > /dev/null 2>&1") == 0) {
-            command = "7za x -y -o\"" + dest_dir + "\" \"" + archive_path + "\" > /dev/null";
-        } else {
-            LOG(ERROR, backend_name) << "Error: .7z extraction requires 'bsdtar' (libarchive-tools) or '7z'/'7za' (p7zip). Please install one of these." << std::endl;
-            return false;
-        }
+        LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
+        return false;
 #endif
         int result = system(command.c_str());
         if (result != 0) {
@@ -408,10 +396,15 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
+            std::string url = "https://github.com/" + repo + "/releases/download/" +
+                            expected_version + "/" + filename;
+
+            // Download archive to cache directory.
             // Preserve the actual filename (sanitised for use in a path) so that
             // extract_archive() dispatches to the correct extractor based on extension,
             // and architecture-specific assets (e.g. sm_86 vs sm_89) don't collide.
-            fs::path cache_dir = get_backend_download_cache_dir();
+            fs::path cache_dir = fs::temp_directory_path();
+            fs::create_directories(cache_dir);
             std::string zip_name = backend.empty() ? spec.recipe : spec.recipe + "_" + backend;
             std::string safe_filename = filename;
             for (char& ch : safe_filename) {

@@ -187,6 +187,7 @@ class TestIdentifyCudaArchFromName(unittest.TestCase):
             ("NVIDIA GTX 1660 Super", "sm_75"),
             ("NVIDIA H100 PCIe", "sm_90"),
             ("NVIDIA A100-SXM4-80GB", "sm_80"),
+            ("NVIDIA A10", "sm_86"),
             ("NVIDIA A40", "sm_86"),
         ]
         for name, expected in cases:

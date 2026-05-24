@@ -140,7 +140,7 @@ jobs:
   validate:
     name: Validate ${{ matrix.backend }}${{ matrix.channel && format(' ({0})', matrix.channel) || '' }}
     needs: [get-latest-releases, build]
-    if: always() && needs.build.result == 'success' && !matrix.skip
+    if: always() && needs.build.result == 'success'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -154,12 +154,12 @@ jobs:
           - backend: rocm
             channel: nightly
             runner: [self-hosted, Windows, 128gb, rocm]
-          # CUDA validation is defined but skipped until an NVIDIA self-hosted
-          # runner is available. To enable: add a runner with the 'cuda' label
-          # and remove the `if: false` condition below.
-          - backend: cuda
-            runner: [self-hosted, Windows, 128gb, cuda]
-            skip: true
+          # CUDA validation is prepared but intentionally disabled until an
+          # NVIDIA self-hosted runner is available. To enable it, uncomment this
+          # matrix entry.
+          #
+          # - backend: cuda
+          #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
       - uses: actions/checkout@v5
         with:

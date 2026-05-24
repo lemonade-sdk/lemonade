@@ -10,6 +10,7 @@
 #include "lemon/system_info.h"
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
@@ -176,20 +177,31 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
 #endif
+    } else if (resolved_backend == "rocm-stable") {
+        params.repo = "lemonade-sdk/llama.cpp";
+        std::string therock_ver = get_therock_version();
+#ifdef _WIN32
+        params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
+#elif defined(__linux__)
+        params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
+#else
+        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
+#endif
     } else if (resolved_backend == "cuda") {
-        params.repo = "Phqen1x/llama.cpp";
+        params.repo = "Phqen1x/llama.cpp-builds";
         std::string target_arch = SystemInfo::get_cuda_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("llamacpp", "cuda")
             );
         }
-        // Phqen1x/llama.cpp releases publish per-Compute-Capability binaries
-        // and do not embed the build tag in the asset filename.
+        // Phqen1x/llama.cpp-builds releases publish per-Compute-Capability binaries
+        // and embed the build tag in the asset filename, e.g.
+        // llama-b1011-ubuntu-cuda-sm_120-x64.tar.xz.
 #ifdef _WIN32
-        params.filename = "llama-windows-cuda-" + target_arch + "-x64.7z";
+        params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
 #elif defined(__linux__)
-        params.filename = "llama-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+        params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
 #else
         throw std::runtime_error("CUDA llamacpp is currently supported on Windows and Linux only");
 #endif
@@ -420,7 +432,7 @@ void LlamaCppServer::load(const std::string& model_name,
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        // The Phqen1x/llamacpp-cuda Linux tarballs ship the bundled CUDA runtime
+        // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime
         // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the
         // executable's directory to LD_LIBRARY_PATH like we do for ROCm.
         fs::path exe_dir = fs::path(executable).parent_path();
@@ -478,6 +490,42 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
     }
 #endif
+
+    // CUDA release assets are architecture-specific. On mixed NVIDIA systems
+    // the latest sm_120-only binary will be installed. So an older sm-Verion is mot
+    // supported. Hide incompatible NV GPUs by default, keep all GPUs that match the selected
+    // release architecture so homogeneous multi-GPU systems still use multiple cards.
+    if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
+        const char* existing_llama_device = std::getenv("LLAMA_ARG_DEVICE");
+        const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
+        const bool has_llama_device_override = existing_llama_device && existing_llama_device[0] != '\0';
+
+        if (!llamacpp_device.empty()) {
+            LOG(INFO, "LlamaCpp")
+                << "Using explicit llama.cpp CUDA device selection: " << llamacpp_device
+                << std::endl;
+        } else if (has_visible_override) {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing CUDA_VISIBLE_DEVICES=" << existing_visible_devices
+                << std::endl;
+        } else if (has_llama_device_override) {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing LLAMA_ARG_DEVICE=" << existing_llama_device
+                << std::endl;
+        } else {
+            std::string cuda_arch = SystemInfo::get_cuda_arch();
+            std::string visible_devices = SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch);
+            if (!cuda_arch.empty() && !visible_devices.empty()) {
+                env_vars.push_back({"CUDA_VISIBLE_DEVICES", visible_devices});
+                LOG(INFO, "LlamaCpp")
+                    << "Restricting CUDA_VISIBLE_DEVICES to " << visible_devices
+                    << " for " << cuda_arch
+                    << " CUDA asset; matching same-arch GPUs remain available for multi-GPU offload"
+                    << std::endl;
+            }
+        }
+    }
 
 #ifdef __APPLE__
     // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent

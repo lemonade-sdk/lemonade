@@ -22,6 +22,8 @@ struct CPUInfo : DeviceInfo {
 };
 
 struct GPUInfo : DeviceInfo {
+    int index = -1;  // NVIDIA only: physical device index from nvidia-smi, when available
+    std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
@@ -104,6 +106,13 @@ public:
     // Device support detection
     static std::string get_rocm_arch();
     static std::string get_cuda_arch();
+
+    // CUDA release assets are architecture-specific (sm_89, sm_120, etc.).
+    // Return the physical CUDA device indices whose compute capability matches
+    // the selected release architecture, so callers can hide incompatible GPUs
+    // with CUDA_VISIBLE_DEVICES while still using all GPUs of the same arch.
+    static std::vector<int> get_cuda_device_indices_for_arch(const std::string& arch);
+    static std::string get_cuda_visible_devices_for_arch(const std::string& arch);
 
     // Detect if the device is an iGPU
     static bool get_has_igpu();
