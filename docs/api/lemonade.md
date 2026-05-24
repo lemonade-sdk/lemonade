@@ -514,7 +514,6 @@ curl http://localhost:13305/v1/stats
   "tokens_per_second": 33.33,
   "input_tokens": 128,
   "output_tokens": 5,
-  "decode_token_times": [0.01, 0.02, 0.03, 0.04, 0.05],
   "prompt_tokens": 9
 }
 ```
@@ -525,7 +524,6 @@ curl http://localhost:13305/v1/stats
 - `tokens_per_second` - Generation speed in tokens per second
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
-- `decode_token_times` - Array of time taken for each generated token
 - `prompt_tokens` - Total prompt tokens including cached tokens
 
 ## `GET /metrics`

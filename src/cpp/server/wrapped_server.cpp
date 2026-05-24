@@ -174,7 +174,6 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                      telemetry.output_tokens,
                                      telemetry.time_to_first_token,
                                      telemetry.tokens_per_second);
-                    telemetry_.decode_token_times = telemetry.decode_token_times;
                 },
                 timeout_seconds
             );

@@ -24,7 +24,6 @@ struct Telemetry {
     int output_tokens = 0;
     double time_to_first_token = 0.0;
     double tokens_per_second = 0.0;
-    std::vector<double> decode_token_times;
     int prompt_tokens = 0;  // From usage.prompt_tokens (includes cached tokens)
     uint64_t request_count_total = 0;
     uint64_t input_tokens_total = 0;
@@ -36,7 +35,6 @@ struct Telemetry {
         output_tokens = 0;
         time_to_first_token = 0.0;
         tokens_per_second = 0.0;
-        decode_token_times.clear();
         prompt_tokens = 0;
         request_count_total = 0;
         input_tokens_total = 0;
@@ -50,7 +48,6 @@ struct Telemetry {
             {"output_tokens", output_tokens},
             {"time_to_first_token", time_to_first_token},
             {"tokens_per_second", tokens_per_second},
-            {"decode_token_times", decode_token_times},
             {"prompt_tokens", prompt_tokens},
             {"request_count_total", request_count_total},
             {"input_tokens_total", input_tokens_total},
