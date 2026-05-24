@@ -26,6 +26,9 @@
 </h3>
 
 **→ [Project Wiki](docs/wiki/README.md)** — architecture, decisions, gotchas, and agent onboarding.
+The wiki is stored in `docs/wiki/`; read it before changing the core
+runtime flow, and update the relevant wiki page whenever a change alters
+architecture, API behavior, agent handoff, or system decisions.
 
 Lemonade is the local AI server that gives you the same capabilities as cloud APIs, except 100% free and private. Use the latest models for chat, coding, speech, and image generation on your own NPU and GPU.
 
