@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks } from '../api';
+import api, { ModelInfo, LoadedModel, PullCallbacks, HFModelResult, searchHuggingFace } from '../api';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -94,6 +94,12 @@ function hfUrl(checkpoint: string): string | null {
   return `https://huggingface.co/${parts}`;
 }
 
+function formatDownloads(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 /* ── Filter / search types ─────────────────────────────────── */
 
 type FilterTab = 'all' | 'llm' | 'image' | 'audio' | 'tts' | 'embedding';
@@ -125,6 +131,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [showAllAvailable, setShowAllAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // HuggingFace search state
+  const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
+  const [hfLoading, setHfLoading] = useState(false);
+  const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     if (!api.isConnected) return;
     const result = await api.refresh();
@@ -135,6 +146,38 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  /* ── HuggingFace debounced search ────────────────────────── */
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setHfResults([]);
+      setHfLoading(false);
+      setExpandedHfModel(null);
+      return;
+    }
+
+    setHfLoading(true);
+    const ac = new AbortController();
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchHuggingFace(q, ac.signal);
+        setHfResults(results);
+      } catch {
+        // Network error / aborted — fail silently
+        if (!ac.signal.aborted) setHfResults([]);
+      } finally {
+        if (!ac.signal.aborted) setHfLoading(false);
+      }
+    }, 400);
+
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
+  }, [searchQuery]);
 
   /* ── Actions ─────────────────────────────────────────────── */
 
@@ -284,6 +327,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return filteredAvailable.slice(0, AVAILABLE_INITIAL);
   }, [filteredAvailable, showAllAvailable, searchQuery, filterTab]);
   const hiddenAvailableCount = filteredAvailable.length - visibleAvailable.length;
+
+  // HuggingFace results — exclude models already in local registry
+  const filteredHfResults = useMemo(() => {
+    if (hfResults.length === 0) return [];
+    const localIds = new Set(models.map(m => modelName(m).toLowerCase()));
+    return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
+  }, [hfResults, models]);
 
   /* ── Toggle detail ───────────────────────────────────────── */
   const toggleDetail = (name: string) => {
@@ -504,6 +554,96 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
+  const renderHfRow = (r: HFModelResult) => {
+    const isExpanded = expandedHfModel === r.id;
+    const pipelineTag = r.pipeline_tag || '';
+    const displayTags = r.tags
+      .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
+      .slice(0, 5);
+
+    return (
+      <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
+        <div className="row__content" onClick={() => setExpandedHfModel(prev => prev === r.id ? null : r.id)}>
+          <div className="row__main">
+            <div className="row__icon row__icon--hf">🤗</div>
+            <div className="row__text">
+              <span className="row__name">{r.id}</span>
+              <span className="row__sub">
+                {pipelineTag && `${pipelineTag} · `}
+                {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
+              </span>
+              {displayTags.length > 0 && (
+                <div className="row__labels">
+                  {displayTags.map(t => (
+                    <span key={t} className="row__label row__label--hf">{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="row__right">
+            <a
+              className="row__action row__action--hf-link"
+              href={`https://huggingface.co/${r.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+            >
+              🤗 View on HuggingFace
+            </a>
+            <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="row__detail row__detail--hf">
+            <div className="detail__grid">
+              <div className="detail__meta">
+                <div className="detail__field">
+                  <span className="detail__label">Repository</span>
+                  <span className="detail__value detail__value--mono">{r.id}</span>
+                </div>
+                {pipelineTag && (
+                  <div className="detail__field">
+                    <span className="detail__label">Pipeline</span>
+                    <span className="detail__value">{pipelineTag}</span>
+                  </div>
+                )}
+                <div className="detail__field">
+                  <span className="detail__label">Last Modified</span>
+                  <span className="detail__value">{new Date(r.lastModified).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div className="detail__source">
+                {r.siblings && r.siblings.length > 0 && (
+                  <div className="detail__field">
+                    <span className="detail__label">Files ({r.siblings.length})</span>
+                    <div className="hf-detail__files">
+                      {r.siblings.slice(0, 10).map(f => (
+                        <span key={f.rfilename} className="hf-detail__file">{f.rfilename}</span>
+                      ))}
+                      {r.siblings.length > 10 && (
+                        <span className="hf-detail__file hf-detail__file--more">+{r.siblings.length - 10} more</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <a
+                  className="detail__hf-link"
+                  href={`https://huggingface.co/${r.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  🤗 View on Hugging Face
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   /* ── Keyboard shortcut ───────────────────────────────────── */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -623,6 +763,31 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               >
                 Show {hiddenAvailableCount} more models
               </button>
+            )}
+          </section>
+        )}
+
+        {/* HuggingFace Explore zone — only when searching */}
+        {searchQuery.trim().length >= 2 && (
+          <section className="zone zone--hf">
+            <div className="zone__head">
+              <span className="zone__dot zone__dot--hf" />
+              <span className="zone__title">Explore — HuggingFace</span>
+              {!hfLoading && <span className="zone__count">{filteredHfResults.length}</span>}
+              <span className="zone__rule" />
+            </div>
+            {hfLoading ? (
+              <div className="hf-zone__loading">
+                <span className="hf-zone__spinner" />
+                <span>Searching HuggingFace…</span>
+              </div>
+            ) : filteredHfResults.length > 0 ? (
+              filteredHfResults.map(r => renderHfRow(r))
+            ) : (
+              <div className="hf-zone__empty">
+                <span>🤗</span>
+                <span>Explore community models on HuggingFace</span>
+              </div>
             )}
           </section>
         )}

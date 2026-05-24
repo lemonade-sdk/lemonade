@@ -366,3 +366,35 @@ class LemonadeAPI {
 // Singleton export
 export const api = new LemonadeAPI();
 export default api;
+
+/* ── HuggingFace search (standalone — external API) ────────── */
+
+export interface HFModelResult {
+  id: string;           // e.g. "TheBloke/Llama-2-7B-GGUF"
+  modelId: string;
+  likes: number;
+  downloads: number;
+  tags: string[];
+  lastModified: string;
+  pipeline_tag?: string;
+  siblings?: { rfilename: string }[];
+}
+
+export async function searchHuggingFace(
+  query: string,
+  signal?: AbortSignal,
+): Promise<HFModelResult[]> {
+  const params = new URLSearchParams({
+    search: query,
+    filter: 'gguf',
+    sort: 'downloads',
+    direction: '-1',
+    limit: '20',
+  });
+  const resp = await fetch(
+    `https://huggingface.co/api/models?${params}`,
+    { signal },
+  );
+  if (!resp.ok) return [];
+  return resp.json();
+}
