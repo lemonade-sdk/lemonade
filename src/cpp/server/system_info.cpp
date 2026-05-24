@@ -350,7 +350,10 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
                 // Check if AMD GPU driver is loaded (KFD indicates amdgpu driver)
                 if (fs::exists("/sys/class/kfd")) {
                     // System has AMD GPU(s), so we need the HIP plugin
-                    if (!is_ggml_hip_plugin_available()) {
+                    const char* mock_ggml = std::getenv("LEMONADE_MOCK_GGML_HIP");
+                    bool mocked = mock_ggml && (std::string(mock_ggml) == "1" || std::string(mock_ggml) == "true");
+
+                    if (!mocked && !utils::is_ggml_hip_plugin_available()) {
                         error_message = "HIP plugin libggml-hip.so not installed";
                         return false;
                     }
@@ -362,7 +365,16 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
         } catch (...) {
 #ifndef _WIN32
             // On Linux, FLM is installed as a system package (in PATH, not install dir)
-            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
+            if (recipe == "flm") {
+                std::string flm_path = utils::find_flm_executable();
+                if (flm_path.empty()) {
+                    error_message = "flm not installed (not found in PATH)";
+                    return false;
+                }
+                // Run validation to catch NPU driver/firmware issues early
+                if (!utils::run_flm_validate(flm_path, error_message)) {
+                    return false;
+                }
                 return true;
             }
 #endif
@@ -983,10 +995,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     }
                 } else if (!required_families.empty()) {
                     // Show specific family requirement for other devices (e.g., "Requires XDNA2 NPU")
-                    message = "Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
+                    message = "Device not supported. Requires " + get_family_name(*required_families.begin()) + " " + get_device_type_name(device_type);
                 } else {
                     // No specific family required (e.g., "Requires CPU")
-                    message = "Requires " + get_device_type_name(device_type);
+                    message = "Device not supported. Requires " + get_device_type_name(device_type);
                 }
             } else {
                 message = "No compatible device";
@@ -998,10 +1010,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
             // FLM on Linux needs richer state to guide users through manual setup
             // (installing .deb, xrt drivers, etc.)
             if (def.recipe == "flm") {
+                std::string installed_version = get_recipe_version(def.recipe, def.backend);
                 bool is_not_installed = install_error.empty()
                                      || install_error.find("not installed") != std::string::npos
                                      || install_error.find("not found") != std::string::npos;
-                bool is_version_mismatch = install_error.find("requires") != std::string::npos;
+                bool is_version_mismatch = install_error.find("requires") != std::string::npos
+                                        || installed_version == "unknown";
 
                 if (is_not_installed) {
                     backend["state"] = "installable";
@@ -1010,10 +1024,13 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 } else {
                     backend["state"] = "action_required";
                 }
-                backend["message"] = install_error;
+                if (installed_version == "unknown") {
+                    backend["message"] = "Backend version is unknown. " + install_error;
+                } else {
+                    backend["message"] = install_error;
+                }
 
                 if (!is_not_installed) {
-                    std::string installed_version = get_recipe_version(def.recipe, def.backend);
                     if (!installed_version.empty() && installed_version != "unknown") {
                         backend["version"] = installed_version;
                     }
@@ -1119,8 +1136,21 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
             if (needs_update) {
                 backend["state"] = "update_required";
-                backend["message"] = "Backend update is required before use.";
+                if (installed_version == "unknown" || installed_version.empty()) {
+                    backend["message"] = "Backend version is unknown; update is required.";
+                } else {
+                    backend["message"] = "Backend update is required before use. Version " + installed_version + " is installed, but " + expected_version + " is required (requires update).";
+                }
+
+#ifdef __linux__
+                if (def.recipe == "flm") {
+                    backend["action"] = "Visit https://lemonade-server.ai/flm_npu_linux.html?mode=troubleshoot";
+                } else {
+                    backend["action"] = get_install_command(def.recipe, def.backend);
+                }
+#else
                 backend["action"] = get_install_command(def.recipe, def.backend);
+#endif
             } else {
                 // Soft "update_available" signal for *_bin = "latest" backends
                 // when GitHub has a newer release than what's installed. The
@@ -2929,39 +2959,57 @@ json SystemInfoCache::get_system_info_with_cache() {
     if (!s_hardware_computed) {
         json system_info;
 
-        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+        // Try to load mock hardware info if present in cache dir (used for testing)
+        bool hardware_mocked = false;
         try {
-            auto sys_info = create_system_info();
-
-            // Get system info (OS, Processor, Memory, etc.)
-            try {
-                system_info = sys_info->get_system_info_dict();
-            } catch (...) {
-                system_info["OS Version"] = "Unknown";
+            fs::path cache_dir = utils::get_cache_dir();
+            fs::path mock_file = cache_dir / "hardware_info.json";
+            if (fs::exists(mock_file)) {
+                json mock_data = utils::JsonUtils::load_from_file(mock_file.string());
+                if (mock_data.contains("hardware") && mock_data["hardware"].is_object()) {
+                    system_info = mock_data["hardware"];
+                    hardware_mocked = true;
+                    LOG(INFO, "Server") << "Using mock hardware info from " << mock_file << std::endl;
+                }
             }
-
-            // Get device information - handles its own exceptions internally
-            system_info["devices"] = sys_info->get_device_dict();
-
-            s_cached_system_info = system_info;
-
-        } catch (const std::exception& e) {
-            // Catastrophic failure - return minimal info but don't crash
-            LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
-            s_cached_system_info = {
-                {"OS Version", "Unknown"},
-                {"error", e.what()},
-                {"devices", json::object()}
-            };
         } catch (...) {
-            LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
-            s_cached_system_info = {
-                {"OS Version", "Unknown"},
-                {"error", "Unknown error"},
-                {"devices", json::object()}
-            };
+            // Ignore mock load failures and fall back to real detection
         }
 
+        // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
+        if (!hardware_mocked) {
+            try {
+                auto sys_info = create_system_info();
+
+                // Get system info (OS, Processor, Memory, etc.)
+                try {
+                    system_info = sys_info->get_system_info_dict();
+                } catch (...) {
+                    system_info["OS Version"] = "Unknown";
+                }
+
+                // Get device information - handles its own exceptions internally
+                system_info["devices"] = sys_info->get_device_dict();
+
+            } catch (const std::exception& e) {
+                // Catastrophic failure - return minimal info but don't crash
+                LOG(ERROR, "Server") << "System info failed: " << e.what() << std::endl;
+                system_info = {
+                    {"OS Version", "Unknown"},
+                    {"error", e.what()},
+                    {"devices", json::object()}
+                };
+            } catch (...) {
+                LOG(ERROR, "Server") << "System info failed with unknown error" << std::endl;
+                system_info = {
+                    {"OS Version", "Unknown"},
+                    {"error", "Unknown error"},
+                    {"devices", json::object()}
+                };
+            }
+        }
+
+        s_cached_system_info = system_info;
         s_hardware_computed = true;
     }
 

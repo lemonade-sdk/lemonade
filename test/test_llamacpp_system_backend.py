@@ -207,12 +207,15 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
     cache_dir = LlamaCppSystemBackendTests.cache_dir
     cmd = [lemond_binary, cache_dir, "--port", str(PORT)]
 
+    env = os.environ.copy()
+    env["LEMONADE_MOCK_GGML_HIP"] = "1"
+
     if sys.platform == "win32":
         subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            env=os.environ.copy(),
+            env=env,
         )
     else:
         subprocess.Popen(
@@ -220,7 +223,7 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env=os.environ.copy(),
+            env=env,
         )
 
     wait_for_server(timeout=60)

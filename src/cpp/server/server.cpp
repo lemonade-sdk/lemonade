@@ -4652,6 +4652,17 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 return;
             }
 
+            if (state == "installed" && !force) {
+                nlohmann::json response = {
+                    {"status", "success"},
+                    {"message", "Backend is already installed"},
+                    {"recipe", recipe},
+                    {"backend", backend}
+                };
+                res.set_content(response.dump(), "application/json");
+                return;
+            }
+
             if (action.find(".html") != std::string::npos) {
                 auto url_pos = action.find("https://");
                 if (url_pos != std::string::npos) {
