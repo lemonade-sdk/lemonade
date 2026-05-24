@@ -2261,8 +2261,6 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
 
-        res.set_header("Content-Type", mime_type);
-
         auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
             // For chunked responses, offset tracks bytes sent so far
             // We only want to stream once when offset is 0
