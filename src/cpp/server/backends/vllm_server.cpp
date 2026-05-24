@@ -6,6 +6,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -248,6 +249,45 @@ json VLLMServer::completion(const json& request) {
 
 json VLLMServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
+}
+
+void VLLMServer::forward_streaming_request(const std::string& endpoint,
+                                           const std::string& request_body,
+                                           httplib::DataSink& sink,
+                                           bool sse,
+                                           long timeout_seconds) {
+    std::string body = request_body;
+    const auto start = std::chrono::steady_clock::now();
+
+    if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
+        try {
+            json request = json::parse(request_body);
+            json& stream_options = request["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            stream_options["include_usage"] = true;
+            body = request.dump();
+        } catch (...) {
+            // Forward the original request if it cannot be parsed.
+        }
+    }
+
+    WrappedServer::forward_streaming_request(endpoint, body, sink, sse, timeout_seconds);
+
+    Telemetry telemetry = get_telemetry();
+    if (sse && telemetry.output_tokens > 0 && telemetry.tokens_per_second <= 0.0) {
+        const double elapsed_seconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - start).count();
+        const double decode_seconds = elapsed_seconds - telemetry.time_to_first_token;
+        const double tps_seconds = decode_seconds > 0.0 ? decode_seconds : elapsed_seconds;
+        if (tps_seconds > 0.0) {
+            set_telemetry(telemetry.input_tokens,
+                        telemetry.output_tokens,
+                        telemetry.time_to_first_token,
+                        telemetry.output_tokens / tps_seconds);
+        }
+    }
 }
 
 } // namespace backends

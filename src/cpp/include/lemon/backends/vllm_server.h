@@ -35,6 +35,13 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+
+    void forward_streaming_request(const std::string& endpoint,
+                                   const std::string& request_body,
+                                   httplib::DataSink& sink,
+                                   bool sse = true,
+                                   long timeout_seconds = 0) override;
+
 };
 
 } // namespace backends
