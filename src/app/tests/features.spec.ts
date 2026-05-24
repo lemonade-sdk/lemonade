@@ -383,4 +383,65 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.screenshot({ path: 'screenshots/12-responsive-mobile.png', fullPage: true });
   });
+
+  test('13 — Presets view renders zones and slide-over', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Presets
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipes');
+
+    // Title visible
+    await expect(page.locator('.recipes__title h1')).toContainText('Presets');
+
+    // Count subtitle visible
+    await expect(page.locator('.recipes__title-sub')).toContainText('starters');
+
+    // Lede paragraph
+    await expect(page.locator('.recipes__lede')).toBeVisible();
+
+    // Zone: Bundled starters
+    const starterZone = page.locator('.zone').first();
+    await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
+
+    // Should have 8 starter cards
+    const starterCards = page.locator('[data-recipe-grid="starters"] .recipe-card');
+    await expect(starterCards).toHaveCount(8);
+
+    // Starter badge on first card
+    await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
+
+    // Capability chips visible on cards
+    await expect(starterCards.first().locator('.cap-chip')).toBeVisible();
+
+    // Zone: Your presets
+    const yoursCards = page.locator('[data-recipe-grid="yours"] .recipe-card');
+    const yoursCount = await yoursCards.count();
+    console.log(`User presets: ${yoursCount}`);
+
+    // Click a preset card to open slide-over
+    await starterCards.first().click();
+    await page.waitForSelector('.slideover.is-open');
+
+    // Slide-over has preset name
+    await expect(page.locator('.slideover__title')).toBeVisible();
+
+    // Slide-over has capability chips
+    await expect(page.locator('.slideover .cap-chip-list')).toBeVisible();
+
+    // Slide-over has form controls (sliders)
+    await expect(page.locator('.slideover .slider').first()).toBeVisible();
+
+    // Close slide-over
+    await page.locator('.slideover__close').click();
+    await page.waitForFunction(() => {
+      return !document.querySelector('.slideover.is-open');
+    });
+
+    // New Preset button visible
+    await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
+
+    await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
+  });
 });

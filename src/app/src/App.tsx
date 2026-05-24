@@ -3,8 +3,9 @@ import api, { ConnectionStatus, LoadedModel } from './api';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
+import PresetManager from './components/PresetManager';
 
-type View = 'chat' | 'models' | 'connect';
+type View = 'chat' | 'models' | 'presets' | 'connect';
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('chat');
@@ -47,7 +48,7 @@ const App: React.FC = () => {
         </div>
 
         <nav className="titlebar__nav" aria-label="Primary">
-          {(['chat', 'models', 'connect'] as View[]).map(v => (
+          {(['chat', 'models', 'presets', 'connect'] as View[]).map(v => (
             <button
               key={v}
               className={view === v ? 'is-active' : ''}
@@ -86,6 +87,9 @@ const App: React.FC = () => {
             onModelSelect={handleModelSelect}
             selectedModel={currentModel}
           />
+        )}
+        {view === 'presets' && (
+          <PresetManager loadedModels={loadedModels} />
         )}
         {view === 'connect' && (
           <ConnectView status={status} />
