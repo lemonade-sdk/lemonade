@@ -1160,6 +1160,105 @@ input, textarea {
   border-color: var(--accent);
 }
 
+/* ── HuggingFace Zone ─────────────────────────────────────── */
+
+.zone__dot--hf {
+  background: #FF9D00;
+  box-shadow: 0 0 6px rgba(255, 157, 0, 0.4);
+}
+
+.hf-zone__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.hf-zone__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-top-color: #FF9D00;
+  border-radius: 50%;
+  animation: hfSpin 0.8s linear infinite;
+}
+
+@keyframes hfSpin {
+  to { transform: rotate(360deg); }
+}
+
+.hf-zone__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  color: var(--text-disabled);
+  font-size: var(--text-sm);
+}
+
+.row--hf {
+  border-left: 3px solid rgba(255, 157, 0, 0.35);
+}
+
+.row--hf:hover {
+  border-left-color: #FF9D00;
+}
+
+.row--hf.row--expanded {
+  border-color: rgba(255, 157, 0, 0.4);
+  border-left-color: #FF9D00;
+  box-shadow: 0 0 0 1px rgba(255, 157, 0, 0.12);
+}
+
+.row__icon--hf {
+  border-color: #FF9D00 !important;
+  font-size: 18px;
+}
+
+.row__label--hf {
+  background: rgba(255, 157, 0, 0.10);
+  color: #FFB84D;
+}
+
+.row__action--hf-link {
+  text-decoration: none;
+  color: #FFB84D;
+  font-size: var(--text-xs);
+  background: rgba(255, 157, 0, 0.08);
+  border-color: rgba(255, 157, 0, 0.2);
+}
+
+.row__action--hf-link:hover {
+  background: rgba(255, 157, 0, 0.16);
+  color: #FF9D00;
+  border-color: rgba(255, 157, 0, 0.4);
+}
+
+.row__detail--hf {
+  border-top-color: rgba(255, 157, 0, 0.15);
+}
+
+.hf-detail__files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-1);
+}
+
+.hf-detail__file {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+.hf-detail__file--more {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
 /* ── Model Row ────────────────────────────────────────────── */
 
 .row {

@@ -159,6 +159,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     console.log(`Filtered to ${filteredCount} rows for "Qwen"`);
     await page.screenshot({ path: 'screenshots/07b-models-search.png', fullPage: true });
 
+    // HuggingFace Explore zone should appear after debounce
+    await page.waitForTimeout(600);
+    const hfZone = page.locator('.zone--hf');
+    const hfVisible = await hfZone.isVisible().catch(() => false);
+    console.log(`HuggingFace zone visible: ${hfVisible}`);
+    if (hfVisible) {
+      const hfRows = await page.locator('.row--hf').count();
+      console.log(`HuggingFace results: ${hfRows}`);
+      await page.screenshot({ path: 'screenshots/07b2-models-hf-zone.png', fullPage: true });
+    }
+
     // Clear search and test type filter
     await searchInput.clear();
     await page.waitForTimeout(300);
