@@ -1,0 +1,112 @@
+/* tokens.css — design tokens for the lemonade UI redesign prototype.
+ *
+ * Dark theme primary. Soft warm dark, never pure black.
+ * Type scale, spacing, radii, motion all live here so the rest of the
+ * stylesheet can be expressed in terms of intent, not magic numbers.
+ */
+
+:root {
+  /* ---------- Color roles (dark) ---------- */
+  --surface-base:   #16140f;
+  --surface-1:      #1d1b16;
+  --surface-2:      #25221c;
+  --surface-3:      #2f2c25;
+  --surface-raised: #1d1b16;
+  --surface-glass:  rgba(29, 27, 22, 0.72);
+
+  --text-primary:   #f3efe6;
+  --text-secondary: #b8b1a2;
+  --text-tertiary:  #807a6c;
+  --text-disabled:  #4f4a40;
+
+  --accent:         #e8c66b;
+  --accent-hover:   #f0d385;
+  --accent-deep:    #c89a3a;
+  --accent-soft:    rgba(232, 198, 107, 0.14);
+  --accent-strong:  rgba(232, 198, 107, 0.22);
+  --accent-on:      #1a1610;
+
+  --success:        #7fb38a;
+  --success-soft:   rgba(127, 179, 138, 0.14);
+  --warn:           #d9a35b;
+  --warn-soft:      rgba(217, 163, 91, 0.14);
+  --danger:         #d97a6c;
+  --danger-soft:    rgba(217, 122, 108, 0.14);
+
+  --border:         rgba(255, 245, 220, 0.08);
+  --border-subtle:  rgba(255, 245, 220, 0.06);
+  --border-strong:  rgba(255, 245, 220, 0.12);
+
+  /* ---------- Typography ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+               "Segoe UI", system-ui, "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+
+  --text-xs:   11px;
+  --text-sm:   12.5px;
+  --text-base: 14px;
+  --text-lg:   15px;
+  --text-xl:   18px;
+  --text-2xl:  24px;
+  --text-3xl:  32px;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight:  -0.01em;
+  --tracking-caps:   0.08em;
+
+  /* ---------- Space (4px grid) ---------- */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-8:  48px;
+  --space-10: 64px;
+  --space-12: 80px;
+
+  /* ---------- Radii ---------- */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   20px;
+  --radius-pill: 9999px;
+
+  /* ---------- Shadows ---------- */
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 1px 1px rgba(0, 0, 0, 0.12);
+  --shadow-md:
+    0 4px 12px rgba(0, 0, 0, 0.22),
+    0 2px 4px rgba(0, 0, 0, 0.14);
+  --shadow-lg:
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 8px 16px rgba(0, 0, 0, 0.20);
+
+  /* ---------- Motion ---------- */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --duration-fast:  150ms;
+  --duration-base:  220ms;
+  --duration-slow:  380ms;
+
+  /* ---------- Layout constants ---------- */
+  --titlebar-height:    52px;
+  --rail-collapsed:     56px;
+  --rail-expanded:      280px;
+  --composer-min:       96px;
+  --max-content-width:  860px;
+  --slide-over-width:   420px;
+}
