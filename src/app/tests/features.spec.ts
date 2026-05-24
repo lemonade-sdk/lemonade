@@ -130,14 +130,56 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Wait for models to load
     await page.waitForTimeout(2000);
 
+    // Should have zones (Running, Downloaded, Available)
+    const zones = page.locator('.zone');
+    const zoneCount = await zones.count();
+    console.log(`Found ${zoneCount} model zones`);
+
     // Should have model rows
     const rows = page.locator('.row');
     const count = await rows.count();
+    console.log(`Found ${count} model rows`);
+
+    // Should have search bar
+    await expect(page.locator('.manager__search-input')).toBeVisible();
+
+    // Should have filter tabs
+    await expect(page.locator('.manager__filters')).toBeVisible();
+
+    // Stats should be visible
+    await expect(page.locator('.manager__stats')).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/07-models-loaded.png', fullPage: true });
 
-    // Just document — don't assert specific count since it depends on server state
-    console.log(`Found ${count} model rows`);
+    // Test search filtering
+    const searchInput = page.locator('.manager__search-input');
+    await searchInput.fill('Qwen');
+    await page.waitForTimeout(500);
+    const filteredCount = await page.locator('.row').count();
+    console.log(`Filtered to ${filteredCount} rows for "Qwen"`);
+    await page.screenshot({ path: 'screenshots/07b-models-search.png', fullPage: true });
+
+    // Clear search and test type filter
+    await searchInput.clear();
+    await page.waitForTimeout(300);
+    await page.locator('.manager__filter').getByText('Image').click();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: 'screenshots/07c-models-filter-image.png', fullPage: true });
+
+    // Reset to All
+    await page.locator('.manager__filter').getByText('All').click();
+    await page.waitForTimeout(300);
+
+    // Test expanding a model detail (click first row)
+    const firstRow = page.locator('.row__content').first();
+    await firstRow.click();
+    await page.waitForTimeout(500);
+    // Detail panel should appear
+    const detail = page.locator('.row__detail').first();
+    if (await detail.isVisible().catch(() => false)) {
+      console.log('Model detail panel expanded successfully');
+    }
+    await page.screenshot({ path: 'screenshots/07d-model-detail.png', fullPage: true });
   });
 
   test('08 — Chat sends message and receives streaming response', async ({ page }) => {
