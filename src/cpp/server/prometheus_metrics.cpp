@@ -19,8 +19,6 @@
     #include <windows.h>
 #elif defined(__linux__)
     #include <fstream>
-#elif defined(__APPLE__)
-    #include <sys/sysctl.h>
 #endif
 
 namespace lemon {
@@ -268,13 +266,6 @@ double get_memory_usage_gb() {
             return std::round(used_gb * 10.0) / 10.0;
         }
     }
-#elif defined(__APPLE__)
-    int64_t physical_memory = 0;
-    size_t length = sizeof(physical_memory);
-    if (sysctlbyname("hw.memsize", &physical_memory, &length, nullptr, 0) == 0) {
-        double total_gb = physical_memory / (1024.0 * 1024.0 * 1024.0);
-        return std::round(total_gb * 10.0) / 10.0;
-    }
 #endif
     return -1.0;
 }
@@ -413,11 +404,13 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
         metrics.sample("lemonade_cpu_usage_percent", {}, system_metrics.cpu_percent);
     }
 
+#ifndef __APPLE__
     metrics.describe("lemonade_memory_used_gb", "System memory usage in GiB.", "gauge");
     double memory_gb = get_memory_usage_gb();
     if (memory_gb >= 0 && std::isfinite(memory_gb)) {
         metrics.sample("lemonade_memory_used_gb", {}, memory_gb);
     }
+#endif
 
     metrics.describe("lemonade_gpu_usage_percent", "GPU utilization percentage.", "gauge");
     if (system_metrics.gpu_percent >= 0 && std::isfinite(system_metrics.gpu_percent)) {

@@ -859,8 +859,8 @@ void Router::update_telemetry(int input_tokens, int output_tokens,
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
     if (server) {
-        server->set_telemetry(input_tokens, output_tokens,
-                             time_to_first_token, tokens_per_second);
+        server->record_telemetry(input_tokens, output_tokens,
+                                 time_to_first_token, tokens_per_second);
     }
 }
 
