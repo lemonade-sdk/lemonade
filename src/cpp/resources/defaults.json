@@ -14,10 +14,13 @@
   "no_fetch_executables": false,
   "disable_model_filtering": false,
   "enable_dgpu_gtt": false,
-  "rocm_channel": "preview",
+  "rocm_channel": "stable",
   "llamacpp": {
     "backend": "auto",
     "args": "",
+    "rocm_args": "",
+    "vulkan_args": "",
+    "cpu_args": "",
     "prefer_system": true,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
@@ -26,12 +29,17 @@
   "whispercpp": {
     "backend": "auto",
     "args": "",
+    "cpu_args": "",
+    "npu_args": "",
     "cpu_bin": "builtin",
     "npu_bin": "builtin"
   },
   "sdcpp": {
     "backend": "auto",
     "args": "",
+    "cpu_args": "",
+    "rocm_args": "",
+    "vulkan_args": "",
     "steps": 20,
     "cfg_scale": 7.0,
     "width": 512,
@@ -41,6 +49,10 @@
     "vulkan_bin": "builtin"
   },
   "flm": {
+    "args": ""
+  },
+  "vllm": {
+    "backend": "auto",
     "args": ""
   },
   "ryzenai": {

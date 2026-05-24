@@ -16,7 +16,7 @@ Expects a running server (started by the installer or manually).
 
 Usage:
     python server_cli2.py
-    python server_cli2.py --server-binary /path/to/lemonade-server
+    python server_cli2.py --cli-binary /path/to/lemonade
 """
 
 import argparse
@@ -33,7 +33,7 @@ import time
 import unittest
 import uuid
 
-from utils.server_base import wait_for_server
+from utils.server_base import _auth_headers, set_server_config, wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     MULTI_REPO_MODEL_A_CACHE_DIR,
@@ -54,7 +54,7 @@ from utils.test_models import (
     USER_MODEL_MAIN_CHECKPOINT,
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_NAME,
-    get_default_server_binary,
+    get_default_cli_binary,
     get_hf_cache_dir_candidates,
 )
 
@@ -123,7 +123,7 @@ def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
 
 # Global configuration
 _config = {
-    "server_binary": None,
+    "cli_binary": None,
 }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -131,30 +131,23 @@ WINDOWS_LAUNCH_STUB_SKIP_REASON = "Windows launch-stub execution uses non-native
 
 
 def get_cli_binary():
-    """Get the CLI binary path (same as server binary but called 'lemonade')."""
-    server_binary = _config["server_binary"] or get_default_server_binary()
-    # Replace 'lemonade-server' with 'lemonade' in the path
-    return server_binary.replace("lemonade-server", "lemonade")
-
-
-def get_legacy_cli_binary():
-    """Get the deprecated lemonade-server shim binary path."""
-    return _config["server_binary"] or get_default_server_binary()
+    """Get the lemonade CLI binary path."""
+    return _config["cli_binary"] or get_default_cli_binary()
 
 
 def parse_cli_args():
     """Parse command line arguments for CLI client tests."""
     parser = argparse.ArgumentParser(description="Test lemonade CLI client")
     parser.add_argument(
-        "--server-binary",
+        "--cli-binary",
         type=str,
-        default=get_default_server_binary(),
-        help="Path to lemonade-server binary (default: CMake build output)",
+        default=get_default_cli_binary(),
+        help="Path to lemonade CLI binary (default: CMake build output)",
     )
 
     args = parser.parse_args()
 
-    _config["server_binary"] = args.server_binary
+    _config["cli_binary"] = args.cli_binary
 
     return args
 
@@ -199,34 +192,6 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         print(f"stdout: {result.stdout}")
     if result.stderr:
         print(f"stderr: {result.stderr}")
-
-    if check and result.returncode != 0:
-        raise subprocess.CalledProcessError(
-            result.returncode, cmd, result.stdout, result.stderr
-        )
-
-    return result
-
-
-def run_legacy_cli_command(args, timeout=60, check=False):
-    """Run the deprecated lemonade-server shim and return the result."""
-    legacy_binary = get_legacy_cli_binary()
-    cmd = [legacy_binary] + args
-    print(f"Running legacy shim: {' '.join(cmd)}")
-
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-    if result.stdout:
-        print(f"legacy stdout: {result.stdout}")
-    if result.stderr:
-        print(f"legacy stderr: {result.stderr}")
 
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -339,6 +304,18 @@ sys.exit(0)
         return env
 
     # =============================================================================
+    # Version Tests
+    # =============================================================================
+
+    def test_005_version(self):
+        """Test --version flag."""
+        result = self.assertCommandSucceeds(["--version"])
+        self.assertTrue(
+            len(result.stdout) > 0 or len(result.stderr) > 0,
+            "Version command should produce output",
+        )
+
+    # =============================================================================
     # Status Tests
     # =============================================================================
 
@@ -428,6 +405,69 @@ sys.exit(0)
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
+
+    # =============================================================================
+    # Runtime Config Tests
+    # =============================================================================
+
+    def test_043_listen_all_via_runtime_config(self):
+        """Test that setting host to 0.0.0.0 via /internal/set works."""
+        # Set host to 0.0.0.0 (listen on all interfaces)
+        try:
+            set_server_config({"host": "0.0.0.0"})
+            print("[OK] Set host to 0.0.0.0 via /internal/set")
+        except Exception as e:
+            self.fail(f"Failed to set host to 0.0.0.0: {e}")
+
+        # Wait for server to finish rebinding. Use 127.0.0.1 explicitly
+        # because 0.0.0.0 only binds IPv4, and "localhost" may resolve to
+        # ::1 (IPv6) in some environments (e.g. Fedora containers).
+        for i in range(30):
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:{PORT}/api/v1/health",
+                    headers=_auth_headers(),
+                    timeout=2,
+                )
+                if response.status_code == 200:
+                    break
+            except requests.ConnectionError:
+                pass
+            time.sleep(1)
+        else:
+            self.fail(
+                "Server did not become reachable on 127.0.0.1 after rebind to 0.0.0.0"
+            )
+
+        # Verify the server still responds (status command should work)
+        result = self.assertCommandSucceeds(["status"])
+        output = result.stdout.lower() + result.stderr.lower()
+        self.assertTrue(
+            "running" in output or "online" in output or "active" in output,
+            f"Status should indicate server is running on 0.0.0.0: {result.stdout}",
+        )
+
+        # Verify via health endpoint too (use 127.0.0.1 for same IPv4 reason)
+        response = requests.get(
+            f"http://127.0.0.1:{PORT}/api/v1/health",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Restore host back to localhost. Use 127.0.0.1 directly since
+        # the server is currently bound to 0.0.0.0 (IPv4 only).
+        try:
+            requests.post(
+                f"http://127.0.0.1:{PORT}/internal/set",
+                json={"host": "localhost"},
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            print("[OK] Restored host to localhost")
+        except Exception as e:
+            # Best-effort restore — don't fail the test
+            print(f"Warning: Failed to restore host to localhost: {e}")
 
     # =============================================================================
     # Pull Tests
@@ -523,6 +563,72 @@ sys.exit(0)
             f"Pull should not report errors: {result.stdout}",
         )
 
+    def test_055_pull_components_omni_collection(self):
+        """Test pull command with --components flag registers an omni collection."""
+        collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
+        # Unique user.<name> entries surface under the bare public name.
+        public_name = collection_name[5:]
+        try:
+            result = self.assertCommandSucceeds(
+                [
+                    "pull",
+                    collection_name,
+                    "--recipe",
+                    "collection.omni",
+                    "--components",
+                    ENDPOINT_TEST_MODEL,
+                ],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            output = result.stdout.lower() + result.stderr.lower()
+            self.assertFalse(
+                "error" in output and "failed" in output,
+                f"Pull should not report errors: {result.stdout}",
+            )
+
+            # Verify the collection landed in /models with components populated.
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/models?show_all=true",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200)
+            entry = next(
+                (m for m in response.json()["data"] if m["id"] == public_name),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertEqual(entry.get("recipe"), "collection.omni")
+            self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+        finally:
+            try:
+                requests.post(
+                    f"http://localhost:{PORT}/api/v1/delete",
+                    json={"model_name": collection_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_056_pull_components_missing_for_omni_recipe(self):
+        """`--recipe collection.omni` without --components is rejected by the CLI."""
+        result = self.assertCommandFails(
+            [
+                "pull",
+                f"user.MissingComps-{uuid.uuid4().hex[:8]}",
+                "--recipe",
+                "collection.omni",
+            ],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        output = (result.stdout + result.stderr).lower()
+        self.assertIn(
+            "--components",
+            output,
+            f"Error should point at the missing --components flag: {output}",
+        )
+
     # =============================================================================
     # Import Tests
     # =============================================================================
@@ -546,45 +652,6 @@ sys.exit(0)
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
             print(f"Import from JSON exit code: {result.returncode}")
-        finally:
-            if os.path.exists(json_file):
-                os.unlink(json_file)
-
-    def test_060a_import_json_file_with_appear_builtin_label(self):
-        """Import should preserve appear-builtin and expose the bare model name."""
-        canonical_name = f"user.ImportAlias-{uuid.uuid4().hex[:8]}"
-        public_name = canonical_name[5:]
-        json_data = {
-            "model_name": canonical_name,
-            "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-            "recipe": "llamacpp",
-            "labels": ["appear-builtin"],
-        }
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json_file = f.name
-            json.dump(json_data, f)
-
-        try:
-            import_result = run_cli_command(
-                ["import", json_file],
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(import_result.returncode, 0)
-
-            list_result = run_cli_command(
-                ["list", "--downloaded"],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            output = list_result.stdout + list_result.stderr
-            self.assertIn(public_name, output)
-            self.assertNotIn(canonical_name, output)
-
-            delete_result = run_cli_command(
-                ["delete", public_name],
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(delete_result.returncode, 0)
         finally:
             if os.path.exists(json_file):
                 os.unlink(json_file)
@@ -949,7 +1016,13 @@ sys.exit(0)
             )
             self.assertIn('model_provider="lemonade"', argv)
             self.assertEqual(payload["env"]["OPENAI_BASE_URL"], "")
-            self.assertEqual(payload["env"]["OPENAI_API_KEY"], "lemonade")
+            # OPENAI_API_KEY mirrors whatever lemonade was running with — the
+            # default "lemonade" when no key is set, or the LEMONADE_API_KEY
+            # env value when the test job sets one (e.g. Test API Key CI job).
+            self.assertEqual(
+                payload["env"]["OPENAI_API_KEY"],
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
 
     def test_114_launch_claude_defaults_and_host_normalization(self):
         """Claude launch should default auth token and normalize wildcard host to localhost."""
@@ -983,8 +1056,12 @@ sys.exit(0)
             with open(capture_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
 
-            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], "lemonade")
-            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], "lemonade")
+            # Both env vars mirror the lemonade api key in use — default
+            # "lemonade" when no key is set, or LEMONADE_API_KEY when the
+            # test job sets one (e.g. Test API Key CI job).
+            expected_key = os.environ.get("LEMONADE_API_KEY", "lemonade")
+            self.assertEqual(payload["env"]["ANTHROPIC_AUTH_TOKEN"], expected_key)
+            self.assertEqual(payload["env"]["LEMONADE_API_KEY"], expected_key)
             self.assertEqual(
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
@@ -1216,6 +1293,7 @@ sys.exit(0)
             while time.time() < deadline:
                 response = requests.get(
                     f"http://127.0.0.1:{PORT}/api/v1/health",
+                    headers=_auth_headers(),
                     timeout=TIMEOUT_DEFAULT,
                 )
                 self.assertEqual(response.status_code, 200)
@@ -1346,7 +1424,11 @@ sys.exit(0)
             lemonade = cfg["provider"]["Lemonade"]
             self.assertEqual(lemonade["npm"], "@ai-sdk/openai-compatible")
             self.assertIn("baseURL", lemonade["options"])
-            self.assertEqual(lemonade["options"]["apiKey"], "lemonade")
+            # Mirrors lemonade api key in use; LEMONADE_API_KEY env wins.
+            self.assertEqual(
+                lemonade["options"]["apiKey"],
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
                 lemonade["models"][ENDPOINT_TEST_MODEL]["contextWindow"],
@@ -1512,6 +1594,45 @@ sys.exit(0)
             timeout=TIMEOUT_DEFAULT,
         )
         print(f"Delete model exit code: {result.returncode}")
+
+    def test_090a_naming_spec_list_shows_canonical_shadowed_rows(self):
+        """`list` prints API ids verbatim, so shadowed sources appear under their canonical IDs.
+
+        Verifies the copy-paste-safe contract: when a user.* shadows a built-in,
+        the list shows both `<bare>` (winner) and `builtin.<bare>` (shadowed),
+        and either string is directly usable in `lemonade load`/`delete`.
+        """
+        bare = ENDPOINT_TEST_MODEL  # known built-in
+        user_canonical = f"user.{bare}"
+
+        try:
+            pull_response = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            result = self.assertCommandSucceeds(["list"], timeout=TIMEOUT_DEFAULT)
+            output = result.stdout + result.stderr
+
+            # Winner appears as bare id; shadowed built-in appears under its canonical id.
+            self.assertIn(bare, output)
+            self.assertIn(f"builtin.{bare}", output)
+            # The user.* canonical form must NOT appear in output — winners emit bare.
+            self.assertNotIn(user_canonical, output)
+
+            print(
+                f"[OK] list shows both {bare} (user winner) and builtin.{bare} (shadowed)"
+            )
+        finally:
+            run_cli_command(["delete", user_canonical], timeout=TIMEOUT_DEFAULT)
 
     def test_091_delete_preserves_shared_repo(self):
         """Test that deleting one model preserves files used by another model sharing the same repo."""
@@ -1829,25 +1950,6 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--ctx-size", launch_section)
         self.assertNotIn("--llamacpp", launch_section)
 
-    def test_901_legacy_pull_deprecation_message(self):
-        """The legacy shim should not forward pull args and should print migration guidance."""
-        result = run_legacy_cli_command(
-            ["pull", "Qwen3-0.6B-GGUF"], timeout=TIMEOUT_DEFAULT
-        )
-        self.assertNotEqual(result.returncode, 0)
-
-        output = result.stdout + result.stderr
-        self.assertIn("This command is deprecated.", output)
-        self.assertIn("use 'lemonade pull --help' instead", output.lower())
-        self.assertIn("Built-in model: lemonade pull Qwen3-0.6B-GGUF", output)
-        self.assertIn(
-            "Checkpoint:     lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M", output
-        )
-        self.assertIn(
-            "Manual pull:    lemonade pull user.MyModel --checkpoint main org/repo:Q4_K_M --recipe llamacpp",
-            output,
-        )
-
 
 def run_cli_client_tests():
     """Run CLI client tests based on command line arguments."""
@@ -1855,7 +1957,6 @@ def run_cli_client_tests():
 
     print(f"\n{'=' * 70}")
     print("CLI CLIENT TESTS")
-    print(f"Server binary: {_config['server_binary']}")
     print(f"CLI binary: {get_cli_binary()}")
     print(f"{'=' * 70}\n")
 

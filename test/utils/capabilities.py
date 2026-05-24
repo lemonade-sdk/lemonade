@@ -64,6 +64,7 @@ CAPABILITIES = {
                 "echo_parameter": False,
                 "generation_parameters": False,
                 "slots": True,
+                "tokenize": True,
                 "static_max_context_window": True,
             },
             "test_models": {

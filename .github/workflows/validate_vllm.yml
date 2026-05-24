@@ -129,11 +129,20 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       - name: Run validation with lemond
+        env:
+          HOME: ${{ github.workspace }}/.home
         run: |
           set -e
+          mkdir -p "$HOME"
+          echo "HOME=$HOME" >> "$GITHUB_ENV"
+
           CACHE_DIR="$(pwd)/ci-cache-vllm"
           LOGS_DIR="$(pwd)/server-logs-rocm"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
           ./build/lemond "$CACHE_DIR" --port 13305 --host 127.0.0.1 \
             > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &

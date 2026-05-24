@@ -15,7 +15,7 @@ import ImageGenerationPanel from './components/panels/ImageGenerationPanel';
 import TTSPanel from './components/panels/TTSPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isCollectionModel, getCollectionPrimaryChatModel, getCollectionComponents } from './utils/collectionModels';
+import { isCollectionModel, getCollectionComponents } from './utils/collectionModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -30,6 +30,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     setSelectedModel,
     userHasSelectedModel,
     setUserHasSelectedModel,
+    refresh,
   } = useModels();
   const inference = useInferenceState();
   const { toasts, removeToast, showError } = useToast();
@@ -41,7 +42,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const [addModelInitialValues, setAddModelInitialValues] = useState<AddModelInitialValues | undefined>(undefined);
   const addModelFromJSONRef = useRef<HTMLInputElement>(null);
 
-  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'speech';
+  type ModelType = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'image' | 'tts';
 
   const modelType = useMemo((): ModelType => {
     if (!selectedModel) return 'llm';
@@ -58,7 +59,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (info.labels?.includes('reranking') || (info as any)?.reranking) return 'reranking';
     if (info.labels?.includes('transcription')) return 'transcription';
     if (info.labels?.includes('image')) return 'image';
-    if (info.labels?.includes('speech')) return 'speech';
+    if (info.labels?.includes('tts')) return 'tts';
     return 'llm';
   }, [selectedModel, modelsData]);
 
@@ -76,8 +77,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     if (!selectedModel) return false;
     const info = modelsData[selectedModel];
     if (isCollectionModel(info)) {
-      const chatModel = getCollectionPrimaryChatModel(selectedModel, modelsData);
-      return modelsData[chatModel]?.labels?.includes('vision') || false;
+      const components = getCollectionComponents(info);
+      return components.some(component => modelsData[component]?.labels?.includes('vision'));
     }
     return info?.labels?.includes('vision') || false;
   }, [selectedModel, modelsData]);
@@ -85,10 +86,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   // A multimodal chat model that accepts audio *as input* to a chat turn.
   // Models with the "chat-transcription" label can handle audio in
   // /chat/completions; distinct from pure ASR (Whisper) models which serve
-  // /audio/transcriptions via the "transcription" label.
+  // /audio/transcriptions via the "transcription" label. Collection models can
+  // also expose a dedicated ASR component, so enable audio controls for those.
   const isAudioChat = useMemo(() => {
     if (!selectedModel) return false;
-    const labels = modelsData[selectedModel]?.labels || [];
+
+    const info = modelsData[selectedModel];
+
+    if (isCollectionModel(info)) {
+      return getCollectionComponents(info).some(component => {
+        const labels = modelsData[component]?.labels || [];
+        return labels.includes('chat-transcription') || labels.includes('transcription');
+      });
+    }
+
+    const labels = info?.labels || [];
     return labels.includes('chat-transcription');
   }, [selectedModel, modelsData]);
 
@@ -203,13 +215,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
   const handleAddModelInstall = (data: ModelInstallData) => {
     setShowAddModelForm(false);
     setAddModelInitialValues(undefined);
+    const modelName = data.name.startsWith('user.') ? data.name : `user.${data.name}`;
     window.dispatchEvent(new CustomEvent('installModel', {
       detail: {
-        name: `user.${data.name}`,
+        name: modelName,
         registrationData: {
           checkpoint: data.checkpoint,
+          checkpoints: data.checkpoints,
           recipe: data.recipe,
           mmproj: data.mmproj,
+          labels: data.labels,
           reasoning: data.reasoning,
           vision: data.vision,
           embedding: data.embedding,
@@ -260,7 +275,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     : activeModelType === 'reranking' ? 'Lemonade Reranking'
     : activeModelType === 'transcription' ? 'Lemonade Transcriber'
     : activeModelType === 'image' ? 'Lemonade Image Generator'
-    : activeModelType === 'speech' ? 'Lemonade Text to Speech'
+    : activeModelType === 'tts' ? 'Lemonade Text to Speech'
     : 'LLM Chat';
 
   const sharedProps = {
@@ -297,7 +312,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
       {activeModelType === 'reranking' && <RerankingPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'transcription' && <TranscriptionPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'image' && <ImageGenerationPanel key={resetKey} {...sharedProps} />}
-      {activeModelType === 'speech' && <TTSPanel key={resetKey} {...sharedProps} />}
+      {activeModelType === 'tts' && <TTSPanel key={resetKey} {...sharedProps} />}
       {activeModelType === 'llm' && (
         <LLMChatPanel
           key={resetKey}

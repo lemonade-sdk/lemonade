@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { deleteModel, uninstallBackend } from './utils/backendInstaller';
+import { controlDownload, deleteModel, uninstallBackend, waitForDownloadStatus } from './utils/backendInstaller';
+import { downloadTracker } from './utils/downloadTracker';
 
 export interface DownloadItem {
   id: string;
@@ -9,6 +10,9 @@ export interface DownloadItem {
   totalFiles: number;
   bytesDownloaded: number;
   bytesTotal: number;
+  // True when bytesTotal is only the amount known so far, not the real final total.
+  // Used for backend split archives or runtime follow-up steps whose later sizes are not known yet.
+  bytesTotalIsLowerBound?: boolean;
   percent: number;
   status: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | 'deleting';
   error?: string;
@@ -16,13 +20,22 @@ export interface DownloadItem {
   bytesResumed: number;  // Bytes already on disk at session start (for accurate speed)
   abortController?: AbortController;
   downloadType?: 'model' | 'backend';
-  // Component model names when this download is a collection.
+  // Components when this download is a collection.
   // UI uses this to explain the collection is made up of separate models.
   collectionComponents?: string[];
   // Declared size from the model registry (bytes). Used as the total when the
   // server doesn't emit a cumulative download size, instead of extrapolating
   // from the first file or two (which overshoots badly for FLM pulls).
   declaredTotalBytes?: number;
+  // Server-owned jobs can be terminal from the UI point of view while the
+  // worker is still unwinding. Keep this so resume waits until pause is real.
+  running?: boolean;
+  // Smoothed/last-sample speed from the tracker. Calculated from byte deltas
+  // between progress snapshots so restored/skipped bytes do not inflate speed.
+  speedBytesPerSecond?: number;
+  speedSampleTime?: number;
+  speedSampleBytes?: number;
+  updatedAt?: number;
 }
 
 interface DownloadManagerProps {
@@ -31,10 +44,17 @@ interface DownloadManagerProps {
 }
 
 const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose }) => {
-  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
+  const [downloads, setDownloads] = useState<DownloadItem[]>(() => downloadTracker.getActiveDownloads());
   const [expandedDownloads, setExpandedDownloads] = useState<Set<string>>(new Set());
   // Track models that are currently being deleted to prevent retry during cleanup
   const [deletingModels, setDeletingModels] = useState<Set<string>>(new Set());
+
+  const getPanelDownloads = (): DownloadItem[] => downloadTracker.getActiveDownloads();
+
+  const forceServerSync = async (): Promise<DownloadItem[]> => {
+    await downloadTracker.hydrateFromServer();
+    return getPanelDownloads();
+  };
 
   useEffect(() => {
     // Listen for download events from the global download tracker
@@ -68,30 +88,66 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       ));
     };
 
+    const handleDownloadRemoved = (event: CustomEvent<{ id: string }>) => {
+      const { id } = event.detail;
+      setDownloads(prev => prev.filter(d => d.id !== id));
+    };
+
+    const handleDownloadSnapshot = () => {
+      setDownloads(getPanelDownloads());
+    };
+
     window.addEventListener('download:update' as any, handleDownloadUpdate);
     window.addEventListener('download:complete' as any, handleDownloadComplete);
     window.addEventListener('download:error' as any, handleDownloadError);
+    window.addEventListener('download:removed' as any, handleDownloadRemoved);
+    window.addEventListener('download:snapshot' as any, handleDownloadSnapshot);
+
+    downloadTracker.connectServerEvents();
+    void forceServerSync().then(setDownloads);
 
     return () => {
       window.removeEventListener('download:update' as any, handleDownloadUpdate);
       window.removeEventListener('download:complete' as any, handleDownloadComplete);
       window.removeEventListener('download:error' as any, handleDownloadError);
+      window.removeEventListener('download:removed' as any, handleDownloadRemoved);
+      window.removeEventListener('download:snapshot' as any, handleDownloadSnapshot);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    void forceServerSync().then(setDownloads);
+  }, [isVisible]);
 
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+  };
+
+  const formatTotalBytes = (download: DownloadItem): string => {
+    if (download.bytesTotalIsLowerBound && download.bytesTotal > 0) {
+      return `${formatBytes(download.bytesTotal)}+`;
+    }
+    return formatBytes(download.bytesTotal);
   };
 
   const formatSpeed = (bytesPerSecond: number): string => {
     return `${formatBytes(bytesPerSecond)}/s`;
   };
 
+  const getDownloadDisplayName = (modelName: string): string => {
+    return modelName.startsWith('user.') ? modelName.slice('user.'.length) : modelName;
+  };
+
   const calculateSpeed = (download: DownloadItem): number => {
+    if (typeof download.speedBytesPerSecond === 'number') {
+      return Math.max(0, download.speedBytesPerSecond);
+    }
+
     const elapsedSeconds = (Date.now() - download.startTime) / 1000;
     if (elapsedSeconds === 0) return 0;
     // Only count bytes downloaded in this session, not bytes already on disk from a prior run
@@ -101,6 +157,11 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   const calculateETA = (download: DownloadItem): string => {
     if (download.status !== 'downloading' || download.bytesDownloaded === 0) {
+      return '--';
+    }
+
+    // Unknown lower-bound totals cannot produce a meaningful remaining-time estimate.
+    if (download.bytesTotalIsLowerBound) {
       return '--';
     }
 
@@ -123,79 +184,173 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
   };
 
-  const handlePauseDownload = (download: DownloadItem) => {
-    if (download.abortController) {
-      download.abortController.abort();
-    }
-    setDownloads(prev => prev.map(d =>
-      d.id === download.id ? { ...d, status: 'paused' as const } : d
-    ));
+  const isServerDownloadId = (downloadId?: string): boolean =>
+    downloadId?.startsWith('model:') === true || downloadId?.startsWith('backend:') === true;
 
-    // Dispatch event for other components to react
-    window.dispatchEvent(new CustomEvent('download:paused', {
-      detail: { id: download.id, modelName: download.modelName }
-    }));
+  const usesServerDownloadControl = (download: DownloadItem | undefined, downloadId?: string): boolean => {
+    return download?.downloadType === 'model' ||
+      download?.downloadType === 'backend' ||
+      isServerDownloadId(download?.id ?? downloadId);
   };
 
-  const handleCancelDownload = async (download: DownloadItem) => {
-    // Mark as deleting to prevent retry during cleanup
-    setDeletingModels(prev => new Set(prev).add(download.modelName));
+  const hasLocalDownloadOwner = (download: DownloadItem): boolean => {
+    return !!download.abortController && !download.abortController.signal.aborted;
+  };
 
-    // First, abort the download to stop any active streams
-    if (download.abortController) {
-      download.abortController.abort();
-    }
-
-    // Update UI to show deleting status (visual feedback during cleanup)
+  const handlePauseDownload = async (download: DownloadItem) => {
+    // UI feedback must be immediate. Keep the tracker owner intact until the
+    // server confirms; otherwise the local fallback cannot abort the owner.
     setDownloads(prev => prev.map(d =>
-      d.id === download.id ? { ...d, status: 'deleting' as const } : d
+      d.id === download.id ? { ...d, status: 'paused' as const, running: true } : d
     ));
 
-    // Dispatch event for other components to react
-    window.dispatchEvent(new CustomEvent('download:cancelled', {
-      detail: { id: download.id, modelName: download.modelName }
-    }));
+    if (!usesServerDownloadControl(download)) {
+      downloadTracker.requestPause(download.id);
+      return;
+    }
 
-    // Wait for the download stream to fully close and release file handles
-    // We listen for the cleanup-complete event with a timeout fallback
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 2000); // Fallback timeout if event doesn't fire
+    try {
+      const snapshot = await controlDownload(download.id, 'pause');
+      if (snapshot) {
+        downloadTracker.applyServerDownload(snapshot);
+      }
+    } catch (error) {
+      console.error('Error pausing model download via server registry:', error);
+      if (hasLocalDownloadOwner(download)) {
+        downloadTracker.requestPause(download.id);
+        return;
+      }
 
+      alert('Could not pause the server-owned download. Refreshing download state.');
+      void forceServerSync().then(setDownloads);
+    }
+  };
+
+  const waitForLocalDownloadCleanup = (download: DownloadItem, timeoutMs = 30000): Promise<boolean> => {
+    return new Promise<boolean>((resolve) => {
       const cleanup = () => {
         window.removeEventListener('download:cleanup-complete' as any, handler);
         clearTimeout(timeout);
       };
 
       const handler = (event: CustomEvent) => {
-        if (event.detail.id === download.id) {
+        if (event.detail?.id === download.id || event.detail?.modelName === download.modelName) {
           cleanup();
-          resolve();
+          resolve(true);
         }
       };
 
+      const timeout = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, timeoutMs);
+
       window.addEventListener('download:cleanup-complete' as any, handler);
     });
+  };
 
-    // Clean up partial downloads via the unified helpers
+  const cleanupDownloadedFiles = async (download: DownloadItem): Promise<void> => {
+    if (download.downloadType === 'backend') {
+      const [recipe, backend] = download.modelName.split(':');
+      await uninstallBackend(recipe, backend);
+    } else {
+      await deleteModel(download.modelName);
+    }
+  };
+
+  const ensureDownloadStopped = async (
+    download: DownloadItem,
+    statuses: Array<'paused' | 'cancelled' | 'completed' | 'error'>,
+    actionDescription: string,
+  ): Promise<boolean> => {
+    if (download.running !== true) return true;
+
     try {
-      if (download.downloadType === 'backend') {
-        const [recipe, backend] = download.modelName.split(':');
-        await uninstallBackend(recipe, backend);
-      } else {
-        await deleteModel(download.modelName);
-      }
+      await waitForDownloadStatus(download.id, statuses, 30000, false);
+      return true;
     } catch (error) {
-      console.error('Error deleting partial download files:', error);
-      alert(`Download cancelled, but failed to delete files: ${error instanceof Error ? error.message : 'Unknown error'}\nPartial files may remain on disk.`);
+      console.warn(`Timed out waiting for download to stop before ${actionDescription}:`, error);
+      alert(`Cannot ${actionDescription} yet: the download worker is still stopping. Please try again once it finishes.`);
+      void forceServerSync().then(setDownloads);
+      return false;
+    }
+  };
+
+  const cancelViaLocalOwner = async (download: DownloadItem): Promise<void> => {
+    const cleanupComplete = waitForLocalDownloadCleanup(download);
+    downloadTracker.requestCancel(download.id);
+    const released = await cleanupComplete;
+
+    if (!released) {
+      alert('Download cancellation was requested, but the worker did not confirm that files were released. Partial files were not deleted.');
+      void forceServerSync().then(setDownloads);
+      return;
+    }
+
+    try {
+      await cleanupDownloadedFiles(download);
+      downloadTracker.removeDownload(download.id);
+      setDownloads(prev => prev.filter(d => d.id !== download.id));
+    } catch (deleteError) {
+      console.error('Error deleting partial download files:', deleteError);
+      alert(`Download cancelled, but failed to delete files: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}
+Partial files may remain on disk.`);
+    }
+  };
+
+  const handleCancelDownload = async (download: DownloadItem) => {
+    // Cancel is a two-step operation: first ask the owner to stop, then delete
+    // partial files only after the worker reports running=false. This avoids
+    // deleting files while the downloader still has open handles.
+    setDeletingModels(prev => new Set(prev).add(download.modelName));
+    setDownloads(prev => prev.map(d =>
+      d.id === download.id ? { ...d, status: 'cancelled' as const, running: true } : d
+    ));
+
+    try {
+      if (!usesServerDownloadControl(download)) {
+        await cancelViaLocalOwner(download);
+        return;
+      }
+
+      const snapshot = await controlDownload(download.id, 'cancel');
+      if (snapshot) {
+        downloadTracker.applyServerDownload(snapshot);
+      }
+
+      const stopped = snapshot?.running === true
+        ? await ensureDownloadStopped(
+            { ...download, running: true },
+            ['cancelled', 'completed', 'error'],
+            'delete partial files',
+          )
+        : true;
+
+      if (!stopped) return;
+
+      const latestSnapshot = (await downloadTracker.hydrateFromServer())
+        .find(item => item.id === download.id);
+      const finalStatus = latestSnapshot?.status
+        ?? downloadTracker.getDownload(download.id)?.status
+        ?? snapshot?.status
+        ?? 'cancelled';
+
+      if (finalStatus !== 'completed') {
+        await cleanupDownloadedFiles(download);
+      }
+
+      downloadTracker.removeDownload(download.id);
+      setDownloads(prev => prev.filter(d => d.id !== download.id));
+      void controlDownload(download.id, 'remove').catch(() => {});
+    } catch (error) {
+      console.error('Error cancelling model download via server registry:', error);
+      if (hasLocalDownloadOwner(download)) {
+        await cancelViaLocalOwner(download);
+      } else {
+        alert('Could not cancel the server-owned download. Refreshing download state.');
+        void forceServerSync().then(setDownloads);
+      }
     } finally {
-      // Mark as cancelled now that deletion is complete
-      setDownloads(prev => prev.map(d =>
-        d.id === download.id ? { ...d, status: 'cancelled' as const } : d
-      ));
-      // Remove from deleting set
       setDeletingModels(prev => {
         const newSet = new Set(prev);
         newSet.delete(download.modelName);
@@ -205,31 +360,28 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const handleDeleteDownload = async (download: DownloadItem) => {
+    const stopped = await ensureDownloadStopped(download, ['paused'], 'delete partial files');
+    if (!stopped) return;
+
     // Mark as deleting to prevent retry during cleanup
     setDeletingModels(prev => new Set(prev).add(download.modelName));
 
     // Update UI to show deleting status
     setDownloads(prev => prev.map(d =>
-      d.id === download.id ? { ...d, status: 'deleting' as const } : d
+      d.id === download.id ? { ...d, status: 'deleting' as const, running: false } : d
     ));
 
-    // Clean up files via the unified helpers
     try {
-      if (download.downloadType === 'backend') {
-        const [recipe, backend] = download.modelName.split(':');
-        await uninstallBackend(recipe, backend);
-      } else {
-        await deleteModel(download.modelName);
-      }
+      await cleanupDownloadedFiles(download);
 
       // Only remove from downloads list if deletion was successful
-      handleRemoveDownload(download.id);
+      await handleRemoveDownload(download.id);
     } catch (error) {
       console.error('Error deleting download files:', error);
       alert(`Error deleting files: ${error instanceof Error ? error.message : 'Unknown error'}`);
       // Revert status on error
       setDownloads(prev => prev.map(d =>
-        d.id === download.id ? { ...d, status: 'paused' as const } : d
+        d.id === download.id ? { ...d, status: 'paused' as const, running: false } : d
       ));
     } finally {
       // Remove from deleting set
@@ -241,57 +393,125 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
   };
 
-  const handleResumeDownload = (download: DownloadItem) => {
-    // Dispatch event to trigger a new download
+  const handleResumeDownload = async (download: DownloadItem) => {
+    // The server marks the row as paused as soon as pause is requested, but the
+    // worker can still be unwinding. If we immediately POST /pull again, the
+    // resume request can block while start_download_job joins the old worker.
+    // Wait for running=false first when the snapshot tells us it is still
+    // pausing; if the server row briefly disappears we still proceed.
+    if (download.running === true) {
+      try {
+        await waitForDownloadStatus(download.id, ['paused'], 30000, true);
+      } catch (error) {
+        console.warn('Timed out waiting for paused download to stop before resume; trying resume anyway:', error);
+      }
+    }
+
+    setDownloads(prev => prev.map(d =>
+      d.id === download.id ? { ...d, status: 'downloading' as const, running: true, startTime: Date.now(), bytesResumed: d.bytesDownloaded } : d
+    ));
+
+    // Dispatch event to trigger the same model/backend pull path. The server
+    // deduplicates by stable download id, so this resumes the existing job
+    // instead of creating a second independent renderer-owned download.
     window.dispatchEvent(new CustomEvent('download:resume', {
       detail: { modelName: download.modelName, downloadType: download.downloadType }
     }));
+  };
 
-    // Remove the paused download from the list as a new one will be created
-    handleRemoveDownload(download.id);
+  const waitForDeleteCleanup = async (modelName: string): Promise<void> => {
+    if (!deletingModels.has(modelName)) return;
+
+    // Wait for deletion to complete before retrying. This preserves the
+    // existing UX without letting retry race with partial-file cleanup.
+    await new Promise<void>((resolve) => {
+      const checkInterval = setInterval(() => {
+        setDeletingModels(prev => {
+          if (!prev.has(modelName)) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+          return prev;
+        });
+      }, 100);
+
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve();
+      }, 10000);
+    });
+  };
+
+  const removeServerDownloadBeforeRetry = async (download: DownloadItem): Promise<boolean> => {
+    const stopped = await ensureDownloadStopped(
+      download,
+      ['paused', 'cancelled', 'completed', 'error'],
+      'retry download',
+    );
+    if (!stopped) return false;
+
+    // Critical ordering for stable model download ids:
+    // remove/dismiss the terminal server row BEFORE emitting download:retry.
+    // Emitting first can start a new /pull with the same id, and a later
+    // /downloads/control remove for the old row can erase/cancel the fresh job.
+    try {
+      await controlDownload(download.id, 'remove');
+      setDownloads(prev => prev.filter(d => d.id !== download.id));
+      downloadTracker.removeDownload(download.id);
+      return true;
+    } catch (error) {
+      console.error('Error removing old server download before retry:', error);
+      alert('Could not clear the old download entry before retrying. Refreshing download state.');
+      void forceServerSync().then(setDownloads);
+      return false;
+    }
   };
 
   const handleRetryDownload = async (download: DownloadItem) => {
-    // Check if this model is currently being deleted
-    if (deletingModels.has(download.modelName)) {
-      // Wait for deletion to complete before retrying
-      // We'll poll the deletingModels set until the model is no longer being deleted
-      await new Promise<void>((resolve) => {
-        const checkInterval = setInterval(() => {
-          setDeletingModels(prev => {
-            if (!prev.has(download.modelName)) {
-              clearInterval(checkInterval);
-              resolve();
-            }
-            return prev;
-          });
-        }, 100);
+    await waitForDeleteCleanup(download.modelName);
 
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          resolve();
-        }, 10000);
-      });
+    if (usesServerDownloadControl(download)) {
+      const removed = await removeServerDownloadBeforeRetry(download);
+      if (!removed) return;
     }
 
-    // Dispatch event to trigger a new download
+    // Dispatch event to trigger a new download. For server-owned model
+    // downloads, the old terminal row has already been removed above, so there
+    // is no delayed remove request that can hit the freshly-created job.
     window.dispatchEvent(new CustomEvent('download:retry', {
       detail: { modelName: download.modelName, downloadType: download.downloadType }
     }));
 
-    // Remove the cancelled download from the list as a new one will be created
-    handleRemoveDownload(download.id);
+    if (!usesServerDownloadControl(download)) {
+      // Renderer-owned backend downloads still use unique ids, so removing the
+      // old local row after starting the retry cannot delete the fresh attempt.
+      void handleRemoveDownload(download.id);
+    }
   };
 
-  const handleRemoveDownload = (downloadId: string) => {
+  const handleRemoveDownload = async (downloadId: string) => {
+    const download = downloads.find(d => d.id === downloadId) || downloadTracker.getActiveDownloads().find(d => d.id === downloadId);
+    if (download?.running === true) {
+      alert('Cannot remove this download yet: the download worker is still stopping.');
+      void forceServerSync().then(setDownloads);
+      return;
+    }
+
     setDownloads(prev => prev.filter(d => d.id !== downloadId));
+    downloadTracker.removeDownload(downloadId);
+    if (usesServerDownloadControl(download, downloadId)) {
+      void controlDownload(downloadId, 'remove').catch(() => {});
+    }
   };
 
   const handleClearCompleted = () => {
-    setDownloads(prev => prev.filter(d =>
-      d.status !== 'completed' && d.status !== 'error' && d.status !== 'cancelled' && d.status !== 'paused'
-    ));
+    const removable = downloads.filter(d =>
+      d.running !== true && (d.status === 'completed' || d.status === 'error')
+    );
+    for (const download of removable) {
+      void handleRemoveDownload(download.id);
+    }
   };
 
   const toggleExpanded = (downloadId: string) => {
@@ -306,7 +526,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     });
   };
 
-  const activeDownloads = downloads.filter(d => d.status === 'downloading').length;
+  const activeDownloads = downloads.filter(d => d.status === 'downloading' || d.running === true).length;
   const completedDownloads = downloads.filter(d => d.status === 'completed').length;
 
   if (!isVisible) return null;
@@ -388,8 +608,8 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                         <div className="download-item-text">
                           <span className="download-model-name">
                             {download.collectionComponents && download.collectionComponents.length > 0
-                              ? `Setting up ${download.modelName}`
-                              : download.modelName}
+                              ? `Setting up ${getDownloadDisplayName(download.modelName)}`
+                              : getDownloadDisplayName(download.modelName)}
                           </span>
                           {download.collectionComponents && download.collectionComponents.length > 0 && (
                             <span
@@ -397,22 +617,22 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                               style={{ fontStyle: 'italic', opacity: 0.8 }}
                               title={download.collectionComponents.join('\n')}
                             >
-                              {download.collectionComponents.length} models: {download.collectionComponents.join(', ')}
+                              {download.collectionComponents.length} models: {download.collectionComponents.map(getDownloadDisplayName).join(', ')}
                             </span>
                           )}
                           <span className="download-file-info">
                             {download.status === 'downloading' && (
                               <>
-                                File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatBytes(download.bytesTotal)}
+                                File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}
                               </>
                             )}
                             {download.status === 'paused' && (
                               <>
-                                Paused • File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatBytes(download.bytesTotal)}
+                                {download.running === true ? 'Pausing' : 'Paused'} • File {download.fileIndex}/{download.totalFiles} • {formatBytes(download.bytesDownloaded)} / {formatTotalBytes(download)}
                               </>
                             )}
                             {download.status === 'completed' && (
-                              <>Completed • {formatBytes(download.bytesTotal)}</>
+                              <>Completed • {formatTotalBytes(download)}</>
                             )}
                             {download.status === 'error' && (
                               <>Error: {download.error || 'Unknown error'}</>
@@ -456,10 +676,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                         )}
                         {download.status === 'paused' && (
                           <>
+                            {download.running === true && (
+                              <span className="download-eta">Pausing...</span>
+                            )}
                             <button
                               className="download-action-btn resume-btn"
                               onClick={() => handleResumeDownload(download)}
-                              title="Resume download"
+                              title={download.running === true ? "Finish pausing, then resume" : "Resume download"}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <polygon points="5,3 19,12 5,21" fill="currentColor"/>
@@ -468,11 +691,23 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                             <button
                               className="download-action-btn delete-btn"
                               onClick={() => handleDeleteDownload(download)}
-                              title="Delete partial download"
+                              title={download.running === true ? "Finish pausing before deleting" : "Delete partial download"}
+                              disabled={download.running === true}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                 <polyline points="3,6 5,6 21,6"/>
                                 <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"/>
+                              </svg>
+                            </button>
+                            <button
+                              className="download-action-btn remove-btn"
+                              onClick={() => void handleRemoveDownload(download.id)}
+                              title={download.running === true ? "Finish pausing before removing" : "Remove from list"}
+                              disabled={download.running === true}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
                               </svg>
                             </button>
                           </>
@@ -481,22 +716,50 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                           <span className="download-deleting-text">Deleting...</span>
                         )}
                         {download.status === 'cancelled' && (
-                          <button
-                            className="download-action-btn retry-btn"
-                            onClick={() => handleRetryDownload(download)}
-                            title="Retry download"
-                            disabled={deletingModels.has(download.modelName)}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="23,4 23,10 17,10"/>
-                              <path d="M20.49,15a9,9,0,1,1-2.12-9.36L23,10"/>
-                            </svg>
-                          </button>
+                          download.running === true ? (
+                            <span className="download-deleting-text">Cancelling...</span>
+                          ) : (
+                            <>
+                              <button
+                                className="download-action-btn retry-btn"
+                                onClick={() => handleRetryDownload(download)}
+                                title="Retry download"
+                                disabled={deletingModels.has(download.modelName)}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="23,4 23,10 17,10"/>
+                                  <path d="M20.49,15a9,9,0,1,1-2.12-9.36L23,10"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="download-action-btn delete-btn"
+                                onClick={() => handleDeleteDownload(download)}
+                                title="Delete partial download"
+                                disabled={deletingModels.has(download.modelName)}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="3,6 5,6 21,6"/>
+                                  <path d="M19,6v14a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6m3,0V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="download-action-btn remove-btn"
+                                onClick={() => void handleRemoveDownload(download.id)}
+                                title="Remove from list"
+                                disabled={deletingModels.has(download.modelName)}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <line x1="18" y1="6" x2="6" y2="18"/>
+                                  <line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
+                              </button>
+                            </>
+                          )
                         )}
                         {(download.status === 'completed' || download.status === 'error') && (
                           <button
                             className="download-action-btn remove-btn"
-                            onClick={() => handleRemoveDownload(download.id)}
+                            onClick={() => void handleRemoveDownload(download.id)}
                             title="Remove from list"
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -542,7 +805,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
                             </div>
                             <div className="download-detail-row">
                               <span className="download-detail-label">Total Size:</span>
-                              <span className="download-detail-value">{formatBytes(download.bytesTotal)}</span>
+                              <span className="download-detail-value">{formatTotalBytes(download)}</span>
                             </div>
                             <div className="download-detail-row">
                               <span className="download-detail-label">Speed:</span>
@@ -559,7 +822,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
           )}
         </div>
 
-        {downloads.some(d => d.status === 'completed' || d.status === 'error' || d.status === 'cancelled' || d.status === 'paused' || d.status === 'deleting') && (
+        {downloads.some(d => d.status === 'completed' || d.status === 'error') && (
           <div className="download-manager-footer">
             <button
               className="clear-completed-btn"

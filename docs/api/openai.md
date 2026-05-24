@@ -1001,6 +1001,12 @@ Labels describe what a model can do. A model may carry multiple labels.
 |-------|-------------|
 | `realtime-transcription` | Supports the WebSocket `/realtime` endpoint for live microphone transcription. |
 
+**Runtime labels** — affect backend launch defaults:
+
+| Label | Description |
+|-------|-------------|
+| `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
+
 **Characteristic labels** — informational, do not affect routing:
 
 | Label | Description |
@@ -1009,8 +1015,7 @@ Labels describe what a model can do. A model may carry multiple labels.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `speech` | Informational tag on TTS models indicating audio output. |
-| `esrgan` | Image upscaling model (Real-ESRGAN). Used as a component in image pipelines. |
+| `upscaling` | Image upscaling model (e.g. Real-ESRGAN). Used as a component in image pipelines. |
 | `experimental` | Not yet validated for production use. |
 
 

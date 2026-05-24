@@ -1,0 +1,25 @@
+[Unit]
+Description=Lemonade Server (user)
+Documentation=https://lemonade-server.ai/docs/
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+EnvironmentFile=-%E/lemonade/conf.d/*.conf
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGINT
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=full
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=default.target

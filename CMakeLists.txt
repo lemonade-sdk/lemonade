@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.4.0)
+project(lemon_cpp VERSION 10.6.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -28,7 +28,6 @@ endif()
 include(GNUInstallDirs)
      # Install man pages
      install(FILES
-          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemond.1
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
@@ -747,6 +746,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
+#   - bench_scenarios.json (benchmark scenarios)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1125,9 +1125,6 @@ add_subdirectory(src/cpp/tray)
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
 
-# Add legacy shim (backwards-compatible lemonade-server)
-add_subdirectory(src/cpp/legacy-cli)
-
 # Wire WiX installer targets to the binaries and frontend artifacts they package.
 # Doing this after the subdirectories are added ensures MSBuild gets real project refs.
 if(WIN32 AND WIX_EXECUTABLE)
@@ -1138,9 +1135,6 @@ if(WIN32 AND WIX_EXECUTABLE)
     endif()
     if(TARGET lemonade)
         list(APPEND WIX_PACKAGED_TARGETS lemonade)
-    endif()
-    if(TARGET lemonade-server)
-        list(APPEND WIX_PACKAGED_TARGETS lemonade-server)
     endif()
     if(TARGET ${EXECUTABLE_NAME})
         list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
@@ -1180,7 +1174,6 @@ if(APPLE)
             COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
             VERBATIM
         )
-        # Note: 'lemonade-server' is signed at install time below (line ~1110)
     endif()
 
     # Prepare Tauri App
@@ -1229,24 +1222,6 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-tray\")
-                endif()
-            " COMPONENT Runtime)
-        endif()
-    endif()
-
-    # Legacy shim -> /usr/local/bin
-    if(TARGET lemonade-server)
-        install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
-
-        # Sign the legacy shim after installation (Release builds only)
-        if(CMAKE_BUILD_TYPE STREQUAL "Release")
-            install(CODE "
-                execute_process(
-                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-server\"
-                    RESULT_VARIABLE SIGN_RESULT
-                )
-                if(NOT SIGN_RESULT EQUAL 0)
-                    message(FATAL_ERROR \"Failed to sign lemonade-server\")
                 endif()
             " COMPONENT Runtime)
         endif()
@@ -1353,7 +1328,6 @@ if(UNIX AND NOT APPLE)
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
 
     # Only install our executables (not curl/development files)
-    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
     install(TARGETS ${EXECUTABLE_NAME}
         RUNTIME DESTINATION bin
     )
@@ -1398,6 +1372,23 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
+
+    # Install sysusers.d snippet so the 'lemonade' system user is created
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
+        RENAME lemonade.conf
+    )
+
+    # Configure + install the user-mode systemd unit
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemond-user.service.in
+        ${CMAKE_BINARY_DIR}/lemond-user.service
+        @ONLY
+    )
+    install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
+        RENAME lemond.service
+    )
 
     # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
@@ -1556,6 +1547,17 @@ endif()
 
 if(WIN32)
     set(EMBEDDABLE_PLATFORM "windows-x64")
+elseif(APPLE)
+    if(DEFINED CMAKE_OSX_ARCHITECTURES AND CMAKE_OSX_ARCHITECTURES)
+        set(_embeddable_arch "${CMAKE_OSX_ARCHITECTURES}")
+    else()
+        set(_embeddable_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    endif()
+    if(_embeddable_arch STREQUAL "arm64")
+        set(EMBEDDABLE_PLATFORM "macos-arm64")
+    else()
+        set(EMBEDDABLE_PLATFORM "macos-x64")
+    endif()
 else()
     set(EMBEDDABLE_PLATFORM "ubuntu-x64")
 endif()
@@ -1596,6 +1598,9 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/bench_scenarios.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive

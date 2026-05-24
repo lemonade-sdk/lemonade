@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
-import { ModelInfo } from './utils/modelData';
+import { ModelInfo, USER_MODEL_PREFIX } from './utils/modelData';
+import { CANONICAL_PREFIXES, getModelDisplayName } from './utils/modelDisplayName';
 import { ToastContainer, useToast } from './Toast';
 import { useConfirmDialog } from './ConfirmDialog';
 import { serverFetch } from './utils/serverConfig';
@@ -19,6 +20,7 @@ import MarketplacePanel, { MarketplaceCategory } from './MarketplacePanel';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
+import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
 
 interface ModelFamily {
   displayName: string;
@@ -128,6 +130,18 @@ type ModelListItem =
   | { type: 'model'; name: string; info: ModelInfo }
   | { type: 'family'; family: ModelFamily; members: { label: string; name: string; info: ModelInfo }[] };
 
+const isUserDefinedModelName = (modelName: string): boolean => {
+  return modelName.startsWith(USER_MODEL_PREFIX);
+};
+
+const getModelListItemSortName = (item: ModelListItem): string => {
+  return item.type === 'family' ? item.family.displayName : getModelDisplayName(item.name);
+};
+
+const getModelListItemSortRank = (item: ModelListItem): number => {
+  return item.type === 'model' && isUserDefinedModelName(item.name) ? 1 : 0;
+};
+
 const MODEL_LABEL_DISPLAY_ORDER = [
   'reasoning',
   'coding',
@@ -208,25 +222,38 @@ interface DetectedBackend {
   suggestedName?: string;
   quantizations?: GGUFQuantization[];
   mmprojFiles?: string[];
+  suggestedLabels?: string[];
 }
 
-const HIDDEN_MODEL_NAME_PREFIXES = ['user.', 'extra.'];
-
-const getModelDisplayName = (modelName: string): string => {
-  const prefix = HIDDEN_MODEL_NAME_PREFIXES.find(p => modelName.startsWith(p));
-  return prefix ? modelName.slice(prefix.length) : modelName;
+// Strip the canonical prefix (if any) to get the bare model name. Used for
+// family-regex matching and family grouping.
+const stripCanonicalPrefix = (modelName: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match ? modelName.slice(match.prefix.length) : modelName;
 };
 
-const isNamespaceHiddenModel = (modelName: string): boolean =>
-  HIDDEN_MODEL_NAME_PREFIXES.some(prefix => modelName.startsWith(prefix));
+const hasCanonicalPrefix = (modelName: string): boolean =>
+  CANONICAL_PREFIXES.some(p => modelName.startsWith(p.prefix));
 
-const getFamilyMemberLabel = (modelName: string, family: ModelFamily, match: RegExpExecArray): string => {
-  if (!isNamespaceHiddenModel(modelName)) return match[1];
+const getSourceSortRank = (modelName: string): number => {
+  const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  return match?.sourceRank ?? 0;
+};
 
-  const displayName = getModelDisplayName(modelName);
-  return displayName.startsWith(`${family.displayName}-`)
-    ? displayName.slice(family.displayName.length + 1)
-    : displayName;
+const stripSourceSuffix = (label: string): string => {
+  const match = CANONICAL_PREFIXES.find(p => label.endsWith(p.suffix));
+  return match ? label.slice(0, -match.suffix.length) : label;
+};
+
+const getFamilyMemberLabel = (modelName: string, family: ModelFamily): string => {
+  const prefixInfo = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
+  const bare = stripCanonicalPrefix(modelName);
+  const relativeName = bare.startsWith(family.displayName)
+    ? bare.slice(family.displayName.length).replace(/^[-_.]/, '')
+    : bare;
+  const label = relativeName.endsWith('-GGUF') ? relativeName.slice(0, -'-GGUF'.length) : relativeName;
+  // Keep the source suffix on collapsed family rows so shadowed sources stay distinguishable.
+  return label + (prefixInfo?.suffix ?? '');
 };
 
 function buildModelList(
@@ -241,17 +268,26 @@ function buildModelList(
     for (const m of models) {
       if (consumed.has(m.name)) continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
-      const match = family.regex.exec(getModelDisplayName(m.name));
+      const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
-        members.push({ label: getFamilyMemberLabel(m.name, family, match), name: m.name, info: m.info });
+        members.push({ label: getFamilyMemberLabel(m.name, family), name: m.name, info: m.info });
         consumed.add(m.name);
       }
     }
     if (members.length > 1) {
       members.sort((a, b) => {
-        const sizeA = parseFloat(a.label);
-        const sizeB = parseFloat(b.label);
-        if (Number.isFinite(sizeA) && Number.isFinite(sizeB)) return sizeA - sizeB;
+        const baseLabelA = stripSourceSuffix(a.label);
+        const baseLabelB = stripSourceSuffix(b.label);
+        const sizeA = parseFloat(baseLabelA);
+        const sizeB = parseFloat(baseLabelB);
+        if (Number.isFinite(sizeA) && Number.isFinite(sizeB) && sizeA !== sizeB) return sizeA - sizeB;
+
+        const baseCompare = baseLabelA.localeCompare(baseLabelB, undefined, { numeric: true });
+        if (baseCompare !== 0) return baseCompare;
+
+        const sourceCompare = getSourceSortRank(a.name) - getSourceSortRank(b.name);
+        if (sourceCompare !== 0) return sourceCompare;
+
         return a.label.localeCompare(b.label, undefined, { numeric: true });
       });
       familyItems.push({ type: 'family', family, members });
@@ -265,12 +301,13 @@ function buildModelList(
     .filter(m => !consumed.has(m.name))
     .map(m => ({ type: 'model' as const, name: m.name, info: m.info }));
 
-  // Merge and sort alphabetically by display name
+  // Merge and sort alphabetically by display name. User-defined entries
+  // stay below built-in entries inside each category, matching custom models.
   const allItems = [...familyItems, ...individualItems];
   allItems.sort((a, b) => {
-    const nameA = a.type === 'family' ? a.family.displayName : getModelDisplayName(a.name);
-    const nameB = b.type === 'family' ? b.family.displayName : getModelDisplayName(b.name);
-    return nameA.localeCompare(nameB) || (
+    const rankDiff = getModelListItemSortRank(a) - getModelListItemSortRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    return getModelListItemSortName(a).localeCompare(getModelListItemSortName(b)) || (
       a.type === 'model' && b.type === 'model' ? a.name.localeCompare(b.name) : 0
     );
   });
@@ -292,7 +329,7 @@ interface ModelJSON {
   recipe: string,
   recipe_options?: object,
   checkpoint?: string,
-  checkpoints?: string[],
+  checkpoints?: Record<string, string>,
   downloaded?: boolean,
   labels?: string[],
   size?: number,
@@ -452,11 +489,11 @@ const [searchQuery, setSearchQuery] = useState('');
     let filtered = suggestedModels;
 
     // Hide ESRGAN upscaler models (managed via the Image Generation panel)
-    filtered = filtered.filter(model => !model.info?.labels?.includes('esrgan'));
+    filtered = filtered.filter(model => !model.info?.labels?.includes('upscaling'));
 
     // Filter by downloaded status
     if (showDownloadedOnly) {
-      filtered = filtered.filter(model => modelsData[model.name]?.downloaded);
+      filtered = filtered.filter(model => isModelEffectivelyDownloaded(model.name, modelsData[model.name], modelsData));
     }
 
     // Filter by search query
@@ -613,7 +650,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getCategoryLabel = (category: string): string => {
     const labels: { [key: string]: string } = {
-      'collection': 'OmniRouter',
+      'collection': 'Lemonade',
       'reasoning': 'Reasoning',
       'coding': 'Coding',
       'vision': 'Vision',
@@ -759,6 +796,7 @@ const [searchQuery, setSearchQuery] = useState('');
               mmproj_files: string[];
               recipe: string;
               suggested_name?: string;
+              suggested_labels?: string[];
             } = await variantsRes.json();
             if (payload.variants && payload.variants.length > 0) {
               const quantizations: GGUFQuantization[] = payload.variants.map(v => ({
@@ -766,6 +804,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 quantization: v.name,
                 size: v.size_bytes || undefined,
               }));
+              const suggestedLabels = Array.isArray(payload.suggested_labels)
+                ? payload.suggested_labels.filter((label): label is string => typeof label === 'string')
+                : [];
               setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({
                 ...prev,
                 [modelId]: {
@@ -774,6 +815,7 @@ const [searchQuery, setSearchQuery] = useState('');
                   suggestedName: payload.suggested_name,
                   quantizations,
                   mmprojFiles: payload.mmproj_files && payload.mmproj_files.length > 0 ? payload.mmproj_files : undefined,
+                  suggestedLabels,
                 },
               }));
               if (!hfSelectedQuantizations[modelId]) {
@@ -858,14 +900,24 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
-      // Don't start a second download if one is already running for this
-      // model. Without this guard, downloadTracker.startDownload would abort
-      // the in-flight request, which surfaces as "Download cancelled" in the
-      // first call's catch block.
+      // Do not start a second download if this renderer owns a live request or
+      // the server-owned download registry reports one. A restored UI row alone
+      // is not authoritative after reload, because it has no fetch stream or
+      // AbortController.
       if (downloadTracker.isActive(modelName)) {
         showWarning(`Download for "${modelName}" is already in progress.`);
         return;
       }
+
+      const serverDownloadActive = await downloadTracker.hasActiveServerDownload(modelName);
+      if (serverDownloadActive) {
+        showWarning(`Download for "${modelName}" is already in progress.`);
+        return;
+      }
+
+      // If the only thing left is a stale renderer-local row, remove it so the
+      // real /pull request can be sent and the server can resume from disk.
+      downloadTracker.clearStaleModelDownload(modelName);
 
       // Add to loading state to show loading indicator
       setLoadingModels(prev => new Set(prev).add(modelName));
@@ -940,7 +992,18 @@ const [searchQuery, setSearchQuery] = useState('');
       ? resolveGgufCheckpoint(hfModel.id, backend)
       : hfModel.id;
     const modelName = `user.${resolveHfModelName(hfModel.id, backend)}`;
-    handleDownloadModel(modelName, { checkpoint, recipe: backend.recipe });
+    const labels = new Set(backend.suggestedLabels ?? []);
+    const mmproj = backend.mmprojFiles?.[0];
+    if (mmproj) labels.add('vision');
+    handleDownloadModel(modelName, {
+      checkpoint,
+      recipe: backend.recipe,
+      mmproj,
+      labels: Array.from(labels),
+      vision: labels.has('vision'),
+      embedding: labels.has('embeddings'),
+      reranking: labels.has('reranking'),
+    });
   }, [hfModelBackends, resolveGgufCheckpoint, resolveHfModelName, handleDownloadModel]);
 
   // Debounced HF search effect - to avoid HF API rate limit error
@@ -1117,17 +1180,41 @@ const [searchQuery, setSearchQuery] = useState('');
     }
   };
 
+  const hasActiveDownloadForModel = (modelName: string): boolean => {
+    const relatedNames = new Set<string>([modelName]);
+    const info = modelsData[modelName];
+    if (isCollectionModel(info)) {
+      getCollectionComponents(info).forEach((component) => relatedNames.add(component));
+    }
+
+    return downloadTracker.getActiveDownloads().some((download) => {
+      if (download.status === 'completed' || download.status === 'error') return false;
+      const downloadNames = [download.modelName, ...(download.collectionComponents ?? [])];
+      return downloadNames.some((name) => relatedNames.has(name));
+    });
+  };
+
   const handleDeleteModel = async (modelName: string) => {
+    setHoveredModel(null);
+
+    await downloadTracker.hydrateFromServer().catch(() => undefined);
+
+    if (hasActiveDownloadForModel(modelName)) {
+      showWarning('A download or setup involving this model is still active. Cancel or delete it from the Download Manager first.');
+      return;
+    }
+
     const info = modelsData[modelName];
     const collectionComponents = isCollectionModel(info) ? getCollectionComponents(info) : [];
     const isCollection = collectionComponents.length > 0;
+    const displayName = isCollection ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName);
 
     const message = isCollection
-      ? `"${modelName}" is a collection. Deleting it will remove the following ${collectionComponents.length} models from disk:\n\n${collectionComponents.map((c) => `• ${c}`).join('\n')}\n\nThis action cannot be undone.`
-      : `Are you sure you want to delete the model "${modelName}"? This action cannot be undone.`;
+      ? `"${displayName}" is an Omni Model. Deleting it removes only the Omni Model entry. Its ${collectionComponents.length} component model${collectionComponents.length === 1 ? '' : 's'} stay on disk.`
+      : `Are you sure you want to delete the model "${displayName}"? This action cannot be undone.`;
 
     const confirmed = await confirm({
-      title: isCollection ? 'Delete Collection' : 'Delete Model',
+      title: isCollection ? 'Delete Omni Model' : 'Delete Model',
       message,
       confirmText: 'Delete',
       cancelText: 'Cancel',
@@ -1138,24 +1225,20 @@ const [searchQuery, setSearchQuery] = useState('');
       return;
     }
 
+    if (hasActiveDownloadForModel(modelName)) {
+      showWarning('A download or setup involving this model is still active. Cancel or delete it from the Download Manager first.');
+      return;
+    }
+
     try {
-      if (isCollection) {
-        for (const component of collectionComponents) {
-          try {
-            await deleteModel(component);
-          } catch (err) {
-            console.error(`Failed to delete component ${component}:`, err);
-          }
-        }
-        showSuccess(`Collection "${modelName}" deleted (${collectionComponents.length} models removed).`);
-      } else {
-        await deleteModel(modelName);
-        showSuccess(`Model "${modelName}" deleted successfully.`);
-      }
+      await deleteModel(modelName);
+      showSuccess(isCollection
+        ? `Omni Model "${displayName}" deleted. Component models were kept.`
+        : `Model "${displayName}" deleted successfully.`);
       await fetchCurrentLoadedModel();
     } catch (error) {
       console.error('Error deleting model:', error);
-      showError(`Failed to delete model: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showError('Failed to delete model: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
@@ -1263,45 +1346,87 @@ const [searchQuery, setSearchQuery] = useState('');
     </button>
   );
 
-  const renderDeleteButton = (modelName: string) => (
+  const renderCustomCollectionOptionsButton = (modelName: string) => (
     <button
-      className="model-action-btn delete-btn"
-      onClick={(e) => { e.stopPropagation(); handleDeleteModel(modelName); }}
-      title="Delete model"
+      className="model-action-btn load-btn"
+      onClick={(e) => {
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('editCustomCollection', { detail: { collectionId: modelName } }));
+      }}
+      title="Omni Model options"
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="3 6 5 6 21 6" />
-        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+           xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M6.5 1.5H9.5L9.9 3.4C10.4 3.6 10.9 3.9 11.3 4.2L13.1 3.5L14.6 6L13.1 7.4C13.2 7.9 13.2 8.1 13.2 8.5C13.2 8.9 13.2 9.1 13.1 9.6L14.6 11L13.1 13.5L11.3 12.8C10.9 13.1 10.4 13.4 9.9 13.6L9.5 15.5H6.5L6.1 13.6C5.6 13.4 5.1 13.1 4.7 12.8L2.9 13.5L1.4 11L2.9 9.6C2.8 9.1 2.8 8.9 2.8 8.5C2.8 8.1 2.8 7.9 2.9 7.4L1.4 6L2.9 3.5L4.7 4.2C5.1 3.9 5.6 3.6 6.1 3.4L6.5 1.5Z"
+          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"
+          strokeLinejoin="round"/>
+        <circle cx="8" cy="8.5" r="2.5" stroke="currentColor"
+                strokeWidth="1.2"/>
       </svg>
     </button>
   );
 
+  const renderDeleteButton = (modelName: string, title = 'Delete model') => {
+    const blockedByDownload = hasActiveDownloadForModel(modelName);
+    return (
+      <button
+        className="model-action-btn delete-btn"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (blockedByDownload) {
+            showWarning('A download or setup involving this model is still active. Cancel or delete it from the Download Manager first.');
+            return;
+          }
+          handleDeleteModel(modelName);
+        }}
+        title={blockedByDownload ? 'Cancel or delete the active download first' : title}
+        disabled={blockedByDownload}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+      </button>
+    );
+  };
+
   const renderActionButtonsContent = (modelName: string) => {
     const { isDownloaded, isLoaded, isLoading } = getModelStatus(modelName);
     const info = modelsData[modelName];
-    const isEsrgan = info?.labels?.includes('esrgan');
+    const isUpscaling = info?.labels?.includes('upscaling');
     const isCollection = isCollectionModel(info);
+    const isEditableCollection = isCollectionEditableAsCustom(info);
+    const isBuiltInCollection = isCollection && info?.suggested === true &&
+      !(info?.labels ?? []).includes('custom') &&
+      !modelName.startsWith(USER_MODEL_PREFIX) &&
+      info?.source !== 'user' && info?.source !== 'user_models' && info?.source !== 'custom';
+    const canDeleteFromRow = !isCollection || !isBuiltInCollection;
     return (
       <>
         {!isDownloaded && (
-          <button
-            className="model-action-btn download-btn"
-            onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName); }}
-            title="Download model"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </button>
+          <>
+            <button
+              className="model-action-btn download-btn"
+              onClick={(e) => { e.stopPropagation(); handleDownloadModel(modelName); }}
+              title="Download model"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
+          </>
         )}
-        {isDownloaded && !isLoaded && !isLoading && isEsrgan && (
+        {isDownloaded && !isLoaded && !isLoading && isUpscaling && (
           <>
             {renderDeleteButton(modelName)}
           </>
         )}
-        {isDownloaded && !isLoaded && !isLoading && !isEsrgan && (
+        {isDownloaded && !isLoaded && !isLoading && !isUpscaling && (
           <>
             <button
               className="model-action-btn load-btn"
@@ -1312,7 +1437,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {!isCollection && renderDeleteButton(modelName)}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
             {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
@@ -1329,7 +1455,8 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {!isCollection && renderDeleteButton(modelName)}
+            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
             {!isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
@@ -1362,7 +1489,7 @@ const [searchQuery, setSearchQuery] = useState('');
         const s = modelsData[c]?.size;
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
-      nameTooltip = `Collection of ${components.length} models:\n${lines.join('\n')}`;
+      nameTooltip = `Omni Model with ${components.length} component models:\n${lines.join('\n')}`;
     } else if (displayName || getModelDisplayName(modelName) !== modelName) {
       nameTooltip = modelName;
     }
@@ -1377,7 +1504,7 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? getModelDisplayName(modelName)}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName))}</span>
             <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             {renderActionButtons(modelName, isHovered)}
           </div>
@@ -1509,7 +1636,8 @@ const [searchQuery, setSearchQuery] = useState('');
             </div>
 
             {shouldShowCategory(category) && (
-              <div className="model-list">
+              <>
+                <div className="model-list">
                 {organizationMode === 'recipe' && !hasModels && renderBackendSetupBanner(category)}
                 <ModelOptionsModal model={optionsModel} isOpen={showModelOptionsModal}
                                    onCancel={() => {
@@ -1528,6 +1656,7 @@ const [searchQuery, setSearchQuery] = useState('');
                   return renderModelItem(item.name, item.info, item.name);
                 })}
               </div>
+              </>
             )}
           </div>
         );
@@ -1543,6 +1672,7 @@ const [searchQuery, setSearchQuery] = useState('');
       onContentVisibilityChange(true);
     }
   };
+
 
   return (
     <div className="model-manager" style={{ width: `${width}px` }}>
@@ -1746,6 +1876,7 @@ const [searchQuery, setSearchQuery] = useState('');
                                     ? resolveGgufCheckpoint(hfModel.id, backend)
                                     : hfModel.id;
                                   const idLower = hfModel.id.toLowerCase();
+                                  const labels = backend.suggestedLabels ?? [];
                                   window.dispatchEvent(new CustomEvent('openAddModel', {
                                     detail: {
                                       initialValues: {
@@ -1753,9 +1884,10 @@ const [searchQuery, setSearchQuery] = useState('');
                                         checkpoint,
                                         recipe: backend.recipe,
                                         mmprojOptions: backend.mmprojFiles,
-                                        vision: (backend.mmprojFiles?.length ?? 0) > 0,
-                                        reranking: idLower.includes('rerank'),
-                                        embedding: idLower.includes('embed'),
+                                        labels,
+                                        vision: labels.includes('vision') || (backend.mmprojFiles?.length ?? 0) > 0,
+                                        reranking: labels.includes('reranking') || idLower.includes('rerank'),
+                                        embedding: labels.includes('embeddings') || idLower.includes('embed'),
                                       },
                                     },
                                   }));

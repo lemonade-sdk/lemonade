@@ -124,6 +124,12 @@ namespace lemon::backends {
         return (filename.size() > 7) && (filename.substr(filename.size() - 7) == ".tar.gz");
     }
 
+    static fs::path get_backend_download_cache_dir() {
+        fs::path cache_dir = fs::path(utils::get_downloaded_bin_dir()) / ".downloads";
+        fs::create_directories(cache_dir);
+        return cache_dir;
+    }
+
     // Helper to extract archive files based on extension
     bool BackendUtils::extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
         // Check if it's a tar.gz file
@@ -147,7 +153,7 @@ namespace lemon::backends {
                                               std::string& out_bin_key) {
         std::string config_backend = backend;
         if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-            (backend == "rocm-preview" || backend == "rocm-stable" || backend == "rocm-nightly")) {
+            (backend == "rocm-stable" || backend == "rocm-nightly")) {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
@@ -208,7 +214,7 @@ namespace lemon::backends {
         // Resolve "rocm" to actual channel for backends that support ROCm channels
         std::string resolved_backend = backend;
         if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
-            std::string channel = "preview";  // default to preview
+            std::string channel = "stable";  // default to stable
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
             }
@@ -240,7 +246,22 @@ namespace lemon::backends {
         if (backend == "system") {
             return "";
         }
-        std::string install_dir = get_install_directory(spec.recipe, backend);
+
+        // Normalize the public rocm backend name to the configured channel before
+        // reading version.txt. get_backend_binary_path() already does this when
+        // locating the executable; version detection must use the same install
+        // directory or ROCm backends remain stuck in update_required after a
+        // successful install.
+        std::string resolved_backend = backend;
+        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+            std::string channel = "stable";
+            if (auto* cfg = RuntimeConfig::global()) {
+                channel = cfg->rocm_channel_for_recipe(spec.recipe);
+            }
+            resolved_backend = "rocm-" + channel;
+        }
+
+        std::string install_dir = get_install_directory(spec.recipe, resolved_backend);
         return get_version_file(install_dir);
     }
 
@@ -248,7 +269,7 @@ namespace lemon::backends {
         std::string resolved_backend = backend;
         if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
             // Map "rocm" to the appropriate channel based on config
-            std::string channel = "preview";  // default to preview for now
+            std::string channel = "stable";  // default to stable for now
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(recipe);
             }
@@ -301,6 +322,15 @@ namespace lemon::backends {
                     needs_install = true;
                     fs::remove_all(install_dir);
                 }
+            } else if (!needs_install && !expected_version.empty()) {
+                // If the executable exists but version.txt is missing, SystemInfo
+                // reports update_required because it cannot prove the installed
+                // binary matches the current Lemonade baseline. Treat this like a
+                // version mismatch rather than a 0B no-op completion.
+                LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
+                        << spec.binary << " version " << expected_version << std::endl;
+                needs_install = true;
+                fs::remove_all(install_dir);
             }
         }
 
@@ -311,9 +341,7 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            // Download ZIP to cache directory
-            fs::path cache_dir = fs::temp_directory_path();
-            fs::create_directories(cache_dir);
+            fs::path cache_dir = get_backend_download_cache_dir();
             std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
             std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
             std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
@@ -376,9 +404,7 @@ namespace lemon::backends {
                 }
                 // 404 = no manifest = single-file release; fall through.
             }
-            const bool has_single = !is_split;
-
-            if (has_single) {
+            if (!is_split) {
                 std::string url = base_download_url + filename;
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
@@ -407,14 +433,14 @@ namespace lemon::backends {
                                              " - " + download_result.error_message);
                 }
             } else {
-                // Split-archive path. Assets known up front, so progress can
-                // report cumulative bytes against a (mostly) accurate total.
+                // Split-archive path. Part names are known up front, but the
+                // total byte size is not. Report per-part bytes and let the
+                // caller/frontend aggregate by file_index / total_files.
                 LOG(INFO, spec.log_name()) << "Downloading " << part_assets.size()
                                            << " split parts from " << repo << "@"
                                            << expected_version << std::endl;
 
                 std::ofstream combined(zip_path, std::ios::binary);
-                size_t cumulative_downloaded = 0;
                 int part_index = 0;
                 const int total_parts = static_cast<int>(part_assets.size());
                 for (const auto& part_filename : part_assets) {
@@ -426,25 +452,23 @@ namespace lemon::backends {
                                                 << part_index << "/" << total_parts
                                                 << ": " << part_filename << std::endl;
 
-                    // Per-part progress wrapper. Reports cumulative bytes
-                    // across all parts so the GUI bar climbs continuously
-                    // instead of resetting between parts.
+                    // Per-part progress wrapper. Keep byte fields scoped to
+                    // the current part; do not synthesize total_download_size
+                    // unless the true total across all parts is known.
                     utils::ProgressCallback part_http_cb;
                     if (progress_cb) {
-                        size_t cumulative_snapshot = cumulative_downloaded;
                         int idx_snapshot = part_index;
                         std::string name_snapshot = part_filename;
-                        part_http_cb = [&progress_cb, name_snapshot, idx_snapshot, total_parts, cumulative_snapshot]
+                        part_http_cb = [&progress_cb, name_snapshot, idx_snapshot, total_parts]
                                       (size_t downloaded, size_t total) -> bool {
                             DownloadProgress p;
                             p.file = name_snapshot;
                             p.file_index = idx_snapshot;
                             p.total_files = total_parts;
-                            p.bytes_downloaded = cumulative_snapshot + downloaded;
-                            p.bytes_total = cumulative_snapshot + total;
-                            p.total_download_size = p.bytes_total;
-                            p.percent = p.bytes_total > 0
-                                ? static_cast<int>((p.bytes_downloaded * 100) / p.bytes_total)
+                            p.bytes_downloaded = downloaded;
+                            p.bytes_total = total;
+                            p.percent = total > 0
+                                ? static_cast<int>((downloaded * 100) / total)
                                 : 0;
                             p.complete = false;
                             return progress_cb(p);
@@ -468,11 +492,6 @@ namespace lemon::backends {
                     std::ifstream part_in(part_path, std::ios::binary);
                     combined << part_in.rdbuf();
                     part_in.close();
-                    std::error_code part_size_ec;
-                    std::uintmax_t part_size = fs::file_size(part_path, part_size_ec);
-                    if (!part_size_ec) {
-                        cumulative_downloaded += part_size;
-                    }
                     fs::remove(part_path);
                 }
                 combined.close();
@@ -532,18 +551,20 @@ namespace lemon::backends {
             fs::remove(zip_path);
 
             // Send completion event now that installation is fully done.
-            // download_result is from the single-file attempt and reports
-            // misleading ~9 bytes from the 404 response body when the archive
-            // was actually fetched via the multi-part fallback. Use the
-            // verified on-disk archive size (captured into file_size above,
-            // before zip_path was deleted) so the GUI shows the real total.
+            // For split archives the combined on-disk size is only known after
+            // all parts have been downloaded, so intermediate progress events
+            // intentionally do not claim a total_download_size.
             if (progress_cb) {
+                const int archive_total_files = is_split ? static_cast<int>(part_assets.size()) : 1;
                 DownloadProgress p;
                 p.file = filename;
-                p.file_index = 1;
-                p.total_files = 1;
-                p.bytes_downloaded = static_cast<size_t>(file_size);
-                p.bytes_total = static_cast<size_t>(file_size);
+                p.file_index = archive_total_files;
+                p.total_files = archive_total_files;
+                if (!is_split) {
+                    p.bytes_downloaded = static_cast<size_t>(file_size);
+                    p.bytes_total = static_cast<size_t>(file_size);
+                    p.total_download_size = static_cast<size_t>(file_size);
+                }
                 p.percent = 100;
                 p.complete = true;
                 progress_cb(p);
@@ -687,7 +708,7 @@ namespace lemon::backends {
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
         std::string url = "https://repo.amd.com/rocm/tarball/" + filename;
 
-        fs::path cache_dir = fs::temp_directory_path();
+        fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();
 
         LOG(DEBUG, "BackendUtils") << "Downloading TheRock from: " << url << std::endl;
@@ -699,8 +720,8 @@ namespace lemon::backends {
             http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
                 DownloadProgress p;
                 p.file = filename;
-                p.file_index = 2;  // TheRock is the second file (after llama.cpp binary)
-                p.total_files = 2;
+                p.file_index = 1;
+                p.total_files = 1;
                 p.bytes_downloaded = downloaded;
                 p.bytes_total = total;
                 p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
@@ -769,8 +790,8 @@ namespace lemon::backends {
         if (progress_cb) {
             DownloadProgress p;
             p.file = filename;
-            p.file_index = 2;  // TheRock is the second file
-            p.total_files = 2;
+            p.file_index = 1;
+            p.total_files = 1;
             p.bytes_downloaded = download_result.bytes_downloaded;
             p.bytes_total = download_result.total_bytes;
             p.percent = 100;

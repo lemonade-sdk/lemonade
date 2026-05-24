@@ -339,7 +339,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         )}
         {logs.length === 0 && connectionStatus === 'error' && (
           <div className="logs-error">
-            Failed to connect to lemonade-server logs.
+            Failed to connect to Lemonade Server logs.
             <br />
             Make sure the server is running on {serverUrl}
           </div>

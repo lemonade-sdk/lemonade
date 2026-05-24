@@ -10,6 +10,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <functional>
+#include <map>
+#include <vector>
 #include <thread>
 #include <lemon/utils/aixlog.hpp>
 
@@ -18,8 +21,6 @@ namespace fs = std::filesystem;
 namespace lemon {
 
 namespace {
-
-static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
 
 std::string get_current_os() {
 #ifdef _WIN32
@@ -36,7 +37,7 @@ std::string get_current_os() {
 std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
     if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
-        std::string channel = "preview";  // default to preview for now
+        std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel_for_recipe(recipe);
         }
@@ -128,132 +129,8 @@ bool has_matching_system_rocm_runtime(const std::string& expected_runtime_versio
     return runtime_version_matches_expected(system_version, expected_runtime_version);
 }
 
-bool has_matching_installed_rocm_stable_runtime(const std::string& install_dir,
-                                                const std::string& expected_runtime_version) {
-    const fs::path info_version_file = fs::path(install_dir) / ".info" / "version";
-    const std::string installed_runtime_version = read_version_file(info_version_file);
-    return runtime_version_matches_expected(installed_runtime_version, expected_runtime_version);
-}
-
-std::string get_rocm_stable_runtime_asset_filename(const std::string& version) {
-    std::string normalized_version = normalize_runtime_version(version);
-    if (normalized_version.empty()) {
-        throw std::runtime_error("Invalid ROCm stable runtime version in backend_versions.json");
-    }
-    return "rocm-" + normalized_version + "-runtime-libs.tar.gz";
-}
-
-void install_rocm_stable_runtime_if_needed(const std::string& os,
-                                           const backends::BackendSpec& spec,
-                                           const json& backend_versions,
-                                           DownloadProgressCallback progress_cb) {
-    // ROCm stable runtime is only needed on Linux.
-    // On Windows, the llama.cpp HIP binaries are self-contained.
-    if (os != "linux") {
-        return;
-    }
-    const std::string backend_type = "rocm-stable";
-    const std::string version = get_backend_runtime_version(backend_versions, spec.recipe, backend_type);
-    const std::string repo = "lemonade-sdk/rocm-stable";
-    const std::string filename = get_rocm_stable_runtime_asset_filename(version);
-    const std::string install_dir = backends::BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-    const std::string expected_runtime_version = normalize_runtime_version(version);
-
-    if (has_matching_system_rocm_runtime(expected_runtime_version)) {
-        LOG(DEBUG, "BackendManager")
-            << "Detected compatible system ROCm runtime version at /opt/rocm/.info/version: "
-            << expected_runtime_version << std::endl;
-        return;
-    }
-
-    if (has_matching_installed_rocm_stable_runtime(install_dir, expected_runtime_version)) {
-        LOG(DEBUG, "BackendManager")
-            << "Detected compatible bundled ROCm stable runtime version in "
-            << install_dir << std::endl;
-        return;
-    }
-
-    fs::remove_all(install_dir);
-    fs::create_directories(install_dir);
-
-    const std::string url = "https://github.com/" + repo + "/releases/download/" + version + "/" + filename;
-    std::string archive_basename = filename;
-    for (char& ch : archive_basename) {
-        if (ch == '/' || ch == '\\' || ch == ':') {
-            ch = '_';
-        }
-    }
-    const std::string archive_path = (fs::temp_directory_path() /
-        ("llamacpp_rocm_stable_runtime_" + version + "_" + archive_basename)).string();
-
-    // Remove any stale archive from a previous failed download. The HTTP downloader
-    // supports resume-by-default, which is undesirable here because older attempts
-    // may have cached an HTML error page under the same temp filename.
-    std::error_code archive_ec;
-    fs::remove(archive_path, archive_ec);
-
-    utils::ProgressCallback http_progress_cb;
-    if (progress_cb) {
-        http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
-            DownloadProgress p;
-            p.file = filename;
-            p.file_index = 2;  // ROCm runtime is the second file
-            p.total_files = 2;  // Backend binary + ROCm runtime
-            p.bytes_downloaded = downloaded;
-            p.bytes_total = total;
-            p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
-            p.complete = false;
-            return progress_cb(p);
-        };
-    } else {
-        http_progress_cb = utils::create_throttled_progress_callback();
-    }
-
-    auto download_result = utils::HttpClient::download_file(url, archive_path, http_progress_cb);
-    if (!download_result.success) {
-        throw std::runtime_error("Failed to download ROCm stable runtime from: " + url +
-                                 " - " + download_result.error_message);
-    }
-
-    if (!backends::BackendUtils::extract_archive(archive_path, install_dir, spec.log_name())) {
-        fs::remove(archive_path);
-        fs::remove_all(install_dir);
-        throw std::runtime_error("Failed to extract ROCm stable runtime archive: " + archive_path);
-    }
-
-    fs::remove(archive_path);
-
-    if (progress_cb) {
-        DownloadProgress p;
-        p.file = filename;
-        p.file_index = 2;  // ROCm runtime is the second file
-        p.total_files = 2;  // Backend binary + ROCm runtime
-        p.bytes_downloaded = download_result.bytes_downloaded;
-        p.bytes_total = download_result.total_bytes;
-        p.percent = 100;
-        p.complete = true;  // Now we can send the completion event
-        progress_cb(p);
-    }
-}
-
-void uninstall_rocm_stable_runtime_if_needed(const std::string& os) {
-    // ROCm stable runtime is only used on Linux.
-    // On Windows, the llama.cpp HIP binaries are self-contained.
-    if (os != "linux") {
-        return;
-    }
-    std::string runtime_dir = backends::BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-    if (fs::exists(runtime_dir)) {
-        std::error_code ec;
-        fs::remove_all(runtime_dir, ec);
-        if (ec && fs::exists(runtime_dir)) {
-            throw std::runtime_error("Failed to remove " + runtime_dir + ": " + ec.message());
-        }
-    }
-}
-
 bool will_install_therock(const std::string& os, const json& backend_versions) {
-    // TheRock is needed on Linux and Windows for ROCm preview channel.
+    // TheRock is needed on Linux and Windows for ROCm stable channel.
     if (os != "linux" && os != "windows") {
         return false;
     }
@@ -296,6 +173,24 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
     }
 
     return true;
+}
+
+bool is_therock_installed_for_current_arch(const json& backend_versions) {
+    if (!backend_versions.contains("therock") ||
+        !backend_versions["therock"].contains("version")) {
+        return false;
+    }
+
+    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+    if (rocm_arch.empty()) {
+        return false;
+    }
+
+    const std::string version = backend_versions["therock"]["version"].get<std::string>();
+    const fs::path version_file =
+        fs::path(backends::BackendUtils::get_therock_install_dir(rocm_arch, version)) / "version.txt";
+
+    return read_version_file(version_file) == version;
 }
 
 void install_therock_if_needed(const std::string& os, const json& backend_versions,
@@ -551,42 +446,169 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
-    // Check if we need to install additional runtime components after the main backend
-    bool needs_rocm_stable_runtime = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                                      resolved_backend == "rocm-stable" &&
-                                      get_current_os() == "linux";
+    // Check if we need to download additional runtime components after the main backend.
+    // `will_install_therock` intentionally answers whether TheRock is applicable
+    // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
+    // Do that here before inflating the install to a multi-file UX flow.
+    const bool needs_therock_download = (recipe == "llamacpp" || recipe == "sd-cpp") &&
+                                        resolved_backend == "rocm-stable" &&
+                                        will_install_therock(get_current_os(), backend_versions_) &&
+                                        !is_therock_installed_for_current_arch(backend_versions_);
 
-    bool needs_therock = (recipe == "llamacpp" || recipe == "sd-cpp") &&
-                         resolved_backend == "rocm-preview" &&
-                         will_install_therock(get_current_os(), backend_versions_);
+    struct RuntimeInstallStep {
+        std::string name;
+        std::function<void(DownloadProgressCallback)> install;
+    };
 
-    // Wrap the progress callback to adjust file indices if runtime download follows
-    DownloadProgressCallback wrapped_progress_cb;
-    if (progress_cb && (needs_rocm_stable_runtime || needs_therock)) {
-        wrapped_progress_cb = [progress_cb](const DownloadProgress& p) -> bool {
-            DownloadProgress adjusted = p;
-            // Adjust to indicate this is file 1 of 2
-            adjusted.file_index = 1;
-            adjusted.total_files = 2;
-            // Suppress the completion event - we'll send it after the runtime download
-            if (p.complete) {
-                adjusted.complete = false;
+    std::vector<RuntimeInstallStep> runtime_steps;
+    if (needs_therock_download) {
+        const std::string os = get_current_os();
+        runtime_steps.push_back({
+            "TheRock runtime",
+            [this, os](DownloadProgressCallback runtime_progress_cb) {
+                install_therock_if_needed(os, backend_versions_, runtime_progress_cb);
             }
-            return progress_cb(adjusted);
+        });
+    }
+
+    // Track known logical file sizes. total_download_size is only forwarded
+    // once it is the real total across every logical file. This prevents a
+    // runtime-follow-up install from inheriting a backend-only total size.
+    std::map<int, size_t> logical_file_sizes;
+    auto known_total_download_size = [&logical_file_sizes](int total_files) -> size_t {
+        size_t total = 0;
+        for (int index = 1; index <= total_files; ++index) {
+            auto it = logical_file_sizes.find(index);
+            if (it == logical_file_sizes.end() || it->second == 0) {
+                return 0;
+            }
+            total += it->second;
+        }
+        return total;
+    };
+
+    auto normalize_progress = [&logical_file_sizes, &known_total_download_size](
+                                  const DownloadProgress& p,
+                                  int logical_file_index,
+                                  int logical_total_files,
+                                  bool allow_complete) -> DownloadProgress {
+        DownloadProgress adjusted = p;
+        adjusted.file_index = logical_file_index;
+        adjusted.total_files = logical_total_files;
+
+        if (adjusted.bytes_total > 0) {
+            logical_file_sizes[logical_file_index] = adjusted.bytes_total;
+        }
+
+        // Only set total_download_size when it is the true full total.
+        adjusted.total_download_size = known_total_download_size(logical_total_files);
+
+        if (!allow_complete && adjusted.complete) {
+            adjusted.complete = false;
+        }
+
+        return adjusted;
+    };
+
+    int backend_total_files = 1;
+    DownloadProgressCallback backend_progress_cb = progress_cb;
+    if (progress_cb && !runtime_steps.empty()) {
+        const int runtime_file_count = static_cast<int>(runtime_steps.size());
+        backend_progress_cb = [progress_cb,
+                               runtime_file_count,
+                               &backend_total_files,
+                               &normalize_progress](const DownloadProgress& p) -> bool {
+            backend_total_files = p.total_files > 0 ? p.total_files : 1;
+            const int logical_file_index = p.file_index > 0 ? p.file_index : 1;
+            const int logical_total_files = backend_total_files + runtime_file_count;
+            return progress_cb(normalize_progress(
+                p, logical_file_index, logical_total_files, /*allow_complete=*/false));
         };
-    } else {
-        wrapped_progress_cb = progress_cb;
     }
 
-    backends::BackendUtils::install_from_github(
-        *spec, params.version, params.repo, params.filename, resolved_backend, wrapped_progress_cb);
+    const std::string backend_install_dir =
+        backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
+    const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
 
-    if (needs_rocm_stable_runtime) {
-        install_rocm_stable_runtime_if_needed(get_current_os(), *spec, backend_versions_, progress_cb);
-    }
+    bool completion_reported = false;
 
-    if (needs_therock) {
-        install_therock_if_needed(get_current_os(), backend_versions_, progress_cb);
+    try {
+        backends::BackendUtils::install_from_github(
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+
+        const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
+        for (size_t i = 0; i < runtime_steps.size(); ++i) {
+            const int logical_file_index = backend_total_files + static_cast<int>(i) + 1;
+            const bool is_last_runtime_step = (i + 1 == runtime_steps.size());
+            bool runtime_reported_progress = false;
+            bool runtime_reported_completion = false;
+            DownloadProgress last_runtime_progress;
+
+            DownloadProgressCallback runtime_progress_cb;
+            if (progress_cb) {
+                runtime_progress_cb = [progress_cb,
+                                       logical_file_index,
+                                       logical_total_files,
+                                       is_last_runtime_step,
+                                       &completion_reported,
+                                       &runtime_reported_progress,
+                                       &runtime_reported_completion,
+                                       &last_runtime_progress,
+                                       &normalize_progress](const DownloadProgress& p) -> bool {
+                    runtime_reported_progress = true;
+                    DownloadProgress adjusted = normalize_progress(
+                        p, logical_file_index, logical_total_files, is_last_runtime_step);
+                    if (adjusted.complete) {
+                        runtime_reported_completion = true;
+                        completion_reported = true;
+                    }
+                    last_runtime_progress = adjusted;
+                    return progress_cb(adjusted);
+                };
+            }
+
+            runtime_steps[i].install(runtime_progress_cb);
+
+            if (!progress_cb) {
+                continue;
+            }
+
+            if (!runtime_reported_progress) {
+                DownloadProgress skipped;
+                skipped.file = runtime_steps[i].name;
+                skipped.file_index = logical_file_index;
+                skipped.total_files = logical_total_files;
+                skipped.percent = 100;
+                skipped.complete = is_last_runtime_step;
+                completion_reported = completion_reported || skipped.complete;
+                progress_cb(skipped);
+            } else if (is_last_runtime_step && !runtime_reported_completion) {
+                last_runtime_progress.file_index = logical_file_index;
+                last_runtime_progress.total_files = logical_total_files;
+                last_runtime_progress.percent = 100;
+                last_runtime_progress.complete = true;
+                completion_reported = true;
+                progress_cb(last_runtime_progress);
+            }
+        }
+
+        if (progress_cb && !runtime_steps.empty() && !completion_reported) {
+            DownloadProgress complete_progress;
+            complete_progress.file = runtime_steps.back().name;
+            complete_progress.file_index = logical_total_files;
+            complete_progress.total_files = logical_total_files;
+            complete_progress.percent = 100;
+            complete_progress.complete = true;
+            progress_cb(complete_progress);
+        }
+    } catch (...) {
+        // If the backend was newly created and a required runtime fails, roll
+        // back the backend so the status does not look ready with missing deps.
+        if (!backend_install_dir_existed_before) {
+            std::error_code cleanup_ec;
+            fs::remove_all(backend_install_dir, cleanup_ec);
+        }
+        throw;
     }
 }
 
@@ -617,11 +639,6 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
     } else {
         LOG(DEBUG, "BackendManager") << "Nothing to uninstall at: " << install_dir << std::endl;
     }
-
-    if (recipe == "llamacpp" && resolved_backend == "rocm-stable") {
-        uninstall_rocm_stable_runtime_if_needed(get_current_os());
-    }
-
 }
 
 // ============================================================================

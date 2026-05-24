@@ -4,12 +4,86 @@
 #include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
 #include <httplib.h>
+#include <algorithm>
+#include <cctype>
 #include <thread>
 #include <chrono>
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
+
+namespace {
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool is_context_window_error(const std::string& message) {
+    const std::string lowered = lower_copy(message);
+    return lowered.find("exceeds the available context size") != std::string::npos ||
+           lowered.find("context length exceeded") != std::string::npos;
+}
+
+std::string extract_backend_error_message(const json& backend_response) {
+    if (backend_response.is_object() && backend_response.contains("error")) {
+        const auto& error = backend_response["error"];
+        if (error.is_string()) {
+            return error.get<std::string>();
+        }
+        if (error.is_object() && error.contains("message") && error["message"].is_string()) {
+            return error["message"].get<std::string>();
+        }
+        return error.dump();
+    }
+    if (backend_response.is_string()) {
+        return backend_response.get<std::string>();
+    }
+    return backend_response.dump();
+}
+
+json create_backend_error_response(const std::string& server_name, int status_code,
+                                   const json& backend_response) {
+    std::string message = extract_backend_error_message(backend_response);
+    if (message.empty()) {
+        message = server_name + " request failed";
+    }
+
+    json error = {
+        {"message", message},
+        {"type", status_code >= 400 && status_code < 500
+            ? "invalid_request_error"
+            : ErrorType::BACKEND_ERROR},
+        {"status_code", status_code},
+        {"details", {
+            {"backend", server_name},
+            {"response", backend_response}
+        }}
+    };
+
+    if (backend_response.is_object() && backend_response.contains("error") &&
+        backend_response["error"].is_object()) {
+        const auto& backend_error = backend_response["error"];
+        if (backend_error.contains("type") && backend_error["type"].is_string()) {
+            error["type"] = backend_error["type"];
+        }
+        if (backend_error.contains("code")) {
+            error["code"] = backend_error["code"];
+        }
+    }
+
+    if (is_context_window_error(message)) {
+        error["type"] = "invalid_request_error";
+        error["code"] = "context_length_exceeded";
+    }
+
+    return {{"error", error}};
+}
+
+} // namespace
 
 int WrappedServer::choose_port() {
     port_ = utils::ProcessManager::find_free_port(8001);
@@ -95,13 +169,10 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
                 error_details = response.body;
             }
 
-            return ErrorResponse::create(
-                server_name_ + " request failed",
-                ErrorType::BACKEND_ERROR,
-                {
-                    {"status_code", response.status_code},
-                    {"response", error_details}
-                }
+            return create_backend_error_response(
+                server_name_,
+                response.status_code,
+                error_details
             );
         }
     } catch (const std::exception& e) {
