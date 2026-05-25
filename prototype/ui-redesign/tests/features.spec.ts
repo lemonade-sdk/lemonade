@@ -486,4 +486,56 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
   });
+
+  test('15 — Dashboard view shows system gauges and session overview', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Dashboard nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toBeVisible();
+
+    // Navigate to Dashboard
+    await page.locator('.titlebar__nav').getByText('Dashboard').click();
+    await page.waitForSelector('[data-view="dashboard"]');
+
+    // Status bar visible
+    await expect(page.locator('.dash-status')).toBeVisible();
+
+    // Connection indicator dot
+    await expect(page.locator('.dash-status__dot')).toBeVisible();
+
+    // Pause/resume button
+    await expect(page.locator('.dash-status__pause')).toBeVisible();
+
+    // System Resources section
+    await expect(page.getByText('System Resources')).toBeVisible();
+
+    // At least CPU and RAM gauges rendered
+    const gauges = page.locator('.dash-gauge');
+    expect(await gauges.count()).toBeGreaterThanOrEqual(2);
+
+    // Session Overview section with KPI tiles
+    await expect(page.getByText('Session Overview')).toBeVisible();
+    const kpis = page.locator('.dash-kpi');
+    expect(await kpis.count()).toBeGreaterThanOrEqual(4);
+
+    // KPI labels present
+    await expect(page.getByText('Models Loaded')).toBeVisible();
+    await expect(page.getByText('Total Slots')).toBeVisible();
+    await expect(page.getByText('Active Sessions')).toBeVisible();
+    await expect(page.getByText('Cached Contexts')).toBeVisible();
+
+    // Pause button toggles
+    await page.locator('.dash-status__pause').click();
+    await expect(page.locator('.dash-status__pause')).toHaveClass(/is-paused/);
+
+    // Resume
+    await page.locator('.dash-status__pause').click();
+    await expect(page.locator('.dash-status__pause')).not.toHaveClass(/is-paused/);
+
+    // Loaded Models section present
+    await expect(page.getByText('Loaded Models')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
+  });
 });

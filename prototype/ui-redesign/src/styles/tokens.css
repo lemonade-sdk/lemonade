@@ -32,6 +32,8 @@
   --warn-soft:      rgba(217, 163, 91, 0.14);
   --danger:         #d97a6c;
   --danger-soft:    rgba(217, 122, 108, 0.14);
+  --info:           #7baed4;
+  --info-soft:      rgba(123, 174, 212, 0.14);
 
   --border:         rgba(255, 245, 220, 0.08);
   --border-subtle:  rgba(255, 245, 220, 0.06);

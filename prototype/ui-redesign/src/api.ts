@@ -70,6 +70,55 @@ export interface PullCallbacks {
   onError?: (err: Error) => void;
 }
 
+export interface StatsData {
+  input_tokens: number;
+  output_tokens: number;
+  time_to_first_token: number;
+  tokens_per_second: number;
+  decode_token_times: number[];
+  prompt_tokens: number;
+}
+
+export interface SystemStatsData {
+  cpu_percent: number | null;
+  memory_gb: number | null;
+  gpu_percent: number | null;
+  vram_gb: number | null;
+  npu_percent: number | null;
+}
+
+export interface SlotTimings {
+  prompt_n: number;
+  prompt_ms: number;
+  prompt_per_token_ms: number;
+  prompt_per_second: number;
+  predicted_n: number;
+  predicted_ms: number;
+  predicted_per_token_ms: number;
+  predicted_per_second: number;
+}
+
+export interface SlotData {
+  id: number;
+  n_ctx: number;
+  n_decoded: number;
+  n_prompt_tokens: number;
+  n_prompt_tokens_processed: number;
+  state: number;
+  is_processing: boolean;
+  model: string;
+  temperature: number;
+  top_k: number;
+  top_p: number;
+  cache_tokens: number[];
+  timings: SlotTimings;
+  prompt: string;
+  truncated: boolean;
+  stopped_eos: boolean;
+  stopped_word: boolean;
+  stopped_limit: boolean;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -201,6 +250,20 @@ class LemonadeAPI {
     const data = await this._json<Record<string, unknown>>('/api/v1/system-info');
     this._systemInfoData = data;
     return data;
+  }
+
+  // ── Dashboard data ──────────────────────────────────────────────
+
+  async stats(): Promise<StatsData> {
+    return this._json<StatsData>('/api/v1/stats');
+  }
+
+  async systemStats(): Promise<SystemStatsData> {
+    return this._json<SystemStatsData>('/api/v1/system-stats');
+  }
+
+  async slots(): Promise<SlotData[]> {
+    return this._json<SlotData[]>('/api/v1/slots');
   }
 
   // ── Backend management ──────────────────────────────────────────
