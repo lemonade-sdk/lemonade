@@ -203,6 +203,48 @@ class LemonadeAPI {
     return data;
   }
 
+  // ── Backend management ──────────────────────────────────────────
+
+  async installBackend(
+    recipe: string,
+    backend: string,
+    callbacks?: { onProgress?: (data: Record<string, unknown>) => void; onComplete?: () => void; onError?: (err: Error) => void }
+  ): Promise<void> {
+    try {
+      const resp = await this._fetch('/api/v1/install', {
+        method: 'POST',
+        body: { recipe, backend, stream: true, subscribe: true },
+      });
+      const reader = resp.body!.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop()!;
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            callbacks?.onProgress?.(d);
+          } catch {}
+        }
+      }
+      callbacks?.onComplete?.();
+    } catch (err) {
+      callbacks?.onError?.(err as Error);
+    }
+  }
+
+  async uninstallBackend(recipe: string, backend: string): Promise<unknown> {
+    return this._json('/api/v1/uninstall', {
+      method: 'POST',
+      body: { recipe, backend },
+    });
+  }
+
   // ── SSE: Pull (model download) ──────────────────────────────────
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}): Promise<void> {
