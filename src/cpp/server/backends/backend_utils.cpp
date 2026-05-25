@@ -103,14 +103,17 @@ namespace lemon::backends {
         std::string command;
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
+        // Use the auto-detect form `-xf` (instead of `-xzf`) so we transparently
+        // handle .tar.gz, .tar.xz, .tar.bz2, etc. — the Phqen1x/llamacpp-cuda
+        // Linux release ships .tar.xz.
 #ifdef _WIN32
         if (!is_native_tar_available()) {
             LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
             return false;
         }
-        command = get_native_tar_path() + " -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
+        command = get_native_tar_path() + " -xf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #else
-        command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
+        command = "tar -xf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #endif
         int result = system(command.c_str());
         if (result != 0) {
@@ -120,8 +123,61 @@ namespace lemon::backends {
         return true;
     }
 
+    static bool ends_with(const std::string& s, const std::string& suffix) {
+        return s.size() >= suffix.size() &&
+            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
     static bool is_tarball(const std::string& filename) {
-        return (filename.size() > 7) && (filename.substr(filename.size() - 7) == ".tar.gz");
+        // Any tar variant we know how to feed to `tar -xf`.
+        return ends_with(filename, ".tar.gz") ||
+               ends_with(filename, ".tgz") ||
+               ends_with(filename, ".tar.xz") ||
+               ends_with(filename, ".txz") ||
+               ends_with(filename, ".tar.bz2") ||
+               ends_with(filename, ".tbz2");
+    }
+
+    static bool is_seven_zip(const std::string& filename) {
+        return ends_with(filename, ".7z");
+    }
+
+    bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
+        // CUDA Windows release assets are .7z and use the existing native tar.exe path.
+        // Linux CUDA assets are .tar.xz, so Linux should not require bsdtar/7z/p7zip.
+        std::string command;
+        fs::create_directories(dest_dir);
+        LOG(DEBUG, backend_name) << "Extracting 7z to " << dest_dir << std::endl;
+#ifdef _WIN32
+        // Windows System32\tar.exe is bsdtar (libarchive) on Windows 11 22H2+,
+        // which can read .7z. Probe with `--list` first to confirm .7z support;
+        // older tar.exe (from Windows 10) will exit non-zero for .7z archives.
+        if (!is_native_tar_available()) {
+            LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 11 22H2+ required for .7z support." << std::endl;
+            return false;
+        }
+        {
+            std::string probe_cmd = get_native_tar_path() + " --list -f \"" + archive_path + "\" >nul 2>&1";
+            std::string unused;
+            if (lemon::utils::ProcessManager::run_command(probe_cmd, unused, 10) != 0) {
+                LOG(ERROR, backend_name) << "Error: tar.exe cannot read this .7z archive. Windows 11 22H2+ (bsdtar/libarchive) required." << std::endl;
+                return false;
+            }
+        }
+        // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
+        // Phqen1x/llama.cpp-builds have no top-level directory — files sit at the
+        // archive root. Stripping would discard every entry and produce an empty dir.
+        command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
+#else
+        LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
+        return false;
+#endif
+        int result = system(command.c_str());
+        if (result != 0) {
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
+            return false;
+        }
+        return true;
     }
 
     static fs::path get_backend_download_cache_dir() {
@@ -132,9 +188,11 @@ namespace lemon::backends {
 
     // Helper to extract archive files based on extension
     bool BackendUtils::extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
-        // Check if it's a tar.gz file
         if (is_tarball(archive_path)) {
             return extract_tarball(archive_path, dest_dir, backend_name);
+        }
+        if (is_seven_zip(archive_path)) {
+            return extract_seven_zip(archive_path, dest_dir, backend_name);
         }
         // Default to ZIP extraction
         return extract_zip(archive_path, dest_dir, backend_name);
@@ -190,10 +248,21 @@ namespace lemon::backends {
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
         if (fs::exists(install_dir)) {
+            // On Windows, executables have a .exe extension that may not be in binary_name
+#ifdef _WIN32
+            const std::string binary_name_exe = binary_name + ".exe";
+#endif
             // This could be optimized with a cache but saving a few milliseconds every few minutes/hours is not going to do much
             for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(install_dir)) {
-                if (dir_entry.is_regular_file() && dir_entry.path().filename() == binary_name) {
-                    return dir_entry.path().string();
+                if (dir_entry.is_regular_file()) {
+                    const auto& fname = dir_entry.path().filename();
+                    if (fname == binary_name
+#ifdef _WIN32
+                        || fname == binary_name_exe
+#endif
+                    ) {
+                        return dir_entry.path().string();
+                    }
                 }
             }
         }
@@ -341,10 +410,21 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            fs::path cache_dir = get_backend_download_cache_dir();
-            std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
-            std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
-            std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
+            std::string url = "https://github.com/" + repo + "/releases/download/" +
+                            expected_version + "/" + filename;
+
+            // Download archive to cache directory.
+            // Preserve the actual filename (sanitised for use in a path) so that
+            // extract_archive() dispatches to the correct extractor based on extension,
+            // and architecture-specific assets (e.g. sm_86 vs sm_89) don't collide.
+            fs::path cache_dir = fs::temp_directory_path();
+            fs::create_directories(cache_dir);
+            std::string zip_name = backend.empty() ? spec.recipe : spec.recipe + "_" + backend;
+            std::string safe_filename = filename;
+            for (char& ch : safe_filename) {
+                if (ch == '/' || ch == '\\' || ch == ':') ch = '_';
+            }
+            std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + "_" + safe_filename)).string();
 
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
 

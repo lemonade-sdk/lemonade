@@ -154,6 +154,12 @@ jobs:
           - backend: rocm
             channel: nightly
             runner: [self-hosted, Windows, 128gb, rocm]
+          # CUDA validation is prepared but intentionally disabled until an
+          # NVIDIA self-hosted runner is available. To enable it, uncomment this
+          # matrix entry.
+          #
+          # - backend: cuda
+          #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
       - uses: actions/checkout@v5
         with:
