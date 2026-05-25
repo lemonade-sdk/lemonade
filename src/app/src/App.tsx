@@ -51,11 +51,26 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
+const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'];
+
+function loadSavedView(): View {
+  try {
+    const saved = localStorage.getItem('lemonade_current_view');
+    if (saved && VALID_VIEWS.includes(saved as View)) return saved as View;
+  } catch { /* ignore */ }
+  return 'chat';
+}
+
 const App: React.FC = () => {
-  const [view, setView] = useState<View>('chat');
+  const [view, setViewState] = useState<View>(loadSavedView);
   const [status, setStatus] = useState<ConnectionStatus>(api.status);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
+
+  const setView = useCallback((v: View) => {
+    setViewState(v);
+    try { localStorage.setItem('lemonade_current_view', v); } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     const unsub = api.onStatusChange(setStatus);
