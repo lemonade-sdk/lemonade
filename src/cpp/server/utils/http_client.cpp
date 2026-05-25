@@ -510,7 +510,15 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     response.status_code = static_cast<int>(response_code);
 
     // For streaming, CURLE_PARTIAL_FILE or CURLE_RECV_ERROR at the end is normal
-    // (backend closes connection after sending all data)
+    // (backend closes connection after sending all data). CURLE_WRITE_ERROR is
+    // also expected when a stream callback intentionally returns false, e.g.
+    // because the client pressed Stop and disconnected from the downstream sink.
+    if (res == CURLE_WRITE_ERROR) {
+        curl_slist_free_all(header_list);
+        curl_easy_cleanup(curl);
+        return response;
+    }
+
     if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         LOG(ERROR, "HttpClient") << "" << error << std::endl;

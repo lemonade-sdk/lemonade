@@ -132,7 +132,9 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     } else if (recipe == "sd-cpp") {
         return DEVICE_CPU;
     } else if (recipe == "kokoro") {
-        return DEVICE_CPU;
+        return DEVICE_CPU;  // Kokoros runs on CPU
+    } else if (recipe == "lemon-mlx") {
+        return DEVICE_GPU;  // Default; MlxServer::load() overrides to DEVICE_CPU for the cpu backend
     } else if (is_collection_recipe(recipe)) {
         return DEVICE_NONE;
     }

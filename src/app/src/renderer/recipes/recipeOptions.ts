@@ -15,6 +15,7 @@ export {
   LlamaOptions,
   WhisperOptions,
   MoonshineOptions,
+  LemonMlxOptions,
   FlmOptions,
   RyzenAIOptions,
   RyzenAIRecipe,

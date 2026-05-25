@@ -7,13 +7,14 @@ import ConnectedBackendRow from './components/ConnectedBackendRow';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
+  'lemon-mlx',
+  'vllm',
   'whispercpp',
   'moonshine',
   'sd-cpp',
   'kokoro',
   'flm',
   'ryzenai-llm',
-  'vllm',
 ].map((recipe, index) => [recipe, index]));
 
 interface GithubReleaseRef {

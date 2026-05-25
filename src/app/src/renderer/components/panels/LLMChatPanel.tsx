@@ -744,6 +744,16 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       extractedThinking += match[1];
     }
     cleanedContent = cleanedContent.replace(thinkRegex, '');
+
+    // Some MLX/CPU streams pass raw Qwen thinking tags through Lemonade. While
+    // the closing tag has not arrived yet, show the open section as live
+    // thinking instead of leaving literal "<think>" text in the assistant body.
+    const openThinkIndex = cleanedContent.indexOf('<think>');
+    if (openThinkIndex !== -1) {
+      extractedThinking += cleanedContent.slice(openThinkIndex + '<think>'.length);
+      cleanedContent = cleanedContent.slice(0, openThinkIndex);
+    }
+
     return { content: cleanedContent, thinking: extractedThinking };
   };
 
@@ -809,6 +819,7 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     // and gets silently discarded — manifesting as "only the first token"
     // or "No content received from stream".
     let lineBuffer = '';
+    let streamError: string | null = null;
 
     try {
       while (true) {
@@ -827,6 +838,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
             try {
               const parsed = JSON.parse(data);
+              if (parsed.error) {
+                streamError = parsed.error.message || parsed.error.type || 'Streaming failed';
+                continue;
+              }
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
               const thinkingContent = delta?.reasoning_content || delta?.thinking;
@@ -855,7 +870,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       reader.releaseLock();
     }
 
-    if (!accumulatedContent) throw new Error('No content received from stream');
+    if (!accumulatedContent && !accumulatedThinking) {
+      throw new Error(streamError || 'No content received from stream');
+    }
   };
 
   const sendMessage = async (textOverride?: string) => {
