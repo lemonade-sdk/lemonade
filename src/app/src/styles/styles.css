@@ -2145,6 +2145,53 @@ input, textarea {
   margin: 0;
 }
 
+.slideover__title-input {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  margin: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: var(--space-1) var(--space-2);
+  width: 100%;
+  font-family: inherit;
+}
+
+.slideover__title-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.slideover__desc-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  resize: vertical;
+  margin-top: var(--space-2);
+}
+
+.slideover__desc-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.select--sm {
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.btn--saved {
+  background: var(--success) !important;
+  color: var(--bg) !important;
+}
+
 .slideover__close {
   width: 32px;
   height: 32px;
