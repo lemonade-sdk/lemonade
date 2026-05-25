@@ -119,6 +119,26 @@ export interface SlotData {
   stopped_limit: boolean;
 }
 
+export interface LogEntry {
+  seq: number;
+  timestamp: string;
+  severity: string;
+  tag: string;
+  line: string;
+}
+
+export interface LogStreamCallbacks {
+  onConnected?: () => void;
+  onDisconnected?: () => void;
+  onError?: (message: string) => void;
+  onSnapshot?: (entries: LogEntry[]) => void;
+  onEntry?: (entry: LogEntry) => void;
+}
+
+export interface LogStreamHandle {
+  close: () => void;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -264,6 +284,74 @@ class LemonadeAPI {
 
   async slots(): Promise<SlotData[]> {
     return this._json<SlotData[]>('/api/v1/slots');
+  }
+
+  // ── Log level ───────────────────────────────────────────────────
+
+  async getLogLevel(): Promise<string> {
+    const data = await this._json<Record<string, unknown>>('/internal/config');
+    return (data.log_level as string) || 'info';
+  }
+
+  async setLogLevel(level: string): Promise<{ status: string; level: string }> {
+    return this._json<{ status: string; level: string }>('/api/v1/log-level', {
+      method: 'POST',
+      body: { level },
+    });
+  }
+
+  // ── Log stream (WebSocket) ──────────────────────────────────────
+
+  connectLogStream(callbacks: LogStreamCallbacks, afterSeq?: number | null): LogStreamHandle {
+    const health = this._healthData;
+    if (!health?.websocket_port) {
+      callbacks.onError?.('No WebSocket port available');
+      return { close: () => {} };
+    }
+
+    // Build WS URL from the HTTP base URL
+    const baseUrl = new URL(this.baseUrl);
+    const wsProto = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProto}//${baseUrl.hostname}:${health.websocket_port}/logs/stream`;
+
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(wsUrl);
+    } catch (err) {
+      callbacks.onError?.(`WebSocket connection failed: ${err}`);
+      return { close: () => {} };
+    }
+
+    socket.addEventListener('open', () => {
+      socket.send(JSON.stringify({
+        type: 'logs.subscribe',
+        after_seq: afterSeq ?? null,
+      }));
+      callbacks.onConnected?.();
+    });
+
+    socket.addEventListener('message', (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'logs.snapshot') {
+          callbacks.onSnapshot?.(msg.entries ?? []);
+        } else if (msg.type === 'logs.entry' && msg.entry) {
+          callbacks.onEntry?.(msg.entry);
+        } else if (msg.type === 'error') {
+          callbacks.onError?.(msg.error?.message || 'Server error');
+        }
+      } catch {}
+    });
+
+    socket.addEventListener('error', () => {
+      callbacks.onError?.('WebSocket error');
+    });
+
+    socket.addEventListener('close', () => {
+      callbacks.onDisconnected?.();
+    });
+
+    return { close: () => socket.close(1000, 'OK') };
   }
 
   // ── Backend management ──────────────────────────────────────────
