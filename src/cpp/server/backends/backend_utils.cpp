@@ -164,7 +164,10 @@ namespace lemon::backends {
                 return false;
             }
         }
-        command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\" --strip-components=1";
+        // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
+        // Phqen1x/llama.cpp-builds have no top-level directory — files sit at the
+        // archive root. Stripping would discard every entry and produce an empty dir.
+        command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
 #else
         LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
         return false;
@@ -245,10 +248,21 @@ namespace lemon::backends {
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
         if (fs::exists(install_dir)) {
+            // On Windows, executables have a .exe extension that may not be in binary_name
+#ifdef _WIN32
+            const std::string binary_name_exe = binary_name + ".exe";
+#endif
             // This could be optimized with a cache but saving a few milliseconds every few minutes/hours is not going to do much
             for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(install_dir)) {
-                if (dir_entry.is_regular_file() && dir_entry.path().filename() == binary_name) {
-                    return dir_entry.path().string();
+                if (dir_entry.is_regular_file()) {
+                    const auto& fname = dir_entry.path().filename();
+                    if (fname == binary_name
+#ifdef _WIN32
+                        || fname == binary_name_exe
+#endif
+                    ) {
+                        return dir_entry.path().string();
+                    }
                 }
             }
         }
