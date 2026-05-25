@@ -6,8 +6,9 @@ import ConnectView from './components/ConnectView';
 import PresetManager from './components/PresetManager';
 import BackendManager from './components/BackendManager';
 import Dashboard from './components/Dashboard';
+import LogViewer from './components/LogViewer';
 
-type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'connect';
+type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect';
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('chat');
@@ -50,7 +51,7 @@ const App: React.FC = () => {
         </div>
 
         <nav className="titlebar__nav" aria-label="Primary">
-          {(['chat', 'models', 'presets', 'backends', 'dashboard', 'connect'] as View[]).map(v => (
+          {(['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'] as View[]).map(v => (
             <button
               key={v}
               className={view === v ? 'is-active' : ''}
@@ -98,6 +99,9 @@ const App: React.FC = () => {
         )}
         {view === 'dashboard' && (
           <Dashboard />
+        )}
+        {view === 'logs' && (
+          <LogViewer />
         )}
         {view === 'connect' && (
           <ConnectView status={status} />

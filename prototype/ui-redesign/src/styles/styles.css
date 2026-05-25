@@ -3229,3 +3229,290 @@ input, textarea {
   .dash-capacity__row { grid-template-columns: 80px 1fr 50px; }
   .dash-status { flex-direction: column; gap: var(--space-2); }
 }
+
+/* ─────────────────────────────────────────────────────────
+   LOG VIEWER
+   ───────────────────────────────────────────────────────── */
+
+.logs-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-base);
+}
+
+/* ── Toolbar ───────────────────────────────────────────── */
+
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  gap: var(--space-3);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.logs-toolbar__left,
+.logs-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.logs-toolbar__center {
+  flex: 1;
+  min-width: 120px;
+  max-width: 320px;
+}
+
+.logs-toolbar__count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Status dot ────────────────────────────────────────── */
+
+.logs-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.logs-status--connected {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.logs-status--connecting {
+  background: var(--warn);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.logs-status--error {
+  background: var(--danger);
+}
+
+.logs-status--disconnected {
+  background: var(--text-muted);
+}
+
+.logs-status__label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* ── Search ────────────────────────────────────────────── */
+
+.logs-search {
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+
+.logs-search::placeholder {
+  color: var(--text-muted);
+}
+
+.logs-search:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* ── Level selectors ───────────────────────────────────── */
+
+.logs-level {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  cursor: default;
+}
+
+.logs-level__label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.logs-level__select {
+  height: 28px;
+  padding: 0 var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  appearance: auto;
+}
+
+.logs-level__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Buttons ───────────────────────────────────────────── */
+
+.logs-btn {
+  height: 28px;
+  padding: 0 var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.logs-btn:hover {
+  background: var(--surface-3);
+}
+
+.logs-btn--accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.logs-btn--accent:hover {
+  background: var(--accent-soft);
+}
+
+/* ── Log output ────────────────────────────────────────── */
+
+.logs-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.logs-empty {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+/* ── Log line ──────────────────────────────────────────── */
+
+.logs-line {
+  display: flex;
+  align-items: baseline;
+  padding: 1px var(--space-4);
+  gap: var(--space-2);
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+}
+
+.logs-line:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.logs-line__time {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 96px;
+  font-variant-numeric: tabular-nums;
+}
+
+.logs-line__badge {
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.logs-line__tag {
+  color: var(--info);
+  flex-shrink: 0;
+  min-width: 60px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-line__text {
+  color: var(--text-primary);
+  word-break: break-word;
+  flex: 1;
+}
+
+/* Severity colors */
+.log-trace { border-left-color: var(--text-muted); }
+.log-trace .logs-line__badge { color: var(--text-muted); background: rgba(150, 150, 150, 0.1); }
+.log-trace .logs-line__text { color: var(--text-muted); }
+
+.log-debug { border-left-color: var(--info); }
+.log-debug .logs-line__badge { color: var(--info); background: var(--info-soft); }
+
+.log-info { border-left-color: var(--success); }
+.log-info .logs-line__badge { color: var(--success); background: var(--success-soft); }
+
+.log-warn { border-left-color: var(--warn); }
+.log-warn .logs-line__badge { color: var(--warn); background: var(--warn-soft); }
+.log-warn .logs-line__text { color: var(--warn); }
+
+.log-error { border-left-color: var(--danger); }
+.log-error .logs-line__badge { color: var(--danger); background: var(--danger-soft); }
+.log-error .logs-line__text { color: var(--danger); }
+
+.log-fatal { border-left-color: #ff4444; }
+.log-fatal .logs-line__badge { color: #fff; background: #cc2222; }
+.log-fatal .logs-line__text { color: #ff4444; font-weight: 600; }
+
+/* ── Jump to bottom ────────────────────────────────────── */
+
+.logs-jump {
+  position: absolute;
+  bottom: var(--space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  color: var(--accent);
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.logs-jump:hover {
+  background: var(--surface-3);
+}
+
+/* ── Log viewer responsive ─────────────────────────────── */
+
+@media (max-width: 768px) {
+  .logs-toolbar { flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2); }
+  .logs-toolbar__left, .logs-toolbar__right { justify-content: center; flex-wrap: wrap; }
+  .logs-toolbar__center { max-width: none; }
+  .logs-line { padding: 1px var(--space-2); }
+  .logs-line__time { width: 70px; font-size: 0.7rem; }
+  .logs-line__tag { display: none; }
+}

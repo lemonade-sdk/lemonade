@@ -538,4 +538,71 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
   });
+
+  test('16 — Logs view shows toolbar and log output', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Logs nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Logs')).toBeVisible();
+
+    // Navigate to Logs
+    await page.locator('.titlebar__nav').getByText('Logs').click();
+    await page.waitForSelector('[data-view="logs"]');
+
+    // Toolbar visible with controls
+    await expect(page.locator('.logs-toolbar')).toBeVisible();
+
+    // Connection status dot
+    await expect(page.locator('.logs-status__dot')).toBeVisible();
+
+    // Status label visible
+    await expect(page.locator('.logs-status__label')).toBeVisible();
+
+    // Search input
+    await expect(page.locator('.logs-search')).toBeVisible();
+
+    // Show (filter) level selector
+    const showSelect = page.locator('.logs-level__select').first();
+    await expect(showSelect).toBeVisible();
+
+    // Server level selector
+    const serverSelect = page.locator('.logs-level__select').nth(1);
+    await expect(serverSelect).toBeVisible();
+
+    // Clear button
+    await expect(page.getByRole('button', { name: 'Clear' })).toBeVisible();
+
+    // Log output area exists
+    await expect(page.locator('.logs-output')).toBeVisible();
+
+    // Wait briefly for WebSocket connection
+    await page.waitForTimeout(2000);
+
+    // If connected, should show some log entries or the empty state
+    const output = page.locator('.logs-output');
+    const hasEntries = await output.locator('.logs-line').count() > 0;
+    const hasEmpty = await output.locator('.logs-empty').count() > 0;
+    expect(hasEntries || hasEmpty).toBeTruthy();
+
+    // If we have entries, verify structure: time, badge, tag, text
+    if (hasEntries) {
+      const firstLine = output.locator('.logs-line').first();
+      await expect(firstLine.locator('.logs-line__time')).toBeVisible();
+      await expect(firstLine.locator('.logs-line__badge')).toBeVisible();
+      await expect(firstLine.locator('.logs-line__text')).toBeVisible();
+    }
+
+    // Search filtering works — type something and verify
+    await page.locator('.logs-search').fill('xyz_nonexistent_query');
+    await page.waitForTimeout(300);
+
+    // Entry count in toolbar should update
+    await expect(page.locator('.logs-toolbar__count')).toBeVisible();
+
+    // Clear the search
+    await page.locator('.logs-search').fill('');
+
+    await page.screenshot({ path: 'screenshots/16-logs-view.png', fullPage: true });
+  });
 });
