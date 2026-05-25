@@ -108,7 +108,15 @@ const LogViewer: React.FC = () => {
         if (entries.length > 0) {
           lastSeqRef.current = entries[entries.length - 1].seq;
         }
-        setLogs(entries.slice(-MAX_CLIENT_LOGS));
+        setLogs(prev => {
+          // On reconnect, merge with existing logs instead of replacing
+          if (prev.length === 0) return entries.slice(-MAX_CLIENT_LOGS);
+          const lastExistingSeq = prev[prev.length - 1]?.seq ?? -1;
+          const newEntries = entries.filter(e => e.seq > lastExistingSeq);
+          if (newEntries.length === 0) return prev;
+          const merged = [...prev, ...newEntries];
+          return merged.length > MAX_CLIENT_LOGS ? merged.slice(-MAX_CLIENT_LOGS) : merged;
+        });
       },
       onEntry: (entry) => {
         lastSeqRef.current = entry.seq;
