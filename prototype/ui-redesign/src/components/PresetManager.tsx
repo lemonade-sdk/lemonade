@@ -102,10 +102,22 @@ const SDCPP_SAMPLING_METHODS = ['euler', 'euler_a', 'heun', 'dpm2', 'dpm++2s_a',
 
 /* ── Helpers ────────────────────────────────────────────────── */
 
+function sanitizePreset(p: Partial<Preset>): Preset {
+  return {
+    id: p.id || `u-${Date.now()}`,
+    name: p.name || 'Untitled',
+    description: p.description || '',
+    recipe: p.recipe || 'any',
+    recipe_options: p.recipe_options || {},
+    sampling: p.sampling || {},
+    starter: p.starter ?? false,
+  };
+}
+
 function loadUserPresets(): Preset[] {
   try {
     const raw = localStorage.getItem(LS_USER_PRESETS);
-    if (raw) return JSON.parse(raw);
+    if (raw) return (JSON.parse(raw) as Partial<Preset>[]).map(sanitizePreset);
   } catch {}
   return [...DEFAULT_USER_PRESETS];
 }
@@ -151,22 +163,25 @@ function recipeChipClass(recipe: PresetRecipe): string {
 
 function paramsPreview(preset: Preset): string {
   const cap = primaryCap(preset);
+  const ro = preset.recipe_options || {};
+  const sp = preset.sampling || {};
   if (cap === 'image') {
-    const s = preset.recipe_options.steps ?? '—';
-    const c = preset.recipe_options.cfg_scale != null ? preset.recipe_options.cfg_scale.toFixed(1) : '—';
-    const w = preset.recipe_options.width ?? 512;
-    const h = preset.recipe_options.height ?? 512;
+    const s = ro.steps ?? '—';
+    const c = ro.cfg_scale != null ? ro.cfg_scale.toFixed(1) : '—';
+    const w = ro.width ?? 512;
+    const h = ro.height ?? 512;
     return `${s} steps · cfg ${c} · ${w}×${h}`;
   }
-  const t = preset.sampling?.temperature != null ? preset.sampling.temperature.toFixed(2) : '—';
-  const ctx = preset.recipe_options.ctx_size ?? '—';
+  const t = sp.temperature != null ? sp.temperature.toFixed(2) : '—';
+  const ctx = ro.ctx_size ?? '—';
   return `temp ${t} · ctx ${ctx}`;
 }
 
 /** Whether a preset has any sampling params */
 function hasSampling(preset: Preset): boolean {
-  return preset.sampling.temperature != null || preset.sampling.top_p != null
-    || preset.sampling.top_k != null || preset.sampling.repeat_penalty != null;
+  const sp = preset.sampling || {};
+  return sp.temperature != null || sp.top_p != null
+    || sp.top_k != null || sp.repeat_penalty != null;
 }
 
 /* ── Phase glyph SVG ───────────────────────────────────────── */

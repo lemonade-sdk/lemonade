@@ -141,22 +141,27 @@ const BackendManager: React.FC = () => {
     const key = `${recipe}:${backend}`;
     setInstalling(key);
     toast(`Installing ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
-    await api.installBackend(recipe, backend, {
-      onProgress: (d) => {
-        if (d.percent != null) {
-          setToastMsg(`Installing ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
-        }
-      },
-      onComplete: () => {
-        toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} installed`);
-        setInstalling(null);
-        fetchInfo();
-      },
-      onError: (err) => {
-        toast(`✗ Install failed: ${err.message}`);
-        setInstalling(null);
-      },
-    });
+    try {
+      await api.installBackend(recipe, backend, {
+        onProgress: (d) => {
+          if (d.percent != null) {
+            setToastMsg(`Installing ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
+          }
+        },
+        onComplete: () => {
+          toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} installed`);
+          setInstalling(null);
+          fetchInfo();
+        },
+        onError: (err) => {
+          toast(`✗ Install failed: ${err.message}`);
+          setInstalling(null);
+        },
+      });
+    } catch (err: any) {
+      toast(`✗ Install failed: ${err.message || err}`);
+      setInstalling(null);
+    }
   }, [fetchInfo, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
@@ -171,6 +176,21 @@ const BackendManager: React.FC = () => {
       setInstalling(null);
     }
   }, [fetchInfo, toast]);
+
+  const handleUpdateAll = useCallback(async () => {
+    if (!sysInfo?.recipes) return;
+    const updates: { recipe: string; backend: string }[] = [];
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
+        if (bInfo.state === 'update_required' || bInfo.state === 'update_available') {
+          updates.push({ recipe, backend });
+        }
+      }
+    }
+    for (const { recipe, backend } of updates) {
+      await handleInstall(recipe, backend);
+    }
+  }, [sysInfo, handleInstall]);
 
   const handleAction = useCallback((url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -272,8 +292,9 @@ const BackendManager: React.FC = () => {
               {updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available
             </span>
             <button className="banner__action" data-backends-banner-action
-              onClick={() => toast('Update all — coming soon')}>
-              Update all
+              onClick={handleUpdateAll}
+              disabled={installing !== null}>
+              {installing ? 'Updating…' : 'Update all'}
             </button>
           </div>
         )}
