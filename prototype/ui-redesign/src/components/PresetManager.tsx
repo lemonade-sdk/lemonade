@@ -239,25 +239,70 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   /* ── Actions ─────────────────────────────────────────────── */
 
   const handleNewPreset = useCallback(() => {
-    alert('New Preset — coming soon! This will open a preset editor.');
+    const newPreset: Preset = {
+      id: `u-${Date.now()}`,
+      name: 'New Preset',
+      description: '',
+      recipe: 'llamacpp',
+      recipe_options: { ctx_size: 4096 },
+      sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 },
+      starter: false,
+    };
+    setUserPresets(prev => [newPreset, ...prev]);
+    setSelectedPreset(newPreset);
+    setApplyTarget('');
   }, []);
 
   const handleImportFile = useCallback(() => {
-    alert('Import from file — coming soon!');
-    setImportOpen(false);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const presets: Preset[] = (Array.isArray(data) ? data : [data]).map((p: Partial<Preset>) =>
+          sanitizePreset({ ...p, id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, starter: false })
+        );
+        setUserPresets(prev => [...presets, ...prev]);
+      } catch { /* ignore invalid JSON */ }
+      setImportOpen(false);
+    };
+    input.click();
   }, []);
 
-  const handleImportClipboard = useCallback(() => {
-    alert('Import from clipboard — coming soon!');
+  const handleImportClipboard = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const data = JSON.parse(text);
+      const presets: Preset[] = (Array.isArray(data) ? data : [data]).map((p: Partial<Preset>) =>
+        sanitizePreset({ ...p, id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, starter: false })
+      );
+      setUserPresets(prev => [...presets, ...prev]);
+    } catch { /* ignore invalid clipboard */ }
     setImportOpen(false);
   }, []);
 
   const handleClone = useCallback((preset: Preset) => {
-    alert(`Cloned "${preset.name}" — coming soon!`);
+    const cloned: Preset = {
+      ...preset,
+      id: `u-${Date.now()}`,
+      name: `${preset.name} (copy)`,
+      starter: false,
+      recipe_options: { ...preset.recipe_options },
+      sampling: { ...preset.sampling },
+    };
+    setUserPresets(prev => [cloned, ...prev]);
+    setSelectedPreset(cloned);
+    setApplyTarget('');
   }, []);
 
   const handleExport = useCallback((preset: Preset) => {
-    alert(`Export "${preset.name}" — coming soon!`);
+    const { starter, ...exportable } = preset;
+    const json = JSON.stringify(exportable, null, 2);
+    navigator.clipboard.writeText(json).catch(() => {});
   }, []);
 
   const handleDelete = useCallback((preset: Preset) => {
@@ -273,10 +318,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     setSelectedPreset(null);
   }, []);
 
+  const handleSave = useCallback((updated: Preset) => {
+    setUserPresets(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setSelectedPreset(updated);
+  }, []);
+
   const handleApply = useCallback((presetId: string, modelName: string) => {
     if (!modelName) return;
     setAppliedPresets(prev => ({ ...prev, [modelName]: presetId }));
-    alert(`Applied preset to ${modelName}`);
   }, []);
 
   const handleDetach = useCallback((modelName: string) => {
@@ -472,6 +521,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             applyTarget={applyTarget}
             onApplyTargetChange={setApplyTarget}
             onApply={handleApply}
+            onSave={handleSave}
             onClone={handleClone}
             onExport={handleExport}
             onDelete={handleDelete}
@@ -547,49 +597,96 @@ const SlideoverContent: React.FC<{
   applyTarget: string;
   onApplyTargetChange: (v: string) => void;
   onApply: (presetId: string, modelName: string) => void;
+  onSave: (updated: Preset) => void;
   onClone: (preset: Preset) => void;
   onExport: (preset: Preset) => void;
   onDelete: (preset: Preset) => void;
   onClose: () => void;
-}> = ({ preset, modelNames, applyTarget, onApplyTargetChange, onApply, onClone, onExport, onDelete, onClose }) => {
-  const cap = primaryCap(preset);
+}> = ({ preset, modelNames, applyTarget, onApplyTargetChange, onApply, onSave, onClone, onExport, onDelete, onClose }) => {
   const isReadOnly = preset.starter;
   const validKeys = RECIPE_KEYS[preset.recipe] || [];
 
+  // Local state — identity
+  const [name, setName] = useState(preset.name);
+  const [description, setDescription] = useState(preset.description);
+  const [recipe, setRecipe] = useState<PresetRecipe>(preset.recipe);
+
   // Local state — recipe options
-  const [ctxSize, setCtxSize] = useState(preset.recipe_options.ctx_size ?? 4096);
-  const [llamacppBackend, setLlamacppBackend] = useState(preset.recipe_options.llamacpp_backend ?? '');
-  const [llamacppDevice, setLlamacppDevice] = useState(preset.recipe_options.llamacpp_device ?? '');
-  const [llamacppArgs, setLlamacppArgs] = useState(preset.recipe_options.llamacpp_args ?? '');
-  const [steps, setSteps] = useState(preset.recipe_options.steps ?? 20);
-  const [cfgScale, setCfgScale] = useState(preset.recipe_options.cfg_scale ?? 7.0);
-  const [imgWidth, setImgWidth] = useState(preset.recipe_options.width ?? 512);
-  const [imgHeight, setImgHeight] = useState(preset.recipe_options.height ?? 512);
-  const [samplingMethod, setSamplingMethod] = useState(preset.recipe_options.sampling_method ?? '');
-  const [sdcppArgs, setSdcppArgs] = useState(preset.recipe_options.sdcpp_args ?? '');
+  const ro = preset.recipe_options || {};
+  const sp = preset.sampling || {};
+  const [ctxSize, setCtxSize] = useState(ro.ctx_size ?? 4096);
+  const [llamacppBackend, setLlamacppBackend] = useState(ro.llamacpp_backend ?? '');
+  const [llamacppDevice, setLlamacppDevice] = useState(ro.llamacpp_device ?? '');
+  const [llamacppArgs, setLlamacppArgs] = useState(ro.llamacpp_args ?? '');
+  const [steps, setSteps] = useState(ro.steps ?? 20);
+  const [cfgScale, setCfgScale] = useState(ro.cfg_scale ?? 7.0);
+  const [imgWidth, setImgWidth] = useState(ro.width ?? 512);
+  const [imgHeight, setImgHeight] = useState(ro.height ?? 512);
+  const [samplingMethod, setSamplingMethod] = useState(ro.sampling_method ?? '');
+  const [sdcppArgs, setSdcppArgs] = useState(ro.sdcpp_args ?? '');
 
   // Local state — sampling params
-  const [temperature, setTemperature] = useState(preset.sampling.temperature ?? 0.7);
-  const [topP, setTopP] = useState(preset.sampling.top_p ?? 0.9);
-  const [topK, setTopK] = useState(preset.sampling.top_k ?? 40);
-  const [repeatPenalty, setRepeatPenalty] = useState(preset.sampling.repeat_penalty ?? 1.05);
+  const [temperature, setTemperature] = useState(sp.temperature ?? 0.7);
+  const [topP, setTopP] = useState(sp.top_p ?? 0.9);
+  const [topK, setTopK] = useState(sp.top_k ?? 40);
+  const [repeatPenalty, setRepeatPenalty] = useState(sp.repeat_penalty ?? 1.05);
+
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setCtxSize(preset.recipe_options.ctx_size ?? 4096);
-    setLlamacppBackend(preset.recipe_options.llamacpp_backend ?? '');
-    setLlamacppDevice(preset.recipe_options.llamacpp_device ?? '');
-    setLlamacppArgs(preset.recipe_options.llamacpp_args ?? '');
-    setSteps(preset.recipe_options.steps ?? 20);
-    setCfgScale(preset.recipe_options.cfg_scale ?? 7.0);
-    setImgWidth(preset.recipe_options.width ?? 512);
-    setImgHeight(preset.recipe_options.height ?? 512);
-    setSamplingMethod(preset.recipe_options.sampling_method ?? '');
-    setSdcppArgs(preset.recipe_options.sdcpp_args ?? '');
-    setTemperature(preset.sampling.temperature ?? 0.7);
-    setTopP(preset.sampling.top_p ?? 0.9);
-    setTopK(preset.sampling.top_k ?? 40);
-    setRepeatPenalty(preset.sampling.repeat_penalty ?? 1.05);
+    const ro2 = preset.recipe_options || {};
+    const sp2 = preset.sampling || {};
+    setName(preset.name);
+    setDescription(preset.description);
+    setRecipe(preset.recipe);
+    setCtxSize(ro2.ctx_size ?? 4096);
+    setLlamacppBackend(ro2.llamacpp_backend ?? '');
+    setLlamacppDevice(ro2.llamacpp_device ?? '');
+    setLlamacppArgs(ro2.llamacpp_args ?? '');
+    setSteps(ro2.steps ?? 20);
+    setCfgScale(ro2.cfg_scale ?? 7.0);
+    setImgWidth(ro2.width ?? 512);
+    setImgHeight(ro2.height ?? 512);
+    setSamplingMethod(ro2.sampling_method ?? '');
+    setSdcppArgs(ro2.sdcpp_args ?? '');
+    setTemperature(sp2.temperature ?? 0.7);
+    setTopP(sp2.top_p ?? 0.9);
+    setTopK(sp2.top_k ?? 40);
+    setRepeatPenalty(sp2.repeat_penalty ?? 1.05);
+    setSaved(false);
   }, [preset]);
+
+  const currentCap = primaryCap({ ...preset, recipe });
+  const currentValidKeys = RECIPE_KEYS[recipe] || [];
+
+  const buildPreset = useCallback((): Preset => {
+    const recipeOpts: RecipeOptions = {};
+    const vk = RECIPE_KEYS[recipe] || [];
+    if (vk.includes('ctx_size')) recipeOpts.ctx_size = ctxSize;
+    if (vk.includes('llamacpp_backend') && llamacppBackend) recipeOpts.llamacpp_backend = llamacppBackend;
+    if (vk.includes('llamacpp_device') && llamacppDevice) recipeOpts.llamacpp_device = llamacppDevice;
+    if (vk.includes('llamacpp_args') && llamacppArgs) recipeOpts.llamacpp_args = llamacppArgs;
+    if (vk.includes('steps')) recipeOpts.steps = steps;
+    if (vk.includes('cfg_scale')) recipeOpts.cfg_scale = cfgScale;
+    if (vk.includes('width')) recipeOpts.width = imgWidth;
+    if (vk.includes('height')) recipeOpts.height = imgHeight;
+    if (vk.includes('sampling_method') && samplingMethod) recipeOpts.sampling_method = samplingMethod;
+    if (vk.includes('sdcpp_args') && sdcppArgs) recipeOpts.sdcpp_args = sdcppArgs;
+    const sampling: SamplingParams = {};
+    if (currentCap === 'llm') {
+      sampling.temperature = temperature;
+      sampling.top_p = topP;
+      sampling.top_k = topK;
+      sampling.repeat_penalty = repeatPenalty;
+    }
+    return { id: preset.id, name, description, recipe, recipe_options: recipeOpts, sampling, starter: false };
+  }, [preset.id, name, description, recipe, ctxSize, llamacppBackend, llamacppDevice, llamacppArgs, steps, cfgScale, imgWidth, imgHeight, samplingMethod, sdcppArgs, temperature, topP, topK, repeatPenalty, currentCap]);
+
+  const handleSave = useCallback(() => {
+    onSave(buildPreset());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }, [buildPreset, onSave]);
 
   return (
     <>
@@ -598,19 +695,52 @@ const SlideoverContent: React.FC<{
         <div className="slideover__top">
           <div className="slideover__title-wrap">
             <PhaseGlyph size="lg" />
-            <h2 className="slideover__title" data-recipe-name>{preset.name}</h2>
+            {isReadOnly ? (
+              <h2 className="slideover__title" data-recipe-name>{preset.name}</h2>
+            ) : (
+              <input
+                className="slideover__title-input"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Preset name"
+                data-recipe-name
+              />
+            )}
           </div>
           <button className="slideover__close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="slideover__meta-row">
-          <RecipeChip recipe={preset.recipe} />
+          {isReadOnly ? (
+            <RecipeChip recipe={preset.recipe} />
+          ) : (
+            <select
+              className="select select--sm"
+              value={recipe}
+              onChange={e => setRecipe(e.target.value as PresetRecipe)}
+            >
+              {(Object.keys(RECIPE_LABELS) as PresetRecipe[]).map(r => (
+                <option key={r} value={r}>{RECIPE_LABELS[r]}</option>
+              ))}
+            </select>
+          )}
           {preset.starter && (
             <span className="recipe-badge recipe-badge--starter" data-recipe-starter-badge>
               Starter
             </span>
           )}
         </div>
-        <p className="slideover__desc" data-recipe-desc>{preset.description}</p>
+        {isReadOnly ? (
+          <p className="slideover__desc" data-recipe-desc>{preset.description}</p>
+        ) : (
+          <textarea
+            className="slideover__desc-input"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Description (optional)"
+            rows={2}
+            data-recipe-desc
+          />
+        )}
       </div>
 
       {/* Body */}
@@ -619,19 +749,19 @@ const SlideoverContent: React.FC<{
         <div className="slideover__section">
           <h3>Recipe target</h3>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', margin: '0 0 var(--space-2)' }}>
-            This preset is scoped to <strong>{RECIPE_LABELS[preset.recipe]}</strong> models.
-            Valid recipe_options: {validKeys.length > 0 ? validKeys.join(', ') : 'none'}.
+            This preset is scoped to <strong>{RECIPE_LABELS[recipe]}</strong> models.
+            Valid recipe_options: {currentValidKeys.length > 0 ? currentValidKeys.join(', ') : 'none'}.
           </p>
         </div>
 
         {/* ── Recipe options (load-time) ── */}
 
         {/* llamacpp / flm / ryzenai-llm / vllm — ctx_size + backend */}
-        {cap === 'llm' && (
+        {currentCap === 'llm' && (
           <div data-preset-fields="llm">
             <div className="slideover__section">
               <h3>Recipe options <span className="slideover__hint">applied at model load</span></h3>
-              {validKeys.includes('ctx_size') && (
+              {currentValidKeys.includes('ctx_size') && (
                 <div className="field">
                   <label className="field__label">ctx_size</label>
                   <div className="field__row">
@@ -642,7 +772,7 @@ const SlideoverContent: React.FC<{
                   </div>
                 </div>
               )}
-              {validKeys.includes('llamacpp_backend') && (
+              {currentValidKeys.includes('llamacpp_backend') && (
                 <div className="field">
                   <label className="field__label">llamacpp_backend</label>
                   <div className="field__row">
@@ -656,7 +786,7 @@ const SlideoverContent: React.FC<{
                   </div>
                 </div>
               )}
-              {validKeys.includes('llamacpp_device') && (
+              {currentValidKeys.includes('llamacpp_device') && (
                 <div className="field">
                   <label className="field__label">llamacpp_device</label>
                   <div className="field__row">
@@ -666,7 +796,7 @@ const SlideoverContent: React.FC<{
                   </div>
                 </div>
               )}
-              {validKeys.includes('llamacpp_args') && (
+              {currentValidKeys.includes('llamacpp_args') && (
                 <div className="field">
                   <label className="field__label">llamacpp_args</label>
                   <div className="field__row">
@@ -681,7 +811,7 @@ const SlideoverContent: React.FC<{
         )}
 
         {/* sd-cpp — image generation options */}
-        {cap === 'image' && (
+        {currentCap === 'image' && (
           <div data-preset-fields="image">
             <div className="slideover__section">
               <h3>Recipe options <span className="slideover__hint">applied at generation time</span></h3>
@@ -726,7 +856,7 @@ const SlideoverContent: React.FC<{
                   </select>
                 </div>
               </div>
-              {validKeys.includes('sdcpp_args') && (
+              {currentValidKeys.includes('sdcpp_args') && (
                 <div className="field">
                   <label className="field__label">sdcpp_args</label>
                   <div className="field__row">
@@ -741,7 +871,7 @@ const SlideoverContent: React.FC<{
         )}
 
         {/* ── Sampling params (per-request) — only for LLM recipes ── */}
-        {hasSampling(preset) && (
+        {(currentCap === 'llm') && (
           <div data-preset-fields="sampling">
             <div className="slideover__section">
               <h3>Sampling params <span className="slideover__hint">applied per request</span></h3>
@@ -855,14 +985,22 @@ const SlideoverContent: React.FC<{
             Clone
           </button>
         ) : (
-          <button
-            className="btn btn--ghost"
-            style={{ color: 'var(--danger)' }}
-            onClick={() => onDelete(preset)}
-            data-recipe-delete
-          >
-            Delete
-          </button>
+          <>
+            <button
+              className="btn btn--ghost"
+              style={{ color: 'var(--danger)' }}
+              onClick={() => onDelete(preset)}
+              data-recipe-delete
+            >
+              Delete
+            </button>
+            <button
+              className={`btn btn--primary${saved ? ' btn--saved' : ''}`}
+              onClick={handleSave}
+            >
+              {saved ? '✓ Saved' : 'Save'}
+            </button>
+          </>
         )}
       </div>
     </>
