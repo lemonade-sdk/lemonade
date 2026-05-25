@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
@@ -9,6 +9,47 @@ import Dashboard from './components/Dashboard';
 import LogViewer from './components/LogViewer';
 
 type View = 'chat' | 'models' | 'presets' | 'backends' | 'dashboard' | 'logs' | 'connect';
+
+/* ── Error boundary ────────────────────────────────────────── */
+
+interface ErrorBoundaryProps { view: string; children: ReactNode; }
+interface ErrorBoundaryState { error: Error | null; }
+
+class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error) { return { error }; }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.view}] Render error:`, error, info.componentStack);
+  }
+
+  componentDidUpdate(prev: ErrorBoundaryProps) {
+    if (prev.view !== this.props.view) this.setState({ error: null });
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', color: '#e8c66b', fontFamily: 'var(--font-mono, monospace)' }}>
+          <h2 style={{ color: '#ff6b6b', margin: '0 0 1rem' }}>
+            Something went wrong in "{this.props.view}"
+          </h2>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: '13px' }}>
+            {this.state.error.message}
+          </pre>
+          <button
+            onClick={() => this.setState({ error: null })}
+            style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#e8c66b', color: '#16140f', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('chat');
@@ -77,6 +118,7 @@ const App: React.FC = () => {
       </header>
 
       <div className="view-container">
+        <ViewErrorBoundary view={view}>
         {view === 'chat' && (
           <ChatView
             currentModel={currentModel}
@@ -106,6 +148,7 @@ const App: React.FC = () => {
         {view === 'connect' && (
           <ConnectView status={status} />
         )}
+        </ViewErrorBoundary>
       </div>
     </div>
   );
