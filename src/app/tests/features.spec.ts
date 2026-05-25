@@ -13,6 +13,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const nav = page.locator('.titlebar__nav');
     await expect(nav.getByText('Chat')).toBeVisible();
     await expect(nav.getByText('Models')).toBeVisible();
+    await expect(nav.getByText('Presets')).toBeVisible();
+    await expect(nav.getByText('Backends')).toBeVisible();
     await expect(nav.getByText('Connect')).toBeVisible();
 
     // Model selector pill visible
@@ -398,8 +400,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Count subtitle visible
     await expect(page.locator('.recipes__title-sub')).toContainText('starters');
 
-    // Lede paragraph
-    await expect(page.locator('.recipes__lede')).toBeVisible();
+    // Lede paragraph mentions recipe options and sampling
+    const lede = page.locator('.recipes__lede');
+    await expect(lede).toBeVisible();
+    await expect(lede).toContainText('recipe options');
+    await expect(lede).toContainText('sampling');
 
     // Zone: Bundled starters
     const starterZone = page.locator('.zone').first();
@@ -412,7 +417,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Starter badge on first card
     await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
 
-    // Capability chips visible on cards
+    // Recipe chip visible on cards (shows recipe name like "llama.cpp")
     await expect(starterCards.first().locator('.cap-chip')).toBeVisible();
 
     // Zone: Your presets
@@ -427,10 +432,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Slide-over has preset name
     await expect(page.locator('.slideover__title')).toBeVisible();
 
-    // Slide-over has capability chips
-    await expect(page.locator('.slideover .cap-chip-list')).toBeVisible();
+    // Slide-over shows recipe chip
+    await expect(page.locator('.slideover .cap-chip')).toBeVisible();
 
-    // Slide-over has form controls (sliders)
+    // Slide-over has recipe options section
+    await expect(page.locator('.slideover').getByText('Recipe options')).toBeVisible();
+
+    // Slide-over has form controls (sliders for ctx_size, etc.)
     await expect(page.locator('.slideover .slider').first()).toBeVisible();
 
     // Close slide-over
@@ -443,5 +451,39 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
+  });
+
+  test('14 — Backends view shows matrix and device info', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Backends nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Backends')).toBeVisible();
+
+    // Navigate to Backends
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-view="backends"]');
+
+    // Title visible
+    await expect(page.locator('.backends__title h1')).toContainText('Backends');
+
+    // Show technical details toggle visible
+    await expect(page.locator('.backends__toggle')).toBeVisible();
+
+    // Matrix table present
+    const matrix = page.locator('[data-backends-matrix] table');
+    await expect(matrix).toBeVisible();
+
+    // Matrix has capability column headers
+    await expect(matrix.locator('thead th')).toHaveCount(5); // Device + LLM + Audio + Image + TTS
+
+    // At least one device row
+    const rows = matrix.locator('tbody tr');
+    expect(await rows.count()).toBeGreaterThan(0);
+
+    // Toggle tech details — version sha becomes visible
+    await page.locator('.backends__toggle input').check();
+
+    await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
   });
 });

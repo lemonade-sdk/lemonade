@@ -3,55 +3,102 @@ import { LoadedModel } from '../api';
 
 /* ── Data model ────────────────────────────────────────────── */
 
+/** Recipe options — applied at model load time via /api/v1/load */
+interface RecipeOptions {
+  // LLM recipes (llamacpp, flm, ryzenai-llm, vllm)
+  ctx_size?: number;
+  llamacpp_backend?: string;
+  llamacpp_device?: string;
+  llamacpp_args?: string;
+  // Image recipe (sd-cpp)
+  steps?: number;
+  cfg_scale?: number;
+  width?: number;
+  height?: number;
+  sampling_method?: string;
+  flow_shift?: number;
+  sdcpp_args?: string;
+  // Whisper recipe
+  whispercpp_backend?: string;
+  whispercpp_args?: string;
+  // vLLM recipe
+  vllm_backend?: string;
+  vllm_args?: string;
+  // FLM recipe
+  flm_args?: string;
+  // Global
+  merge_args?: boolean;
+}
+
+/** Sampling params — applied per-request in chat/completions body */
+interface SamplingParams {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  repeat_penalty?: number;
+}
+
+type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'any';
+
 interface Preset {
   id: string;
   name: string;
   description: string;
-  applies_to: string[];
-  options: {
-    ctx_size?: number;
-    backend?: string;
-    steps?: number;
-    cfg_scale?: number;
-  };
-  sampling: {
-    temperature?: number;
-    top_p?: number;
-    top_k?: number;
-    repeat_penalty?: number;
-  };
+  recipe: PresetRecipe;
+  recipe_options: RecipeOptions;
+  sampling: SamplingParams;
   starter: boolean;
 }
 
 /* ── Constants ─────────────────────────────────────────────── */
 
 const STARTERS: Preset[] = [
-  { id: 's-balanced', name: 'Balanced', description: 'Sensible defaults. Good first pick for everyday chat.', applies_to: ['chat'], options: { ctx_size: 4096, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, starter: true },
-  { id: 's-quality', name: 'Quality', description: 'Larger context, slightly looser sampling for richer long-form answers.', applies_to: ['chat'], options: { ctx_size: 8192, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.70, top_p: 0.95, top_k: 40, repeat_penalty: 1.10 }, starter: true },
-  { id: 's-fast', name: 'Fast', description: 'Small context, tight sampling. Snappy responses for quick interactions.', applies_to: ['chat'], options: { ctx_size: 2048, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.60, top_p: 0.80, top_k: 40, repeat_penalty: 1.05 }, starter: true },
-  { id: 's-creative', name: 'Creative', description: 'Higher temperature for brainstorming, dialog, and divergent thinking.', applies_to: ['chat'], options: { ctx_size: 8192, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.95, top_p: 0.95, top_k: 60, repeat_penalty: 1.00 }, starter: true },
-  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], options: { ctx_size: 32768, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, starter: true },
-  { id: 's-code', name: 'Code', description: 'Low temperature, tight sampling for code generation and refactoring.', applies_to: ['chat'], options: { ctx_size: 8192, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.20, top_p: 0.95, top_k: 40, repeat_penalty: 1.05 }, starter: true },
-  { id: 's-sharp', name: 'Sharp', description: 'More steps and tighter guidance for crisp, deliberate image generation.', applies_to: ['image'], options: { steps: 30, cfg_scale: 8.0 }, sampling: {}, starter: true },
-  { id: 's-quick', name: 'Quick', description: 'Fewer steps, looser guidance — fast drafts and iteration.', applies_to: ['image'], options: { steps: 15, cfg_scale: 7.0 }, sampling: {}, starter: true },
+  // LLM presets (apply to llamacpp-family recipes)
+  { id: 's-balanced',     name: 'Balanced',     description: 'Sensible defaults. Good first pick for everyday chat.',                      recipe: 'llamacpp', recipe_options: { ctx_size: 4096 },  sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, starter: true },
+  { id: 's-quality',      name: 'Quality',      description: 'Larger context, slightly looser sampling for richer long-form answers.',     recipe: 'llamacpp', recipe_options: { ctx_size: 8192 },  sampling: { temperature: 0.70, top_p: 0.95, top_k: 40, repeat_penalty: 1.10 }, starter: true },
+  { id: 's-fast',         name: 'Fast',         description: 'Small context, tight sampling. Snappy responses for quick interactions.',    recipe: 'llamacpp', recipe_options: { ctx_size: 2048 },  sampling: { temperature: 0.60, top_p: 0.80, top_k: 40, repeat_penalty: 1.05 }, starter: true },
+  { id: 's-creative',     name: 'Creative',     description: 'Higher temperature for brainstorming, dialog, and divergent thinking.',      recipe: 'llamacpp', recipe_options: { ctx_size: 8192 },  sampling: { temperature: 0.95, top_p: 0.95, top_k: 60, repeat_penalty: 1.00 }, starter: true },
+  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.',                  recipe: 'llamacpp', recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, starter: true },
+  { id: 's-code',         name: 'Code',         description: 'Low temperature, tight sampling for code generation and refactoring.',       recipe: 'llamacpp', recipe_options: { ctx_size: 8192 },  sampling: { temperature: 0.20, top_p: 0.95, top_k: 40, repeat_penalty: 1.05 }, starter: true },
+  // Image presets (apply to sd-cpp recipe)
+  { id: 's-sharp', name: 'Sharp', description: 'More steps and tighter guidance for crisp, deliberate image generation.', recipe: 'sd-cpp', recipe_options: { steps: 30, cfg_scale: 8.0, width: 512, height: 512 }, sampling: {}, starter: true },
+  { id: 's-quick', name: 'Quick', description: 'Fewer steps, looser guidance — fast drafts and iteration.',               recipe: 'sd-cpp', recipe_options: { steps: 15, cfg_scale: 7.0, width: 512, height: 512 }, sampling: {}, starter: true },
 ];
 
 const DEFAULT_USER_PRESETS: Preset[] = [
-  { id: 'u-long-code', name: 'Long Code', description: 'Custom: big context + code-style sampling for monorepo work.', applies_to: ['chat'], options: { ctx_size: 16384, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 0.25, top_p: 0.95, top_k: 40, repeat_penalty: 1.04 }, starter: false },
-  { id: 'u-brainstorm', name: 'Brainstorm', description: 'High-temp, wide top_p for ideation sessions and divergent thinking.', applies_to: ['chat'], options: { ctx_size: 4096, backend: 'llamacpp · Vulkan' }, sampling: { temperature: 1.05, top_p: 0.98, top_k: 80, repeat_penalty: 1.00 }, starter: false },
+  { id: 'u-long-code',  name: 'Long Code',  description: 'Custom: big context + code-style sampling for monorepo work.',               recipe: 'llamacpp', recipe_options: { ctx_size: 16384 }, sampling: { temperature: 0.25, top_p: 0.95, top_k: 40, repeat_penalty: 1.04 }, starter: false },
+  { id: 'u-brainstorm', name: 'Brainstorm', description: 'High-temp, wide top_p for ideation sessions and divergent thinking.',        recipe: 'llamacpp', recipe_options: { ctx_size: 4096 },  sampling: { temperature: 1.05, top_p: 0.98, top_k: 80, repeat_penalty: 1.00 }, starter: false },
 ];
 
 const LS_USER_PRESETS = 'lemonade_user_presets';
 const LS_APPLIED_PRESETS = 'lemonade_applied_presets';
 
-const BACKEND_OPTIONS = [
-  'llamacpp · CPU',
-  'llamacpp · Vulkan',
-  'llamacpp · ROCm',
-  'llamacpp · Metal',
-];
+/** Real recipe names from the backend — user-facing labels */
+const RECIPE_LABELS: Record<PresetRecipe, string> = {
+  'llamacpp':     'llama.cpp',
+  'sd-cpp':       'stable-diffusion.cpp',
+  'whispercpp':   'whisper.cpp',
+  'flm':          'FastFlowLM',
+  'ryzenai-llm':  'RyzenAI',
+  'vllm':         'vLLM',
+  'kokoro':       'Kokoro',
+  'any':          'Any',
+};
 
-const ALL_CAPABILITIES = ['chat', 'vision', 'code', 'embedding', 'reranking', 'image', 'edit', 'transcription', 'tts'];
+/** Recipe → which recipe_options keys are valid */
+const RECIPE_KEYS: Record<string, (keyof RecipeOptions)[]> = {
+  'llamacpp':     ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'merge_args'],
+  'sd-cpp':       ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args'],
+  'whispercpp':   ['whispercpp_backend', 'whispercpp_args', 'merge_args'],
+  'flm':          ['ctx_size', 'flm_args', 'merge_args'],
+  'ryzenai-llm':  ['ctx_size'],
+  'vllm':         ['ctx_size', 'vllm_backend', 'vllm_args', 'merge_args'],
+  'kokoro':       [],
+  'any':          [],
+};
+
+const LLAMACPP_BACKENDS = ['vulkan', 'rocm', 'metal', 'cpu'] as const;
+const SDCPP_SAMPLING_METHODS = ['euler', 'euler_a', 'heun', 'dpm2', 'dpm++2s_a', 'dpm++2m', 'dpm++2mv2', 'lcm'] as const;
 
 /* ── Helpers ────────────────────────────────────────────────── */
 
@@ -79,19 +126,47 @@ function saveApplied(applied: Record<string, string>): void {
   localStorage.setItem(LS_APPLIED_PRESETS, JSON.stringify(applied));
 }
 
-function primaryCap(preset: Preset): string {
-  return preset.applies_to[0] || 'chat';
+function primaryCap(preset: Preset): 'llm' | 'image' | 'audio' | 'tts' | 'other' {
+  const r = preset.recipe;
+  if (r === 'llamacpp' || r === 'flm' || r === 'ryzenai-llm' || r === 'vllm') return 'llm';
+  if (r === 'sd-cpp') return 'image';
+  if (r === 'whispercpp') return 'audio';
+  if (r === 'kokoro') return 'tts';
+  return 'other';
+}
+
+/** Chip color per recipe */
+function recipeChipClass(recipe: PresetRecipe): string {
+  switch (recipe) {
+    case 'llamacpp':    return 'cap-chip--chat';
+    case 'sd-cpp':      return 'cap-chip--image';
+    case 'whispercpp':  return 'cap-chip--audio';
+    case 'flm':         return 'cap-chip--embed';
+    case 'ryzenai-llm': return 'cap-chip--vision';
+    case 'vllm':        return 'cap-chip--rerank';
+    case 'kokoro':      return 'cap-chip--tts';
+    default:            return 'cap-chip--chat';
+  }
 }
 
 function paramsPreview(preset: Preset): string {
-  if (primaryCap(preset) === 'image') {
-    const s = preset.options.steps ?? '—';
-    const c = preset.options.cfg_scale != null ? preset.options.cfg_scale.toFixed(1) : '—';
-    return `steps ${s} · cfg ${c}`;
+  const cap = primaryCap(preset);
+  if (cap === 'image') {
+    const s = preset.recipe_options.steps ?? '—';
+    const c = preset.recipe_options.cfg_scale != null ? preset.recipe_options.cfg_scale.toFixed(1) : '—';
+    const w = preset.recipe_options.width ?? 512;
+    const h = preset.recipe_options.height ?? 512;
+    return `${s} steps · cfg ${c} · ${w}×${h}`;
   }
   const t = preset.sampling?.temperature != null ? preset.sampling.temperature.toFixed(2) : '—';
-  const ctx = preset.options.ctx_size ?? '—';
+  const ctx = preset.recipe_options.ctx_size ?? '—';
   return `temp ${t} · ctx ${ctx}`;
+}
+
+/** Whether a preset has any sampling params */
+function hasSampling(preset: Preset): boolean {
+  return preset.sampling.temperature != null || preset.sampling.top_p != null
+    || preset.sampling.top_k != null || preset.sampling.repeat_penalty != null;
 }
 
 /* ── Phase glyph SVG ───────────────────────────────────────── */
@@ -111,29 +186,17 @@ const PhaseGlyph: React.FC<{ size?: 'sm' | 'lg' | 'xl' }> = ({ size }) => {
   );
 };
 
-/* ── Capability chip ───────────────────────────────────────── */
+/* ── Recipe chip ────────────────────────────────────────────── */
 
-const CapChip: React.FC<{
-  cap: string;
-  isOn?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-}> = ({ cap, isOn, disabled, onClick }) => {
-  let cls = `cap-chip cap-chip--${cap}`;
-  if (isOn !== undefined) cls += isOn ? ' is-on' : ' is-off';
-  return (
-    <button
-      className={cls}
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      data-cap-chip={cap}
-    >
-      <span className="cap-chip__dot" aria-hidden="true" />
-      {cap}
-    </button>
-  );
-};
+const RecipeChip: React.FC<{
+  recipe: PresetRecipe;
+  small?: boolean;
+}> = ({ recipe, small }) => (
+  <span className={`cap-chip ${recipeChipClass(recipe)}${small ? ' cap-chip--sm' : ''}`}>
+    <span className="cap-chip__dot" aria-hidden="true" />
+    {RECIPE_LABELS[recipe]}
+  </span>
+);
 
 /* ── Main component ────────────────────────────────────────── */
 
@@ -263,10 +326,10 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
         {/* ── Body ────────────────────────────────────── */}
         <div className="recipes__body">
           <p className="recipes__lede">
-            Presets are portable bundles of <em>options</em> (applied when a model
-            loads) and <em>sampling</em> (applied to each request), keyed by
-            capability — so a chat preset fits any chat-capable model, an image
-            preset fits any image model, and so on.
+            Presets bundle <strong>recipe options</strong> (applied when a model
+            loads — context size, backend, image dimensions) and <strong>sampling
+            params</strong> (applied per request — temperature, top_p), scoped to
+            a recipe type like <em>llama.cpp</em> or <em>stable-diffusion.cpp</em>.
           </p>
 
           {/* Zone 1 — Bundled starters */}
@@ -431,13 +494,8 @@ const PresetCard: React.FC<{
         <span className="recipe-card__name">{preset.name}</span>
       </div>
       <p className="recipe-card__desc">{preset.description}</p>
-      <div className="cap-chip-list cap-chip-list--card" title="Applies to capabilities">
-        {preset.applies_to.map(c => (
-          <span className={`cap-chip cap-chip--${c}`} key={c}>
-            <span className="cap-chip__dot" aria-hidden="true" />
-            {c}
-          </span>
-        ))}
+      <div className="cap-chip-list cap-chip-list--card" title="Recipe target">
+        <RecipeChip recipe={preset.recipe} small />
       </div>
       <div className="recipe-card__params" aria-hidden="true">
         <span className="recipe-card__param-key">params</span>
@@ -481,25 +539,41 @@ const SlideoverContent: React.FC<{
 }> = ({ preset, modelNames, applyTarget, onApplyTargetChange, onApply, onClone, onExport, onDelete, onClose }) => {
   const cap = primaryCap(preset);
   const isReadOnly = preset.starter;
+  const validKeys = RECIPE_KEYS[preset.recipe] || [];
 
-  // Local state for slider values (mirrors)
-  const [ctxSize, setCtxSize] = useState(preset.options.ctx_size ?? 4096);
+  // Local state — recipe options
+  const [ctxSize, setCtxSize] = useState(preset.recipe_options.ctx_size ?? 4096);
+  const [llamacppBackend, setLlamacppBackend] = useState(preset.recipe_options.llamacpp_backend ?? '');
+  const [llamacppDevice, setLlamacppDevice] = useState(preset.recipe_options.llamacpp_device ?? '');
+  const [llamacppArgs, setLlamacppArgs] = useState(preset.recipe_options.llamacpp_args ?? '');
+  const [steps, setSteps] = useState(preset.recipe_options.steps ?? 20);
+  const [cfgScale, setCfgScale] = useState(preset.recipe_options.cfg_scale ?? 7.0);
+  const [imgWidth, setImgWidth] = useState(preset.recipe_options.width ?? 512);
+  const [imgHeight, setImgHeight] = useState(preset.recipe_options.height ?? 512);
+  const [samplingMethod, setSamplingMethod] = useState(preset.recipe_options.sampling_method ?? '');
+  const [sdcppArgs, setSdcppArgs] = useState(preset.recipe_options.sdcpp_args ?? '');
+
+  // Local state — sampling params
   const [temperature, setTemperature] = useState(preset.sampling.temperature ?? 0.7);
   const [topP, setTopP] = useState(preset.sampling.top_p ?? 0.9);
   const [topK, setTopK] = useState(preset.sampling.top_k ?? 40);
   const [repeatPenalty, setRepeatPenalty] = useState(preset.sampling.repeat_penalty ?? 1.05);
-  const [steps, setSteps] = useState(preset.options.steps ?? 30);
-  const [cfgScale, setCfgScale] = useState(preset.options.cfg_scale ?? 7.0);
 
-  // Reset local state when preset changes
   useEffect(() => {
-    setCtxSize(preset.options.ctx_size ?? 4096);
+    setCtxSize(preset.recipe_options.ctx_size ?? 4096);
+    setLlamacppBackend(preset.recipe_options.llamacpp_backend ?? '');
+    setLlamacppDevice(preset.recipe_options.llamacpp_device ?? '');
+    setLlamacppArgs(preset.recipe_options.llamacpp_args ?? '');
+    setSteps(preset.recipe_options.steps ?? 20);
+    setCfgScale(preset.recipe_options.cfg_scale ?? 7.0);
+    setImgWidth(preset.recipe_options.width ?? 512);
+    setImgHeight(preset.recipe_options.height ?? 512);
+    setSamplingMethod(preset.recipe_options.sampling_method ?? '');
+    setSdcppArgs(preset.recipe_options.sdcpp_args ?? '');
     setTemperature(preset.sampling.temperature ?? 0.7);
     setTopP(preset.sampling.top_p ?? 0.9);
     setTopK(preset.sampling.top_k ?? 40);
     setRepeatPenalty(preset.sampling.repeat_penalty ?? 1.05);
-    setSteps(preset.options.steps ?? 30);
-    setCfgScale(preset.options.cfg_scale ?? 7.0);
   }, [preset]);
 
   return (
@@ -514,6 +588,7 @@ const SlideoverContent: React.FC<{
           <button className="slideover__close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="slideover__meta-row">
+          <RecipeChip recipe={preset.recipe} />
           {preset.starter && (
             <span className="recipe-badge recipe-badge--starter" data-recipe-starter-badge>
               Starter
@@ -525,61 +600,136 @@ const SlideoverContent: React.FC<{
 
       {/* Body */}
       <div className="slideover__body">
-        {/* Applies to capabilities */}
+        {/* Recipe info */}
         <div className="slideover__section">
-          <h3>Applies to capabilities</h3>
-          <div className="cap-chip-list" data-recipe-engines>
-            {ALL_CAPABILITIES.map(c => (
-              <CapChip
-                key={c}
-                cap={c}
-                isOn={preset.applies_to.includes(c)}
-                disabled={isReadOnly}
-              />
-            ))}
-          </div>
+          <h3>Recipe target</h3>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', margin: '0 0 var(--space-2)' }}>
+            This preset is scoped to <strong>{RECIPE_LABELS[preset.recipe]}</strong> models.
+            Valid recipe_options: {validKeys.length > 0 ? validKeys.join(', ') : 'none'}.
+          </p>
         </div>
 
-        {/* Chat fields */}
-        {cap === 'chat' && (
-          <div data-preset-fields="chat">
+        {/* ── Recipe options (load-time) ── */}
+
+        {/* llamacpp / flm / ryzenai-llm / vllm — ctx_size + backend */}
+        {cap === 'llm' && (
+          <div data-preset-fields="llm">
             <div className="slideover__section">
-              <h3>Options · per model load</h3>
+              <h3>Recipe options <span className="slideover__hint">applied at model load</span></h3>
+              {validKeys.includes('ctx_size') && (
+                <div className="field">
+                  <label className="field__label">ctx_size</label>
+                  <div className="field__row">
+                    <input type="range" className="slider" min={1024} max={131072} step={1024}
+                      value={ctxSize} disabled={isReadOnly}
+                      onChange={e => setCtxSize(Number(e.target.value))} data-recipe-ctx />
+                    <span className="field__value" data-recipe-ctx-val>{ctxSize.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+              {validKeys.includes('llamacpp_backend') && (
+                <div className="field">
+                  <label className="field__label">llamacpp_backend</label>
+                  <div className="field__row">
+                    <select className="select" disabled={isReadOnly}
+                      value={llamacppBackend}
+                      onChange={e => setLlamacppBackend(e.target.value)}
+                      data-recipe-backend>
+                      <option value="">(auto — server decides)</option>
+                      {LLAMACPP_BACKENDS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              {validKeys.includes('llamacpp_device') && (
+                <div className="field">
+                  <label className="field__label">llamacpp_device</label>
+                  <div className="field__row">
+                    <input type="text" className="input" placeholder="e.g. Vulkan0"
+                      value={llamacppDevice} disabled={isReadOnly}
+                      onChange={e => setLlamacppDevice(e.target.value)} />
+                  </div>
+                </div>
+              )}
+              {validKeys.includes('llamacpp_args') && (
+                <div className="field">
+                  <label className="field__label">llamacpp_args</label>
+                  <div className="field__row">
+                    <input type="text" className="input" placeholder="e.g. --n-gpu-layers 99"
+                      value={llamacppArgs} disabled={isReadOnly}
+                      onChange={e => setLlamacppArgs(e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* sd-cpp — image generation options */}
+        {cap === 'image' && (
+          <div data-preset-fields="image">
+            <div className="slideover__section">
+              <h3>Recipe options <span className="slideover__hint">applied at generation time</span></h3>
               <div className="field">
-                <label className="field__label">Context size</label>
+                <label className="field__label">steps</label>
                 <div className="field__row">
-                  <input
-                    type="range"
-                    className="slider"
-                    min={1024}
-                    max={65536}
-                    step={1024}
-                    value={ctxSize}
-                    disabled={isReadOnly}
-                    onChange={e => setCtxSize(Number(e.target.value))}
-                    data-recipe-ctx
-                  />
-                  <span className="field__value" data-recipe-ctx-val>{ctxSize}</span>
+                  <input type="range" className="slider" min={1} max={100} step={1}
+                    value={steps} disabled={isReadOnly}
+                    onChange={e => setSteps(Number(e.target.value))} data-recipe-steps />
+                  <span className="field__value" data-recipe-steps-val>{steps}</span>
                 </div>
               </div>
               <div className="field">
-                <label className="field__label">Backend hint</label>
+                <label className="field__label">cfg_scale</label>
                 <div className="field__row">
-                  <select
-                    className="select"
-                    disabled={isReadOnly}
-                    defaultValue={preset.options.backend || BACKEND_OPTIONS[1]}
-                    data-recipe-backend
-                  >
-                    {BACKEND_OPTIONS.map(b => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
+                  <input type="range" className="slider" min={1} max={30} step={0.5}
+                    value={cfgScale} disabled={isReadOnly}
+                    onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg />
+                  <span className="field__value" data-recipe-cfg-val>{cfgScale.toFixed(1)}</span>
+                </div>
+              </div>
+              <div className="field">
+                <label className="field__label">width × height</label>
+                <div className="field__row" style={{ gap: 'var(--space-2)' }}>
+                  <input type="number" className="input input--narrow" min={256} max={2048} step={64}
+                    value={imgWidth} disabled={isReadOnly}
+                    onChange={e => setImgWidth(Number(e.target.value))} />
+                  <span style={{ color: 'var(--text-tertiary)' }}>×</span>
+                  <input type="number" className="input input--narrow" min={256} max={2048} step={64}
+                    value={imgHeight} disabled={isReadOnly}
+                    onChange={e => setImgHeight(Number(e.target.value))} />
+                </div>
+              </div>
+              <div className="field">
+                <label className="field__label">sampling_method</label>
+                <div className="field__row">
+                  <select className="select" disabled={isReadOnly}
+                    value={samplingMethod}
+                    onChange={e => setSamplingMethod(e.target.value)}>
+                    <option value="">(default)</option>
+                    {SDCPP_SAMPLING_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
               </div>
+              {validKeys.includes('sdcpp_args') && (
+                <div className="field">
+                  <label className="field__label">sdcpp_args</label>
+                  <div className="field__row">
+                    <input type="text" className="input" placeholder="e.g. --diffusion-fa"
+                      value={sdcppArgs} disabled={isReadOnly}
+                      onChange={e => setSdcppArgs(e.target.value)} />
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
+        )}
+
+        {/* ── Sampling params (per-request) — only for LLM recipes ── */}
+        {hasSampling(preset) && (
+          <div data-preset-fields="sampling">
             <div className="slideover__section">
-              <h3>Sampling · per request</h3>
+              <h3>Sampling params <span className="slideover__hint">applied per request</span></h3>
               <div className="field">
                 <label className="field__label">Temperature</label>
                 <div className="field__row">
@@ -644,49 +794,6 @@ const SlideoverContent: React.FC<{
                     data-recipe-rp
                   />
                   <span className="field__value" data-recipe-rp-val>{repeatPenalty.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Image fields */}
-        {cap === 'image' && (
-          <div data-preset-fields="image">
-            <div className="slideover__section">
-              <h3>Options · per generation</h3>
-              <div className="field">
-                <label className="field__label">Steps</label>
-                <div className="field__row">
-                  <input
-                    type="range"
-                    className="slider"
-                    min={5}
-                    max={60}
-                    step={1}
-                    value={steps}
-                    disabled={isReadOnly}
-                    onChange={e => setSteps(Number(e.target.value))}
-                    data-recipe-steps
-                  />
-                  <span className="field__value" data-recipe-steps-val>{steps}</span>
-                </div>
-              </div>
-              <div className="field">
-                <label className="field__label">CFG scale</label>
-                <div className="field__row">
-                  <input
-                    type="range"
-                    className="slider"
-                    min={1}
-                    max={20}
-                    step={0.5}
-                    value={cfgScale}
-                    disabled={isReadOnly}
-                    onChange={e => setCfgScale(Number(e.target.value))}
-                    data-recipe-cfg
-                  />
-                  <span className="field__value" data-recipe-cfg-val>{cfgScale.toFixed(1)}</span>
                 </div>
               </div>
             </div>
