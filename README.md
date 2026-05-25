@@ -177,8 +177,8 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>cpu</code></td>
-      <td><code>x86_64</code> or Apple Silicon CPU</td>
-      <td>Linux, macOS (beta)</td>
+      <td>x86_64 CPU on Linux; Apple Silicon (arm64) on macOS</td>
+      <td>Linux x86_64, macOS arm64 (beta)</td>
     </tr>
     <tr>
       <td><code>flm</code></td>

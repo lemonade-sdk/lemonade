@@ -137,7 +137,7 @@ CAPABILITIES = {
                 "chat_completions_streaming": True,
                 "chat_completions_async": True,
                 "completions": True,
-                "completions_streaming": True,
+                "completions_streaming": False,
                 "completions_async": True,
                 "responses_api": False,
                 "responses_api_streaming": False,
