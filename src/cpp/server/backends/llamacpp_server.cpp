@@ -188,14 +188,14 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "cuda") {
-        params.repo = "Phqen1x/llama.cpp-builds";
+        params.repo = "lemonade-sdk/llama.cpp";
         std::string target_arch = SystemInfo::get_cuda_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("llamacpp", "cuda")
             );
         }
-        // Phqen1x/llama.cpp-builds releases publish per-Compute-Capability binaries
+        // lemonade-sdk/llama.cpp releases publish per-Compute-Capability binaries
         // and embed the build tag in the asset filename, e.g.
         // llama-b1011-ubuntu-cuda-sm_120-x64.tar.xz.
 #ifdef _WIN32

@@ -34,7 +34,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Hardware**: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)
 - **Use Case**: NVIDIA GPU-optimized inference
 - **Performance**: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs
-- **Source**: Per-architecture builds from [Phqen1x/llama.cpp-builds](https://github.com/Phqen1x/llama.cpp-builds)
+- **Source**: Per-architecture builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
 - **Binaries**: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)
 - **Runtime**: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)
 - **Notes**: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system `tar`.
