@@ -371,6 +371,36 @@ input, textarea {
   color: var(--text-secondary);
 }
 
+.rail__item-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rail__item:hover .rail__item-delete { opacity: 1; }
+.rail__item-delete:hover { background: var(--surface-3); color: var(--danger, #ff6b6b); }
+
+.rail__empty {
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
 /* ---------- Chat main pane ---------- */
 .chat__main {
   grid-area: main;

@@ -9,6 +9,62 @@ interface Message {
   stats?: ChatCompletionStats;
 }
 
+interface Conversation {
+  id: string;
+  title: string;
+  model: string | null;
+  messages: Message[];
+  updatedAt: number;
+}
+
+const STORAGE_KEY = 'lemonade_conversations';
+const ACTIVE_KEY = 'lemonade_active_conversation';
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function loadConversations(): Conversation[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveConversations(convos: Conversation[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(convos)); } catch { /* ignore */ }
+}
+
+function loadActiveId(): string | null {
+  try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
+}
+
+function saveActiveId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_KEY, id);
+    else localStorage.removeItem(ACTIVE_KEY);
+  } catch { /* ignore */ }
+}
+
+function deriveTitle(messages: Message[]): string {
+  const first = messages.find(m => m.role === 'user');
+  if (!first) return 'New conversation';
+  const text = first.content.slice(0, 50);
+  return text.length < first.content.length ? text + '…' : text;
+}
+
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
 interface ChatViewProps {
   currentModel: string | null;
   loadedModels: LoadedModel[];
@@ -17,7 +73,8 @@ interface ChatViewProps {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
+  const [activeId, setActiveId] = useState<string | null>(loadActiveId);
   const [inputValue, setInputValue] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -27,6 +84,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const activeConvo = conversations.find(c => c.id === activeId) || null;
+  const messages = activeConvo?.messages || [];
+
+  // Persist conversations to localStorage whenever they change
+  useEffect(() => {
+    saveConversations(conversations);
+  }, [conversations]);
+
+  // Persist active conversation id
+  useEffect(() => {
+    saveActiveId(activeId);
+  }, [activeId]);
+
+  const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
+    setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     if (threadRef.current) {
@@ -41,38 +115,75 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const handleNewChat = useCallback(() => {
     if (isStreaming && abortControllerRef.current) {
       abortControllerRef.current.abort();
+      setIsStreaming(false);
+      setStreamingContent('');
+      setStreamingThinking('');
     }
-    setMessages([]);
-    setIsStreaming(false);
-    setStreamingContent('');
-    setStreamingThinking('');
+    setActiveId(null);
     inputRef.current?.focus();
   }, [isStreaming]);
+
+  const handleSelectConversation = useCallback((id: string) => {
+    if (isStreaming) return;
+    setActiveId(id);
+  }, [isStreaming]);
+
+  const handleDeleteConversation = useCallback((e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (activeId === id) setActiveId(null);
+  }, [activeId]);
 
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      if (streamingContent || streamingThinking) {
+      if ((streamingContent || streamingThinking) && activeId) {
         const partialMessage: Message = {
           role: 'assistant',
           content: streamingContent || '(stopped)',
           thinking: streamingThinking || undefined,
         };
-        setMessages(prev => [...prev, partialMessage]);
+        updateConversation(activeId, c => ({
+          ...c,
+          messages: [...c.messages, partialMessage],
+          updatedAt: Date.now(),
+        }));
       }
       setIsStreaming(false);
       setStreamingContent('');
       setStreamingThinking('');
     }
-  }, [streamingContent, streamingThinking]);
+  }, [streamingContent, streamingThinking, activeId, updateConversation]);
 
   const handleSend = async () => {
     const text = inputValue.trim();
     if (!text || isStreaming) return;
     if (!api.isConnected || !currentModel) return;
 
+    let convoId = activeId;
+
+    // Create a new conversation if none is active
+    if (!convoId) {
+      const newConvo: Conversation = {
+        id: generateId(),
+        title: text.slice(0, 50) + (text.length > 50 ? '…' : ''),
+        model: currentModel,
+        messages: [],
+        updatedAt: Date.now(),
+      };
+      convoId = newConvo.id;
+      setConversations(prev => [newConvo, ...prev]);
+      setActiveId(convoId);
+    }
+
     const userMessage: Message = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMessage]);
+    updateConversation(convoId, c => ({
+      ...c,
+      messages: [...c.messages, userMessage],
+      model: currentModel,
+      updatedAt: Date.now(),
+    }));
+
     setInputValue('');
     setIsStreaming(true);
     setStreamingContent('');
@@ -82,10 +193,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Build chat history from the conversation's current messages + new user message
+    const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const chatMessages: ChatMessage[] = [
-      ...messages.map(m => ({ role: m.role, content: m.content })),
+      ...currentMessages.map(m => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content: text },
     ];
+
+    const targetId = convoId; // capture for closures
 
     await api.chatCompletion(currentModel, chatMessages, {
       onReasoning: (_token, fullReasoning) => {
@@ -97,12 +212,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         setThinkingExpanded(false);
       },
       onDone: (stats) => {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: stats.content,
-          thinking: stats.reasoning || undefined,
-          stats,
-        }]);
+        updateConversation(targetId, c => ({
+          ...c,
+          messages: [...c.messages, {
+            role: 'assistant',
+            content: stats.content,
+            thinking: stats.reasoning || undefined,
+            stats,
+          }],
+          updatedAt: Date.now(),
+        }));
         setIsStreaming(false);
         setStreamingContent('');
         setStreamingThinking('');
@@ -110,7 +229,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       },
       onError: (err) => {
         if (err.name === 'AbortError') return;
-        setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);
+        updateConversation(targetId, c => ({
+          ...c,
+          messages: [...c.messages, { role: 'assistant', content: `Error: ${err.message}` }],
+          updatedAt: Date.now(),
+        }));
         setIsStreaming(false);
         setStreamingContent('');
         setStreamingThinking('');
@@ -161,18 +284,32 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         </div>
 
         <ul className="rail__list" role="listbox">
-          {messages.length > 0 && (
-            <li className="rail__item is-active" role="option">
+          {conversations.map(c => (
+            <li
+              className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+              key={c.id}
+              role="option"
+              onClick={() => handleSelectConversation(c.id)}
+            >
               <span className="rail__item-title">
-                {messages[0]?.content.slice(0, 40) || 'New conversation'}
+                {c.title || deriveTitle(c.messages)}
               </span>
               <span className="rail__item-meta">
                 <span className="rail__model-badge">
-                  {(currentModel || '').split('-')[0]?.toLowerCase() || 'llm'}
+                  {(c.model || '').split('-')[0]?.toLowerCase() || 'llm'}
                 </span>
-                <span>just now</span>
+                <span>{timeAgo(c.updatedAt)}</span>
               </span>
+              <button
+                className="rail__item-delete"
+                onClick={(e) => handleDeleteConversation(e, c.id)}
+                aria-label="Delete conversation"
+                title="Delete"
+              >×</button>
             </li>
+          ))}
+          {conversations.length === 0 && (
+            <li className="rail__empty">No conversations yet</li>
           )}
         </ul>
       </aside>
