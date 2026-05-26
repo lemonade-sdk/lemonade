@@ -311,16 +311,9 @@ const Dashboard: React.FC = () => {
       const currPrompted = s.n_prompt_tokens_processed || 0;
       const prev = c.prevSlotTokens.get(s.id);
 
-      // Accumulate session totals from deltas
-      if (prev) {
-        const decodeDelta = currDecoded - prev.decoded;
-        const promptDelta = currPrompted - prev.prompted;
-        if (decodeDelta > 0) c.totalTokensGenerated += decodeDelta;
-        if (promptDelta > 0) c.totalPromptTokens += promptDelta;
-      } else {
-        c.totalTokensGenerated += currDecoded;
-        c.totalPromptTokens += currPrompted;
-      }
+      // Token counting is handled by the WS timing handler
+      // (fires once per completed request with exact n_decoded).
+      // Poll only tracks prev values for sliding window reset detection.
       c.prevSlotTokens.set(s.id, { decoded: currDecoded, prompted: currPrompted, ts: now });
 
       // Sliding window: push sample, trim old, handle slot resets
@@ -460,20 +453,45 @@ const Dashboard: React.FC = () => {
           const map = liveSlotTps.current;
           map.set(t.slotId, { tg: t.tg ?? 0, pp: t.pp ?? 0 });
 
+          // Count tokens from every completed request (the timing
+          // line fires once per completion with n_decoded).
+          // Must be BEFORE the throttle gate — every line counts.
+          const c = countersRef.current;
+          if (t.decoded != null && t.decoded > 0) {
+            c.totalTokensGenerated += t.decoded;
+          }
+
           // Throttle chart pushes to at most 1/s
           const now = Date.now();
           if (now - lastLivePushRef.current < 1000) return;
           lastLivePushRef.current = now;
 
-          // Track peak TPS from completed requests
-          const c = countersRef.current;
+          // Aggregate across all live slots
           let aggTps = 0, aggPp = 0;
           for (const v of map.values()) {
             aggTps += v.tg;
             aggPp += v.pp;
           }
+
+          // Track peak TPS
           if (aggTps > c.peakTps) c.peakTps = aggTps;
           if (aggPp > c.peakPromptTps) c.peakPromptTps = aggPp;
+
+          // Feed WS timing data into chart targets so the
+          // interpolation ticker picks them up immediately —
+          // the poll-based sliding window only fires every 2s
+          // and misses short requests entirely.
+          targetAggRef.current.tps = aggTps;
+          targetAggRef.current.ppTps = aggPp;
+
+          for (const [slotId, v] of map) {
+            const existing = targetSlotRef.current.get(slotId);
+            if (existing) {
+              existing.tps = v.tg;
+              existing.ppTps = v.pp;
+              existing.isActive = v.tg > 0.05 || v.pp > 0.05;
+            }
+          }
         },
         onDisconnected: () => {
           wsHandleRef.current = null;
