@@ -1250,6 +1250,82 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                 return filepath;
             }
         }
+        
+        // Case 5: Local quant-token fallback.
+        //
+        // Keep the existing resolver cases above as the primary logic: exact
+        // filenames, suffix matches, and folder-based sharding are more
+        // specific and preserve the CHECKPOINT:VARIANT contract.
+        //
+        // Some GGUF repositories name files with the quant token in the middle,
+        // for example:
+        //   Qwen3.6-27B-MTP-IMAT-IQ4_XS-Q8nextn.gguf
+        // for variant:
+        //   IQ4_XS
+        // That file does not end with IQ4_XS.gguf, so mirror the downloader's
+        // GGUF variant enumeration over the files that are already present in
+        // the local HF cache before declaring the model missing.
+        //
+        // HF cache paths have an extra snapshots/<revision>/ prefix that is not
+        // part of the repository-relative filename. Strip it before calling
+        // enumerate_gguf_variants(); otherwise the enumerator treats
+        // "snapshots" as a top-level sharded-folder variant and never extracts
+        // the quant token from the actual GGUF filename.
+        std::vector<std::string> relative_gguf_files;
+        std::map<std::string, std::string> absolute_by_relative;
+        auto repo_relative_from_cache_relative = [](std::string rel) {
+            std::replace(rel.begin(), rel.end(), '\\', '/');
+
+            static const std::string snapshots_prefix = "snapshots/";
+            if (rel.rfind(snapshots_prefix, 0) == 0) {
+                size_t revision_end = rel.find('/', snapshots_prefix.size());
+                if (revision_end != std::string::npos && revision_end + 1 < rel.size()) {
+                    rel = rel.substr(revision_end + 1);
+                }
+            }
+
+            return rel;
+        };
+
+        for (const auto& filepath : all_gguf_files) {
+            std::string relative_path = path_to_utf8(
+                path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
+            relative_path = repo_relative_from_cache_relative(relative_path);
+
+            // Multiple HF snapshots can contain the same repo-relative file.
+            // Keep the first absolute path from the sorted all_gguf_files list
+            // so duplicates do not create false ambiguity.
+            if (absolute_by_relative.emplace(relative_path, filepath).second) {
+                relative_gguf_files.push_back(relative_path);
+            }
+        }
+
+        std::vector<std::string> enumerated_matches;
+        auto local_variants = lemon::enumerate_gguf_variants(relative_gguf_files);
+        for (const auto& local_variant : local_variants.variants) {
+            if (to_lower(local_variant.name) != variant_lower) {
+                continue;
+            }
+
+            auto it = absolute_by_relative.find(local_variant.primary_file);
+            if (it != absolute_by_relative.end()) {
+                enumerated_matches.push_back(it->second);
+            }
+        }
+
+        if (enumerated_matches.size() == 1) {
+            LOG(INFO, "ModelManager")
+                << "Resolved local GGUF variant '" << variant
+                << "' via quant-token fallback: " << enumerated_matches[0] << std::endl;
+            return enumerated_matches[0];
+        }
+
+        if (enumerated_matches.size() > 1) {
+            LOG(WARNING, "ModelManager")
+                << "Multiple local GGUF files matched variant '" << variant
+                << "' via quant-token fallback; refusing to guess" << std::endl;
+            return "";
+        }
 
         // No match found for the requested GGUF variant. Do not fall back to
         // another quantization in the same Hugging Face repo; otherwise a

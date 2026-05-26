@@ -133,7 +133,11 @@ jobs:
           LEMONADE_CI_MODE: "True"
         run: |
           echo "Starting lemond in background..."
-          ./build/lemond --port 13305 > /tmp/lemonade-server.log 2>&1 &
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond --port 13305 > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
 
           echo "Waiting for server to be ready..."
           for i in $(seq 1 30); do
@@ -144,7 +148,7 @@ jobs:
             sleep 2
           done
           echo "ERROR: Server did not start"
-          cat /tmp/lemonade-server.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/lemonade-server.log" 2>/dev/null || true
           exit 1
 
       - name: Run CLI tests

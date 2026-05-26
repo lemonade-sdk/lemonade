@@ -1,0 +1,23 @@
+name: Standard change
+description: Propose a repo change using the OpenSpec / LLM Wiki standard
+title: "[change] "
+labels:
+  - openspec
+body:
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: What needs to change and why?
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundaries
+      description: What owns/consumes/emits/changes? What must not be touched?
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Which tests/checks/docs prove this is ready?

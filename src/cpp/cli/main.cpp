@@ -2,6 +2,7 @@
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
+#include "lemon_cli/bench.h"
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
@@ -162,6 +163,9 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+
+    // Bench command options
+    lemon_cli::BenchCliOptions bench;
 };
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
@@ -1187,6 +1191,9 @@ int main(int argc, char* argv[]) {
     // Cleanup cache options
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
+    // Bench command
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.model, config.output_file, config.bench);
+
     // Parse arguments
     try {
         app.parse(argc, argv);
@@ -1282,6 +1289,9 @@ int main(int argc, char* argv[]) {
         return handle_config_view(client);
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
+    } else if (bench_cmd->count() > 0) {
+        auto bench_config = lemon_cli::build_bench_config(config.model, config.output_file, config.bench);
+        return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

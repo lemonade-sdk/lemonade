@@ -5,9 +5,11 @@
 #include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include <iostream>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -32,10 +34,29 @@ namespace backends {
 
 WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("whisper-server", log_level, model_manager, backend_manager) {
+    fs::path runtime_base = path_from_utf8(get_runtime_dir());
 
-    // Create temp directory for audio files
-    temp_dir_ = fs::temp_directory_path() / "lemonade_audio";
-    fs::create_directories(temp_dir_);
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    std::error_code ec;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "whisper-audio-" << nonce << "-" << std::hex << dis(rd);
+        fs::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (fs::create_directory(candidate, ec)) {
+            temp_dir_ = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir_.empty()) {
+        throw std::runtime_error("Failed to create temporary directory for WhisperServer");
+    }
 }
 
 WhisperServer::~WhisperServer() {

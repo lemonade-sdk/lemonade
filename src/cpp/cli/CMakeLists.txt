@@ -9,6 +9,7 @@ set(COMMON_SOURCES
     model_selection.cpp
     recipe_import.cpp
     hf_pull.cpp
+    bench.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp

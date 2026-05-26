@@ -14,6 +14,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Options for export](#options-for-export)
 - [Options for backends](#options-for-backends)
 - [Options for launch](#options-for-launch)
+- [Options for bench](#options-for-bench)
 - [Options for scan](#options-for-scan)
 
 ## Commands
@@ -47,6 +48,12 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
+
+### Benchmarking
+
+| Command             | Description                         |
+|---------------------|-------------------------------------|
+| `bench MODEL_NAME`  | Benchmark a model's chat completion performance across backends and context sizes. See command options [below](#options-for-bench). |
 
 ### Global Flags
 
@@ -545,6 +552,198 @@ lemonade scan
 
 # Scan for beacons for a custom duration
 lemonade scan --duration 5
+```
+
+## Options for bench
+
+The `bench` command measures chat completion performance (TTFT and tokens-per-second) for a given model across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
+
+```
+lemonade bench [options] MODEL_NAME
+```
+
+### Required Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `MODEL_NAME` | Registered model name to benchmark |
+
+### Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--backend BACKEND` | Backend to test (e.g., `vulkan`, `metal`, `cpu`). Repeat for multiple backends. | All installed backends |
+| `--ctx-size SIZE` | Context size to test. Repeat for multiple sizes. | Model's default context size |
+| `--runs N` | Number of measurement runs per scenario | `3` |
+| `--warmup N` | Number of warmup runs per scenario (not included in stats) | `0` |
+| `--scenarios NAME\|CATEGORY` | Scenario name(s) or category (e.g. `chat`, `coding`, `long-context`). Use `all` to include every scenario. Repeat for multiple. | All scenarios except `long-context` |
+| `--scenario-file FILE` | Load scenarios from a single JSON file | Default bundled scenarios |
+| `--scenario-dir DIR` | Load all `.json` scenario files from a directory | — |
+| `--json` | Output results as JSON instead of a table | Table output |
+| `--output FILE` | Write results to file (in addition to stdout) | — |
+| `--compare FILE` | Compare results against a previously saved JSON file | — |
+| `--auto-pull` | Automatically pull the model if not downloaded | False |
+| `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
+| `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
+| `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
+| `--flm-args ARGS` | Custom args for flm serve. Repeat for multiple. | — |
+| `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
+
+### Scenario Files
+
+Scenarios are defined in JSON files. Each file contains a `scenarios` array where each entry specifies a workload:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Unique scenario name (required) |
+| `category` | string | Category label for grouping (default: `"general"`) |
+| `messages` | array | Chat messages in OpenAI format (required) |
+| `max_tokens` | int | Maximum output tokens (default: `128`) |
+| `warmup_runs` | int | Override warmup runs for this scenario (default: `0`) |
+| `measurement_runs` | int | Override measurement runs for this scenario (default: `3`) |
+| `context` | object | Optional context expansion block (see below) |
+
+#### Context Expansion
+
+The optional `context` block generates large input contexts by repeating a filler string to a target token count. This is useful for benchmarking long-context performance (e.g., needle-in-a-haystack tests):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `filler` | string | Text to repeat to build context |
+| `target_tokens` | int | Target token count (~4 chars per token for English) |
+| `position` | string | Where to place the question relative to filler: `"end"` (default), `"start"`, or `"middle"` |
+
+When `context` is present, the user message content is replaced with the expanded text. The question (extracted from the user message) is positioned relative to the filler according to `position`.
+
+#### Default Scenarios
+
+Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering:
+- **Chat** — Short and long conversational turns
+- **Coding** — Code generation, explanation, and debugging
+- **Long-context** — 32K, 64K, 128K context windows and multi-turn conversation memory
+
+You can override these with `--scenario-file` or `--scenario-dir`.
+
+**Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them, or `--scenarios all` to run every scenario.
+
+### Output
+
+#### Table Output (default)
+
+Results are printed as a table grouped by backend. Columns show TTFT (Time To First Token) and TPS (Tokens Per Second) with mean, min/max (or p50/p95 when `--runs >= 10`), and peak VRAM usage:
+
+```
+Benchmark: Qwen3-0.6B-GGUF
+====================================================================================================
+
+Backend: llamacpp/vulkan (ctx=4096)
+----------------------------------------------------------------------------------------------------
+Scenario            TTFT    min     max     TPS     min     max     VRAM (GB)
+----------------------------------------------------------------------------------------------------
+chat-short          45.2    42.1    48.3    185.3   178.2   192.1   1.2
+chat-long-output    48.7    46.5    51.2    142.6   138.4   147.8   1.2
+code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
+```
+
+#### JSON Output
+
+With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
+
+### Comparison Mode
+
+Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta:
+
+```bash
+# Save a baseline
+lemonade bench --output baseline.json Qwen3-0.6B-GGUF
+
+# Later, compare after a change
+lemonade bench --compare baseline.json Qwen3-0.6B-GGUF
+```
+
+The comparison table marks each scenario as:
+- **matched** — compared against previous data
+- **new** — no previous data available
+- **removed** — was in previous run but not in current
+- **failed** — all measurement runs errored
+- **prev_failed** — previous run errored, no baseline
+
+**Note:** TTFT change > 0 means slower (worse). TPS change > 0 means faster (better).
+
+### Examples
+
+```bash
+# Benchmark with default scenarios and all installed backends
+lemonade bench Qwen3-0.6B-GGUF
+
+# Benchmark specific backends and context sizes
+lemonade bench --backend vulkan --backend cpu --ctx-size 4096 8192 Qwen3-0.6B-GGUF
+
+# Run with custom scenarios
+lemonade bench --scenario-file my-scenarios.json Qwen3-0.6B-GGUF
+
+# Run only specific scenarios by name
+lemonade bench --scenarios chat-short --scenarios code-debug Qwen3-0.6B-GGUF
+
+# Run all scenarios in a category
+lemonade bench --scenarios coding Qwen3-0.6B-GGUF
+
+# Include long-context scenarios (excluded by default)
+lemonade bench --scenarios all Qwen3-0.6B-GGUF
+
+# Benchmark with custom backend arguments (e.g., different batch sizes)
+lemonade bench --llamacpp-args "-b 1024" "-b 2048" Qwen3-0.6B-GGUF
+
+# Save results as JSON
+lemonade bench --json --output results.json Qwen3-0.6B-GGUF
+
+# Compare against a previous run
+lemonade bench --compare results.json Qwen3-0.6B-GGUF
+
+# Run more measurement iterations for statistical significance
+lemonade bench --runs 20 Qwen3-0.6B-GGUF
+```
+
+### Example Custom Scenario File
+
+This is an example of a scenario which can be passed `--scenario-file`:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "hello-world",
+      "category": "chat",
+      "messages": [
+        { "role": "system", "content": "You are a helpful assistant." },
+        { "role": "user", "content": "What is 2 + 2?" }
+      ],
+      "max_tokens": 10
+    },
+    {
+      "name": "write-function",
+      "category": "coding",
+      "messages": [
+        { "role": "system", "content": "You are a coding assistant." },
+        { "role": "user", "content": "Write a Python function to reverse a string." }
+      ],
+      "max_tokens": 50
+    },
+    {
+      "name": "needle-16k",
+      "category": "long-context",
+      "context": {
+        "filler": "The project codename for the secret mission is Bluefin. This is a long filler text that will be repeated to build up a large context window for benchmarking. ",
+        "target_tokens": 16000,
+        "position": "middle"
+      },
+      "messages": [
+        { "role": "user", "content": "What is the project codename mentioned in this text?" }
+      ],
+      "max_tokens": 20
+    }
+  ]
+}
 ```
 
 ## Next Steps
