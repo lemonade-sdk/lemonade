@@ -519,10 +519,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.getByText('Prompt Processing').first()).toBeVisible();
     await expect(page.getByText('Active Streams')).toBeVisible();
 
-    // Session summary stats
-    await expect(page.getByText('Tokens generated')).toBeVisible();
-    await expect(page.getByText('Peak TPS')).toBeVisible();
-    await expect(page.getByText('Session time')).toBeVisible();
+    // Session summary hidden until inference happens (no data at idle)
 
     // Pause button toggles
     await page.locator('.dash2-bar__btn').click();

@@ -587,8 +587,10 @@ const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* ═══ Session Summary ═══ */}
+        {/* ═══ Session Summary (hidden until inference happens) ═══ */}
+        {(counters.totalTokensGenerated > 0 || counters.totalPromptTokens > 0 || counters.peakTps > 0) && (
         <div className="dash2-card dash2-card--summary">
+          <h3 className="dash2-card__h">Session Summary</h3>
           <div className="dash2-summary">
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{fmtNum(counters.totalTokensGenerated)}</span>
@@ -608,6 +610,7 @@ const Dashboard: React.FC = () => {
             </span>
           </div>
         </div>
+        )}
       </div>
     </section>
   );
