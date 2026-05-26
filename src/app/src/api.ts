@@ -358,12 +358,13 @@ class LemonadeAPI {
   async installBackend(
     recipe: string,
     backend: string,
-    callbacks?: { onProgress?: (data: Record<string, unknown>) => void; onComplete?: () => void; onError?: (err: Error) => void }
+    callbacks?: { onProgress?: (data: Record<string, unknown>) => void; onComplete?: () => void; onError?: (err: Error) => void },
+    options?: { force?: boolean }
   ): Promise<void> {
     try {
       const resp = await this._fetch('/api/v1/install', {
         method: 'POST',
-        body: { recipe, backend, stream: true, subscribe: true },
+        body: { recipe, backend, stream: true, subscribe: true, force: options?.force ?? false },
       });
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
