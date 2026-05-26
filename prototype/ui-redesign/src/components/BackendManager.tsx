@@ -160,7 +160,7 @@ const BackendManager: React.FC = () => {
             if (isUpdate && fresh?.recipes?.[recipe]?.backends?.[backend]) {
               const newState = fresh.recipes[recipe].backends[backend].state;
               if (newState === 'update_required' || newState === 'update_available') {
-                toast(`⚠ ${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — try restarting the server`);
+                toast(`⚠ ${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — the existing binary may need to be removed manually`);
               }
             }
           } catch {
