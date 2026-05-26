@@ -137,8 +137,8 @@ const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7b
 /** Asymmetric envelope: fast attack (respond to new data), slow release
  *  (hold value when generation pauses). Produces smooth monitoring curves
  *  like the System Vitals chart instead of sawtooth oscillation. */
-const ATTACK_ALPHA = 0.5;   // track rising values quickly
-const RELEASE_ALPHA = 0.1;  // decay slowly when raw drops
+const ATTACK_ALPHA = 1.0;   // track rising values instantly — lerp handles visual smoothing
+const RELEASE_ALPHA = 0.08; // decay slowly when raw drops (holds through batch gaps)
 function smoothTarget(current: number, raw: number): number {
   const alpha = raw >= current ? ATTACK_ALPHA : RELEASE_ALPHA;
   return current + (raw - current) * alpha;
