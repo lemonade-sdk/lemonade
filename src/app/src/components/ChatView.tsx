@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import api, { ChatMessage, ChatCompletionStats, LoadedModel } from '../api';
+import api, { ChatMessage, ChatCompletionStats, LiveStreamStats, LoadedModel } from '../api';
 import MarkdownMessage from './MarkdownMessage';
 
 interface Message {
@@ -78,6 +78,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [inputValue, setInputValue] = useState('');
   // Per-conversation streaming state: { [convoId]: { content, thinking } }
   const [activeStreams, setActiveStreams] = useState<Record<string, { content: string; thinking: string }>>({});
+  const [liveStats, setLiveStats] = useState<Record<string, LiveStreamStats>>({});
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [railExpanded, setRailExpanded] = useState(true);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -91,6 +92,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const isStreaming = !!currentStream;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
+  const currentLiveStats = activeId ? liveStats[activeId] : undefined;
   const streamingConvoIds = new Set(Object.keys(activeStreams));
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
@@ -178,6 +180,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       delete next[activeId!];
       return next;
     });
+    setLiveStats(prev => {
+      const next = { ...prev };
+      delete next[activeId!];
+      return next;
+    });
   }, [activeId, activeStreams, updateConversation]);
 
   const handleSend = async () => {
@@ -241,6 +248,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         });
         setThinkingExpanded(false);
       },
+      onStats: (stats) => {
+        setLiveStats(prev => ({ ...prev, [targetId]: stats }));
+      },
       onDone: (stats) => {
         updateConversation(targetId, c => ({
           ...c,
@@ -257,6 +267,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           delete next[targetId];
           return next;
         });
+        setLiveStats(prev => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
         controllersRef.current.delete(targetId);
       },
       onError: (err) => {
@@ -267,6 +282,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           updatedAt: Date.now(),
         }));
         setActiveStreams(prev => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
+        setLiveStats(prev => {
           const next = { ...prev };
           delete next[targetId];
           return next;
@@ -392,6 +412,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                       </div>
                     ) : null}
                     {streamingContent && <span className="streaming-cursor" aria-hidden="true" />}
+                    {currentLiveStats && (
+                      <div className="message__live-stats">
+                        <span>{currentLiveStats.tps.toFixed(1)} tok/s</span>
+                        {currentLiveStats.ttft != null && <span>{(currentLiveStats.ttft / 1000).toFixed(2)}s TTFT</span>}
+                        <span>{currentLiveStats.tokens + currentLiveStats.reasoningTokens} tokens</span>
+                        <span>{(currentLiveStats.elapsed / 1000).toFixed(1)}s</span>
+                      </div>
+                    )}
                   </div>
                 </article>
               )}
