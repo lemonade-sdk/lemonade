@@ -515,10 +515,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const gauges = page.locator('.dash2-gauge');
     expect(await gauges.count()).toBeGreaterThanOrEqual(2);
 
-    // Hero throughput stats
-    await expect(page.getByText('Generation Speed')).toBeVisible();
-    await expect(page.getByText('Prompt Processing').first()).toBeVisible();
-    await expect(page.getByText('Active Streams')).toBeVisible();
+    // Hero throughput stats — check for the aggregate throughput section
+    await expect(page.getByText('Aggregate Throughput')).toBeVisible();
+    await expect(page.getByText('tok/s').first()).toBeVisible();
+    await expect(page.getByText('Generation TPS')).toBeVisible();
 
     // Session summary hidden until inference happens (no data at idle)
 

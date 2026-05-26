@@ -268,82 +268,70 @@ const HeroStat: React.FC<{
   </div>
 );
 
-/* ── Slot card with per-slot TPS graph ──────────────────────── */
+/* ── Slot row — full-width with inline metrics + chart ─────── */
 
-const SlotCard: React.FC<{ slot: SlotData; history: SlotHistoryPoint[]; live?: SlotLiveTps }> = ({ slot, history, live }) => {
+const SlotRow: React.FC<{ slot: SlotData; history: SlotHistoryPoint[]; live?: SlotLiveTps }> = ({ slot, history, live }) => {
   const cacheLen = slot.cache_tokens?.length || 0;
   const cacheUtil = slot.n_ctx > 0 ? (cacheLen / slot.n_ctx) * 100 : 0;
   const t = slot.timings || {} as SlotTimings;
-
-  // Prefer delta-based live TPS, fall back to server timings
   const tps = live?.tps || (t.predicted_per_second > 0 ? t.predicted_per_second : 0);
   const ppTps = live?.ppTps || (t.prompt_per_second > 0 ? t.prompt_per_second : 0);
   const isActive = live?.isActive || slot.is_processing;
 
-  // Derive prompt snippet for slot identification
-  const promptSnippet = slot.prompt
-    ? slot.prompt.slice(0, 60) + (slot.prompt.length > 60 ? '…' : '')
-    : '(no prompt)';
-
   return (
-    <div className={`dash2-slotcard ${isActive ? 'dash2-slotcard--active' : ''}`}>
-      <div className="dash2-slotcard__head">
-        <div className="dash2-slotcard__id">
-          <span className={`dash2-slotcard__dot ${isActive ? 'dash2-slotcard__dot--on' : ''}`} />
-          <span>Slot {slot.id}</span>
-          <span className={`dash2-slotcard__state ${isActive ? 'dash2-slotcard__state--on' : ''}`}>
-            {isActive ? 'Active' : 'Idle'}
-          </span>
-        </div>
-        <span className="dash2-slotcard__prompt" title={slot.prompt || undefined}>
-          {promptSnippet}
+    <div style={{
+      background: '#25221c',
+      border: isActive ? '1px solid rgba(232,198,107,0.35)' : '1px solid rgba(255,245,220,0.08)',
+      borderRadius: '10px',
+      padding: '12px 16px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      boxShadow: isActive ? '0 0 16px rgba(232,198,107,0.08)' : 'none',
+    }}>
+      {/* Header: slot id + metrics inline */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+          background: isActive ? '#7fb38a' : '#4f4a40',
+          boxShadow: isActive ? '0 0 6px #7fb38a' : 'none',
+        }} />
+        <span style={{ fontWeight: 600, fontSize: '12.5px', color: '#b8b1a2' }}>
+          Slot {slot.id}
+        </span>
+        <span style={{
+          fontSize: '11px', fontWeight: 500,
+          color: isActive ? '#7fb38a' : '#4f4a40',
+        }}>
+          {isActive ? 'Active' : 'Idle'}
+        </span>
+
+        <span style={{ marginLeft: 'auto' }} />
+
+        <span style={{ fontSize: '13px', color: '#f3efe6', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+          {tps > 0 ? `${tps.toFixed(1)} tok/s` : '—'}
+        </span>
+        <span style={{ fontSize: '12px', color: '#b8b1a2', fontVariantNumeric: 'tabular-nums' }}>
+          {ppTps > 0 ? `${ppTps.toFixed(0)} pp/s` : ''}
+        </span>
+        <span style={{ fontSize: '12px', color: '#807a6c', fontVariantNumeric: 'tabular-nums' }}>
+          {slot.n_decoded} decoded
+        </span>
+        <span style={{ fontSize: '11px', color: '#807a6c', fontVariantNumeric: 'tabular-nums' }}>
+          KV {pct(cacheUtil)}
         </span>
       </div>
 
-      {/* Key metrics row */}
-      <div className="dash2-slotcard__metrics">
-        <div className="dash2-slotcard__metric">
-          <span className="dash2-slotcard__mv">{tps > 0 ? tps.toFixed(1) : '—'}</span>
-          <span className="dash2-slotcard__ml">tok/s</span>
-        </div>
-        <div className="dash2-slotcard__metric">
-          <span className="dash2-slotcard__mv">{ppTps > 0 ? ppTps.toFixed(0) : '—'}</span>
-          <span className="dash2-slotcard__ml">pp/s</span>
-        </div>
-        <div className="dash2-slotcard__metric">
-          <span className="dash2-slotcard__mv">{slot.n_decoded}</span>
-          <span className="dash2-slotcard__ml">decoded</span>
-        </div>
-        <div className="dash2-slotcard__metric">
-          <span className="dash2-slotcard__mv">{t.predicted_n > 0 ? t.predicted_n : '—'}</span>
-          <span className="dash2-slotcard__ml">predicted</span>
-        </div>
-      </div>
-
-      {/* Per-slot TPS chart */}
-      {history.length > 1 && (
-        <AreaChart
-          data={history.map(h => h.tps)}
-          color={isActive ? '#e8c66b' : '#666'}
-          label="Decode TPS"
-          currentValue={tps > 0 ? `${tps.toFixed(1)} tok/s` : 'idle'}
-          height={48}
-          fillOpacity={isActive ? 0.2 : 0.05}
-          gradientId={`slot-tps-${slot.id}`}
-        />
-      )}
-
-      {/* KV cache bar */}
-      <div className="dash2-slotcard__cache">
-        <span className="dash2-slotcard__cache-label">KV Cache</span>
-        <div className="dash2-slotcard__cache-track">
-          <div className="dash2-slotcard__cache-fill" style={{
-            width: `${Math.min(100, cacheUtil)}%`,
-            background: cacheUtil > 80 ? 'var(--danger)' : cacheUtil > 50 ? 'var(--accent)' : 'var(--success)',
-          }} />
-        </div>
-        <span className="dash2-slotcard__cache-pct">{pct(cacheUtil)}</span>
-      </div>
+      {/* TPS chart — full width, always visible */}
+      <AreaChart
+        data={history.length > 0 ? history.map(h => h.tps) : [0]}
+        color={isActive ? '#e8c66b' : '#4f4a40'}
+        label=""
+        currentValue=""
+        height={40}
+        fillOpacity={isActive ? 0.25 : 0.05}
+        gradientId={`slot-tps-${slot.id}`}
+      />
     </div>
   );
 };
@@ -686,16 +674,36 @@ const Dashboard: React.FC = () => {
         <div className="dash2-card dash2-card--glow">
           <h2 className="dash2-card__h">⚡ Aggregate Throughput</h2>
 
-          <div className="dash2-hero-row">
-            <HeroStat value={latestTps} label="Generation Speed" unit="tok/s"
-              peak={counters.peakTps} color="var(--accent)"
-              secondary={`${fmtNum(counters.totalTokensGenerated)} total generated`} />
-            <HeroStat value={latestPP} label="Prompt Processing" unit="tok/s"
-              peak={counters.peakPromptTps} color="var(--info)"
-              secondary={`${fmtNum(counters.totalPromptTokens)} total processed`} />
-            <HeroStat value={activeSlotCount} label="Active Streams" unit={activeSlotCount === 1 ? 'stream' : 'streams'}
-              color="var(--success)"
-              secondary={`${slots.length} total slots`} />
+          {/* Inline metrics — guaranteed visible with explicit colors */}
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span style={{ fontSize: '2rem', fontWeight: 700, color: '#e8c66b', fontVariantNumeric: 'tabular-nums' }}>
+                {latestTps > 0 ? latestTps.toFixed(1) : '—'}
+              </span>
+              <span style={{ fontSize: '13px', color: '#807a6c' }}>tok/s</span>
+              {counters.peakTps > 0 && (
+                <span style={{ fontSize: '11px', color: '#e8c66b', opacity: 0.7 }}>
+                  ⚡ peak {counters.peakTps.toFixed(1)}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span style={{ fontSize: '2rem', fontWeight: 700, color: '#7baed4', fontVariantNumeric: 'tabular-nums' }}>
+                {latestPP > 0 ? latestPP.toFixed(0) : '—'}
+              </span>
+              <span style={{ fontSize: '13px', color: '#807a6c' }}>pp/s</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+              <span style={{ fontSize: '2rem', fontWeight: 700, color: '#7fb38a', fontVariantNumeric: 'tabular-nums' }}>
+                {activeSlotCount}
+              </span>
+              <span style={{ fontSize: '13px', color: '#807a6c' }}>
+                {activeSlotCount === 1 ? 'stream' : 'streams'}
+              </span>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '11px', color: '#807a6c' }}>
+              <span>{fmtNum(counters.totalTokensGenerated)} total tokens</span>
+            </div>
           </div>
 
           <div className="dash2-charts">
@@ -715,8 +723,8 @@ const Dashboard: React.FC = () => {
               Parallel Slots
               <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
             </h2>
-            <div className="dash2-slotcards">
-              {slots.map(s => <SlotCard key={s.id} slot={s} history={slotHistory[s.id] || []} live={slotLive[s.id]} />)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {slots.map(s => <SlotRow key={s.id} slot={s} history={slotHistory[s.id] || []} live={slotLive[s.id]} />)}
             </div>
           </div>
         )}

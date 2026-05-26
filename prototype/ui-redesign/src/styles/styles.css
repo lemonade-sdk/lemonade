@@ -2923,6 +2923,7 @@ input, textarea {
   padding: var(--space-6, 32px);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .dash2-card--glow {
