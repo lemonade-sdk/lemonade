@@ -2962,21 +2962,27 @@ json SystemInfoCache::get_system_info_with_cache() {
     if (!s_hardware_computed) {
         json system_info;
 
-        // Try to load mock hardware info if present in cache dir (used for testing)
+        // Try to load mock hardware info if present in cache dir (used for testing).
+        // The LEMONADE_MOCK_HARDWARE env var must be set to "1" or "true" for
+        // the mock to take effect; without it the file is ignored even if present.
         bool hardware_mocked = false;
-        try {
-            fs::path cache_dir = utils::get_cache_dir();
-            fs::path mock_file = cache_dir / "hardware_info.json";
-            if (fs::exists(mock_file)) {
-                json mock_data = utils::JsonUtils::load_from_file(mock_file.string());
-                if (mock_data.contains("hardware") && mock_data["hardware"].is_object()) {
-                    system_info = mock_data["hardware"];
-                    hardware_mocked = true;
-                    LOG(INFO, "Server") << "Using mock hardware info from " << mock_file << std::endl;
+        const char* mock_hw_env = std::getenv("LEMONADE_MOCK_HARDWARE");
+        bool mock_hardware_enabled = mock_hw_env && (std::string(mock_hw_env) == "1" || std::string(mock_hw_env) == "true");
+        if (mock_hardware_enabled) {
+            try {
+                fs::path cache_dir = utils::get_cache_dir();
+                fs::path mock_file = cache_dir / "hardware_info.json";
+                if (fs::exists(mock_file)) {
+                    json mock_data = utils::JsonUtils::load_from_file(mock_file.string());
+                    if (mock_data.contains("hardware") && mock_data["hardware"].is_object()) {
+                        system_info = mock_data["hardware"];
+                        hardware_mocked = true;
+                        LOG(INFO, "Server") << "Using mock hardware info from " << mock_file << std::endl;
+                    }
                 }
+            } catch (...) {
+                // Ignore mock load failures and fall back to real detection
             }
-        } catch (...) {
-            // Ignore mock load failures and fall back to real detection
         }
 
         // Top-level try-catch to ensure system info collection NEVER crashes Lemonade
