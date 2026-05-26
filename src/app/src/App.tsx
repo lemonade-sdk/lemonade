@@ -133,37 +133,49 @@ const App: React.FC = () => {
       </header>
 
       <div className="view-container">
-        <ViewErrorBoundary view={view}>
-        {view === 'chat' && (
-          <ChatView
-            currentModel={currentModel}
-            loadedModels={loadedModels}
-            onModelSelect={handleModelSelect}
-            onRefresh={handleRefreshModels}
-          />
-        )}
-        {view === 'models' && (
-          <ModelManager
-            onModelSelect={handleModelSelect}
-            selectedModel={currentModel}
-          />
-        )}
-        {view === 'presets' && (
-          <PresetManager loadedModels={loadedModels} />
-        )}
-        {view === 'backends' && (
-          <BackendManager />
-        )}
-        {view === 'dashboard' && (
-          <Dashboard />
-        )}
-        {view === 'logs' && (
-          <LogViewer />
-        )}
-        {view === 'connect' && (
-          <ConnectView status={status} />
-        )}
-        </ViewErrorBoundary>
+        <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="chat">
+            <ChatView
+              currentModel={currentModel}
+              loadedModels={loadedModels}
+              onModelSelect={handleModelSelect}
+              onRefresh={handleRefreshModels}
+            />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'models' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="models">
+            <ModelManager
+              onModelSelect={handleModelSelect}
+              selectedModel={currentModel}
+            />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'presets' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="presets">
+            <PresetManager loadedModels={loadedModels} />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'backends' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="backends">
+            <BackendManager />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'dashboard' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="dashboard">
+            <Dashboard />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'logs' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="logs">
+            <LogViewer />
+          </ViewErrorBoundary>
+        </div>
+        <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>
+          <ViewErrorBoundary view="connect">
+            <ConnectView status={status} />
+          </ViewErrorBoundary>
+        </div>
       </div>
     </div>
   );

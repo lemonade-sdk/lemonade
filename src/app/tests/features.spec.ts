@@ -63,7 +63,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.connect h1')).toContainText('Connect');
     await expect(page.locator('#host-input')).toBeVisible();
     await expect(page.locator('#key-input')).toBeVisible();
-    await expect(page.locator('.btn--primary')).toBeVisible();
+    await expect(page.locator('.connect .btn--primary')).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/04-connect-view.png', fullPage: true });
   });
@@ -105,7 +105,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await urlInput.fill('http://localhost:13305');
 
     // Click Connect
-    await page.locator('.btn--primary').click();
+    await page.locator('.connect .btn--primary').click();
 
     // Wait for connection status dot to turn green
     await page.waitForFunction(() => {
