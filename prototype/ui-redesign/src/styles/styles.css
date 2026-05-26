@@ -2836,10 +2836,10 @@ input, textarea {
 .dash2-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-5);
+  padding: var(--space-6, 32px) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5, 24px);
 }
 
 /* ── Cards ─────────────────────────────────────────────── */
@@ -2848,7 +2848,7 @@ input, textarea {
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  padding: var(--space-5);
+  padding: var(--space-6, 32px);
   position: relative;
   overflow: hidden;
 }
@@ -2892,7 +2892,7 @@ input, textarea {
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-4);
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -2901,7 +2901,7 @@ input, textarea {
 .dash2-card__sub {
   font-size: var(--text-xs);
   color: var(--text-muted);
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-5, 24px);
 }
 
 .dash2-card__badge {
@@ -2919,9 +2919,9 @@ input, textarea {
 
 .dash2-hero-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-5, 24px);
+  margin-bottom: var(--space-5, 24px);
 }
 
 .dash2-hero {
@@ -2929,7 +2929,7 @@ input, textarea {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: var(--space-4) var(--space-3);
+  padding: var(--space-5, 24px) var(--space-4);
   background: var(--surface-2);
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
@@ -2993,9 +2993,9 @@ input, textarea {
 
 .dash2-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-4);
-  margin-top: var(--space-4);
+  margin-top: var(--space-5, 24px);
 }
 
 .dash2-area {
@@ -3037,10 +3037,10 @@ input, textarea {
 
 .dash2-gauges {
   display: flex;
-  gap: var(--space-4);
+  gap: var(--space-5, 24px);
   justify-content: flex-start;
   flex-wrap: wrap;
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .dash2-gauge {
@@ -3094,8 +3094,8 @@ input, textarea {
 
 .dash2-inf-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-4);
 }
 
 .dash2-inf {
@@ -3103,7 +3103,7 @@ input, textarea {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--surface-2);
   border-radius: 10px;
   border: 1px solid var(--border-subtle);
@@ -3129,18 +3129,18 @@ input, textarea {
 
 .dash2-slots {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
 }
 
 .dash2-slot {
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  padding: var(--space-3);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   transition: border-color 0.3s, box-shadow 0.3s;
 }
 
@@ -3220,7 +3220,7 @@ input, textarea {
 .dash2-models {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .dash2-model {
@@ -3335,8 +3335,8 @@ input, textarea {
 
 .dash2-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-4);
 }
 
 .dash2-summary__item {
@@ -3365,8 +3365,8 @@ input, textarea {
 /* ── Dashboard responsive ──────────────────────────────── */
 
 @media (max-width: 768px) {
-  .dash2-scroll { padding: var(--space-3); gap: var(--space-3); }
-  .dash2-card { padding: var(--space-3); border-radius: 12px; }
+  .dash2-scroll { padding: var(--space-4) var(--space-3); gap: var(--space-4); }
+  .dash2-card { padding: var(--space-4); border-radius: 12px; }
   .dash2-gauges { justify-content: center; }
   .dash2-hero__val { font-size: 1.8rem; }
   .dash2-hero-row { grid-template-columns: 1fr; }
