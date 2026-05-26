@@ -6,7 +6,7 @@ import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, Slo
 
 const HISTORY_LEN = 300;    // 300 × 200ms tick = 60s visible window
 const TICK_MS = 200;        // Interpolation ticker interval
-const LERP_SPEED = 0.08;   // Per-tick lerp factor toward target
+const LERP_SPEED = 0.15;   // Per-tick lerp factor toward target
 
 interface SlotHistoryPoint {
   ts: number;
@@ -129,11 +129,9 @@ function parseTimingLine(line: string): { slotId: number; decoded?: number; tg?:
   };
 }
 
-/* ── Smoothing ──────────────────────────────────────────────── */
+/* ── Sliding window TPS ───────────────────────────────────── */
 
-const SMOOTH_ALPHA = 0.25;
-const DECAY_FACTOR = 0.85;
-const DECAY_THRESHOLD = 0.05;
+const WINDOW_MS = 5000;     // 5-second sliding window for TPS averaging
 const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7bc8c8'];
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
@@ -286,7 +284,7 @@ const Dashboard: React.FC = () => {
 
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const smoothedTpsRef = useRef(new Map<number, { tps: number; ppTps: number }>());
+  const slotWindowRef = useRef(new Map<number, { ts: number; decoded: number; prompted: number }[]>());
   const targetAggRef = useRef({
     tps: 0, ppTps: 0,
     cpu: null as number | null, ram: null as number | null,
@@ -306,50 +304,47 @@ const Dashboard: React.FC = () => {
     let aggTps = 0;
     let aggPromptTps = 0;
     const perSlotLive: Map<number, SlotLiveTps> = new Map();
+    const cutoff = now - WINDOW_MS;
 
     for (const s of slotData) {
-      const t = s.timings || {} as SlotTimings;
       const currDecoded = s.n_decoded || 0;
       const currPrompted = s.n_prompt_tokens_processed || 0;
       const prev = c.prevSlotTokens.get(s.id);
 
-      // Calculate raw TPS from token count deltas
-      let rawTps = 0;
-      let rawPpTps = 0;
-
+      // Accumulate session totals from deltas
       if (prev) {
-        const elapsedSec = (now - prev.ts) / 1000;
         const decodeDelta = currDecoded - prev.decoded;
         const promptDelta = currPrompted - prev.prompted;
-
-        if (elapsedSec > 0.1) {
-          if (decodeDelta > 0) rawTps = decodeDelta / elapsedSec;
-          if (promptDelta > 0) rawPpTps = promptDelta / elapsedSec;
-        }
-
         if (decodeDelta > 0) c.totalTokensGenerated += decodeDelta;
         if (promptDelta > 0) c.totalPromptTokens += promptDelta;
       } else {
         c.totalTokensGenerated += currDecoded;
         c.totalPromptTokens += currPrompted;
       }
-
-      // EMA smoothing with gradual decay
-      const prevSmooth = smoothedTpsRef.current.get(s.id);
-      let slotTps = rawTps;
-      let slotPpTps = rawPpTps;
-      if (prevSmooth) {
-        slotTps = rawTps > 0
-          ? SMOOTH_ALPHA * rawTps + (1 - SMOOTH_ALPHA) * prevSmooth.tps
-          : prevSmooth.tps > DECAY_THRESHOLD ? prevSmooth.tps * DECAY_FACTOR : 0;
-        slotPpTps = rawPpTps > 0
-          ? SMOOTH_ALPHA * rawPpTps + (1 - SMOOTH_ALPHA) * prevSmooth.ppTps
-          : prevSmooth.ppTps > DECAY_THRESHOLD ? prevSmooth.ppTps * DECAY_FACTOR : 0;
-      }
-      smoothedTpsRef.current.set(s.id, { tps: slotTps, ppTps: slotPpTps });
-
-      const slotActive = slotTps > DECAY_THRESHOLD || s.is_processing;
       c.prevSlotTokens.set(s.id, { decoded: currDecoded, prompted: currPrompted, ts: now });
+
+      // Sliding window: push sample, trim old, handle slot resets
+      const winMap = slotWindowRef.current;
+      let samples = winMap.get(s.id) || [];
+      if (prev && currDecoded < prev.decoded) samples = []; // slot reset
+      samples.push({ ts: now, decoded: currDecoded, prompted: currPrompted });
+      samples = samples.filter(p => p.ts >= cutoff);
+      winMap.set(s.id, samples);
+
+      // Compute TPS from window span
+      let slotTps = 0;
+      let slotPpTps = 0;
+      if (samples.length >= 2) {
+        const oldest = samples[0];
+        const newest = samples[samples.length - 1];
+        const spanSec = (newest.ts - oldest.ts) / 1000;
+        if (spanSec > 0.5) {
+          slotTps = Math.max(0, newest.decoded - oldest.decoded) / spanSec;
+          slotPpTps = Math.max(0, newest.prompted - oldest.prompted) / spanSec;
+        }
+      }
+
+      const slotActive = slotTps > 0.05 || s.is_processing;
       perSlotLive.set(s.id, { tps: slotTps, ppTps: slotPpTps, isActive: slotActive });
 
       aggTps += slotTps;
@@ -470,35 +465,15 @@ const Dashboard: React.FC = () => {
           if (now - lastLivePushRef.current < 1000) return;
           lastLivePushRef.current = now;
 
-          // Update interpolation targets from live WebSocket data
-          for (const [slotId, vals] of map.entries()) {
-            const existing = targetSlotRef.current.get(slotId);
-            targetSlotRef.current.set(slotId, {
-              tps: vals.tg,
-              ppTps: vals.pp,
-              decoded: existing?.decoded ?? 0,
-              cacheUtil: existing?.cacheUtil ?? 0,
-              isActive: vals.tg > 0 || vals.pp > 0,
-            });
-          }
-
-          // Aggregate across all active slots
+          // Track peak TPS from completed requests
+          const c = countersRef.current;
           let aggTps = 0, aggPp = 0;
           for (const v of map.values()) {
             aggTps += v.tg;
             aggPp += v.pp;
           }
-
-          // Update peak counters
-          const c = countersRef.current;
           if (aggTps > c.peakTps) c.peakTps = aggTps;
           if (aggPp > c.peakPromptTps) c.peakPromptTps = aggPp;
-
-          // Update aggregate target (ticker handles chart history)
-          const tgt = targetAggRef.current;
-          tgt.tps = aggTps;
-          tgt.ppTps = aggPp;
-          tgt.activeSlots = map.size;
         },
         onDisconnected: () => {
           wsHandleRef.current = null;
