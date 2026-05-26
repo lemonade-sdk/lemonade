@@ -147,6 +147,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Re-fetch when server connection status changes (e.g. connects after initial mount)
+  useEffect(() => {
+    const unsub = api.onStatusChange((status) => {
+      if (status === 'connected') refresh();
+    });
+    return unsub;
+  }, [refresh]);
+
   /* ── HuggingFace debounced search ────────────────────────── */
 
   useEffect(() => {
@@ -725,7 +733,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <section className="zone zone--running">
             <div className="zone__head">
               <span className="zone__dot zone__dot--running" />
-              <span className="zone__title">Running</span>
+              <span className="zone__title">Loaded Models</span>
               <span className="zone__count">{filteredRunning.length}</span>
               <span className="zone__rule" />
             </div>
@@ -738,7 +746,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <section className="zone zone--downloaded">
             <div className="zone__head">
               <span className="zone__dot zone__dot--ready" />
-              <span className="zone__title">Downloaded — Ready to Load</span>
+              <span className="zone__title">Downloaded</span>
               <span className="zone__count">{filteredDownloaded.length}</span>
               <span className="zone__rule" />
             </div>
@@ -751,7 +759,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <section className="zone">
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">Available — Download Required</span>
+              <span className="zone__title">Lemonade Registry</span>
               <span className="zone__count">{filteredAvailable.length}</span>
               <span className="zone__rule" />
             </div>
@@ -767,35 +775,36 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </section>
         )}
 
-        {/* HuggingFace Explore zone — only when searching */}
-        {searchQuery.trim().length >= 2 && (
-          <section className="zone zone--hf">
-            <div className="zone__head">
-              <span className="zone__dot zone__dot--hf" />
-              <span className="zone__title">Explore — HuggingFace</span>
-              {!hfLoading && <span className="zone__count">{filteredHfResults.length}</span>}
-              <span className="zone__rule" />
+        {/* HuggingFace zone — always visible */}
+        <section className="zone zone--hf">
+          <div className="zone__head">
+            <span className="zone__dot zone__dot--hf" />
+            <span className="zone__title">HuggingFace</span>
+            {!hfLoading && hfResults.length > 0 && <span className="zone__count">{filteredHfResults.length}</span>}
+            <span className="zone__rule" />
+          </div>
+          {hfLoading ? (
+            <div className="hf-zone__loading">
+              <span className="hf-zone__spinner" />
+              <span>Searching HuggingFace…</span>
             </div>
-            {hfLoading ? (
-              <div className="hf-zone__loading">
-                <span className="hf-zone__spinner" />
-                <span>Searching HuggingFace…</span>
-              </div>
-            ) : filteredHfResults.length > 0 ? (
-              filteredHfResults.map(r => renderHfRow(r))
-            ) : (
-              <div className="hf-zone__empty">
-                <span>🤗</span>
-                <span>Explore community models on HuggingFace</span>
-              </div>
-            )}
-          </section>
-        )}
+          ) : searchQuery.trim().length >= 2 && filteredHfResults.length > 0 ? (
+            filteredHfResults.map(r => renderHfRow(r))
+          ) : (
+            <div className="hf-zone__empty">
+              <span>🤗</span>
+              <span>{searchQuery.trim().length < 2 ? 'Type at least 2 characters to search HuggingFace' : 'No HuggingFace results for this query'}</span>
+            </div>
+          )}
+        </section>
 
         {filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0 && (
           <div className="manager__empty">
-            <span className="manager__empty-icon">🤖</span>
-            <p>No models found matching your search.</p>
+            <span className="manager__empty-icon">{api.isConnected ? '🤖' : '🔌'}</span>
+            <p>{api.isConnected
+              ? 'No models found matching your search.'
+              : 'Connect to a Lemonade server to see models.'
+            }</p>
           </div>
         )}
       </div>

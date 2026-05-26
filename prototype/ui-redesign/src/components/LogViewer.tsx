@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import api, { LogEntry, LogStreamHandle } from '../api';
 
 /* ── Constants ─────────────────────────────────────────────── */
@@ -63,9 +63,10 @@ const LogViewer: React.FC = () => {
   /* ── Auto-scroll ─────────────────────────────────────────── */
 
   const scrollToBottom = useCallback(() => {
-    if (!endRef.current) return;
+    const el = containerRef.current;
+    if (!el) return;
     isProgrammaticRef.current = true;
-    endRef.current.scrollIntoView({ behavior: 'auto', block: 'end' });
+    el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => { isProgrammaticRef.current = false; });
   }, []);
 
@@ -77,10 +78,6 @@ const LogViewer: React.FC = () => {
     autoScrollRef.current = nearBottom;
     setAutoScroll(nearBottom);
   }, []);
-
-  useEffect(() => {
-    if (autoScroll && logs.length > 0) scrollToBottom();
-  }, [logs, autoScroll, scrollToBottom]);
 
   /* ── Connect to log stream ───────────────────────────────── */
 
@@ -193,6 +190,28 @@ const LogViewer: React.FC = () => {
     }
     return result;
   }, [logs, filterPriority, searchQuery]);
+
+  // Use useLayoutEffect so scroll happens synchronously after DOM update
+  // (must be after filteredLogs declaration to avoid temporal dead zone)
+  useLayoutEffect(() => {
+    if (autoScroll) scrollToBottom();
+  }, [filteredLogs.length, autoScroll, scrollToBottom]);
+
+  // Re-scroll when the view becomes visible (user switches back to Logs tab)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && autoScrollRef.current) {
+          scrollToBottom();
+        }
+      },
+      { threshold: 0.01 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
 
   /* ── Status indicator ────────────────────────────────────── */
 

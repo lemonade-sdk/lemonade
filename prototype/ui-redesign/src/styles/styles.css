@@ -371,6 +371,21 @@ input, textarea {
   color: var(--text-secondary);
 }
 
+.rail__streaming-badge {
+  font-size: 10px;
+  letter-spacing: var(--tracking-caps);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+  animation: rail-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes rail-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .rail__item-delete {
   position: absolute;
   top: 6px;

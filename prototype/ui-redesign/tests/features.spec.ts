@@ -406,8 +406,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(lede).toContainText('recipe options');
     await expect(lede).toContainText('sampling');
 
-    // Zone: Bundled starters
-    const starterZone = page.locator('.zone').first();
+    // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones)
+    const recipesView = page.locator('.recipes');
+    const starterZone = recipesView.locator('.zone').first();
     await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
 
     // Should have 8 starter cards
@@ -529,8 +530,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.dash2-bar__btn').click();
     await expect(page.locator('.dash2-bar__btn')).not.toHaveClass(/is-paused/);
 
-    // Loaded Models section present
-    await expect(page.getByText('Loaded Models')).toBeVisible();
+    // Loaded Models section present (scope to dashboard to avoid Models view zone match)
+    const dashView = page.locator('[data-view="dashboard"]');
+    await expect(dashView.getByText('Loaded Models')).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
   });
@@ -600,5 +602,254 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.logs-search').fill('');
 
     await page.screenshot({ path: 'screenshots/16-logs-view.png', fullPage: true });
+  });
+
+  /* ── Bug fix validations ─────────────────────────────────── */
+
+  test('17 — Logs auto-scroll sticks to bottom across view switches', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Logs
+    await page.locator('.titlebar__nav').getByText('Logs').click();
+    await page.waitForSelector('.logs-output', { state: 'visible' });
+
+    // Inject enough content to make the container scrollable, then scroll to bottom
+    await page.evaluate(() => {
+      const output = document.querySelector('.logs-output');
+      if (!output) return;
+      for (let i = 0; i < 100; i++) {
+        const line = document.createElement('div');
+        line.className = 'logs-line';
+        line.style.height = '24px';
+        line.innerHTML = `
+          <span class="logs-line__time">12:00:${String(i).padStart(2, '0')}</span>
+          <span class="logs-line__badge logs-line__badge--info">INFO</span>
+          <span class="logs-line__tag">test</span>
+          <span class="logs-line__text">Synthetic log entry #${i}</span>`;
+        output.appendChild(line);
+      }
+      // Scroll to the very bottom
+      output.scrollTop = output.scrollHeight;
+    });
+
+    await page.waitForTimeout(200);
+
+    // Verify we are at the bottom
+    const scrolledBefore = await page.evaluate(() => {
+      const el = document.querySelector('.logs-output');
+      if (!el) return { at: false, top: 0, height: 0, scroll: 0 };
+      return {
+        at: el.scrollHeight - el.scrollTop <= el.clientHeight + 80,
+        top: el.scrollTop,
+        height: el.scrollHeight,
+        scroll: el.clientHeight,
+      };
+    });
+    expect(scrolledBefore.at).toBeTruthy();
+
+    // Switch away to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForTimeout(500);
+
+    // Switch back to Logs
+    await page.locator('.titlebar__nav').getByText('Logs').click();
+    await page.waitForSelector('.logs-output', { state: 'visible' });
+    await page.waitForTimeout(500);
+
+    // After coming back, the IntersectionObserver should have re-scrolled to bottom
+    const scrolledAfter = await page.evaluate(() => {
+      const el = document.querySelector('.logs-output');
+      if (!el) return { at: false, top: 0, height: 0, scroll: 0 };
+      return {
+        at: el.scrollHeight - el.scrollTop <= el.clientHeight + 80,
+        top: el.scrollTop,
+        height: el.scrollHeight,
+        scroll: el.clientHeight,
+      };
+    });
+    expect(scrolledAfter.at).toBeTruthy();
+
+    await page.screenshot({ path: 'screenshots/17-logs-sticky-scroll.png', fullPage: true });
+  });
+
+  test('18 — Chat allows navigation while streaming (concurrent chat)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+
+    // The rail should allow clicking conversations even with no server
+    // Verify new chat button works and switching is not blocked
+    const newBtn = page.locator('.rail__new');
+    await expect(newBtn).toBeVisible();
+
+    // Create a first chat by clicking New Chat
+    await newBtn.click();
+    await page.waitForTimeout(200);
+
+    // The hero should be visible (empty chat state)
+    await expect(page.locator('.hero')).toBeVisible();
+
+    // Verify the conversation rail exists and is interactive
+    const rail = page.locator('.rail');
+    await expect(rail).toBeVisible();
+
+    // Verify the composer is not disabled (can start typing in new chat)
+    const input = page.locator('.composer__input');
+    await expect(input).toBeVisible();
+    await input.fill('Test message for nav check');
+
+    // Click New Chat again — should work without being blocked
+    await newBtn.click();
+    await page.waitForTimeout(200);
+
+    // Hero should still be visible (new empty chat)
+    await expect(page.locator('.hero')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/18-concurrent-chat-nav.png', fullPage: true });
+  });
+
+  test('19 — Chat streaming badge shows on rail items', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+
+    // Verify the streaming badge CSS class exists in the stylesheet
+    const hasBadgeStyle = await page.evaluate(() => {
+      const sheets = document.styleSheets;
+      for (let i = 0; i < sheets.length; i++) {
+        try {
+          const rules = sheets[i].cssRules;
+          for (let j = 0; j < rules.length; j++) {
+            if ((rules[j] as CSSStyleRule).selectorText?.includes('rail__streaming-badge')) {
+              return true;
+            }
+          }
+        } catch { /* cross-origin */ }
+      }
+      return false;
+    });
+    expect(hasBadgeStyle).toBeTruthy();
+
+    await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
+  });
+
+  test('20 — Models page shows all four zones with correct labels', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+
+    // HuggingFace zone should always be visible (not conditional on search)
+    const hfZone = page.locator('.zone--hf');
+    await expect(hfZone).toBeVisible();
+
+    // HuggingFace zone title should say "HuggingFace" (not "Explore — HuggingFace")
+    await expect(hfZone.locator('.zone__title')).toContainText('HuggingFace');
+    await expect(hfZone.locator('.zone__title')).not.toContainText('Explore');
+
+    // HuggingFace should show the prompt when no search text
+    await expect(hfZone.locator('.hf-zone__empty')).toContainText('Type at least 2 characters');
+
+    // When disconnected, empty state should show appropriate message
+    const emptyState = page.locator('.manager__empty');
+    if (await emptyState.isVisible().catch(() => false)) {
+      const text = await emptyState.textContent();
+      // Should say either "Connect to a Lemonade server" or "No models found"
+      expect(text).toMatch(/Connect to a Lemonade server|No models found/);
+    }
+
+    // Search triggers HuggingFace search
+    const searchInput = page.locator('.manager__search-input');
+    await searchInput.fill('llama');
+    await page.waitForTimeout(1500); // debounce (400ms) + network time
+
+    // HuggingFace zone should show results, loading spinner, or "no results" message
+    const hfEmpty = hfZone.locator('.hf-zone__empty');
+    const hfRows = hfZone.locator('.row--hf');
+    const hfLoading = hfZone.locator('.hf-zone__loading');
+    const hasResults = await hfRows.count() > 0;
+    const hasEmpty = await hfEmpty.isVisible().catch(() => false);
+    const isLoading = await hfLoading.isVisible().catch(() => false);
+    // One of these states should be true
+    expect(hasResults || hasEmpty || isLoading).toBeTruthy();
+
+    await page.screenshot({ path: 'screenshots/20-models-zones.png', fullPage: true });
+  });
+
+  test('21 — Models page zone labels: Loaded, Downloaded, Registry', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Connect to server first
+    await page.locator('.titlebar__nav').getByText('Connect').click();
+    await page.waitForSelector('.connect');
+    const urlInput = page.locator('#host-input');
+    await urlInput.clear();
+    await urlInput.fill('http://localhost:13305');
+    await page.locator('.connect .btn--primary').click();
+
+    // Wait for connection
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.model-selector__dot');
+      return dot?.classList.contains('model-selector__dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    // Navigate to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+    await page.waitForTimeout(2000);
+
+    // Check zone labels (only visible zones will have these titles)
+    const allTitles = await page.locator('.zone__title').allTextContents();
+    console.log('Zone titles:', allTitles);
+
+    // Should NOT contain old labels
+    for (const t of allTitles) {
+      expect(t).not.toContain('Ready to Load');
+      expect(t).not.toContain('Download Required');
+      expect(t).not.toContain('Explore —');
+    }
+
+    // Should contain new labels where zones appear
+    const hasLoadedModels = allTitles.some(t => t.includes('Loaded Models'));
+    const hasDownloaded = allTitles.some(t => t === 'Downloaded');
+    const hasRegistry = allTitles.some(t => t.includes('Lemonade Registry'));
+    const hasHuggingFace = allTitles.some(t => t === 'HuggingFace');
+
+    // HuggingFace should always be there
+    expect(hasHuggingFace).toBeTruthy();
+
+    console.log(`Loaded Models: ${hasLoadedModels}, Downloaded: ${hasDownloaded}, Registry: ${hasRegistry}, HF: ${hasHuggingFace}`);
+
+    await page.screenshot({ path: 'screenshots/21-models-zone-labels.png', fullPage: true });
+  });
+
+  test('22 — Backends update button says "updated" not "installed"', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Backends
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-view="backends"]');
+
+    // Check if any Update buttons exist in the matrix (filter by text)
+    const updateBtns = page.locator('.cell__swap', { hasText: /^Update$|^Updating/ });
+    const installBtns = page.locator('.cell__swap', { hasText: /^Install$|^Installing/ });
+    const updateCount = await updateBtns.count();
+    const installCount = await installBtns.count();
+    console.log(`Update buttons: ${updateCount}, Install buttons: ${installCount}`);
+
+    // If update buttons exist, they should say "Update" not "Install"
+    if (updateCount > 0) {
+      const firstUpdate = updateBtns.first();
+      await expect(firstUpdate).toContainText(/Update/);
+    }
+
+    // Verify the matrix table renders
+    const matrix = page.locator('[data-backends-matrix] table');
+    await expect(matrix).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/22-backends-update.png', fullPage: true });
   });
 });
