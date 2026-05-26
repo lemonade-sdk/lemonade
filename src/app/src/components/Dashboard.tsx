@@ -134,6 +134,16 @@ function parseTimingLine(line: string): { slotId: number; decoded?: number; tg?:
 const WINDOW_MS = 5000;     // 5-second sliding window for TPS averaging
 const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7bc8c8'];
 
+/** Asymmetric envelope: fast attack (respond to new data), slow release
+ *  (hold value when generation pauses). Produces smooth monitoring curves
+ *  like the System Vitals chart instead of sawtooth oscillation. */
+const ATTACK_ALPHA = 0.5;   // track rising values quickly
+const RELEASE_ALPHA = 0.1;  // decay slowly when raw drops
+function smoothTarget(current: number, raw: number): number {
+  const alpha = raw >= current ? ATTACK_ALPHA : RELEASE_ALPHA;
+  return current + (raw - current) * alpha;
+}
+
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
 
 const RingGauge: React.FC<{
@@ -382,9 +392,10 @@ const Dashboard: React.FC = () => {
         const live = perSlotLive.get(s.id);
         const cacheLen = s.cache_tokens?.length || 0;
         const cu = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
+        const prev = targetSlotRef.current.get(s.id);
         targetSlotRef.current.set(s.id, {
-          tps: live?.tps || 0,
-          ppTps: live?.ppTps || 0,
+          tps: smoothTarget(prev?.tps || 0, live?.tps || 0),
+          ppTps: smoothTarget(prev?.ppTps || 0, live?.ppTps || 0),
           decoded: s.n_decoded || 0,
           cacheUtil: cu,
           isActive: live?.isActive || s.is_processing,
@@ -401,8 +412,8 @@ const Dashboard: React.FC = () => {
       const cacheUtil = totalCtx > 0 ? (totalCache / totalCtx) * 100 : null;
 
       const tgt = targetAggRef.current;
-      tgt.tps = aggTps;
-      tgt.ppTps = aggPromptTps;
+      tgt.tps = smoothTarget(tgt.tps, aggTps);
+      tgt.ppTps = smoothTarget(tgt.ppTps, aggPromptTps);
       tgt.cpu = ss?.cpu_percent ?? null;
       tgt.ram = ss?.memory_gb ?? null;
       tgt.gpu = ss?.gpu_percent ?? null;
@@ -481,14 +492,16 @@ const Dashboard: React.FC = () => {
           // interpolation ticker picks them up immediately —
           // the poll-based sliding window only fires every 2s
           // and misses short requests entirely.
-          targetAggRef.current.tps = aggTps;
-          targetAggRef.current.ppTps = aggPp;
+          // smoothTarget applies asymmetric envelope (fast attack, slow release).
+          const tgt = targetAggRef.current;
+          tgt.tps = smoothTarget(tgt.tps, aggTps);
+          tgt.ppTps = smoothTarget(tgt.ppTps, aggPp);
 
           for (const [slotId, v] of map) {
             const existing = targetSlotRef.current.get(slotId);
             if (existing) {
-              existing.tps = v.tg;
-              existing.ppTps = v.pp;
+              existing.tps = smoothTarget(existing.tps, v.tg);
+              existing.ppTps = smoothTarget(existing.ppTps, v.pp);
               existing.isActive = v.tg > 0.05 || v.pp > 0.05;
             }
           }
