@@ -26,9 +26,31 @@ module.exports = (env, argv) => ({
     extensions: ['.tsx', '.ts', '.js', '.jsx'],
   },
   output: {
-    filename: 'bundle.js',
+    filename: '[name].bundle.js',
     path: path.resolve(__dirname, 'dist'),
     clean: true,
+  },
+  optimization: {
+    splitChunks: {
+      chunks: 'all',
+      cacheGroups: {
+        charts: {
+          test: /[\\/]node_modules[\\/](recharts|d3-.*|victory-vendor)[\\/]/,
+          name: 'charts',
+          priority: 20,
+        },
+        markdown: {
+          test: /[\\/]node_modules[\\/](highlight\.js|markdown-it|katex|markdown-it-texmath)[\\/]/,
+          name: 'markdown',
+          priority: 20,
+        },
+        vendors: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          priority: 10,
+        },
+      },
+    },
   },
   plugins: [
     new HtmlWebpackPlugin({
