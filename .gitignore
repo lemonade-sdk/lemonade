@@ -1,6 +1,14 @@
 # Local dev helper script (not tracked)
 .tauri-build-helper.sh
 
+# Node
+node_modules/
+package-lock.json
+
+# Prototype build artifacts & test output
+prototype/ui-redesign/screenshots/
+prototype/ui-redesign/test-results/
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
