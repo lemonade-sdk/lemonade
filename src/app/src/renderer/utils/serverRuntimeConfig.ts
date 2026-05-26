@@ -125,8 +125,30 @@ export function resetModelsDir(): Promise<RuntimeConfigUpdateResult> {
   return postInternalSet({ models_dir: MODELS_DIR_AUTO });
 }
 
+/**
+ * Set `extra_models_dir` to an absolute path on the server's machine. The
+ * server recursively scans this directory for loose `.gguf` files and exposes
+ * them under the `extra.` prefix. Pass an empty string to disable the feature
+ * (use `clearExtraModelsDir` for clarity).
+ */
+export function setExtraModelsDir(path: string): Promise<RuntimeConfigUpdateResult> {
+  return postInternalSet({ extra_models_dir: path });
+}
+
+/**
+ * Clear `extra_models_dir` (writes the empty-string default), disabling the
+ * loose-GGUF discovery feature. See `docs/embeddable/models.md`.
+ */
+export function clearExtraModelsDir(): Promise<RuntimeConfigUpdateResult> {
+  return postInternalSet({ extra_models_dir: '' });
+}
+
 export const MODELS_DIR_AUTO_SENTINEL = MODELS_DIR_AUTO;
 
 export function isModelsDirAuto(value: string): boolean {
   return value.trim().toLowerCase() === MODELS_DIR_AUTO;
+}
+
+export function isExtraModelsDirEnabled(value: string): boolean {
+  return value.trim() !== '';
 }

@@ -20,6 +20,8 @@ Contents:
 - `models_dir` is the primary model store, where `lemond` will `pull` models to.
 - `extra_models_dir` is a search path for GGUF LLMs that can be imported into `lemond`.
 
+> Tip: in the Lemonade desktop app, `models_dir` and `extra_models_dir` can also be set under **Settings &rarr; Server**.
+
 ### Sharing Models With Other Apps
 
 The default value for `models_dir` is `"auto"`, which means "respect my user's `HF_HOME` and `HF_HUB_CACHE` environment variables, in accordance with the Hugging Face Hub standard." If those environment variables are not set, it defaults to `~/.cache/huggingface/hub`.

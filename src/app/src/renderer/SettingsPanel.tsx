@@ -257,9 +257,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
       label: 'Server',
       keywords: [
         'server', 'models', 'model', 'folder', 'directory', 'download', 'models dir',
-        'models_dir', 'extra models', 'extra_models_dir', 'storage', 'cache', 'huggingface'
+        'models_dir', 'extra models', 'extra_models_dir', 'extra', 'gguf', 'import',
+        'storage', 'cache', 'huggingface'
       ],
-      settingCount: 1,
+      settingCount: 2,
     },
     {
       id: 'tts_settings',

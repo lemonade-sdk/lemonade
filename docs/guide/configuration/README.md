@@ -100,6 +100,8 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 
+> Tip: in the Lemonade desktop app, `models_dir` and `extra_models_dir` can also be set under **Settings &rarr; Server**.
+
 ### Backend Configuration
 
 Backend-specific settings are nested under their backend name:

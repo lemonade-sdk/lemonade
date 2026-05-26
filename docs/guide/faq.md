@@ -78,6 +78,8 @@
    lemonade config set extra_models_dir="/home/you/.cache/llama.cpp"
    ```
 
+   > Tip: in the Lemonade desktop app, `models_dir` and `extra_models_dir` can also be set under **Settings &rarr; Server**.
+
    Any `.gguf` files found in this directory (including subdirectories) will automatically appear in Lemonade's model list in the `custom` category.
 
    **FastFlowLM**
