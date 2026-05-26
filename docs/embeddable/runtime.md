@@ -167,7 +167,6 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `cfg_scale` | number |
 | `width` | int (positive) |
 | `height` | int (positive) |
-| `flm_args` | string |
 
 **Example:**
 === "Windows (cmd.exe)"
