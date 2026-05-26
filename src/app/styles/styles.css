@@ -5253,6 +5253,16 @@ input::-webkit-calendar-picker-indicator {
     text-align: left;
 }
 
+.settings-path-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.settings-path-row .settings-text-input {
+    flex: 1;
+}
+
 .settings-checkbox-label {
     display: flex;
     align-items: flex-start;
