@@ -450,18 +450,22 @@ export function useDashboardData(): DashboardData {
 
   const slotChartData = useMemo(() => {
     if (slots.length === 0) return [];
-    const maxLen = Math.max(...slots.map(s => (slotHistory[s.id] || []).length), 0);
+    // Use aggregate history length as the timeline — pad slot histories
+    // with leading zeros so both charts align horizontally
+    const timelineLen = history.length;
+    if (timelineLen === 0) return [];
     const data: Record<string, number>[] = [];
-    for (let i = 0; i < maxLen; i++) {
+    for (let i = 0; i < timelineLen; i++) {
       const point: Record<string, number> = {};
       for (const s of slots) {
         const hist = slotHistory[s.id] || [];
-        point[`slot${s.id}`] = hist[i]?.tps || 0;
+        const offset = timelineLen - hist.length;
+        point[`slot${s.id}`] = i >= offset ? (hist[i - offset]?.tps || 0) : 0;
       }
       data.push(point);
     }
     return data;
-  }, [slots, slotHistory]);
+  }, [slots, slotHistory, history.length]);
 
   const sysChartData = useMemo(() =>
     history.map(h => ({ cpu: h.cpu ?? 0, gpu: h.gpu ?? 0 })),
