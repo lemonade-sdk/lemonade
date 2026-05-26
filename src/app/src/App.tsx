@@ -82,9 +82,18 @@ const App: React.FC = () => {
         if (llm) setCurrentModel(llm.model_name);
       }
     });
-    api.startPolling(15000);
-    return () => { unsub(); api.stopPolling(); };
+    return () => { unsub(); };
   }, []);
+
+  // App-level health polling: skip when Dashboard is active (it polls every 2s)
+  useEffect(() => {
+    if (view === 'dashboard') {
+      api.stopPolling();
+    } else {
+      api.startPolling(15000);
+    }
+    return () => { api.stopPolling(); };
+  }, [view]);
 
   const handleRefreshModels = useCallback(async () => {
     const result = await api.refresh();
