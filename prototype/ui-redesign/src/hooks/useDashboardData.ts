@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle } from '../api';
+import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount } from '../api';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -188,6 +188,12 @@ export function useDashboardData(): DashboardData {
         }
       }
 
+      // Fallback: use llama.cpp's own prompt_per_second when our delta is 0
+      // (n_prompt_tokens_processed can reset between requests in some versions)
+      if (slotPpTps < 0.05 && s.is_processing && s.timings?.prompt_per_second > 0) {
+        slotPpTps = s.timings.prompt_per_second;
+      }
+
       const slotActive = slotTps > 0.05 || s.is_processing;
       perSlotLive.set(s.id, { tps: slotTps, ppTps: slotPpTps, isActive: slotActive });
 
@@ -229,7 +235,7 @@ export function useDashboardData(): DashboardData {
 
       for (const s of slotData) {
         const live = perSlotLive.get(s.id);
-        const cacheLen = s.cache_tokens?.length || 0;
+        const cacheLen = getCacheTokenCount(s);
         const cu = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
         const prev = targetSlotRef.current.get(s.id);
         targetSlotRef.current.set(s.id, {
@@ -424,7 +430,7 @@ export function useDashboardData(): DashboardData {
     const target = targetSlotRef.current.get(s.id);
     return live?.isActive || target?.isActive || s.is_processing;
   }).length;
-  const totalCacheTokens = slots.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
+  const totalCacheTokens = slots.reduce((a, s) => a + getCacheTokenCount(s), 0);
   const totalCtx = slots.reduce((a, s) => a + s.n_ctx, 0);
   const overallCacheUtil = totalCtx > 0 ? (totalCacheTokens / totalCtx) * 100 : null;
 
