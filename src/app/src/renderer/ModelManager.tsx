@@ -1484,7 +1484,7 @@ const [searchQuery, setSearchQuery] = useState('');
             </button>
             {canDeleteFromRow && !isCloud && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && !isCloud && renderLoadOptionsButton(modelName)}
+            {!isCloud && !isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1502,7 +1502,7 @@ const [searchQuery, setSearchQuery] = useState('');
             </button>
             {canDeleteFromRow && !isCloud && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && !isCloud && renderLoadOptionsButton(modelName)}
+            {!isCloud && !isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>

@@ -38,10 +38,12 @@ ModelType infer_type(const std::string& id) {
         id_contains(id, "chatgpt-image") || id_contains(id, "sora")) {
         return ModelType::IMAGE;
     }
-    if (id_contains(id, "whisper") || id_contains(id, "tts") ||
-        id_contains(id, "transcribe") || id_contains(id, "realtime") ||
-        id_contains(id, "audio")) {
-        return ModelType::AUDIO;
+    if (id_contains(id, "tts")) {
+        return ModelType::TTS;
+    }
+    if (id_contains(id, "whisper") || id_contains(id, "transcribe") ||
+        id_contains(id, "realtime") || id_contains(id, "audio")) {
+        return ModelType::TRANSCRIPTION;
     }
     if (id_contains(id, "rerank")) {
         return ModelType::RERANKING;
