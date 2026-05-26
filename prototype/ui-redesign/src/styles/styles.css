@@ -751,6 +751,17 @@ input, textarea {
   gap: var(--space-3);
 }
 
+.message__live-stats {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  display: flex;
+  gap: var(--space-3);
+  opacity: 0.8;
+}
+
 /* Thinking / reasoning */
 .message__thinking {
   margin-bottom: var(--space-3);

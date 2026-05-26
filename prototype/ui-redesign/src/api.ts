@@ -55,9 +55,18 @@ export interface ChatCompletionStats {
   reasoningTokens: number;
 }
 
+export interface LiveStreamStats {
+  tps: number;
+  tokens: number;
+  reasoningTokens: number;
+  elapsed: number;
+  ttft: number | null;
+}
+
 export interface ChatCompletionCallbacks {
   onToken?: (token: string, fullContent: string) => void;
   onReasoning?: (token: string, fullReasoning: string) => void;
+  onStats?: (stats: LiveStreamStats) => void;
   onDone?: (stats: ChatCompletionStats) => void;
   onError?: (err: Error) => void;
   params?: Record<string, unknown>;
@@ -445,11 +454,23 @@ class LemonadeAPI {
     messages: ChatMessage[],
     callbacks: ChatCompletionCallbacks = {}
   ): Promise<void> {
-    const { onToken, onReasoning, onDone, onError, params, signal } = callbacks;
+    const { onToken, onReasoning, onStats, onDone, onError, params, signal } = callbacks;
     const t0 = performance.now();
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
     let reasoningTokenCount = 0;
+
+    const emitStats = () => {
+      const elapsed = performance.now() - t0;
+      const total = tokenCount + reasoningTokenCount;
+      onStats?.({
+        tps: total > 0 ? total / (elapsed / 1000) : 0,
+        tokens: tokenCount,
+        reasoningTokens: reasoningTokenCount,
+        elapsed,
+        ttft: firstTokenTime ? firstTokenTime - t0 : null,
+      });
+    };
 
     try {
       const body = { model, messages, stream: true, ...(params || {}) };
@@ -500,12 +521,14 @@ class LemonadeAPI {
               reasoningTokenCount++;
               reasoning += delta.reasoning_content;
               onReasoning?.(delta.reasoning_content, reasoning);
+              emitStats();
             }
             if (delta?.content) {
               if (!firstTokenTime) firstTokenTime = performance.now();
               tokenCount++;
               full += delta.content;
               onToken?.(delta.content, full);
+              emitStats();
             }
           } catch {}
         }
