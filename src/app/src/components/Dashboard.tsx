@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData } from '../api';
+import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, SlotTimings } from '../api';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -12,14 +12,33 @@ interface HistoryPoint {
   gpu: number | null;
   vram: number | null;
   npu: number | null;
-  tps: number | null;
+  aggregateTps: number;
+  aggregatePromptTps: number;
   activeSlots: number;
   totalSlots: number;
   cacheUtil: number | null;
 }
 
-function emptyHistory(): HistoryPoint[] {
-  return [];
+/* ── Cumulative session counters ───────────────────────────── */
+
+interface SessionCounters {
+  totalTokensGenerated: number;
+  totalPromptTokens: number;
+  peakTps: number;
+  peakPromptTps: number;
+  sessionStart: number;
+  prevSlotTokens: Map<number, { decoded: number; prompted: number }>;
+}
+
+function initCounters(): SessionCounters {
+  return {
+    totalTokensGenerated: 0,
+    totalPromptTokens: 0,
+    peakTps: 0,
+    peakPromptTps: 0,
+    sessionStart: Date.now(),
+    prevSlotTokens: new Map(),
+  };
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -29,15 +48,23 @@ function pct(value: number | null): string {
   return `${Math.round(value)}%`;
 }
 
-function fmt(value: number | null, unit: string, decimals = 1): string {
-  if (value == null || value < 0) return '—';
-  return `${value.toFixed(decimals)} ${unit}`;
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+function elapsed(startMs: number): string {
+  const s = Math.floor((Date.now() - startMs) / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
 }
 
 function relativeTime(ms: number): string {
-  // Backend last_use may be uptime-relative (ms since process start) rather than Unix epoch.
-  // If it looks like a valid recent Unix timestamp (after year 2020), use it directly.
-  // Otherwise, treat it as an opaque value.
   const YEAR_2020_MS = 1577836800000;
   if (ms > YEAR_2020_MS) {
     const delta = Date.now() - ms;
@@ -46,25 +73,12 @@ function relativeTime(ms: number): string {
     if (delta < 3600000) return `${Math.round(delta / 60000)}m ago`;
     return `${Math.round(delta / 3600000)}h ago`;
   }
-  // Uptime-relative: convert ms to human-readable duration
   const totalSec = Math.floor(ms / 1000);
   if (totalSec < 60) return `${totalSec}s uptime`;
   const m = Math.floor(totalSec / 60);
   if (m < 60) return `${m}m uptime`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ${m % 60}m uptime`;
-  const d = Math.floor(h / 24);
-  return `${d}d ${h % 24}h uptime`;
-}
-
-function elapsed(startMs: number): string {
-  const s = Math.floor((Date.now() - startMs) / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${sec}s`;
-  return `${sec}s`;
+  return `${h}h ${m % 60}m uptime`;
 }
 
 function typeIcon(type: string): string {
@@ -79,185 +93,248 @@ function typeIcon(type: string): string {
   }
 }
 
-function stateLabel(state: number): string {
-  return state === 1 ? 'Processing' : 'Idle';
-}
+/* ── SVG Ring Gauge with glow ──────────────────────────────── */
 
-function stateClass(state: number): string {
-  return state === 1 ? 'slot-state--active' : 'slot-state--idle';
-}
-
-/* ── Gauge component ───────────────────────────────────────── */
-
-const Gauge: React.FC<{
-  label: string;
+const RingGauge: React.FC<{
   value: number | null;
   max?: number;
+  size?: number;
+  label: string;
   unit?: string;
   color?: string;
   subtitle?: string;
-}> = ({ label, value, max = 100, unit = '%', color, subtitle }) => {
+}> = ({ value, max = 100, size = 110, label, unit = '%', color, subtitle }) => {
   const safeVal = value != null && value >= 0 ? value : 0;
   const pctVal = Math.min(100, (safeVal / max) * 100);
   const unavailable = value == null || value < 0;
 
-  // Color ramp: green → gold → red
+  const r = 42;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference - (pctVal / 100) * circumference;
+
   const autoColor = pctVal < 50 ? 'var(--success)' : pctVal < 80 ? 'var(--accent)' : 'var(--danger)';
   const ringColor = color || autoColor;
+  const filterId = `glow-${label.replace(/\s/g, '')}`;
 
   return (
-    <div className="dash-gauge" data-gauge={label.toLowerCase()}>
-      <svg viewBox="0 0 36 36" className="dash-gauge__ring">
-        <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--surface-3)" strokeWidth="2.5" />
-        {!unavailable && (
-          <circle
-            cx="18" cy="18" r="15.9" fill="none"
-            stroke={ringColor}
-            strokeWidth="2.5"
-            strokeDasharray={`${pctVal} ${100 - pctVal}`}
-            strokeDashoffset="25"
+    <div className="dash2-gauge">
+      <svg width={size} height={size} viewBox="0 0 100 100" className="dash2-gauge__svg">
+        <defs>
+          <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feFlood floodColor={ringColor} floodOpacity="0.35" result="color" />
+            <feComposite in="color" in2="blur" operator="in" result="glow" />
+            <feMerge>
+              <feMergeNode in="glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <circle cx="50" cy="50" r={r} fill="none"
+          stroke="var(--surface-3)" strokeWidth="5" opacity="0.4" />
+        {!unavailable && pctVal > 0 && (
+          <circle cx="50" cy="50" r={r} fill="none"
+            stroke={ringColor} strokeWidth="5"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
             strokeLinecap="round"
-            style={{ transition: 'stroke-dasharray 0.6s ease-out' }}
+            transform="rotate(-90 50 50)"
+            filter={`url(#${filterId})`}
+            style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1)' }}
           />
         )}
       </svg>
-      <div className="dash-gauge__inner">
-        <span className="dash-gauge__value">
+      <div className="dash2-gauge__center">
+        <span className="dash2-gauge__value">
           {unavailable ? '—' : (unit === '%' ? `${Math.round(safeVal)}` : safeVal.toFixed(1))}
         </span>
-        <span className="dash-gauge__unit">{unavailable ? '' : unit}</span>
+        <span className="dash2-gauge__unit">{unavailable ? '' : unit}</span>
       </div>
-      <span className="dash-gauge__label">{label}</span>
-      {subtitle && <span className="dash-gauge__sub">{subtitle}</span>}
+      <span className="dash2-gauge__label">{label}</span>
+      {subtitle && <span className="dash2-gauge__sub">{subtitle}</span>}
     </div>
   );
 };
 
-/* ── Sparkline component ───────────────────────────────────── */
+/* ── Area chart ────────────────────────────────────────────── */
 
-const Sparkline: React.FC<{
+const AreaChart: React.FC<{
   data: (number | null)[];
   width?: number;
   height?: number;
-  color?: string;
+  color: string;
+  fillOpacity?: number;
   label?: string;
-}> = ({ data, width = 120, height = 32, color = 'var(--accent)', label }) => {
-  const filtered = data.filter((v): v is number => v != null && v >= 0);
-  if (filtered.length < 2) {
-    return (
-      <div className="dash-spark" style={{ width, height }}>
-        {label && <span className="dash-spark__label">{label}</span>}
-        <span className="dash-spark__empty">waiting…</span>
-      </div>
-    );
-  }
+  currentValue?: string;
+}> = ({ data, width = 200, height = 60, color, fillOpacity = 0.15, label, currentValue }) => {
+  const filtered = data.map(v => (v != null && v >= 0 ? v : 0));
   const max = Math.max(...filtered, 1);
-  const step = width / (filtered.length - 1);
-  const points = filtered.map((v, i) => `${i * step},${height - (v / max) * (height - 4) - 2}`).join(' ');
+  const step = width / Math.max(filtered.length - 1, 1);
+
+  const points = filtered.map((v, i) => {
+    const x = i * step;
+    const y = height - (v / max) * (height - 8) - 4;
+    return `${x},${y}`;
+  }).join(' ');
+
+  const fillPoints = `0,${height} ${points} ${width},${height}`;
 
   return (
-    <div className="dash-spark" style={{ width }}>
-      {label && <span className="dash-spark__label">{label}</span>}
-      <svg width={width} height={height} className="dash-spark__svg">
+    <div className="dash2-area">
+      <div className="dash2-area__header">
+        {label && <span className="dash2-area__label">{label}</span>}
+        {currentValue && <span className="dash2-area__current" style={{ color }}>{currentValue}</span>}
+      </div>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none" className="dash2-area__svg">
+        <defs>
+          <linearGradient id={`areagrad-${label?.replace(/\s/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={fillOpacity} />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={fillPoints} fill={`url(#areagrad-${label?.replace(/\s/g, '')})`} />
         <polyline
           points={points}
           fill="none"
           stroke={color}
-          strokeWidth="1.5"
+          strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
     </div>
   );
 };
 
-/* ── Slot card ─────────────────────────────────────────────── */
+/* ── Throughput hero stat ──────────────────────────────────── */
 
-const SlotCard: React.FC<{ slot: SlotData }> = ({ slot }) => {
+const HeroStat: React.FC<{
+  value: number;
+  label: string;
+  unit: string;
+  peak?: number;
+  color: string;
+  secondary?: string;
+}> = ({ value, label, unit, peak, color, secondary }) => (
+  <div className="dash2-hero">
+    <div className="dash2-hero__num">
+      <span className="dash2-hero__val" style={{ color }}>
+        {value > 0 ? value.toFixed(1) : '—'}
+      </span>
+      <span className="dash2-hero__unit">{unit}</span>
+    </div>
+    <span className="dash2-hero__label">{label}</span>
+    {peak != null && peak > 0 && (
+      <span className="dash2-hero__peak">⚡ Peak {peak.toFixed(1)} {unit}</span>
+    )}
+    {secondary && <span className="dash2-hero__secondary">{secondary}</span>}
+  </div>
+);
+
+/* ── Slot mini card ────────────────────────────────────────── */
+
+const SlotMini: React.FC<{ slot: SlotData }> = ({ slot }) => {
   const cacheLen = slot.cache_tokens?.length || 0;
   const cacheUtil = slot.n_ctx > 0 ? (cacheLen / slot.n_ctx) * 100 : 0;
-  const timings = slot.timings || {} as SlotTimings;
+  const t = slot.timings || {} as SlotTimings;
 
   return (
-    <div className={`dash-slot ${slot.is_processing ? 'dash-slot--active' : ''}`}
-      data-slot-id={slot.id}>
-      <div className="dash-slot__head">
-        <span className="dash-slot__id">Slot {slot.id}</span>
-        <span className={`dash-slot__state ${stateClass(slot.state)}`}>
-          <span className="dash-slot__state-dot" />
-          {stateLabel(slot.state)}
+    <div className={`dash2-slot ${slot.is_processing ? 'dash2-slot--active' : ''}`}>
+      <div className="dash2-slot__head">
+        <span className="dash2-slot__id">Slot {slot.id}</span>
+        <span className={`dash2-slot__state ${slot.is_processing ? 'dash2-slot__state--on' : ''}`}>
+          <span className="dash2-slot__dot" />
+          {slot.is_processing ? 'Active' : 'Idle'}
         </span>
       </div>
-
-      {/* KV cache bar */}
-      <div className="dash-slot__cache">
-        <div className="dash-slot__cache-bar">
-          <div
-            className="dash-slot__cache-fill"
-            style={{
-              width: `${Math.min(100, cacheUtil)}%`,
-              background: cacheUtil > 80 ? 'var(--danger)' : cacheUtil > 50 ? 'var(--accent)' : 'var(--success)',
-            }}
-          />
-        </div>
-        <span className="dash-slot__cache-label">
-          KV {cacheLen.toLocaleString()} / {slot.n_ctx.toLocaleString()} ({cacheUtil.toFixed(0)}%)
-        </span>
+      <div className="dash2-slot__bar">
+        <div className="dash2-slot__fill" style={{
+          width: `${Math.min(100, cacheUtil)}%`,
+          background: cacheUtil > 80 ? 'var(--danger)' : cacheUtil > 50 ? 'var(--accent)' : 'var(--success)',
+        }} />
       </div>
-
-      {/* Metrics */}
-      <div className="dash-slot__metrics">
-        <div className="dash-slot__metric">
-          <span className="dash-slot__metric-label">Prompt</span>
-          <span className="dash-slot__metric-value">{slot.n_prompt_tokens_processed}</span>
-        </div>
-        <div className="dash-slot__metric">
-          <span className="dash-slot__metric-label">Decoded</span>
-          <span className="dash-slot__metric-value">{slot.n_decoded}</span>
-        </div>
-        {timings.predicted_per_second > 0 && (
-          <div className="dash-slot__metric">
-            <span className="dash-slot__metric-label">TPS</span>
-            <span className="dash-slot__metric-value">
-              {timings.predicted_per_second.toFixed(1)}
-            </span>
-          </div>
-        )}
-        {timings.prompt_per_second > 0 && (
-          <div className="dash-slot__metric">
-            <span className="dash-slot__metric-label">Prompt/s</span>
-            <span className="dash-slot__metric-value">
-              {timings.prompt_per_second.toFixed(0)}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Sampling params */}
-      <div className="dash-slot__params">
-        temp {(slot.temperature ?? 0).toFixed(2)} · top_p {(slot.top_p ?? 0).toFixed(2)} · top_k {slot.top_k ?? 0}
+      <div className="dash2-slot__stats">
+        <span><b>{t.predicted_per_second > 0 ? t.predicted_per_second.toFixed(1) : '—'}</b> tok/s</span>
+        <span><b>{t.prompt_per_second > 0 ? t.prompt_per_second.toFixed(0) : '—'}</b> pp/s</span>
+        <span><b>{slot.n_decoded}</b> decoded</span>
+        <span><b>{pct(cacheUtil)}</b> KV</span>
       </div>
     </div>
   );
 };
 
-/* ── Main Dashboard ────────────────────────────────────────── */
+/* ── Model row ─────────────────────────────────────────────── */
 
-const POLL_INTERVAL = 2500;
+const ModelRow: React.FC<{ model: LoadedModel }> = ({ model }) => (
+  <div className="dash2-model">
+    <span className="dash2-model__icon">{typeIcon(model.type)}</span>
+    <div className="dash2-model__info">
+      <span className="dash2-model__name">{model.model_name}</span>
+      <span className="dash2-model__meta">
+        {model.recipe} · {model.device} · PID {model.pid}
+      </span>
+    </div>
+    <span className="dash2-model__badge" data-type={model.type}>{model.type}</span>
+    <span className="dash2-model__time">{relativeTime(model.last_use)}</span>
+  </div>
+);
+
+/* ══════════════════════════════════════════════════════════════
+   ██  MAIN DASHBOARD
+   ══════════════════════════════════════════════════════════════ */
+
+const POLL_INTERVAL = 2000;
 
 const Dashboard: React.FC = () => {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
   const [slots, setSlots] = useState<SlotData[]>([]);
-  const [history, setHistory] = useState<HistoryPoint[]>(emptyHistory);
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [pollCount, setPollCount] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
 
-  const startTime = useRef(Date.now());
+  const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /* ── Aggregate throughput from all slots ──────────────────── */
+
+  const computeAggregates = useCallback((slotData: SlotData[]) => {
+    const c = countersRef.current;
+
+    let aggTps = 0;
+    let aggPromptTps = 0;
+
+    for (const s of slotData) {
+      const t = s.timings || {} as SlotTimings;
+      if (t.predicted_per_second > 0) aggTps += t.predicted_per_second;
+      if (t.prompt_per_second > 0) aggPromptTps += t.prompt_per_second;
+    }
+
+    // Accumulate token deltas for session totals
+    for (const s of slotData) {
+      const prev = c.prevSlotTokens.get(s.id);
+      const currDecoded = s.n_decoded || 0;
+      const currPrompted = s.n_prompt_tokens_processed || 0;
+
+      if (prev) {
+        if (currDecoded > prev.decoded) c.totalTokensGenerated += currDecoded - prev.decoded;
+        if (currPrompted > prev.prompted) c.totalPromptTokens += currPrompted - prev.prompted;
+      } else {
+        c.totalTokensGenerated += currDecoded;
+        c.totalPromptTokens += currPrompted;
+      }
+      c.prevSlotTokens.set(s.id, { decoded: currDecoded, prompted: currPrompted });
+    }
+
+    if (aggTps > c.peakTps) c.peakTps = aggTps;
+    if (aggPromptTps > c.peakPromptTps) c.peakPromptTps = aggPromptTps;
+
+    return { aggTps, aggPromptTps };
+  }, []);
 
   /* ── Polling ─────────────────────────────────────────────── */
 
@@ -273,16 +350,14 @@ const Dashboard: React.FC = () => {
       if (st) setStats(st);
       if (ss) setSysStats(ss);
 
-      // Try slots if any llm models are loaded
       let slotData: SlotData[] = [];
       if (h && h.all_models_loaded.some(m => m.recipe === 'llamacpp' || m.recipe === 'vllm')) {
-        try {
-          slotData = await api.slots();
-        } catch {}
+        try { slotData = await api.slots(); } catch {}
       }
       setSlots(slotData);
 
-      // Build history point
+      const { aggTps, aggPromptTps } = computeAggregates(slotData);
+
       const activeSlots = slotData.filter(s => s.is_processing).length;
       const totalSlots = slotData.length;
       const totalCache = slotData.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
@@ -297,7 +372,8 @@ const Dashboard: React.FC = () => {
           gpu: ss?.gpu_percent ?? null,
           vram: ss?.vram_gb ?? null,
           npu: ss?.npu_percent ?? null,
-          tps: st?.tokens_per_second ?? null,
+          aggregateTps: aggTps,
+          aggregatePromptTps: aggPromptTps,
           activeSlots,
           totalSlots,
           cacheUtil,
@@ -310,240 +386,205 @@ const Dashboard: React.FC = () => {
     } catch (err: any) {
       setLastError(err.message || 'Poll failed');
     }
-  }, []);
+  }, [computeAggregates]);
 
   useEffect(() => {
-    poll(); // initial
+    poll();
     if (!paused) {
       pollRef.current = setInterval(poll, POLL_INTERVAL);
     }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [poll, paused]);
 
-  /* ── Derived stats ───────────────────────────────────────── */
+  /* ── Derived ─────────────────────────────────────────────── */
 
   const loadedModels = health?.all_models_loaded || [];
-  const modelsByType = useMemo(() => {
-    const map: Record<string, LoadedModel[]> = {};
-    for (const m of loadedModels) {
-      (map[m.type] = map[m.type] || []).push(m);
-    }
-    return map;
-  }, [loadedModels]);
-
+  const counters = countersRef.current;
+  const latestTps = history.length > 0 ? history[history.length - 1].aggregateTps : 0;
+  const latestPP = history.length > 0 ? history[history.length - 1].aggregatePromptTps : 0;
   const activeSlotCount = slots.filter(s => s.is_processing).length;
-  const idleSlotCount = slots.filter(s => !s.is_processing).length;
   const totalCacheTokens = slots.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
   const totalCtx = slots.reduce((a, s) => a + s.n_ctx, 0);
   const overallCacheUtil = totalCtx > 0 ? (totalCacheTokens / totalCtx) * 100 : null;
-  const cachedSlots = slots.filter(s => (s.cache_tokens?.length || 0) > 0).length;
 
   const hasGpu = sysStats?.gpu_percent != null && sysStats.gpu_percent >= 0;
-  const hasVram = sysStats?.vram_gb != null && sysStats.vram_gb >= 0;
   const hasNpu = sysStats?.npu_percent != null && sysStats.npu_percent >= 0;
+
+  const modelsByType = useMemo(() => {
+    const map: Record<string, LoadedModel[]> = {};
+    for (const m of loadedModels) (map[m.type] = map[m.type] || []).push(m);
+    return map;
+  }, [loadedModels]);
 
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
-    <section className="dashboard" data-view="dashboard">
-      {/* ── Status bar ──────────────────────────────────── */}
-      <div className="dash-status">
-        <div className="dash-status__left">
-          <span className="dash-status__dot" data-connected={!!health} />
-          <span className="dash-status__text">
+    <section className="dash2" data-view="dashboard">
+      {/* ═══ Top bar ═══ */}
+      <header className="dash2-bar">
+        <div className="dash2-bar__left">
+          <span className="dash2-bar__dot" data-connected={!!health} />
+          <span className="dash2-bar__title">
             {health ? `Lemonade ${health.version}` : 'Disconnected'}
           </span>
-          {health && (
-            <span className="dash-status__uptime">
-              uptime {elapsed(startTime.current)}
-            </span>
-          )}
+          {health && <span className="dash2-bar__uptime">{elapsed(counters.sessionStart)}</span>}
         </div>
-        <div className="dash-status__right">
-          {health?.websocket_port && (
-            <span className="dash-status__meta">WS :{health.websocket_port}</span>
-          )}
-          <span className="dash-status__meta">poll #{pollCount}</span>
-          <button
-            className={`dash-status__pause ${paused ? 'is-paused' : ''}`}
-            onClick={() => setPaused(p => !p)}
-            title={paused ? 'Resume polling' : 'Pause polling'}>
+        <div className="dash2-bar__right">
+          {health?.websocket_port && <span className="dash2-bar__chip">WS :{health.websocket_port}</span>}
+          <span className="dash2-bar__chip">#{pollCount}</span>
+          <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
+            onClick={() => setPaused(p => !p)} title={paused ? 'Resume' : 'Pause'}>
             {paused ? '▶' : '⏸'}
           </button>
         </div>
-      </div>
+      </header>
 
-      {lastError && (
-        <div className="dash-error">
-          <span>⚠ {lastError}</span>
-        </div>
-      )}
+      {lastError && <div className="dash2-err">⚠ {lastError}</div>}
 
-      <div className="dash-body">
-        {/* ── Section 1: System resources ────────────────── */}
-        <div className="dash-section">
-          <h2 className="dash-section__title">System Resources</h2>
-          <div className="dash-gauges">
-            <Gauge label="CPU" value={sysStats?.cpu_percent ?? null} subtitle={pct(sysStats?.cpu_percent ?? null)} />
-            <Gauge label="RAM" value={sysStats?.memory_gb ?? null} max={64} unit="GB"
-              color="var(--info)" subtitle={fmt(sysStats?.memory_gb ?? null, 'GB')} />
-            {hasGpu && <Gauge label="GPU" value={sysStats!.gpu_percent!} subtitle={pct(sysStats!.gpu_percent)} />}
-            {hasVram && <Gauge label="VRAM" value={sysStats!.vram_gb!} max={32} unit="GB"
-              color="var(--info)" subtitle={fmt(sysStats!.vram_gb, 'GB')} />}
-            {hasNpu && <Gauge label="NPU" value={sysStats!.npu_percent!} subtitle={pct(sysStats!.npu_percent)} />}
+      <div className="dash2-scroll">
+        {/* ═══ HERO — Aggregate Throughput ═══ */}
+        <div className="dash2-card dash2-card--glow">
+          <h2 className="dash2-card__h">⚡ Aggregate Throughput</h2>
+          <p className="dash2-card__sub">Real-time totals across all parallel slots and models</p>
+
+          <div className="dash2-hero-row">
+            <HeroStat value={latestTps} label="Generation Speed" unit="tok/s"
+              peak={counters.peakTps} color="var(--accent)"
+              secondary={`${fmtNum(counters.totalTokensGenerated)} total generated`} />
+            <HeroStat value={latestPP} label="Prompt Processing" unit="tok/s"
+              peak={counters.peakPromptTps} color="var(--info)"
+              secondary={`${fmtNum(counters.totalPromptTokens)} total processed`} />
+            <HeroStat value={activeSlotCount} label="Active Streams" unit={activeSlotCount === 1 ? 'stream' : 'streams'}
+              color="var(--success)"
+              secondary={`${slots.length} total slots`} />
           </div>
-          <div className="dash-sparks">
-            <Sparkline data={history.map(h => h.cpu)} label="CPU %" color="var(--success)" />
-            <Sparkline data={history.map(h => h.ram)} label="RAM GB" color="var(--info)" />
-            {hasGpu && <Sparkline data={history.map(h => h.gpu)} label="GPU %" color="var(--accent)" />}
-            <Sparkline data={history.map(h => h.tps)} label="TPS" color="var(--warn)" />
-          </div>
-        </div>
 
-        {/* ── Section 2: Session overview ────────────────── */}
-        <div className="dash-section">
-          <h2 className="dash-section__title">Session Overview</h2>
-          <div className="dash-kpis">
-            <div className="dash-kpi" data-kpi="loaded">
-              <span className="dash-kpi__value">{loadedModels.length}</span>
-              <span className="dash-kpi__label">Models Loaded</span>
-            </div>
-            <div className="dash-kpi" data-kpi="slots">
-              <span className="dash-kpi__value">{slots.length}</span>
-              <span className="dash-kpi__label">Total Slots</span>
-            </div>
-            <div className="dash-kpi dash-kpi--accent" data-kpi="active">
-              <span className="dash-kpi__value">{activeSlotCount}</span>
-              <span className="dash-kpi__label">Active Sessions</span>
-            </div>
-            <div className="dash-kpi" data-kpi="idle">
-              <span className="dash-kpi__value">{idleSlotCount}</span>
-              <span className="dash-kpi__label">Idle Slots</span>
-            </div>
-            <div className="dash-kpi" data-kpi="cached">
-              <span className="dash-kpi__value">{cachedSlots}</span>
-              <span className="dash-kpi__label">Cached Contexts</span>
-            </div>
-            <div className="dash-kpi" data-kpi="cache-util">
-              <span className="dash-kpi__value">
-                {overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'}
-              </span>
-              <span className="dash-kpi__label">KV Cache Usage</span>
-            </div>
+          <div className="dash2-charts">
+            <AreaChart data={history.map(h => h.aggregateTps)} color="#e8c66b"
+              label="Generation TPS" currentValue={latestTps > 0 ? `${latestTps.toFixed(1)} tok/s` : 'idle'}
+              height={72} />
+            <AreaChart data={history.map(h => h.aggregatePromptTps)} color="#7baed4"
+              label="Prompt Processing" currentValue={latestPP > 0 ? `${latestPP.toFixed(0)} tok/s` : 'idle'}
+              height={72} />
           </div>
         </div>
 
-        {/* ── Section 3: Inference metrics ───────────────── */}
+        {/* ═══ System Vitals ═══ */}
+        <div className="dash2-card">
+          <h2 className="dash2-card__h">System Vitals</h2>
+          <div className="dash2-gauges">
+            <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
+              subtitle={pct(sysStats?.cpu_percent ?? null)} />
+            <RingGauge label="RAM" value={sysStats?.memory_gb ?? null} max={64} unit="GB"
+              color="var(--info)" subtitle={`${(sysStats?.memory_gb ?? 0).toFixed(1)} GB`} />
+            {hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
+              color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
+            {hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
+              <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={32} unit="GB"
+                color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
+            )}
+            {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
+              color="#b07df0" subtitle={pct(sysStats!.npu_percent)} />}
+            <RingGauge label="KV Cache" value={overallCacheUtil}
+              color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
+          </div>
+          <div className="dash2-charts">
+            <AreaChart data={history.map(h => h.cpu)} color="#7fb38a"
+              label="CPU" currentValue={pct(sysStats?.cpu_percent ?? null)} height={48} />
+            {hasGpu && <AreaChart data={history.map(h => h.gpu)} color="#e8c66b"
+              label="GPU" currentValue={pct(sysStats?.gpu_percent ?? null)} height={48} />}
+            <AreaChart data={history.map(h => h.cacheUtil)} color="#d9a35b"
+              label="KV Cache" currentValue={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} height={48} />
+          </div>
+        </div>
+
+        {/* ═══ Last Inference ═══ */}
         {stats && (
-          <div className="dash-section">
-            <h2 className="dash-section__title">Last Inference</h2>
-            <div className="dash-kpis dash-kpis--inference">
-              <div className="dash-kpi">
-                <span className="dash-kpi__value">
-                  {stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}
-                </span>
-                <span className="dash-kpi__label">Tokens/sec</span>
-              </div>
-              <div className="dash-kpi">
-                <span className="dash-kpi__value">
-                  {stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}ms` : '—'}
-                </span>
-                <span className="dash-kpi__label">TTFT</span>
-              </div>
-              <div className="dash-kpi">
-                <span className="dash-kpi__value">{stats.input_tokens}</span>
-                <span className="dash-kpi__label">Prompt Tokens</span>
-              </div>
-              <div className="dash-kpi">
-                <span className="dash-kpi__value">{stats.output_tokens}</span>
-                <span className="dash-kpi__label">Completion Tokens</span>
-              </div>
+          <div className="dash2-card">
+            <h2 className="dash2-card__h">Last Inference</h2>
+            <div className="dash2-inf-row">
+              <div className="dash2-inf"><span className="dash2-inf__v">{stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}</span><span className="dash2-inf__l">Tokens/sec</span></div>
+              <div className="dash2-inf"><span className="dash2-inf__v">{stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}` : '—'}</span><span className="dash2-inf__l">TTFT (ms)</span></div>
+              <div className="dash2-inf"><span className="dash2-inf__v">{stats.input_tokens}</span><span className="dash2-inf__l">Prompt Tokens</span></div>
+              <div className="dash2-inf"><span className="dash2-inf__v">{stats.output_tokens}</span><span className="dash2-inf__l">Completion Tokens</span></div>
             </div>
           </div>
         )}
 
-        {/* ── Section 4: Loaded models ──────────────────── */}
-        <div className="dash-section">
-          <h2 className="dash-section__title">
+        {/* ═══ Parallel Slots ═══ */}
+        {slots.length > 0 && (
+          <div className="dash2-card">
+            <h2 className="dash2-card__h">
+              Parallel Slots
+              <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
+            </h2>
+            <div className="dash2-slots">
+              {slots.map(s => <SlotMini key={s.id} slot={s} />)}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ Loaded Models ═══ */}
+        <div className="dash2-card">
+          <h2 className="dash2-card__h">
             Loaded Models
-            {loadedModels.length > 0 && (
-              <span className="dash-section__count">{loadedModels.length}</span>
-            )}
+            {loadedModels.length > 0 && <span className="dash2-card__badge">{loadedModels.length}</span>}
           </h2>
           {loadedModels.length === 0 ? (
-            <div className="dash-empty">No models loaded</div>
+            <div className="dash2-empty">No models loaded</div>
           ) : (
-            <div className="dash-models">
-              {loadedModels.map(m => (
-                <div className="dash-model" key={m.model_name} data-model={m.model_name}>
-                  <div className="dash-model__head">
-                    <span className="dash-model__icon">{typeIcon(m.type)}</span>
-                    <span className="dash-model__name">{m.model_name}</span>
-                  </div>
-                  <div className="dash-model__meta">
-                    <span className="dash-model__chip dash-model__chip--type">{m.type}</span>
-                    <span className="dash-model__chip dash-model__chip--device">{m.device}</span>
-                    <span className="dash-model__chip dash-model__chip--recipe">{m.recipe}</span>
-                  </div>
-                  <div className="dash-model__details">
-                    <span>PID {m.pid}</span>
-                    <span>{m.backend_url}</span>
-                    <span>Last use: {relativeTime(m.last_use)}</span>
-                  </div>
-                </div>
-              ))}
+            <div className="dash2-models">
+              {loadedModels.map(m => <ModelRow key={m.model_name} model={m} />)}
             </div>
           )}
         </div>
 
-        {/* ── Section 5: Parallel slots ─────────────────── */}
-        {slots.length > 0 && (
-          <div className="dash-section">
-            <h2 className="dash-section__title">
-              Parallel Slots
-              <span className="dash-section__count">
-                {activeSlotCount} active / {slots.length} total
-              </span>
-            </h2>
-            <div className="dash-slots">
-              {slots.map(s => <SlotCard key={s.id} slot={s} />)}
-            </div>
-            <div className="dash-sparks" style={{ marginTop: 'var(--space-4)' }}>
-              <Sparkline data={history.map(h => h.activeSlots)} label="Active" color="var(--success)" />
-              <Sparkline data={history.map(h => h.cacheUtil)} label="KV Cache %" color="var(--accent)" />
-            </div>
-          </div>
-        )}
-
-        {/* ── Section 6: Model capacity ─────────────────── */}
+        {/* ═══ Model Capacity ═══ */}
         {health?.max_models && (
-          <div className="dash-section">
-            <h2 className="dash-section__title">Model Capacity</h2>
-            <div className="dash-capacity">
+          <div className="dash2-card">
+            <h2 className="dash2-card__h">Model Capacity</h2>
+            <div className="dash2-caps">
               {Object.entries(health.max_models).map(([type, max]) => {
                 const loaded = modelsByType[type]?.length || 0;
                 const pctUsed = max > 0 ? (loaded / max) * 100 : 0;
                 return (
-                  <div className="dash-capacity__row" key={type}>
-                    <span className="dash-capacity__type">{typeIcon(type)} {type}</span>
-                    <div className="dash-capacity__bar">
-                      <div
-                        className="dash-capacity__fill"
-                        style={{
-                          width: `${Math.min(100, pctUsed)}%`,
-                          background: pctUsed >= 100 ? 'var(--danger)' : 'var(--accent)',
-                        }}
-                      />
+                  <div className="dash2-cap" key={type}>
+                    <span className="dash2-cap__type">{typeIcon(type)} {type}</span>
+                    <div className="dash2-cap__track">
+                      <div className="dash2-cap__fill" style={{
+                        width: `${Math.min(100, pctUsed)}%`,
+                        background: pctUsed >= 100 ? 'var(--danger)' : 'var(--accent)',
+                      }} />
                     </div>
-                    <span className="dash-capacity__label">{loaded} / {max}</span>
+                    <span className="dash2-cap__label">{loaded} / {max}</span>
                   </div>
                 );
               })}
             </div>
           </div>
         )}
+
+        {/* ═══ Session Summary ═══ */}
+        <div className="dash2-card dash2-card--summary">
+          <div className="dash2-summary">
+            <span className="dash2-summary__item">
+              <span className="dash2-summary__val">{fmtNum(counters.totalTokensGenerated)}</span>
+              <span className="dash2-summary__lbl">Tokens generated</span>
+            </span>
+            <span className="dash2-summary__item">
+              <span className="dash2-summary__val">{fmtNum(counters.totalPromptTokens)}</span>
+              <span className="dash2-summary__lbl">Tokens processed</span>
+            </span>
+            <span className="dash2-summary__item">
+              <span className="dash2-summary__val">{counters.peakTps > 0 ? counters.peakTps.toFixed(1) : '—'}</span>
+              <span className="dash2-summary__lbl">Peak TPS</span>
+            </span>
+            <span className="dash2-summary__item">
+              <span className="dash2-summary__val">{elapsed(counters.sessionStart)}</span>
+              <span className="dash2-summary__lbl">Session time</span>
+            </span>
+          </div>
+        </div>
       </div>
     </section>
   );
