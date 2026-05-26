@@ -3,10 +3,13 @@
 #include <stdexcept>
 #include <string>
 #include <map>
+#include <optional>
+#include <set>
 #include <vector>
 #include <mutex>
 #include <functional>
 #include <nlohmann/json.hpp>
+#include "canonical_id.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -67,11 +70,17 @@ struct ModelInfo {
     std::map<std::string, std::string> resolved_paths; // Absolute path to model file/directory on disk
     std::string recipe;
     std::vector<std::string> labels;
-    std::vector<std::string> composite_models;
+    std::vector<std::string> components;
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
+    // When true, LlamaCppServer launches llama-server with `-hf <checkpoint>`
+    // instead of `-m <gguf> [--mmproj <mmproj>]`. Required for models like
+    // Qwen2.5-Omni where llama-server's manual-load path rejects audio content
+    // parts — the -hf path drives the dual-clip (vision+audio) context correctly.
+    bool hf_load = false;
     double size = 0.0;   // Model size in GB
+    int64_t max_context_window = 0;  // Static model-supported text context, when known
     RecipeOptions recipe_options;
 
     // Multi-model support fields
@@ -94,7 +103,7 @@ struct ModelInfo {
 
 class ModelManager {
 public:
-    ModelManager();
+    explicit ModelManager(const std::string& extra_models_dir = "");
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
@@ -143,6 +152,12 @@ public:
     // Check if model exists (in filtered list based on system capabilities)
     bool model_exists(const std::string& model_name);
 
+    // Validate a collection (recipe="collection.omni") registration request.
+    // Returns nullopt on success, or a user-facing error message on failure.
+    // Used by /pull request validation and as a defensive guard in download_model.
+    std::optional<std::string> validate_collection_request(
+        const std::string& model_name, const nlohmann::json& model_data);
+
     // Check if model exists in the raw registry (before filtering)
     // Returns true even for NPU models on systems without NPU
     bool model_exists_unfiltered(const std::string& model_name);
@@ -173,6 +188,15 @@ public:
     void save_model_options(const ModelInfo& info);
 
 private:
+    // Cycle-detecting overload used by the collection fan-out in download_model.
+    // `visited` accumulates collection names already entered on the current
+    // call chain; re-entering one throws.
+    void download_model(const std::string& model_name,
+                       const json& model_data,
+                       bool do_not_upgrade,
+                       DownloadProgressCallback progress_callback,
+                       std::set<std::string>& visited);
+
     json load_server_models();
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);

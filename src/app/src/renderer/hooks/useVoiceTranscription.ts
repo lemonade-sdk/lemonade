@@ -33,11 +33,8 @@ async function fetchLoadedAudioModel(modelsData: ModelsData): Promise<string | n
     if (!res.ok) return null;
     const health = await res.json();
     const allLoaded: { model_name: string; type?: string }[] = health.all_models_loaded || [];
-    // Must be *loaded as audio* — omni models (e.g. gemma4) carry the "audio"
-    // label statically but may be currently loaded as an LLM; using one of
-    // those for transcription hangs the realtime session.
     const loaded = allLoaded.find(
-      (m) => m.type === 'audio' && modelsData[m.model_name]?.labels?.includes('audio'),
+      (m) => m.type === 'transcription' && modelsData[m.model_name]?.labels?.includes('realtime-transcription'),
     );
     return loaded?.model_name ?? null;
   } catch {
@@ -54,7 +51,7 @@ export function useVoiceTranscription({
   onError,
 }: UseVoiceTranscriptionOptions): UseVoiceTranscriptionResult {
   const { modelsData } = useModels();
-  const audioModels = Object.keys(modelsData).filter(name => modelsData[name]?.labels?.includes('audio'));
+  const audioModels = Object.keys(modelsData).filter(name => modelsData[name]?.labels?.includes('realtime-transcription'));
 
   // Prefer the smallest downloaded model (fastest for real-time), fall back to any audio model.
   const activeModel =
@@ -143,7 +140,7 @@ export function useVoiceTranscription({
 
   const start = useCallback(async () => {
     if (!activeModel) {
-      onError('No Whisper model available. Pull one from the Model Manager first.');
+      onError('No realtime transcription model available. Pull one from the Model Manager first.');
       return;
     }
     baseTextRef.current = inputValue;

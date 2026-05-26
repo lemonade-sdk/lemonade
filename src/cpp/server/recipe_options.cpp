@@ -1,12 +1,11 @@
 #include <lemon/recipe_options.h>
-#ifndef LEMONADE_CLI
-#include <lemon/system_info.h>
-#endif
+#include <lemon/utils/custom_args.h>
 #include <nlohmann/json.hpp>
-#include <algorithm>
 #include <map>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
+#else
+#include <lemon/system_info.h>
 #endif
 
 namespace lemon {
@@ -15,7 +14,9 @@ using json = nlohmann::json;
 
 static const json DEFAULTS = {
     {"ctx_size", 4096},
-    {"llamacpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
+    {"merge_args", true},
+    {"llamacpp_device", ""},
+    {"llamacpp_backend", ""},  // Will be overridden dynamically
     {"llamacpp_args", ""},
     {"sd-cpp_backend", ""},   // "" means auto-detect (mapped from "auto" in config.json)
     {"sdcpp_args", ""},
@@ -31,7 +32,10 @@ static const json DEFAULTS = {
     {"sampling_method", ""},
     {"flow_shift", 0.0},
     // FLM-specific options
-    {"flm_args", ""}       // Custom arguments to pass to flm serve
+    {"flm_args", ""},       // Custom arguments to pass to flm serve
+    // vLLM-specific options
+    {"vllm_backend", ""},  // "" means auto-detect
+    {"vllm_args", ""}      // Custom arguments to pass to vllm-server
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
@@ -40,26 +44,32 @@ static const json DEFAULTS = {
 // Runtime options (diffusion_fa, offload_to_cpu) go through --sdcpp-args.
 static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"ctx_size", "--ctx-size"},
+    {"merge_args", "--merge-args"},
     {"llamacpp_backend", "--llamacpp"},
+    {"llamacpp_device", "--llamacpp-device"},
     {"llamacpp_args", "--llamacpp-args"},
     {"sd-cpp_backend", "--sdcpp"},
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
-    {"flm_args", "--flm-args"}
+    {"flm_args", "--flm-args"},
+    {"vllm_backend", "--vllm"},
+    {"vllm_args", "--vllm-args"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_backend", "llamacpp_args"};
+        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
     } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend", "whispercpp_args"};
+        return {"whispercpp_backend", "whispercpp_args", "merge_args"};
     } else if (recipe == "flm") {
-        return {"ctx_size", "flm_args"};
+        return {"ctx_size", "flm_args", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
         return {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift"};
+        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
+    } else if (recipe == "vllm") {
+        return {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
     } else {
         return {};
     }
@@ -132,7 +142,7 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
 
 static std::string format_option_for_logging(const json& opt) {
     if (opt.is_null() || opt == "") return "(none)";
-    if (opt.is_boolean()) return opt.get<bool>() ? "1" : "0";
+    if (opt.is_boolean()) return opt.get<bool>() ? "true" : "false";
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
     return opt;
@@ -159,9 +169,33 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
+    bool merge_args = options_.contains("merge_args") ? options_["merge_args"].get<bool>() : options.get_option("merge_args").get<bool>();
 
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
-        if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
+        if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {
+            // Special handling for _args options: parse, merge maps, re-stringify
+            std::string target_str = "";
+            if (merged.contains(it.key()) && merged[it.key()].is_string()) {
+                target_str = merged[it.key()];
+            }
+
+            std::string incoming_str = it.value().is_string() ? it.value() : "";
+
+            if (target_str.empty()) {
+                merged[it.key()] = incoming_str;
+            } else if (incoming_str.empty()) {
+                merged[it.key()] = target_str;
+            } else {
+                auto target_tokens = lemon::utils::parse_custom_args(target_str, true);
+                auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str, true);
+
+                auto target_map = lemon::utils::build_custom_args_map(target_tokens);
+                auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
+
+                auto merged_map = lemon::utils::merge_args_maps(target_map, incoming_map);
+                merged[it.key()] = lemon::utils::map_to_args_string(merged_map);
+            }
+        } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
             merged[it.key()] = it.value();
         }
     }
@@ -189,12 +223,16 @@ json RecipeOptions::get_option(const std::string& opt) const {
 // CLI_OPTIONS used only by the lemonade CLI client for add_cli_options
 static const json CLI_OPTIONS = {
     {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
+    {"--merge-args", {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"envname", "LEMONADE_MERGE_ARGS"}, {"help", "Merge global and model arguments when loading the model"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
+    {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"envname", "LEMONADE_LLAMACPP_DEVICE"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}}},
     {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}}},
     {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}}},
+    {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_VLLM"}, {"help", "vLLM backend to use"}}},
+    {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_VLLM_ARGS"}, {"help", "Custom arguments to pass to vllm-server"}}},
     // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
     // Runtime options (--diffusion-fa, --offload-to-cpu) go through --sdcpp-args.
     {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}}
@@ -212,6 +250,9 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
         } else if (defval.is_number_integer()) {
             o = app.add_option_function<int>(key, [opt_name, &storage = storage](int val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val((int) defval);
+        } else if (defval.is_boolean()) {
+            o = app.add_flag_function(key + ",!" + lemon::utils::negate_flag(key), [opt_name, defval, &storage = storage](std::int64_t val) { storage[opt_name] = val == 0 ? defval.get<bool>() : val > 0; }, opt["help"]);
+            o->default_val((bool) defval);
         } else {
             o = app.add_option_function<std::string>(key, [opt_name, &storage = storage](const std::string& val) { storage[opt_name] = val; }, opt["help"]);
             o->default_val(defval);

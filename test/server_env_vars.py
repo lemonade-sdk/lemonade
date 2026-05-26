@@ -109,6 +109,7 @@ class TestConfigEnvVars(unittest.TestCase):
     """Start lemond once with all config-based env vars set, verify snapshot."""
 
     proc = None
+    extra_models_dir = os.path.join(tempfile.gettempdir(), "lemon_extra_models_test")
 
     @classmethod
     def setUpClass(cls):
@@ -116,13 +117,21 @@ class TestConfigEnvVars(unittest.TestCase):
             "LEMONADE_PORT": str(PORT),
             "LEMONADE_HOST": "localhost",
             "LEMONADE_LOG_LEVEL": "debug",
-            "LEMONADE_EXTRA_MODELS_DIR": "/tmp/lemon_extra_models_test",
+            "LEMONADE_EXTRA_MODELS_DIR": cls.extra_models_dir,
             "LEMONADE_GLOBAL_TIMEOUT": "999",
             "LEMONADE_MAX_LOADED_MODELS": "3",
             # Recipe-option env vars
             "LEMONADE_CTX_SIZE": "2048",
         }
-        if not IS_MACOS:
+        if IS_MACOS:
+            # On macOS the platform defaults are metal for llamacpp/whispercpp
+            cls.env.update(
+                {
+                    "LEMONADE_LLAMACPP": "metal",
+                    "LEMONADE_WHISPERCPP": "metal",
+                }
+            )
+        else:
             cls.env.update(
                 {
                     "LEMONADE_LLAMACPP": "cpu",
@@ -151,9 +160,7 @@ class TestConfigEnvVars(unittest.TestCase):
         self.assertEqual(self.snapshot["log_level"], "debug")
 
     def test_extra_models_dir(self):
-        self.assertEqual(
-            self.snapshot["extra_models_dir"], "/tmp/lemon_extra_models_test"
-        )
+        self.assertEqual(self.snapshot["extra_models_dir"], self.extra_models_dir)
 
     def test_global_timeout(self):
         self.assertEqual(self.snapshot["global_timeout"], 999)
@@ -170,17 +177,18 @@ class TestConfigEnvVars(unittest.TestCase):
     def test_ctx_size(self):
         self.assertEqual(self.snapshot["ctx_size"], 2048)
 
-    @unittest.skipIf(IS_MACOS, "llamacpp backend selection not applicable on macOS")
     def test_llamacpp_backend(self):
-        self.assertEqual(self.snapshot["llamacpp"]["backend"], "cpu")
+        expected = "metal" if IS_MACOS else "cpu"
+        self.assertEqual(self.snapshot["llamacpp"]["backend"], expected)
 
     @unittest.skipIf(IS_MACOS, "llamacpp args not applicable on macOS")
     def test_llamacpp_args(self):
         self.assertEqual(self.snapshot["llamacpp"]["args"], "--flash-attn on")
 
-    @unittest.skipIf(IS_MACOS, "whispercpp backend selection not applicable on macOS")
     def test_whispercpp_backend(self):
-        self.assertEqual(self.snapshot["whispercpp"]["backend"], "cpu")
+        # On macOS the default is metal; on other platforms it's cpu
+        expected = "metal" if IS_MACOS else "cpu"
+        self.assertEqual(self.snapshot["whispercpp"]["backend"], expected)
 
     @unittest.skipIf(IS_MACOS, "whispercpp args not applicable on macOS")
     def test_whispercpp_args(self):

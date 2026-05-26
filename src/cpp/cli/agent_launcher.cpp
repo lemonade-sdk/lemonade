@@ -184,10 +184,11 @@ void configure_opencode_agent(const std::string& model,
                               AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
-    config.binary_name = "opencode";
 #ifdef _WIN32
-    config.binary_alternatives = {"opencode.cmd", "opencode.exe"};
+    config.binary_name = "opencode.cmd";
+    config.binary_alternatives = {"opencode.exe", "opencode"};
 #else
+    config.binary_name = "opencode";
     config.binary_alternatives = {};
 #endif
     config.fallback_paths = {

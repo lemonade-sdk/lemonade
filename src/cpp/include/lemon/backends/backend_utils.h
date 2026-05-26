@@ -16,17 +16,26 @@ namespace lemon::backends {
     struct InstallParams {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
+        std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
     };
 
     struct BackendSpec {
         const std::string recipe;
         const std::string binary;
+        // True when the backend's GitHub release may publish the archive as
+        // multiple parts ({base}.partNN-of-MM.tar.gz) alongside a tiny
+        // {base}.partcount manifest. The installer probes the manifest only
+        // when this is set, so non-split backends incur no extra HTTP
+        // requests and no spurious 404 lines in install logs.
+        const bool supports_split_archive;
 
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
-        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr)
-            : recipe(std::move(r)), binary(std::move(b)), install_params_fn(fn) {}
+        BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
+                    bool split = false)
+            : recipe(std::move(r)), binary(std::move(b)),
+              supports_split_archive(split), install_params_fn(fn) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };
@@ -55,6 +64,14 @@ namespace lemon::backends {
         * @return true if extraction was successful, false otherwise
         */
         static bool extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name);
+
+        /**
+        * Extract 7z files (uses bsdtar/libarchive on Windows 11 22H2+ and Linux)
+        * @param archive_path Path to the .7z file
+        * @param dest_dir Destination directory to extract to
+        * @return true if extraction was successful, false otherwise
+        */
+        static bool extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name);
 
 
         /**

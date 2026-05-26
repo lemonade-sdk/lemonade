@@ -138,11 +138,10 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
-    // Add custom headers
+     // Add custom headers
     struct curl_slist* header_list = nullptr;
     header_list = curl_slist_append(header_list, "Content-Type: application/json");
     for (const auto& header : headers) {
@@ -200,8 +199,7 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     CURLcode res = curl_easy_perform(curl);
@@ -276,8 +274,7 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
-    // Use provided timeout, or fallback to global default (set via --http-timeout)
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -646,6 +643,19 @@ DownloadResult HttpClient::download_file(const std::string& url,
                 final_result.error_message = "Download succeeded but failed to rename file: " + ec.message();
             }
             return final_result;
+        }
+
+        // Don't retry permanent HTTP failures (4xx client errors).
+        // 408 Request Timeout and 429 Too Many Requests are transient and still retried.
+        bool is_permanent_4xx = (final_result.http_code >= 400 && final_result.http_code < 500
+                                 && final_result.http_code != 408
+                                 && final_result.http_code != 429);
+        if (is_permanent_4xx) {
+            LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
+            if (fs::exists(partial_path_fs)) {
+                fs::remove(partial_path_fs);
+            }
+            break;
         }
 
         if (!final_result.can_resume && attempt < options.max_retries) {

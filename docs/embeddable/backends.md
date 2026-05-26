@@ -53,6 +53,7 @@ Follow these instructions if you want backends to be bundled into your app's ins
 At the time of this writing:
 -  `flm` is not available for packaging-time bundling *on Linux*.
 - `llamacpp:rocm` is not available for packaging-time bundling on any OS.
+- `vllm:rocm` is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its `gfx_target` with the deployment machine.
 
 ### Installing Backends at Install-Time or Runtime
 
@@ -171,4 +172,4 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ./lemonade config set llamacpp.vulkan_bin /path/to/bins
     ```
 
-See the `*_bin` settings in the [Configuration Guide](../server/configuration.md) for the full set of customization options.
+See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.

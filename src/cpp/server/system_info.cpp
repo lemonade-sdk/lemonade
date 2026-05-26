@@ -72,6 +72,21 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
 
+// CUDA Compute Capability targets that the Phqen1x/llama.cpp-builds release pipeline
+// publishes binaries for. Each entry is a literal `sm_XX` token that appears in the
+// release asset filename (e.g. llama-ubuntu-cuda-sm_86-x64.tar.xz).
+// Empty string means "no CUDA binary for this compute capability" — skip for
+// get_cuda_arch / install filenames.
+const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
+    "sm_75",   // Turing       (RTX 20, GTX 16, T4, Quadro RTX)
+    "sm_80",   // Ampere DC    (A100)
+    "sm_86",   // Ampere       (RTX 30, A40, A6000, A4000)
+    "sm_89",   // Ada Lovelace (RTX 40, L40, L4)
+    "sm_90",   // Hopper       (H100, H200)
+    "sm_100",  // Blackwell DC (B100, B200)
+    "sm_120",  // Blackwell    (RTX 50)
+};
+
 // ROCm architecture mapping - maps specific gfx architectures to their family (download target).
 // Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
@@ -132,6 +147,9 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {
         {"metal", {}},
     }},
+    {"llamacpp", "cuda", {"windows", "linux"}, {
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+    }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
         {"amd_gpu", {}},      // all AMD GPU families
@@ -143,7 +161,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
-    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan only
+    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan; macOS: Metal
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
@@ -153,10 +171,16 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"whispercpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
     }},
+    {"whispercpp", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
 
-    // kokoro - Windows/Linux x86_64
+    // kokoro - Windows/Linux x86_64; macOS arm64 (Metal)
     {"kokoro", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+    }},
+    {"kokoro", "metal", {"macos"}, {
+        {"metal", {}},
     }},
 
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
@@ -172,6 +196,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
     }},
 
+    // stable-diffusion.cpp - Metal backend (macOS arm64)
+    {"sd-cpp", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
+
     // FLM - NPU (XDNA2)
     {"flm", "npu", {"windows", "linux"}, {
         {"amd_npu", {"XDNA2"}},
@@ -180,6 +209,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // RyzenAI LLM - Windows NPU (XDNA2)
     {"ryzenai-llm", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
+    }},
+
+    // vLLM - ROCm backend for AMD GPUs (Linux only)
+    {"vllm", "rocm", {"linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
 };
 
@@ -200,6 +234,15 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
+
+    // NVIDIA GPU compute capabilities (CUDA)
+    {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
+    {"sm_80",  "NVIDIA A100 (Ampere)"},
+    {"sm_86",  "GeForce RTX 30 / A40 / A6000 (Ampere)"},
+    {"sm_89",  "GeForce RTX 40 / L40 / L4 (Ada Lovelace)"},
+    {"sm_90",  "NVIDIA H100 / H200 (Hopper)"},
+    {"sm_100", "NVIDIA B100 / B200 (Blackwell)"},
+    {"sm_120", "GeForce RTX 50 series (Blackwell)"},
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
@@ -285,7 +328,9 @@ static std::string get_current_os() {
 
 // Forward declarations for helper functions
 std::string identify_rocm_arch_from_name(const std::string& device_name);
+std::string identify_cuda_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
+static std::string compute_cap_to_sm(const std::string& compute_cap);
 static std::string read_version_file(const fs::path& version_file);
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
@@ -303,7 +348,8 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
 
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
-    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend) {
+    bool is_vllm_rocm_backend = recipe == "vllm" && backend == "rocm";
+    if ((recipe == "sd-cpp" && backend == "rocm") || is_llamacpp_rocm_backend || is_vllm_rocm_backend) {
         if (needs_gfx1151_cwsr_fix()) {
             error_message = "Linux kernel missing support";
             return false;
@@ -448,11 +494,24 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!backend_versions.contains(recipe)) {
         return "";
     }
+
+    // sd-cpp and llamacpp expose a single "rocm" backend but store per-channel
+    // version pins ("rocm-stable", "rocm-nightly") in backend_versions.json.
+    // Mirror the resolution done by BackendUtils::get_backend_version().
+    std::string resolved_backend = backend;
+    if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
+        std::string channel = "stable";
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel_for_recipe(recipe);
+        }
+        resolved_backend = "rocm-" + channel;
+    }
+
     const auto& recipe_config = backend_versions[recipe];
-    if (!recipe_config.contains(backend) || !recipe_config[backend].is_string()) {
+    if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    return recipe_config[backend].get<std::string>();
+    return recipe_config[resolved_backend].get<std::string>();
 }
 
 // ============================================================================
@@ -561,6 +620,28 @@ json SystemInfo::get_device_dict() {
                 {"name", gpu.name},
                 {"available", gpu.available}
             };
+            if (gpu.index >= 0) {
+                gpu_json["index"] = gpu.index;
+            }
+            if (!gpu.uuid.empty()) {
+                gpu_json["uuid"] = gpu.uuid;
+            }
+            if (gpu.available) {
+                std::string family;
+                const bool has_compute_cap = !gpu.compute_capability.empty();
+                if (has_compute_cap) {
+                    // Primary: derive sm_XX from nvidia-smi compute_cap (e.g. "8.6" -> "sm_86").
+                    // Keep the derived value even when unsupported so availability logic can
+                    // surface a precise "Unsupported GPU: sm_XX" message.
+                    family = compute_cap_to_sm(gpu.compute_capability);
+                    gpu_json["compute_capability"] = gpu.compute_capability;
+                }
+                if (family.empty() && !has_compute_cap && !gpu.name.empty()) {
+                    // Fallback only when compute_cap is unavailable.
+                    family = identify_cuda_arch_from_name(gpu.name);
+                }
+                gpu_json["family"] = family;
+            }
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
             }
@@ -716,6 +797,24 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // NVIDIA GPUs
+    if (devices.contains("nvidia_gpu") && devices["nvidia_gpu"].is_array()) {
+        for (const auto& gpu : devices["nvidia_gpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
+                if (!name.empty()) {
+                    detected_devices.push_back({
+                        "nvidia_gpu",
+                        name,
+                        family,
+                        true
+                    });
+                }
+            }
+        }
+    }
+
     // AMD NPU
     if (devices.contains("amd_npu") && devices["amd_npu"].is_object()) {
         const auto& npu = devices["amd_npu"];
@@ -769,6 +868,35 @@ json SystemInfo::build_recipes_info(const json& devices) {
     if (current_os == "macos" && std::find_if(detected_devices.begin(), detected_devices.end(),
         [](const DetectedDevice& d) { return d.type == "metal"; }) == detected_devices.end()) {
         detected_devices.push_back({"metal", "Apple Metal", "metal", true});
+    }
+
+    // Explicit backend selections in config.json define the recipe default
+    // reported to clients. "auto" falls back to RECIPE_DEFS preference order.
+    // Unknown backend names (e.g., a renamed or removed backend left in
+    // config.json) are dropped with a warning so the recipe still gets a
+    // valid default_backend from the fallback path below.
+    std::map<std::string, std::string> configured_default_backends;
+    if (auto* cfg = RuntimeConfig::global()) {
+        std::set<std::string> processed_recipes;
+        for (const auto& def : RECIPE_DEFS) {
+            if (!processed_recipes.insert(def.recipe).second) continue;
+            std::string section = RuntimeConfig::recipe_to_config_section(def.recipe);
+            std::string backend = cfg->backend_string(section, "backend");
+            if (backend.empty() || backend == "auto") continue;
+            bool known = std::any_of(RECIPE_DEFS.begin(), RECIPE_DEFS.end(),
+                [&](const RecipeBackendDef& d) {
+                    return d.recipe == def.recipe && d.backend == backend;
+                });
+            if (!known) {
+                LOG(WARNING, "Server")
+                    << "Ignoring unknown configured backend '" << backend
+                    << "' for recipe '" << def.recipe
+                    << "'; falling back to RECIPE_DEFS preference order."
+                    << std::endl;
+                continue;
+            }
+            configured_default_backends[def.recipe] = backend;
+        }
     }
 
     // Default to preferring system llamacpp on Linux AMD systems.
@@ -894,8 +1022,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     ? wrong_family[0]
                     : missing_devices[0];
 
-                // For AMD GPUs, include the detected family in the message
-                if (device_type == "amd_gpu") {
+                // For AMD/NVIDIA GPUs, include the detected family in the message
+                if (device_type == "amd_gpu" || device_type == "nvidia_gpu") {
                     // Find the detected GPU family for this device type
                     std::string detected_family;
                     for (const auto& detected : detected_devices) {
@@ -905,7 +1033,26 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         }
                     }
 
-                    if (!detected_family.empty()) {
+                    if (device_type == "nvidia_gpu" && devices.contains("nvidia_gpu") && devices["nvidia_gpu"].is_array()) {
+                        std::string detected_compute_cap;
+                        for (const auto& gpu : devices["nvidia_gpu"]) {
+                            if (!gpu.value("available", false)) continue;
+                            std::string cc = gpu.value("compute_capability", "");
+                            if (!cc.empty()) {
+                                detected_compute_cap = cc;
+                                break;
+                            }
+                        }
+                        if (!detected_family.empty() && !detected_compute_cap.empty()) {
+                            message = "Unsupported GPU: " + detected_family + " (compute capability " + detected_compute_cap + ")";
+                        } else if (!detected_family.empty()) {
+                            message = "Unsupported GPU: " + detected_family;
+                        } else if (!detected_compute_cap.empty()) {
+                            message = "Unsupported GPU (compute capability " + detected_compute_cap + ")";
+                        } else {
+                            message = "Unsupported GPU";
+                        }
+                    } else if (!detected_family.empty()) {
                         message = "Unsupported GPU: " + detected_family;
                     } else {
                         message = "Unsupported GPU";
@@ -969,9 +1116,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
                 bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
-                    (def.recipe == "llamacpp" && def.backend == "rocm");
+                    (def.recipe == "llamacpp" && def.backend == "rocm") ||
+                    (def.recipe == "vllm" && def.backend == "rocm");
 
-                // Special action for ROCm backends on llamacpp/sd-cpp if CWSR fix is missing
+                // Special action for ROCm backends on llamacpp/sd-cpp/vllm if CWSR fix is missing
                 if (is_rocm_backend
                     && !install_error.empty() && needs_gfx1151_cwsr_fix()) {
                     backend["action"] = "Visit https://lemonade-server.ai/gfx1151_linux.html";
@@ -1008,6 +1156,18 @@ json SystemInfo::build_recipes_info(const json& devices) {
             bool has_expected = !expected_version.empty();
             bool latest_pin = is_bin_pinned_to_latest(def.recipe, def.backend);
             bool needs_update;
+
+            // Some recipes (e.g. vllm) install with per-GPU-target release
+            // tags (e.g. "{base}-gfx1151") via version_override, while
+            // backend_versions.json stores only the base. Treat
+            // "{expected}-{anything}" as a match for "{expected}" so the
+            // suffix doesn't perpetually trigger update_required.
+            auto versions_match = [](const std::string& installed,
+                                     const std::string& expected) {
+                if (installed == expected) return true;
+                const std::string prefix = expected + "-";
+                return installed.compare(0, prefix.size(), prefix) == 0;
+            };
 #if !defined(_WIN32)
             // On non-Windows, FLM is a system-managed package; a version newer
             // than the minimum required is acceptable.
@@ -1029,7 +1189,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     && (!version_known
                         || version_compare(installed_version, expected_version) < 0);
             } else {
-                needs_update = has_expected && (!version_known || installed_version != expected_version);
+                needs_update = has_expected
+                    && (!version_known || !versions_match(installed_version, expected_version));
             }
 
             if (needs_update) {
@@ -1069,8 +1230,17 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
         recipes[def.recipe]["backends"][def.backend] = backend;
 
-        // First supported backend in RECIPE_DEFS order becomes the default.
-        // Skip 'system' backend unless explicitly preferred via env var.
+        auto configured_default = configured_default_backends.find(def.recipe);
+        if (configured_default != configured_default_backends.end()) {
+            if (def.backend == configured_default->second) {
+                recipes[def.recipe]["default_backend"] = def.backend;
+            }
+            continue;
+        }
+
+        // First supported backend in RECIPE_DEFS order becomes the default when
+        // the recipe backend is auto-selected. Skip 'system' backend unless
+        // explicitly preferred via env var.
         bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
         if (supported && !skip_as_default && !recipes[def.recipe].contains("default_backend")) {
             recipes[def.recipe]["default_backend"] = def.backend;
@@ -1236,6 +1406,71 @@ std::string SystemInfo::get_system_llamacpp_version() {
     }
 
     return "unknown";
+}
+
+// Map a CUDA Compute Capability "MAJOR.MINOR" string (as reported by nvidia-smi
+// --query-gpu=compute_cap) to the sm_XX token used in llamacpp-cuda release filenames.
+// Returns empty if the value cannot be parsed.
+static std::string compute_cap_to_sm(const std::string& compute_cap) {
+    size_t dot = compute_cap.find('.');
+    if (dot == std::string::npos) return "";
+    std::string major = compute_cap.substr(0, dot);
+    std::string minor = compute_cap.substr(dot + 1);
+    if (major.empty() || minor.empty()) return "";
+    // major*10 + minor, e.g. "8.6" -> "sm_86", "12.0" -> "sm_120"
+    try {
+        int m = std::stoi(major);
+        int n = std::stoi(minor);
+        return "sm_" + std::to_string(m * 10 + n);
+    } catch (...) {
+        return "";
+    }
+}
+
+// Helper to identify CUDA Compute Capability from a marketing GPU name.
+// Returns an sm_XX token (e.g. "sm_86") when the model can be inferred, or an
+// empty string otherwise. This is the fallback path used when nvidia-smi
+// compute_cap is not available; it intentionally only covers GPUs for which
+// the llamacpp-cuda backend ships binaries (CUDA_SUPPORTED_ARCHS).
+//
+// IMPORTANT: nvidia-smi compute_cap is preferred — only extend this table for
+// GPUs that are confirmed to have a supported sm_XX binary.
+std::string identify_cuda_arch_from_name(const std::string& device_name) {
+    std::string n = device_name;
+    std::transform(n.begin(), n.end(), n.begin(), ::tolower);
+
+    // Quick guard: require at least one NVIDIA identifier substring
+    static const std::vector<std::string> NVIDIA_IDS = {
+        "nvidia", "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
+        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40",
+    };
+    bool is_nvidia = false;
+    for (const auto& id : NVIDIA_IDS) {
+        if (n.find(id) != std::string::npos) { is_nvidia = true; break; }
+    }
+    if (!is_nvidia) return "";
+
+    // Compact table: {sm_XX, {substrings that identify the architecture}}.
+    // Listed highest-to-lowest; first match wins.
+    static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
+        {"sm_120", {"rtx 50", "rtx50", "5090", "5080", "5070", "5060"}},
+        {"sm_100", {"b100", "b200"}},
+        {"sm_90",  {"h100", "h200"}},
+        {"sm_89",  {"rtx 40", "rtx40", "4090", "4080", "4070", "4060", "l40", " l4"}},
+        {"sm_80",  {"a100"}},
+        {"sm_86",  {"rtx 30", "rtx30", "3090", "3080", "3070", "3060", "3050",
+                    "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"}},
+        {"sm_75",  {"rtx 20", "rtx20", "2080", "2070", "2060",
+                    "gtx 16", "gtx16", "1660", "1650",
+                    "titan rtx", "quadro rtx", " t4"}},
+    };
+
+    for (const auto& [sm, keywords] : TABLE) {
+        for (const auto& kw : keywords) {
+            if (n.find(kw) != std::string::npos) return sm;
+        }
+    }
+    return "";
 }
 
 // Helper to identify ROCm architecture from GPU name.
@@ -1534,6 +1769,166 @@ std::string SystemInfo::get_rocm_arch() {
     return "";  // No supported architecture found
 }
 
+static int cuda_sm_value(const std::string& arch) {
+    if (arch.size() <= 3 || arch.substr(0, 3) != "sm_") {
+        return 0;
+    }
+    try {
+        return std::stoi(arch.substr(3));
+    } catch (...) {
+        return 0;
+    }
+}
+
+static std::string cuda_arch_from_gpu_json(const json& gpu) {
+    std::string family = gpu.value("family", "");
+    if (!family.empty() && CUDA_SUPPORTED_ARCHS.count(family)) {
+        return family;
+    }
+
+    std::string name = gpu.value("name", "");
+    if (!name.empty()) {
+        std::string name_arch = identify_cuda_arch_from_name(name);
+        if (!name_arch.empty() && CUDA_SUPPORTED_ARCHS.count(name_arch)) {
+            return name_arch;
+        }
+    }
+
+    return "";
+}
+
+std::string SystemInfo::get_cuda_arch() {
+    // Returns the sm_XX token for the best available NVIDIA GPU on this system.
+    // On multi-GPU systems, selects the GPU with the highest supported compute
+    // capability. Uses the cached family field (populated from nvidia-smi during
+    // device detection), falling back to marketing-name inference for older drivers.
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+
+        if (!system_info.contains("devices")) {
+            return "";
+        }
+
+        const auto& devices = system_info["devices"];
+
+        if (!devices.contains("nvidia_gpu") || !devices["nvidia_gpu"].is_array()) {
+            return "";
+        }
+
+        std::string best_arch;
+        int best_sm_val = 0;
+
+        for (const auto& gpu : devices["nvidia_gpu"]) {
+            if (!gpu.value("available", false)) continue;
+
+            std::string arch = cuda_arch_from_gpu_json(gpu);
+            int sm_val = cuda_sm_value(arch);
+            if (sm_val > best_sm_val) {
+                best_sm_val = sm_val;
+                best_arch = arch;
+            }
+        }
+
+        return best_arch;
+    } catch (...) {
+        // Detection failed
+    }
+
+    return "";
+}
+
+std::vector<int> SystemInfo::get_cuda_device_indices_for_arch(const std::string& arch) {
+    std::vector<int> indices;
+    if (arch.empty()) {
+        return indices;
+    }
+
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (!system_info.contains("devices")) {
+            return indices;
+        }
+
+        const auto& devices = system_info["devices"];
+        if (!devices.contains("nvidia_gpu") || !devices["nvidia_gpu"].is_array()) {
+            return indices;
+        }
+
+        int ordinal = 0;
+        for (const auto& gpu : devices["nvidia_gpu"]) {
+            if (!gpu.value("available", false)) {
+                ordinal++;
+                continue;
+            }
+
+            if (cuda_arch_from_gpu_json(gpu) == arch) {
+                int index = gpu.value("index", -1);
+                if (index < 0) {
+                    index = ordinal;
+                }
+                indices.push_back(index);
+            }
+            ordinal++;
+        }
+    } catch (...) {
+        indices.clear();
+    }
+
+    return indices;
+}
+
+std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arch) {
+    // CUDA_VISIBLE_DEVICES accepts GPU UUIDs. Prefer UUIDs over numeric indices because
+    // CUDA runtime ordinals and nvidia-smi/NVML indices can differ on mixed systems.
+    // Passing a numeric nvidia-smi index can therefore accidentally expose the wrong GPU
+    // (e.g. selecting sm_120 but making an sm_89 RTX 4090 visible as CUDA0).
+    std::vector<std::string> devices_to_expose;
+    if (arch.empty()) {
+        return "";
+    }
+
+    try {
+        json system_info = SystemInfoCache::get_system_info_with_cache();
+        if (!system_info.contains("devices")) {
+            return "";
+        }
+
+        const auto& devices = system_info["devices"];
+        if (!devices.contains("nvidia_gpu") || !devices["nvidia_gpu"].is_array()) {
+            return "";
+        }
+
+        int ordinal = 0;
+        for (const auto& gpu : devices["nvidia_gpu"]) {
+            if (!gpu.value("available", false)) {
+                ordinal++;
+                continue;
+            }
+
+            if (cuda_arch_from_gpu_json(gpu) == arch) {
+                std::string uuid = gpu.value("uuid", "");
+                if (!uuid.empty()) {
+                    devices_to_expose.push_back(uuid);
+                } else {
+                    // Fallback only for detection paths that lack UUIDs. This is less robust
+                    // than UUIDs because numeric CUDA ordinals can differ from nvidia-smi indices.
+                    devices_to_expose.push_back(std::to_string(ordinal));
+                }
+            }
+            ordinal++;
+        }
+    } catch (...) {
+        devices_to_expose.clear();
+    }
+
+    std::ostringstream ss;
+    for (size_t i = 0; i < devices_to_expose.size(); ++i) {
+        if (i > 0) ss << ",";
+        ss << devices_to_expose[i];
+    }
+    return ss.str();
+}
+
 bool SystemInfo::get_has_igpu() {
     // Detect at runtime using OS-level iGPU detection
     // Linux: checks for absence of board_info in sysfs (iGPUs don't have it)
@@ -1634,6 +2029,104 @@ std::unique_ptr<SystemInfo> create_system_info() {
 }
 
 // ============================================================================
+// NVIDIA detection helper
+// ============================================================================
+
+struct NvidiaSmiGpuInfo {
+    int index = -1;
+    std::string uuid;          // e.g. "GPU-..."
+    std::string name;
+    std::string compute_cap;   // e.g. "8.6"
+    std::string driver_version;
+    double vram_gb = 0.0;
+};
+
+// Query nvidia-smi for all GPUs. Returns one entry per GPU or an empty vector
+// if nvidia-smi is not available (e.g. drivers not installed).
+// Uses: nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total
+//                  --format=csv,noheader,nounits
+static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
+    std::vector<NvidiaSmiGpuInfo> result;
+    std::string output;
+
+#ifdef _WIN32
+    int rc = lemon::utils::ProcessManager::run_command(
+        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total "
+        "--format=csv,noheader,nounits 2>NUL",
+        output, 10);
+    if (rc != 0 || output.empty()) return result;
+#else
+    FILE* pipe = popen(
+        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total "
+        "--format=csv,noheader,nounits 2>/dev/null", "r");
+    if (!pipe) return result;
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) output += buffer;
+    pclose(pipe);
+    if (output.empty()) return result;
+#endif
+
+    auto trim = [](std::string s) -> std::string {
+        size_t start = s.find_first_not_of(" \t\r\n");
+        size_t end   = s.find_last_not_of(" \t\r\n");
+        return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+    };
+
+    std::istringstream ss(output);
+    std::string line;
+    while (std::getline(ss, line)) {
+        line = trim(line);
+        if (line.empty()) continue;
+
+        // Fields: index, uuid, name, compute_cap, driver_version, memory_mb.
+        // Split the right side first so names with commas are handled.
+        std::string remaining = line;
+        std::vector<std::string> tail;
+        for (int i = 0; i < 3; i++) {
+            size_t pos = remaining.rfind(", ");
+            if (pos == std::string::npos) break;
+            tail.insert(tail.begin(), trim(remaining.substr(pos + 2)));
+            remaining = remaining.substr(0, pos);
+        }
+        if (tail.size() != 3) continue;
+
+        NvidiaSmiGpuInfo info;
+        size_t first_comma = remaining.find(", ");
+        size_t second_comma = first_comma == std::string::npos
+            ? std::string::npos
+            : remaining.find(", ", first_comma + 2);
+
+        if (first_comma != std::string::npos && second_comma != std::string::npos) {
+            try {
+                info.index = std::stoi(trim(remaining.substr(0, first_comma)));
+            } catch (...) {
+                info.index = static_cast<int>(result.size());
+            }
+            info.uuid = trim(remaining.substr(first_comma + 2, second_comma - first_comma - 2));
+            info.name = trim(remaining.substr(second_comma + 2));
+        } else if (first_comma != std::string::npos) {
+            try {
+                info.index = std::stoi(trim(remaining.substr(0, first_comma)));
+            } catch (...) {
+                info.index = static_cast<int>(result.size());
+            }
+            info.name = trim(remaining.substr(first_comma + 2));
+        } else {
+            info.index = static_cast<int>(result.size());
+            info.name = trim(remaining);
+        }
+        info.compute_cap    = tail[0];
+        info.driver_version = tail[1];
+        try {
+            double mem_mb = std::stod(tail[2]);
+            info.vram_gb = mem_mb / 1024.0;
+        } catch (...) {}
+        result.push_back(info);
+    }
+    return result;
+}
+
+// ============================================================================
 // Windows implementation
 // ============================================================================
 
@@ -1715,6 +2208,25 @@ std::vector<GPUInfo> WindowsSystemInfo::get_amd_dgpu_devices() {
 std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
+    // Primary: nvidia-smi gives us name, compute capability, driver version, and VRAM
+    // in one query. This is more reliable than WMI for compute capability.
+    auto smi_gpus = query_nvidia_smi();
+    if (!smi_gpus.empty()) {
+        for (const auto& smi : smi_gpus) {
+            GPUInfo gpu;
+            gpu.index              = smi.index;
+            gpu.uuid               = smi.uuid;
+            gpu.name               = smi.name;
+            gpu.available          = true;
+            gpu.compute_capability = smi.compute_cap;
+            gpu.driver_version     = smi.driver_version;
+            gpu.vram_gb            = smi.vram_gb;
+            gpus.push_back(gpu);
+        }
+        return gpus;
+    }
+
+    // Fallback: WMI (for systems where nvidia-smi is not in PATH)
     wmi::WMIConnection wmi;
     if (!wmi.is_valid()) {
         GPUInfo gpu;
@@ -1727,12 +2239,10 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
     wmi.query(L"SELECT * FROM Win32_VideoController", [&gpus, this](IWbemClassObject* pObj) {
         std::string name = wmi::get_property_string(pObj, L"Name");
 
-        // Check if this is an NVIDIA GPU
         if (name.find("NVIDIA") != std::string::npos) {
             std::string name_lower = name;
             std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
 
-            // Most NVIDIA GPUs are discrete
             bool is_discrete = true;
             for (const auto& keyword : NVIDIA_DISCRETE_GPU_KEYWORDS) {
                 if (name_lower.find(keyword) != std::string::npos) {
@@ -1746,17 +2256,13 @@ std::vector<GPUInfo> WindowsSystemInfo::get_nvidia_gpu_devices() {
                 gpu.name = name;
                 gpu.available = true;
 
-                // Get driver version - try multiple methods
                 std::string driver_version = get_driver_version("NVIDIA");
                 if (driver_version.empty()) {
                     driver_version = wmi::get_property_string(pObj, L"DriverVersion");
                 }
                 gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
 
-                // Try dxdiag first (most reliable for dedicated memory)
                 gpu.vram_gb = get_gpu_vram_dxdiag(name);
-
-                // Fallback to nvidia-smi if dxdiag fails
                 if (gpu.vram_gb == 0.0) {
                     gpu.vram_gb = get_nvidia_vram_smi();
                 }
@@ -2182,7 +2688,25 @@ std::vector<GPUInfo> LinuxSystemInfo::get_amd_dgpu_devices() {
 std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
-    // Execute lspci to find GPUs
+    // Primary: nvidia-smi is always present when NVIDIA drivers are installed and
+    // gives us compute capability directly — no marketing-name guessing needed.
+    auto smi_gpus = query_nvidia_smi();
+    if (!smi_gpus.empty()) {
+        for (const auto& smi : smi_gpus) {
+            GPUInfo gpu;
+            gpu.index              = smi.index;
+            gpu.uuid               = smi.uuid;
+            gpu.name               = smi.name;
+            gpu.available          = true;
+            gpu.compute_capability = smi.compute_cap;
+            gpu.driver_version     = smi.driver_version;
+            gpu.vram_gb            = smi.vram_gb;
+            gpus.push_back(gpu);
+        }
+        return gpus;
+    }
+
+    // Fallback: lspci (for systems where nvidia-smi is unavailable)
     FILE* pipe = popen("lspci 2>/dev/null | grep -iE 'vga|3d|display'", "r");
     if (!pipe) {
         GPUInfo gpu;
@@ -2199,53 +2723,25 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
     }
     pclose(pipe);
 
-    // Parse NVIDIA GPUs
     for (const auto& line : lspci_lines) {
         if (line.find("NVIDIA") != std::string::npos || line.find("nvidia") != std::string::npos) {
-            // Extract device name
             std::string name;
             size_t pos = line.find(": ");
             if (pos != std::string::npos) {
                 name = line.substr(pos + 2);
-                // Remove newline
-                if (!name.empty() && name.back() == '\n') {
-                    name.pop_back();
-                }
+                if (!name.empty() && name.back() == '\n') name.pop_back();
             } else {
                 name = line;
             }
 
-            // Check if discrete (most NVIDIA GPUs are discrete)
-            std::string name_lower = name;
-            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-
-            bool is_discrete = true;  // Default to discrete for NVIDIA
-            for (const auto& keyword : NVIDIA_DISCRETE_GPU_KEYWORDS) {
-                if (name_lower.find(keyword) != std::string::npos) {
-                    is_discrete = true;
-                    break;
-                }
-            }
-
-            if (is_discrete) {
-                GPUInfo gpu;
-                gpu.name = name;
-                gpu.available = true;
-
-                // Get driver version
-                gpu.driver_version = get_nvidia_driver_version();
-                if (gpu.driver_version.empty()) {
-                    gpu.driver_version = "Unknown";
-                }
-
-                // Get VRAM
-                double vram = get_nvidia_vram();
-                if (vram > 0.0) {
-                    gpu.vram_gb = vram;
-                }
-
-                gpus.push_back(gpu);
-            }
+            GPUInfo gpu;
+            gpu.name = name;
+            gpu.available = true;
+            gpu.driver_version = get_nvidia_driver_version();
+            if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
+            double vram = get_nvidia_vram();
+            if (vram > 0.0) gpu.vram_gb = vram;
+            gpus.push_back(gpu);
         }
     }
 

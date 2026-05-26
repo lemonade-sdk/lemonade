@@ -89,10 +89,23 @@ public:
         return is_busy_;
     }
 
-    void wait_until_not_busy() const {
+    // Wait until the server is no longer busy processing a request.
+    // If timeout_seconds < 0, wait indefinitely (default behavior).
+    // If timeout_seconds >= 0, wait up to that many seconds before returning.
+    void wait_until_not_busy(int timeout_seconds = -1) const {
         std::unique_lock<std::mutex> lock(busy_mutex_);
-        while (is_busy_) {
-            busy_cv_.wait(lock);
+        if (timeout_seconds < 0) {
+            // Indefinite wait — original behavior
+            while (is_busy_) {
+                busy_cv_.wait(lock);
+            }
+        } else {
+            // Bounded wait with timeout
+            if (!busy_cv_.wait_for(lock, std::chrono::seconds(timeout_seconds),
+                                   [this] { return !is_busy_; })) {
+                // Timeout expired — server is still busy, proceed anyway
+                // The backend will be force-killed after SIGTERM timeout
+            }
         }
     }
 
@@ -111,6 +124,7 @@ public:
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
+    int get_process_id() const { return process_handle_.pid; }
 
     // Load a model and start the server
     virtual void load(const std::string& model_name,

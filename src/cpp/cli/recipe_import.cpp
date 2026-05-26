@@ -1,6 +1,8 @@
 #include "lemon_cli/recipe_import.h"
 
+#include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 
 #include <algorithm>
 #include <chrono>
@@ -8,6 +10,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <random>
+#include <sstream>
 #include <vector>
 
 namespace lemon_cli {
@@ -130,20 +134,47 @@ int prompt_numbered_choice(const std::string& title,
 bool download_recipe_to_temp_file(const std::string& download_url,
                                   std::filesystem::path& temp_file_out,
                                   std::string& error_out) {
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    temp_file_out = std::filesystem::temp_directory_path() /
-        ("lemonade-recipe-" + std::to_string(timestamp) + ".json");
+    std::filesystem::path runtime_base = lemon::utils::path_from_utf8(lemon::utils::get_runtime_dir());
+
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    std::error_code ec;
+    std::filesystem::path temp_dir;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "recipe-import-" << nonce << "-" << std::hex << dis(rd);
+        std::filesystem::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (std::filesystem::create_directory(candidate, ec)) {
+            temp_dir = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir.empty()) {
+        error_out = "Failed to create temporary directory for recipe download";
+        return false;
+    }
+
+    temp_file_out = temp_dir / "recipe.json";
 
     lemon::utils::DownloadResult result;
     try {
         result = lemon::utils::HttpClient::download_file(download_url, temp_file_out.string());
     } catch (const std::exception& e) {
+        std::filesystem::remove(temp_file_out, ec);
+        std::filesystem::remove(temp_dir, ec);
         error_out = "Recipe download failed: " + std::string(e.what());
         return false;
     }
 
     if (!result.success) {
+        std::filesystem::remove(temp_file_out, ec);
+        std::filesystem::remove(temp_dir, ec);
         error_out = "Recipe download failed: " + result.error_message;
         if (result.http_code > 0) {
             error_out += " (HTTP " + std::to_string(result.http_code) + ")";
@@ -168,9 +199,17 @@ bool validate_and_transform_model_json(nlohmann::json& model_data) {
     }
 
     std::string model_name = model_data["model_name"].get<std::string>();
-    if (model_name.substr(0, 5) != "user.") {
+    if (lemon::is_reserved_registration_name(model_name)) {
+        std::cerr << "Error: Model names with 'extra.' / 'builtin.' prefixes are reserved, "
+                  << "including as bare-name parts of a 'user.' alias. "
+                  << "Use 'user.<name>' for import where <name> does not begin "
+                  << "with 'extra.' or 'builtin.'." << std::endl;
+        return false;
+    }
+    if (!lemon::parse_canonical_id(model_name)) {
         model_data["model_name"] = "user." + model_name;
     }
+    // Already user.* — leave as-is.
 
     if (!model_data.contains("recipe") || !model_data["recipe"].is_string()) {
         std::cerr << "Error: JSON file must contain a 'recipe' string field" << std::endl;
@@ -426,6 +465,7 @@ int import_remote_recipe(lemonade::LemonadeClient& client,
     if (rm_ec) {
         std::cerr << "Warning: Failed to remove temp recipe file '" << temp_file.string() << "'." << std::endl;
     }
+    std::filesystem::remove(temp_file.parent_path(), rm_ec);
 
     return import_result;
 }

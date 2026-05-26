@@ -13,6 +13,7 @@ const RECIPE_ORDER = new Map([
   'kokoro',
   'flm',
   'ryzenai-llm',
+  'vllm',
 ].map((recipe, index) => [recipe, index]));
 
 interface GithubReleaseRef {

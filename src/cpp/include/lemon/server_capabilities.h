@@ -35,10 +35,10 @@ public:
     virtual json reranking(const json& request) = 0;
 };
 
-// Optional audio capability (speech-to-text)
-class IAudioServer : public virtual ICapability {
+// Optional transcription capability (speech-to-text)
+class ITranscriptionServer : public virtual ICapability {
 public:
-    virtual ~IAudioServer() = default;
+    virtual ~ITranscriptionServer() = default;
 
     // Speech-to-text transcription (OpenAI /v1/audio/transcriptions compatible)
     virtual json audio_transcriptions(const json& request) = 0;
@@ -66,6 +66,26 @@ public:
 
     // Image variations (OpenAI /v1/images/variations compatible)
     virtual json image_variations(const json& request) = 0;
+};
+
+// Optional slots capability (llama.cpp server slots information)
+class ISlotsServer : public virtual ICapability {
+public:
+    virtual ~ISlotsServer() = default;
+
+    // Get server slot information
+    virtual json get_slots() = 0;
+
+    // Perform action on specific slot (with slot ID)
+    virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
+};
+
+// Optional tokenize capability (llama.cpp tokenization of input)
+class ITokenizerServer : public virtual ICapability {
+public:
+    virtual ~ITokenizerServer() = default;
+
+    virtual json tokenize(const json& request_body) = 0;
 };
 
 // Helper to check if a server supports a capability

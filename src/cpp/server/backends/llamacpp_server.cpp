@@ -8,10 +8,12 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
-#include <iostream>
-#include <filesystem>
-#include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <set>
 #ifdef __APPLE__
 #include <pwd.h>
@@ -38,7 +40,6 @@ namespace backends {
 static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
-static const char* ROCM_STABLE_RUNTIME_DIR = "rocm-stable-runtime";
 
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
@@ -99,7 +100,7 @@ static void push_overridable_arg(std::vector<std::string>& args,
 static std::string resolve_llamacpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
-        std::string channel = "preview";  // default to preview for now
+        std::string channel = "stable";  // default to stable for now
         if (auto* cfg = RuntimeConfig::global()) {
             channel = cfg->rocm_channel();
         }
@@ -109,7 +110,11 @@ static std::string resolve_llamacpp_backend(const std::string& backend) {
 }
 
 static bool is_llamacpp_rocm_backend(const std::string& backend) {
-    return backend == "rocm-stable" || backend == "rocm-preview" || backend == "rocm-nightly";
+    return backend == "rocm-stable" || backend == "rocm-nightly";
+}
+
+static bool is_llamacpp_cuda_backend(const std::string& backend) {
+    return backend == "cuda";
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -147,7 +152,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         return params; // Return empty params for system backend
     }
 
-    if (resolved_backend == "rocm-preview") {
+    if (resolved_backend == "rocm-stable") {
         params.repo = "lemonade-sdk/llama.cpp";
         std::string therock_ver = get_therock_version();
 #ifdef _WIN32
@@ -155,7 +160,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #elif defined(__linux__)
         params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
 #else
-        throw std::runtime_error("ROCm preview llamacpp is currently supported on Windows and Linux only");
+        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
@@ -173,13 +178,32 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
 #endif
     } else if (resolved_backend == "rocm-stable") {
-        params.repo = "ggml-org/llama.cpp";
+        params.repo = "lemonade-sdk/llama.cpp";
+        std::string therock_ver = get_therock_version();
 #ifdef _WIN32
-        params.filename = "llama-" + version + "-bin-win-hip-radeon-x64.zip";
+        params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
 #elif defined(__linux__)
-        params.filename = "llama-" + version + "-bin-ubuntu-rocm-7.2-x64.tar.gz";
+        params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
 #else
         throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
+#endif
+    } else if (resolved_backend == "cuda") {
+        params.repo = "Phqen1x/llama.cpp-builds";
+        std::string target_arch = SystemInfo::get_cuda_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("llamacpp", "cuda")
+            );
+        }
+        // Phqen1x/llama.cpp-builds releases publish per-Compute-Capability binaries
+        // and embed the build tag in the asset filename, e.g.
+        // llama-b1011-ubuntu-cuda-sm_120-x64.tar.xz.
+#ifdef _WIN32
+        params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
+#elif defined(__linux__)
+        params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#else
+        throw std::runtime_error("CUDA llamacpp is currently supported on Windows and Linux only");
 #endif
     } else if (resolved_backend == "metal") {
         params.repo = "ggml-org/llama.cpp";
@@ -229,8 +253,11 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     int ctx_size = options.get_option("ctx_size");
+
+    std::string llamacpp_device = options.get_option("llamacpp_device");
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
+
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
@@ -246,13 +273,16 @@ void LlamaCppServer::load(const std::string& model_name,
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(SPEC.recipe, llamacpp_backend);
 
-    // Use pre-resolved GGUF path
+    // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
+    // sources the weights itself via -hf; those models may not have local files.
     std::string gguf_path = model_info.resolved_path();
-    if (gguf_path.empty()) {
+    if (gguf_path.empty() && !model_info.hf_load) {
         throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint());
     }
 
-    LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
+    if (!gguf_path.empty()) {
+        LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
+    }
 
     // Get mmproj path for vision models
     std::string mmproj_path = model_info.resolved_path("mmproj");
@@ -278,16 +308,32 @@ void LlamaCppServer::load(const std::string& model_name,
     std::vector<std::string> args;
     std::set<std::string> reserved_flags;
 
-    push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
+    // hf_load delegates model+mmproj resolution to llama-server's -hf flag. This
+    // is required for models like Qwen2.5-Omni where the manual -m + --mmproj
+    // path rejects audio content parts in /v1/chat/completions — the -hf path
+    // drives the dual-clip (vision+audio) context correctly.
+    if (model_info.hf_load) {
+        push_arg(args, reserved_flags, "-hf", model_info.checkpoint(),
+                 std::vector<std::string>{"--hf-repo", "-mr", "--hf-file", "-mf"});
+    } else {
+        push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
+    }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
+
+    if (llamacpp_device != "") {
+        push_arg(args, reserved_flags, "--device", llamacpp_device);
+    }
+    push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
+
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
 
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
-    // Add mmproj file if present (for vision models)
-    if (!mmproj_path.empty()) {
+    // Add mmproj file if present (for vision models). Skip when hf_load is set —
+    // llama-server resolves the mmproj companion itself from the HF repo.
+    if (!mmproj_path.empty() && !model_info.hf_load) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         if (!use_gpu) {
             LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
@@ -296,8 +342,9 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
-    // Enable context shift for vulkan/rocm (not supported on Metal)
-    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend)) {
+    // Enable context shift for vulkan/rocm/cuda (not supported on Metal)
+    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend) ||
+        is_llamacpp_cuda_backend(llamacpp_backend)) {
         push_overridable_arg(args, llamacpp_args, "--context-shift");
         push_overridable_arg(args, llamacpp_args, "--keep", "16");
     } else {
@@ -307,6 +354,13 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
+
+    if (std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end()) {
+        LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
+        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
+        push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
+        push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
+    }
 
     // Disable llamacpp webui by default
     push_overridable_arg(args, llamacpp_args, "--no-webui");
@@ -360,11 +414,6 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string lib_path = exe_dir.string();
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-            if (fs::exists(runtime_dir)) {
-                lib_path = runtime_dir + ":" + lib_path;
-            }
-        } else if (llamacpp_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
@@ -382,6 +431,20 @@ void LlamaCppServer::load(const std::string& model_name,
 
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime
+        // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the
+        // executable's directory to LD_LIBRARY_PATH like we do for ROCm.
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string lib_path = exe_dir.string();
+
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && strlen(existing_ld_path) > 0) {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+        LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
 #else
     // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
@@ -390,11 +453,6 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string new_path;
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string runtime_dir = BackendUtils::get_install_directory(ROCM_STABLE_RUNTIME_DIR, "");
-            if (fs::exists(runtime_dir)) {
-                new_path = runtime_dir;
-            }
-        } else if (llamacpp_backend == "rocm-preview") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
@@ -417,8 +475,57 @@ void LlamaCppServer::load(const std::string& model_name,
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
         }
+    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
+        // llama-server.exe. Prepend the executable directory to PATH so the loader
+        // resolves them before any system-wide CUDA install.
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string new_path = exe_dir.string();
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
     }
 #endif
+
+    // CUDA release assets are architecture-specific. On mixed NVIDIA systems
+    // the latest sm_120-only binary will be installed. So an older sm-Verion is mot
+    // supported. Hide incompatible NV GPUs by default, keep all GPUs that match the selected
+    // release architecture so homogeneous multi-GPU systems still use multiple cards.
+    if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
+        const char* existing_llama_device = std::getenv("LLAMA_ARG_DEVICE");
+        const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
+        const bool has_llama_device_override = existing_llama_device && existing_llama_device[0] != '\0';
+
+        if (!llamacpp_device.empty()) {
+            LOG(INFO, "LlamaCpp")
+                << "Using explicit llama.cpp CUDA device selection: " << llamacpp_device
+                << std::endl;
+        } else if (has_visible_override) {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing CUDA_VISIBLE_DEVICES=" << existing_visible_devices
+                << std::endl;
+        } else if (has_llama_device_override) {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing LLAMA_ARG_DEVICE=" << existing_llama_device
+                << std::endl;
+        } else {
+            std::string cuda_arch = SystemInfo::get_cuda_arch();
+            std::string visible_devices = SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch);
+            if (!cuda_arch.empty() && !visible_devices.empty()) {
+                env_vars.push_back({"CUDA_VISIBLE_DEVICES", visible_devices});
+                LOG(INFO, "LlamaCpp")
+                    << "Restricting CUDA_VISIBLE_DEVICES to " << visible_devices
+                    << " for " << cuda_arch
+                    << " CUDA asset; matching same-arch GPUs remain available for multi-GPU offload"
+                    << std::endl;
+            }
+        }
+    }
 
 #ifdef __APPLE__
     // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
@@ -508,6 +615,131 @@ json LlamaCppServer::embeddings(const json& request) {
 
 json LlamaCppServer::reranking(const json& request) {
     return forward_request("/v1/rerank", request);
+}
+
+json LlamaCppServer::get_slots() {
+    // Get slot information from llama.cpp server via GET request
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    std::string url = get_base_url() + "/slots";
+    std::map<std::string, std::string> headers; // No Content-Type needed for GET
+
+    LOG(DEBUG, "LlamaCpp") << server_name_ << " GET request to /slots" << std::endl;
+
+    try {
+        auto response = utils::HttpClient::get(url, headers);
+        if (response.status_code == 200) {
+            LOG(DEBUG, "LlamaCpp") << server_name_ << " received slots response: " << response.body << std::endl;
+            return json::parse(response.body);
+        } else {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(
+            "HTTP request failed: " + std::string(e.what()),
+            ErrorType::NETWORK_ERROR
+        );
+    }
+}
+
+json LlamaCppServer::slots_action(int slot_id, const std::string& action, const json& request_body) {
+    // Perform action on specific slot via POST request
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    std::string url = get_base_url() + "/slots/" + std::to_string(slot_id) + "?action=" + action;
+    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
+
+    LOG(DEBUG, "LlamaCpp") << server_name_ << " POST request to /slots/" << slot_id << "?action=" << action << " with body: " << request_body.dump() << std::endl;
+
+    try {
+        auto response = utils::HttpClient::post(url, request_body.dump(), headers);
+        if (response.status_code == 200) {
+            LOG(DEBUG, "LlamaCpp") << server_name_ << " received slots action response: " << response.body << std::endl;
+            return json::parse(response.body);
+        } else {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(
+            "HTTP request failed: " + std::string(e.what()),
+            ErrorType::NETWORK_ERROR
+        );
+    }
+}
+
+json LlamaCppServer::tokenize(const json& request_body) {
+    if (!is_process_running()) {
+        return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
+    }
+
+    std::string url = get_base_url() + "/tokenize";
+    std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
+
+    LOG(DEBUG, "LlamaCpp") << server_name_ << " POST request to /tokenize with body: " << request_body.dump() << std::endl;
+
+    try {
+        auto response = utils::HttpClient::post(url, request_body.dump(), headers);
+        if (response.status_code == 200) {
+            LOG(DEBUG, "LlamaCpp") << server_name_ << " received tokenize response: " << response.body << std::endl;
+            return json::parse(response.body);
+        } else {
+            // Try to parse error response from backend
+            json error_details;
+            try {
+                error_details = json::parse(response.body);
+            } catch (...) {
+                error_details = response.body;
+            }
+
+            return ErrorResponse::create(
+                server_name_ + " request failed",
+                ErrorType::BACKEND_ERROR,
+                {
+                    {"status_code", response.status_code},
+                    {"response", error_details}
+                }
+            );
+        }
+    } catch (const std::exception& e) {
+        return ErrorResponse::create(
+            "HTTP request failed: " + std::string(e.what()),
+            ErrorType::NETWORK_ERROR
+        );
+    }
 }
 
 json LlamaCppServer::responses(const json& request) {

@@ -36,6 +36,7 @@ export interface LlamaOptions {
   ctxSize: NumericOption;
   llamacppBackend: StringOption;
   llamacppArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -43,12 +44,14 @@ export interface WhisperOptions {
   recipe: 'whispercpp';
   whispercppBackend: StringOption;
   whispercppArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
 export interface FlmOptions {
   recipe: 'flm';
   ctxSize: NumericOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
@@ -67,11 +70,21 @@ export interface StableDiffusionOptions {
   cfgScale: NumericOption;
   width: NumericOption;
   height: NumericOption;
+  mergeArgs: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
+export interface VLLMOptions {
+  recipe: 'vllm';
+  ctxSize: NumericOption;
+  vllmBackend: StringOption;
+  vllmArgs: StringOption;
+  mergeArgs: BooleanOption;
   saveOptions: BooleanOption;
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -136,6 +149,14 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Context size for the model',
   },
 
+  // Launch argument merging option
+  mergeArgs: {
+    type: 'boolean',
+    default: true,
+    label: 'Merge arguments',
+    description: 'Global and model arguments will be merged on model load',
+  },
+
   // LlamaCpp-specific options
   llamacppBackend: {
     type: 'string',
@@ -150,6 +171,22 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     default: '',
     label: 'LlamaCpp Arguments',
     description: 'Custom arguments to pass to llama-server',
+  },
+
+  // vLLM-specific options
+  vllmBackend: {
+    type: 'string',
+    default: '',
+    label: 'Backend',
+    description: 'vLLM backend to use',
+    isBackendOption: true,
+    backendRecipe: 'vllm',
+  },
+  vllmArgs: {
+    type: 'string',
+    default: '',
+    label: 'vLLM Arguments',
+    description: 'Custom arguments to pass to vllm-server',
   },
 
   // WhisperCpp-specific options
@@ -227,18 +264,19 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd-cpp';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
 
 /**
  * Maps recipe names to the option keys they support.
  * This mirrors the C++ get_keys_for_recipe() function in recipe_options.cpp
  */
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
-  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'saveOptions'],
-  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'saveOptions'],
-  'flm': ['ctxSize', 'saveOptions'],
+  'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'saveOptions'],
+  'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'saveOptions'],
+  'flm': ['ctxSize', 'mergeArgs', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
-  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'saveOptions'],
+  'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'saveOptions'],
+  'vllm': ['ctxSize', 'vllmBackend', 'vllmArgs', 'mergeArgs', 'saveOptions'],
 };
 
 /**
@@ -264,12 +302,15 @@ export function getOptionDefinition(key: string): OptionDef | undefined {
 
 const FRONTEND_TO_API_MAP: Record<string, string> = {
   ctxSize: 'ctx_size',
+  mergeArgs: 'merge_args',
   llamacppBackend: 'llamacpp_backend',
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',
   whispercppArgs: 'whispercpp_args',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
+  vllmBackend: 'vllm_backend',
+  vllmArgs: 'vllm_args',
   saveOptions: 'save_options',
 };
 

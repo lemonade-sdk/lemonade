@@ -11,10 +11,9 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 ### Executables
 
 - **lemond** — Pure HTTP server. Handles REST API, routes requests to backends, manages model loading/unloading. Configured via `config.json` in the lemonade cache directory. CLI args: `[cache_dir] [--port PORT] [--host HOST]`.
-- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `recipes`, `scan`, etc. Communicates with router via HTTP. Discovers running server via UDP beacon.
+- **lemonade** — CLI client (`src/cpp/cli/`). Commands: `list`, `pull`, `delete`, `run`, `status`, `logs`, `launch`, `backends`, `scan`, etc. Communicates with router via HTTP. Discovers running server via UDP beacon.
 - **LemonadeServer.exe** (Windows) — SUBSYSTEM:WINDOWS GUI app that embeds `lemond` and shows a system tray icon. Auto-starts via Windows startup folder.
 - **lemonade-tray** (macOS/Linux) — Lightweight tray client that connects to a running `lemond`. Platform code in `src/cpp/tray/platform/`.
-- **lemonade-server** — Deprecated backwards-compatibility shim. Delegates to `lemond` or `lemonade`.
 
 ### Backend Abstraction
 
@@ -25,11 +24,12 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running la
 | llama.cpp | `LlamaCppServer` | Completion, Embeddings, Reranking | GPU | LLM inference — CPU/GPU (Vulkan, ROCm, Metal) |
 | FastFlowLM | `FastFlowLMServer` | Completion, Embeddings, Reranking, Audio | NPU | NPU inference (multi-modal: LLM, ASR, embeddings, reranking) |
 | RyzenAI | `RyzenAIServer` | Completion | NPU | Hybrid NPU inference |
+| vLLM | `VLLMServer` | Completion | GPU | LLM inference — ROCm on AMD iGPU/dGPU (Linux). **Experimental**, validated only on gfx1151 (Strix Halo). |
 | whisper.cpp | `WhisperServer` | Audio | CPU | Audio transcription |
 | stable-diffusion.cpp | `SdServer` | Image | CPU | Image generation, editing, variations |
 | Kokoro | `KokoroServer` | TTS | CPU | Text-to-speech |
 
-Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `IAudioServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
+Capability interfaces: `ICompletionServer`, `IEmbeddingsServer`, `IRerankingServer`, `ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer` (defined in `server_capabilities.h`). Use `supports_capability<T>(server)` template for runtime checks.
 
 ### Router & Multi-Model Support
 
@@ -89,7 +89,7 @@ cmake --build --preset default --target tauri-app    # Linux / macOS
 cmake --build --preset windows --target tauri-app    # Windows (VS 2022)
 cmake --build --preset vs18 --target tauri-app       # Windows (VS 2026)
 
-# 4. Web app (auto-built on non-Windows; manual on Windows)
+# 4. Web app (auto-built on all platforms)
 cmake --build --preset default --target web-app         # Linux / macOS
 cmake --build --preset windows --target web-app         # Windows
 
@@ -107,17 +107,17 @@ cd build && cpack -G RPM     # .rpm
 
 CMake presets: `default` (Ninja, Release), `windows` (VS 2022), `vs18` (VS 2026), `debug` (Ninja, Debug).
 
-CMake options: `BUILD_WEB_APP` (ON by default on non-Windows), `BUILD_TAURI_APP` (Linux only, include Tauri desktop app in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemond.service`).
+CMake options: `BUILD_WEB_APP` (ON by default on all platforms), `BUILD_TAURI_APP` (Linux only, include Tauri desktop app in deb), `LEMONADE_SYSTEMD_UNIT_NAME` (default: `lemond.service`).
 
 ## Testing
 
-Integration tests in Python against a live server. Tests auto-discover the server binary from the build directory; use `--server-binary` to override.
+Integration tests in Python against a live server. Tests auto-discover the `lemonade` CLI binary from the build directory; use `--cli-binary` to override.
 
 ```bash
 pip install -r test/requirements.txt
 
 # CLI tests (no inference backend needed)
-python test/server_cli.py
+python test/server_cli2.py
 
 # Endpoint tests (no inference backend needed)
 python test/server_endpoints.py

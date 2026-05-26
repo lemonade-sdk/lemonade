@@ -1,4 +1,6 @@
-// Shared Navbar Component for Lemonade docs pages
+// Shared navbar for the Lemonade homepage and static HTML pages
+// (marketplace.html, models.html, news/, etc.). The Zensical docs site
+// renders its own header, restyled in docs/assets/zest-theme.css.
 
 function createNavbar(basePath = '') {
   return `

@@ -41,6 +41,7 @@ CAPABILITIES = {
             "backends": [
                 "vulkan",
                 "rocm",
+                "cuda",
                 "metal",
                 "cpu",
                 "system",
@@ -63,6 +64,9 @@ CAPABILITIES = {
                 "stop_parameter": True,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": True,
+                "tokenize": True,
+                "static_max_context_window": True,
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
@@ -90,6 +94,8 @@ CAPABILITIES = {
                 "stop_parameter": True,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": False,
             },
             "test_models": {
                 "llm_cpu": "Qwen2.5-0.5B-Instruct-CPU",
@@ -117,6 +123,8 @@ CAPABILITIES = {
                 "stop_parameter": False,
                 "echo_parameter": False,
                 "generation_parameters": False,
+                "slots": False,
+                "static_max_context_window": True,
             },
             "test_models": {
                 "llm": "llama3.2-1b-FLM",
@@ -126,7 +134,7 @@ CAPABILITIES = {
     },
     "whisper": {
         "whispercpp": {
-            "backends": ["cpu", "npu", "vulkan"],
+            "backends": ["cpu", "npu", "vulkan", "metal"],
             "supports": {
                 "transcription": True,
                 "transcription_with_language": True,
@@ -152,7 +160,7 @@ CAPABILITIES = {
     },
     "stable_diffusion": {
         "sd-cpp": {
-            "backends": ["cpu", "vulkan"],
+            "backends": ["cpu", "vulkan", "metal"],
             "supports": {
                 "image_generation": True,
                 "image_generation_b64": True,

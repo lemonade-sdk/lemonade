@@ -25,6 +25,7 @@ Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.
 
 - Windows: `lemonade-embeddable-10.1.0-windows-x64.zip`
 - Ubuntu: `lemonade-embeddable-10.1.0-ubuntu-x64.tar.gz`
+- macOS: `lemonade-embeddable-10.1.0-macos-arm64.tar.gz`
 
 > Note: see the [Building from Source](./building.md) for instructions for building your own embeddable Lemonade from source, including for other Linux distros.
 
@@ -43,7 +44,7 @@ While you can ship Embeddable Lemonade as-is, there many opportunities to custom
 
 ### How it Works
 
-Many of the customization options rely of `lemond`'s `config.json` file, a persistent store of settings. Learn more about the individual settings in the [configuration guide](../server/configuration.md).
+Many of the customization options rely of `lemond`'s `config.json` file, a persistent store of settings. Learn more about the individual settings in the [configuration guide](../guide/configuration/README.md).
 
 `config.json` is automatically generated based on the values in `resources/defaults.json` the first time `lemond` starts. The positional arg `lemond DIR` determines where `config.json` and other runtime files (e.g., backend binaries) will be located.
 

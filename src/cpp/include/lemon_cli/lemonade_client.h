@@ -77,7 +77,7 @@ public:
 
     // Model management commands
     int list_models(bool show_all, const std::string& name_filter = "") const;
-    int pull_model(const nlohmann::json& model_data);
+    int pull_model(const nlohmann::json& model_data, const std::string& display_name = "");
     int delete_model(const std::string& model_name) const;
     int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
     int unload_model(const std::string& model_name) const;
@@ -99,13 +99,13 @@ public:
     // Utility (timeouts are in milliseconds)
     std::string make_request(const std::string& path, const std::string& method = "GET",
                              const std::string& body = "", const std::string& content_type = "",
-                             int connection_timeout_ms = 30000, int read_timeout_ms = 30000) const;
+                             time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
 
     // Streaming request overload (timeouts are in milliseconds)
     bool make_request(const std::string& path, const std::string& method,
                       const std::string& body, const std::string& content_type,
                       std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                      int connection_timeout_ms = 30000, int read_timeout_ms = 30000) const;
+                      time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
 
 private:
     std::string host_;

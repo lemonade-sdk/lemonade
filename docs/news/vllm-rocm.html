@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vLLM ROCm now in Lemonade - Lemonade Server</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
+  <meta name="description" content="Lemonade now includes experimental vLLM ROCm support on Linux for AMD GPUs, with day-0 model support, multi-GPU concurrency, and a self-contained backend bundle.">
+  <meta property="og:title" content="vLLM ROCm now in Lemonade">
+  <meta property="og:description" content="Lemonade now includes experimental vLLM ROCm support on Linux for AMD GPUs, with day-0 model support, multi-GPU concurrency, and a self-contained backend bundle.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-05-08">
+  <meta property="article:author" content="Lemonade Team">
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main blog-main">
+    <article class="blog-article blog-article-unified">
+      <div class="hero-section">
+        <div class="hero-content">
+          <div class="hero-badge">Experimental Backend</div>
+          <h1 class="hero-title">vLLM ROCm now in Lemonade</h1>
+          <div class="hero-subtitle" id="article-subtitle">Lemonade now includes vLLM as an experimental backend for AMD ROCm GPUs on Linux, giving local developers a new path for fast model availability and high-concurrency serving.</div>
+          <div class="hero-meta">
+            <div class="meta-item"><span class="meta-icon">Date:</span>May 8, 2026</div>
+            <div class="meta-item meta-authors"><span class="meta-icon">Author:</span>Lemonade Team</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="article-content">
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Announcement</span>
+            <h2 class="section-title">A new Linux GPU backend</h2>
+            <p>Lemonade has added <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> as a backend for AMD ROCm GPUs on Linux. This release is experimental and usable today, with known rough edges tracked publicly in the <a href="https://github.com/lemonade-sdk/lemonade/milestone/9" target="_blank" rel="noopener">vLLM milestone</a>.</p>
+          </div>
+
+          <p>vLLM brings two capabilities that complement Lemonade's existing backend lineup:</p>
+          <ul>
+            <li><strong>Improved day-0 model support.</strong> New transformer architectures often become usable directly from Hugging Face checkpoints without a separate porting cycle.</li>
+            <li><strong>Concurrency and multi-GPU scaling.</strong> vLLM's paged-attention KV cache, continuous batching, chunked prefill, tensor parallelism, and pipeline parallelism help scale throughput across busy local serving workloads.</li>
+          </ul>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Release Notes</span>
+            <h2 class="section-title">What's included</h2>
+            <p>The Lemonade vLLM backend is distributed as a self-contained ROCm bundle from <a href="https://github.com/lemonade-sdk/vllm-rocm" target="_blank" rel="noopener">lemonade-sdk/vllm-rocm</a>.</p>
+          </div>
+
+          <div class="blog-steps-grid">
+            <div class="step-card">
+              <h4>Self-contained bundle</h4>
+              <p>Includes a relocatable Python interpreter, PyTorch ROCm, ROCm user-space libraries, Triton, and vLLM.</p>
+            </div>
+            <div class="step-card">
+              <h4>No host Python stack</h4>
+              <p>No system Python, PyTorch, or ROCm install is required on the host for the backend bundle.</p>
+            </div>
+            <div class="step-card">
+              <h4>Per-GPU target builds</h4>
+              <p>Lemonade selects the release matching the detected ROCm architecture at install time.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Quickstart</span>
+            <h2 class="section-title">Install and run vLLM ROCm</h2>
+            <p>Install Lemonade Server, add the vLLM ROCm backend, and run the starter Qwen model.</p>
+          </div>
+
+          <p>Ubuntu commands are shown below, and Lemonade also supports additional Linux install paths including Snap, Debian, Fedora, Arch, and Docker. See the <a href="../docs/guide/install/" target="_blank" rel="noopener">install guide</a> for the full set of options.</p>
+          <div class="enhanced-code-block">
+            <div class="code-header">
+              <span class="code-title">Linux quickstart</span>
+              <button class="blog-copy-btn" type="button" data-copy-target="vllm-quickstart">Copy</button>
+            </div>
+            <pre><code id="vllm-quickstart"># Install Lemonade Server on Ubuntu
+sudo add-apt-repository ppa:lemonade-team/stable
+sudo apt install lemonade-server
+
+# Install and run the vLLM ROCm backend
+lemonade backends install vllm:rocm
+lemonade run Qwen3.5-0.8B-vLLM</code></pre>
+          </div>
+
+          <p>The vLLM backend download is large and can take a while. The first model download also takes a few minutes, and first-time users should confirm the Linux kernel prerequisites before installing the backend.</p>
+          <div class="cta-actions">
+            <a href="../gfx1151_linux.html" class="download-btn" target="_blank" rel="noopener">Check Kernel Prerequisites</a>
+            <a href="../docs/guide/configuration/vllm/" class="download-btn" target="_blank" rel="noopener">Read vLLM Docs</a>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Hardware</span>
+            <h2 class="section-title">Validated AMD GPU targets</h2>
+            <p>vLLM ROCm support currently focuses on Linux systems with AMD ROCm-capable GPUs.</p>
+          </div>
+
+          <table class="blog-download-table">
+            <thead>
+              <tr>
+                <th>GPU target</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>gfx1151</strong> (Strix Halo)</td>
+                <td>Validated end-to-end</td>
+              </tr>
+              <tr>
+                <td><strong>gfx1150</strong> (Strix Point)</td>
+                <td>Validated end-to-end</td>
+              </tr>
+              <tr>
+                <td><strong>gfx110X</strong> (RDNA3)</td>
+                <td>Prebuilt wheels available; end-to-end validation pending</td>
+              </tr>
+              <tr>
+                <td><strong>gfx120X</strong> (RDNA4)</td>
+                <td>Prebuilt wheels available; end-to-end validation pending</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <span class="section-kicker">Feedback</span>
+            <h2 class="section-title">Share what works</h2>
+            <p>This experiment is meant to gather community feedback and help us decide whether vLLM ROCm should become a productized Lemonade backend. Try it, compare notes with other users, and tell us where the path feels promising or rough.</p>
+          </div>
+
+          <div class="cta-actions">
+            <a href="https://github.com/lemonade-sdk/lemonade/milestone/9" class="download-btn" target="_blank" rel="noopener">View Known Issues</a>
+            <a href="https://discord.gg/5xXzkMu8Zk" class="download-btn" target="_blank" rel="noopener">Join the Discord</a>
+          </div>
+        </div>
+
+        <div class="cta-separator" aria-hidden="true"></div>
+
+        <div class="cta-section cta-section-minimal">
+          <div class="cta-content">
+            <h2 class="cta-title">Ready to try vLLM ROCm?</h2>
+            <p class="cta-subtitle">Install the experimental backend and run a vLLM recipe through Lemonade's local OpenAI-compatible API.</p>
+            <div class="cta-actions">
+              <a href="../index.html#getting-started" class="download-btn" target="_blank" rel="noopener">Install Lemonade</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <div class="footer-placeholder"></div>
+
+  <script src="../assets/footer.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
+      initializeFooter('../');
+
+      const copyButtons = document.querySelectorAll('.blog-copy-btn[data-copy-target]');
+      copyButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+          const targetId = button.getAttribute('data-copy-target');
+          const codeEl = targetId ? document.getElementById(targetId) : null;
+          const text = codeEl ? codeEl.textContent : '';
+          if (!text) return;
+
+          try {
+            await navigator.clipboard.writeText(text.trim());
+          } catch (error) {
+            const helper = document.createElement('textarea');
+            helper.value = text.trim();
+            document.body.appendChild(helper);
+            helper.select();
+            document.execCommand('copy');
+            document.body.removeChild(helper);
+          }
+
+          button.classList.add('is-copied');
+          const original = button.textContent;
+          button.textContent = 'Copied';
+          setTimeout(() => {
+            button.classList.remove('is-copied');
+            button.textContent = original;
+          }, 1000);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

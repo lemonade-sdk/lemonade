@@ -9,7 +9,7 @@ Usage:
     python server_whisper.py --wrapped-server whispercpp --backend npu
     python server_whisper.py --wrapped-server whispercpp --backend vulkan
     python server_whisper.py --wrapped-server flm
-    python server_whisper.py --server-binary /path/to/lemonade-server
+    python server_whisper.py --cli-binary /path/to/lemonade
 
     # Backward compatible (defaults to whispercpp):
     python server_whisper.py --backend cpu
@@ -494,9 +494,7 @@ class WhisperTests(ServerTestBase):
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.created")
 
-            await conn.session.update(
-                session={"model": model, "turn_detection": None}
-            )
+            await conn.session.update(session={"model": model, "turn_detection": None})
             event = await asyncio.wait_for(conn.recv(), timeout=10)
             self.assertEqual(event.type, "session.updated")
 

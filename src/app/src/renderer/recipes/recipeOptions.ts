@@ -18,6 +18,7 @@ export {
   RyzenAIOptions,
   RyzenAIRecipe,
   StableDiffusionOptions,
+  VLLMOptions,
 
   // Union type
   RecipeOptions,
