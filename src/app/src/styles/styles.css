@@ -3207,15 +3207,15 @@ input, textarea {
   letter-spacing: 0.04em;
 }
 
-/* ── Slot mini cards ───────────────────────────────────── */
+/* ── Slot cards with per-slot graphs ────────────────────── */
 
-.dash2-slots {
+.dash2-slotcards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-4);
 }
 
-.dash2-slot {
+.dash2-slotcard {
   background: var(--surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -3226,41 +3226,35 @@ input, textarea {
   transition: border-color 0.3s, box-shadow 0.3s;
 }
 
-.dash2-slot--active {
+.dash2-slotcard--active {
   border-color: rgba(232, 198, 107, 0.3);
   box-shadow: 0 0 20px rgba(232, 198, 107, 0.06);
 }
 
-.dash2-slot__head {
+.dash2-slotcard__head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.dash2-slot__id {
+.dash2-slotcard__id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-.dash2-slot__state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.dash2-slot__state--on { color: var(--success); }
-
-.dash2-slot__dot {
-  width: 6px; height: 6px;
+.dash2-slotcard__dot {
+  width: 8px; height: 8px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--text-muted);
+  flex-shrink: 0;
 }
 
-.dash2-slot__state--on .dash2-slot__dot {
+.dash2-slotcard__dot--on {
+  background: var(--success);
   box-shadow: 0 0 6px var(--success);
   animation: dash2-pulse 1.5s ease-in-out infinite;
 }
@@ -3270,31 +3264,90 @@ input, textarea {
   50% { opacity: 0.35; }
 }
 
-.dash2-slot__bar {
+.dash2-slotcard__state {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.dash2-slotcard__state--on { color: var(--success); }
+
+.dash2-slotcard__prompt {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+.dash2-slotcard__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+
+.dash2-slotcard__metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.dash2-slotcard__mv {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash2-slotcard__ml {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dash2-slotcard__cache {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dash2-slotcard__cache-label {
+  flex-shrink: 0;
+  width: 55px;
+}
+
+.dash2-slotcard__cache-track {
+  flex: 1;
   height: 4px;
   background: var(--surface-3);
   border-radius: 2px;
   overflow: hidden;
 }
 
-.dash2-slot__fill {
+.dash2-slotcard__cache-fill {
   height: 100%;
   border-radius: 2px;
   transition: width 0.6s ease-out;
 }
 
-.dash2-slot__stats {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--text-muted);
+.dash2-slotcard__cache-pct {
+  width: 30px;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.dash2-slot__stats b {
-  color: var(--text-primary);
-  font-weight: 600;
+/* ── Inference stats grid ──────────────────────────────── */
+
+.dash2-inf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
 }
 
 /* ── Model list ────────────────────────────────────────── */
@@ -3460,7 +3513,8 @@ input, textarea {
   .dash2-gauges { justify-content: center; }
   .dash2-hero__val { font-size: 2rem; }
   .dash2-inf-col { grid-template-columns: 1fr; }
-  .dash2-slots { grid-template-columns: 1fr; }
+  .dash2-inf-grid { grid-template-columns: 1fr 1fr; }
+  .dash2-slotcards { grid-template-columns: 1fr; }
   .dash2-cap { grid-template-columns: 80px 1fr 40px; }
   .dash2-bar { flex-direction: column; gap: var(--space-2); }
 }
