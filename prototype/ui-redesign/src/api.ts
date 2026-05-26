@@ -472,6 +472,9 @@ class LemonadeAPI {
       });
     };
 
+    // Timer-based stats: update every 200ms so display stays live even between tokens
+    const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
+
     try {
       const body = { model, messages, stream: true, ...(params || {}) };
       const resp = await this._fetch('/api/v1/chat/completions', {
@@ -499,6 +502,7 @@ class LemonadeAPI {
           if (!t || !t.startsWith('data: ')) continue;
           const payload = t.slice(6);
           if (payload === '[DONE]') {
+            clearInterval(statsInterval);
             const elapsed = performance.now() - t0;
             const totalTokens = tokenCount + reasoningTokenCount;
             const tps = totalTokens > 0 ? (totalTokens / (elapsed / 1000)).toFixed(1) : '0';
@@ -510,6 +514,7 @@ class LemonadeAPI {
             const chunk = JSON.parse(payload);
             // Detect server-side error in SSE stream
             if (chunk.error) {
+              clearInterval(statsInterval);
               onError?.(new Error(chunk.error.message || 'Server streaming error'));
               return;
             }
@@ -521,25 +526,25 @@ class LemonadeAPI {
               reasoningTokenCount++;
               reasoning += delta.reasoning_content;
               onReasoning?.(delta.reasoning_content, reasoning);
-              emitStats();
             }
             if (delta?.content) {
               if (!firstTokenTime) firstTokenTime = performance.now();
               tokenCount++;
               full += delta.content;
               onToken?.(delta.content, full);
-              emitStats();
             }
           } catch {}
         }
       }
       // Stream ended without [DONE]
+      clearInterval(statsInterval);
       const elapsed = performance.now() - t0;
       const totalTokens = tokenCount + reasoningTokenCount;
       const tps = totalTokens > 0 ? (totalTokens / (elapsed / 1000)).toFixed(1) : '0';
       const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
       onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
     } catch (err) {
+      clearInterval(statsInterval);
       onError?.(err as Error);
     }
   }
