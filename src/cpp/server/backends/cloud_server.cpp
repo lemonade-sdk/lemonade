@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <string_view>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -371,21 +372,40 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     try {
         if (sse) {
-            // Buffer the body until the status code is known: providers return
-            // 200 with SSE events on success, but JSON (not SSE) with 4xx/5xx
-            // on auth/quota/format errors. Forwarding chunks straight through
-            // and then appending an SSE error on top would produce garbled
-            // output to the client. Hold the bytes; only flush them on 200.
+            // Providers return 200 with SSE events on success, and JSON (not
+            // SSE) with 4xx/5xx on auth/quota/format errors. We need clean SSE
+            // output in both cases — but post_stream only surfaces the status
+            // code at the end, so we discriminate by peeking at the first
+            // chunk: SSE bodies start with "data:" or ":" (comment/heartbeat),
+            // JSON errors start with "{" or whitespace. Stream-through if SSE;
+            // buffer if it looks like an error, then emit a clean SSE error
+            // envelope on the non-200 path. Holding the whole body before
+            // flushing (the previous behavior) defeats streaming.
             std::string body_buffer;
             bool has_done_marker = false;
+            bool streaming_mode = false;
+            bool first_chunk = true;
             auto result = utils::HttpClient::post_stream(
                 url,
                 forwarded_body,
-                [&body_buffer, &has_done_marker](const char* data, size_t length) {
-                    body_buffer.append(data, length);
-                    if (std::string(data, length).find("[DONE]") != std::string::npos) {
-                        has_done_marker = true;
+                [&](const char* data, size_t length) -> bool {
+                    if (length == 0) return true;
+                    if (first_chunk) {
+                        first_chunk = false;
+                        // Skip leading whitespace before classifying.
+                        size_t i = 0;
+                        while (i < length && std::isspace(static_cast<unsigned char>(data[i]))) ++i;
+                        if (i < length && (data[i] == 'd' || data[i] == ':')) {
+                            streaming_mode = true;
+                        }
                     }
+                    if (streaming_mode) {
+                        if (std::string_view(data, length).find("[DONE]") != std::string_view::npos) {
+                            has_done_marker = true;
+                        }
+                        return sink.write(data, length);
+                    }
+                    body_buffer.append(data, length);
                     return true;
                 },
                 headers,
@@ -403,6 +423,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 return;
             }
 
+            // 200 OK: if streaming_mode is true we've already flushed everything.
+            // If we somehow buffered on a 200 (provider sent non-SSE success),
+            // flush the buffer now so the client at least sees the payload.
             if (!body_buffer.empty()) {
                 sink.write(body_buffer.data(), body_buffer.size());
             }
