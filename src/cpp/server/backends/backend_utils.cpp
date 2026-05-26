@@ -43,7 +43,7 @@ namespace lemon::backends {
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
         if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
-        if (recipe == "lemon-mlx") return &MlxServer::SPEC;
+        if (recipe == "lemon-mlx") return &MlxServer::spec;
         return nullptr;
     }
 

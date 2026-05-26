@@ -11,7 +11,7 @@ class MlxServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
-    inline static const BackendSpec SPEC = BackendSpec(
+    inline static const BackendSpec spec = BackendSpec(
             "lemon-mlx",
     #ifdef _WIN32
             "server.exe"

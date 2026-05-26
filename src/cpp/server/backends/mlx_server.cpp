@@ -1,30 +1,35 @@
 #include "lemon/backends/mlx_server.h"
+
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
-#include "lemon/runtime_config.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/utils/path_utils.h"
 #include "lemon/error_types.h"
+#include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/aixlog.hpp"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
-#include <lemon/utils/aixlog.hpp>
-
-namespace fs = std::filesystem;
-using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+
+namespace fs = std::filesystem;
+using namespace lemon::utils;
 
 // Resolve a user-facing backend choice ("rocm", "auto") to the concrete
 // variant used in asset filenames and install directories.
 static std::string resolve_mlx_backend(const std::string& backend) {
     if (backend == "auto" || backend.empty()) {
 #ifdef __APPLE__
+#if defined(__arm64__) || defined(__aarch64__)
         return "metal";
+#else
+        throw std::runtime_error("lemon-mlx is only supported on Apple Silicon (arm64) Macs, not Intel Macs");
+#endif
 #else
         // On non-Apple platforms, default to rocm if an AMD GPU from a
         // supported family (gfx1150, gfx1151, gfx110X, gfx120X) is present.
@@ -53,7 +58,11 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
 
     if (resolved == "metal") {
 #ifdef __APPLE__
+#if defined(__arm64__) || defined(__aarch64__)
         params.filename = "mlx-engine-" + version + "-macos-arm64.zip";
+#else
+        throw std::runtime_error("Metal lemon-mlx is only supported on Apple Silicon (arm64) Macs");
+#endif
 #else
         throw std::runtime_error("Metal lemon-mlx is only supported on macOS");
 #endif
@@ -90,7 +99,11 @@ InstallParams MlxServer::get_install_params(const std::string& backend, const st
 #elif defined(__APPLE__)
         // On macOS the "cpu" build is served by the macos-arm64 asset
         // (MLX runs through Metal/Accelerate even with no explicit GPU selection).
+#if defined(__arm64__) || defined(__aarch64__)
         params.filename = "mlx-engine-" + version + "-macos-arm64.zip";
+#else
+        throw std::runtime_error("CPU lemon-mlx is only supported on Apple Silicon (arm64) Macs");
+#endif
 #else
         throw std::runtime_error("CPU lemon-mlx is not supported on this platform");
 #endif
@@ -131,7 +144,7 @@ void MlxServer::load(const std::string& model_name,
     device_type_ = (mlx_backend == "cpu") ? DEVICE_CPU : DEVICE_GPU;
 
     // Install lemon-mlx binary if needed.
-    backend_manager_->install_backend(SPEC.recipe, mlx_backend);
+    backend_manager_->install_backend(spec.recipe, mlx_backend);
 
     // Pass the HuggingFace repo-id (checkpoint) to lemon-mlx, not the
     // resolved local path. Upstream lemon-mlx unconditionally URL-joins the
@@ -155,7 +168,7 @@ void MlxServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(SPEC, mlx_backend);
+    std::string executable = BackendUtils::get_backend_binary_path(spec, mlx_backend);
 
     std::vector<std::string> args;
     // Positional model argument — pre-load mode.
