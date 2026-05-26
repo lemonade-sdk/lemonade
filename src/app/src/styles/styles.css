@@ -1476,6 +1476,21 @@ input, textarea {
   border-color: var(--border-strong);
 }
 
+.row__action--delete {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1px solid transparent;
+  min-width: auto;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.row__action--delete:hover {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 30%, transparent);
+}
+
 .row__action--download {
   background: transparent;
   color: var(--text-secondary);
