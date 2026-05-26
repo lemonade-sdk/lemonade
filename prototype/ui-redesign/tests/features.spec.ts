@@ -436,7 +436,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.slideover .cap-chip')).toBeVisible();
 
     // Slide-over has recipe options section
-    await expect(page.locator('.slideover').getByText('Recipe options')).toBeVisible();
+    await expect(page.locator('.slideover h3').getByText('Recipe options')).toBeVisible();
 
     // Slide-over has form controls (sliders for ctx_size, etc.)
     await expect(page.locator('.slideover .slider').first()).toBeVisible();

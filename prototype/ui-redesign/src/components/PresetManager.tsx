@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { LoadedModel } from '../api';
+import api, { LoadedModel } from '../api';
 
 /* ── Data model ────────────────────────────────────────────── */
 
@@ -225,6 +225,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [selectedPreset, setSelectedPreset] = useState<Preset | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [applyTarget, setApplyTarget] = useState('');
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applySuccess, setApplySuccess] = useState<string | null>(null);
 
   // Persist on change
   useEffect(() => { saveUserPresets(userPresets); }, [userPresets]);
@@ -323,10 +326,25 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     setSelectedPreset(updated);
   }, []);
 
-  const handleApply = useCallback((presetId: string, modelName: string) => {
+  const handleApply = useCallback(async (presetId: string, modelName: string) => {
     if (!modelName) return;
-    setAppliedPresets(prev => ({ ...prev, [modelName]: presetId }));
-  }, []);
+    const preset = [...STARTERS, ...userPresets].find(p => p.id === presetId);
+    if (!preset) return;
+
+    setApplyLoading(true);
+    setApplyError(null);
+    setApplySuccess(null);
+    try {
+      await api.loadModel(modelName, preset.recipe_options as Record<string, unknown>);
+      setAppliedPresets(prev => ({ ...prev, [modelName]: presetId }));
+      setApplySuccess(`Loaded ${modelName} with "${preset.name}" preset`);
+      setTimeout(() => setApplySuccess(null), 3000);
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : 'Failed to apply preset');
+    } finally {
+      setApplyLoading(false);
+    }
+  }, [userPresets]);
 
   const handleDetach = useCallback((modelName: string) => {
     setAppliedPresets(prev => {
@@ -431,7 +449,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
                     key={preset.id}
                     preset={preset}
                     onClick={() => openSlideover(preset)}
-                    onApply={() => alert(`Apply "${preset.name}" — pick a model in the detail panel.`)}
+                    onApply={() => openSlideover(preset)}
                     onExport={() => handleExport(preset)}
                   />
                 ))}
@@ -493,7 +511,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
                             <button className="btn btn--tiny btn--ghost" onClick={() => handleDetach(name)}>Detach</button>
                           </>
                         ) : (
-                          <button className="btn btn--tiny btn--ghost" onClick={() => alert(`Apply a preset to ${name}`)}>Apply…</button>
+                          <button className="btn btn--tiny btn--ghost" onClick={() => {
+                            /* Open a quick-apply — user picks a preset from the slideover */
+                          }}>Apply…</button>
                         )}
                       </div>
                     </div>
@@ -521,6 +541,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             applyTarget={applyTarget}
             onApplyTargetChange={setApplyTarget}
             onApply={handleApply}
+            applyLoading={applyLoading}
+            applyError={applyError}
+            applySuccess={applySuccess}
             onSave={handleSave}
             onClone={handleClone}
             onExport={handleExport}
@@ -597,12 +620,15 @@ const SlideoverContent: React.FC<{
   applyTarget: string;
   onApplyTargetChange: (v: string) => void;
   onApply: (presetId: string, modelName: string) => void;
+  applyLoading: boolean;
+  applyError: string | null;
+  applySuccess: string | null;
   onSave: (updated: Preset) => void;
   onClone: (preset: Preset) => void;
   onExport: (preset: Preset) => void;
   onDelete: (preset: Preset) => void;
   onClose: () => void;
-}> = ({ preset, modelNames, applyTarget, onApplyTargetChange, onApply, onSave, onClone, onExport, onDelete, onClose }) => {
+}> = ({ preset, modelNames, applyTarget, onApplyTargetChange, onApply, applyLoading, applyError, applySuccess, onSave, onClone, onExport, onDelete, onClose }) => {
   const isReadOnly = preset.starter;
   const validKeys = RECIPE_KEYS[preset.recipe] || [];
 
@@ -948,11 +974,15 @@ const SlideoverContent: React.FC<{
         {/* Apply to a model */}
         <div className="slideover__section">
           <h3>Apply to a model</h3>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', margin: '0 0 var(--space-3)' }}>
+            Loads (or reloads) the selected model with this preset's recipe options.
+          </p>
           <div className="field__row">
             <select
               className="select"
               value={applyTarget}
               onChange={e => onApplyTargetChange(e.target.value)}
+              disabled={applyLoading}
               data-recipe-apply-target
             >
               <option value="">— pick a model —</option>
@@ -962,12 +992,22 @@ const SlideoverContent: React.FC<{
             </select>
             <button
               className="btn btn--primary"
-              disabled={!applyTarget}
+              disabled={!applyTarget || applyLoading}
               onClick={() => onApply(preset.id, applyTarget)}
             >
-              Apply
+              {applyLoading ? 'Loading…' : 'Apply'}
             </button>
           </div>
+          {applyError && (
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--danger)', marginTop: 'var(--space-2)' }}>
+              ⚠ {applyError}
+            </p>
+          )}
+          {applySuccess && (
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--success)', marginTop: 'var(--space-2)' }}>
+              ✓ {applySuccess}
+            </p>
+          )}
         </div>
       </div>
 

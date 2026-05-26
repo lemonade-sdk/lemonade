@@ -256,8 +256,7 @@ class LemonadeAPI {
   }
 
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>): Promise<unknown> {
-    const body: Record<string, unknown> = { model_name: modelName };
-    if (recipeOptions) body.recipe_options = recipeOptions;
+    const body: Record<string, unknown> = { model_name: modelName, ...recipeOptions };
     return this._json('/api/v1/load', { method: 'POST', body });
   }
 
