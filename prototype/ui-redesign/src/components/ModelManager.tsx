@@ -377,12 +377,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
-  const renderModelDetail = (m: ModelInfo) => {
+  const renderModelDetail = (m: ModelInfo, liveCtxSize?: number) => {
     const name = modelName(m);
     const checkpoint = (m as any).checkpoint || '';
     const checkpoints = (m as any).checkpoints || {};
     const recipe = (m as any).recipe || '';
-    const maxCtx = (m as any).max_context_window;
+    const maxCtx = liveCtxSize || (m as any).max_context_window;
     const compositeModels = (m as any).composite_models || [];
     const url = hfUrl(checkpoint);
 
@@ -511,7 +511,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           // find matching ModelInfo for detail
           const info = models.find(mi => modelName(mi) === m.model_name);
           if (!info) return null;
-          return renderModelDetail(info);
+          // Merge loaded model's live recipe_options over static registry data
+          const liveCtx = m.recipe_options?.ctx_size as number | undefined;
+          return (
+            <>
+              {renderModelDetail(info, liveCtx)}
+              {m.recipe_options && Object.keys(m.recipe_options).length > 0 && (
+                <div className="row__detail row__detail--live">
+                  <div className="detail__field">
+                    <span className="detail__label">Active Recipe Options</span>
+                    <div className="detail__recipe-options">
+                      {Object.entries(m.recipe_options).map(([k, v]) => (
+                        <span key={k} className="detail__recipe-opt">
+                          <span className="detail__ro-key">{k}</span>
+                          <span className="detail__ro-val">{String(v)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          );
         })()}
       </div>
     );
