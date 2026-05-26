@@ -3367,8 +3367,8 @@ input, textarea {
 }
 
 .dash2-summary__lbl {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
   margin-top: var(--space-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
