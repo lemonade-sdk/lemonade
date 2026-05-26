@@ -88,9 +88,7 @@ input, textarea {
 .titlebar__lemon {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
 }
 
 .titlebar__nav {

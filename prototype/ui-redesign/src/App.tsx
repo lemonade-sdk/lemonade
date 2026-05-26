@@ -111,7 +111,22 @@ const App: React.FC = () => {
     <div className="app">
       <header className="titlebar">
         <div className="titlebar__brand">
-          <span className="titlebar__lemon" aria-hidden="true" />
+          <svg className="titlebar__lemon" width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M7.036 2.492L2 5.01c.826 2.337 3.525 3.525 6.043 2.518l6.044-2.518C13.26 2.663 9.85 1.177 7.036 2.492Z" fill="url(#ll0)"/>
+            <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.403 3.989 4.987 6.583 8.93 6.908a3.07 3.07 0 0 1 1.994.884 2.56 2.56 0 0 0 3.027.605c1.078-.384 1.809-1.314 1.983-2.372a3.9 3.9 0 0 1 .997-1.942c2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.681 14.924 4.6Z" fill="url(#ll1)"/>
+            <path d="M14.924 4.6C9.52 6.507 6.69 12.45 8.592 17.87l1.252 3.558c1.403 3.989 4.987 6.583 8.93 6.908a3.07 3.07 0 0 1 1.994.884 2.56 2.56 0 0 0 3.027.605c1.078-.384 1.809-1.314 1.983-2.372a3.9 3.9 0 0 1 .997-1.942c2.864-2.745 4.035-7.013 2.632-11.002l-1.252-3.559C26.253 5.518 20.327 2.681 14.924 4.6Z" fill="url(#ll2)"/>
+            <defs>
+              <linearGradient id="ll0" x1="2" y1="5.009" x2="14.087" y2="5.009" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#80A338"/><stop offset="1" stopColor="#B3D745"/>
+              </linearGradient>
+              <radialGradient id="ll1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(21.2 10.57) rotate(115.15) scale(17.63 14.92)">
+                <stop stopColor="#FFFB98"/><stop offset=".505" stopColor="#FFD84C"/><stop offset="1" stopColor="#E6B534"/>
+              </radialGradient>
+              <radialGradient id="ll2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(14.62 4.97) rotate(69.33) scale(26.75 22.64)">
+                <stop offset=".52" stopColor="#FFDE67" stopOpacity="0"/><stop offset=".74" stopColor="#FFA457" stopOpacity=".2"/><stop offset=".89" stopColor="#D5676D" stopOpacity=".75"/><stop offset=".92" stopColor="#E88257"/><stop offset="1" stopColor="#F49754"/>
+              </radialGradient>
+            </defs>
+          </svg>
           <span>lemonade</span>
         </div>
 
