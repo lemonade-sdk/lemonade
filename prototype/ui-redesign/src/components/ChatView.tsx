@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import api, { ChatMessage, ChatCompletionStats, LiveStreamStats, LoadedModel } from '../api';
+import api, { ChatMessage, ChatCompletionStats, LoadedModel } from '../api';
 import MarkdownMessage from './MarkdownMessage';
+import { useChatStreaming } from '../hooks/useChatStreaming';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -76,28 +77,47 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string | null>(loadActiveId);
   const [inputValue, setInputValue] = useState('');
-  // Per-conversation streaming state: { [convoId]: { content, thinking } }
-  const [activeStreams, setActiveStreams] = useState<Record<string, { content: string; thinking: string }>>({});
-  const [liveStats, setLiveStats] = useState<Record<string, LiveStreamStats>>({});
-  const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [railExpanded, setRailExpanded] = useState(true);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const controllersRef = useRef<Map<string, AbortController>>(new Map());
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
-
-  // Token buffering: accumulate per-token updates in a ref, flush to state every 50ms
-  const tokenBufferRef = useRef<Record<string, { content: string; thinking: string }>>({});
   const scrollRafRef = useRef<number>(0);
 
+  const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
+    setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
+  }, []);
+
+  // Streaming hook — owns token buffer, flush interval, abort controllers
+  const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats) => {
+    updateConversation(convoId, c => ({
+      ...c,
+      messages: [...c.messages, {
+        role: 'assistant',
+        content: stats.content,
+        thinking: stats.reasoning || undefined,
+        stats,
+      }],
+      updatedAt: Date.now(),
+    }));
+  }, [updateConversation]);
+
+  const handleStreamError = useCallback((convoId: string, message: string) => {
+    updateConversation(convoId, c => ({
+      ...c,
+      messages: [...c.messages, { role: 'assistant', content: `Error: ${message}` }],
+      updatedAt: Date.now(),
+    }));
+  }, [updateConversation]);
+
+  const streaming = useChatStreaming(handleStreamDone, handleStreamError);
+
   // Derived: is the CURRENT conversation streaming?
-  const currentStream = activeId ? activeStreams[activeId] : undefined;
+  const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
-  const currentLiveStats = activeId ? liveStats[activeId] : undefined;
-  const streamingConvoIds = new Set(Object.keys(activeStreams));
+  const currentLiveStats = activeId ? streaming.getLiveStats(activeId) : undefined;
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
@@ -112,10 +132,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     saveActiveId(activeId);
   }, [activeId]);
 
-  const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
-    setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
-  }, []);
-
   const scrollToBottom = useCallback(() => {
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
     scrollRafRef.current = requestAnimationFrame(() => {
@@ -128,26 +144,6 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingContent, streamingThinking, scrollToBottom]);
-
-  // Flush token buffer → state (50ms interval)
-  useEffect(() => {
-    const flush = setInterval(() => {
-      const buf = tokenBufferRef.current;
-      const keys = Object.keys(buf);
-      if (keys.length === 0) return;
-      setActiveStreams(prev => {
-        let next = prev;
-        for (const id of keys) {
-          if (!prev[id]) continue;
-          if (next === prev) next = { ...prev };
-          next[id] = { ...next[id], ...buf[id] };
-        }
-        return next;
-      });
-      tokenBufferRef.current = {};
-    }, 50);
-    return () => clearInterval(flush);
-  }, []);
 
   // Auto-scroll the thinking content box when sticky
   useEffect(() => {
@@ -182,43 +178,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const handleStop = useCallback(() => {
     if (!activeId) return;
-    const controller = controllersRef.current.get(activeId);
-    if (!controller) return;
-    // Merge any buffered tokens before capturing the stream
-    const buf = tokenBufferRef.current[activeId];
-    const stream = activeStreams[activeId];
-    const merged = stream && buf
-      ? { content: buf.content || stream.content, thinking: buf.thinking || stream.thinking }
-      : stream;
-    delete tokenBufferRef.current[activeId];
-
-    controller.abort();
-    controllersRef.current.delete(activeId);
-
-    if (merged && (merged.content || merged.thinking)) {
-      const partialMessage: Message = {
-        role: 'assistant',
-        content: merged.content || '(stopped)',
-        thinking: merged.thinking || undefined,
-      };
+    const partial = streaming.stop(activeId);
+    if (partial) {
       updateConversation(activeId, c => ({
         ...c,
-        messages: [...c.messages, partialMessage],
+        messages: [...c.messages, {
+          role: 'assistant' as const,
+          content: partial.content,
+          thinking: partial.thinking,
+        }],
         updatedAt: Date.now(),
       }));
     }
-
-    setActiveStreams(prev => {
-      const next = { ...prev };
-      delete next[activeId!];
-      return next;
-    });
-    setLiveStats(prev => {
-      const next = { ...prev };
-      delete next[activeId!];
-      return next;
-    });
-  }, [activeId, activeStreams, updateConversation]);
+  }, [activeId, streaming, updateConversation]);
 
   const handleSend = async () => {
     const text = inputValue.trim();
@@ -250,12 +222,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }));
 
     setInputValue('');
-    setActiveStreams(prev => ({ ...prev, [convoId!]: { content: '', thinking: '' } }));
-    setThinkingExpanded(false);
     thinkingSticky.current = true;
-
-    const controller = new AbortController();
-    controllersRef.current.set(convoId, controller);
 
     // Build chat history from the conversation's current messages + new user message
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
@@ -264,69 +231,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       { role: 'user' as const, content: text },
     ];
 
-    const targetId = convoId; // capture for closures
-
-    await api.chatCompletion(currentModel, chatMessages, {
-      onReasoning: (_token, fullReasoning) => {
-        const buf = tokenBufferRef.current;
-        if (!buf[targetId]) buf[targetId] = { content: '', thinking: '' };
-        buf[targetId].thinking = fullReasoning;
-        if (!thinkingExpanded) setThinkingExpanded(true);
-      },
-      onToken: (_token, full) => {
-        const buf = tokenBufferRef.current;
-        if (!buf[targetId]) buf[targetId] = { content: '', thinking: '' };
-        buf[targetId].content = full;
-      },
-      onStats: (stats) => {
-        setLiveStats(prev => ({ ...prev, [targetId]: stats }));
-      },
-      onDone: (stats) => {
-        delete tokenBufferRef.current[targetId];
-        updateConversation(targetId, c => ({
-          ...c,
-          messages: [...c.messages, {
-            role: 'assistant',
-            content: stats.content,
-            thinking: stats.reasoning || undefined,
-            stats,
-          }],
-          updatedAt: Date.now(),
-        }));
-        setActiveStreams(prev => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-        setLiveStats(prev => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-        controllersRef.current.delete(targetId);
-      },
-      onError: (err) => {
-        if (err.name === 'AbortError') return;
-        delete tokenBufferRef.current[targetId];
-        updateConversation(targetId, c => ({
-          ...c,
-          messages: [...c.messages, { role: 'assistant', content: `Error: ${err.message}` }],
-          updatedAt: Date.now(),
-        }));
-        setActiveStreams(prev => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-        setLiveStats(prev => {
-          const next = { ...prev };
-          delete next[targetId];
-          return next;
-        });
-        controllersRef.current.delete(targetId);
-      },
-      signal: controller.signal,
-    });
+    await streaming.send(convoId, currentModel, chatMessages);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -381,7 +286,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                 {c.title || deriveTitle(c.messages)}
               </span>
               <span className="rail__item-meta">
-                {streamingConvoIds.has(c.id) && (
+                {streaming.streamingConvoIds.has(c.id) && (
                   <span className="rail__streaming-badge">● generating</span>
                 )}
                 <span className="rail__model-badge">
@@ -427,7 +332,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                   <div className="message__body">
                     <div className="message__author">{currentModel || 'Assistant'}</div>
                     {streamingThinking && (
-                      <details className="message__thinking" open={thinkingExpanded}>
+                      <details className="message__thinking" open={streaming.thinkingExpanded}>
                         <summary>Thinking…</summary>
                         <div
                           className="message__thinking-content"
