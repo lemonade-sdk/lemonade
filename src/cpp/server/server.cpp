@@ -265,7 +265,8 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     // Check if path requires authentication (API routes and internal endpoints)
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
-                        (req.path.rfind("/v1/", 0) == 0);
+                        (req.path.rfind("/v1/", 0) == 0) ||
+                        (req.path.rfind("/web-app/", 0) == 0);
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
     // Internal endpoints are restricted to loopback regardless of API key
@@ -747,10 +748,36 @@ window.api = {
         // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
         // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
         auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
-            std::string full_path = web_app_dir + "/" + file_path;
+            namespace fs = std::filesystem;
+            std::error_code ec;
+
+            // Canonicalize base directory
+            auto base = fs::weakly_canonical(fs::path(web_app_dir), ec);
+            if (ec) {
+                res.status = 500;
+                res.set_content("Internal Server Error", "text/plain");
+                return;
+            }
+
+            // Canonicalize requested path (base + file_path)
+            auto cand = fs::weakly_canonical(base / file_path, ec);
+            if (ec) {
+                res.status = 403;
+                res.set_content("Forbidden", "text/plain");
+                return;
+            }
+
+            // Verify the resolved path is under the web app directory
+            std::string base_str = base.string();
+            std::string cand_str = cand.string();
+            if (cand_str.rfind(base_str, 0) != 0 || (cand_str.length() > base_str.length() && cand_str[base_str.length()] != fs::path::preferred_separator)) {
+                res.status = 403;
+                res.set_content("Forbidden", "text/plain");
+                return;
+            }
 
             // Serve the file
-            std::ifstream file(full_path, std::ios::binary);
+            std::ifstream file(cand, std::ios::binary);
             if (!file.is_open()) {
                 res.status = 404;
                 res.set_content("File not found", "text/plain");
