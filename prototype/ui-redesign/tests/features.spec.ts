@@ -498,40 +498,39 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.titlebar__nav').getByText('Dashboard').click();
     await page.waitForSelector('[data-view="dashboard"]');
 
-    // Status bar visible
-    await expect(page.locator('.dash-status')).toBeVisible();
+    // Top bar visible
+    await expect(page.locator('.dash2-bar')).toBeVisible();
 
     // Connection indicator dot
-    await expect(page.locator('.dash-status__dot')).toBeVisible();
+    await expect(page.locator('.dash2-bar__dot')).toBeVisible();
 
     // Pause/resume button
-    await expect(page.locator('.dash-status__pause')).toBeVisible();
+    await expect(page.locator('.dash2-bar__btn')).toBeVisible();
 
-    // System Resources section
-    await expect(page.getByText('System Resources')).toBeVisible();
+    // Aggregate Throughput hero section
+    await expect(page.getByText('Aggregate Throughput')).toBeVisible();
 
     // At least CPU and RAM gauges rendered
-    const gauges = page.locator('.dash-gauge');
+    const gauges = page.locator('.dash2-gauge');
     expect(await gauges.count()).toBeGreaterThanOrEqual(2);
 
-    // Session Overview section with KPI tiles
-    await expect(page.getByText('Session Overview')).toBeVisible();
-    const kpis = page.locator('.dash-kpi');
-    expect(await kpis.count()).toBeGreaterThanOrEqual(4);
+    // Hero throughput stats
+    await expect(page.getByText('Generation Speed')).toBeVisible();
+    await expect(page.getByText('Prompt Processing').first()).toBeVisible();
+    await expect(page.getByText('Active Streams')).toBeVisible();
 
-    // KPI labels present
-    await expect(page.getByText('Models Loaded')).toBeVisible();
-    await expect(page.getByText('Total Slots')).toBeVisible();
-    await expect(page.getByText('Active Sessions')).toBeVisible();
-    await expect(page.getByText('Cached Contexts')).toBeVisible();
+    // Session summary stats
+    await expect(page.getByText('Tokens generated')).toBeVisible();
+    await expect(page.getByText('Peak TPS')).toBeVisible();
+    await expect(page.getByText('Session time')).toBeVisible();
 
     // Pause button toggles
-    await page.locator('.dash-status__pause').click();
-    await expect(page.locator('.dash-status__pause')).toHaveClass(/is-paused/);
+    await page.locator('.dash2-bar__btn').click();
+    await expect(page.locator('.dash2-bar__btn')).toHaveClass(/is-paused/);
 
     // Resume
-    await page.locator('.dash-status__pause').click();
-    await expect(page.locator('.dash-status__pause')).not.toHaveClass(/is-paused/);
+    await page.locator('.dash2-bar__btn').click();
+    await expect(page.locator('.dash2-bar__btn')).not.toHaveClass(/is-paused/);
 
     // Loaded Models section present
     await expect(page.getByText('Loaded Models')).toBeVisible();
