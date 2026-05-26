@@ -430,8 +430,6 @@ const Dashboard: React.FC = () => {
           {health && <span className="dash2-bar__uptime">{elapsed(counters.sessionStart)}</span>}
         </div>
         <div className="dash2-bar__right">
-          {health?.websocket_port && <span className="dash2-bar__chip">WS :{health.websocket_port}</span>}
-          <span className="dash2-bar__chip">#{pollCount}</span>
           <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
             onClick={() => setPaused(p => !p)} title={paused ? 'Resume' : 'Pause'}>
             {paused ? '▶' : '⏸'}
