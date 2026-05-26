@@ -443,7 +443,6 @@ const Dashboard: React.FC = () => {
         {/* ═══ HERO — Aggregate Throughput ═══ */}
         <div className="dash2-card dash2-card--glow">
           <h2 className="dash2-card__h">⚡ Aggregate Throughput</h2>
-          <p className="dash2-card__sub">Real-time totals across all parallel slots and models</p>
 
           <div className="dash2-hero-row">
             <HeroStat value={latestTps} label="Generation Speed" unit="tok/s"
@@ -460,54 +459,74 @@ const Dashboard: React.FC = () => {
           <div className="dash2-charts">
             <AreaChart data={history.map(h => h.aggregateTps)} color="#e8c66b"
               label="Generation TPS" currentValue={latestTps > 0 ? `${latestTps.toFixed(1)} tok/s` : 'idle'}
-              height={72} />
+              height={80} />
             <AreaChart data={history.map(h => h.aggregatePromptTps)} color="#7baed4"
               label="Prompt Processing" currentValue={latestPP > 0 ? `${latestPP.toFixed(0)} tok/s` : 'idle'}
-              height={72} />
+              height={80} />
           </div>
         </div>
 
-        {/* ═══ System Vitals ═══ */}
-        <div className="dash2-card">
-          <h2 className="dash2-card__h">System Vitals</h2>
-          <div className="dash2-gauges">
-            <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
-              subtitle={pct(sysStats?.cpu_percent ?? null)} />
-            <RingGauge label="RAM" value={sysStats?.memory_gb ?? null} max={64} unit="GB"
-              color="var(--info)" subtitle={`${(sysStats?.memory_gb ?? 0).toFixed(1)} GB`} />
-            {hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
-              color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
-            {hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
-              <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={32} unit="GB"
-                color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
-            )}
-            {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
-              color="#b07df0" subtitle={pct(sysStats!.npu_percent)} />}
-            <RingGauge label="KV Cache" value={overallCacheUtil}
-              color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
-          </div>
-          <div className="dash2-charts">
-            <AreaChart data={history.map(h => h.cpu)} color="#7fb38a"
-              label="CPU" currentValue={pct(sysStats?.cpu_percent ?? null)} height={48} />
-            {hasGpu && <AreaChart data={history.map(h => h.gpu)} color="#e8c66b"
-              label="GPU" currentValue={pct(sysStats?.gpu_percent ?? null)} height={48} />}
-            <AreaChart data={history.map(h => h.cacheUtil)} color="#d9a35b"
-              label="KV Cache" currentValue={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} height={48} />
-          </div>
-        </div>
-
-        {/* ═══ Last Inference ═══ */}
-        {stats && (
+        {/* ═══ Two-column: System Vitals | Last Inference ═══ */}
+        <div className="dash2-grid-2col">
           <div className="dash2-card">
-            <h2 className="dash2-card__h">Last Inference</h2>
-            <div className="dash2-inf-row">
-              <div className="dash2-inf"><span className="dash2-inf__v">{stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}</span><span className="dash2-inf__l">Tokens/sec</span></div>
-              <div className="dash2-inf"><span className="dash2-inf__v">{stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}` : '—'}</span><span className="dash2-inf__l">TTFT (ms)</span></div>
-              <div className="dash2-inf"><span className="dash2-inf__v">{stats.input_tokens}</span><span className="dash2-inf__l">Prompt Tokens</span></div>
-              <div className="dash2-inf"><span className="dash2-inf__v">{stats.output_tokens}</span><span className="dash2-inf__l">Completion Tokens</span></div>
+            <h2 className="dash2-card__h">System Vitals</h2>
+            <div className="dash2-gauges">
+              <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
+                subtitle={pct(sysStats?.cpu_percent ?? null)} />
+              <RingGauge label="RAM" value={sysStats?.memory_gb ?? null} max={64} unit="GB"
+                color="var(--info)" subtitle={`${(sysStats?.memory_gb ?? 0).toFixed(1)} GB`} />
+              {hasGpu && <RingGauge label="GPU" value={sysStats!.gpu_percent!}
+                color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
+              {hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
+                <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={32} unit="GB"
+                  color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
+              )}
+              {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
+                color="#b07df0" subtitle={pct(sysStats!.npu_percent)} />}
+              <RingGauge label="KV Cache" value={overallCacheUtil}
+                color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
+            </div>
+            <div className="dash2-charts">
+              <AreaChart data={history.map(h => h.cpu)} color="#7fb38a"
+                label="CPU" currentValue={pct(sysStats?.cpu_percent ?? null)} height={56} />
+              {hasGpu && <AreaChart data={history.map(h => h.gpu)} color="#e8c66b"
+                label="GPU" currentValue={pct(sysStats?.gpu_percent ?? null)} height={56} />}
             </div>
           </div>
-        )}
+
+          {stats ? (
+            <div className="dash2-card">
+              <h2 className="dash2-card__h">Last Inference</h2>
+              <div className="dash2-inf-col">
+                <div className="dash2-inf">
+                  <span className="dash2-inf__v">{stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}</span>
+                  <span className="dash2-inf__l">Tokens/sec</span>
+                </div>
+                <div className="dash2-inf">
+                  <span className="dash2-inf__v">{stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}` : '—'}</span>
+                  <span className="dash2-inf__l">TTFT (ms)</span>
+                </div>
+                <div className="dash2-inf">
+                  <span className="dash2-inf__v">{stats.input_tokens}</span>
+                  <span className="dash2-inf__l">Prompt Tokens</span>
+                </div>
+                <div className="dash2-inf">
+                  <span className="dash2-inf__v">{stats.output_tokens}</span>
+                  <span className="dash2-inf__l">Completion Tokens</span>
+                </div>
+              </div>
+              <div className="dash2-charts" style={{ marginTop: 'auto' }}>
+                <AreaChart data={history.map(h => h.cacheUtil)} color="#d9a35b"
+                  label="KV Cache" currentValue={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} height={56} />
+              </div>
+            </div>
+          ) : (
+            <div className="dash2-card">
+              <h2 className="dash2-card__h">Last Inference</h2>
+              <div className="dash2-empty">No inference data yet — send a request to see stats</div>
+            </div>
+          )}
+        </div>
 
         {/* ═══ Parallel Slots ═══ */}
         {slots.length > 0 && (
@@ -522,45 +541,51 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {/* ═══ Loaded Models ═══ */}
-        <div className="dash2-card">
-          <h2 className="dash2-card__h">
-            Loaded Models
-            {loadedModels.length > 0 && <span className="dash2-card__badge">{loadedModels.length}</span>}
-          </h2>
-          {loadedModels.length === 0 ? (
-            <div className="dash2-empty">No models loaded</div>
+        {/* ═══ Two-column: Loaded Models | Model Capacity ═══ */}
+        <div className="dash2-grid-2col">
+          <div className="dash2-card">
+            <h2 className="dash2-card__h">
+              Loaded Models
+              {loadedModels.length > 0 && <span className="dash2-card__badge">{loadedModels.length}</span>}
+            </h2>
+            {loadedModels.length === 0 ? (
+              <div className="dash2-empty">No models loaded</div>
+            ) : (
+              <div className="dash2-models">
+                {loadedModels.map(m => <ModelRow key={m.model_name} model={m} />)}
+              </div>
+            )}
+          </div>
+
+          {health?.max_models ? (
+            <div className="dash2-card">
+              <h2 className="dash2-card__h">Model Capacity</h2>
+              <div className="dash2-caps">
+                {Object.entries(health.max_models).map(([type, max]) => {
+                  const loaded = modelsByType[type]?.length || 0;
+                  const pctUsed = max > 0 ? (loaded / max) * 100 : 0;
+                  return (
+                    <div className="dash2-cap" key={type}>
+                      <span className="dash2-cap__type">{typeIcon(type)} {type}</span>
+                      <div className="dash2-cap__track">
+                        <div className="dash2-cap__fill" style={{
+                          width: `${Math.min(100, pctUsed)}%`,
+                          background: pctUsed >= 100 ? 'var(--danger)' : 'var(--accent)',
+                        }} />
+                      </div>
+                      <span className="dash2-cap__label">{loaded} / {max}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ) : (
-            <div className="dash2-models">
-              {loadedModels.map(m => <ModelRow key={m.model_name} model={m} />)}
+            <div className="dash2-card">
+              <h2 className="dash2-card__h">Model Capacity</h2>
+              <div className="dash2-empty">Connect to a server to see capacity</div>
             </div>
           )}
         </div>
-
-        {/* ═══ Model Capacity ═══ */}
-        {health?.max_models && (
-          <div className="dash2-card">
-            <h2 className="dash2-card__h">Model Capacity</h2>
-            <div className="dash2-caps">
-              {Object.entries(health.max_models).map(([type, max]) => {
-                const loaded = modelsByType[type]?.length || 0;
-                const pctUsed = max > 0 ? (loaded / max) * 100 : 0;
-                return (
-                  <div className="dash2-cap" key={type}>
-                    <span className="dash2-cap__type">{typeIcon(type)} {type}</span>
-                    <div className="dash2-cap__track">
-                      <div className="dash2-cap__fill" style={{
-                        width: `${Math.min(100, pctUsed)}%`,
-                        background: pctUsed >= 100 ? 'var(--danger)' : 'var(--accent)',
-                      }} />
-                    </div>
-                    <span className="dash2-cap__label">{loaded} / {max}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* ═══ Session Summary ═══ */}
         <div className="dash2-card dash2-card--summary">
