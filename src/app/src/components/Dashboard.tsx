@@ -232,33 +232,33 @@ const Dashboard: React.FC = () => {
           <h2 className="dash2-card__h">⚡ Aggregate Throughput</h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}
-          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-              <span style={{ fontSize: '2rem', fontWeight: 700, color: '#e8c66b', fontVariantNumeric: 'tabular-nums' }}>
+          <div className="dash2-hero-metrics">
+            <div className="dash2-hero-metric">
+              <span className="dash2-hero-metric__val dash2-hero-metric__val--tps">
                 {latestTps > 0.05 ? latestTps.toFixed(1) : (counters.peakTps > 0 ? '0.0' : '—')}
               </span>
-              <span style={{ fontSize: '13px', color: '#807a6c' }}>tok/s</span>
+              <span className="dash2-hero-metric__unit">tok/s</span>
               {counters.peakTps > 0 && (
-                <span style={{ fontSize: '11px', color: '#e8c66b', opacity: 0.7 }}>
+                <span className="dash2-hero-metric__peak">
                   ⚡ peak {counters.peakTps.toFixed(1)}
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-              <span style={{ fontSize: '2rem', fontWeight: 700, color: '#7baed4', fontVariantNumeric: 'tabular-nums' }}>
+            <div className="dash2-hero-metric">
+              <span className="dash2-hero-metric__val dash2-hero-metric__val--pp">
                 {latestPP > 0.05 ? latestPP.toFixed(0) : (counters.peakPromptTps > 0 ? '0' : '—')}
               </span>
-              <span style={{ fontSize: '13px', color: '#807a6c' }}>pp/s</span>
+              <span className="dash2-hero-metric__unit">pp/s</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-              <span style={{ fontSize: '2rem', fontWeight: 700, color: '#7fb38a', fontVariantNumeric: 'tabular-nums' }}>
+            <div className="dash2-hero-metric">
+              <span className="dash2-hero-metric__val dash2-hero-metric__val--stream">
                 {activeSlotCount}
               </span>
-              <span style={{ fontSize: '13px', color: '#807a6c' }}>
+              <span className="dash2-hero-metric__unit">
                 {activeSlotCount === 1 ? 'stream' : 'streams'}
               </span>
             </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px', fontSize: '11px', color: '#807a6c' }}>
+            <div className="dash2-hero-metric__totals">
               <span>{fmtNum(counters.totalTokensGenerated)} total tokens</span>
             </div>
           </div>
@@ -272,13 +272,13 @@ const Dashboard: React.FC = () => {
             height={120}
             unit=" tok/s"
           />
-          <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#807a6c' }}>
-              <span style={{ width: 10, height: 3, borderRadius: 2, background: '#e8c66b' }} />
+          <div className="dash2-chart-legend">
+            <span className="dash2-chart-legend__item">
+              <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--tps" />
               Generation TPS
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#807a6c' }}>
-              <span style={{ width: 10, height: 3, borderRadius: 2, background: '#7baed4' }} />
+            <span className="dash2-chart-legend__item">
+              <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--pp" />
               Prompt Processing
             </span>
           </div>
@@ -301,7 +301,7 @@ const Dashboard: React.FC = () => {
               height={160}
               unit=" tok/s"
             />
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '12px' }}>
+            <div className="dash2-slot-legend">
               {slots.map((s, i) => {
                 const live = slotLive[s.id];
                 const target = getSlotTarget(s.id);
@@ -313,13 +313,13 @@ const Dashboard: React.FC = () => {
                 // recalculating from cache_tokens which may be empty between requests
                 const cu = target?.cacheUtil || 0;
                 return (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isActive ? 1 : 0.5 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: isActive ? `0 0 6px ${color}` : 'none', flexShrink: 0 }} />
-                    <span style={{ fontSize: '12px', color: '#b8b1a2' }}>Slot {s.id}</span>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: isActive ? '#f3efe6' : '#4f4a40', fontVariantNumeric: 'tabular-nums' }}>
+                  <div key={s.id} className={`dash2-slot-legend__item${isActive ? '' : ' dash2-slot-legend__item--idle'}`}>
+                    <span className="dash2-slot-legend__dot" style={{ background: color, boxShadow: isActive ? `0 0 6px ${color}` : 'none' }} />
+                    <span className="dash2-slot-legend__label">Slot {s.id}</span>
+                    <span className={`dash2-slot-legend__tps ${isActive ? 'dash2-slot-legend__tps--active' : 'dash2-slot-legend__tps--idle'}`}>
                       {tps > 0.05 ? `${tps.toFixed(1)} tok/s` : 'idle'}
                     </span>
-                    <span style={{ fontSize: '11px', color: '#807a6c', fontVariantNumeric: 'tabular-nums' }}>
+                    <span className="dash2-slot-legend__kv">
                       KV {pct(cu)}
                     </span>
                   </div>
@@ -381,7 +381,7 @@ const Dashboard: React.FC = () => {
                   <span className="dash2-inf__l">Completion Tokens</span>
                 </div>
               </div>
-              <div style={{ marginTop: 'auto' }}>
+              <div className="dash2-mt-auto">
                 <SmoothChart
                   data={cacheChartData}
                   series={[{ key: 'cache', color: '#d9a35b', name: 'KV Cache %' }]}

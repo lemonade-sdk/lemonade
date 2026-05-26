@@ -3500,6 +3500,114 @@ input, textarea {
   letter-spacing: 0.04em;
 }
 
+/* ── Dashboard inline-style replacements ───────────────── */
+
+.dash2-hero-metrics {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.dash2-hero-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dash2-hero-metric__val {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dash2-hero-metric__val--tps    { color: #e8c66b; }
+.dash2-hero-metric__val--pp     { color: #7baed4; }
+.dash2-hero-metric__val--stream { color: #7fb38a; }
+
+.dash2-hero-metric__unit {
+  font-size: 13px;
+  color: #807a6c;
+}
+
+.dash2-hero-metric__peak {
+  font-size: 11px;
+  color: #e8c66b;
+  opacity: 0.7;
+}
+
+.dash2-hero-metric__totals {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 11px;
+  color: #807a6c;
+}
+
+.dash2-chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.dash2-chart-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #807a6c;
+}
+
+.dash2-chart-legend__swatch {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}
+.dash2-chart-legend__swatch--tps { background: #e8c66b; }
+.dash2-chart-legend__swatch--pp  { background: #7baed4; }
+
+.dash2-slot-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.dash2-slot-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash2-slot-legend__item--idle { opacity: 0.5; }
+
+.dash2-slot-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dash2-slot-legend__label {
+  font-size: 12px;
+  color: #b8b1a2;
+}
+
+.dash2-slot-legend__tps {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dash2-slot-legend__tps--active { color: #f3efe6; }
+.dash2-slot-legend__tps--idle   { color: #4f4a40; }
+
+.dash2-slot-legend__kv {
+  font-size: 11px;
+  color: #807a6c;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash2-mt-auto { margin-top: auto; }
+
 /* ── Dashboard responsive ──────────────────────────────── */
 
 @media (max-width: 900px) {
