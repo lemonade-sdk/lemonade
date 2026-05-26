@@ -4,7 +4,9 @@ import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, Slo
 
 /* ── History ring buffer ───────────────────────────────────── */
 
-const HISTORY_LEN = 60;
+const HISTORY_LEN = 300;    // 300 × 200ms tick = 60s visible window
+const TICK_MS = 200;        // Interpolation ticker interval
+const LERP_SPEED = 0.25;   // Per-tick lerp factor toward target
 
 interface SlotHistoryPoint {
   ts: number;
@@ -285,6 +287,15 @@ const Dashboard: React.FC = () => {
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const smoothedTpsRef = useRef(new Map<number, { tps: number; ppTps: number }>());
+  const targetAggRef = useRef({
+    tps: 0, ppTps: 0,
+    cpu: null as number | null, ram: null as number | null,
+    gpu: null as number | null, vram: null as number | null, npu: null as number | null,
+    activeSlots: 0, totalSlots: 0, cacheUtil: null as number | null,
+  });
+  const targetSlotRef = useRef(new Map<number, { tps: number; ppTps: number; decoded: number; cacheUtil: number; isActive: boolean }>());
+  const interpAggRef = useRef({ tps: 0, ppTps: 0 });
+  const interpSlotRef = useRef(new Map<number, { tps: number; ppTps: number }>());
 
   /* ── Aggregate throughput from all slots ──────────────────── */
 
@@ -378,27 +389,19 @@ const Dashboard: React.FC = () => {
       for (const [id, v] of perSlotLive) liveObj[id] = v;
       setSlotLive(liveObj);
 
-      // Build per-slot history using delta-based live TPS
-      const now = Date.now();
-      setSlotHistory(prev => {
-        const next = { ...prev };
-        for (const s of slotData) {
-          const live = perSlotLive.get(s.id);
-          const cacheLen = s.cache_tokens?.length || 0;
-          const cacheUtil = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
-          const point: SlotHistoryPoint = {
-            ts: now,
-            tps: live?.tps || 0,
-            ppTps: live?.ppTps || 0,
-            decoded: s.n_decoded || 0,
-            cacheUtil,
-            isActive: live?.isActive || s.is_processing,
-          };
-          const arr = next[s.id] || [];
-          next[s.id] = arr.length >= HISTORY_LEN ? [...arr.slice(-HISTORY_LEN + 1), point] : [...arr, point];
-        }
-        return next;
-      });
+      // Update interpolation targets (ticker lerps into chart history)
+      for (const s of slotData) {
+        const live = perSlotLive.get(s.id);
+        const cacheLen = s.cache_tokens?.length || 0;
+        const cu = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
+        targetSlotRef.current.set(s.id, {
+          tps: live?.tps || 0,
+          ppTps: live?.ppTps || 0,
+          decoded: s.n_decoded || 0,
+          cacheUtil: cu,
+          isActive: live?.isActive || s.is_processing,
+        });
+      }
 
       const activeSlots = slotData.filter((s, _i) => {
         const live = perSlotLive.get(s.id);
@@ -409,22 +412,17 @@ const Dashboard: React.FC = () => {
       const totalCtx = slotData.reduce((a, s) => a + s.n_ctx, 0);
       const cacheUtil = totalCtx > 0 ? (totalCache / totalCtx) * 100 : null;
 
-      setHistory(prev => {
-        const next = [...prev, {
-          ts: Date.now(),
-          cpu: ss?.cpu_percent ?? null,
-          ram: ss?.memory_gb ?? null,
-          gpu: ss?.gpu_percent ?? null,
-          vram: ss?.vram_gb ?? null,
-          npu: ss?.npu_percent ?? null,
-          aggregateTps: aggTps,
-          aggregatePromptTps: aggPromptTps,
-          activeSlots,
-          totalSlots,
-          cacheUtil,
-        }];
-        return next.length > HISTORY_LEN ? next.slice(-HISTORY_LEN) : next;
-      });
+      const tgt = targetAggRef.current;
+      tgt.tps = aggTps;
+      tgt.ppTps = aggPromptTps;
+      tgt.cpu = ss?.cpu_percent ?? null;
+      tgt.ram = ss?.memory_gb ?? null;
+      tgt.gpu = ss?.gpu_percent ?? null;
+      tgt.vram = ss?.vram_gb ?? null;
+      tgt.npu = ss?.npu_percent ?? null;
+      tgt.activeSlots = activeSlots;
+      tgt.totalSlots = totalSlots;
+      tgt.cacheUtil = cacheUtil;
 
       setPollCount(c => c + 1);
       setLastError(null);
@@ -472,23 +470,17 @@ const Dashboard: React.FC = () => {
           if (now - lastLivePushRef.current < 1000) return;
           lastLivePushRef.current = now;
 
-          // Push per-slot history from live WebSocket data
-          setSlotHistory(prev => {
-            const next = { ...prev };
-            for (const [slotId, vals] of map.entries()) {
-              const point: SlotHistoryPoint = {
-                ts: now,
-                tps: vals.tg,
-                ppTps: vals.pp,
-                decoded: 0, // not available from log lines
-                cacheUtil: 0,
-                isActive: vals.tg > 0 || vals.pp > 0,
-              };
-              const arr = next[slotId] || [];
-              next[slotId] = arr.length >= HISTORY_LEN ? [...arr.slice(-HISTORY_LEN + 1), point] : [...arr, point];
-            }
-            return next;
-          });
+          // Update interpolation targets from live WebSocket data
+          for (const [slotId, vals] of map.entries()) {
+            const existing = targetSlotRef.current.get(slotId);
+            targetSlotRef.current.set(slotId, {
+              tps: vals.tg,
+              ppTps: vals.pp,
+              decoded: existing?.decoded ?? 0,
+              cacheUtil: existing?.cacheUtil ?? 0,
+              isActive: vals.tg > 0 || vals.pp > 0,
+            });
+          }
 
           // Aggregate across all active slots
           let aggTps = 0, aggPp = 0;
@@ -502,25 +494,11 @@ const Dashboard: React.FC = () => {
           if (aggTps > c.peakTps) c.peakTps = aggTps;
           if (aggPp > c.peakPromptTps) c.peakPromptTps = aggPp;
 
-          // Push a throughput history point (system stats carried from last poll)
-          setHistory(prev => {
-            const last = prev.length > 0 ? prev[prev.length - 1] : null;
-            const point: HistoryPoint = {
-              ts: now,
-              cpu: last?.cpu ?? null,
-              ram: last?.ram ?? null,
-              gpu: last?.gpu ?? null,
-              vram: last?.vram ?? null,
-              npu: last?.npu ?? null,
-              aggregateTps: aggTps,
-              aggregatePromptTps: aggPp,
-              activeSlots: map.size,
-              totalSlots: last?.totalSlots ?? 0,
-              cacheUtil: last?.cacheUtil ?? null,
-            };
-            const next = [...prev, point];
-            return next.length > HISTORY_LEN ? next.slice(-HISTORY_LEN) : next;
-          });
+          // Update aggregate target (ticker handles chart history)
+          const tgt = targetAggRef.current;
+          tgt.tps = aggTps;
+          tgt.ppTps = aggPp;
+          tgt.activeSlots = map.size;
         },
         onDisconnected: () => {
           wsHandleRef.current = null;
@@ -540,6 +518,71 @@ const Dashboard: React.FC = () => {
       wsHandleRef.current = null;
     };
   }, [health?.websocket_port]);
+
+  /* ── Interpolation ticker — smooth 200ms chart updates ───── */
+
+  useEffect(() => {
+    if (paused) return;
+
+    const ticker = setInterval(() => {
+      const aTarget = targetAggRef.current;
+      const aI = interpAggRef.current;
+
+      // Lerp aggregate values toward targets
+      aI.tps += (aTarget.tps - aI.tps) * LERP_SPEED;
+      aI.ppTps += (aTarget.ppTps - aI.ppTps) * LERP_SPEED;
+      if (Math.abs(aI.tps) < 0.05) aI.tps = 0;
+      if (Math.abs(aI.ppTps) < 0.05) aI.ppTps = 0;
+
+      setHistory(prev => {
+        const point: HistoryPoint = {
+          ts: Date.now(),
+          cpu: aTarget.cpu,
+          ram: aTarget.ram,
+          gpu: aTarget.gpu,
+          vram: aTarget.vram,
+          npu: aTarget.npu,
+          aggregateTps: aI.tps,
+          aggregatePromptTps: aI.ppTps,
+          activeSlots: aTarget.activeSlots,
+          totalSlots: aTarget.totalSlots,
+          cacheUtil: aTarget.cacheUtil,
+        };
+        const next = [...prev, point];
+        return next.length > HISTORY_LEN ? next.slice(-HISTORY_LEN) : next;
+      });
+
+      // Lerp per-slot values
+      const sI = interpSlotRef.current;
+      const sT = targetSlotRef.current;
+
+      setSlotHistory(prev => {
+        const next = { ...prev };
+        for (const [slotId, target] of sT) {
+          const interp = sI.get(slotId) || { tps: 0, ppTps: 0 };
+          interp.tps += (target.tps - interp.tps) * LERP_SPEED;
+          interp.ppTps += (target.ppTps - interp.ppTps) * LERP_SPEED;
+          if (Math.abs(interp.tps) < 0.05) interp.tps = 0;
+          if (Math.abs(interp.ppTps) < 0.05) interp.ppTps = 0;
+          sI.set(slotId, interp);
+
+          const point: SlotHistoryPoint = {
+            ts: Date.now(),
+            tps: interp.tps,
+            ppTps: interp.ppTps,
+            decoded: target.decoded,
+            cacheUtil: target.cacheUtil,
+            isActive: target.isActive,
+          };
+          const arr = next[slotId] || [];
+          next[slotId] = arr.length >= HISTORY_LEN ? [...arr.slice(-HISTORY_LEN + 1), point] : [...arr, point];
+        }
+        return next;
+      });
+    }, TICK_MS);
+
+    return () => clearInterval(ticker);
+  }, [paused]);
 
   /* ── Derived ─────────────────────────────────────────────── */
 
