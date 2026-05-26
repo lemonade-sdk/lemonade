@@ -61,11 +61,32 @@ function loadSavedView(): View {
   return 'chat';
 }
 
+type Theme = 'dark' | 'light';
+const THEME_KEY = 'lemonade_theme';
+
+function loadTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch { /* ignore */ }
+  return 'dark';
+}
+
 const App: React.FC = () => {
   const [view, setViewState] = useState<View>(loadSavedView);
   const [status, setStatus] = useState<ConnectionStatus>(api.status);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => t === 'dark' ? 'light' : 'dark');
+  }, []);
 
   const setView = useCallback((v: View) => {
     setViewState(v);
@@ -143,6 +164,9 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right">
+          <button className="titlebar__theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
           <button className="model-selector" aria-label="Active model">
             <span className={`model-selector__dot ${
               status === 'connected' ? 'model-selector__dot--connected' :

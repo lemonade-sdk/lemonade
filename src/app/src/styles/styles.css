@@ -125,6 +125,22 @@ input, textarea {
   gap: var(--space-2);
 }
 
+.titlebar__theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background var(--duration-fast) var(--ease-out);
+  line-height: 1;
+}
+.titlebar__theme-toggle:hover { background: var(--surface-2); }
+
 /* Model selector pill in titlebar */
 .model-selector {
   display: flex;
@@ -3518,18 +3534,18 @@ input, textarea {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.dash2-hero-metric__val--tps    { color: #e8c66b; }
-.dash2-hero-metric__val--pp     { color: #7baed4; }
-.dash2-hero-metric__val--stream { color: #7fb38a; }
+.dash2-hero-metric__val--tps    { color: var(--accent); }
+.dash2-hero-metric__val--pp     { color: var(--info); }
+.dash2-hero-metric__val--stream { color: var(--success); }
 
 .dash2-hero-metric__unit {
   font-size: 13px;
-  color: #807a6c;
+  color: var(--text-tertiary);
 }
 
 .dash2-hero-metric__peak {
   font-size: 11px;
-  color: #e8c66b;
+  color: var(--accent);
   opacity: 0.7;
 }
 
@@ -3539,7 +3555,7 @@ input, textarea {
   align-items: center;
   gap: 16px;
   font-size: 11px;
-  color: #807a6c;
+  color: var(--text-tertiary);
 }
 
 .dash2-chart-legend {
@@ -3553,7 +3569,7 @@ input, textarea {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #807a6c;
+  color: var(--text-tertiary);
 }
 
 .dash2-chart-legend__swatch {
@@ -3561,8 +3577,8 @@ input, textarea {
   height: 3px;
   border-radius: 2px;
 }
-.dash2-chart-legend__swatch--tps { background: #e8c66b; }
-.dash2-chart-legend__swatch--pp  { background: #7baed4; }
+.dash2-chart-legend__swatch--tps { background: var(--accent); }
+.dash2-chart-legend__swatch--pp  { background: var(--info); }
 
 .dash2-slot-legend {
   display: flex;
@@ -3587,7 +3603,7 @@ input, textarea {
 
 .dash2-slot-legend__label {
   font-size: 12px;
-  color: #b8b1a2;
+  color: var(--text-secondary);
 }
 
 .dash2-slot-legend__tps {
@@ -3595,12 +3611,12 @@ input, textarea {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.dash2-slot-legend__tps--active { color: #f3efe6; }
-.dash2-slot-legend__tps--idle   { color: #4f4a40; }
+.dash2-slot-legend__tps--active { color: var(--text-primary); }
+.dash2-slot-legend__tps--idle   { color: var(--text-disabled); }
 
 .dash2-slot-legend__kv {
   font-size: 11px;
-  color: #807a6c;
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
