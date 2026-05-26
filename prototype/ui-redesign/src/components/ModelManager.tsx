@@ -208,6 +208,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setLoadingModel(null);
   };
 
+  const handleDelete = async (model: ModelInfo) => {
+    const name = modelName(model);
+    if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
+    setLoadingModel(name);
+    try {
+      await api.deleteModel(name);
+      await refresh();
+    } catch (err: any) {
+      console.error('Delete failed:', err);
+    }
+    setLoadingModel(null);
+  };
+
   const handlePull = async (model: ModelInfo) => {
     const name = modelName(model);
     if (pulling[name] !== undefined) return;
@@ -478,6 +491,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             >
               {loadingModel === m.model_name ? '⏳' : 'Unload'}
             </button>
+            <button
+              className="row__action row__action--delete"
+              onClick={(e) => {
+                e.stopPropagation();
+                const info = models.find(mi => modelName(mi) === m.model_name);
+                if (info) handleDelete(info);
+              }}
+              disabled={loadingModel === m.model_name}
+              title="Delete model files"
+            >
+              🗑
+            </button>
             <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
           </div>
         </div>
@@ -533,6 +558,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   disabled={isLoading}
                 >
                   {isLoading ? '⏳ Loading…' : '▶ Load'}
+                </button>
+                <button
+                  className="row__action row__action--delete"
+                  onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
+                  disabled={isLoading}
+                  title="Delete model files"
+                >
+                  🗑
                 </button>
               </>
             ) : (

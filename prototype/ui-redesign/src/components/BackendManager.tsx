@@ -171,7 +171,7 @@ const BackendManager: React.FC = () => {
           toast(`✗ ${actionLabel} failed: ${err.message}`);
           setInstalling(null);
         },
-      }, { force: isUpdate });
+      });
     } catch (err: any) {
       toast(`✗ ${actionLabel} failed: ${err.message || err}`);
       setInstalling(null);

@@ -265,6 +265,13 @@ class LemonadeAPI {
     return this._json('/api/v1/unload', { method: 'POST', body });
   }
 
+  async deleteModel(modelName: string): Promise<unknown> {
+    return this._json('/api/v1/delete', {
+      method: 'POST',
+      body: { model_name: modelName },
+    });
+  }
+
   async systemInfo(): Promise<Record<string, unknown>> {
     const data = await this._json<Record<string, unknown>>('/api/v1/system-info');
     this._systemInfoData = data;
@@ -359,12 +366,11 @@ class LemonadeAPI {
     recipe: string,
     backend: string,
     callbacks?: { onProgress?: (data: Record<string, unknown>) => void; onComplete?: () => void; onError?: (err: Error) => void },
-    options?: { force?: boolean }
   ): Promise<void> {
     try {
       const resp = await this._fetch('/api/v1/install', {
         method: 'POST',
-        body: { recipe, backend, stream: true, subscribe: true, force: options?.force ?? false },
+        body: { recipe, backend, stream: true, subscribe: true },
       });
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
