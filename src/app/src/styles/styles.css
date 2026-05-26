@@ -1644,6 +1644,37 @@ input, textarea {
   background: rgba(232, 198, 107, 0.22);
 }
 
+.row__detail--live {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.detail__recipe-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.detail__recipe-opt {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+}
+
+.detail__ro-key {
+  color: var(--text-secondary);
+}
+
+.detail__ro-val {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
 /* ---------- Connect view ---------- */
 .connect {
   max-width: 480px;
