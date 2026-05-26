@@ -5,6 +5,15 @@ import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, Slo
 
 const HISTORY_LEN = 60;
 
+interface SlotHistoryPoint {
+  ts: number;
+  tps: number;
+  ppTps: number;
+  decoded: number;
+  cacheUtil: number;
+  isActive: boolean;
+}
+
 interface HistoryPoint {
   ts: number;
   cpu: number | null;
@@ -183,7 +192,8 @@ const AreaChart: React.FC<{
   fillOpacity?: number;
   label?: string;
   currentValue?: string;
-}> = ({ data, width = 200, height = 60, color, fillOpacity = 0.15, label, currentValue }) => {
+  gradientId?: string;
+}> = ({ data, width = 200, height = 60, color, fillOpacity = 0.15, label, currentValue, gradientId }) => {
   const filtered = data.map(v => (v != null && v >= 0 ? v : 0));
   const max = Math.max(...filtered, 1);
   const step = width / Math.max(filtered.length - 1, 1);
@@ -195,6 +205,7 @@ const AreaChart: React.FC<{
   }).join(' ');
 
   const fillPoints = `0,${height} ${points} ${width},${height}`;
+  const gid = gradientId || `areagrad-${label?.replace(/\s/g, '') || 'x'}`;
 
   return (
     <div className="dash2-area">
@@ -205,12 +216,12 @@ const AreaChart: React.FC<{
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none" className="dash2-area__svg">
         <defs>
-          <linearGradient id={`areagrad-${label?.replace(/\s/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={fillOpacity} />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <polygon points={fillPoints} fill={`url(#areagrad-${label?.replace(/\s/g, '')})`} />
+        <polygon points={fillPoints} fill={`url(#${gid})`} />
         <polyline
           points={points}
           fill="none"
@@ -250,33 +261,78 @@ const HeroStat: React.FC<{
   </div>
 );
 
-/* ── Slot mini card ────────────────────────────────────────── */
+/* ── Slot card with per-slot TPS graph ──────────────────────── */
 
-const SlotMini: React.FC<{ slot: SlotData }> = ({ slot }) => {
+const SlotCard: React.FC<{ slot: SlotData; history: SlotHistoryPoint[] }> = ({ slot, history }) => {
   const cacheLen = slot.cache_tokens?.length || 0;
   const cacheUtil = slot.n_ctx > 0 ? (cacheLen / slot.n_ctx) * 100 : 0;
   const t = slot.timings || {} as SlotTimings;
+  const tps = t.predicted_per_second > 0 ? t.predicted_per_second : 0;
+  const ppTps = t.prompt_per_second > 0 ? t.prompt_per_second : 0;
+
+  // Derive prompt snippet for slot identification
+  const promptSnippet = slot.prompt
+    ? slot.prompt.slice(0, 60) + (slot.prompt.length > 60 ? '…' : '')
+    : '(no prompt)';
 
   return (
-    <div className={`dash2-slot ${slot.is_processing ? 'dash2-slot--active' : ''}`}>
-      <div className="dash2-slot__head">
-        <span className="dash2-slot__id">Slot {slot.id}</span>
-        <span className={`dash2-slot__state ${slot.is_processing ? 'dash2-slot__state--on' : ''}`}>
-          <span className="dash2-slot__dot" />
-          {slot.is_processing ? 'Active' : 'Idle'}
+    <div className={`dash2-slotcard ${slot.is_processing ? 'dash2-slotcard--active' : ''}`}>
+      <div className="dash2-slotcard__head">
+        <div className="dash2-slotcard__id">
+          <span className={`dash2-slotcard__dot ${slot.is_processing ? 'dash2-slotcard__dot--on' : ''}`} />
+          <span>Slot {slot.id}</span>
+          <span className={`dash2-slotcard__state ${slot.is_processing ? 'dash2-slotcard__state--on' : ''}`}>
+            {slot.is_processing ? 'Active' : 'Idle'}
+          </span>
+        </div>
+        <span className="dash2-slotcard__prompt" title={slot.prompt || undefined}>
+          {promptSnippet}
         </span>
       </div>
-      <div className="dash2-slot__bar">
-        <div className="dash2-slot__fill" style={{
-          width: `${Math.min(100, cacheUtil)}%`,
-          background: cacheUtil > 80 ? 'var(--danger)' : cacheUtil > 50 ? 'var(--accent)' : 'var(--success)',
-        }} />
+
+      {/* Key metrics row */}
+      <div className="dash2-slotcard__metrics">
+        <div className="dash2-slotcard__metric">
+          <span className="dash2-slotcard__mv">{tps > 0 ? tps.toFixed(1) : '—'}</span>
+          <span className="dash2-slotcard__ml">tok/s</span>
+        </div>
+        <div className="dash2-slotcard__metric">
+          <span className="dash2-slotcard__mv">{ppTps > 0 ? ppTps.toFixed(0) : '—'}</span>
+          <span className="dash2-slotcard__ml">pp/s</span>
+        </div>
+        <div className="dash2-slotcard__metric">
+          <span className="dash2-slotcard__mv">{slot.n_decoded}</span>
+          <span className="dash2-slotcard__ml">decoded</span>
+        </div>
+        <div className="dash2-slotcard__metric">
+          <span className="dash2-slotcard__mv">{t.predicted_n > 0 ? t.predicted_n : '—'}</span>
+          <span className="dash2-slotcard__ml">predicted</span>
+        </div>
       </div>
-      <div className="dash2-slot__stats">
-        <span><b>{t.predicted_per_second > 0 ? t.predicted_per_second.toFixed(1) : '—'}</b> tok/s</span>
-        <span><b>{t.prompt_per_second > 0 ? t.prompt_per_second.toFixed(0) : '—'}</b> pp/s</span>
-        <span><b>{slot.n_decoded}</b> decoded</span>
-        <span><b>{pct(cacheUtil)}</b> KV</span>
+
+      {/* Per-slot TPS chart */}
+      {history.length > 1 && (
+        <AreaChart
+          data={history.map(h => h.tps)}
+          color={slot.is_processing ? '#e8c66b' : '#666'}
+          label="Decode TPS"
+          currentValue={tps > 0 ? `${tps.toFixed(1)} tok/s` : 'idle'}
+          height={48}
+          fillOpacity={slot.is_processing ? 0.2 : 0.05}
+          gradientId={`slot-tps-${slot.id}`}
+        />
+      )}
+
+      {/* KV cache bar */}
+      <div className="dash2-slotcard__cache">
+        <span className="dash2-slotcard__cache-label">KV Cache</span>
+        <div className="dash2-slotcard__cache-track">
+          <div className="dash2-slotcard__cache-fill" style={{
+            width: `${Math.min(100, cacheUtil)}%`,
+            background: cacheUtil > 80 ? 'var(--danger)' : cacheUtil > 50 ? 'var(--accent)' : 'var(--success)',
+          }} />
+        </div>
+        <span className="dash2-slotcard__cache-pct">{pct(cacheUtil)}</span>
       </div>
     </div>
   );
@@ -310,6 +366,7 @@ const Dashboard: React.FC = () => {
   const [sysStats, setSysStats] = useState<SystemStatsData | null>(null);
   const [slots, setSlots] = useState<SlotData[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [slotHistory, setSlotHistory] = useState<Record<number, SlotHistoryPoint[]>>({});
   const [pollCount, setPollCount] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -374,6 +431,28 @@ const Dashboard: React.FC = () => {
       setSlots(slotData);
 
       const { aggTps, aggPromptTps } = computeAggregates(slotData);
+
+      // Build per-slot history
+      const now = Date.now();
+      setSlotHistory(prev => {
+        const next = { ...prev };
+        for (const s of slotData) {
+          const t = s.timings || {} as SlotTimings;
+          const cacheLen = s.cache_tokens?.length || 0;
+          const cacheUtil = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
+          const point: SlotHistoryPoint = {
+            ts: now,
+            tps: t.predicted_per_second > 0 ? t.predicted_per_second : 0,
+            ppTps: t.prompt_per_second > 0 ? t.prompt_per_second : 0,
+            decoded: s.n_decoded || 0,
+            cacheUtil,
+            isActive: s.is_processing,
+          };
+          const arr = next[s.id] || [];
+          next[s.id] = arr.length >= HISTORY_LEN ? [...arr.slice(-HISTORY_LEN + 1), point] : [...arr, point];
+        }
+        return next;
+      });
 
       const activeSlots = slotData.filter(s => s.is_processing).length;
       const totalSlots = slotData.length;
@@ -443,6 +522,24 @@ const Dashboard: React.FC = () => {
           const now = Date.now();
           if (now - lastLivePushRef.current < 1000) return;
           lastLivePushRef.current = now;
+
+          // Push per-slot history from live WebSocket data
+          setSlotHistory(prev => {
+            const next = { ...prev };
+            for (const [slotId, vals] of map.entries()) {
+              const point: SlotHistoryPoint = {
+                ts: now,
+                tps: vals.tg,
+                ppTps: vals.pp,
+                decoded: 0, // not available from log lines
+                cacheUtil: 0,
+                isActive: vals.tg > 0 || vals.pp > 0,
+              };
+              const arr = next[slotId] || [];
+              next[slotId] = arr.length >= HISTORY_LEN ? [...arr.slice(-HISTORY_LEN + 1), point] : [...arr, point];
+            }
+            return next;
+          });
 
           // Aggregate across all active slots
           let aggTps = 0, aggPp = 0;
@@ -596,17 +693,17 @@ const Dashboard: React.FC = () => {
           {stats ? (
             <div className="dash2-card">
               <h2 className="dash2-card__h">Last Inference</h2>
-              <div className="dash2-inf-col">
+              <div className="dash2-inf-grid">
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}</span>
-                  <span className="dash2-inf__l">Tokens/sec</span>
+                  <span className="dash2-inf__l">Decode tok/s</span>
                 </div>
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}` : '—'}</span>
                   <span className="dash2-inf__l">TTFT (ms)</span>
                 </div>
                 <div className="dash2-inf">
-                  <span className="dash2-inf__v">{stats.input_tokens}</span>
+                  <span className="dash2-inf__v">{stats.prompt_tokens || stats.input_tokens}</span>
                   <span className="dash2-inf__l">Prompt Tokens</span>
                 </div>
                 <div className="dash2-inf">
@@ -627,15 +724,15 @@ const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* ═══ Parallel Slots ═══ */}
+        {/* ═══ Parallel Slots — Per-Slot Metrics ═══ */}
         {slots.length > 0 && (
           <div className="dash2-card">
             <h2 className="dash2-card__h">
               Parallel Slots
               <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
             </h2>
-            <div className="dash2-slots">
-              {slots.map(s => <SlotMini key={s.id} slot={s} />)}
+            <div className="dash2-slotcards">
+              {slots.map(s => <SlotCard key={s.id} slot={s} history={slotHistory[s.id] || []} />)}
             </div>
           </div>
         )}
