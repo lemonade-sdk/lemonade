@@ -6,7 +6,7 @@ import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, Slo
 
 const HISTORY_LEN = 300;    // 300 × 200ms tick = 60s visible window
 const TICK_MS = 200;        // Interpolation ticker interval
-const LERP_SPEED = 0.25;   // Per-tick lerp factor toward target
+const LERP_SPEED = 0.08;   // Per-tick lerp factor toward target
 
 interface SlotHistoryPoint {
   ts: number;
@@ -131,9 +131,9 @@ function parseTimingLine(line: string): { slotId: number; decoded?: number; tg?:
 
 /* ── Smoothing ──────────────────────────────────────────────── */
 
-const SMOOTH_ALPHA = 0.35;
-const DECAY_FACTOR = 0.65;
-const DECAY_THRESHOLD = 0.1;
+const SMOOTH_ALPHA = 0.25;
+const DECAY_FACTOR = 0.85;
+const DECAY_THRESHOLD = 0.05;
 const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7bc8c8'];
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
