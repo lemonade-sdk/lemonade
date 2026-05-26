@@ -149,9 +149,24 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     LOG(INFO, "WhisperServer") << "Downloading NPU compiled cache: " << cache_filename << std::endl;
     LOG(INFO, "WhisperServer") << "From repository: " << cache_repo << std::endl;
 
+    if (cache_filename.find('/') != std::string::npos ||
+        cache_filename.find('\\') != std::string::npos ||
+        cache_filename.find("..") != std::string::npos) {
+        throw std::runtime_error("Illegal npu_cache filename: contains path traversal characters");
+    }
+
+    if (cache_repo.find("..") != std::string::npos ||
+        cache_repo.find('\\') != std::string::npos) {
+        throw std::runtime_error("Illegal npu_cache repository: contains suspicious characters");
+    }
+
     // Determine where to place the .rai file (must be in the same directory as .bin file)
     fs::path model_dir = fs::path(model_path).parent_path();
-    fs::path cache_path = model_dir / cache_filename;
+    fs::path cache_path = fs::weakly_canonical(model_dir / fs::path(cache_filename).filename());
+
+    if (cache_path.parent_path() != fs::weakly_canonical(model_dir)) {
+        throw std::runtime_error("npu_cache path escapes model directory");
+    }
 
     // Check if cache already exists
     if (fs::exists(cache_path) && !do_not_upgrade) {
