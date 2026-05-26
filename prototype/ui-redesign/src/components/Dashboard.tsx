@@ -138,10 +138,11 @@ const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7b
  *  (hold value when generation pauses). Produces smooth monitoring curves
  *  like the System Vitals chart instead of sawtooth oscillation. */
 const ATTACK_ALPHA = 1.0;   // track rising values instantly — lerp handles visual smoothing
-const RELEASE_ALPHA = 0.08; // decay slowly when raw drops (holds through batch gaps)
+const RELEASE_ALPHA = 0.5;  // halve each poll cycle (~6s to decay from peak to near-zero)
 function smoothTarget(current: number, raw: number): number {
   const alpha = raw >= current ? ATTACK_ALPHA : RELEASE_ALPHA;
-  return current + (raw - current) * alpha;
+  const result = current + (raw - current) * alpha;
+  return result < 0.5 ? 0 : result; // snap to zero — no lingering phantom values
 }
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
