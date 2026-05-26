@@ -227,6 +227,7 @@ void VLLMServer::load(const std::string& model_name,
 }
 
 void VLLMServer::unload() {
+    stop_backend_watchdog();
     LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
 #ifdef _WIN32
     if (process_handle_.handle) {

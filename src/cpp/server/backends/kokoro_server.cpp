@@ -148,6 +148,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 }
 
 void KokoroServer::unload() {
+    stop_backend_watchdog();
     if (process_handle_.pid != 0) {
         LOG(INFO, "KokoroServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(process_handle_);

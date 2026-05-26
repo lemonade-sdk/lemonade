@@ -148,6 +148,9 @@ private:
     // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
     WrappedServer* get_most_recent_server() const;
+    void prune_unavailable_servers_locked();
+    bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options);
+    bool is_watchdog_reset_response(const json& response) const;
     int count_servers_by_type(ModelType type) const;
     WrappedServer* find_lru_server_by_type(ModelType type) const;
     bool has_npu_server() const;
@@ -155,7 +158,7 @@ private:
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
     WrappedServer* find_flm_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
-    void evict_server(WrappedServer* server);
+    void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
     std::string resolve_model_name(const std::string& model_name) const;

@@ -39,8 +39,15 @@ public:
     static int get_exit_code(ProcessHandle handle);
     static int wait_for_exit(ProcessHandle handle, int timeout_seconds = -1);
     static std::string read_output(ProcessHandle handle, int max_bytes = 4096);
+
+    // Kill process forcefully and wait/close owned handles.
     static void kill_process(ProcessHandle handle);
 
+    // Ask the OS to terminate the process without reaping or closing handles.
+    // Use this only when another owner will perform the normal lifecycle cleanup.
+    static void terminate_process(ProcessHandle handle);
+
+    // Run a command and capture its stdout as a string (no console window on Windows).
     // Replacement for system()/popen() that avoids console flashes in GUI apps.
     static int run_command(const std::string& command, std::string& output, int timeout_seconds = 30);
 

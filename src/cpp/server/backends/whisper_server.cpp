@@ -326,6 +326,7 @@ void WhisperServer::load(const std::string& model_name,
 }
 
 void WhisperServer::unload() {
+    stop_backend_watchdog();
     if (process_handle_.pid != 0) {
         LOG(INFO, "WhisperServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(process_handle_);

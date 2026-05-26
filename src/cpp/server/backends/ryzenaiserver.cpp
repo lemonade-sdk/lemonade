@@ -124,6 +124,7 @@ void RyzenAIServer::load(const std::string& model_name,
 }
 
 void RyzenAIServer::unload() {
+    stop_backend_watchdog();
     if (!is_loaded_) {
         return;
     }

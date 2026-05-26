@@ -249,6 +249,7 @@ void FastFlowLMServer::load(const std::string& model_name,
 }
 
 void FastFlowLMServer::unload() {
+    stop_backend_watchdog();
     LOG(INFO, "FastFlowLM") << "Unloading model..." << std::endl;
     if (is_loaded_ && process_handle_.pid != 0) {
         utils::ProcessManager::stop_process(process_handle_);
@@ -281,6 +282,7 @@ bool FastFlowLMServer::wait_for_ready() {
         // Try to reach the /api/tags endpoint
         if (utils::HttpClient::is_reachable(tags_url, 1)) {
             LOG(INFO, "FastFlowLM") << server_name_ + " is ready!" << std::endl;
+            start_backend_watchdog("/api/tags");
             return true;
         }
 
@@ -425,6 +427,7 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
             + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
         return;
     }
 

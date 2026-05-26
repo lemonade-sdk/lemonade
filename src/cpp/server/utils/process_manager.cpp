@@ -24,8 +24,39 @@ void ProcessManager::stop_process(ProcessHandle handle) {
 }
 
 bool ProcessManager::is_running(ProcessHandle handle) {
-    auto platform = create_process_platform();
-    return platform->is_running(handle);
+#ifdef _WIN32
+    if (!handle.handle) {
+        return false;
+    }
+
+    DWORD exit_code;
+    if (!GetExitCodeProcess(handle.handle, &exit_code)) {
+        return false;
+    }
+
+    return exit_code == STILL_ACTIVE;
+#else
+    if (handle.pid <= 0) {
+        return false;
+    }
+
+#ifdef WNOWAIT
+    // Observe child state without reaping it. Reaping in a cheap liveness check
+    // loses the exit status for later lifecycle/error reporting and makes status
+    // endpoints mutate process state. waitid(..., WNOWAIT) reports exited
+    // children while leaving them waitable for get_exit_code()/wait_for_exit().
+    siginfo_t info;
+    std::memset(&info, 0, sizeof(info));
+    if (waitid(P_PID, static_cast<id_t>(handle.pid), &info, WEXITED | WNOHANG | WNOWAIT) == 0) {
+        return info.si_pid == 0;
+    }
+#endif
+
+    // Fallback for platforms without WNOWAIT: kill(pid, 0) does not signal the
+    // process and does not reap. It cannot distinguish a zombie from a running
+    // child, but it is still safer than waitpid(WNOHANG) for read-only checks.
+    return kill(handle.pid, 0) == 0 || errno == EPERM;
+#endif
 }
 
 int ProcessManager::get_exit_code(ProcessHandle handle) {
@@ -59,6 +90,18 @@ int ProcessManager::run_process_with_output(
 void ProcessManager::kill_process(ProcessHandle handle) {
     auto platform = create_process_platform();
     platform->kill(handle);
+}
+
+void ProcessManager::terminate_process(ProcessHandle handle) {
+#ifdef _WIN32
+    if (handle.handle) {
+        TerminateProcess(handle.handle, 1);
+    }
+#else
+    if (handle.pid > 0) {
+        kill(handle.pid, SIGKILL);
+    }
+#endif
 }
 
 int ProcessManager::find_free_port(int start_port) {

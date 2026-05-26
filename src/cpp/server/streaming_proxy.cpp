@@ -11,7 +11,8 @@ void StreamingProxy::forward_sse_stream(
     const std::string& request_body,
     httplib::DataSink& sink,
     std::function<void(const TelemetryData&)> on_complete,
-    long timeout_seconds) {
+    long timeout_seconds,
+    std::function<void()> on_chunk) {
 
     std::string telemetry_buffer;
     bool stream_error = false;
@@ -25,7 +26,11 @@ void StreamingProxy::forward_sse_stream(
         backend_url,
         request_body,
         [&sink, &telemetry_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time](const char* data, size_t length) {
+         &time_to_first_token, &start_time, &on_chunk](const char* data, size_t length) {
+            if (on_chunk) {
+                on_chunk();
+            }
+
             // Buffer for telemetry parsing
             telemetry_buffer.append(data, length);
 
@@ -37,7 +42,7 @@ void StreamingProxy::forward_sse_stream(
                     std::chrono::steady_clock::now() - start_time).count();
             }
 
-            if (chunk.find("[DONE]") != std::string::npos) {
+            if (chunk.find("data: [DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
 
@@ -46,9 +51,8 @@ void StreamingProxy::forward_sse_stream(
                 return false; // Client disconnected
             }
 
-            return true; // Continue streaming
+            return true;
         },
-        {}, // Empty headers map
         timeout_seconds
     );
 
@@ -90,7 +94,8 @@ void StreamingProxy::forward_byte_stream(
     const std::string& backend_url,
     const std::string& request_body,
     httplib::DataSink& sink,
-    long timeout_seconds) {
+    long timeout_seconds,
+    std::function<void()> on_chunk) {
 
     bool stream_error = false;
 
@@ -98,7 +103,11 @@ void StreamingProxy::forward_byte_stream(
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink](const char* data, size_t length) {
+        [&sink, &on_chunk](const char* data, size_t length) {
+            if (on_chunk) {
+                on_chunk();
+            }
+
             // Forward chunk to client immediately
             if (!sink.write(data, length)) {
                 return false; // Client disconnected
