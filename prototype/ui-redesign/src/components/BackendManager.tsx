@@ -150,16 +150,28 @@ const BackendManager: React.FC = () => {
             setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
           }
         },
-        onComplete: () => {
+        onComplete: async () => {
           toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
           setInstalling(null);
-          fetchInfo();
+          // Re-fetch system info and verify the state actually changed
+          try {
+            const fresh = await api.systemInfo() as unknown as SystemInfoData;
+            setSysInfo(fresh);
+            if (isUpdate && fresh?.recipes?.[recipe]?.backends?.[backend]) {
+              const newState = fresh.recipes[recipe].backends[backend].state;
+              if (newState === 'update_required' || newState === 'update_available') {
+                toast(`⚠ ${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — try restarting the server`);
+              }
+            }
+          } catch {
+            fetchInfo();
+          }
         },
         onError: (err) => {
           toast(`✗ ${actionLabel} failed: ${err.message}`);
           setInstalling(null);
         },
-      });
+      }, { force: isUpdate });
     } catch (err: any) {
       toast(`✗ ${actionLabel} failed: ${err.message || err}`);
       setInstalling(null);
