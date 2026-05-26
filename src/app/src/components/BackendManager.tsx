@@ -137,29 +137,31 @@ const BackendManager: React.FC = () => {
     setTimeout(() => setToastMsg(null), 3500);
   }, []);
 
-  const handleInstall = useCallback(async (recipe: string, backend: string) => {
+  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
     const key = `${recipe}:${backend}`;
+    const actionLabel = isUpdate ? 'Updating' : 'Installing';
+    const doneLabel = isUpdate ? 'updated' : 'installed';
     setInstalling(key);
-    toast(`Installing ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
+    toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
           if (d.percent != null) {
-            setToastMsg(`Installing ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
+            setToastMsg(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}… ${d.percent}%`);
           }
         },
         onComplete: () => {
-          toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} installed`);
+          toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
           setInstalling(null);
           fetchInfo();
         },
         onError: (err) => {
-          toast(`✗ Install failed: ${err.message}`);
+          toast(`✗ ${actionLabel} failed: ${err.message}`);
           setInstalling(null);
         },
       });
     } catch (err: any) {
-      toast(`✗ Install failed: ${err.message || err}`);
+      toast(`✗ ${actionLabel} failed: ${err.message || err}`);
       setInstalling(null);
     }
   }, [fetchInfo, toast]);
@@ -188,7 +190,7 @@ const BackendManager: React.FC = () => {
       }
     }
     for (const { recipe, backend } of updates) {
-      await handleInstall(recipe, backend);
+      await handleInstall(recipe, backend, true);
     }
   }, [sysInfo, handleInstall]);
 
@@ -371,7 +373,7 @@ const BackendManager: React.FC = () => {
                                 <button
                                   className="cell__swap"
                                   disabled={isInstalling}
-                                  onClick={() => handleInstall(recipe, backend)}>
+                                  onClick={() => handleInstall(recipe, backend, true)}>
                                   {isInstalling ? 'Updating…' : 'Update'}
                                 </button>
                               )}

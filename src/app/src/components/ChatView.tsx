@@ -76,16 +76,22 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string | null>(loadActiveId);
   const [inputValue, setInputValue] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
-  const [streamingThinking, setStreamingThinking] = useState('');
+  // Per-conversation streaming state: { [convoId]: { content, thinking } }
+  const [activeStreams, setActiveStreams] = useState<Record<string, { content: string; thinking: string }>>({});
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [railExpanded, setRailExpanded] = useState(true);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const controllersRef = useRef<Map<string, AbortController>>(new Map());
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
+
+  // Derived: is the CURRENT conversation streaming?
+  const currentStream = activeId ? activeStreams[activeId] : undefined;
+  const isStreaming = !!currentStream;
+  const streamingContent = currentStream?.content || '';
+  const streamingThinking = currentStream?.thinking || '';
+  const streamingConvoIds = new Set(Object.keys(activeStreams));
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
@@ -131,20 +137,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, []);
 
   const handleNewChat = useCallback(() => {
-    if (isStreaming && abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      setIsStreaming(false);
-      setStreamingContent('');
-      setStreamingThinking('');
-    }
     setActiveId(null);
     inputRef.current?.focus();
-  }, [isStreaming]);
+  }, []);
 
   const handleSelectConversation = useCallback((id: string) => {
-    if (isStreaming) return;
     setActiveId(id);
-  }, [isStreaming]);
+  }, []);
 
   const handleDeleteConversation = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -153,25 +152,33 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, [activeId]);
 
   const handleStop = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      if ((streamingContent || streamingThinking) && activeId) {
-        const partialMessage: Message = {
-          role: 'assistant',
-          content: streamingContent || '(stopped)',
-          thinking: streamingThinking || undefined,
-        };
-        updateConversation(activeId, c => ({
-          ...c,
-          messages: [...c.messages, partialMessage],
-          updatedAt: Date.now(),
-        }));
-      }
-      setIsStreaming(false);
-      setStreamingContent('');
-      setStreamingThinking('');
+    if (!activeId) return;
+    const controller = controllersRef.current.get(activeId);
+    if (!controller) return;
+    const stream = activeStreams[activeId];
+
+    controller.abort();
+    controllersRef.current.delete(activeId);
+
+    if (stream && (stream.content || stream.thinking)) {
+      const partialMessage: Message = {
+        role: 'assistant',
+        content: stream.content || '(stopped)',
+        thinking: stream.thinking || undefined,
+      };
+      updateConversation(activeId, c => ({
+        ...c,
+        messages: [...c.messages, partialMessage],
+        updatedAt: Date.now(),
+      }));
     }
-  }, [streamingContent, streamingThinking, activeId, updateConversation]);
+
+    setActiveStreams(prev => {
+      const next = { ...prev };
+      delete next[activeId!];
+      return next;
+    });
+  }, [activeId, activeStreams, updateConversation]);
 
   const handleSend = async () => {
     const text = inputValue.trim();
@@ -203,14 +210,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }));
 
     setInputValue('');
-    setIsStreaming(true);
-    setStreamingContent('');
-    setStreamingThinking('');
+    setActiveStreams(prev => ({ ...prev, [convoId!]: { content: '', thinking: '' } }));
     setThinkingExpanded(false);
     thinkingSticky.current = true;
 
     const controller = new AbortController();
-    abortControllerRef.current = controller;
+    controllersRef.current.set(convoId, controller);
 
     // Build chat history from the conversation's current messages + new user message
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
@@ -223,11 +228,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     await api.chatCompletion(currentModel, chatMessages, {
       onReasoning: (_token, fullReasoning) => {
-        setStreamingThinking(fullReasoning);
+        setActiveStreams(prev => {
+          if (!prev[targetId]) return prev;
+          return { ...prev, [targetId]: { ...prev[targetId], thinking: fullReasoning } };
+        });
         if (!thinkingExpanded) setThinkingExpanded(true);
       },
       onToken: (_token, full) => {
-        setStreamingContent(full);
+        setActiveStreams(prev => {
+          if (!prev[targetId]) return prev;
+          return { ...prev, [targetId]: { ...prev[targetId], content: full } };
+        });
         setThinkingExpanded(false);
       },
       onDone: (stats) => {
@@ -241,10 +252,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           }],
           updatedAt: Date.now(),
         }));
-        setIsStreaming(false);
-        setStreamingContent('');
-        setStreamingThinking('');
-        abortControllerRef.current = null;
+        setActiveStreams(prev => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
+        controllersRef.current.delete(targetId);
       },
       onError: (err) => {
         if (err.name === 'AbortError') return;
@@ -253,10 +266,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           messages: [...c.messages, { role: 'assistant', content: `Error: ${err.message}` }],
           updatedAt: Date.now(),
         }));
-        setIsStreaming(false);
-        setStreamingContent('');
-        setStreamingThinking('');
-        abortControllerRef.current = null;
+        setActiveStreams(prev => {
+          const next = { ...prev };
+          delete next[targetId];
+          return next;
+        });
+        controllersRef.current.delete(targetId);
       },
       signal: controller.signal,
     });
@@ -314,6 +329,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                 {c.title || deriveTitle(c.messages)}
               </span>
               <span className="rail__item-meta">
+                {streamingConvoIds.has(c.id) && (
+                  <span className="rail__streaming-badge">● generating</span>
+                )}
                 <span className="rail__model-badge">
                   {(c.model || '').split('-')[0]?.toLowerCase() || 'llm'}
                 </span>
