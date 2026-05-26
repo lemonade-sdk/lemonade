@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, SlotTimings } from '../api';
+import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, SlotTimings, LogStreamHandle } from '../api';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -91,6 +91,23 @@ function typeIcon(type: string): string {
     case 'tts': return '🔊';
     default: return '⚙';
   }
+}
+
+/** Parse llama.cpp slot print_timing log lines for real-time throughput. */
+function parseTimingLine(line: string): { slotId: number; decoded?: number; tg?: number; pp?: number } | null {
+  const m = line.match(/slot\s+print_timing:\s*id\s+(\d+)/);
+  if (!m) return null;
+  const slotId = parseInt(m[1], 10);
+  const decodedM = line.match(/n_decoded\s*=\s*(\d+)/);
+  const tgM = line.match(/tg\s*=\s*([\d.]+)\s*t\/s/);
+  const ppM = line.match(/pp\s*=\s*([\d.]+)\s*t\/s/);
+  if (!tgM && !ppM) return null;
+  return {
+    slotId,
+    decoded: decodedM ? parseInt(decodedM[1], 10) : undefined,
+    tg: tgM ? parseFloat(tgM[1]) : undefined,
+    pp: ppM ? parseFloat(ppM[1]) : undefined,
+  };
 }
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
@@ -395,6 +412,88 @@ const Dashboard: React.FC = () => {
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [poll, paused]);
+
+  /* ── Live throughput from log WebSocket ───────────────────── */
+
+  const liveSlotTps = useRef(new Map<number, { tg: number; pp: number }>());
+  const lastLivePushRef = useRef(0);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const wsHandleRef = useRef<LogStreamHandle | null>(null);
+  const wsReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const wsPort = health?.websocket_port;
+    if (!wsPort) return;
+
+    const connectWs = () => {
+      if (wsHandleRef.current) wsHandleRef.current.close();
+
+      const handle = api.connectLogStream({
+        onEntry: (entry) => {
+          if (pausedRef.current) return;
+          const t = parseTimingLine(entry.line);
+          if (!t) return;
+
+          // Update per-slot live TPS
+          const map = liveSlotTps.current;
+          map.set(t.slotId, { tg: t.tg ?? 0, pp: t.pp ?? 0 });
+
+          // Throttle chart pushes to at most 1/s
+          const now = Date.now();
+          if (now - lastLivePushRef.current < 1000) return;
+          lastLivePushRef.current = now;
+
+          // Aggregate across all active slots
+          let aggTps = 0, aggPp = 0;
+          for (const v of map.values()) {
+            aggTps += v.tg;
+            aggPp += v.pp;
+          }
+
+          // Update peak counters
+          const c = countersRef.current;
+          if (aggTps > c.peakTps) c.peakTps = aggTps;
+          if (aggPp > c.peakPromptTps) c.peakPromptTps = aggPp;
+
+          // Push a throughput history point (system stats carried from last poll)
+          setHistory(prev => {
+            const last = prev.length > 0 ? prev[prev.length - 1] : null;
+            const point: HistoryPoint = {
+              ts: now,
+              cpu: last?.cpu ?? null,
+              ram: last?.ram ?? null,
+              gpu: last?.gpu ?? null,
+              vram: last?.vram ?? null,
+              npu: last?.npu ?? null,
+              aggregateTps: aggTps,
+              aggregatePromptTps: aggPp,
+              activeSlots: map.size,
+              totalSlots: last?.totalSlots ?? 0,
+              cacheUtil: last?.cacheUtil ?? null,
+            };
+            const next = [...prev, point];
+            return next.length > HISTORY_LEN ? next.slice(-HISTORY_LEN) : next;
+          });
+        },
+        onDisconnected: () => {
+          wsHandleRef.current = null;
+          // Auto-reconnect after 5s
+          wsReconnectRef.current = setTimeout(connectWs, 5000);
+        },
+      });
+
+      wsHandleRef.current = handle;
+    };
+
+    connectWs();
+
+    return () => {
+      if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
+      if (wsHandleRef.current) wsHandleRef.current.close();
+      wsHandleRef.current = null;
+    };
+  }, [health?.websocket_port]);
 
   /* ── Derived ─────────────────────────────────────────────── */
 
