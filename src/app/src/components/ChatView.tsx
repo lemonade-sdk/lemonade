@@ -84,6 +84,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const thinkingContentRef = useRef<HTMLDivElement>(null);
+  const thinkingSticky = useRef(true);
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
@@ -111,6 +113,22 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingContent, streamingThinking, scrollToBottom]);
+
+  // Auto-scroll the thinking content box when sticky
+  useEffect(() => {
+    const el = thinkingContentRef.current;
+    if (el && thinkingSticky.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [streamingThinking]);
+
+  const handleThinkingScroll = useCallback(() => {
+    const el = thinkingContentRef.current;
+    if (!el) return;
+    // "At bottom" = within 8px of the end
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+    thinkingSticky.current = atBottom;
+  }, []);
 
   const handleNewChat = useCallback(() => {
     if (isStreaming && abortControllerRef.current) {
@@ -189,6 +207,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     setStreamingContent('');
     setStreamingThinking('');
     setThinkingExpanded(false);
+    thinkingSticky.current = true;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -340,7 +359,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                     {streamingThinking && (
                       <details className="message__thinking" open={thinkingExpanded}>
                         <summary>Thinking…</summary>
-                        <div className="message__thinking-content">{streamingThinking}</div>
+                        <div
+                          className="message__thinking-content"
+                          ref={thinkingContentRef}
+                          onScroll={handleThinkingScroll}
+                        >{streamingThinking}</div>
                       </details>
                     )}
                     {streamingContent ? (
