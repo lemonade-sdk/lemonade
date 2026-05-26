@@ -461,10 +461,13 @@ class LemonadeAPI {
     let reasoningTokenCount = 0;
 
     const emitStats = () => {
-      const elapsed = performance.now() - t0;
+      const now = performance.now();
+      const elapsed = now - t0;
       const total = tokenCount + reasoningTokenCount;
+      // TPS = decode rate from first token, not from request start
+      const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
       onStats?.({
-        tps: total > 0 ? total / (elapsed / 1000) : 0,
+        tps: total > 0 && decodeTime > 0 ? total / decodeTime : 0,
         tokens: tokenCount,
         reasoningTokens: reasoningTokenCount,
         elapsed,
@@ -503,9 +506,10 @@ class LemonadeAPI {
           const payload = t.slice(6);
           if (payload === '[DONE]') {
             clearInterval(statsInterval);
-            const elapsed = performance.now() - t0;
+            const now = performance.now();
+            const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
             const totalTokens = tokenCount + reasoningTokenCount;
-            const tps = totalTokens > 0 ? (totalTokens / (elapsed / 1000)).toFixed(1) : '0';
+            const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
             const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
             onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
             return;
@@ -538,9 +542,10 @@ class LemonadeAPI {
       }
       // Stream ended without [DONE]
       clearInterval(statsInterval);
-      const elapsed = performance.now() - t0;
+      const now = performance.now();
+      const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
       const totalTokens = tokenCount + reasoningTokenCount;
-      const tps = totalTokens > 0 ? (totalTokens / (elapsed / 1000)).toFixed(1) : '0';
+      const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
       const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
       onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
     } catch (err) {
