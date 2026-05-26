@@ -596,7 +596,11 @@ const Dashboard: React.FC = () => {
   const counters = countersRef.current;
   const latestTps = history.length > 0 ? history[history.length - 1].aggregateTps : 0;
   const latestPP = history.length > 0 ? history[history.length - 1].aggregatePromptTps : 0;
-  const activeSlotCount = slots.filter(s => slotLive[s.id]?.isActive || s.is_processing).length;
+  const activeSlotCount = slots.filter(s => {
+    const live = slotLive[s.id];
+    const target = targetSlotRef.current.get(s.id);
+    return live?.isActive || target?.isActive || s.is_processing;
+  }).length;
   const totalCacheTokens = slots.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
   const totalCtx = slots.reduce((a, s) => a + s.n_ctx, 0);
   const overallCacheUtil = totalCtx > 0 ? (totalCacheTokens / totalCtx) * 100 : null;
@@ -741,11 +745,14 @@ const Dashboard: React.FC = () => {
             <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '12px' }}>
               {slots.map((s, i) => {
                 const live = slotLive[s.id];
-                const isActive = live?.isActive || s.is_processing;
-                const tps = live?.tps || 0;
+                const target = targetSlotRef.current.get(s.id);
+                // Use the higher of poll-based live TPS or smoothed WS target
+                const tps = Math.max(live?.tps || 0, target?.tps || 0);
+                const isActive = tps > 0.05 || live?.isActive || target?.isActive || s.is_processing;
                 const color = SLOT_COLORS[i % SLOT_COLORS.length];
-                const cacheLen = s.cache_tokens?.length || 0;
-                const cu = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
+                // Use target cacheUtil (updated from poll) — more reliable than
+                // recalculating from cache_tokens which may be empty between requests
+                const cu = target?.cacheUtil || 0;
                 return (
                   <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isActive ? 1 : 0.5 }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: isActive ? `0 0 6px ${color}` : 'none', flexShrink: 0 }} />
