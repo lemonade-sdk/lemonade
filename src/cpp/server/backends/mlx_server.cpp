@@ -26,10 +26,15 @@ static std::string resolve_mlx_backend(const std::string& backend) {
 #ifdef __APPLE__
         return "metal";
 #else
-        // On non-Apple platforms, default to rocm if an AMD GPU is present,
-        // fall back to cpu otherwise. SystemInfo already knows the truth.
+        // On non-Apple platforms, default to rocm if an AMD GPU from a
+        // supported family (gfx1150, gfx1151, gfx110X, gfx120X) is present.
+        // Fall back to cpu for unsupported families such as RDNA2/gfx103X,
+        // matching the supported-by matrix in system_info.
         std::string arch = SystemInfo::get_rocm_arch();
-        return arch.empty() ? "cpu" : "rocm";
+        if (arch == "gfx1150" || arch == "gfx1151" || arch == "gfx110X" || arch == "gfx120X") {
+            return "rocm";
+        }
+        return "cpu";
 #endif
     }
     return backend;
@@ -240,8 +245,11 @@ json MlxServer::prepare_request(const json& request) const {
     if (!loaded_model_ref_.empty()) {
         modified["model"] = loaded_model_ref_;
     }
-    if (modified.contains("max_completion_tokens") && !modified.contains("max_tokens")) {
-        modified["max_tokens"] = modified["max_completion_tokens"];
+    if (modified.contains("max_completion_tokens")) {
+        if (!modified.contains("max_tokens")) {
+            modified["max_tokens"] = modified["max_completion_tokens"];
+        }
+        modified.erase("max_completion_tokens");
     }
     return modified;
 }
@@ -271,7 +279,10 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
     // completions_streaming is marked False in capabilities.py; this guard defends
     // against direct calls that bypass the router capability check.
     if (endpoint == "/v1/completions") {
-        throw std::runtime_error("lemon-mlx does not support streaming /v1/completions");
+        std::string error_msg = "data: {\"error\":{\"message\":\"lemon-mlx does not support streaming /v1/completions\",\"type\":\"streaming_error\"}}\n\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        return;
     }
     try {
         json request = json::parse(request_body);
