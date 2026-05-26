@@ -147,7 +147,7 @@ function smoothTarget(current: number, raw: number): number {
 
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
 
-const RingGauge: React.FC<{
+const RingGauge = React.memo<{
   value: number | null;
   max?: number;
   size?: number;
@@ -155,7 +155,7 @@ const RingGauge: React.FC<{
   unit?: string;
   color?: string;
   subtitle?: string;
-}> = ({ value, max = 100, size = 110, label, unit = '%', color, subtitle }) => {
+}>(({ value, max = 100, size = 110, label, unit = '%', color, subtitle }) => {
   const safeVal = value != null && value >= 0 ? value : 0;
   const pctVal = Math.min(100, (safeVal / max) * 100);
   const unavailable = value == null || value < 0;
@@ -206,7 +206,7 @@ const RingGauge: React.FC<{
       {subtitle && <span className="dash2-gauge__sub">{subtitle}</span>}
     </div>
   );
-};
+});
 
 /* ── Smooth Recharts wrapper ────────────────────────────────── */
 
@@ -218,12 +218,12 @@ const CHART_TOOLTIP_STYLE: React.CSSProperties = {
   padding: '6px 10px',
 };
 
-const SmoothChart: React.FC<{
+const SmoothChart = React.memo<{
   data: Record<string, number>[];
   series: { key: string; color: string; name?: string }[];
   height?: number;
   unit?: string;
-}> = ({ data, series, height = 80, unit = '' }) => (
+}>(({ data, series, height = 80, unit = '' }) => (
   <ResponsiveContainer width="100%" height={height}>
     <RechartArea data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
       <defs>
@@ -257,11 +257,11 @@ const SmoothChart: React.FC<{
       ))}
     </RechartArea>
   </ResponsiveContainer>
-);
+));
 
 /* ── Model row ─────────────────────────────────────────────── */
 
-const ModelRow: React.FC<{ model: LoadedModel }> = ({ model }) => (
+const ModelRow = React.memo<{ model: LoadedModel }>(({ model }) => (
   <div className="dash2-model">
     <span className="dash2-model__icon">{typeIcon(model.type)}</span>
     <div className="dash2-model__info">
@@ -273,7 +273,7 @@ const ModelRow: React.FC<{ model: LoadedModel }> = ({ model }) => (
     <span className="dash2-model__badge" data-type={model.type}>{model.type}</span>
     <span className="dash2-model__time">{relativeTime(model.last_use)}</span>
   </div>
-);
+));
 
 /* ══════════════════════════════════════════════════════════════
    ██  MAIN DASHBOARD
