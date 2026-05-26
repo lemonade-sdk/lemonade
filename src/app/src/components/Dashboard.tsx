@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { AreaChart as RechartArea, Area, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api, { HealthData, LoadedModel, StatsData, SystemStatsData, SlotData, SlotTimings, LogStreamHandle } from '../api';
 
 /* ── History ring buffer ───────────────────────────────────── */
@@ -126,6 +127,13 @@ function parseTimingLine(line: string): { slotId: number; decoded?: number; tg?:
   };
 }
 
+/* ── Smoothing ──────────────────────────────────────────────── */
+
+const SMOOTH_ALPHA = 0.35;
+const DECAY_FACTOR = 0.65;
+const DECAY_THRESHOLD = 0.1;
+const SLOT_COLORS = ['#e8c66b', '#7baed4', '#7fb38a', '#b07df0', '#e07b7b', '#7bc8c8'];
+
 /* ── SVG Ring Gauge with glow ──────────────────────────────── */
 
 const RingGauge: React.FC<{
@@ -189,152 +197,56 @@ const RingGauge: React.FC<{
   );
 };
 
-/* ── Area chart ────────────────────────────────────────────── */
+/* ── Smooth Recharts wrapper ────────────────────────────────── */
 
-const AreaChart: React.FC<{
-  data: (number | null)[];
-  width?: number;
+const CHART_TOOLTIP_STYLE: React.CSSProperties = {
+  background: '#1d1b16',
+  border: '1px solid rgba(255,245,220,0.1)',
+  borderRadius: 8,
+  fontSize: 12,
+  padding: '6px 10px',
+};
+
+const SmoothChart: React.FC<{
+  data: Record<string, number>[];
+  series: { key: string; color: string; name?: string }[];
   height?: number;
-  color: string;
-  fillOpacity?: number;
-  label?: string;
-  currentValue?: string;
-  gradientId?: string;
-}> = ({ data, width = 200, height = 60, color, fillOpacity = 0.15, label, currentValue, gradientId }) => {
-  const filtered = data.map(v => (v != null && v >= 0 ? v : 0));
-  const max = Math.max(...filtered, 1);
-  const step = width / Math.max(filtered.length - 1, 1);
-
-  const points = filtered.map((v, i) => {
-    const x = i * step;
-    const y = height - (v / max) * (height - 8) - 4;
-    return `${x},${y}`;
-  }).join(' ');
-
-  const fillPoints = `0,${height} ${points} ${width},${height}`;
-  const gid = gradientId || `areagrad-${label?.replace(/\s/g, '') || 'x'}`;
-
-  return (
-    <div className="dash2-area">
-      <div className="dash2-area__header">
-        {label && <span className="dash2-area__label">{label}</span>}
-        {currentValue && <span className="dash2-area__current" style={{ color }}>{currentValue}</span>}
-      </div>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none" className="dash2-area__svg">
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={fillOpacity} />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
+  unit?: string;
+}> = ({ data, series, height = 80, unit = '' }) => (
+  <ResponsiveContainer width="100%" height={height}>
+    <RechartArea data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+      <defs>
+        {series.map(s => (
+          <linearGradient key={s.key} id={`grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={s.color} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={s.color} stopOpacity={0} />
           </linearGradient>
-        </defs>
-        <polygon points={fillPoints} fill={`url(#${gid})`} />
-        <polyline
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-    </div>
-  );
-};
-
-/* ── Throughput hero stat ──────────────────────────────────── */
-
-const HeroStat: React.FC<{
-  value: number;
-  label: string;
-  unit: string;
-  peak?: number;
-  color: string;
-  secondary?: string;
-}> = ({ value, label, unit, peak, color, secondary }) => (
-  <div className="dash2-hero">
-    <div className="dash2-hero__num">
-      <span className="dash2-hero__val" style={{ color }}>
-        {value > 0 ? value.toFixed(1) : '—'}
-      </span>
-      <span className="dash2-hero__unit">{unit}</span>
-    </div>
-    <span className="dash2-hero__label">{label}</span>
-    {peak != null && peak > 0 && (
-      <span className="dash2-hero__peak">⚡ Peak {peak.toFixed(1)} {unit}</span>
-    )}
-    {secondary && <span className="dash2-hero__secondary">{secondary}</span>}
-  </div>
-);
-
-/* ── Slot row — full-width with inline metrics + chart ─────── */
-
-const SlotRow: React.FC<{ slot: SlotData; history: SlotHistoryPoint[]; live?: SlotLiveTps }> = ({ slot, history, live }) => {
-  const cacheLen = slot.cache_tokens?.length || 0;
-  const cacheUtil = slot.n_ctx > 0 ? (cacheLen / slot.n_ctx) * 100 : 0;
-  const t = slot.timings || {} as SlotTimings;
-  const tps = live?.tps || (t.predicted_per_second > 0 ? t.predicted_per_second : 0);
-  const ppTps = live?.ppTps || (t.prompt_per_second > 0 ? t.prompt_per_second : 0);
-  const isActive = live?.isActive || slot.is_processing;
-
-  return (
-    <div style={{
-      background: '#25221c',
-      border: isActive ? '1px solid rgba(232,198,107,0.35)' : '1px solid rgba(255,245,220,0.08)',
-      borderRadius: '10px',
-      padding: '12px 16px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-      boxShadow: isActive ? '0 0 16px rgba(232,198,107,0.08)' : 'none',
-    }}>
-      {/* Header: slot id + metrics inline */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-          background: isActive ? '#7fb38a' : '#4f4a40',
-          boxShadow: isActive ? '0 0 6px #7fb38a' : 'none',
-        }} />
-        <span style={{ fontWeight: 600, fontSize: '12.5px', color: '#b8b1a2' }}>
-          Slot {slot.id}
-        </span>
-        <span style={{
-          fontSize: '11px', fontWeight: 500,
-          color: isActive ? '#7fb38a' : '#4f4a40',
-        }}>
-          {isActive ? 'Active' : 'Idle'}
-        </span>
-
-        <span style={{ marginLeft: 'auto' }} />
-
-        <span style={{ fontSize: '13px', color: '#f3efe6', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-          {tps > 0 ? `${tps.toFixed(1)} tok/s` : '—'}
-        </span>
-        <span style={{ fontSize: '12px', color: '#b8b1a2', fontVariantNumeric: 'tabular-nums' }}>
-          {ppTps > 0 ? `${ppTps.toFixed(0)} pp/s` : ''}
-        </span>
-        <span style={{ fontSize: '12px', color: '#807a6c', fontVariantNumeric: 'tabular-nums' }}>
-          {slot.n_decoded} decoded
-        </span>
-        <span style={{ fontSize: '11px', color: '#807a6c', fontVariantNumeric: 'tabular-nums' }}>
-          KV {pct(cacheUtil)}
-        </span>
-      </div>
-
-      {/* TPS chart — full width, always visible */}
-      <AreaChart
-        data={history.length > 0 ? history.map(h => h.tps) : [0]}
-        color={isActive ? '#e8c66b' : '#4f4a40'}
-        label=""
-        currentValue=""
-        height={40}
-        fillOpacity={isActive ? 0.25 : 0.05}
-        gradientId={`slot-tps-${slot.id}`}
+        ))}
+      </defs>
+      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,245,220,0.04)" vertical={false} />
+      <YAxis hide domain={[0, 'auto']} />
+      <Tooltip
+        contentStyle={CHART_TOOLTIP_STYLE}
+        labelStyle={{ display: 'none' }}
+        formatter={(value: number) => [`${value.toFixed(1)}${unit}`, undefined]}
+        isAnimationActive={false}
       />
-    </div>
-  );
-};
+      {series.map(s => (
+        <Area
+          key={s.key}
+          type="monotone"
+          dataKey={s.key}
+          stroke={s.color}
+          fill={`url(#grad-${s.key})`}
+          strokeWidth={2}
+          dot={false}
+          isAnimationActive={false}
+          name={s.name || s.key}
+        />
+      ))}
+    </RechartArea>
+  </ResponsiveContainer>
+);
 
 /* ── Model row ─────────────────────────────────────────────── */
 
@@ -372,6 +284,7 @@ const Dashboard: React.FC = () => {
 
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const smoothedTpsRef = useRef(new Map<number, { tps: number; ppTps: number }>());
 
   /* ── Aggregate throughput from all slots ──────────────────── */
 
@@ -389,10 +302,9 @@ const Dashboard: React.FC = () => {
       const currPrompted = s.n_prompt_tokens_processed || 0;
       const prev = c.prevSlotTokens.get(s.id);
 
-      // Calculate live TPS from token count deltas between polls
-      let slotTps = 0;
-      let slotPpTps = 0;
-      let slotActive = s.is_processing;
+      // Calculate raw TPS from token count deltas
+      let rawTps = 0;
+      let rawPpTps = 0;
 
       if (prev) {
         const elapsedSec = (now - prev.ts) / 1000;
@@ -400,29 +312,32 @@ const Dashboard: React.FC = () => {
         const promptDelta = currPrompted - prev.prompted;
 
         if (elapsedSec > 0.1) {
-          if (decodeDelta > 0) {
-            slotTps = decodeDelta / elapsedSec;
-            slotActive = true; // slot is actively decoding
-          }
-          if (promptDelta > 0) {
-            slotPpTps = promptDelta / elapsedSec;
-            slotActive = true;
-          }
+          if (decodeDelta > 0) rawTps = decodeDelta / elapsedSec;
+          if (promptDelta > 0) rawPpTps = promptDelta / elapsedSec;
         }
 
-        // Accumulate session totals
         if (decodeDelta > 0) c.totalTokensGenerated += decodeDelta;
         if (promptDelta > 0) c.totalPromptTokens += promptDelta;
       } else {
-        // First poll for this slot — skip delta, just init
         c.totalTokensGenerated += currDecoded;
         c.totalPromptTokens += currPrompted;
       }
 
-      // Fall back to server-reported timings if delta TPS is 0 (e.g. first poll or completed)
-      if (slotTps === 0 && t.predicted_per_second > 0) slotTps = t.predicted_per_second;
-      if (slotPpTps === 0 && t.prompt_per_second > 0) slotPpTps = t.prompt_per_second;
+      // EMA smoothing with gradual decay
+      const prevSmooth = smoothedTpsRef.current.get(s.id);
+      let slotTps = rawTps;
+      let slotPpTps = rawPpTps;
+      if (prevSmooth) {
+        slotTps = rawTps > 0
+          ? SMOOTH_ALPHA * rawTps + (1 - SMOOTH_ALPHA) * prevSmooth.tps
+          : prevSmooth.tps > DECAY_THRESHOLD ? prevSmooth.tps * DECAY_FACTOR : 0;
+        slotPpTps = rawPpTps > 0
+          ? SMOOTH_ALPHA * rawPpTps + (1 - SMOOTH_ALPHA) * prevSmooth.ppTps
+          : prevSmooth.ppTps > DECAY_THRESHOLD ? prevSmooth.ppTps * DECAY_FACTOR : 0;
+      }
+      smoothedTpsRef.current.set(s.id, { tps: slotTps, ppTps: slotPpTps });
 
+      const slotActive = slotTps > DECAY_THRESHOLD || s.is_processing;
       c.prevSlotTokens.set(s.id, { decoded: currDecoded, prompted: currPrompted, ts: now });
       perSlotLive.set(s.id, { tps: slotTps, ppTps: slotPpTps, isActive: slotActive });
 
@@ -646,6 +561,36 @@ const Dashboard: React.FC = () => {
     return map;
   }, [loadedModels]);
 
+  const aggChartData = useMemo(() =>
+    history.map(h => ({ genTps: h.aggregateTps, ppTps: h.aggregatePromptTps })),
+    [history]
+  );
+
+  const slotChartData = useMemo(() => {
+    if (slots.length === 0) return [];
+    const maxLen = Math.max(...slots.map(s => (slotHistory[s.id] || []).length), 0);
+    const data: Record<string, number>[] = [];
+    for (let i = 0; i < maxLen; i++) {
+      const point: Record<string, number> = {};
+      for (const s of slots) {
+        const hist = slotHistory[s.id] || [];
+        point[`slot${s.id}`] = hist[i]?.tps || 0;
+      }
+      data.push(point);
+    }
+    return data;
+  }, [slots, slotHistory]);
+
+  const sysChartData = useMemo(() =>
+    history.map(h => ({ cpu: h.cpu ?? 0, gpu: h.gpu ?? 0 })),
+    [history]
+  );
+
+  const cacheChartData = useMemo(() =>
+    history.map(h => ({ cache: h.cacheUtil ?? 0 })),
+    [history]
+  );
+
   /* ── Render ──────────────────────────────────────────────── */
 
   return (
@@ -678,7 +623,7 @@ const Dashboard: React.FC = () => {
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
               <span style={{ fontSize: '2rem', fontWeight: 700, color: '#e8c66b', fontVariantNumeric: 'tabular-nums' }}>
-                {latestTps > 0 ? latestTps.toFixed(1) : '—'}
+                {latestTps > 0.05 ? latestTps.toFixed(1) : (counters.peakTps > 0 ? '0.0' : '—')}
               </span>
               <span style={{ fontSize: '13px', color: '#807a6c' }}>tok/s</span>
               {counters.peakTps > 0 && (
@@ -689,7 +634,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
               <span style={{ fontSize: '2rem', fontWeight: 700, color: '#7baed4', fontVariantNumeric: 'tabular-nums' }}>
-                {latestPP > 0 ? latestPP.toFixed(0) : '—'}
+                {latestPP > 0.05 ? latestPP.toFixed(0) : (counters.peakPromptTps > 0 ? '0' : '—')}
               </span>
               <span style={{ fontSize: '13px', color: '#807a6c' }}>pp/s</span>
             </div>
@@ -706,13 +651,24 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="dash2-charts">
-            <AreaChart data={history.map(h => h.aggregateTps)} color="#e8c66b"
-              label="Generation TPS" currentValue={latestTps > 0 ? `${latestTps.toFixed(1)} tok/s` : 'idle'}
-              height={80} />
-            <AreaChart data={history.map(h => h.aggregatePromptTps)} color="#7baed4"
-              label="Prompt Processing" currentValue={latestPP > 0 ? `${latestPP.toFixed(0)} tok/s` : 'idle'}
-              height={80} />
+          <SmoothChart
+            data={aggChartData}
+            series={[
+              { key: 'genTps', color: '#e8c66b', name: 'Generation TPS' },
+              { key: 'ppTps', color: '#7baed4', name: 'Prompt Processing' },
+            ]}
+            height={120}
+            unit=" tok/s"
+          />
+          <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#807a6c' }}>
+              <span style={{ width: 10, height: 3, borderRadius: 2, background: '#e8c66b' }} />
+              Generation TPS
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#807a6c' }}>
+              <span style={{ width: 10, height: 3, borderRadius: 2, background: '#7baed4' }} />
+              Prompt Processing
+            </span>
           </div>
         </div>
 
@@ -723,8 +679,37 @@ const Dashboard: React.FC = () => {
               Parallel Slots
               <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
             </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {slots.map(s => <SlotRow key={s.id} slot={s} history={slotHistory[s.id] || []} live={slotLive[s.id]} />)}
+            <SmoothChart
+              data={slotChartData}
+              series={slots.map((s, i) => ({
+                key: `slot${s.id}`,
+                color: SLOT_COLORS[i % SLOT_COLORS.length],
+                name: `Slot ${s.id}`,
+              }))}
+              height={160}
+              unit=" tok/s"
+            />
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '12px' }}>
+              {slots.map((s, i) => {
+                const live = slotLive[s.id];
+                const isActive = live?.isActive || s.is_processing;
+                const tps = live?.tps || 0;
+                const color = SLOT_COLORS[i % SLOT_COLORS.length];
+                const cacheLen = s.cache_tokens?.length || 0;
+                const cu = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
+                return (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isActive ? 1 : 0.5 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: isActive ? `0 0 6px ${color}` : 'none', flexShrink: 0 }} />
+                    <span style={{ fontSize: '12px', color: '#b8b1a2' }}>Slot {s.id}</span>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: isActive ? '#f3efe6' : '#4f4a40', fontVariantNumeric: 'tabular-nums' }}>
+                      {tps > 0.05 ? `${tps.toFixed(1)} tok/s` : 'idle'}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#807a6c', fontVariantNumeric: 'tabular-nums' }}>
+                      KV {pct(cu)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -749,12 +734,15 @@ const Dashboard: React.FC = () => {
               <RingGauge label="KV Cache" value={overallCacheUtil}
                 color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
             </div>
-            <div className="dash2-charts">
-              <AreaChart data={history.map(h => h.cpu)} color="#7fb38a"
-                label="CPU" currentValue={pct(sysStats?.cpu_percent ?? null)} height={56} />
-              {hasGpu && <AreaChart data={history.map(h => h.gpu)} color="#e8c66b"
-                label="GPU" currentValue={pct(sysStats?.gpu_percent ?? null)} height={56} />}
-            </div>
+            <SmoothChart
+              data={sysChartData}
+              series={[
+                { key: 'cpu', color: '#7fb38a', name: 'CPU %' },
+                ...(hasGpu ? [{ key: 'gpu', color: '#e8c66b', name: 'GPU %' }] : []),
+              ]}
+              height={56}
+              unit="%"
+            />
           </div>
 
           {stats ? (
@@ -778,9 +766,13 @@ const Dashboard: React.FC = () => {
                   <span className="dash2-inf__l">Completion Tokens</span>
                 </div>
               </div>
-              <div className="dash2-charts" style={{ marginTop: 'auto' }}>
-                <AreaChart data={history.map(h => h.cacheUtil)} color="#d9a35b"
-                  label="KV Cache" currentValue={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} height={56} />
+              <div style={{ marginTop: 'auto' }}>
+                <SmoothChart
+                  data={cacheChartData}
+                  series={[{ key: 'cache', color: '#d9a35b', name: 'KV Cache %' }]}
+                  height={56}
+                  unit="%"
+                />
               </div>
             </div>
           ) : (
