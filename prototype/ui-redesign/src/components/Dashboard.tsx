@@ -36,7 +36,7 @@ interface SessionCounters {
   peakTps: number;
   peakPromptTps: number;
   sessionStart: number;
-  prevSlotTokens: Map<number, { decoded: number; prompted: number }>;
+  prevSlotTokens: Map<number, { decoded: number; prompted: number; ts: number }>;
 }
 
 function initCounters(): SessionCounters {
@@ -48,6 +48,13 @@ function initCounters(): SessionCounters {
     sessionStart: Date.now(),
     prevSlotTokens: new Map(),
   };
+}
+
+/** Per-slot live TPS computed from token count deltas between polls */
+interface SlotLiveTps {
+  tps: number;
+  ppTps: number;
+  isActive: boolean;
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -263,12 +270,15 @@ const HeroStat: React.FC<{
 
 /* ── Slot card with per-slot TPS graph ──────────────────────── */
 
-const SlotCard: React.FC<{ slot: SlotData; history: SlotHistoryPoint[] }> = ({ slot, history }) => {
+const SlotCard: React.FC<{ slot: SlotData; history: SlotHistoryPoint[]; live?: SlotLiveTps }> = ({ slot, history, live }) => {
   const cacheLen = slot.cache_tokens?.length || 0;
   const cacheUtil = slot.n_ctx > 0 ? (cacheLen / slot.n_ctx) * 100 : 0;
   const t = slot.timings || {} as SlotTimings;
-  const tps = t.predicted_per_second > 0 ? t.predicted_per_second : 0;
-  const ppTps = t.prompt_per_second > 0 ? t.prompt_per_second : 0;
+
+  // Prefer delta-based live TPS, fall back to server timings
+  const tps = live?.tps || (t.predicted_per_second > 0 ? t.predicted_per_second : 0);
+  const ppTps = live?.ppTps || (t.prompt_per_second > 0 ? t.prompt_per_second : 0);
+  const isActive = live?.isActive || slot.is_processing;
 
   // Derive prompt snippet for slot identification
   const promptSnippet = slot.prompt
@@ -276,13 +286,13 @@ const SlotCard: React.FC<{ slot: SlotData; history: SlotHistoryPoint[] }> = ({ s
     : '(no prompt)';
 
   return (
-    <div className={`dash2-slotcard ${slot.is_processing ? 'dash2-slotcard--active' : ''}`}>
+    <div className={`dash2-slotcard ${isActive ? 'dash2-slotcard--active' : ''}`}>
       <div className="dash2-slotcard__head">
         <div className="dash2-slotcard__id">
-          <span className={`dash2-slotcard__dot ${slot.is_processing ? 'dash2-slotcard__dot--on' : ''}`} />
+          <span className={`dash2-slotcard__dot ${isActive ? 'dash2-slotcard__dot--on' : ''}`} />
           <span>Slot {slot.id}</span>
-          <span className={`dash2-slotcard__state ${slot.is_processing ? 'dash2-slotcard__state--on' : ''}`}>
-            {slot.is_processing ? 'Active' : 'Idle'}
+          <span className={`dash2-slotcard__state ${isActive ? 'dash2-slotcard__state--on' : ''}`}>
+            {isActive ? 'Active' : 'Idle'}
           </span>
         </div>
         <span className="dash2-slotcard__prompt" title={slot.prompt || undefined}>
@@ -314,11 +324,11 @@ const SlotCard: React.FC<{ slot: SlotData; history: SlotHistoryPoint[] }> = ({ s
       {history.length > 1 && (
         <AreaChart
           data={history.map(h => h.tps)}
-          color={slot.is_processing ? '#e8c66b' : '#666'}
+          color={isActive ? '#e8c66b' : '#666'}
           label="Decode TPS"
           currentValue={tps > 0 ? `${tps.toFixed(1)} tok/s` : 'idle'}
           height={48}
-          fillOpacity={slot.is_processing ? 0.2 : 0.05}
+          fillOpacity={isActive ? 0.2 : 0.05}
           gradientId={`slot-tps-${slot.id}`}
         />
       )}
@@ -367,6 +377,7 @@ const Dashboard: React.FC = () => {
   const [slots, setSlots] = useState<SlotData[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [slotHistory, setSlotHistory] = useState<Record<number, SlotHistoryPoint[]>>({});
+  const [slotLive, setSlotLive] = useState<Record<number, SlotLiveTps>>({});
   const [pollCount, setPollCount] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -378,36 +389,63 @@ const Dashboard: React.FC = () => {
 
   const computeAggregates = useCallback((slotData: SlotData[]) => {
     const c = countersRef.current;
+    const now = Date.now();
 
     let aggTps = 0;
     let aggPromptTps = 0;
+    const perSlotLive: Map<number, SlotLiveTps> = new Map();
 
     for (const s of slotData) {
       const t = s.timings || {} as SlotTimings;
-      if (t.predicted_per_second > 0) aggTps += t.predicted_per_second;
-      if (t.prompt_per_second > 0) aggPromptTps += t.prompt_per_second;
-    }
-
-    // Accumulate token deltas for session totals
-    for (const s of slotData) {
-      const prev = c.prevSlotTokens.get(s.id);
       const currDecoded = s.n_decoded || 0;
       const currPrompted = s.n_prompt_tokens_processed || 0;
+      const prev = c.prevSlotTokens.get(s.id);
+
+      // Calculate live TPS from token count deltas between polls
+      let slotTps = 0;
+      let slotPpTps = 0;
+      let slotActive = s.is_processing;
 
       if (prev) {
-        if (currDecoded > prev.decoded) c.totalTokensGenerated += currDecoded - prev.decoded;
-        if (currPrompted > prev.prompted) c.totalPromptTokens += currPrompted - prev.prompted;
+        const elapsedSec = (now - prev.ts) / 1000;
+        const decodeDelta = currDecoded - prev.decoded;
+        const promptDelta = currPrompted - prev.prompted;
+
+        if (elapsedSec > 0.1) {
+          if (decodeDelta > 0) {
+            slotTps = decodeDelta / elapsedSec;
+            slotActive = true; // slot is actively decoding
+          }
+          if (promptDelta > 0) {
+            slotPpTps = promptDelta / elapsedSec;
+            slotActive = true;
+          }
+        }
+
+        // Accumulate session totals
+        if (decodeDelta > 0) c.totalTokensGenerated += decodeDelta;
+        if (promptDelta > 0) c.totalPromptTokens += promptDelta;
       } else {
+        // First poll for this slot — skip delta, just init
         c.totalTokensGenerated += currDecoded;
         c.totalPromptTokens += currPrompted;
       }
-      c.prevSlotTokens.set(s.id, { decoded: currDecoded, prompted: currPrompted });
+
+      // Fall back to server-reported timings if delta TPS is 0 (e.g. first poll or completed)
+      if (slotTps === 0 && t.predicted_per_second > 0) slotTps = t.predicted_per_second;
+      if (slotPpTps === 0 && t.prompt_per_second > 0) slotPpTps = t.prompt_per_second;
+
+      c.prevSlotTokens.set(s.id, { decoded: currDecoded, prompted: currPrompted, ts: now });
+      perSlotLive.set(s.id, { tps: slotTps, ppTps: slotPpTps, isActive: slotActive });
+
+      aggTps += slotTps;
+      aggPromptTps += slotPpTps;
     }
 
     if (aggTps > c.peakTps) c.peakTps = aggTps;
     if (aggPromptTps > c.peakPromptTps) c.peakPromptTps = aggPromptTps;
 
-    return { aggTps, aggPromptTps };
+    return { aggTps, aggPromptTps, perSlotLive };
   }, []);
 
   /* ── Polling ─────────────────────────────────────────────── */
@@ -430,23 +468,28 @@ const Dashboard: React.FC = () => {
       }
       setSlots(slotData);
 
-      const { aggTps, aggPromptTps } = computeAggregates(slotData);
+      const { aggTps, aggPromptTps, perSlotLive } = computeAggregates(slotData);
 
-      // Build per-slot history
+      // Store live TPS for render
+      const liveObj: Record<number, SlotLiveTps> = {};
+      for (const [id, v] of perSlotLive) liveObj[id] = v;
+      setSlotLive(liveObj);
+
+      // Build per-slot history using delta-based live TPS
       const now = Date.now();
       setSlotHistory(prev => {
         const next = { ...prev };
         for (const s of slotData) {
-          const t = s.timings || {} as SlotTimings;
+          const live = perSlotLive.get(s.id);
           const cacheLen = s.cache_tokens?.length || 0;
           const cacheUtil = s.n_ctx > 0 ? (cacheLen / s.n_ctx) * 100 : 0;
           const point: SlotHistoryPoint = {
             ts: now,
-            tps: t.predicted_per_second > 0 ? t.predicted_per_second : 0,
-            ppTps: t.prompt_per_second > 0 ? t.prompt_per_second : 0,
+            tps: live?.tps || 0,
+            ppTps: live?.ppTps || 0,
             decoded: s.n_decoded || 0,
             cacheUtil,
-            isActive: s.is_processing,
+            isActive: live?.isActive || s.is_processing,
           };
           const arr = next[s.id] || [];
           next[s.id] = arr.length >= HISTORY_LEN ? [...arr.slice(-HISTORY_LEN + 1), point] : [...arr, point];
@@ -454,7 +497,10 @@ const Dashboard: React.FC = () => {
         return next;
       });
 
-      const activeSlots = slotData.filter(s => s.is_processing).length;
+      const activeSlots = slotData.filter((s, _i) => {
+        const live = perSlotLive.get(s.id);
+        return live?.isActive || s.is_processing;
+      }).length;
       const totalSlots = slotData.length;
       const totalCache = slotData.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
       const totalCtx = slotData.reduce((a, s) => a + s.n_ctx, 0);
@@ -598,7 +644,7 @@ const Dashboard: React.FC = () => {
   const counters = countersRef.current;
   const latestTps = history.length > 0 ? history[history.length - 1].aggregateTps : 0;
   const latestPP = history.length > 0 ? history[history.length - 1].aggregatePromptTps : 0;
-  const activeSlotCount = slots.filter(s => s.is_processing).length;
+  const activeSlotCount = slots.filter(s => slotLive[s.id]?.isActive || s.is_processing).length;
   const totalCacheTokens = slots.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
   const totalCtx = slots.reduce((a, s) => a + s.n_ctx, 0);
   const overallCacheUtil = totalCtx > 0 ? (totalCacheTokens / totalCtx) * 100 : null;
@@ -662,6 +708,19 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* ═══ Parallel Slots — Per-Slot Metrics ═══ */}
+        {slots.length > 0 && (
+          <div className="dash2-card">
+            <h2 className="dash2-card__h">
+              Parallel Slots
+              <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
+            </h2>
+            <div className="dash2-slotcards">
+              {slots.map(s => <SlotCard key={s.id} slot={s} history={slotHistory[s.id] || []} live={slotLive[s.id]} />)}
+            </div>
+          </div>
+        )}
+
         {/* ═══ Two-column: System Vitals | Last Inference ═══ */}
         <div className="dash2-grid-2col">
           <div className="dash2-card">
@@ -723,19 +782,6 @@ const Dashboard: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* ═══ Parallel Slots — Per-Slot Metrics ═══ */}
-        {slots.length > 0 && (
-          <div className="dash2-card">
-            <h2 className="dash2-card__h">
-              Parallel Slots
-              <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
-            </h2>
-            <div className="dash2-slotcards">
-              {slots.map(s => <SlotCard key={s.id} slot={s} history={slotHistory[s.id] || []} />)}
-            </div>
-          </div>
-        )}
 
         {/* ═══ Two-column: Loaded Models | Model Capacity ═══ */}
         <div className="dash2-grid-2col">
