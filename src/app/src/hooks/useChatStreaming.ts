@@ -21,6 +21,7 @@ function summarizeResult(toolName: string, data: Record<string, unknown>): strin
     case 'get_system_info': return 'System info retrieved';
     case 'list_backends': return `${Object.keys(data).length} recipe(s)`;
     case 'install_backend': return `${data.status}`;
+    case 'ask_question': return 'Presenting choices';
     default: return JSON.stringify(data).slice(0, 80);
   }
 }
