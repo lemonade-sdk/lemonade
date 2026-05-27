@@ -4148,6 +4148,89 @@ input, textarea {
   height: auto;
 }
 
+/* Override mermaid SVG colors with theme tokens so diagrams adapt to light/dark */
+.mermaid-block__diagram .node rect,
+.mermaid-block__diagram .node circle,
+.mermaid-block__diagram .node polygon,
+.mermaid-block__diagram .node .label-container {
+  fill: var(--surface-2) !important;
+  stroke: var(--border-strong) !important;
+}
+
+.mermaid-block__diagram .cluster rect {
+  fill: var(--surface-1) !important;
+  stroke: var(--border) !important;
+}
+
+.mermaid-block__diagram .label,
+.mermaid-block__diagram .nodeLabel,
+.mermaid-block__diagram .edgeLabel,
+.mermaid-block__diagram .label-container {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+
+.mermaid-block__diagram .edgePath .path,
+.mermaid-block__diagram .flowchart-link {
+  stroke: var(--text-tertiary) !important;
+}
+
+.mermaid-block__diagram .arrowheadPath,
+.mermaid-block__diagram .marker {
+  fill: var(--text-tertiary) !important;
+  stroke: var(--text-tertiary) !important;
+}
+
+.mermaid-block__diagram .actor {
+  fill: var(--surface-2) !important;
+  stroke: var(--border-strong) !important;
+}
+
+.mermaid-block__diagram .actor-line {
+  stroke: var(--border) !important;
+}
+
+.mermaid-block__diagram text.actor,
+.mermaid-block__diagram .messageText,
+.mermaid-block__diagram .loopText,
+.mermaid-block__diagram .noteText {
+  fill: var(--text-primary) !important;
+}
+
+.mermaid-block__diagram .messageLine0,
+.mermaid-block__diagram .messageLine1 {
+  stroke: var(--text-tertiary) !important;
+}
+
+.mermaid-block__diagram .note {
+  fill: var(--accent-soft) !important;
+  stroke: var(--accent-deep) !important;
+}
+
+.mermaid-block__diagram .loopLine {
+  stroke: var(--border-strong) !important;
+}
+
+.mermaid-block__diagram .activation0,
+.mermaid-block__diagram .activation1,
+.mermaid-block__diagram .activation2 {
+  fill: var(--surface-3) !important;
+  stroke: var(--border-strong) !important;
+}
+
+.mermaid-block__diagram .labelBox {
+  fill: var(--surface-2) !important;
+  stroke: var(--border) !important;
+}
+
+.mermaid-block__diagram .labelText {
+  fill: var(--text-secondary) !important;
+}
+
+.mermaid-block__diagram line[id*="sequencenumber"] {
+  stroke: var(--accent) !important;
+}
+
 .mermaid-block__actions {
   display: flex;
   justify-content: flex-end;
