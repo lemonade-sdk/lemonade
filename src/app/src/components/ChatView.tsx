@@ -1,13 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import api, { ChatMessage, ChatCompletionStats, LoadedModel } from '../api';
 import MarkdownMessage from './MarkdownMessage';
-import { useChatStreaming } from '../hooks/useChatStreaming';
+import { useChatStreaming, ToolCallEntry } from '../hooks/useChatStreaming';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
   stats?: ChatCompletionStats;
+  toolCalls?: ToolCallEntry[];
 }
 
 interface Conversation {
@@ -94,13 +95,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, []);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
-  const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats) => {
+  const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, {
         role: 'assistant',
         content: stats.content,
         thinking: stats.reasoning || undefined,
+        toolCalls,
         stats,
       }],
       updatedAt: Date.now(),
@@ -123,6 +125,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
+  const streamingToolCalls = currentStream?.toolCalls || [];
   const currentLiveStats = activeId ? streaming.getLiveStats(activeId) : undefined;
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
@@ -347,6 +350,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                         >{streamingThinking}</div>
                       </details>
                     )}
+                    {streamingToolCalls.length > 0 && <ToolCallsDisplay calls={streamingToolCalls} />}
                     {streamingContent ? (
                       <MarkdownMessage content={streamingContent} isComplete={false} />
                     ) : !streamingThinking ? (
@@ -510,6 +514,42 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
 
 /* ─── Message bubble ──────────────────────────────────── */
 
+/* ── Tool call indicator ─────────────────────────────────── */
+
+const TOOL_LABELS: Record<string, string> = {
+  list_models: 'List models',
+  get_model_info: 'Get model info',
+  load_model: 'Load model',
+  unload_model: 'Unload model',
+  get_loaded_models: 'Get loaded models',
+  get_server_health: 'Server health',
+  pull_model: 'Pull model',
+  delete_model: 'Delete model',
+  get_system_info: 'System info',
+  list_backends: 'List backends',
+  install_backend: 'Install backend',
+};
+
+const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[] }> = ({ calls }) => {
+  if (calls.length === 0) return null;
+  return (
+    <div className="message__tool-calls">
+      {calls.map((tc, i) => (
+        <details key={i} className={`message__tool-call message__tool-call--${tc.status}`}>
+          <summary>
+            <span className="message__tool-call-icon">{tc.status === 'running' ? '⏳' : tc.status === 'error' ? '❌' : '✅'}</span>
+            <span className="message__tool-call-name">{TOOL_LABELS[tc.name] || tc.name}</span>
+            {tc.args && <span className="message__tool-call-args">{tc.args}</span>}
+          </summary>
+          {tc.result && <div className="message__tool-call-result">{tc.result}</div>}
+        </details>
+      ))}
+    </div>
+  );
+};
+
+/* ── Message bubble ──────────────────────────────────────── */
+
 const MessageBubble: React.FC<{ message: Message; currentModel: string | null }> = ({ message, currentModel }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
@@ -542,6 +582,7 @@ const MessageBubble: React.FC<{ message: Message; currentModel: string | null }>
             <div className="message__thinking-content">{message.thinking}</div>
           </details>
         )}
+        {message.toolCalls && <ToolCallsDisplay calls={message.toolCalls} />}
         <MarkdownMessage content={message.content} />
         {message.stats && (
           <div className="message__metrics">
