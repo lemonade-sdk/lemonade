@@ -157,9 +157,14 @@ export interface LogStreamHandle {
   close: () => void;
 }
 
+export type ChatMessageContent = string | null | Array<
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+>;
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: ChatMessageContent;
   tool_calls?: Array<{
     id: string;
     type: 'function';

@@ -1,29 +1,110 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import texmath from 'markdown-it-texmath';
 import katex from 'katex';
+import DOMPurify from 'dompurify';
 import 'highlight.js/styles/github-dark.css';
 import 'katex/dist/katex.min.css';
 
 interface MarkdownMessageProps {
   content: string;
   isComplete?: boolean;
+  onOptionSelect?: (text: string) => void;
 }
 
-const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2-2v1"></path></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true }) => {
+/* ── Mermaid lazy loader ──────────────────────────────────── */
+
+let mermaidPromise: Promise<typeof import('mermaid')> | null = null;
+function loadMermaid() {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then(m => {
+      m.default.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'strict',
+        fontFamily: 'var(--font-sans)',
+      });
+      return m;
+    });
+  }
+  return mermaidPromise;
+}
+
+/* ── DOMPurify config ─────────────────────────────────────── */
+
+const PURIFY_CONFIG: DOMPurify.Config = {
+  ALLOWED_TAGS: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr',
+    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+    'div', 'span', 'a', 'img',
+    'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'mark', 'sub', 'sup', 'small',
+    'blockquote', 'pre', 'code', 'kbd', 'var', 'samp',
+    'details', 'summary', 'figure', 'figcaption',
+    'abbr', 'cite', 'q', 'time', 'ruby', 'rt', 'rp',
+    // Interactive options
+    'button', 'input',
+    // SVG basics for inline diagrams
+    'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'text', 'g', 'defs',
+    'use', 'clipPath', 'marker', 'pattern', 'foreignObject', 'tspan',
+  ],
+  ALLOWED_ATTR: [
+    'class', 'id', 'style', 'href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height',
+    'colspan', 'rowspan', 'scope', 'align', 'valign',
+    'open', 'datetime', 'cite',
+    'data-option', 'data-mermaid', 'placeholder', 'type', 'value',
+    // SVG attrs
+    'd', 'fill', 'stroke', 'stroke-width', 'viewBox', 'xmlns', 'x', 'y', 'rx', 'ry',
+    'cx', 'cy', 'r', 'x1', 'y1', 'x2', 'y2', 'points', 'transform',
+    'font-size', 'text-anchor', 'dominant-baseline', 'clip-path', 'marker-end',
+    'marker-start', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity',
+  ],
+  ALLOW_DATA_ATTR: false,
+};
+
+const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true, onOptionSelect }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [, setMermaidTick] = useState(0);
 
   const md = useMemo(() => {
     const instance = new MarkdownIt({
-      html: false,
+      html: true,
       linkify: true,
       typographer: true,
       breaks: true,
       highlight(str: string, lang: string) {
+        // Mermaid blocks get a placeholder div
+        if (lang === 'mermaid') {
+          return `<div class="mermaid-block" data-mermaid="${instance.utils.escapeHtml(str)}"><div class="mermaid-block__loading">Loading diagram…</div></div>`;
+        }
+
+        // Options blocks get rendered as interactive buttons
+        if (lang === 'options') {
+          try {
+            const parsed = JSON.parse(str);
+            const question = parsed.question || '';
+            const choices: string[] = parsed.choices || parsed.options || [];
+            let optHtml = '<div class="options-block">';
+            if (question) optHtml += `<div class="options-block__question">${instance.utils.escapeHtml(question)}</div>`;
+            optHtml += '<div class="options-block__choices">';
+            for (const choice of choices) {
+              optHtml += `<button class="options-block__btn" data-option="${instance.utils.escapeHtml(choice)}">${instance.utils.escapeHtml(choice)}</button>`;
+            }
+            optHtml += '</div>';
+            if (parsed.allowCustom !== false) {
+              optHtml += '<div class="options-block__custom"><input class="options-block__input" placeholder="Or type your own…" /><button class="options-block__submit">Send</button></div>';
+            }
+            optHtml += '</div>';
+            return optHtml;
+          } catch {
+            // Invalid JSON — fall through to normal code block
+          }
+        }
+
         const langLabel = lang || 'text';
         let highlighted: string;
         if (lang && hljs.getLanguage(lang)) {
@@ -50,32 +131,107 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return instance;
   }, []);
 
-  const html = useMemo(() => md.render(content || ''), [md, content]);
+  const html = useMemo(() => {
+    const raw = md.render(content || '');
+    return DOMPurify.sanitize(raw, PURIFY_CONFIG);
+  }, [md, content]);
 
+  // Render mermaid diagrams after mount
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block[data-mermaid]');
+    if (blocks.length === 0) return;
+
+    let cancelled = false;
+    loadMermaid().then(async (mermaidModule) => {
+      if (cancelled) return;
+      for (const block of blocks) {
+        if (block.querySelector('svg')) continue;
+        const source = block.getAttribute('data-mermaid') || '';
+        if (!source.trim()) continue;
+        try {
+          const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          const { svg } = await mermaidModule.default.render(id, source);
+          if (!cancelled) {
+            block.innerHTML = svg;
+            block.classList.add('mermaid-block--rendered');
+          }
+        } catch {
+          if (!cancelled) {
+            block.innerHTML = `<div class="mermaid-block__error">Invalid diagram</div><pre class="mermaid-block__source"><code>${source}</code></pre>`;
+          }
+        }
+      }
+      if (!cancelled) setMermaidTick(t => t + 1);
+    });
+
+    return () => { cancelled = true; };
+  }, [html]);
+
+  // Handle copy buttons and option buttons
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleClick = (e: MouseEvent) => {
-      const btn = (e.target as HTMLElement).closest('.code-block__copy') as HTMLButtonElement | null;
-      if (!btn) return;
-      const codeBlock = btn.closest('.code-block');
-      const code = codeBlock?.querySelector('code');
-      if (!code) return;
+      const target = e.target as HTMLElement;
 
-      navigator.clipboard.writeText(code.textContent || '').then(() => {
-        btn.innerHTML = CHECK_ICON;
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.innerHTML = COPY_ICON;
-          btn.classList.remove('copied');
-        }, 2000);
-      });
+      // Copy button
+      const copyBtn = target.closest('.code-block__copy') as HTMLButtonElement | null;
+      if (copyBtn) {
+        const codeBlock = copyBtn.closest('.code-block');
+        const code = codeBlock?.querySelector('code');
+        if (!code) return;
+        navigator.clipboard.writeText(code.textContent || '').then(() => {
+          copyBtn.innerHTML = CHECK_ICON;
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.innerHTML = COPY_ICON;
+            copyBtn.classList.remove('copied');
+          }, 2000);
+        });
+        return;
+      }
+
+      // Option button
+      const optBtn = target.closest('.options-block__btn') as HTMLButtonElement | null;
+      if (optBtn && onOptionSelect) {
+        onOptionSelect(optBtn.getAttribute('data-option') || optBtn.textContent || '');
+        return;
+      }
+
+      // Custom option submit
+      const submitBtn = target.closest('.options-block__submit') as HTMLButtonElement | null;
+      if (submitBtn && onOptionSelect) {
+        const input = submitBtn.parentElement?.querySelector('.options-block__input') as HTMLInputElement | null;
+        if (input?.value.trim()) {
+          onOptionSelect(input.value.trim());
+          input.value = '';
+        }
+        return;
+      }
+    };
+
+    // Handle Enter key in custom option input
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('options-block__input') && e.key === 'Enter' && onOptionSelect) {
+        const input = target as HTMLInputElement;
+        if (input.value.trim()) {
+          onOptionSelect(input.value.trim());
+          input.value = '';
+        }
+      }
     };
 
     container.addEventListener('click', handleClick);
-    return () => container.removeEventListener('click', handleClick);
-  }, [html]);
+    container.addEventListener('keydown', handleKeyDown);
+    return () => {
+      container.removeEventListener('click', handleClick);
+      container.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [html, onOptionSelect]);
 
   return (
     <div
