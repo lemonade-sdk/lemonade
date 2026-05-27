@@ -56,7 +56,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
     'class', 'id', 'style', 'href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height',
     'colspan', 'rowspan', 'scope', 'align', 'valign',
     'open', 'datetime', 'cite',
-    'data-option', 'data-mermaid', 'placeholder', 'type', 'value',
+    'data-option', 'data-mermaid-pending', 'data-mermaid-toggle', 'placeholder', 'type', 'value',
     // SVG attrs
     'd', 'fill', 'stroke', 'stroke-width', 'viewBox', 'xmlns', 'x', 'y', 'rx', 'ry',
     'cx', 'cy', 'r', 'x1', 'y1', 'x2', 'y2', 'points', 'transform',
@@ -80,7 +80,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         // Mermaid blocks get a placeholder div
         if (lang.toLowerCase() === 'mermaid') {
           const escaped = instance.utils.escapeHtml(str);
-          return `<div class="mermaid-block" data-mermaid="${escaped}"><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
+          return `<div class="mermaid-block" data-mermaid-pending><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
         }
 
         // Options blocks get rendered as interactive buttons
@@ -142,7 +142,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     if (!isComplete) return;
     const container = containerRef.current;
     if (!container) return;
-    const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block[data-mermaid]');
+    const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block[data-mermaid-pending]');
     if (blocks.length === 0) return;
 
     let cancelled = false;
@@ -150,7 +150,9 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       if (cancelled) return;
       for (const block of blocks) {
         if (block.querySelector('svg')) continue;
-        const source = block.getAttribute('data-mermaid') || '';
+        // Read source from the code element (avoids data-attribute encoding issues)
+        const codeEl = block.querySelector('.mermaid-block__source code');
+        const source = codeEl?.textContent || '';
         if (!source.trim()) continue;
         try {
           const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -165,30 +167,33 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             svgWrapper.innerHTML = svg;
             block.insertBefore(svgWrapper, block.firstChild);
             block.classList.add('mermaid-block--rendered');
+            block.removeAttribute('data-mermaid-pending');
           }
         } catch (err) {
-          console.error('Mermaid render error:', err);
+          console.error('Mermaid render error:', err, '\nSource:', source);
           if (!cancelled) {
             // Remove loading but keep source visible for debugging
             const loading = block.querySelector('.mermaid-block__loading');
             if (loading) loading.remove();
             const errorDiv = document.createElement('div');
             errorDiv.className = 'mermaid-block__error';
-            errorDiv.textContent = 'Invalid diagram';
+            errorDiv.textContent = 'Diagram syntax error';
             block.insertBefore(errorDiv, block.firstChild);
             // Show the source block on error
             const sourceBlock = block.querySelector('.mermaid-block__source') as HTMLElement;
             if (sourceBlock) sourceBlock.style.display = '';
+            block.removeAttribute('data-mermaid-pending');
           }
         }
       }
       if (!cancelled) setMermaidTick(t => t + 1);
     }).catch((err) => {
-      console.error('Failed to load mermaid:', err);
+      console.error('Failed to load mermaid module:', err);
       if (cancelled) return;
       for (const block of blocks) {
         if (!block.querySelector('svg')) {
-          block.innerHTML = '<div class="mermaid-block__error">Failed to load diagram renderer</div>';
+          const loading = block.querySelector('.mermaid-block__loading');
+          if (loading) loading.textContent = 'Failed to load diagram renderer';
         }
       }
     });
