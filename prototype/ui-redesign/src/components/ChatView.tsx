@@ -73,11 +73,16 @@ interface ChatViewProps {
   onRefresh: () => void;
 }
 
+const TOOLS_KEY = 'lemonade_use_tools';
+
 const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh }) => {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string | null>(loadActiveId);
   const [inputValue, setInputValue] = useState('');
   const [railExpanded, setRailExpanded] = useState(true);
+  const [useTools, setUseTools] = useState(() => {
+    try { return localStorage.getItem(TOOLS_KEY) === 'true'; } catch { return false; }
+  });
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
@@ -117,6 +122,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const isStreaming = !!currentStream;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
+  const streamingToolStatus = currentStream?.toolStatus || '';
   const currentLiveStats = activeId ? streaming.getLiveStats(activeId) : undefined;
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
@@ -231,7 +237,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       { role: 'user' as const, content: text },
     ];
 
-    await streaming.send(convoId, currentModel, chatMessages);
+    await streaming.send(convoId, currentModel, chatMessages, useTools);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -367,18 +373,38 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
       {/* Composer */}
       <div className="composer">
-        {loadedModels.length > 1 && (
-          <div className="composer__model-picker">
-            <span className="composer__model-label">Model</span>
-            <select
-              className="composer__model-select"
-              value={currentModel || ''}
-              onChange={e => onModelSelect(e.target.value)}
-            >
-              {loadedModels.map(m => (
-                <option key={m.model_name} value={m.model_name}>{m.model_name}</option>
-              ))}
-            </select>
+        <div className="composer__toolbar">
+          {loadedModels.length > 1 && (
+            <div className="composer__model-picker">
+              <span className="composer__model-label">Model</span>
+              <select
+                className="composer__model-select"
+                value={currentModel || ''}
+                onChange={e => onModelSelect(e.target.value)}
+              >
+                {loadedModels.map(m => (
+                  <option key={m.model_name} value={m.model_name}>{m.model_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            className={`composer__tools-toggle ${useTools ? 'composer__tools-toggle--active' : ''}`}
+            onClick={() => {
+              const next = !useTools;
+              setUseTools(next);
+              try { localStorage.setItem(TOOLS_KEY, String(next)); } catch { /* ignore */ }
+            }}
+            title={useTools ? 'Lemonade tools enabled — click to disable' : 'Enable lemonade tools (model management via chat)'}
+            aria-pressed={useTools}
+          >
+            🛠 Tools {useTools ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        {streamingToolStatus && (
+          <div className="composer__tool-status">
+            <span className="composer__tool-status-dot" />
+            {streamingToolStatus}
           </div>
         )}
         <div className="composer__bar">
