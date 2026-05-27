@@ -56,7 +56,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
     'class', 'id', 'style', 'href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height',
     'colspan', 'rowspan', 'scope', 'align', 'valign',
     'open', 'datetime', 'cite',
-    'data-option', 'data-mermaid-pending', 'data-mermaid-toggle', 'placeholder', 'type', 'value',
+    'data-option', 'data-mermaid-toggle', 'placeholder', 'type', 'value',
     // SVG attrs
     'd', 'fill', 'stroke', 'stroke-width', 'viewBox', 'xmlns', 'x', 'y', 'rx', 'ry',
     'cx', 'cy', 'r', 'x1', 'y1', 'x2', 'y2', 'points', 'transform',
@@ -80,7 +80,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         // Mermaid blocks get a placeholder div
         if (lang.toLowerCase() === 'mermaid') {
           const escaped = instance.utils.escapeHtml(str);
-          return `<div class="mermaid-block" data-mermaid-pending><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
+          return `<div class="mermaid-block mermaid-block--pending"><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
         }
 
         // Options blocks get rendered as interactive buttons
@@ -139,24 +139,34 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
 
   // Render mermaid diagrams after mount (skip during streaming to avoid cancellation race)
   useEffect(() => {
-    if (!isComplete) return;
+    if (!isComplete) {
+      console.debug('[mermaid] skipped: streaming (isComplete=false)');
+      return;
+    }
     const container = containerRef.current;
-    if (!container) return;
-    const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block[data-mermaid-pending]');
+    if (!container) {
+      console.debug('[mermaid] skipped: no container ref');
+      return;
+    }
+    const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block--pending');
+    console.debug(`[mermaid] found ${blocks.length} pending block(s)`);
     if (blocks.length === 0) return;
 
     let cancelled = false;
     loadMermaid().then(async (mermaidModule) => {
+      console.debug('[mermaid] module loaded, cancelled:', cancelled);
       if (cancelled) return;
       for (const block of blocks) {
         if (block.querySelector('svg')) continue;
         // Read source from the code element (avoids data-attribute encoding issues)
         const codeEl = block.querySelector('.mermaid-block__source code');
         const source = codeEl?.textContent || '';
+        console.debug('[mermaid] source length:', source.length, 'first 100:', source.slice(0, 100));
         if (!source.trim()) continue;
         try {
           const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           const { svg } = await mermaidModule.default.render(id, source);
+          console.debug('[mermaid] render success, svg length:', svg.length);
           if (!cancelled) {
             // Remove loading indicator but keep actions bar and source block
             const loading = block.querySelector('.mermaid-block__loading');
@@ -167,10 +177,10 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             svgWrapper.innerHTML = svg;
             block.insertBefore(svgWrapper, block.firstChild);
             block.classList.add('mermaid-block--rendered');
-            block.removeAttribute('data-mermaid-pending');
+            block.classList.remove('mermaid-block--pending');
           }
         } catch (err) {
-          console.error('Mermaid render error:', err, '\nSource:', source);
+          console.error('[mermaid] render error:', err, '\nSource:', source);
           if (!cancelled) {
             // Remove loading but keep source visible for debugging
             const loading = block.querySelector('.mermaid-block__loading');
@@ -182,13 +192,13 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             // Show the source block on error
             const sourceBlock = block.querySelector('.mermaid-block__source') as HTMLElement;
             if (sourceBlock) sourceBlock.style.display = '';
-            block.removeAttribute('data-mermaid-pending');
+            block.classList.remove('mermaid-block--pending');
           }
         }
       }
       if (!cancelled) setMermaidTick(t => t + 1);
     }).catch((err) => {
-      console.error('Failed to load mermaid module:', err);
+      console.error('[mermaid] module load error:', err);
       if (cancelled) return;
       for (const block of blocks) {
         if (!block.querySelector('svg')) {
