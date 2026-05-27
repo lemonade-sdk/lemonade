@@ -24,7 +24,7 @@ function ensureMermaidInit() {
   if (!mermaidReady) {
     mermaid.initialize({
       startOnLoad: false,
-      theme: 'dark',
+      theme: 'neutral',
       securityLevel: 'strict',
     });
     mermaidReady = true;
