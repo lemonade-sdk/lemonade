@@ -4,10 +4,39 @@ import { LEMONADE_TOOLS, executeTool, ToolCall } from '../tools/lemonadeTools';
 
 const MAX_TOOL_ROUNDS = 5;
 
+/** Produce a short human-readable summary of a tool result */
+function summarizeResult(toolName: string, data: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'list_models': return `${data.count} models found`;
+    case 'get_model_info': return `${(data as any).display_name || (data as any).name || (data as any).id || 'model'} — ${((data as any).recipes || []).length} recipe(s)`;
+    case 'load_model': return 'Model loaded';
+    case 'unload_model': return 'Model unloaded';
+    case 'get_loaded_models': {
+      const loaded = (data as any).loaded;
+      return Array.isArray(loaded) ? `${loaded.length} model(s) loaded` : JSON.stringify(data).slice(0, 80);
+    }
+    case 'get_server_health': return `${data.status} — ${data.loaded_models} model(s)`;
+    case 'pull_model': return `${data.status}`;
+    case 'delete_model': return 'Model deleted';
+    case 'get_system_info': return 'System info retrieved';
+    case 'list_backends': return `${Object.keys(data).length} recipe(s)`;
+    case 'install_backend': return `${data.status}`;
+    default: return JSON.stringify(data).slice(0, 80);
+  }
+}
+
+export interface ToolCallEntry {
+  name: string;
+  args: string;
+  result: string;
+  status: 'running' | 'done' | 'error';
+}
+
 interface StreamState {
   content: string;
   thinking: string;
-  toolStatus?: string; // Shows "Calling load_model…" etc.
+  toolStatus?: string;
+  toolCalls: ToolCallEntry[];
 }
 
 export interface ChatStreamingResult {
@@ -23,7 +52,7 @@ export interface ChatStreamingResult {
 }
 
 export function useChatStreaming(
-  onDone: (convoId: string, stats: ChatCompletionStats) => void,
+  onDone: (convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => void,
   onError: (convoId: string, message: string) => void,
 ): ChatStreamingResult {
   const [activeStreams, setActiveStreams] = useState<Record<string, StreamState>>({});
@@ -64,7 +93,7 @@ export function useChatStreaming(
   );
 
   const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[], useTools = false) => {
-    setActiveStreams(prev => ({ ...prev, [convoId]: { content: '', thinking: '' } }));
+    setActiveStreams(prev => ({ ...prev, [convoId]: { content: '', thinking: '', toolCalls: [] } }));
     setThinkingExpanded(false);
 
     const controller = new AbortController();
@@ -73,6 +102,7 @@ export function useChatStreaming(
     let fullMessages = [...messages];
 
     let toolRound = 0;
+    const allToolCalls: ToolCallEntry[] = [];
 
     const runCompletion = async (): Promise<void> => {
       return new Promise<void>((resolve, reject) => {
@@ -101,11 +131,17 @@ export function useChatStreaming(
               return;
             }
 
-            // Show tool status in the stream
+            // Show tool status in the stream and add running entries
             const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
+            const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
+              let argsStr = '';
+              try { const a = JSON.parse(tc.function.arguments || '{}'); argsStr = Object.entries(a).map(([k,v]) => `${k}: ${v}`).join(', '); } catch {}
+              return { name: tc.function.name, args: argsStr, result: '', status: 'running' as const };
+            });
+            allToolCalls.push(...runningEntries);
             setActiveStreams(prev => ({
               ...prev,
-              [convoId]: { ...(prev[convoId] || { content: '', thinking: '' }), toolStatus: `Calling ${toolNames}…` },
+              [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: `Calling ${toolNames}…`, toolCalls: [...allToolCalls] },
             }));
 
             // Append the assistant's tool_calls message
@@ -119,6 +155,20 @@ export function useChatStreaming(
               toolCalls.map(tc => executeTool(tc as ToolCall))
             );
 
+            // Update entries with results
+            for (let j = 0; j < runningEntries.length; j++) {
+              const r = results[j];
+              const entry = runningEntries[j];
+              try {
+                const parsed = JSON.parse(r.content);
+                entry.result = parsed.error ? `Error: ${parsed.error}` : summarizeResult(entry.name, parsed);
+                entry.status = parsed.error ? 'error' : 'done';
+              } catch {
+                entry.result = r.content.slice(0, 200);
+                entry.status = 'done';
+              }
+            }
+
             // Append tool results
             for (const result of results) {
               fullMessages = [
@@ -127,10 +177,10 @@ export function useChatStreaming(
               ];
             }
 
-            // Clear tool status
+            // Clear tool status, keep accumulated tool call entries
             setActiveStreams(prev => ({
               ...prev,
-              [convoId]: { ...(prev[convoId] || { content: '', thinking: '' }), toolStatus: undefined },
+              [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
             }));
 
             // Re-run completion with tool results
@@ -143,7 +193,7 @@ export function useChatStreaming(
           },
           onDone: (stats) => {
             delete tokenBufferRef.current[convoId];
-            onDone(convoId, stats);
+            onDone(convoId, stats, allToolCalls.length > 0 ? [...allToolCalls] : undefined);
             cleanup(convoId);
             resolve();
           },
