@@ -141,6 +141,25 @@ input, textarea {
 }
 .titlebar__theme-toggle:hover { background: var(--surface-2); }
 
+.titlebar__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-disabled);
+  transition: background var(--duration-fast);
+  flex-shrink: 0;
+}
+
+.titlebar__status-dot--connected {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.titlebar__status-dot--connecting {
+  background: var(--warn);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
 /* Model selector pill in titlebar */
 .model-selector {
   display: flex;
@@ -900,6 +919,52 @@ input, textarea {
   padding: var(--space-3) var(--space-6) var(--space-4);
   background: linear-gradient(180deg, transparent 0%, var(--surface-base) 25%);
   position: relative;
+}
+
+.composer__model-picker {
+  max-width: var(--max-content-width);
+  margin: 0 auto var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.composer__model-label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--weight-medium);
+}
+
+.composer__model-select {
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 4px var(--space-3) 4px var(--space-2);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23807a6c'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+}
+
+.composer__model-select:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.composer__model-select:focus {
+  border-color: var(--accent);
 }
 
 .composer__bar {

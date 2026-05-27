@@ -17,8 +17,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(nav.getByText('Backends')).toBeVisible();
     await expect(nav.getByText('Connect')).toBeVisible();
 
-    // Model selector pill visible
-    await expect(page.locator('.model-selector')).toBeVisible();
+    // Status dot visible
+    await expect(page.locator('.titlebar__status-dot')).toBeVisible();
 
     await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
   });
@@ -109,8 +109,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Wait for connection status dot to turn green
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
     await page.screenshot({ path: 'screenshots/06-connected.png', fullPage: true });
@@ -122,8 +122,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Wait for auto-connect
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
     await page.locator('.titlebar__nav').getByText('Models').click();
@@ -201,18 +201,18 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Wait for connection + model
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
-    // Wait for model name in selector pill
+    // Wait for model to be loaded (composer placeholder shows model name)
     await page.waitForFunction(() => {
-      const name = document.querySelector('.model-selector__name');
-      return name && name.textContent && name.textContent !== 'Offline' && name.textContent !== 'No model';
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
     }, { timeout: 10000 }).catch(() => {});
 
-    const modelText = await page.locator('.model-selector__name').textContent().catch(() => null);
-    if (!modelText || modelText === 'Offline' || modelText === 'No model') {
+    const placeholder = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder || !placeholder.startsWith('Message ')) {
       console.log('No model loaded — skipping chat test');
       await page.screenshot({ path: 'screenshots/08-no-model.png', fullPage: true });
       return;
@@ -251,17 +251,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
 
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
     await page.waitForFunction(() => {
-      const name = document.querySelector('.model-selector__name');
-      return name && name.textContent && name.textContent !== 'Offline' && name.textContent !== 'No model';
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
     }, { timeout: 10000 }).catch(() => {});
 
-    const modelText = await page.locator('.model-selector__name').textContent().catch(() => null);
-    if (!modelText || modelText === 'Offline' || modelText === 'No model') {
+    const placeholder09 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder09 || !placeholder09.startsWith('Message ')) {
       await page.screenshot({ path: 'screenshots/09-no-model.png', fullPage: true });
       return;
     }
@@ -295,17 +295,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
 
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
     await page.waitForFunction(() => {
-      const name = document.querySelector('.model-selector__name');
-      return name && name.textContent && name.textContent !== 'Offline' && name.textContent !== 'No model';
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
     }, { timeout: 10000 }).catch(() => {});
 
-    const modelText = await page.locator('.model-selector__name').textContent().catch(() => null);
-    if (!modelText || modelText === 'Offline' || modelText === 'No model') {
+    const placeholder10 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder10 || !placeholder10.startsWith('Message ')) {
       await page.screenshot({ path: 'screenshots/10-no-model.png', fullPage: true });
       return;
     }
@@ -332,17 +332,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.goto('/');
 
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
     await page.waitForFunction(() => {
-      const name = document.querySelector('.model-selector__name');
-      return name && name.textContent && name.textContent !== 'Offline' && name.textContent !== 'No model';
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
     }, { timeout: 10000 }).catch(() => {});
 
-    const modelText = await page.locator('.model-selector__name').textContent().catch(() => null);
-    if (!modelText || modelText === 'Offline' || modelText === 'No model') {
+    const placeholder11 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder11 || !placeholder11.startsWith('Message ')) {
       await page.screenshot({ path: 'screenshots/11-no-model.png', fullPage: true });
       return;
     }
@@ -791,8 +791,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Wait for connection
     await page.waitForFunction(() => {
-      const dot = document.querySelector('.model-selector__dot');
-      return dot?.classList.contains('model-selector__dot--connected');
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
     }, { timeout: 10000 }).catch(() => {});
 
     // Navigate to Models
