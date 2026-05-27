@@ -379,6 +379,47 @@ static std::string repo_id_to_cache_dir_name(const std::string& repo_id) {
     return cache_dir_name;
 }
 
+static std::string read_hf_ref_main(const fs::path& model_cache_path) {
+    fs::path refs_main_path = model_cache_path / "refs" / "main";
+    std::ifstream refs_file(refs_main_path);
+    if (!refs_file.is_open()) {
+        return "";
+    }
+
+    std::string ref;
+    std::getline(refs_file, ref);
+    ref.erase(0, ref.find_first_not_of(" \t\r\n"));
+    size_t last = ref.find_last_not_of(" \t\r\n");
+    if (last == std::string::npos) {
+        return "";
+    }
+    ref.erase(last + 1);
+    return ref;
+}
+
+static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
+    std::string ref = read_hf_ref_main(model_cache_path);
+    if (ref.empty()) {
+        return fs::path();
+    }
+
+    fs::path snapshot_path = model_cache_path / "snapshots" / ref;
+    return safe_exists(snapshot_path) ? snapshot_path : fs::path();
+}
+
+static void write_hf_ref_main(const fs::path& model_cache_path, const std::string& commit_hash) {
+    if (commit_hash.empty()) {
+        return;
+    }
+
+    fs::path refs_dir = model_cache_path / "refs";
+    fs::create_directories(refs_dir);
+    std::ofstream refs_file(refs_dir / "main");
+    if (refs_file.is_open()) {
+        refs_file << commit_hash;
+    }
+}
+
 static std::string checkpoint_to_repo_id(std::string checkpoint) {
     std::string repo_id = checkpoint;
 
@@ -1171,18 +1212,39 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
             return model_cache_path;  // Return directory path even if not found
         }
 
-        // Collect all GGUF files (exclude mmproj files)
-        std::vector<std::string> all_gguf_files;
-        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
-            if (entry.is_regular_file()) {
+        // Prefer the active HF snapshot recorded in refs/main. This lets
+        // Lemonade keep using the previous snapshot when upstream only changed
+        // README/metadata and the requested model artifacts are unchanged.
+        auto collect_gguf_files = [](const fs::path& search_root) {
+            std::vector<std::string> files;
+            if (search_root.empty() || !safe_exists(search_root)) {
+                return files;
+            }
+
+            std::error_code ec;
+            for (const auto& entry : fs::recursive_directory_iterator(search_root, safe_dir_options, ec)) {
+                if (ec) break;
+                if (!entry.is_regular_file(ec)) {
+                    ec.clear();
+                    continue;
+                }
+
                 std::string filename = entry.path().filename().string();
                 std::string filename_lower = filename;
                 std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
                 if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
-                    all_gguf_files.push_back(path_to_utf8(entry.path()));
+                    files.push_back(path_to_utf8(entry.path()));
                 }
             }
+            return files;
+        };
+
+        std::vector<std::string> all_gguf_files = collect_gguf_files(active_hf_snapshot_path(model_cache_path_fs));
+        if (all_gguf_files.empty()) {
+            // Backward-compatible fallback for caches without refs/main and for
+            // partially migrated/manual HF cache layouts.
+            all_gguf_files = collect_gguf_files(model_cache_path_fs);
         }
 
         if (all_gguf_files.empty()) {
@@ -1336,6 +1398,34 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // Everything else
     if (!variant.empty()) {
+        // Prefer refs/main for auxiliary checkpoints too (for example mmproj),
+        // so companion files stay on the same active snapshot as the main model
+        // when unchanged artifacts are reused across README-only commits.
+        fs::path active_snapshot = active_hf_snapshot_path(model_cache_path_fs);
+        if (!active_snapshot.empty()) {
+            fs::path direct_variant_path = active_snapshot / path_from_utf8(variant);
+            if (safe_exists(direct_variant_path)) {
+                return path_to_utf8(direct_variant_path);
+            }
+
+            std::error_code ec;
+            for (const auto& entry : fs::recursive_directory_iterator(active_snapshot, safe_dir_options, ec)) {
+                if (ec) break;
+                if (entry.is_regular_file(ec)) {
+                    std::string filename = entry.path().filename().string();
+                    if (filename == variant) {
+                        return path_to_utf8(entry.path());
+                    }
+                } else if (entry.is_directory(ec)) {
+                    fs::path variant_path = entry.path() / path_from_utf8(variant);
+                    if (safe_exists(variant_path)) {
+                        return path_to_utf8(variant_path);
+                    }
+                }
+                ec.clear();
+            }
+        }
+
         // Try to find the exact variant in snapshots subdirectories
         if (safe_exists(model_cache_path_fs)) {
             for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
@@ -2748,6 +2838,8 @@ void ModelManager::download_model(const std::string& model_name,
 /**
  * Download everything from download manifest.
  */
+static thread_local bool g_manifest_download_performed_network_transfer = false;
+
 static bool has_hash_metadata(const json& file_desc) {
     return (file_desc.contains("hash") && file_desc["hash"].is_object()) ||
            (file_desc.contains("sha256") && file_desc["sha256"].is_string());
@@ -2822,6 +2914,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     int file_index = 0;
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
+    g_manifest_download_performed_network_transfer = false;
 
     auto ends_with_ignore_case_local = [](std::string value, std::string suffix) {
         std::transform(value.begin(), value.end(), value.begin(), ::tolower);
@@ -3036,6 +3129,9 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         }
 
         if (result.success) {
+            if (result.bytes_downloaded > 0) {
+                g_manifest_download_performed_network_transfer = true;
+            }
             LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
 
             // Emit completion event for already-complete files that were skipped
@@ -3171,6 +3267,11 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     fs::path model_cache_path = hf_cache_path / repo_id_to_cache_dir_name(main_repo_id);
     fs::create_directories(model_cache_path);
 
+    std::map<std::string, fs::path> repo_cache_paths;
+    std::map<std::string, std::string> repo_previous_refs;
+    repo_cache_paths[main_repo_id] = model_cache_path;
+    repo_previous_refs[main_repo_id] = read_hf_ref_main(model_cache_path);
+
     // Get HF token if available
     std::map<std::string, std::string> headers;
     const char* hf_token = std::getenv("HF_TOKEN");
@@ -3217,15 +3318,9 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
     fs::create_directories(snapshot_path);
 
-    // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
-    fs::path refs_dir = model_cache_path / "refs";
-    fs::create_directories(refs_dir);
-    fs::path refs_main_path = refs_dir / "main";
-    std::ofstream refs_file(refs_main_path);
-    if (refs_file.is_open()) {
-        refs_file << commit_hash;
-        refs_file.close();
-    }
+    // refs/main is advanced only after the selected files are successfully
+    // downloaded or verified. This keeps Lemonade on the previous active
+    // snapshot for README-only upstream commits that do not change artifacts.
 
     // Extract list of all files in the repository
     std::vector<std::string> repo_files;
@@ -3343,17 +3438,13 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
 
         fs::path other_cache_path = hf_cache_path / repo_id_to_cache_dir_name(repo_id);
+        repo_cache_paths[repo_id] = other_cache_path;
+        repo_previous_refs[repo_id] = read_hf_ref_main(other_cache_path);
         fs::path other_snapshot = other_cache_path / "snapshots" / other_hash;
         fs::create_directories(other_snapshot);
 
-        // Create refs/main file (matching huggingface_hub behavior)
-        fs::path other_refs_dir = other_cache_path / "refs";
-        fs::create_directories(other_refs_dir);
-        std::ofstream other_refs_file(other_refs_dir / "main");
-        if (other_refs_file.is_open()) {
-            other_refs_file << other_hash;
-            other_refs_file.close();
-        }
+        // refs/main for auxiliary repos is advanced only after successful
+        // download/verification, matching the main repo behavior.
 
         repo_snapshot_paths[repo_id] = path_to_utf8(other_snapshot);
         repo_commit_hashes[repo_id] = other_hash;
@@ -3455,6 +3546,31 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     if (fs::exists(manifest_path)) {
         fs::remove(manifest_path);
         LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
+    }
+
+    // Advance refs/main only after success. If no network transfer was needed
+    // (for example a README-only upstream commit where all requested artifacts
+    // were reused from sibling snapshots and hash-verified), keep refs/main on
+    // the previous active snapshot. Real model updates download new bytes and
+    // advance refs/main to the new commit.
+    const bool downloaded_new_bytes = g_manifest_download_performed_network_transfer;
+    for (const auto& [repo_id, repo_hash] : repo_commit_hashes) {
+        auto cache_it = repo_cache_paths.find(repo_id);
+        if (cache_it == repo_cache_paths.end()) {
+            continue;
+        }
+
+        const std::string previous_ref = repo_previous_refs.count(repo_id) ? repo_previous_refs[repo_id] : "";
+        if (downloaded_new_bytes || previous_ref.empty() || previous_ref == repo_hash) {
+            write_hf_ref_main(cache_it->second, repo_hash);
+            LOG(INFO, "ModelManager") << "Updated refs/main for " << repo_id
+                                      << " to " << repo_hash << std::endl;
+        } else {
+            LOG(INFO, "ModelManager") << "Keeping refs/main for " << repo_id
+                                      << " at " << previous_ref
+                                      << " because latest snapshot " << repo_hash
+                                      << " did not require downloading new bytes" << std::endl;
+        }
     }
 
     // Send completion event
