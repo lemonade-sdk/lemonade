@@ -240,8 +240,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }
   }, [activeId, streaming, updateConversation]);
 
-  const handleSend = async () => {
-    const text = inputValue.trim();
+  const handleSend = async (overrideText?: string) => {
+    const text = (overrideText ?? inputValue).trim();
     if ((!text && pendingImages.length === 0) || isStreaming) return;
     if (!api.isConnected || !currentModel) return;
 
@@ -364,16 +364,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   // ── Option select from assistant messages ───────────────────
 
   const handleOptionSelect = useCallback((text: string) => {
-    setInputValue(text);
-    // Auto-send after a brief delay so user sees what was selected
-    setTimeout(() => {
-      const input = inputRef.current;
-      if (input) {
-        input.value = text;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }, 50);
-  }, []);
+    handleSend(text);
+  }, [handleSend]);
 
   const hasMessages = messages.length > 0 || isStreaming;
 
@@ -582,7 +574,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           ) : (
             <button
               className="composer__send"
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={(!inputValue.trim() && pendingImages.length === 0) || !currentModel}
               aria-label="Send"
             >↑</button>
@@ -683,6 +675,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_system_info: 'System info',
   list_backends: 'List backends',
   install_backend: 'Install backend',
+  ask_question: 'Asking you',
 };
 
 const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[] }> = ({ calls }) => {

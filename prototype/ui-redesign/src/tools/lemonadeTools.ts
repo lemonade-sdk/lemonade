@@ -144,6 +144,26 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'ask_question',
+      description: 'Present an interactive question with clickable choices to the user. Use this whenever you need the user to choose between options (e.g. which recipe, which model, yes/no confirmations). The UI renders choices as clickable buttons. Set allowCustom to true if the user should also be able to type a custom answer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The question to ask the user.' },
+          choices: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Array of choice strings to present as clickable buttons.',
+          },
+          allowCustom: { type: 'boolean', description: 'Whether to show a text input for custom answers. Defaults to true.' },
+        },
+        required: ['question', 'choices'],
+      },
+    },
+  },
 ];
 
 /* ── Tool executor ─────────────────────────────────────────────── */
@@ -291,6 +311,20 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           });
         });
         result = { status: installResult, recipe: args.recipe, backend: args.backend };
+        break;
+      }
+
+      case 'ask_question': {
+        // Return the options block format for MarkdownMessage to render as interactive buttons.
+        // The LLM should include this block verbatim in its response text.
+        const question = args.question as string;
+        const choices = args.choices as string[];
+        const allowCustom = args.allowCustom !== false;
+        const optionsJson = JSON.stringify({ question, choices, allowCustom });
+        result = {
+          instruction: 'Include the following markdown block VERBATIM in your response so the UI renders interactive buttons. Do not modify it.',
+          block: '```options\n' + optionsJson + '\n```',
+        };
         break;
       }
 
