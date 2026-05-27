@@ -121,6 +121,29 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'list_backends',
+      description: 'List all available recipes and their backends with install status. Shows which backends (e.g. vulkan, rocm, cpu, npu) are installed, available to install, or need updating for each recipe (e.g. llamacpp, whispercpp, flm, kokoro, sd-cpp).',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'install_backend',
+      description: 'Install or update a backend for a recipe. For example, install the vulkan backend for the llamacpp recipe to enable GPU-accelerated inference.',
+      parameters: {
+        type: 'object',
+        properties: {
+          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "sd-cpp", "kokoro", "flm", "vllm").' },
+          backend: { type: 'string', description: 'The backend to install (e.g. "vulkan", "rocm", "cpu", "metal", "npu").' },
+        },
+        required: ['recipe', 'backend'],
+      },
+    },
+  },
 ];
 
 /* ── Tool executor ─────────────────────────────────────────────── */
@@ -240,6 +263,37 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         break;
       }
 
+      case 'list_backends': {
+        const info = await api.systemInfo();
+        const recipes = info.recipes as Record<string, { default_backend: string; backends: Record<string, { devices: string[]; state: string; version: string; message: string }> }> | undefined;
+        if (!recipes) {
+          result = { error: 'No recipe data available from server' };
+        } else {
+          const summary: Record<string, unknown> = {};
+          for (const [recipe, rInfo] of Object.entries(recipes)) {
+            const backends: Record<string, { state: string; version: string; devices: string[] }> = {};
+            for (const [backend, bInfo] of Object.entries(rInfo.backends)) {
+              backends[backend] = { state: bInfo.state, version: bInfo.version, devices: bInfo.devices };
+            }
+            summary[recipe] = { default_backend: rInfo.default_backend, backends };
+          }
+          result = summary;
+        }
+        break;
+      }
+
+      case 'install_backend': {
+        const installResult = await new Promise<string>((resolve, reject) => {
+          api.installBackend(args.recipe as string, args.backend as string, {
+            onProgress: () => {},
+            onComplete: () => resolve('Installation complete'),
+            onError: (err) => reject(err),
+          });
+        });
+        result = { status: installResult, recipe: args.recipe, backend: args.backend };
+        break;
+      }
+
       default:
         result = { error: `Unknown tool: ${name}` };
     }
@@ -255,10 +309,30 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
 
 export const TOOLS_SYSTEM_PROMPT = `You are a helpful assistant with access to the lemonade local LLM server. You can manage models, check server status, and configure the server using the available tools.
 
-When the user asks you to load, unload, list, download, or delete models, or check server status, use the appropriate tool. After using a tool, summarize the result in a friendly way.
+When the user asks you to load, unload, list, download, or delete models, check server status, or manage backends, use the appropriate tool. After using a tool, summarize the result in a friendly way.
 
 Key concepts:
-- Models can be loaded with different "recipes" (e.g. llamacpp-vulkan for GPU, llamacpp-cpu for CPU, flm for NPU)
+
+**Recipes & Backends:**
+A "recipe" defines HOW a model runs. Each recipe has one or more "backends" (hardware-specific implementations):
+- llamacpp — LLM inference via llama.cpp. Backends: vulkan (AMD/NVIDIA GPU), rocm (AMD GPU on Linux), metal (Apple GPU), cpu
+- flm — FastFlowLM for NPU-accelerated inference. Backend: npu
+- ryzenai-llm — RyzenAI hybrid NPU inference. Backend: npu
+- whispercpp — Audio transcription. Backends: cpu, npu
+- sd-cpp — Image generation via stable-diffusion.cpp. Backend: cpu
+- kokoro — Text-to-speech. Backend: cpu
+- vllm — vLLM for ROCm GPUs (Linux). Backend: rocm
+
+When loading a model, you can specify a recipe like "llamacpp" and optionally a backend preference. The server picks the best available backend if you only specify the recipe. Common combined forms: "llamacpp-vulkan" (GPU), "llamacpp-cpu" (CPU only).
+
+**Models:**
+- Models must be downloaded ("pulled") before they can be loaded
 - Multiple models can be loaded simultaneously (within server limits)
-- Models must be downloaded (pulled) before they can be loaded
-- The server has resource limits (max loaded models per type)`;
+- Use list_backends to check which backends are installed before recommending a recipe
+- If a user wants GPU inference but vulkan isn't installed, suggest installing it first
+
+**Recipe options** (for load_model):
+- n_ctx: Context window size (default varies by model, e.g. 4096 or 8192)
+- n_gpu_layers: Number of layers to offload to GPU (higher = faster but uses more VRAM)
+
+Be proactive: if a user asks to load a model and you're unsure which recipe to use, check list_backends first to see what's installed, then recommend the best option.`;
