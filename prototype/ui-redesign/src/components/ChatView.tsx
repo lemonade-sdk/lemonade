@@ -276,7 +276,31 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     // Build chat history from the conversation's current messages + new user message
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
-    const chatMessages: ChatMessage[] = currentMessages.map(m => {
+    const chatMessages: ChatMessage[] = [];
+
+    // Inject a system prompt when tools are enabled so the model knows to use them
+    if (useTools) {
+      const loadedList = loadedModels.length > 0
+        ? loadedModels.map(m => `${m.model_name} (${m.recipe}, ${m.device})`).join(', ')
+        : 'none';
+      chatMessages.push({
+        role: 'system' as const,
+        content: [
+          'You are a helpful assistant integrated with a local AI inference server called Lemonade.',
+          'You have tools to manage models, check hardware and system info, inspect backends, and control the server.',
+          '',
+          'IMPORTANT: Use your tools proactively whenever the user asks about models, hardware, backends, server status, or anything the tools can answer.',
+          'Do NOT guess or say you cannot help — call the appropriate tool first, then answer based on the result.',
+          'When a user wants to load a model and hasn\'t specified a recipe, call get_model_info first to check available recipes, then use ask_question to let them choose.',
+          '',
+          `Currently loaded models: ${loadedList}`,
+          `Active chat model: ${currentModel || 'none'}`,
+          `Server: ${api.isConnected ? 'connected' : 'disconnected'}`,
+        ].join('\n'),
+      });
+    }
+
+    chatMessages.push(...currentMessages.map(m => {
       if (m.images?.length) {
         return {
           role: m.role,
@@ -287,7 +311,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         };
       }
       return { role: m.role, content: m.content };
-    });
+    }));
 
     // Add the new user message
     if (images?.length) {
