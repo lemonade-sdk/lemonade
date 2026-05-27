@@ -155,6 +155,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return unsub;
   }, [refresh]);
 
+  // Re-fetch when models are loaded/unloaded/deleted via any path (tools, other views)
+  useEffect(() => {
+    return api.onModelsChanged(() => { refresh(); });
+  }, [refresh]);
+
   /* ── HuggingFace debounced search ────────────────────────── */
 
   useEffect(() => {
