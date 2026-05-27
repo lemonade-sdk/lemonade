@@ -63,7 +63,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
     'font-size', 'text-anchor', 'dominant-baseline', 'clip-path', 'marker-end',
     'marker-start', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity',
   ],
-  ALLOW_DATA_ATTR: false,
+  ALLOW_DATA_ATTR: true,
 };
 
 const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true, onOptionSelect }) => {
@@ -164,6 +164,13 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         }
       }
       if (!cancelled) setMermaidTick(t => t + 1);
+    }).catch(() => {
+      if (cancelled) return;
+      for (const block of blocks) {
+        if (!block.querySelector('svg')) {
+          block.innerHTML = '<div class="mermaid-block__error">Failed to load diagram renderer</div>';
+        }
+      }
     });
 
     return () => { cancelled = true; };
