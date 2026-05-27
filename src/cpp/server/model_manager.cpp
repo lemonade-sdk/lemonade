@@ -2838,8 +2838,6 @@ void ModelManager::download_model(const std::string& model_name,
 /**
  * Download everything from download manifest.
  */
-static thread_local bool g_manifest_download_performed_network_transfer = false;
-
 static bool has_hash_metadata(const json& file_desc) {
     return (file_desc.contains("hash") && file_desc["hash"].is_object()) ||
            (file_desc.contains("sha256") && file_desc["sha256"].is_string());
@@ -2855,7 +2853,7 @@ static void materialize_unchanged_files_from_sibling_snapshots(const json& manif
         std::string download_path = file_desc.value("download_path", default_download_path);
         size_t expected_size = file_desc.value("size", 0);
 
-        if (filename.empty() || download_path.empty() || expected_size == 0) continue;
+        if (filename.empty() || download_path.empty()) continue;
 
         fs::path snapshot_dir = path_from_utf8(download_path);
         fs::path snapshots_root = snapshot_dir.parent_path();
@@ -2881,9 +2879,18 @@ static void materialize_unchanged_files_from_sibling_snapshots(const json& manif
             }
 
             auto candidate_size = fs::file_size(candidate, ec);
-            if (ec || candidate_size != expected_size) {
+            if (ec || candidate_size == 0) {
                 ec.clear();
                 continue;
+            }
+
+            if (expected_size > 0 && candidate_size != expected_size) {
+                LOG(DEBUG, "ModelManager")
+                    << "Sibling snapshot candidate size differs from manifest metadata; "
+                    << "letting hash verification decide: "
+                    << path_to_utf8(candidate)
+                    << " expected=" << expected_size
+                    << " actual=" << candidate_size << std::endl;
             }
 
             fs::create_directories(target.parent_path(), ec);
@@ -2909,12 +2916,12 @@ static void materialize_unchanged_files_from_sibling_snapshots(const json& manif
     }
 }
 
-void ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
+bool ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
     // Download each file with robust retry and resume support
     int file_index = 0;
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
-    g_manifest_download_performed_network_transfer = false;
+    bool performed_network_transfer = false;
 
     auto ends_with_ignore_case_local = [](std::string value, std::string suffix) {
         std::transform(value.begin(), value.end(), value.begin(), ::tolower);
@@ -3130,7 +3137,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 
         if (result.success) {
             if (result.bytes_downloaded > 0) {
-                g_manifest_download_performed_network_transfer = true;
+                performed_network_transfer = true;
             }
             LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
 
@@ -3237,6 +3244,8 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             "Run the command again to resume."
         );
     }
+
+    return performed_network_transfer;
 }
 
 // Download model files from HuggingFace
@@ -3540,7 +3549,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
 
-    download_from_manifest(manifest, headers, progress_callback);
+    const bool performed_network_transfer = download_from_manifest(manifest, headers, progress_callback);
 
     // All files validated - remove manifest to mark download as complete
     if (fs::exists(manifest_path)) {
@@ -3553,7 +3562,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // were reused from sibling snapshots and hash-verified), keep refs/main on
     // the previous active snapshot. Real model updates download new bytes and
     // advance refs/main to the new commit.
-    const bool downloaded_new_bytes = g_manifest_download_performed_network_transfer;
+    const bool downloaded_new_bytes = performed_network_transfer;
     for (const auto& [repo_id, repo_hash] : repo_commit_hashes) {
         auto cache_it = repo_cache_paths.find(repo_id);
         if (cache_it == repo_cache_paths.end()) {
@@ -3570,6 +3579,39 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                                       << " at " << previous_ref
                                       << " because latest snapshot " << repo_hash
                                       << " did not require downloading new bytes" << std::endl;
+
+            // If this pull only materialized already-cached files into the latest
+            // snapshot, refs/main intentionally stays on the previous active
+            // snapshot. Remove the unused new snapshot so future cache scans do
+            // not treat it as an active candidate. Never remove the active ref.
+            const auto snapshot_it = repo_snapshot_paths.find(repo_id);
+            if (snapshot_it != repo_snapshot_paths.end() && !previous_ref.empty() && previous_ref != repo_hash) {
+                fs::path unused_snapshot = path_from_utf8(snapshot_it->second);
+                fs::path active_snapshot;
+                auto cache_it_for_ref = repo_cache_paths.find(repo_id);
+                if (cache_it_for_ref != repo_cache_paths.end()) {
+                    active_snapshot = cache_it_for_ref->second / "snapshots" / previous_ref;
+                }
+
+                std::error_code cmp_ec;
+                const bool is_active_snapshot =
+                    !active_snapshot.empty() &&
+                    fs::equivalent(unused_snapshot, active_snapshot, cmp_ec);
+                if (cmp_ec) {
+                    cmp_ec.clear();
+                }
+
+                if (!is_active_snapshot) {
+                    std::error_code remove_ec;
+                    fs::remove_all(unused_snapshot, remove_ec);
+                    if (remove_ec) {
+                        LOG(WARNING, "ModelManager")
+                            << "Could not remove unused snapshot after no-transfer pull: "
+                            << path_to_utf8(unused_snapshot)
+                            << " (" << remove_ec.message() << ")" << std::endl;
+                    }
+                }
+            }
         }
     }
 

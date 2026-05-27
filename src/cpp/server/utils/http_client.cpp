@@ -80,6 +80,13 @@ static ExpectedHash parse_expected_hash(const DownloadOptions& options) {
     if (algorithm == "sha-1") algorithm = "sha1";
     if (algorithm == "gitsha1" || algorithm == "git-sha") algorithm = "git-sha1";
 
+    if (!algorithm.empty() &&
+        algorithm != "sha256" &&
+        algorithm != "sha1" &&
+        algorithm != "git-sha1") {
+        return {};
+    }
+
     if (algorithm.empty()) {
         if (is_hex_digest(value, 64)) {
             algorithm = "sha256";

@@ -212,7 +212,7 @@ private:
     void resolve_all_model_paths(ModelInfo& info);
 
     // Download from a JSON manifest
-    void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
+    bool download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
     // Download from Hugging Face
     void download_from_huggingface(const ModelInfo& info,
