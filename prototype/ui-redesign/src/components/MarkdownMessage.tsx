@@ -4,6 +4,7 @@ import hljs from 'highlight.js';
 import texmath from 'markdown-it-texmath';
 import katex from 'katex';
 import DOMPurify from 'dompurify';
+import mermaid from 'mermaid';
 import 'highlight.js/styles/github-dark.css';
 import 'katex/dist/katex.min.css';
 
@@ -16,22 +17,18 @@ interface MarkdownMessageProps {
 const COPY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2-2v1"></path></svg>`;
 const CHECK_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-/* ── Mermaid lazy loader ──────────────────────────────────── */
+/* ── Mermaid init ──────────────────────────────────────────── */
 
-let mermaidPromise: Promise<typeof import('mermaid')> | null = null;
-function loadMermaid() {
-  if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then(m => {
-      m.default.initialize({
-        startOnLoad: false,
-        theme: 'dark',
-        securityLevel: 'strict',
-        fontFamily: 'var(--font-sans)',
-      });
-      return m;
+let mermaidReady = false;
+function ensureMermaidInit() {
+  if (!mermaidReady) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      securityLevel: 'strict',
     });
+    mermaidReady = true;
   }
-  return mermaidPromise;
 }
 
 /* ── DOMPurify config ─────────────────────────────────────── */
@@ -139,39 +136,27 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
 
   // Render mermaid diagrams after mount (skip during streaming to avoid cancellation race)
   useEffect(() => {
-    if (!isComplete) {
-      console.debug('[mermaid] skipped: streaming (isComplete=false)');
-      return;
-    }
+    if (!isComplete) return;
     const container = containerRef.current;
-    if (!container) {
-      console.debug('[mermaid] skipped: no container ref');
-      return;
-    }
+    if (!container) return;
     const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block--pending');
-    console.debug(`[mermaid] found ${blocks.length} pending block(s)`);
     if (blocks.length === 0) return;
 
+    ensureMermaidInit();
     let cancelled = false;
-    loadMermaid().then(async (mermaidModule) => {
-      console.debug('[mermaid] module loaded, cancelled:', cancelled);
-      if (cancelled) return;
+
+    (async () => {
       for (const block of blocks) {
-        if (block.querySelector('svg')) continue;
-        // Read source from the code element (avoids data-attribute encoding issues)
+        if (cancelled || block.querySelector('svg')) continue;
         const codeEl = block.querySelector('.mermaid-block__source code');
         const source = codeEl?.textContent || '';
-        console.debug('[mermaid] source length:', source.length, 'first 100:', source.slice(0, 100));
         if (!source.trim()) continue;
         try {
           const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          const { svg } = await mermaidModule.default.render(id, source);
-          console.debug('[mermaid] render success, svg length:', svg.length);
+          const { svg } = await mermaid.render(id, source);
           if (!cancelled) {
-            // Remove loading indicator but keep actions bar and source block
             const loading = block.querySelector('.mermaid-block__loading');
             if (loading) loading.remove();
-            // Insert rendered SVG at the start
             const svgWrapper = document.createElement('div');
             svgWrapper.className = 'mermaid-block__diagram';
             svgWrapper.innerHTML = svg;
@@ -180,16 +165,14 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             block.classList.remove('mermaid-block--pending');
           }
         } catch (err) {
-          console.error('[mermaid] render error:', err, '\nSource:', source);
+          console.error('[mermaid] render error:', err);
           if (!cancelled) {
-            // Remove loading but keep source visible for debugging
             const loading = block.querySelector('.mermaid-block__loading');
             if (loading) loading.remove();
             const errorDiv = document.createElement('div');
             errorDiv.className = 'mermaid-block__error';
             errorDiv.textContent = 'Diagram syntax error';
             block.insertBefore(errorDiv, block.firstChild);
-            // Show the source block on error
             const sourceBlock = block.querySelector('.mermaid-block__source') as HTMLElement;
             if (sourceBlock) sourceBlock.style.display = '';
             block.classList.remove('mermaid-block--pending');
@@ -197,16 +180,9 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         }
       }
       if (!cancelled) setMermaidTick(t => t + 1);
-    }).catch((err) => {
-      console.error('[mermaid] module load error:', err);
-      if (cancelled) return;
-      for (const block of blocks) {
-        if (!block.querySelector('svg')) {
-          const loading = block.querySelector('.mermaid-block__loading');
-          if (loading) loading.textContent = 'Failed to load diagram renderer';
-        }
-      }
-    });
+    })();
+
+    return () => { cancelled = true; };
 
     return () => { cancelled = true; };
   }, [html, isComplete]);
