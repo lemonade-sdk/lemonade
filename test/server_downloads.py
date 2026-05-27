@@ -462,7 +462,33 @@ class ServerDownloadRegistryTests(ServerTestBase):
         finally:
             if gguf.exists() and _sha256_file(gguf) != original_sha256:
                 _restore_one_byte(gguf, offset, original_byte)
+                
+    def test_006_real_download_reuses_valid_verified_cache_without_redownload(self):
+        """Optional CI/local smoke test: a valid cached GGUF is verified and reused, not redownloaded."""
+        if not RUN_REAL_DOWNLOAD_TESTS:
+            self.skipTest("set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads")
 
+        self._wait_for_completed_download(REAL_DOWNLOAD_MODEL)
+        gguf = self._find_downloaded_gguf(REAL_DOWNLOAD_MODEL)
+        _assert_gguf_magic(self, gguf)
+
+        original_sha256 = _sha256_file(gguf)
+        original_git_sha1 = _git_blob_sha1_file(gguf)
+        original_size = gguf.stat().st_size
+        original_mtime_ns = gguf.stat().st_mtime_ns
+
+        # Pull the same model again. With a valid final cache file and matching
+        # SHA/Git-SHA metadata, HttpClient should verify and return success
+        # without replacing the final file.
+        job = self._wait_for_completed_download(REAL_DOWNLOAD_MODEL)
+        self.assertEqual(job.get("status"), "completed")
+
+        reused_gguf = self._find_downloaded_gguf(REAL_DOWNLOAD_MODEL)
+        self.assertEqual(reused_gguf, gguf)
+        self.assertEqual(reused_gguf.stat().st_size, original_size)
+        self.assertEqual(reused_gguf.stat().st_mtime_ns, original_mtime_ns)
+        self.assertEqual(_sha256_file(reused_gguf), original_sha256)
+        self.assertEqual(_git_blob_sha1_file(reused_gguf), original_git_sha1)
 
 if __name__ == "__main__":
     run_server_tests(ServerDownloadRegistryTests, "SERVER DOWNLOAD REGISTRY TESTS")
