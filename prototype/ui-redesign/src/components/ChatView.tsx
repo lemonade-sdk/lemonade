@@ -367,6 +367,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
       {/* Composer */}
       <div className="composer">
+        {loadedModels.length > 1 && (
+          <div className="composer__model-picker">
+            <span className="composer__model-label">Model</span>
+            <select
+              className="composer__model-select"
+              value={currentModel || ''}
+              onChange={e => onModelSelect(e.target.value)}
+            >
+              {loadedModels.map(m => (
+                <option key={m.model_name} value={m.model_name}>{m.model_name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="composer__bar">
           <textarea
             ref={inputRef}

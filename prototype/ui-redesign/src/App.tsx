@@ -167,16 +167,10 @@ const App: React.FC = () => {
           <button className="titlebar__theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
-          <button className="model-selector" aria-label="Active model">
-            <span className={`model-selector__dot ${
-              status === 'connected' ? 'model-selector__dot--connected' :
-              status === 'connecting' ? 'model-selector__dot--connecting' : ''
-            }`} aria-hidden="true" />
-            <span className="model-selector__name">
-              {currentModel || (status === 'connected' ? 'No model' : 'Offline')}
-            </span>
-            <span className="model-selector__caret">▾</span>
-          </button>
+          <span className={`titlebar__status-dot ${
+            status === 'connected' ? 'titlebar__status-dot--connected' :
+            status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
+          }`} title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'} />
         </div>
       </header>
 
