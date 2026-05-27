@@ -6,6 +6,7 @@ import { useChatStreaming, ToolCallEntry } from '../hooks/useChatStreaming';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  images?: string[];  // base64 data URLs for user messages with images
   thinking?: string;
   stats?: ChatCompletionStats;
   toolCalls?: ToolCallEntry[];
@@ -38,7 +39,12 @@ function loadConversations(): Conversation[] {
 }
 
 function saveConversations(convos: Conversation[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(convos)); } catch { /* ignore */ }
+  // Strip base64 images before persisting — they're too large for localStorage
+  const stripped = convos.map(c => ({
+    ...c,
+    messages: c.messages.map(m => m.images ? { ...m, images: undefined } : m),
+  }));
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped)); } catch { /* ignore */ }
 }
 
 function loadActiveId(): string | null {
@@ -75,17 +81,50 @@ interface ChatViewProps {
 }
 
 const TOOLS_KEY = 'lemonade_use_tools';
+const MAX_IMAGE_DIM = 1024;
+const MAX_IMAGES = 4;
+
+/** Resize and compress an image file to base64 data URL */
+async function imageToBase64(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        // Downscale if needed
+        let { width, height } = img;
+        if (width > MAX_IMAGE_DIM || height > MAX_IMAGE_DIM) {
+          const scale = MAX_IMAGE_DIM / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = reject;
+      img.src = reader.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh }) => {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
   const [activeId, setActiveId] = useState<string | null>(loadActiveId);
   const [inputValue, setInputValue] = useState('');
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [railExpanded, setRailExpanded] = useState(true);
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(TOOLS_KEY) === 'true'; } catch { return false; }
   });
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -203,7 +242,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const handleSend = async () => {
     const text = inputValue.trim();
-    if (!text || isStreaming) return;
+    if ((!text && pendingImages.length === 0) || isStreaming) return;
     if (!api.isConnected || !currentModel) return;
 
     let convoId = activeId;
@@ -222,7 +261,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       setActiveId(convoId);
     }
 
-    const userMessage: Message = { role: 'user', content: text };
+    const images = pendingImages.length > 0 ? [...pendingImages] : undefined;
+    const userMessage: Message = { role: 'user', content: text, images };
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, userMessage],
@@ -231,14 +271,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }));
 
     setInputValue('');
+    setPendingImages([]);
     thinkingSticky.current = true;
 
     // Build chat history from the conversation's current messages + new user message
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
-    const chatMessages: ChatMessage[] = [
-      ...currentMessages.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content: text },
-    ];
+    const chatMessages: ChatMessage[] = currentMessages.map(m => {
+      if (m.images?.length) {
+        return {
+          role: m.role,
+          content: [
+            { type: 'text' as const, text: m.content },
+            ...m.images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    // Add the new user message
+    if (images?.length) {
+      chatMessages.push({
+        role: 'user' as const,
+        content: [
+          { type: 'text' as const, text },
+          ...images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+        ],
+      });
+    } else {
+      chatMessages.push({ role: 'user' as const, content: text });
+    }
 
     await streaming.send(convoId, currentModel, chatMessages, useTools);
   };
@@ -249,6 +311,69 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       handleSend();
     }
   };
+
+  // ── Image handling ──────────────────────────────────────────
+
+  const addImages = useCallback(async (files: File[]) => {
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    const remaining = MAX_IMAGES - pendingImages.length;
+    const toProcess = imageFiles.slice(0, remaining);
+    const encoded = await Promise.all(toProcess.map(imageToBase64));
+    setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
+  }, [pendingImages.length]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      addImages(files);
+    }
+  }, [addImages]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer.files);
+    addImages(files);
+  }, [addImages]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    addImages(files);
+    e.target.value = '';
+  }, [addImages]);
+
+  const removeImage = useCallback((index: number) => {
+    setPendingImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // ── Option select from assistant messages ───────────────────
+
+  const handleOptionSelect = useCallback((text: string) => {
+    setInputValue(text);
+    // Auto-send after a brief delay so user sees what was selected
+    setTimeout(() => {
+      const input = inputRef.current;
+      if (input) {
+        input.value = text;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, 50);
+  }, []);
 
   const hasMessages = messages.length > 0 || isStreaming;
 
@@ -330,7 +455,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           ) : (
             <div className="thread">
               {messages.map((msg, i) => (
-                <MessageBubble key={i} message={msg} currentModel={currentModel} />
+                <MessageBubble key={i} message={msg} currentModel={currentModel} onOptionSelect={handleOptionSelect} />
               ))}
 
               {isStreaming && (
@@ -352,7 +477,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                     )}
                     {streamingToolCalls.length > 0 && <ToolCallsDisplay calls={streamingToolCalls} />}
                     {streamingContent ? (
-                      <MarkdownMessage content={streamingContent} isComplete={false} />
+                      <MarkdownMessage content={streamingContent} isComplete={false} onOptionSelect={handleOptionSelect} />
                     ) : !streamingThinking ? (
                       <div className="message__content">
                         <span className="streaming-cursor" aria-hidden="true" />
@@ -376,7 +501,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       </div>
 
       {/* Composer */}
-      <div className="composer">
+      <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
           {loadedModels.length > 1 && (
             <div className="composer__model-picker">
@@ -411,7 +536,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             {streamingToolStatus}
           </div>
         )}
+        {pendingImages.length > 0 && (
+          <div className="composer__images">
+            {pendingImages.map((src, i) => (
+              <div key={i} className="composer__image-thumb">
+                <img src={src} alt={`Attachment ${i + 1}`} />
+                <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label="Remove image">×</button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="composer__bar">
+          <button
+            className="composer__attach"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!currentModel || isStreaming || pendingImages.length >= MAX_IMAGES}
+            title="Attach image"
+            aria-label="Attach image"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
           <textarea
             ref={inputRef}
             className="composer__input"
@@ -419,6 +573,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={!currentModel || isStreaming}
             rows={1}
           />
@@ -428,12 +583,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             <button
               className="composer__send"
               onClick={handleSend}
-              disabled={!inputValue.trim() || !currentModel}
+              disabled={(!inputValue.trim() && pendingImages.length === 0) || !currentModel}
               aria-label="Send"
             >↑</button>
           )}
         </div>
-        <div className="composer__hint">⏎ to send · Shift+⏎ for newline</div>
+        <div className="composer__hint">⏎ to send · Shift+⏎ for newline · Paste or drop images</div>
       </div>
     </div>
   );
@@ -550,7 +705,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[] }> = ({ calls }) => {
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; currentModel: string | null }> = ({ message, currentModel }) => {
+const MessageBubble: React.FC<{ message: Message; currentModel: string | null; onOptionSelect?: (text: string) => void }> = ({ message, currentModel, onOptionSelect }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
   if (message.role === 'user') {
@@ -559,6 +714,13 @@ const MessageBubble: React.FC<{ message: Message; currentModel: string | null }>
         <div className="message__avatar">Y</div>
         <div className="message__body">
           <div className="message__author">You</div>
+          {message.images && message.images.length > 0 && (
+            <div className="message__images">
+              {message.images.map((src, i) => (
+                <img key={i} src={src} alt={`Attached image ${i + 1}`} className="message__image" />
+              ))}
+            </div>
+          )}
           <div className="message__content"><p>{message.content}</p></div>
         </div>
       </article>
@@ -583,7 +745,7 @@ const MessageBubble: React.FC<{ message: Message; currentModel: string | null }>
           </details>
         )}
         {message.toolCalls && <ToolCallsDisplay calls={message.toolCalls} />}
-        <MarkdownMessage content={message.content} />
+        <MarkdownMessage content={message.content} onOptionSelect={onOptionSelect} />
         {message.stats && (
           <div className="message__metrics">
             <span>{message.stats.tps} tok/s</span>
