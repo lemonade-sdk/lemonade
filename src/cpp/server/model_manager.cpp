@@ -2748,6 +2748,75 @@ void ModelManager::download_model(const std::string& model_name,
 /**
  * Download everything from download manifest.
  */
+static bool has_hash_metadata(const json& file_desc) {
+    return (file_desc.contains("hash") && file_desc["hash"].is_object()) ||
+           (file_desc.contains("sha256") && file_desc["sha256"].is_string());
+}
+
+static void materialize_unchanged_files_from_sibling_snapshots(const json& manifest) {
+    std::string default_download_path = manifest.value("download_path", "");
+
+    for (const auto& file_desc : manifest["files"]) {
+        if (!has_hash_metadata(file_desc)) continue;
+
+        std::string filename = file_desc.value("name", "");
+        std::string download_path = file_desc.value("download_path", default_download_path);
+        size_t expected_size = file_desc.value("size", 0);
+
+        if (filename.empty() || download_path.empty() || expected_size == 0) continue;
+
+        fs::path snapshot_dir = path_from_utf8(download_path);
+        fs::path snapshots_root = snapshot_dir.parent_path();
+        fs::path target = snapshot_dir / path_from_utf8(filename);
+        fs::path partial = path_from_utf8(path_to_utf8(target) + ".partial");
+
+        if (safe_exists(target) || safe_exists(partial) || !safe_exists(snapshots_root)) {
+            continue;
+        }
+
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(snapshots_root, ec)) {
+            if (ec) break;
+            if (!entry.is_directory(ec)) {
+                ec.clear();
+                continue;
+            }
+
+            fs::path candidate = entry.path() / path_from_utf8(filename);
+            if (candidate == target || !fs::is_regular_file(candidate, ec)) {
+                ec.clear();
+                continue;
+            }
+
+            auto candidate_size = fs::file_size(candidate, ec);
+            if (ec || candidate_size != expected_size) {
+                ec.clear();
+                continue;
+            }
+
+            fs::create_directories(target.parent_path(), ec);
+            if (ec) {
+                ec.clear();
+                continue;
+            }
+
+            fs::create_hard_link(candidate, target, ec);
+            if (ec) {
+                ec.clear();
+                fs::copy_file(candidate, target, fs::copy_options::none, ec);
+            }
+
+            if (!ec) {
+                LOG(INFO, "ModelManager")
+                    << "Reused unchanged cached file from sibling snapshot: "
+                    << path_to_utf8(candidate) << " -> " << path_to_utf8(target)
+                    << std::endl;
+            }
+            break;
+        }
+    }
+}
+
 void ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
     // Download each file with robust retry and resume support
     int file_index = 0;
@@ -2772,6 +2841,8 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
                magic[0] == 'G' && magic[1] == 'G' &&
                magic[2] == 'U' && magic[3] == 'F';
     };
+
+    materialize_unchanged_files_from_sibling_snapshots(manifest);
 
     // Compute total download size across all files for accurate progress reporting
     size_t total_download_size = 0;
