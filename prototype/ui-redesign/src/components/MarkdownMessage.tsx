@@ -78,7 +78,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       breaks: true,
       highlight(str: string, lang: string) {
         // Mermaid blocks get a placeholder div
-        if (lang === 'mermaid') {
+        if (lang.toLowerCase() === 'mermaid') {
           const escaped = instance.utils.escapeHtml(str);
           return `<div class="mermaid-block" data-mermaid="${escaped}"><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
         }
@@ -137,8 +137,9 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return DOMPurify.sanitize(raw, PURIFY_CONFIG);
   }, [md, content]);
 
-  // Render mermaid diagrams after mount
+  // Render mermaid diagrams after mount (skip during streaming to avoid cancellation race)
   useEffect(() => {
+    if (!isComplete) return;
     const container = containerRef.current;
     if (!container) return;
     const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block[data-mermaid]');
@@ -165,7 +166,8 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
             block.insertBefore(svgWrapper, block.firstChild);
             block.classList.add('mermaid-block--rendered');
           }
-        } catch {
+        } catch (err) {
+          console.error('Mermaid render error:', err);
           if (!cancelled) {
             // Remove loading but keep source visible for debugging
             const loading = block.querySelector('.mermaid-block__loading');
@@ -181,7 +183,8 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
         }
       }
       if (!cancelled) setMermaidTick(t => t + 1);
-    }).catch(() => {
+    }).catch((err) => {
+      console.error('Failed to load mermaid:', err);
       if (cancelled) return;
       for (const block of blocks) {
         if (!block.querySelector('svg')) {
@@ -191,7 +194,7 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     });
 
     return () => { cancelled = true; };
-  }, [html]);
+  }, [html, isComplete]);
 
   // Handle copy buttons and option buttons
   useEffect(() => {
