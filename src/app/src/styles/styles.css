@@ -4139,9 +4139,35 @@ input, textarea {
   border-color: transparent;
 }
 
+.mermaid-block__diagram {
+  text-align: center;
+}
+
 .mermaid-block svg {
   max-width: 100%;
   height: auto;
+}
+
+.mermaid-block__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+.mermaid-block__toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.mermaid-block__toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 
 .mermaid-block__loading {
