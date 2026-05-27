@@ -63,9 +63,12 @@ const PURIFY_CONFIG: DOMPurify.Config = {
   ALLOW_DATA_ATTR: true,
 };
 
+/* Module-level counter — reset before each md.render() call */
+let mermaidBlockCount = 0;
+
 const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete = true, onOptionSelect }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [, setMermaidTick] = useState(0);
+  const [mermaidSvgs, setMermaidSvgs] = useState<Record<number, string>>({});
 
   const md = useMemo(() => {
     const instance = new MarkdownIt({
@@ -74,10 +77,11 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       typographer: true,
       breaks: true,
       highlight(str: string, lang: string) {
-        // Mermaid blocks get a placeholder div
+        // Mermaid blocks get a placeholder div with an index marker
         if (lang.toLowerCase() === 'mermaid') {
+          const idx = mermaidBlockCount++;
           const escaped = instance.utils.escapeHtml(str);
-          return `<div class="mermaid-block mermaid-block--pending"><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
+          return `<div class="mermaid-block mermaid-block--pending" data-mermaid-idx="${idx}"><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
         }
 
         // Options blocks get rendered as interactive buttons
@@ -129,63 +133,80 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
     return instance;
   }, []);
 
-  const html = useMemo(() => {
+  // Base HTML from markdown (with mermaid loading placeholders)
+  const baseHtml = useMemo(() => {
+    mermaidBlockCount = 0;
     const raw = md.render(content || '');
     return DOMPurify.sanitize(raw, PURIFY_CONFIG);
   }, [md, content]);
 
-  // Render mermaid diagrams after mount (skip during streaming to avoid cancellation race)
-  useEffect(() => {
-    if (!isComplete) return;
-    const container = containerRef.current;
-    if (!container) return;
-    const blocks = container.querySelectorAll<HTMLElement>('.mermaid-block--pending');
-    if (blocks.length === 0) return;
+  // Extract mermaid source blocks from content
+  const mermaidSources = useMemo(() => {
+    const sources: string[] = [];
+    const regex = /```mermaid\s*\n([\s\S]*?)```/gi;
+    let match;
+    while ((match = regex.exec(content || '')) !== null) {
+      sources.push(match[1]);
+    }
+    return sources;
+  }, [content]);
 
+  // Render mermaid sources to SVGs (async, stored in state)
+  useEffect(() => {
+    if (!isComplete || mermaidSources.length === 0) {
+      if (Object.keys(mermaidSvgs).length > 0) setMermaidSvgs({});
+      return;
+    }
     ensureMermaidInit();
     let cancelled = false;
 
     (async () => {
-      for (const block of blocks) {
-        if (cancelled || block.querySelector('svg')) continue;
-        const codeEl = block.querySelector('.mermaid-block__source code');
-        const source = codeEl?.textContent || '';
-        if (!source.trim()) continue;
+      const newSvgs: Record<number, string> = {};
+      for (let i = 0; i < mermaidSources.length; i++) {
+        if (cancelled) break;
         try {
-          const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          const { svg } = await mermaid.render(id, source);
-          if (!cancelled) {
-            const loading = block.querySelector('.mermaid-block__loading');
-            if (loading) loading.remove();
-            const svgWrapper = document.createElement('div');
-            svgWrapper.className = 'mermaid-block__diagram';
-            svgWrapper.innerHTML = svg;
-            block.insertBefore(svgWrapper, block.firstChild);
-            block.classList.add('mermaid-block--rendered');
-            block.classList.remove('mermaid-block--pending');
-          }
-        } catch (err) {
-          console.error('[mermaid] render error:', err);
-          if (!cancelled) {
-            const loading = block.querySelector('.mermaid-block__loading');
-            if (loading) loading.remove();
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'mermaid-block__error';
-            errorDiv.textContent = 'Diagram syntax error';
-            block.insertBefore(errorDiv, block.firstChild);
-            const sourceBlock = block.querySelector('.mermaid-block__source') as HTMLElement;
-            if (sourceBlock) sourceBlock.style.display = '';
-            block.classList.remove('mermaid-block--pending');
-          }
+          const id = `mm-${Date.now()}-${i}`;
+          const { svg } = await mermaid.render(id, mermaidSources[i]);
+          newSvgs[i] = svg;
+        } catch {
+          // Mark as error — will be shown as error block
+          newSvgs[i] = '__ERROR__';
         }
       }
-      if (!cancelled) setMermaidTick(t => t + 1);
+      if (!cancelled) setMermaidSvgs(newSvgs);
     })();
 
     return () => { cancelled = true; };
+  }, [mermaidSources, isComplete]);
 
-    return () => { cancelled = true; };
-  }, [html, isComplete]);
+  // Final HTML: inject rendered SVGs into the sanitized HTML (survives re-renders)
+  const html = useMemo(() => {
+    if (Object.keys(mermaidSvgs).length === 0) return baseHtml;
+
+    let result = baseHtml;
+    for (const [idxStr, svg] of Object.entries(mermaidSvgs)) {
+      const idx = idxStr;
+      if (svg === '__ERROR__') {
+        // Replace loading with error message, show source, remove --pending
+        result = result.replace(
+          new RegExp(`(<div[^>]*data-mermaid-idx="${idx}"[^>]*class="[^"]*?)mermaid-block--pending([^"]*"[^>]*>)\\s*<div class="mermaid-block__loading">Loading diagram…</div>`),
+          `$1mermaid-block--error$2<div class="mermaid-block__error">Diagram syntax error</div>`
+        );
+        // Show source block
+        result = result.replace(
+          new RegExp(`(data-mermaid-idx="${idx}"[\\s\\S]*?)<pre class="mermaid-block__source" style="display:none">`),
+          `$1<pre class="mermaid-block__source">`
+        );
+      } else {
+        // Replace loading with SVG diagram, swap --pending for --rendered
+        result = result.replace(
+          new RegExp(`(<div[^>]*data-mermaid-idx="${idx}"[^>]*class="[^"]*?)mermaid-block--pending([^"]*"[^>]*>)\\s*<div class="mermaid-block__loading">Loading diagram…</div>`),
+          `$1mermaid-block--rendered$2<div class="mermaid-block__diagram">${svg}</div>`
+        );
+      }
+    }
+    return result;
+  }, [baseHtml, mermaidSvgs]);
 
   // Handle copy buttons and option buttons
   useEffect(() => {
