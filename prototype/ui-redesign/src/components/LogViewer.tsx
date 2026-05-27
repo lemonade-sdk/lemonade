@@ -58,6 +58,7 @@ const LogViewer: React.FC = () => {
   const lastSeqRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
   const isProgrammaticRef = useRef(false);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── Auto-scroll ─────────────────────────────────────────── */
@@ -67,7 +68,10 @@ const LogViewer: React.FC = () => {
     if (!el) return;
     isProgrammaticRef.current = true;
     el.scrollTop = el.scrollHeight;
-    requestAnimationFrame(() => { isProgrammaticRef.current = false; });
+    // Use a timer instead of rAF — scroll events from the assignment
+    // can arrive after rAF fires, incorrectly disabling auto-scroll
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => { isProgrammaticRef.current = false; }, 150);
   }, []);
 
   const handleScroll = useCallback(() => {
@@ -128,17 +132,11 @@ const LogViewer: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Wait for health data to be available (has websocket_port)
+    // Health check is needed for websocket_port — connect stream as soon as it's ready
+    // Fetch server log level in parallel (non-blocking)
     const tryConnect = async () => {
       try {
         await api.health();
-        // Fetch current server log level
-        try {
-          const level = await api.getLogLevel();
-          if (LOG_LEVELS.includes(level as LogLevel)) {
-            setServerLevel(level as LogLevel);
-          }
-        } catch {}
         connect();
       } catch {
         setConnStatus('error');
@@ -148,9 +146,14 @@ const LogViewer: React.FC = () => {
 
     tryConnect();
 
+    api.getLogLevel().then(level => {
+      if (LOG_LEVELS.includes(level as LogLevel)) setServerLevel(level as LogLevel);
+    }).catch(() => {});
+
     return () => {
       if (streamRef.current) streamRef.current.close();
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
     };
   }, [connect]);
 
