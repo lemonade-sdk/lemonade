@@ -79,7 +79,8 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
       highlight(str: string, lang: string) {
         // Mermaid blocks get a placeholder div
         if (lang === 'mermaid') {
-          return `<div class="mermaid-block" data-mermaid="${instance.utils.escapeHtml(str)}"><div class="mermaid-block__loading">Loading diagram…</div></div>`;
+          const escaped = instance.utils.escapeHtml(str);
+          return `<div class="mermaid-block" data-mermaid="${escaped}"><div class="mermaid-block__loading">Loading diagram…</div><div class="mermaid-block__actions"><button class="mermaid-block__toggle" data-mermaid-toggle>Show source</button></div><pre class="mermaid-block__source" style="display:none"><code>${escaped}</code></pre></div>`;
         }
 
         // Options blocks get rendered as interactive buttons
@@ -154,12 +155,28 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
           const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           const { svg } = await mermaidModule.default.render(id, source);
           if (!cancelled) {
-            block.innerHTML = svg;
+            // Remove loading indicator but keep actions bar and source block
+            const loading = block.querySelector('.mermaid-block__loading');
+            if (loading) loading.remove();
+            // Insert rendered SVG at the start
+            const svgWrapper = document.createElement('div');
+            svgWrapper.className = 'mermaid-block__diagram';
+            svgWrapper.innerHTML = svg;
+            block.insertBefore(svgWrapper, block.firstChild);
             block.classList.add('mermaid-block--rendered');
           }
         } catch {
           if (!cancelled) {
-            block.innerHTML = `<div class="mermaid-block__error">Invalid diagram</div><pre class="mermaid-block__source"><code>${source}</code></pre>`;
+            // Remove loading but keep source visible for debugging
+            const loading = block.querySelector('.mermaid-block__loading');
+            if (loading) loading.remove();
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'mermaid-block__error';
+            errorDiv.textContent = 'Invalid diagram';
+            block.insertBefore(errorDiv, block.firstChild);
+            // Show the source block on error
+            const sourceBlock = block.querySelector('.mermaid-block__source') as HTMLElement;
+            if (sourceBlock) sourceBlock.style.display = '';
           }
         }
       }
@@ -183,6 +200,21 @@ const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ content, isComplete =
 
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
+
+      // Mermaid source toggle
+      const toggleBtn = target.closest('[data-mermaid-toggle]') as HTMLButtonElement | null;
+      if (toggleBtn) {
+        const block = toggleBtn.closest('.mermaid-block');
+        if (!block) return;
+        const source = block.querySelector('.mermaid-block__source') as HTMLElement;
+        const diagram = block.querySelector('.mermaid-block__diagram') as HTMLElement;
+        if (!source) return;
+        const showing = source.style.display !== 'none';
+        source.style.display = showing ? 'none' : '';
+        if (diagram) diagram.style.display = showing ? '' : 'none';
+        toggleBtn.textContent = showing ? 'Show source' : 'Show diagram';
+        return;
+      }
 
       // Copy button
       const copyBtn = target.closest('.code-block__copy') as HTMLButtonElement | null;
