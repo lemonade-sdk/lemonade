@@ -287,11 +287,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         role: 'system' as const,
         content: [
           'You are a helpful assistant integrated with a local AI inference server called Lemonade.',
-          'You have tools to manage models, check hardware and system info, inspect backends, and control the server.',
+          'You have tools to manage models, check hardware and system info, inspect backends, control the server, and present interactive choices to the user via ask_question.',
           '',
           'IMPORTANT: Use your tools proactively whenever the user asks about models, hardware, backends, server status, or anything the tools can answer.',
           'Do NOT guess or say you cannot help — call the appropriate tool first, then answer based on the result.',
           'When a user wants to load a model and hasn\'t specified a recipe, call get_model_info first to check available recipes, then use ask_question to let them choose.',
+          'When presenting options or choices to the user, ALWAYS use the ask_question tool — it renders interactive clickable buttons in the UI. Never list choices as plain text when ask_question is available.',
+          'When asked what tools you have, list ALL tools including ask_question.',
           '',
           'RICH CONTENT: Your responses are rendered as Markdown with extra capabilities:',
           '- Standard Markdown (headings, bold, italic, lists, links, tables)',
@@ -499,7 +501,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                         >{streamingThinking}</div>
                       </details>
                     )}
-                    {streamingToolCalls.length > 0 && <ToolCallsDisplay calls={streamingToolCalls} />}
+                    {streamingToolCalls.length > 0 && <ToolCallsDisplay calls={streamingToolCalls} onOptionSelect={handleOptionSelect} />}
                     {streamingContent ? (
                       <MarkdownMessage content={streamingContent} isComplete={false} onOptionSelect={handleOptionSelect} />
                     ) : !streamingThinking ? (
@@ -710,20 +712,51 @@ const TOOL_LABELS: Record<string, string> = {
   ask_question: 'Asking you',
 };
 
-const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[] }> = ({ calls }) => {
+const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (text: string) => void }> = ({ calls, onOptionSelect }) => {
   if (calls.length === 0) return null;
   return (
     <div className="message__tool-calls">
-      {calls.map((tc, i) => (
-        <details key={i} className={`message__tool-call message__tool-call--${tc.status}`}>
-          <summary>
-            <span className="message__tool-call-icon">{tc.status === 'running' ? '⏳' : tc.status === 'error' ? '❌' : '✅'}</span>
-            <span className="message__tool-call-name">{TOOL_LABELS[tc.name] || tc.name}</span>
-            {tc.args && <span className="message__tool-call-args">{tc.args}</span>}
-          </summary>
-          {tc.result && <div className="message__tool-call-result">{tc.result}</div>}
-        </details>
-      ))}
+      {calls.map((tc, i) => {
+        // Render ask_question as interactive buttons directly from tool call data
+        if (tc.name === 'ask_question' && tc.rawArgs && tc.status === 'done') {
+          try {
+            const parsed = JSON.parse(tc.rawArgs);
+            const question = parsed.question || '';
+            const choices: string[] = parsed.choices || [];
+            const allowCustom = parsed.allowCustom !== false;
+            return (
+              <div key={i} className="options-block">
+                {question && <div className="options-block__question">{question}</div>}
+                <div className="options-block__choices">
+                  {choices.map((choice: string, ci: number) => (
+                    <button key={ci} className="options-block__btn" onClick={() => onOptionSelect?.(choice)}>{choice}</button>
+                  ))}
+                </div>
+                {allowCustom && (
+                  <div className="options-block__custom">
+                    <input className="options-block__input" placeholder="Or type your own\u2026"
+                      onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { onOptionSelect?.((e.target as HTMLInputElement).value.trim()); } }} />
+                    <button className="options-block__submit" onClick={e => {
+                      const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
+                      if (input?.value.trim()) onOptionSelect?.(input.value.trim());
+                    }}>Send</button>
+                  </div>
+                )}
+              </div>
+            );
+          } catch { /* fall through to normal display */ }
+        }
+        return (
+          <details key={i} className={`message__tool-call message__tool-call--${tc.status}`}>
+            <summary>
+              <span className="message__tool-call-icon">{tc.status === 'running' ? '⏳' : tc.status === 'error' ? '❌' : '✅'}</span>
+              <span className="message__tool-call-name">{TOOL_LABELS[tc.name] || tc.name}</span>
+              {tc.args && <span className="message__tool-call-args">{tc.args}</span>}
+            </summary>
+            {tc.result && <div className="message__tool-call-result">{tc.result}</div>}
+          </details>
+        );
+      })}
     </div>
   );
 };
@@ -769,7 +802,7 @@ const MessageBubble: React.FC<{ message: Message; currentModel: string | null; o
             <div className="message__thinking-content">{message.thinking}</div>
           </details>
         )}
-        {message.toolCalls && <ToolCallsDisplay calls={message.toolCalls} />}
+        {message.toolCalls && <ToolCallsDisplay calls={message.toolCalls} onOptionSelect={onOptionSelect} />}
         <MarkdownMessage content={message.content} onOptionSelect={onOptionSelect} />
         {message.stats && (
           <div className="message__metrics">

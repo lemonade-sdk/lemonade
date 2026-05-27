@@ -29,6 +29,7 @@ function summarizeResult(toolName: string, data: Record<string, unknown>): strin
 export interface ToolCallEntry {
   name: string;
   args: string;
+  rawArgs?: string;
   result: string;
   status: 'running' | 'done' | 'error';
 }
@@ -137,7 +138,7 @@ export function useChatStreaming(
             const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
               let argsStr = '';
               try { const a = JSON.parse(tc.function.arguments || '{}'); argsStr = Object.entries(a).map(([k,v]) => `${k}: ${v}`).join(', '); } catch {}
-              return { name: tc.function.name, args: argsStr, result: '', status: 'running' as const };
+              return { name: tc.function.name, args: argsStr, rawArgs: tc.function.arguments, result: '', status: 'running' as const };
             });
             allToolCalls.push(...runningEntries);
             setActiveStreams(prev => ({

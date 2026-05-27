@@ -315,15 +315,13 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
       }
 
       case 'ask_question': {
-        // Return the options block format for MarkdownMessage to render as interactive buttons.
-        // The LLM should include this block verbatim in its response text.
+        // The UI renders the interactive buttons directly from the tool call data.
+        // Just confirm to the LLM that choices were presented.
         const question = args.question as string;
         const choices = args.choices as string[];
-        const allowCustom = args.allowCustom !== false;
-        const optionsJson = JSON.stringify({ question, choices, allowCustom });
         result = {
-          instruction: 'Include the following markdown block VERBATIM in your response so the UI renders interactive buttons. Do not modify it.',
-          block: '```options\n' + optionsJson + '\n```',
+          status: 'presented',
+          message: `Interactive choices presented to user: "${question}" with options: ${choices.join(', ')}. The user will click a button to respond. You may reference the question in your response but do NOT list the choices as text — they are already shown as interactive buttons.`,
         };
         break;
       }
