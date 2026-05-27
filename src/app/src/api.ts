@@ -68,8 +68,10 @@ export interface ChatCompletionCallbacks {
   onReasoning?: (token: string, fullReasoning: string) => void;
   onStats?: (stats: LiveStreamStats) => void;
   onDone?: (stats: ChatCompletionStats) => void;
+  onToolCalls?: (toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>) => void;
   onError?: (err: Error) => void;
   params?: Record<string, unknown>;
+  tools?: Array<Record<string, unknown>>;
   signal?: AbortSignal;
 }
 
@@ -156,8 +158,14 @@ export interface LogStreamHandle {
 }
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
 }
 
 type StatusListener = (status: ConnectionStatus) => void;
@@ -461,7 +469,7 @@ class LemonadeAPI {
     messages: ChatMessage[],
     callbacks: ChatCompletionCallbacks = {}
   ): Promise<void> {
-    const { onToken, onReasoning, onStats, onDone, onError, params, signal } = callbacks;
+    const { onToken, onReasoning, onStats, onDone, onToolCalls, onError, params, tools, signal } = callbacks;
     const t0 = performance.now();
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
@@ -486,7 +494,8 @@ class LemonadeAPI {
     const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
 
     try {
-      const body = { model, messages, stream: true, ...(params || {}) };
+      const body: Record<string, unknown> = { model, messages, stream: true, ...(params || {}) };
+      if (tools && tools.length > 0) body.tools = tools;
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
         body,
@@ -499,6 +508,7 @@ class LemonadeAPI {
       let full = '';
       let reasoning = '';
       let respId: string | null = null;
+      const pendingToolCalls: Map<number, { id: string; type: 'function'; function: { name: string; arguments: string } }> = new Map();
 
       while (true) {
         const { done, value } = await reader.read();
@@ -513,6 +523,11 @@ class LemonadeAPI {
           const payload = t.slice(6);
           if (payload === '[DONE]') {
             clearInterval(statsInterval);
+            // If we accumulated tool calls, emit them instead of content
+            if (pendingToolCalls.size > 0) {
+              onToolCalls?.(Array.from(pendingToolCalls.values()));
+              return;
+            }
             const now = performance.now();
             const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
             const totalTokens = tokenCount + reasoningTokenCount;
@@ -544,17 +559,38 @@ class LemonadeAPI {
               full += delta.content;
               onToken?.(delta.content, full);
             }
+            // Accumulate tool calls (streamed incrementally)
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (!pendingToolCalls.has(idx)) {
+                  pendingToolCalls.set(idx, {
+                    id: tc.id || '',
+                    type: 'function',
+                    function: { name: tc.function?.name || '', arguments: '' },
+                  });
+                }
+                const entry = pendingToolCalls.get(idx)!;
+                if (tc.id) entry.id = tc.id;
+                if (tc.function?.name) entry.function.name = tc.function.name;
+                if (tc.function?.arguments) entry.function.arguments += tc.function.arguments;
+              }
+            }
           } catch {}
         }
       }
       // Stream ended without [DONE]
       clearInterval(statsInterval);
-      const now = performance.now();
-      const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
-      const totalTokens = tokenCount + reasoningTokenCount;
-      const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
-      const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
-      onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
+      if (pendingToolCalls.size > 0) {
+        onToolCalls?.(Array.from(pendingToolCalls.values()));
+      } else {
+        const now = performance.now();
+        const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
+        const totalTokens = tokenCount + reasoningTokenCount;
+        const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
+        const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
+        onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
+      }
     } catch (err) {
       clearInterval(statsInterval);
       onError?.(err as Error);

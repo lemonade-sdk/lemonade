@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api, { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
+import { LEMONADE_TOOLS, TOOLS_SYSTEM_PROMPT, executeTool, ToolCall } from '../tools/lemonadeTools';
+
+const MAX_TOOL_ROUNDS = 5;
 
 interface StreamState {
   content: string;
   thinking: string;
+  toolStatus?: string; // Shows "Calling load_model…" etc.
 }
 
 export interface ChatStreamingResult {
@@ -14,7 +18,7 @@ export interface ChatStreamingResult {
   streamingConvoIds: Set<string>;
   getStream: (convoId: string) => StreamState | undefined;
   getLiveStats: (convoId: string) => LiveStreamStats | undefined;
-  send: (convoId: string, model: string, messages: ChatMessage[]) => Promise<void>;
+  send: (convoId: string, model: string, messages: ChatMessage[], useTools?: boolean) => Promise<void>;
   stop: (convoId: string) => { content: string; thinking?: string } | null;
 }
 
@@ -59,61 +63,120 @@ export function useChatStreaming(
     [liveStats],
   );
 
-  const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[]) => {
+  const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[], useTools = false) => {
     setActiveStreams(prev => ({ ...prev, [convoId]: { content: '', thinking: '' } }));
     setThinkingExpanded(false);
 
     const controller = new AbortController();
     controllersRef.current.set(convoId, controller);
 
-    await api.chatCompletion(model, messages, {
-      onReasoning: (_token, fullReasoning) => {
-        const buf = tokenBufferRef.current;
-        if (!buf[convoId]) buf[convoId] = { content: '', thinking: '' };
-        buf[convoId].thinking = fullReasoning;
-        if (!thinkingExpanded) setThinkingExpanded(true);
-      },
-      onToken: (_token, full) => {
-        const buf = tokenBufferRef.current;
-        if (!buf[convoId]) buf[convoId] = { content: '', thinking: '' };
-        buf[convoId].content = full;
-      },
-      onStats: (stats) => {
-        setLiveStats(prev => ({ ...prev, [convoId]: stats }));
-      },
-      onDone: (stats) => {
-        delete tokenBufferRef.current[convoId];
-        onDone(convoId, stats);
-        setActiveStreams(prev => {
-          const next = { ...prev };
-          delete next[convoId];
-          return next;
+    // Prepend tools system prompt if tools are enabled
+    let fullMessages = useTools
+      ? [{ role: 'system' as const, content: TOOLS_SYSTEM_PROMPT }, ...messages]
+      : messages;
+
+    let toolRound = 0;
+
+    const runCompletion = async (): Promise<void> => {
+      return new Promise<void>((resolve, reject) => {
+        api.chatCompletion(model, fullMessages, {
+          tools: useTools ? LEMONADE_TOOLS as unknown as Record<string, unknown>[] : undefined,
+          onReasoning: (_token, fullReasoning) => {
+            const buf = tokenBufferRef.current;
+            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '' };
+            buf[convoId].thinking = fullReasoning;
+            if (!thinkingExpanded) setThinkingExpanded(true);
+          },
+          onToken: (_token, full) => {
+            const buf = tokenBufferRef.current;
+            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '' };
+            buf[convoId].content = full;
+          },
+          onStats: (stats) => {
+            setLiveStats(prev => ({ ...prev, [convoId]: stats }));
+          },
+          onToolCalls: async (toolCalls) => {
+            toolRound++;
+            if (toolRound > MAX_TOOL_ROUNDS) {
+              onError(convoId, 'Too many tool call rounds — stopping to prevent loops.');
+              cleanup(convoId);
+              resolve();
+              return;
+            }
+
+            // Show tool status in the stream
+            const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
+            setActiveStreams(prev => ({
+              ...prev,
+              [convoId]: { ...(prev[convoId] || { content: '', thinking: '' }), toolStatus: `Calling ${toolNames}…` },
+            }));
+
+            // Append the assistant's tool_calls message
+            fullMessages = [
+              ...fullMessages,
+              { role: 'assistant' as const, content: null, tool_calls: toolCalls },
+            ];
+
+            // Execute all tool calls in parallel
+            const results = await Promise.all(
+              toolCalls.map(tc => executeTool(tc as ToolCall))
+            );
+
+            // Append tool results
+            for (const result of results) {
+              fullMessages = [
+                ...fullMessages,
+                { role: 'tool' as const, content: result.content, tool_call_id: result.tool_call_id },
+              ];
+            }
+
+            // Clear tool status
+            setActiveStreams(prev => ({
+              ...prev,
+              [convoId]: { ...(prev[convoId] || { content: '', thinking: '' }), toolStatus: undefined },
+            }));
+
+            // Re-run completion with tool results
+            try {
+              await runCompletion();
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          },
+          onDone: (stats) => {
+            delete tokenBufferRef.current[convoId];
+            onDone(convoId, stats);
+            cleanup(convoId);
+            resolve();
+          },
+          onError: (err) => {
+            if (err.name === 'AbortError') { resolve(); return; }
+            delete tokenBufferRef.current[convoId];
+            onError(convoId, err.message);
+            cleanup(convoId);
+            resolve();
+          },
+          signal: controller.signal,
         });
-        setLiveStats(prev => {
-          const next = { ...prev };
-          delete next[convoId];
-          return next;
-        });
-        controllersRef.current.delete(convoId);
-      },
-      onError: (err) => {
-        if (err.name === 'AbortError') return;
-        delete tokenBufferRef.current[convoId];
-        onError(convoId, err.message);
-        setActiveStreams(prev => {
-          const next = { ...prev };
-          delete next[convoId];
-          return next;
-        });
-        setLiveStats(prev => {
-          const next = { ...prev };
-          delete next[convoId];
-          return next;
-        });
-        controllersRef.current.delete(convoId);
-      },
-      signal: controller.signal,
-    });
+      });
+    };
+
+    const cleanup = (id: string) => {
+      setActiveStreams(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setLiveStats(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      controllersRef.current.delete(id);
+    };
+
+    await runCompletion();
   }, [onDone, onError]);
 
   const stop = useCallback((convoId: string): { content: string; thinking?: string } | null => {
