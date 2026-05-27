@@ -431,7 +431,7 @@
               '<div style="margin-top:16px;">' +
                 gsConsoleHtml([
                   'sudo systemctl enable --now lemond',
-                  'sudo systemctl status lemond'
+                  'sudo systemctl --no-pager status lemond'
                 ]) +
               '</div>';
             } else {

@@ -29,7 +29,7 @@ sudo systemctl enable --now lemond
 Check that it's running:
 
 ```bash
-sudo systemctl status lemond
+sudo systemctl --no-pager status lemond
 ```
 
 Once the service is running, open [http://localhost:13305](http://localhost:13305) in your browser.
