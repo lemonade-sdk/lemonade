@@ -34,10 +34,25 @@ public:
         const std::string& working_dir = "",
         int timeout_seconds = -1);
 
+    // Stop a process and clean up owned OS resources.
     static void stop_process(ProcessHandle handle);
+
+    // Check if process is running. This must be non-mutating: on POSIX it must
+    // not reap the child, because status/health checks may call this frequently.
     static bool is_running(ProcessHandle handle);
+
+    // Get process exit code (returns -1 if still running). POSIX callers should
+    // prefer reap_process() when they intentionally own cleanup of an exited child.
     static int get_exit_code(ProcessHandle handle);
     static int wait_for_exit(ProcessHandle handle, int timeout_seconds = -1);
+
+    // Reap/close an already-exited child/handle and return its exit code.
+    // Returns -1 if the process is still running, is not owned, or the status
+    // cannot be obtained. This is intentionally explicit so liveness checks stay
+    // read-only while lifecycle cleanup can reliably remove zombies.
+    static int reap_process(ProcessHandle handle);
+
+    // Read process output
     static std::string read_output(ProcessHandle handle, int max_bytes = 4096);
 
     // Kill process forcefully and wait/close owned handles.

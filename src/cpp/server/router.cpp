@@ -564,6 +564,11 @@ json Router::get_all_loaded_models() const {
     json result = json::array();
 
     for (const auto& server : loaded_servers_) {
+        const bool backend_alive = server->is_backend_alive();
+        if (!backend_alive) {
+            continue;
+        }
+
         json model_info;
         model_info["model_name"] = model_manager_->get_public_model_name(server->get_model_name());
         model_info["checkpoint"] = server->get_checkpoint();
@@ -571,8 +576,9 @@ json Router::get_all_loaded_models() const {
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
         model_info["pid"] = server->get_process_id();
-        model_info["backend_alive"] = server->is_backend_alive();
+        model_info["backend_alive"] = true;
         model_info["backend_health"] = server->get_backend_health_state();
+        model_info["loaded"] = true;
         model_info["watchdog_reset"] = server->was_watchdog_triggered();
         std::string watchdog_reason = server->get_watchdog_reset_reason();
         if (!watchdog_reason.empty()) {
@@ -741,43 +747,59 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 template<typename Func>
 void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func) {
     WrappedServer* server = nullptr;
+    std::string requested_model;
 
-    {
-        std::lock_guard<std::mutex> lock(load_mutex_);
+    try {
+        json request = json::parse(request_body);
+        if (request.contains("model") && request["model"].is_string()) {
+            requested_model = request["model"].get<std::string>();
+        }
+    } catch (...) {
+        LOG(DEBUG, "Router") << "Failed to parse request body for model extraction" << std::endl;
+    }
 
-        // Extract model from request body if present (same logic as execute_inference)
-        std::string requested_model;
-        try {
-            json request = json::parse(request_body);
-            if (request.contains("model") && request["model"].is_string()) {
-                requested_model = request["model"].get<std::string>();
+    if (requested_model.empty()) {
+        LOG(ERROR, "Router") << "No model specified in streaming request" << std::endl;
+        json error = ErrorResponse::from_exception(InvalidRequestException("No model specified in request"));
+        std::string error_msg = "data: " + error.dump() + "\n\n";
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        return;
+    }
+
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        RecipeOptions restart_options;
+        bool should_reload_before_request = false;
+
+        {
+            std::lock_guard<std::mutex> lock(load_mutex_);
+            server = find_server_by_model_name(resolve_model_name(requested_model));
+            if (!server) {
+                json error = ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
+                std::string error_msg = "data: " + error.dump() + "\n\n";
+                sink.write(error_msg.c_str(), error_msg.size());
+                sink.done();
+                return;
             }
-        } catch (...) {
-            LOG(DEBUG, "Router") << "Failed to parse request body for model extraction" << std::endl;
+
+            if (!server->is_backend_alive()) {
+                restart_options = server->get_recipe_options();
+                should_reload_before_request = true;
+            } else {
+                server->set_busy(true);
+                server->update_access_time();
+            }
         }
 
-        // Find requested model - no fallback to avoid silent misrouting
-        if (requested_model.empty()) {
-            LOG(ERROR, "Router") << "No model specified in streaming request" << std::endl;
-            json error = ErrorResponse::from_exception(InvalidRequestException("No model specified in request"));
-            std::string error_msg = "data: " + error.dump() + "\n\n";
-            sink.write(error_msg.c_str(), error_msg.size());
-            sink.done();
-            return;
-        }
+        if (should_reload_before_request) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(requested_model, restart_options)) {
+                continue;
+            }
 
-        server = find_server_by_model_name(resolve_model_name(requested_model));
-        if (!server || !server->is_backend_alive()) {
             json error = ErrorResponse::create(
-                server && server->was_watchdog_triggered()
-                    ? "Backend was reset by the watchdog. Retry the request to reload the model."
-                    : "Model not loaded: " + requested_model,
-                server && server->was_watchdog_triggered()
-                    ? ErrorType::BACKEND_ERROR
-                    : ErrorType::MODEL_NOT_LOADED,
-                server && server->was_watchdog_triggered()
-                    ? json{{"code", "backend_watchdog_reset"}, {"retryable", true}}
-                    : json{}
+                "Backend for model '" + requested_model + "' is unavailable",
+                ErrorType::BACKEND_ERROR,
+                {{"code", "backend_unavailable"}, {"retryable", true}}
             );
             std::string error_msg = "data: " + error.dump() + "\n\n";
             sink.write(error_msg.c_str(), error_msg.size());
@@ -785,16 +807,41 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             return;
         }
 
-        server->set_busy(true);
-        server->update_access_time();
-    }
+        try {
+            streaming_func(server);
+            const bool watchdog_reset = server->was_watchdog_triggered();
+            restart_options = server->get_recipe_options();
+            server->set_busy(false);
 
-    try {
-        streaming_func(server);
-        server->set_busy(false);
-    } catch (...) {
-        server->set_busy(false);
-        throw;
+            // Do not replay a streaming response after bytes may have reached the
+            // client. Reload immediately so the next request does not see a
+            // stale tombstone, then return the stream outcome as-is.
+            if (watchdog_reset) {
+                reload_model_after_watchdog_reset(requested_model, restart_options);
+            }
+            return;
+        } catch (const BackendStreamRetryableReset& e) {
+            restart_options = server->get_recipe_options();
+            server->set_busy(false);
+
+            if (attempt == 0 && reload_model_after_watchdog_reset(requested_model, restart_options)) {
+                continue;
+            }
+
+            json error = ErrorResponse::create(
+                std::string("Backend for model '") + requested_model +
+                    "' crashed before streaming started and could not be reloaded: " + e.what(),
+                ErrorType::BACKEND_ERROR,
+                {{"code", "backend_watchdog_reset"}, {"retryable", true}}
+            );
+            std::string error_msg = "data: " + error.dump() + "\n\n";
+            sink.write(error_msg.c_str(), error_msg.size());
+            sink.done();
+            return;
+        } catch (...) {
+            server->set_busy(false);
+            throw;
+        }
     }
 }
 

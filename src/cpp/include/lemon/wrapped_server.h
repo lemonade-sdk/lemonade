@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
@@ -21,6 +22,13 @@ namespace lemon {
 
 using json = nlohmann::json;
 using utils::ProcessHandle;
+
+class BackendStreamRetryableReset : public std::runtime_error {
+public:
+    explicit BackendStreamRetryableReset(const std::string& reason)
+        : std::runtime_error(reason) {}
+};
+
 
 struct Telemetry {
     int input_tokens = 0;
@@ -136,7 +144,8 @@ public:
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
-    int get_process_id() const { return process_handle_.pid; }
+    int get_process_id() const { return get_process_handle_snapshot().pid; }
+    int get_backend_port() const;
 
     // Cheap liveness gate used by the router. On POSIX this relies on
     // ProcessManager::is_running(), which intentionally checks without reaping.
@@ -228,6 +237,10 @@ protected:
         BackendRequestKind kind_;
     };
 
+    static bool has_process_handle(const ProcessHandle& handle);
+    ProcessHandle get_process_handle_snapshot() const;
+    ProcessHandle consume_process_handle_for_cleanup();
+
     // Choose an available port
     int choose_port();
 
@@ -259,7 +272,7 @@ protected:
 
     // Get the base URL for the wrapped server
     std::string get_base_url() const {
-        return "http://127.0.0.1:" + std::to_string(port_);
+        return "http://127.0.0.1:" + std::to_string(get_backend_port());
     }
 
     json create_watchdog_reset_response() const;
@@ -267,6 +280,8 @@ protected:
     std::string server_name_;
     int port_;
     ProcessHandle process_handle_;
+    mutable std::mutex process_mutex_;
+    Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
@@ -289,6 +304,7 @@ private:
     void begin_backend_request(BackendRequestKind kind);
     void end_backend_request(BackendRequestKind kind);
     void backend_watchdog_loop();
+    bool has_backend_process_exited() const;
     void request_backend_reset_from_watchdog(const std::string& reason);
 
     mutable std::mutex watchdog_mutex_;
