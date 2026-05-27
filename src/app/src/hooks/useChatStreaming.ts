@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api, { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
-import { LEMONADE_TOOLS, TOOLS_SYSTEM_PROMPT, executeTool, ToolCall } from '../tools/lemonadeTools';
+import { LEMONADE_TOOLS, executeTool, ToolCall } from '../tools/lemonadeTools';
 
 const MAX_TOOL_ROUNDS = 5;
 
@@ -70,10 +70,7 @@ export function useChatStreaming(
     const controller = new AbortController();
     controllersRef.current.set(convoId, controller);
 
-    // Prepend tools system prompt if tools are enabled
-    let fullMessages = useTools
-      ? [{ role: 'system' as const, content: TOOLS_SYSTEM_PROMPT }, ...messages]
-      : messages;
+    let fullMessages = [...messages];
 
     let toolRound = 0;
 

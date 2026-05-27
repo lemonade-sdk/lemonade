@@ -20,7 +20,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'list_models',
-      description: 'List all models known to the lemonade server — loaded, downloaded, and registry. Returns model names, status, recipes, and sizes.',
+      description: 'List all models known to the lemonade server (loaded, downloaded, and registry). Returns model names, status, available recipes, and sizes. Each model may support multiple recipes — a recipe defines how the model runs (e.g. "llamacpp" for GPU/CPU via llama.cpp, "flm" for NPU via FastFlowLM).',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -28,7 +28,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'get_model_info',
-      description: 'Get detailed info about a specific model including its available recipes, size, and labels.',
+      description: 'Get detailed info about a specific model including its available recipes, size, and labels. IMPORTANT: Call this before load_model to check which recipes a model supports. If multiple recipes are available (e.g. llamacpp and flm), present the options to the user and ask which they prefer before loading. Suggest llamacpp (GPU) as the recommended default.',
       parameters: {
         type: 'object',
         properties: {
@@ -42,14 +42,14 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'load_model',
-      description: 'Load a model into the server for inference. Optionally specify a recipe (e.g. "llamacpp-vulkan", "flm") and recipe options like context size.',
+      description: 'Load a model into the server for inference. A "recipe" defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (hybrid NPU). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a specific backend. Always specify a recipe — do not omit it. If the user did not specify one and the model has multiple recipes, ask them first (call get_model_info to check).',
       parameters: {
         type: 'object',
         properties: {
           model_name: { type: 'string', description: 'The model name/ID to load.' },
-          recipe: { type: 'string', description: 'The recipe to use (e.g. "llamacpp-vulkan", "llamacpp-cpu", "flm"). Optional — server picks the best if omitted.' },
-          n_ctx: { type: 'number', description: 'Context window size. Optional.' },
-          n_gpu_layers: { type: 'number', description: 'Number of GPU layers. Optional.' },
+          recipe: { type: 'string', description: 'The recipe to use. Examples: "llamacpp" (auto-selects best GPU/CPU backend), "llamacpp-vulkan" (AMD/NVIDIA GPU), "llamacpp-cpu" (CPU only), "flm" (NPU), "ryzenai-llm" (hybrid NPU). Always specify — check get_model_info for available options.' },
+          n_ctx: { type: 'number', description: 'Context window size (e.g. 4096, 8192, 32768). Higher uses more memory.' },
+          n_gpu_layers: { type: 'number', description: 'Number of layers to offload to GPU. Higher = faster but uses more VRAM.' },
         },
         required: ['model_name'],
       },
@@ -73,7 +73,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'get_loaded_models',
-      description: 'List only the currently loaded models with their recipe, device, and resource usage.',
+      description: 'List only the currently loaded models with their recipe, device, and resource usage. Multiple models can be loaded simultaneously within server limits.',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -81,7 +81,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'get_server_health',
-      description: 'Get server health status including version, loaded models, and resource limits.',
+      description: 'Get server health status including version, loaded models count, and per-type resource limits (max loaded models for LLM, embedding, reranking, audio, image, TTS).',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -89,7 +89,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'pull_model',
-      description: 'Download a model from the registry to local storage. This may take a while for large models.',
+      description: 'Download a model from the registry to local storage. Models must be pulled before they can be loaded. This may take a while for large models.',
       parameters: {
         type: 'object',
         properties: {
@@ -103,7 +103,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'delete_model',
-      description: 'Delete a downloaded model from local storage.',
+      description: 'Delete a downloaded model from local storage, freeing disk space.',
       parameters: {
         type: 'object',
         properties: {
@@ -117,7 +117,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'get_system_info',
-      description: 'Get system hardware info including CPU, GPU, VRAM, and NPU capabilities.',
+      description: 'Get system hardware info including CPU, GPU (AMD/NVIDIA), VRAM, and NPU capabilities, plus all available recipes and their backend install status.',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -125,7 +125,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'list_backends',
-      description: 'List all available recipes and their backends with install status. Shows which backends (e.g. vulkan, rocm, cpu, npu) are installed, available to install, or need updating for each recipe (e.g. llamacpp, whispercpp, flm, kokoro, sd-cpp).',
+      description: 'List all recipes and their backends with install status. A recipe (e.g. llamacpp, whispercpp, flm, kokoro, sd-cpp, vllm) defines the inference engine. Each recipe has backends (e.g. vulkan, rocm, cpu, metal, npu) that target specific hardware. Returns install state (installed, installable, update_available, update_required), version, and supported devices for each. Check this before recommending a recipe — if the user needs GPU but vulkan is not installed, suggest installing it first.',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -133,7 +133,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'install_backend',
-      description: 'Install or update a backend for a recipe. For example, install the vulkan backend for the llamacpp recipe to enable GPU-accelerated inference.',
+      description: 'Install or update a backend for a recipe (e.g. install vulkan for llamacpp to enable GPU inference). Use list_backends first to check what is installable.',
       parameters: {
         type: 'object',
         properties: {
@@ -305,35 +305,4 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
   }
 }
 
-/* ── System prompt for tool-aware conversations ────────────────── */
 
-export const TOOLS_SYSTEM_PROMPT = `You are a helpful assistant with access to the lemonade local LLM server. You can manage models, check server status, and configure the server using the available tools.
-
-When the user asks you to load, unload, list, download, or delete models, check server status, or manage backends, use the appropriate tool. After using a tool, summarize the result in a friendly way.
-
-Key concepts:
-
-**Recipes & Backends:**
-A "recipe" defines HOW a model runs. Each recipe has one or more "backends" (hardware-specific implementations):
-- llamacpp — LLM inference via llama.cpp. Backends: vulkan (AMD/NVIDIA GPU), rocm (AMD GPU on Linux), metal (Apple GPU), cpu
-- flm — FastFlowLM for NPU-accelerated inference. Backend: npu
-- ryzenai-llm — RyzenAI hybrid NPU inference. Backend: npu
-- whispercpp — Audio transcription. Backends: cpu, npu
-- sd-cpp — Image generation via stable-diffusion.cpp. Backend: cpu
-- kokoro — Text-to-speech. Backend: cpu
-- vllm — vLLM for ROCm GPUs (Linux). Backend: rocm
-
-**Loading models — recipe selection:**
-Before loading a model, ALWAYS call get_model_info first to check its available recipes. If the model has only one recipe, use it directly. If the model has MULTIPLE recipes (e.g. both llamacpp and flm), ask the user which one they want before loading. Present the options clearly, e.g.:
-  "This model supports GPU (llamacpp) and NPU (flm). Which would you like?"
-Suggest llamacpp (GPU) as the recommended default. Only proceed without asking if the user already specified a recipe in their request.
-
-**Models:**
-- Models must be downloaded ("pulled") before they can be loaded
-- Multiple models can be loaded simultaneously (within server limits)
-- Use list_backends to check which backends are installed before recommending a recipe
-- If a user wants GPU inference but vulkan isn't installed, suggest installing it first
-
-**Recipe options** (for load_model):
-- n_ctx: Context window size (default varies by model, e.g. 4096 or 8192)
-- n_gpu_layers: Number of layers to offload to GPU (higher = faster but uses more VRAM)`;
