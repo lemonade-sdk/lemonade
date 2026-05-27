@@ -202,10 +202,10 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
 
       case 'load_model': {
         const opts: Record<string, unknown> = {};
-        if (args.recipe) opts.recipe = args.recipe;
+        opts.recipe = (args.recipe as string) || 'llamacpp';
         if (args.n_ctx) opts.n_ctx = args.n_ctx;
         if (args.n_gpu_layers) opts.n_gpu_layers = args.n_gpu_layers;
-        result = await api.loadModel(args.model_name as string, Object.keys(opts).length > 0 ? opts : undefined);
+        result = await api.loadModel(args.model_name as string, opts);
         break;
       }
 
@@ -323,7 +323,7 @@ A "recipe" defines HOW a model runs. Each recipe has one or more "backends" (har
 - kokoro — Text-to-speech. Backend: cpu
 - vllm — vLLM for ROCm GPUs (Linux). Backend: rocm
 
-When loading a model, you can specify a recipe like "llamacpp" and optionally a backend preference. The server picks the best available backend if you only specify the recipe. Common combined forms: "llamacpp-vulkan" (GPU), "llamacpp-cpu" (CPU only).
+When loading a model, ALWAYS default to the "llamacpp" recipe (GPU inference) unless the user specifically asks for NPU or another recipe. The tool automatically uses llamacpp if no recipe is specified. Common combined forms: "llamacpp-vulkan" (GPU), "llamacpp-cpu" (CPU only). Only use "flm" or "ryzenai-llm" if the user explicitly requests NPU.
 
 **Models:**
 - Models must be downloaded ("pulled") before they can be loaded
