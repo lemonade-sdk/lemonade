@@ -173,6 +173,7 @@ type StatusListener = (status: ConnectionStatus) => void;
 class LemonadeAPI {
   private _status: ConnectionStatus = 'disconnected';
   private _listeners: StatusListener[] = [];
+  private _modelsChangedListeners: Array<() => void> = [];
   private _healthData: HealthData | null = null;
   private _modelsData: ModelsData | null = null;
   private _systemInfoData: Record<string, unknown> | null = null;
@@ -216,6 +217,15 @@ class LemonadeAPI {
   onStatusChange(fn: StatusListener): () => void {
     this._listeners.push(fn);
     return () => { this._listeners = this._listeners.filter(f => f !== fn); };
+  }
+
+  onModelsChanged(fn: () => void): () => void {
+    this._modelsChangedListeners.push(fn);
+    return () => { this._modelsChangedListeners = this._modelsChangedListeners.filter(f => f !== fn); };
+  }
+
+  private _notifyModelsChanged(): void {
+    this._modelsChangedListeners.forEach(fn => { try { fn(); } catch {} });
   }
 
   private _setStatus(s: ConnectionStatus): void {
@@ -281,19 +291,25 @@ class LemonadeAPI {
 
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>): Promise<unknown> {
     const body: Record<string, unknown> = { model_name: modelName, ...recipeOptions };
-    return this._json('/api/v1/load', { method: 'POST', body });
+    const result = await this._json('/api/v1/load', { method: 'POST', body });
+    this._notifyModelsChanged();
+    return result;
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
     const body = modelName ? { model_name: modelName } : {};
-    return this._json('/api/v1/unload', { method: 'POST', body });
+    const result = await this._json('/api/v1/unload', { method: 'POST', body });
+    this._notifyModelsChanged();
+    return result;
   }
 
   async deleteModel(modelName: string): Promise<unknown> {
-    return this._json('/api/v1/delete', {
+    const result = await this._json('/api/v1/delete', {
       method: 'POST',
       body: { model_name: modelName },
     });
+    this._notifyModelsChanged();
+    return result;
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {
@@ -457,6 +473,7 @@ class LemonadeAPI {
         }
       }
       onComplete?.({});
+      this._notifyModelsChanged();
     } catch (err) {
       onError?.(err as Error);
     }
