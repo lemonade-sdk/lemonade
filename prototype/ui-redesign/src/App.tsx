@@ -53,7 +53,18 @@ class ViewErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
 const VALID_VIEWS: View[] = ['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'];
 
+function viewFromHash(): View | null {
+  try {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    if (hash && VALID_VIEWS.includes(hash as View)) return hash as View;
+  } catch { /* ignore */ }
+  return null;
+}
+
 function loadSavedView(): View {
+  // Hash takes priority, then localStorage, then default
+  const fromHash = viewFromHash();
+  if (fromHash) return fromHash;
   try {
     const saved = localStorage.getItem('lemonade_current_view');
     if (saved && VALID_VIEWS.includes(saved as View)) return saved as View;
@@ -91,6 +102,25 @@ const App: React.FC = () => {
   const setView = useCallback((v: View) => {
     setViewState(v);
     try { localStorage.setItem('lemonade_current_view', v); } catch { /* ignore */ }
+    // Update hash without triggering hashchange (we're already setting state)
+    const newHash = `#/${v}`;
+    if (window.location.hash !== newHash) {
+      window.history.pushState(null, '', newHash);
+    }
+  }, []);
+
+  // Sync view from hash on back/forward navigation
+  useEffect(() => {
+    const onHashChange = () => {
+      const v = viewFromHash();
+      if (v) setViewState(v);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    // Set initial hash if not already set
+    if (!window.location.hash) {
+      window.history.replaceState(null, '', `#/${view}`);
+    }
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   useEffect(() => {
