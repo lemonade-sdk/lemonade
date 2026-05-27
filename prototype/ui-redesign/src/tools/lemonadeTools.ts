@@ -202,10 +202,10 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
 
       case 'load_model': {
         const opts: Record<string, unknown> = {};
-        opts.recipe = (args.recipe as string) || 'llamacpp';
+        if (args.recipe) opts.recipe = args.recipe;
         if (args.n_ctx) opts.n_ctx = args.n_ctx;
         if (args.n_gpu_layers) opts.n_gpu_layers = args.n_gpu_layers;
-        result = await api.loadModel(args.model_name as string, opts);
+        result = await api.loadModel(args.model_name as string, Object.keys(opts).length > 0 ? opts : undefined);
         break;
       }
 
@@ -323,7 +323,10 @@ A "recipe" defines HOW a model runs. Each recipe has one or more "backends" (har
 - kokoro — Text-to-speech. Backend: cpu
 - vllm — vLLM for ROCm GPUs (Linux). Backend: rocm
 
-When loading a model, ALWAYS default to the "llamacpp" recipe (GPU inference) unless the user specifically asks for NPU or another recipe. The tool automatically uses llamacpp if no recipe is specified. Common combined forms: "llamacpp-vulkan" (GPU), "llamacpp-cpu" (CPU only). Only use "flm" or "ryzenai-llm" if the user explicitly requests NPU.
+**Loading models — recipe selection:**
+Before loading a model, ALWAYS call get_model_info first to check its available recipes. If the model has only one recipe, use it directly. If the model has MULTIPLE recipes (e.g. both llamacpp and flm), ask the user which one they want before loading. Present the options clearly, e.g.:
+  "This model supports GPU (llamacpp) and NPU (flm). Which would you like?"
+Suggest llamacpp (GPU) as the recommended default. Only proceed without asking if the user already specified a recipe in their request.
 
 **Models:**
 - Models must be downloaded ("pulled") before they can be loaded
@@ -333,6 +336,4 @@ When loading a model, ALWAYS default to the "llamacpp" recipe (GPU inference) un
 
 **Recipe options** (for load_model):
 - n_ctx: Context window size (default varies by model, e.g. 4096 or 8192)
-- n_gpu_layers: Number of layers to offload to GPU (higher = faster but uses more VRAM)
-
-Be proactive: if a user asks to load a model and you're unsure which recipe to use, check list_backends first to see what's installed, then recommend the best option.`;
+- n_gpu_layers: Number of layers to offload to GPU (higher = faster but uses more VRAM)`;
