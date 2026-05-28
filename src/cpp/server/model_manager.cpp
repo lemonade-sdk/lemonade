@@ -966,25 +966,25 @@ bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& m
         return false;
     }
 
+    json latest_user_models = load_optional_json(get_user_models_file());
+    if (!latest_user_models.is_object()) {
+        return false;
+    }
+
+    bool found = false;
+    for (const auto& key : candidate_keys) {
+        if (latest_user_models.contains(key)) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        return false;
+    }
+
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        json latest_user_models = load_optional_json(get_user_models_file());
-        if (!latest_user_models.is_object()) {
-            return false;
-        }
-
-        bool found = false;
-        for (const auto& key : candidate_keys) {
-            if (latest_user_models.contains(key)) {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            return false;
-        }
-
         user_models_ = std::move(latest_user_models);
         cache_valid_ = false;
     }
@@ -2903,6 +2903,58 @@ static bool has_hash_metadata(const json& file_desc) {
            (file_desc.contains("sha256") && file_desc["sha256"].is_string());
 }
 
+static bool regular_files_have_same_content(const fs::path& lhs, const fs::path& rhs) {
+    std::error_code ec;
+    if (!fs::is_regular_file(lhs, ec)) {
+        ec.clear();
+        return false;
+    }
+    if (!fs::is_regular_file(rhs, ec)) {
+        ec.clear();
+        return false;
+    }
+
+    const auto lhs_size = fs::file_size(lhs, ec);
+    if (ec) {
+        ec.clear();
+        return false;
+    }
+    const auto rhs_size = fs::file_size(rhs, ec);
+    if (ec || lhs_size != rhs_size) {
+        ec.clear();
+        return false;
+    }
+
+    std::ifstream lhs_stream(lhs, std::ios::binary);
+    std::ifstream rhs_stream(rhs, std::ios::binary);
+    if (!lhs_stream.is_open() || !rhs_stream.is_open()) {
+        return false;
+    }
+
+    constexpr size_t buffer_size = 1024 * 1024;
+    std::vector<char> lhs_buffer(buffer_size);
+    std::vector<char> rhs_buffer(buffer_size);
+
+    while (lhs_stream.good() && rhs_stream.good()) {
+        lhs_stream.read(lhs_buffer.data(), static_cast<std::streamsize>(lhs_buffer.size()));
+        rhs_stream.read(rhs_buffer.data(), static_cast<std::streamsize>(rhs_buffer.size()));
+
+        const std::streamsize lhs_count = lhs_stream.gcount();
+        const std::streamsize rhs_count = rhs_stream.gcount();
+        if (lhs_count != rhs_count) {
+            return false;
+        }
+        if (lhs_count == 0) {
+            break;
+        }
+        if (std::memcmp(lhs_buffer.data(), rhs_buffer.data(), static_cast<size_t>(lhs_count)) != 0) {
+            return false;
+        }
+    }
+
+    return !lhs_stream.bad() && !rhs_stream.bad();
+}
+
 static void materialize_unchanged_files_from_sibling_snapshots(const json& manifest) {
     std::string default_download_path = manifest.value("download_path", "");
 
@@ -3019,9 +3071,21 @@ static bool manifest_files_are_equivalent_in_snapshot(const json& manifest,
             return false;
         }
 
-        const bool same_file = fs::equivalent(selected_file, candidate_file, ec);
-        if (ec || !same_file) {
+        bool same_file = fs::equivalent(selected_file, candidate_file, ec);
+        if (ec) {
             ec.clear();
+            same_file = false;
+        }
+
+        if (!same_file && regular_files_have_same_content(selected_file, candidate_file)) {
+            same_file = true;
+            LOG(INFO, "ModelManager")
+                << "Sibling snapshot files are content-equivalent after copy fallback: "
+                << path_to_utf8(candidate_file) << " -> " << path_to_utf8(selected_file)
+                << std::endl;
+        }
+
+        if (!same_file) {
             return false;
         }
     }

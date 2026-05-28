@@ -1,5 +1,5 @@
 export type NumericSettingKey = 'temperature' | 'topK' | 'topP' | 'repeatPenalty';
-export type BooleanSettingKey = 'enableThinking' | 'collapseThinkingByDefault' | 'modelAutoUpdate';
+export type BooleanSettingKey = 'enableThinking' | 'collapseThinkingByDefault';
 export type StringSettingKey = 'baseURL' | 'apiKey';
 export type SettingKey = NumericSettingKey | BooleanSettingKey | StringSettingKey;
 
@@ -44,7 +44,6 @@ export interface AppSettings {
   repeatPenalty: NumericSetting;
   enableThinking: BooleanSetting;
   collapseThinkingByDefault: BooleanSetting;
-  modelAutoUpdate: BooleanSetting;
   baseURL: StringSetting;
   apiKey: StringSetting;
   layout: LayoutSettings;
@@ -54,7 +53,6 @@ export interface AppSettings {
 type BaseSettingValues = Record<NumericSettingKey, number> & {
   enableThinking: boolean;
   collapseThinkingByDefault: boolean;
-  modelAutoUpdate: boolean;
   baseURL: string;
   apiKey: string;
 };
@@ -66,7 +64,6 @@ export const BASE_SETTING_VALUES: BaseSettingValues = {
   repeatPenalty: 1.1,
   enableThinking: true,
   collapseThinkingByDefault: false,
-  modelAutoUpdate: false,
   baseURL: '',
   apiKey: '',
 };
@@ -106,7 +103,6 @@ export const createDefaultSettings = (): AppSettings => ({
   repeatPenalty: { value: BASE_SETTING_VALUES.repeatPenalty, useDefault: true },
   enableThinking: { value: BASE_SETTING_VALUES.enableThinking, useDefault: true },
   collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
-  modelAutoUpdate: { value: BASE_SETTING_VALUES.modelAutoUpdate, useDefault: true },
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
@@ -120,7 +116,6 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   repeatPenalty: { ...settings.repeatPenalty },
   enableThinking: { ...settings.enableThinking },
   collapseThinkingByDefault: { ...settings.collapseThinkingByDefault },
-  modelAutoUpdate: { ...settings.modelAutoUpdate },
   baseURL: { ...settings.baseURL },
   apiKey: { ...settings.apiKey },
   layout: { ...settings.layout },
@@ -197,24 +192,6 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
         : defaults.collapseThinkingByDefault.value;
 
     defaults.collapseThinkingByDefault = {
-      value,
-      useDefault,
-    };
-  }
-
-  const rawModelAutoUpdate = incoming.modelAutoUpdate;
-  if (rawModelAutoUpdate && typeof rawModelAutoUpdate === 'object') {
-    const useDefault =
-      typeof rawModelAutoUpdate.useDefault === 'boolean'
-        ? rawModelAutoUpdate.useDefault
-        : defaults.modelAutoUpdate.useDefault;
-    const value = useDefault
-      ? defaults.modelAutoUpdate.value
-      : typeof rawModelAutoUpdate.value === 'boolean'
-        ? rawModelAutoUpdate.value
-        : defaults.modelAutoUpdate.value;
-
-    defaults.modelAutoUpdate = {
       value,
       useDefault,
     };

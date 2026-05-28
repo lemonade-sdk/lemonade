@@ -280,6 +280,35 @@ class ServerDownloadRegistryTests(ServerTestBase):
             else:
                 user_models_path.write_bytes(original_bytes)
 
+    def test_003_model_auto_update_config_round_trips_as_server_setting(self):
+        """model_auto_update is server-owned runtime config, not client app settings."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        response = requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+        response.raise_for_status()
+        original = bool(response.json().get("model_auto_update", False))
+
+        try:
+            for value in (not original, original):
+                with self.subTest(model_auto_update=value):
+                    set_response = requests.post(
+                        set_url,
+                        json={"model_auto_update": value},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    set_response.raise_for_status()
+
+                    config_response = requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                    config_response.raise_for_status()
+                    self.assertEqual(config_response.json().get("model_auto_update"), value)
+        finally:
+            requests.post(
+                set_url,
+                json={"model_auto_update": original},
+                timeout=TIMEOUT_DEFAULT,
+            ).raise_for_status()
+
     def _find_downloaded_gguf(self, model_name) -> Path:
         info = self._get_model_info(model_name)
         checkpoint = info.get("checkpoint") or ""
@@ -507,7 +536,7 @@ class ServerDownloadRegistryTests(ServerTestBase):
         finally:
             if gguf.exists() and _sha256_file(gguf) != original_sha256:
                 _restore_one_byte(gguf, offset, original_byte)
-                
+
     def test_006_real_download_reuses_valid_verified_cache_without_redownload(self):
         """Optional CI/local smoke test: a valid cached GGUF is verified and reused, not redownloaded."""
         if not RUN_REAL_DOWNLOAD_TESTS:

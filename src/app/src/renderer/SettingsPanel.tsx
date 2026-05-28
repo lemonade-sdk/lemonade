@@ -3,6 +3,7 @@ import { ChevronRight } from './components/Icons';
 import {
   AppSettings,
   BASE_SETTING_VALUES,
+  BooleanSetting,
   NumericSettingKey,
   clampNumericSettingValue,
   createDefaultSettings,
@@ -19,6 +20,11 @@ interface SettingsPanelProps {
   isVisible: boolean;
   searchQuery?: string;
 }
+
+const createDefaultModelAutoUpdateSetting = (): BooleanSetting => ({
+  value: false,
+  useDefault: true,
+});
 
 const numericSettingsConfig: Array<{
   key: NumericSettingKey;
@@ -49,6 +55,7 @@ const numericSettingsConfig: Array<{
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = '' }) => {
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
+  const [modelAutoUpdate, setModelAutoUpdate] = useState<BooleanSetting>(createDefaultModelAutoUpdateSetting());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
@@ -63,47 +70,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         setIsLoading(true);
       }
 
+      let merged = createDefaultSettings();
+      let nextModelAutoUpdate = createDefaultModelAutoUpdateSetting();
+
       try {
-        if (!window.api?.getSettings) {
-          if (isMounted) {
-            setSettings(createDefaultSettings());
-          }
-          return;
-        }
-
-        const stored = await window.api.getSettings();
-        let merged = mergeWithDefaultSettings(stored);
-
-        try {
-          await serverConfig.waitForInit();
-          const serverUrl = getServerBaseUrl();
-          const configResponse = await serverFetch(`${serverUrl}/internal/config`, { cache: 'no-store' });
-          if (configResponse.ok) {
-            const serverConfigJson = await configResponse.json();
-            if (typeof serverConfigJson?.model_auto_update === 'boolean') {
-              merged = {
-                ...merged,
-                modelAutoUpdate: {
-                  value: serverConfigJson.model_auto_update,
-                  useDefault: false,
-                },
-              };
-            }
-          }
-        } catch (error) {
-          console.warn('Could not load server model-manager settings:', error);
-        }
-
-        if (isMounted) {
-          setSettings(merged);
+        if (window.api?.getSettings) {
+          const stored = await window.api.getSettings();
+          merged = mergeWithDefaultSettings(stored);
         }
       } catch (error) {
-        console.error('Failed to load settings:', error);
-        if (isMounted) {
-          setSettings(createDefaultSettings());
+        console.error('Failed to load app settings:', error);
+      }
+
+      try {
+        await serverConfig.waitForInit();
+        const serverUrl = getServerBaseUrl();
+        const configResponse = await serverFetch(`${serverUrl}/internal/config`, { cache: 'no-store' });
+        if (configResponse.ok) {
+          const serverConfigJson = await configResponse.json();
+          if (typeof serverConfigJson?.model_auto_update === 'boolean') {
+            nextModelAutoUpdate = {
+              value: serverConfigJson.model_auto_update,
+              useDefault: serverConfigJson.model_auto_update === createDefaultModelAutoUpdateSetting().value,
+            };
+          }
         }
+      } catch (error) {
+        console.warn('Could not load server model-manager settings:', error);
       } finally {
         if (isMounted) {
+          setSettings(merged);
+          setModelAutoUpdate(nextModelAutoUpdate);
           setIsLoading(false);
         }
       }
@@ -125,7 +122,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
     }));
   };
 
-  const handleBooleanChange = (key: 'enableThinking' | 'collapseThinkingByDefault' | 'modelAutoUpdate', value: boolean) => {
+  const handleBooleanChange = (key: 'enableThinking' | 'collapseThinkingByDefault', value: boolean) => {
     setSettings((prev) => ({
       ...prev,
       [key]: {
@@ -133,6 +130,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         useDefault: false,
       },
     }));
+  };
+
+  const handleModelAutoUpdateChange = (value: boolean) => {
+    setModelAutoUpdate({
+      value,
+      useDefault: false,
+    });
+  };
+
+  const handleResetModelAutoUpdate = () => {
+    setModelAutoUpdate(createDefaultModelAutoUpdateSetting());
   };
 
   const handleTTSSettingChange = (key: string, value: string | boolean) => {
@@ -157,7 +165,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
     }));
   };
 
-  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'modelAutoUpdate' | 'baseURL' | 'apiKey' | 'model' | 'userVoice' | 'assistantVoice') => {
+  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey' | 'model' | 'userVoice' | 'assistantVoice') => {
     setSettings((prev) => {
       if (key === 'enableThinking') {
         return {
@@ -174,16 +182,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
           ...prev,
           collapseThinkingByDefault: {
             value: BASE_SETTING_VALUES.collapseThinkingByDefault,
-            useDefault: true,
-          },
-        };
-      }
-
-      if (key === 'modelAutoUpdate') {
-        return {
-          ...prev,
-          modelAutoUpdate: {
-            value: BASE_SETTING_VALUES.modelAutoUpdate,
             useDefault: true,
           },
         };
@@ -231,33 +229,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
 
   const handleReset = () => {
     setSettings(createDefaultSettings());
+    setModelAutoUpdate(createDefaultModelAutoUpdateSetting());
   };
 
   const handleSave = async () => {
-    if (!window.api?.saveSettings) {
-      return;
-    }
-
     setIsSaving(true);
     try {
-      const saved = await window.api.saveSettings(settings);
+      const saved = window.api?.saveSettings
+        ? await window.api.saveSettings(settings)
+        : settings;
 
       await serverConfig.waitForInit();
       const serverUrl = getServerBaseUrl();
       const configResponse = await serverFetch(`${serverUrl}/internal/set`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_auto_update: settings.modelAutoUpdate.value }),
+        body: JSON.stringify({ model_auto_update: modelAutoUpdate.value }),
       });
       if (!configResponse.ok) {
         const body = await configResponse.text();
         throw new Error(body || `Server config update failed with status ${configResponse.status}`);
       }
 
-      setSettings(mergeWithDefaultSettings({
-        ...saved,
-        modelAutoUpdate: settings.modelAutoUpdate,
-      }));
+      setSettings(mergeWithDefaultSettings(saved));
+      setModelAutoUpdate({
+        value: modelAutoUpdate.value,
+        useDefault: modelAutoUpdate.value === createDefaultModelAutoUpdateSetting().value,
+      });
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert('Failed to save settings. Please try again.');
@@ -338,9 +336,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         />;
       case 'model_manager_settings':
         return <ModelManagerSettings
-          settings={settings}
-          onBooleanChangeFunc={handleBooleanChange}
-          onResetFunc={handleResetField}
+          modelAutoUpdate={modelAutoUpdate}
+          onBooleanChangeFunc={handleModelAutoUpdateChange}
+          onResetFunc={handleResetModelAutoUpdate}
         />;
       case 'llm_chat_settings':
         return <LLMChatSettings

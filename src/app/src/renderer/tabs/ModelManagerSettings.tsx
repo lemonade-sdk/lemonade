@@ -1,27 +1,27 @@
 import React from 'react';
-import { AppSettings } from '../utils/appSettings';
+import { BooleanSetting } from '../utils/appSettings';
 
 interface ModelManagerSettingsProps {
-  settings: AppSettings;
-  onBooleanChangeFunc: (key: string | any, value: boolean) => void;
-  onResetFunc: (key: any) => void;
+  modelAutoUpdate: BooleanSetting;
+  onBooleanChangeFunc: (value: boolean) => void;
+  onResetFunc: () => void;
 }
 
 const ModelManagerSettings: React.FC<ModelManagerSettingsProps> = ({
-  settings,
+  modelAutoUpdate,
   onBooleanChangeFunc,
   onResetFunc,
 }) => {
   return (
     <div className="settings-section-container">
-      <div className={`settings-section ${settings.modelAutoUpdate.useDefault ? 'settings-section-default' : ''}`}>
+      <div className={`settings-section ${modelAutoUpdate.useDefault ? 'settings-section-default' : ''}`}>
         <div className="settings-label-row">
           <span className="settings-label-text">Model Auto Update</span>
           <button
             type="button"
             className="settings-field-reset"
-            onClick={() => onResetFunc('modelAutoUpdate')}
-            disabled={settings.modelAutoUpdate.useDefault}
+            onClick={onResetFunc}
+            disabled={modelAutoUpdate.useDefault}
           >
             Reset
           </button>
@@ -29,8 +29,8 @@ const ModelManagerSettings: React.FC<ModelManagerSettingsProps> = ({
         <label className="settings-checkbox-label">
           <input
             type="checkbox"
-            checked={settings.modelAutoUpdate.value}
-            onChange={(e) => onBooleanChangeFunc('modelAutoUpdate', e.target.checked)}
+            checked={modelAutoUpdate.value}
+            onChange={(e) => onBooleanChangeFunc(e.target.checked)}
             className="settings-checkbox"
           />
           <div className="settings-checkbox-content">

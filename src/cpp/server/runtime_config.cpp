@@ -199,7 +199,7 @@ int RuntimeConfig::ctx_size() const {
 
 bool RuntimeConfig::model_auto_update() const {
     std::shared_lock lock(mutex_);
-    return config_.value("model_auto_update", false);
+    return config_["model_auto_update"].get<bool>();
 }
 
 bool RuntimeConfig::offline() const {
