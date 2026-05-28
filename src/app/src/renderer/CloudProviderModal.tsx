@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { serverConfig, getServerBaseUrl } from './utils/serverConfig';
 
 export interface CloudProviderInitialValues {
   name?: string;
@@ -7,13 +6,21 @@ export interface CloudProviderInitialValues {
   hasApiKey?: boolean; // true when editing an existing provider that already has a key set
 }
 
+export interface CloudProviderSaveResult {
+  name: string;
+  baseUrl: string;
+  apiKey: string | null; // null = keep existing (edit mode without "Replace")
+}
+
 interface CloudProviderModalProps {
   mode: 'add' | 'edit';
   initialValues?: CloudProviderInitialValues;
   onClose: () => void;
-  onSaved: () => void;
+  // Parent owns persistence (local app settings) and discovery (calls
+  // /internal/cloud/discover). The modal is a pure form.
+  onSave: (result: CloudProviderSaveResult) => Promise<void>;
+  onRemove?: (name: string) => Promise<void>;
   showError: (msg: string) => void;
-  showSuccess: (msg: string) => void;
 }
 
 // Common base URLs offered as quick-fill suggestions. Users can still paste
@@ -26,18 +33,15 @@ const BASE_URL_PRESETS: Array<{ name: string; baseUrl: string; label: string }> 
 ];
 
 const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
-  mode, initialValues, onClose, onSaved, showError, showSuccess
+  mode, initialValues, onClose, onSave, onRemove, showError
 }) => {
   const [name, setName] = useState(initialValues?.name ?? '');
   const [baseUrl, setBaseUrl] = useState(initialValues?.baseUrl ?? '');
   const [apiKey, setApiKey] = useState('');
-  // When editing an existing entry that already has a key in config.json,
-  // the field is masked and the user must click "Replace" to opt into
-  // overwriting it. In every other case — add mode, or edit mode with no
-  // saved key (e.g. the key was previously coming from a LEMONADE_*_API_KEY
-  // env var) — the input field is shown directly and any value the user
-  // types should be persisted, so replaceKey starts true. Without this, the
-  // typed key was silently dropped on save.
+  // Edit-mode safety: when an existing provider already has a key in local
+  // settings, the field is masked behind a "Replace" gate so the user can
+  // change base_url without unintentionally clobbering the saved key with
+  // an empty value. In every other case the input is editable directly.
   const [replaceKey, setReplaceKey] = useState(mode === 'add' || !initialValues?.hasApiKey);
   const [revealKey, setRevealKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -57,34 +61,15 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
   };
 
   const handleRemove = async () => {
-    if (mode !== 'edit' || !initialValues?.name) return;
+    if (mode !== 'edit' || !initialValues?.name || !onRemove) return;
     const target = initialValues.name;
-    if (!window.confirm(`Remove provider "${target}"? This deletes its entry from config.json.`)) {
+    if (!window.confirm(`Remove provider "${target}"? This deletes it from this client's settings.`)) {
       return;
     }
     setError(null);
     setIsSaving(true);
     try {
-      // null on a provider key is the deletion sentinel handled by
-      // RuntimeConfig::apply_changes — it erases the entry on disk.
-      const url = `${getServerBaseUrl()}/internal/set`;
-      const response = await serverConfig.fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cloud_offload: { providers: { [target]: null } },
-        }),
-      });
-      if (!response.ok) {
-        let msg = `HTTP ${response.status}`;
-        try {
-          const body = await response.json();
-          if (body?.error) msg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
-        } catch { /* ignore */ }
-        throw new Error(msg);
-      }
-      showSuccess(`Removed provider '${target}'.`);
-      onSaved();
+      await onRemove(target);
       onClose();
     } catch (e: any) {
       const msg = e?.message || String(e);
@@ -116,61 +101,13 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
       return;
     }
 
-    // Build the nested patch. RuntimeConfig::set merges into existing config
-    // — we only send the keys we want to change. When editing without
-    // "Replace key" enabled, omit api_key entirely so the server keeps its
-    // current value.
-    const providerPatch: Record<string, string> = { base_url: trimmedBaseUrl };
-    if (replaceKey && trimmedKey) {
-      providerPatch.api_key = trimmedKey;
-    }
-
-    const patch = {
-      cloud_offload: {
-        enabled: true, // adding a provider implies the user wants cloud on
-        providers: { [trimmedName]: providerPatch },
-      },
-    };
+    // null signals "keep existing key" — only sent when editing and the
+    // user did not opt into Replace.
+    const apiKeyToSave: string | null = (replaceKey && trimmedKey) ? trimmedKey : null;
 
     setIsSaving(true);
     try {
-      // POST goes to /internal/set; /internal/config is read-only (GET).
-      const url = `${getServerBaseUrl()}/internal/set`;
-      const response = await serverConfig.fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (!response.ok) {
-        let msg = `HTTP ${response.status}`;
-        try {
-          const body = await response.json();
-          if (body?.error) msg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
-        } catch { /* ignore */ }
-        throw new Error(msg);
-      }
-
-      // Trigger a model cache rebuild + count discovered models for this
-      // provider. The /v1/models route rebuilds the cache lazily.
-      let discoveredCount: number | null = null;
-      try {
-        const modelsResponse = await serverConfig.fetch('/models?show_all=true');
-        if (modelsResponse.ok) {
-          const modelsBody = await modelsResponse.json();
-          const list = Array.isArray(modelsBody) ? modelsBody : modelsBody?.data || [];
-          const prefix = `${trimmedName}/`;
-          discoveredCount = list.filter((m: any) => typeof m?.id === 'string' && m.id.startsWith(prefix)).length;
-        }
-      } catch { /* discovery is best-effort confirmation */ }
-
-      if (discoveredCount === null) {
-        showSuccess(`Saved provider '${trimmedName}'.`);
-      } else if (discoveredCount === 0) {
-        showError(`Saved '${trimmedName}', but discovery returned 0 models. Double-check the API key and base URL.`);
-      } else {
-        showSuccess(`Saved '${trimmedName}' — discovered ${discoveredCount} model${discoveredCount === 1 ? '' : 's'}.`);
-      }
-      onSaved();
+      await onSave({ name: trimmedName, baseUrl: trimmedBaseUrl, apiKey: apiKeyToSave });
       onClose();
     } catch (e: any) {
       const msg = e?.message || String(e);
@@ -214,7 +151,7 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
         )}
 
         <div className="form-section">
-          <label className="form-label" title="Short identifier used as the model name prefix and in the LEMONADE_<NAME>_API_KEY env var">
+          <label className="form-label" title="Short identifier used as the model name prefix">
             Provider name
           </label>
           <input
@@ -242,7 +179,7 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
         </div>
 
         <div className="form-section">
-          <label className="form-label" title="API key for the provider. Stored on the server in config.json. Env var LEMONADE_<NAME>_API_KEY also supported and takes precedence.">
+          <label className="form-label" title="API key for the provider. Stored locally on this client (in this app's settings), never on the lemonade server. Sent per-request via the X-Lemonade-Cloud-Key header.">
             API key {mode === 'edit' && initialValues?.hasApiKey && !replaceKey && '(currently set)'}
           </label>
           {mode === 'edit' && initialValues?.hasApiKey && !replaceKey ? (
@@ -288,13 +225,13 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
       </div>
 
       <div className="settings-footer">
-        {mode === 'edit' && initialValues?.name && (
+        {mode === 'edit' && initialValues?.name && onRemove && (
           <button
             className="settings-reset-button"
             style={{ marginRight: 'auto', color: '#ef4444' }}
             onClick={handleRemove}
             disabled={isSaving}
-            title="Remove this provider from config.json"
+            title="Remove this provider from this client's settings"
           >
             Remove
           </button>

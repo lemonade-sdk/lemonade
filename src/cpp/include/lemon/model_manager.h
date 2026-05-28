@@ -123,6 +123,25 @@ public:
                             const json& model_data,
                             const std::string& source = "");
 
+    // Lazily register a cloud-recipe ModelInfo from a client-supplied
+    // request. Cloud models are discovered + persisted client-side now
+    // (see CloudServer header), so the server's cache normally has no
+    // entry for them — but Router::load_model still needs a ModelInfo to
+    // construct CloudServer. The chat handlers call this when they see
+    // X-Lemonade-Cloud-* headers on a request whose model name uses the
+    // "<provider>/<upstream_id>" convention.
+    //
+    // upstream_id_hint: the raw provider-side id (from
+    // X-Lemonade-Cloud-Upstream-Model header). Required when the model
+    // name's post-slash half doesn't match what the provider expects
+    // (Fireworks public id "fireworks/kimi-k2p5" → upstream
+    // "accounts/fireworks/models/kimi-k2p5"). Falls back to the slash-
+    // parsed half if empty.
+    //
+    // Idempotent: re-registering an existing entry is a no-op.
+    void register_cloud_model(const std::string& model_name,
+                              const std::string& upstream_id_hint = "");
+
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,

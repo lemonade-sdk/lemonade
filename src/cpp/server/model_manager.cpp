@@ -1626,25 +1626,14 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Step 1.7: Discover cloud-offload models from each configured provider.
-    // Mirrors the FLM pattern: hit the provider's /v1/models endpoint and
-    // merge results in. Precedence keeps any matching server_models or
-    // user_models entry intact. Failures are logged inside discover_models
-    // and never abort the cache build. Provider names come from config —
-    // any OpenAI-compatible provider works without code changes as long as
-    // the user supplies base_url + api_key.
-    auto* runtime_cfg = lemon::RuntimeConfig::global();
-    if (runtime_cfg && runtime_cfg->cloud_offload_enabled()) {
-        for (const auto& provider : runtime_cfg->cloud_provider_names()) {
-            std::string api_key = runtime_cfg->cloud_provider_api_key(provider);
-            if (api_key.empty()) continue;
-            std::string base_url = runtime_cfg->cloud_provider_base_url(provider);
-            auto cloud_models = backends::CloudServer::discover_models(provider, api_key, base_url);
-            for (const auto& info : cloud_models) {
-                all_models.emplace(info.model_name, info);
-            }
-        }
-    }
+    // Cloud-offload discovery moved client-side. Each client manages its own
+    // provider credentials in local app settings and calls
+    // POST /internal/cloud/discover on demand to populate its own cloud model
+    // list. This honors AGENTS.md Invariant #11 — per-client state (including
+    // credentials) lives in the client, never in lemond. Server-side env
+    // vars (LEMONADE_<PROVIDER>_API_KEY / _BASE_URL) remain as a fallback
+    // for operator-pre-provisioned deployments, but are consumed per-request
+    // in CloudServer rather than at cache build time.
 
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
@@ -2059,12 +2048,10 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
     bool enable_dgpu_gtt = false;
-    bool cloud_offload_enabled = false;
     auto* cfg = lemon::RuntimeConfig::global();
     if (cfg) {
         disable_filtering = cfg->disable_model_filtering();
         enable_dgpu_gtt = cfg->enable_dgpu_gtt();
-        cloud_offload_enabled = cfg->cloud_offload_enabled();
     }
 
     if (disable_filtering) {
@@ -2160,19 +2147,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         // Cloud-offloaded models bypass local backend/RAM checks (the model
-        // executes on a remote provider). They are gated on cloud_offload
-        // being explicitly enabled in config.json so a fresh install never
-        // silently advertises remote endpoints.
+        // executes on a remote provider). Discovery is client-driven now —
+        // server-side cache normally has none of these, but if a user has
+        // pinned one into user_models.json we still pass it through here.
         if (recipe == "cloud") {
-            if (cloud_offload_enabled) {
-                filtered[name] = info;
-            } else {
-                filtered_count++;
-                filtered_out_models_[name] =
-                    "Cloud offload is disabled. Set 'cloud_offload.enabled' to "
-                    "true in config.json (and configure a provider API key) to "
-                    "enable cloud-offloaded models.";
-            }
+            filtered[name] = info;
             continue;
         }
 
@@ -2223,6 +2202,57 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     }
 
     return filtered;
+}
+
+void ModelManager::register_cloud_model(const std::string& model_name,
+                                        const std::string& upstream_id_hint) {
+    // Convention: "<provider>/<upstream_id>". Anything without a slash, or
+    // with an empty provider/upstream half, is rejected — the chat handler
+    // will surface a model_not_found error to the client.
+    const auto slash = model_name.find('/');
+    if (slash == std::string::npos || slash == 0 || slash + 1 >= model_name.size()) {
+        return;
+    }
+    const std::string provider = model_name.substr(0, slash);
+    // Prefer the client-supplied raw upstream id; some providers (Fireworks,
+    // OpenRouter) clean their public ids in a way that's not reversible
+    // server-side. Fall back to the slash-parsed half for providers whose
+    // public id IS the upstream id (e.g. OpenAI).
+    const std::string upstream_id = upstream_id_hint.empty()
+        ? model_name.substr(slash + 1)
+        : upstream_id_hint;
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto existing = models_cache_.find(model_name);
+    if (existing != models_cache_.end()) {
+        // Idempotent in the common case, but update the upstream id if the
+        // current registration was a slash-parse fallback and the client is
+        // now telling us the real upstream. Otherwise leave it.
+        if (!upstream_id_hint.empty() &&
+            existing->second.checkpoints["main"] != upstream_id_hint) {
+            existing->second.checkpoints["main"] = upstream_id_hint;
+            LOG(DEBUG, "ModelManager") << "Updated upstream id for cloud model: "
+                                        << model_name << " -> " << upstream_id_hint << std::endl;
+        }
+        return;
+    }
+
+    ModelInfo info;
+    info.model_name = model_name;
+    info.recipe = "cloud";
+    info.cloud_provider = provider;
+    info.checkpoints["main"] = upstream_id;
+    info.downloaded = true; // No local artifact — execution is remote.
+    info.suggested = false;
+    info.type = ModelType::LLM;
+    info.device = DEVICE_NONE;
+    info.source = "cloud";
+    info.labels = {"cloud"};
+    info.recipe_options = RecipeOptions(info.recipe, json::object());
+    models_cache_[model_name] = info;
+    LOG(DEBUG, "ModelManager") << "Lazy-registered cloud model: " << model_name
+                                << " (provider=" << provider
+                                << ", upstream=" << upstream_id << ")" << std::endl;
 }
 
 void ModelManager::register_user_model(const std::string& model_name,

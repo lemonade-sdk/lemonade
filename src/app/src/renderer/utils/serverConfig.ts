@@ -12,10 +12,23 @@ import { tauriReady } from '../tauriShim';
 type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
+// Per-provider cloud credentials, mirrored from app settings. Used by
+// fetch() to attach X-Lemonade-Cloud-Key / X-Lemonade-Cloud-Base-Url
+// headers when the request body's "model" prefix matches a configured
+// provider. lemond's CloudServer reads + strips these headers; non-cloud
+// requests are untouched.
+type CloudProviderCacheEntry = { baseUrl: string; apiKey: string };
+
 class ServerConfig {
   private port: number = 13305;
   private explicitBaseUrl: string | null = null;
   private apiKey: string | null = null;
+  private cloudProviders: Map<string, CloudProviderCacheEntry> = new Map();
+  // model_name (e.g., "fireworks/kimi-k2p5") -> upstream id
+  // (e.g., "accounts/fireworks/models/kimi-k2p5"). Populated from cloud
+  // discovery responses so fetch() can attach X-Lemonade-Cloud-Upstream-Model
+  // and the server forwards the right id upstream.
+  private cloudModelCheckpoints: Map<string, string> = new Map();
   private portListeners: Set<PortChangeListener> = new Set();
   private urlListeners: Set<UrlChangeListener> = new Set();
   private isDiscovering: boolean = false;
@@ -104,6 +117,72 @@ class ServerConfig {
           this.setUpdatedAPIKey(apiKey);
         }
       });
+    }
+
+    // Cloud-provider cache: populate now and refresh whenever app settings
+    // change. We don't await onSettingsUpdated registration — it's a
+    // fire-and-forget subscription, same shape as the connection-settings
+    // hook above.
+    await this.refreshCloudProviders();
+    if (typeof window !== 'undefined' && window.api?.onSettingsUpdated) {
+      window.api.onSettingsUpdated(() => {
+        // Best-effort; failures just mean we keep the stale cache until
+        // the next event or the next manual refresh.
+        this.refreshCloudProviders().catch((err) =>
+          console.warn('Cloud provider cache refresh failed:', err));
+      });
+    }
+  }
+
+  private async refreshCloudProviders(): Promise<void> {
+    try {
+      if (typeof window === 'undefined' || !window.api?.getSettings) return;
+      const stored = await window.api.getSettings();
+      const providers = (stored as any)?.cloudProviders;
+      const next = new Map<string, CloudProviderCacheEntry>();
+      if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
+        for (const [name, cfg] of Object.entries(providers)) {
+          if (!cfg || typeof cfg !== 'object') continue;
+          const c = cfg as any;
+          if (typeof c.baseUrl === 'string' && typeof c.apiKey === 'string' && c.apiKey.length > 0) {
+            next.set(name, { baseUrl: c.baseUrl, apiKey: c.apiKey });
+          }
+        }
+      }
+      this.cloudProviders = next;
+    } catch (err) {
+      console.warn('Failed to refresh cloud provider cache:', err);
+    }
+  }
+
+  // Look up the cloud provider for a model name. Convention: cloud models
+  // are named "<provider>/<upstream-id>", so the prefix before the first
+  // slash is the provider slug. Returns null for local/non-cloud models
+  // (no slash, or prefix not in the configured-providers map).
+  private cloudProviderForModel(model: unknown): CloudProviderCacheEntry | null {
+    if (typeof model !== 'string') return null;
+    const slash = model.indexOf('/');
+    if (slash <= 0) return null;
+    const prefix = model.substring(0, slash);
+    return this.cloudProviders.get(prefix) ?? null;
+  }
+
+  // Called by modelData.ts after each cloud discovery so fetch() can
+  // attach the right upstream id per request. Replaces (does not merge)
+  // the entries for the named provider — if discovery returned a smaller
+  // list this time, stale entries are dropped.
+  setCloudModelCheckpoints(provider: string, entries: Array<{ id: string; checkpoint: string }>): void {
+    // Drop any previous entries for this provider before reseeding.
+    const prefix = `${provider}/`;
+    for (const key of Array.from(this.cloudModelCheckpoints.keys())) {
+      if (key.startsWith(prefix)) {
+        this.cloudModelCheckpoints.delete(key);
+      }
+    }
+    for (const entry of entries) {
+      if (entry?.id && entry?.checkpoint) {
+        this.cloudModelCheckpoints.set(entry.id, entry.checkpoint);
+      }
     }
   }
 
@@ -325,6 +404,37 @@ class ServerConfig {
       options.headers = {
         ...options.headers,
         Authorization: `Bearer ${this.apiKey}`,
+      }
+    }
+
+    // If the request body names a cloud-routed model, attach the per-
+    // request cloud headers. lemond's chat handlers copy these into the
+    // forwarded request body as "_lemonade_cloud_creds" so CloudServer
+    // can read and strip them before forwarding upstream. Local-backend
+    // requests are untouched — the cache only contains providers the
+    // user has configured, so non-cloud model names never match.
+    if (this.cloudProviders.size > 0 && typeof options.body === 'string' &&
+        options.body.length > 0 && options.body[0] === '{') {
+      try {
+        const parsed = JSON.parse(options.body);
+        const provider = this.cloudProviderForModel(parsed?.model);
+        if (provider) {
+          const cloudHeaders: Record<string, string> = {
+            'X-Lemonade-Cloud-Key': provider.apiKey,
+            'X-Lemonade-Cloud-Base-Url': provider.baseUrl,
+          };
+          // Some providers (Fireworks, OpenRouter) clean their public model
+          // ids in a way that doesn't round-trip server-side. Pass the raw
+          // upstream id from the discovery response so the server forwards
+          // exactly what the provider's API expects.
+          const upstream = this.cloudModelCheckpoints.get(parsed.model);
+          if (upstream) {
+            cloudHeaders['X-Lemonade-Cloud-Upstream-Model'] = upstream;
+          }
+          options.headers = { ...options.headers, ...cloudHeaders };
+        }
+      } catch {
+        // Body wasn't JSON; nothing to inject.
       }
     }
 

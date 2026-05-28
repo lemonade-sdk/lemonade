@@ -2,6 +2,7 @@
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/cloud_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
@@ -540,6 +541,16 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
+    });
+
+    // Client-driven cloud-model discovery. Body: {provider, base_url, api_key}.
+    // Calls CloudServer::discover_models() against the supplied creds and
+    // returns the list of chat-capable model ids. lemond does NOT persist
+    // the credentials — they are read once and discarded. This is the
+    // server-side proxy for client discovery to sidestep browser CORS on
+    // direct calls to providers like OpenAI.
+    web_server.Post("/internal/cloud/discover", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_discover(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -1341,6 +1352,54 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
+bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json) {
+    // Only act on requests targeting a cloud-recipe model. We do NOT inject
+    // for local backends because the body is forwarded verbatim to the
+    // backend subprocess (llama-server, flm, etc.), and we don't want
+    // cloud API keys ending up in those processes' request logs.
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return false;
+    }
+    const std::string model_name = request_json["model"].get<std::string>();
+
+    const std::string key = req.get_header_value("X-Lemonade-Cloud-Key");
+    const std::string base_url = req.get_header_value("X-Lemonade-Cloud-Base-Url");
+    const std::string upstream_id = req.get_header_value("X-Lemonade-Cloud-Upstream-Model");
+    const bool has_cloud_headers = !key.empty() || !base_url.empty();
+
+    // Cloud models are discovered client-side now; the server cache won't
+    // have them unless the client previously sent a request for the same
+    // name. If the request has cloud headers and the model name fits the
+    // "<provider>/<upstream_id>" convention, lazy-register it so Router
+    // can construct CloudServer. The upstream id hint comes from the
+    // X-Lemonade-Cloud-Upstream-Model header — required for providers
+    // whose public id differs from what their API expects (Fireworks).
+    // register_cloud_model is idempotent and a no-op for names without a
+    // slash, so this is safe to call always.
+    if (has_cloud_headers) {
+        model_manager_->register_cloud_model(model_name, upstream_id);
+    }
+
+    if (!model_manager_->model_exists(model_name)) {
+        return false;
+    }
+    const auto info = model_manager_->get_model_info(model_name);
+    if (info.recipe != "cloud") {
+        return false;
+    }
+    if (!has_cloud_headers) {
+        // No client-supplied creds. CloudServer will fall back to the
+        // LEMONADE_<PROVIDER>_API_KEY / _BASE_URL env vars on its own.
+        return false;
+    }
+
+    nlohmann::json creds = nlohmann::json::object();
+    if (!key.empty()) creds["api_key"] = key;
+    if (!base_url.empty()) creds["base_url"] = base_url;
+    request_json["_lemonade_cloud_creds"] = creds;
+    return true;
+}
+
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
     // For HEAD requests, just return 200 OK without processing
     if (req.method == "HEAD") {
@@ -1502,6 +1561,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
+        // inject_cloud_creds also lazy-registers the cloud model in
+        // ModelManager (no-op for non-cloud paths), so it must run before
+        // auto_load_model_if_needed — otherwise the "model_not_found" check
+        // fires before we ever get a chance to register.
+        bool request_modified = inject_cloud_creds(req, request_json);
+
         // Handle model loading/switching
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -1540,14 +1605,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
-        // model name transformation internally via their forward methods
+        // model name transformation internally via their forward methods.
+        // request_modified is initialized above (from inject_cloud_creds).
         std::string request_body = req.body;
-        bool request_modified = false;
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
         if (should_disable_thinking(request_json)) {
-            request_modified = prepend_no_think_to_last_user_message(request_json);
+            request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
         }
         request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
@@ -1706,6 +1771,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Must run before auto_load to lazy-register cloud models. See
+        // handle_chat_completions for the rationale.
+        bool request_modified = inject_cloud_creds(req, request_json);
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -1743,8 +1812,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use original request body - each backend handles model name transformation internally
-        std::string request_body = req.body;
+        // request_modified was set earlier by inject_cloud_creds. Re-dump
+        // only if injection happened, so non-cloud paths avoid the
+        // parse+dump cost.
+        std::string request_body = request_modified ? request_json.dump() : req.body;
 
         if (is_streaming) {
             try {
@@ -2829,6 +2900,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Must run before auto_load to lazy-register cloud models. See
+        // handle_chat_completions for the rationale.
+        bool request_modified = inject_cloud_creds(req, request_json);
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -2852,6 +2927,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        // request_modified set earlier by inject_cloud_creds. Re-dump only
+        // when needed so non-cloud paths skip the parse+dump cost.
+        std::string request_body = request_modified ? request_json.dump() : req.body;
+
         if (is_streaming) {
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
@@ -2864,7 +2943,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
@@ -3332,6 +3411,52 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_cloud_discover(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        if (!body.contains("provider") || !body["provider"].is_string() ||
+            !body.contains("base_url") || !body["base_url"].is_string() ||
+            !body.contains("api_key")  || !body["api_key"].is_string()) {
+            res.status = 400;
+            res.set_content(R"({"error":{"message":"Body must contain string fields: provider, base_url, api_key","type":"invalid_request_error"}})",
+                            "application/json");
+            return;
+        }
+        const auto provider = body["provider"].get<std::string>();
+        const auto base_url = body["base_url"].get<std::string>();
+        const auto api_key = body["api_key"].get<std::string>();
+
+        // discover_models is best-effort — it logs upstream failures and
+        // returns an empty list rather than throwing, so we can always
+        // produce a well-formed response. Empty list with status 200 means
+        // "auth probably wrong" or "upstream returned no chat models"; the
+        // client surfaces that to the user.
+        auto models = backends::CloudServer::discover_models(provider, api_key, base_url);
+
+        nlohmann::json data = nlohmann::json::array();
+        for (const auto& info : models) {
+            data.push_back({
+                {"id", info.model_name},
+                {"checkpoint", info.checkpoint()},
+                {"cloud_provider", info.cloud_provider},
+                {"labels", info.labels},
+            });
+        }
+        nlohmann::json response = {{"object", "list"}, {"data", data}};
+        res.set_content(response.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {{"message", "Invalid JSON: " + std::string(e.what())},
+                                            {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_discover: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
     }
 }
 
@@ -4146,17 +4271,6 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             std::string dir = config_->models_dir();
             LOG(INFO, "Server") << "Models dir changed to: " << dir << std::endl;
             utils::set_models_dir(dir);
-            model_manager_->invalidate_models_cache();
-        } else if (key == "cloud_offload") {
-            // The cached model list is built once and reused. Without this
-            // invalidation, saving a new api_key, base_url, or provider
-            // entry updates RuntimeConfig but ModelManager never reruns
-            // CloudServer::discover_models, so the new cloud entries never
-            // appear in /v1/models. Toggling enabled has the same problem
-            // in reverse — the previously discovered models stay listed
-            // until the next external invalidation. Invalidating here makes
-            // the next /v1/models call rebuild against the fresh config.
-            LOG(INFO, "Server") << "cloud_offload changed; invalidating models cache" << std::endl;
             model_manager_->invalidate_models_cache();
         } else if (value.is_object()) {
             // Nested backend section change (llamacpp / whispercpp / sdcpp / ryzenai / kokoro).

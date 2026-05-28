@@ -12,8 +12,18 @@ namespace backends {
  * CloudServer offloads inference to a remote OpenAI-compatible cloud provider
  * (Fireworks, OpenAI, Together, Groq, OpenRouter, DeepInfra, vLLM, LM Studio,
  * etc.) instead of running a local subprocess. It is generic: the provider
- * name and base URL come from `cloud_offload.providers.<provider>` in
- * config.json, with no provider-specific code paths.
+ * name comes from the per-model "cloud_provider" field; base URL and API key
+ * are supplied per-request by the client (or via LEMONADE_<PROVIDER>_BASE_URL
+ * and LEMONADE_<PROVIDER>_API_KEY env vars as a server-side fallback).
+ *
+ * Per-client credentials: lemond does NOT persist cloud keys. Each client
+ * (desktop app, CLI, third-party SDK) supplies its own credentials per
+ * request via the X-Lemonade-Cloud-Key and X-Lemonade-Cloud-Base-Url
+ * headers. The server.cpp chat handlers extract these and inject them into
+ * the request body as the "_lemonade_cloud_creds" field; CloudServer reads
+ * and strips the field before forwarding upstream. This mirrors how the
+ * lemonade client API key works (per-client storage, sent per request) and
+ * honors Invariant #11 in AGENTS.md.
  *
  * Scope: chat-only (chat/completions and completions on OpenAI v1). Other
  * modalities — embeddings, audio, reranking, image — are intentionally not
@@ -26,9 +36,9 @@ namespace backends {
  * Anthropic) need a sibling backend class — they are not handled here.
  *
  * Selection: recipe="cloud" + the per-model "cloud_provider" field. The
- * Router constructs CloudServer for cloud recipes; ModelManager calls
- * CloudServer::discover_models() at cache-build time, once per provider in
- * config, to populate the available-models list dynamically.
+ * Router constructs CloudServer for cloud recipes. Discovery is now
+ * client-driven via POST /internal/cloud/discover — the server no longer
+ * auto-populates cloud models at cache build time.
  */
 class CloudServer : public WrappedServer {
 public:
@@ -67,12 +77,26 @@ public:
                                                    const std::string& base_url);
 
 private:
-    json post_with_auth(const std::string& path, const json& request, long timeout_seconds = 0);
+    // Per-request credentials extracted from "_lemonade_cloud_creds" field
+    // (injected by server.cpp from X-Lemonade-Cloud-* headers) with env-var
+    // fallback. The base_url has its trailing slash stripped so path
+    // concatenation doesn't produce "//chat/...".
+    struct PerRequestCreds {
+        std::string api_key;
+        std::string base_url;
+    };
+
+    // Extracts and strips "_lemonade_cloud_creds" from the request (mutates).
+    // Falls back to LEMONADE_<PROVIDER>_API_KEY / _BASE_URL env vars for any
+    // missing field. Returns the resolved creds; api_key or base_url may
+    // still be empty if neither header nor env var supplied them.
+    PerRequestCreds extract_creds(json& request) const;
+
+    json post_with_auth(const std::string& path, const json& request,
+                        const PerRequestCreds& creds, long timeout_seconds = 0);
     json rewrite_model_field(const json& request) const;
 
     std::string provider_;       // e.g., "fireworks", "openai", "groq"
-    std::string base_url_;       // resolved at load time from config
-    std::string api_key_;        // resolved at load time
     std::string upstream_model_; // provider's model id (from ModelInfo.checkpoint())
     bool loaded_ = false;
 };

@@ -92,6 +92,11 @@ private:
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
+
+    // Client-driven cloud-model discovery. Body: {provider, base_url, api_key}.
+    // Proxies a one-shot call to the provider's /v1/models and returns the
+    // discovered chat-capable models. Credentials are never persisted.
+    void handle_cloud_discover(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
@@ -179,6 +184,16 @@ private:
 
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
+
+    // Cloud credential injection. Per-client cloud keys travel with each
+    // request via X-Lemonade-Cloud-Key and X-Lemonade-Cloud-Base-Url
+    // headers (mirrors how the lemonade client API key works). When the
+    // requested model has recipe="cloud", copy those headers into the
+    // request body as "_lemonade_cloud_creds" so CloudServer can read +
+    // strip them. Returns true if the json was mutated (caller must
+    // re-dump the body for streaming paths). Non-cloud models are left
+    // untouched so the secrets never reach local subprocesses.
+    bool inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json);
 
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
