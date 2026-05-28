@@ -164,6 +164,10 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
       );
     }
     triggerRefresh();
+    // useModels listens for this event to re-fetch the model list. Without
+    // it, the Model Manager keeps showing the pre-save state (no cloud
+    // models even though discovery just succeeded).
+    window.dispatchEvent(new Event('modelsUpdated'));
   }, [showError, showSuccess, triggerRefresh]);
 
   const removeProvider = useCallback(async (name: string) => {
@@ -176,6 +180,7 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
     await window.api.saveSettings(merged);
     showSuccess(`Removed provider '${name}'.`);
     triggerRefresh();
+    window.dispatchEvent(new Event('modelsUpdated'));
   }, [showSuccess, triggerRefresh]);
 
   const query = searchQuery.trim().toLowerCase();

@@ -297,7 +297,11 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
           const info: ModelInfo = {
             checkpoint: typeof entry.checkpoint === 'string' ? entry.checkpoint : '',
             recipe: 'cloud',
-            suggested: false,
+            // useModels.suggestedModels (which feeds the Model Manager
+            // picker) filters to `info.suggested || name.startsWith(USER_MODEL_PREFIX)`.
+            // Cloud models are added through the UI like user models, so
+            // mark them suggested so they surface in the picker.
+            suggested: true,
             downloaded: true, // cloud models have no local artifact
           };
           if (typeof entry.cloud_provider === 'string' && entry.cloud_provider) {

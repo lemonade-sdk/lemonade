@@ -3162,6 +3162,18 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
 
+        // Lazy-register cloud models on /load. The chat handlers use
+        // inject_cloud_creds for this (keyed off the "model" field in the
+        // request body); /load uses "model_name" and doesn't carry a creds
+        // payload, so we register directly off the headers when present.
+        // Harmless when the headers are absent or the model name lacks a
+        // slash — register_cloud_model is a no-op in those cases.
+        if (req.has_header("X-Lemonade-Cloud-Key") || req.has_header("X-Lemonade-Cloud-Base-Url")) {
+            model_manager_->register_cloud_model(
+                model_name,
+                req.get_header_value("X-Lemonade-Cloud-Upstream-Model"));
+        }
+
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
             LOG(ERROR, "Server") << "Model not found: " << model_name << std::endl;

@@ -417,7 +417,11 @@ class ServerConfig {
         options.body.length > 0 && options.body[0] === '{') {
       try {
         const parsed = JSON.parse(options.body);
-        const provider = this.cloudProviderForModel(parsed?.model);
+        // OpenAI-compat endpoints use "model"; lemonade's /load uses
+        // "model_name". Both should attach the cloud headers when the
+        // referenced name matches a configured provider.
+        const modelField = parsed?.model ?? parsed?.model_name;
+        const provider = this.cloudProviderForModel(modelField);
         if (provider) {
           const cloudHeaders: Record<string, string> = {
             'X-Lemonade-Cloud-Key': provider.apiKey,
@@ -427,7 +431,7 @@ class ServerConfig {
           // ids in a way that doesn't round-trip server-side. Pass the raw
           // upstream id from the discovery response so the server forwards
           // exactly what the provider's API expects.
-          const upstream = this.cloudModelCheckpoints.get(parsed.model);
+          const upstream = this.cloudModelCheckpoints.get(modelField);
           if (upstream) {
             cloudHeaders['X-Lemonade-Cloud-Upstream-Model'] = upstream;
           }
