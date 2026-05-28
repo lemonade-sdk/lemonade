@@ -81,6 +81,24 @@ export interface PullCallbacks {
   onError?: (err: Error) => void;
 }
 
+export interface PullVariant {
+  name: string;
+  primary_file: string;
+  files: string[];
+  sharded: boolean;
+  size_bytes: number;
+}
+
+export interface PullVariantsResult {
+  checkpoint: string;
+  recipe: string;
+  repo_kind: string;
+  suggested_name: string;
+  suggested_labels: string[];
+  mmproj_files: string[];
+  variants: PullVariant[];
+}
+
 export interface StatsData {
   input_tokens: number;
   output_tokens: number;
@@ -447,6 +465,12 @@ class LemonadeAPI {
     });
   }
 
+  // ── Pull variants (HF model file discovery) ────────────────────
+
+  async pullVariants(checkpoint: string): Promise<PullVariantsResult> {
+    return this._json(`/api/v1/pull/variants?checkpoint=${encodeURIComponent(checkpoint)}`);
+  }
+
   // ── SSE: Pull (model download) ──────────────────────────────────
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: { checkpoint?: string; recipe?: string }): Promise<void> {
@@ -677,7 +701,6 @@ export interface HFModelResult {
   tags: string[];
   lastModified: string;
   pipeline_tag?: string;
-  siblings?: { rfilename: string }[];
 }
 
 export async function searchHuggingFace(
@@ -691,9 +714,9 @@ export async function searchHuggingFace(
     direction: '-1',
     limit: '20',
   });
-  // expand[]=siblings returns file listings so we can show GGUF download buttons
+  // Variant/file details are fetched on demand via pullVariants()
   const resp = await fetch(
-    `https://huggingface.co/api/models?${params}&expand[]=siblings`,
+    `https://huggingface.co/api/models?${params}`,
     { signal },
   );
   if (!resp.ok) return [];
