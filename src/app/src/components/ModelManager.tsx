@@ -137,6 +137,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model → percent
+  const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -148,6 +149,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [hfLoading, setHfLoading] = useState(false);
   const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
   const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
+  const pullHfAbortRef = useRef<Record<string, AbortController>>({});
   const [hfVariants, setHfVariants] = useState<Record<string, PullVariantsResult>>({}); // hf id → variants data
   const [hfVariantsLoading, setHfVariantsLoading] = useState<Record<string, boolean>>({}); // hf id → loading
 
@@ -244,6 +246,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const handlePull = async (model: ModelInfo) => {
     const name = modelName(model);
     if (pulling[name] !== undefined) return;
+    const ac = new AbortController();
+    pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
 
     const callbacks: PullCallbacks = {
@@ -253,19 +257,30 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         }
       },
       onComplete: () => {
+        delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         refresh();
       },
       onError: () => {
+        delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
+      signal: ac.signal,
     };
 
     await api.pullModel(name, callbacks);
   };
 
+  const handleCancelPull = (name: string) => {
+    pullAbortRef.current[name]?.abort();
+    delete pullAbortRef.current[name];
+    setPulling(p => { const next = { ...p }; delete next[name]; return next; });
+  };
+
   const handlePullAndLoad = async (model: ModelInfo) => {
     const name = modelName(model);
+    const ac = new AbortController();
+    pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
 
     const callbacks: PullCallbacks = {
@@ -275,6 +290,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         }
       },
       onComplete: async () => {
+        delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
         setLoadingModel(name);
@@ -286,8 +302,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         setLoadingModel(null);
       },
       onError: () => {
+        delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
+      signal: ac.signal,
     };
 
     await api.pullModel(name, callbacks);
@@ -299,6 +317,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
     const modelName = `user.${suggestedName}`;
     const checkpoint = `${hfId}:${variantName}`;
+    const ac = new AbortController();
+    pullHfAbortRef.current[hfId] = ac;
     setPullingHf(p => ({ ...p, [hfId]: 0 }));
 
     const callbacks: PullCallbacks = {
@@ -308,16 +328,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         }
       },
       onComplete: () => {
+        delete pullHfAbortRef.current[hfId];
         setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
         refresh();
       },
       onError: (err) => {
         console.error('HF pull failed:', err);
+        delete pullHfAbortRef.current[hfId];
         setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
       },
+      signal: ac.signal,
     };
 
     await api.pullModel(modelName, callbacks, { checkpoint, recipe });
+  };
+
+  const handleCancelHfPull = (hfId: string) => {
+    pullHfAbortRef.current[hfId]?.abort();
+    delete pullHfAbortRef.current[hfId];
+    setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
   };
 
   const fetchHfVariants = async (hfId: string) => {
@@ -628,6 +657,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <div className="row__progress-fill" style={{ width: `${pullPercent}%` }} />
                 </div>
                 <span className="row__progress-text">{pullPercent.toFixed(0)}%</span>
+                <button
+                  className="row__action row__action--cancel"
+                  onClick={(e) => { e.stopPropagation(); handleCancelPull(name); }}
+                  title="Cancel download"
+                >✕</button>
               </div>
             ) : isDownloaded ? (
               <>
@@ -722,6 +756,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <div className="row__progress-fill" style={{ width: `${hfPullPercent}%` }} />
                 </div>
                 <span className="row__progress-text">{hfPullPercent.toFixed(0)}%</span>
+                <button
+                  className="row__action row__action--cancel"
+                  onClick={(e) => { e.stopPropagation(); handleCancelHfPull(r.id); }}
+                  title="Cancel download"
+                >✕</button>
               </div>
             ) : (
               <button
