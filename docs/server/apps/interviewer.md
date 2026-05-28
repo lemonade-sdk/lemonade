@@ -41,9 +41,9 @@ npm install
 Start Lemonade Server using the desktop app or CLI:
 
 ```bash
-# Using the desktop app - click the lemon icon
-# Or using CLI:
-lemonade-server serve
+# Using the desktop app - click the lemon icon (LemonadeServer.exe on Windows, lemonade-tray on macOS/Linux)
+# Or using the CLI to start the HTTP server directly:
+lemond
 ```
 
 ### 3. Pull Required Models
@@ -52,13 +52,13 @@ Interviewer uses multiple AI models for different capabilities. Pull the recomme
 
 ```bash
 # LLM for interview logic and feedback (recommended: Qwen3-Coder-30B-A3B-Instruct-GGUF)
-lemonade-server pull Qwen3-Coder-30B-A3B-Instruct-GGUF
+lemonade pull Qwen3-Coder-30B-A3B-Instruct-GGUF
 
 # Whisper-base for speech-to-text (automatic transcription)
-lemonade-server pull Whisper-base
+lemonade pull Whisper-base
 
 # Kokoro for text-to-speech (natural voice synthesis)
-lemonade-server pull Kokoro
+lemonade pull Kokoro
 ```
 
 ### 4. Run Interviewer
@@ -116,7 +116,7 @@ Lemonade Server
 ### Model Loading Issues
 If models fail to load, check that Lemonade Server is running:
 ```bash
-lemonade-server status
+lemonade status
 ```
 
 ### Audio Not Working
@@ -137,4 +137,4 @@ Ensure your microphone and speakers are properly configured in your system setti
 MIT License - see the [LICENSE](https://github.com/lemonade-sdk/interviewer/blob/main/LICENSE) file for details.
 
 <!--This file was originally licensed under Apache 2.0. It has been modified.
-Modifications Copyright (c) 2025 AMD-->
+Modifications Copyright (c) 2026 AMD-->
