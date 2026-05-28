@@ -1567,6 +1567,13 @@ input, textarea {
   flex-shrink: 0;
 }
 
+.hf-detail__gguf-size {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── Model Row ────────────────────────────────────────────── */
 
 .row {

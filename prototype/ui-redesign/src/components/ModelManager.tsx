@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, HFModelResult, searchHuggingFace } from '../api';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace } from '../api';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -100,6 +100,18 @@ function formatDownloads(n: number): string {
   return String(n);
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
+  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
+const RECIPE_BADGES: Record<string, string> = {
+  llamacpp: '🦙 llama.cpp',
+  'ryzenai-llm': '🔷 RyzenAI',
+};
+
 /* ── Filter / search types ─────────────────────────────────── */
 
 type FilterTab = 'all' | 'llm' | 'image' | 'audio' | 'tts' | 'embedding';
@@ -136,6 +148,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [hfLoading, setHfLoading] = useState(false);
   const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
   const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
+  const [hfVariants, setHfVariants] = useState<Record<string, PullVariantsResult>>({}); // hf id → variants data
+  const [hfVariantsLoading, setHfVariantsLoading] = useState<Record<string, boolean>>({}); // hf id → loading
 
   const refresh = useCallback(async () => {
     if (!api.isConnected) return;
@@ -279,11 +293,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     await api.pullModel(name, callbacks);
   };
 
-  const handleHfPull = async (hfId: string, ggufFile: string) => {
+  const handleHfPull = async (hfId: string, variantName: string, recipe: string) => {
     if (pullingHf[hfId] !== undefined) return;
-    // Create a user.* model name from the HF repo (e.g. "user.TheBloke/Llama-2-7B-GGUF")
-    const modelName = `user.${hfId}`;
-    const checkpoint = `${hfId}:${ggufFile}`;
+    const vdata = hfVariants[hfId];
+    const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
+    const modelName = `user.${suggestedName}`;
+    const checkpoint = `${hfId}:${variantName}`;
     setPullingHf(p => ({ ...p, [hfId]: 0 }));
 
     const callbacks: PullCallbacks = {
@@ -302,7 +317,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       },
     };
 
-    await api.pullModel(modelName, callbacks, { checkpoint, recipe: 'llamacpp' });
+    await api.pullModel(modelName, callbacks, { checkpoint, recipe });
+  };
+
+  const fetchHfVariants = async (hfId: string) => {
+    if (hfVariants[hfId] || hfVariantsLoading[hfId]) return;
+    setHfVariantsLoading(prev => ({ ...prev, [hfId]: true }));
+    try {
+      const result = await api.pullVariants(hfId);
+      setHfVariants(prev => ({ ...prev, [hfId]: result }));
+    } catch (err) {
+      console.error('Failed to fetch variants for', hfId, err);
+    }
+    setHfVariantsLoading(prev => ({ ...prev, [hfId]: false }));
   };
 
   /* ── Derived data ────────────────────────────────────────── */
@@ -657,20 +684,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const hfPullPercent = pullingHf[r.id];
     const isHfPulling = hfPullPercent !== undefined;
 
-    // Filter to only GGUF files from siblings
-    const ggufFiles = (r.siblings || [])
-      .map(f => f.rfilename)
-      .filter(f => f.toLowerCase().endsWith('.gguf'));
+    // Variant data from the server (fetched on expand)
+    const vdata = hfVariants[r.id];
+    const isLoadingVariants = hfVariantsLoading[r.id] || false;
+    const recipeBadge = vdata ? (RECIPE_BADGES[vdata.recipe] || vdata.recipe) : '';
+
+    const handleExpand = () => {
+      const next = isExpanded ? null : r.id;
+      setExpandedHfModel(next);
+      if (next) fetchHfVariants(r.id);
+    };
 
     return (
       <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
-        <div className="row__content" onClick={() => setExpandedHfModel(prev => prev === r.id ? null : r.id)}>
+        <div className="row__content" onClick={handleExpand}>
           <div className="row__main">
             <div className="row__icon row__icon--hf">🤗</div>
             <div className="row__text">
               <span className="row__name">{r.id}</span>
               <span className="row__sub">
-                🦙 llama.cpp · {pipelineTag && `${pipelineTag} · `}
+                {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
                 {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
               </span>
               {displayTags.length > 0 && (
@@ -690,15 +723,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </div>
                 <span className="row__progress-text">{hfPullPercent.toFixed(0)}%</span>
               </div>
-            ) : ggufFiles.length > 0 ? (
+            ) : (
               <button
                 className="row__action row__action--download"
-                onClick={(e) => { e.stopPropagation(); setExpandedHfModel(r.id); }}
-                title="Expand to pick a GGUF file to download"
+                onClick={(e) => { e.stopPropagation(); handleExpand(); }}
+                title="Expand to pick a variant to download"
               >
                 ↓ Download
               </button>
-            ) : null}
+            )}
             <a
               className="row__action row__action--hf-link"
               href={`https://huggingface.co/${r.id}`}
@@ -726,40 +759,49 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                     <span className="detail__value">{pipelineTag}</span>
                   </div>
                 )}
+                {vdata && (
+                  <>
+                    <div className="detail__field">
+                      <span className="detail__label">Backend</span>
+                      <span className="detail__value">{RECIPE_BADGES[vdata.recipe] || vdata.recipe}</span>
+                    </div>
+                    {vdata.suggested_labels.length > 0 && (
+                      <div className="detail__field">
+                        <span className="detail__label">Capabilities</span>
+                        <span className="detail__value">{vdata.suggested_labels.join(', ')}</span>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className="detail__field">
                   <span className="detail__label">Last Modified</span>
                   <span className="detail__value">{new Date(r.lastModified).toLocaleDateString()}</span>
                 </div>
               </div>
               <div className="detail__source">
-                {ggufFiles.length > 0 && (
+                {isLoadingVariants && (
                   <div className="detail__field">
-                    <span className="detail__label">GGUF Files — pick one to download</span>
+                    <span className="detail__label">Loading variants…</span>
+                  </div>
+                )}
+                {vdata && vdata.variants.length > 0 && (
+                  <div className="detail__field">
+                    <span className="detail__label">Variants — pick one to download</span>
                     <div className="hf-detail__gguf-list">
-                      {ggufFiles.map(f => (
+                      {vdata.variants.map(v => (
                         <button
-                          key={f}
+                          key={v.name}
                           className="hf-detail__gguf-btn"
                           disabled={isHfPulling}
-                          onClick={() => handleHfPull(r.id, f)}
+                          onClick={() => handleHfPull(r.id, v.name, vdata.recipe)}
                         >
-                          <span className="hf-detail__gguf-name">{f}</span>
+                          <span className="hf-detail__gguf-name">
+                            {v.name}{v.sharded ? ' (sharded)' : ''}
+                          </span>
+                          <span className="hf-detail__gguf-size">{formatBytes(v.size_bytes)}</span>
                           <span className="hf-detail__gguf-action">↓ Download</span>
                         </button>
                       ))}
-                    </div>
-                  </div>
-                )}
-                {r.siblings && r.siblings.length > ggufFiles.length && (
-                  <div className="detail__field">
-                    <span className="detail__label">Other Files ({r.siblings.length - ggufFiles.length})</span>
-                    <div className="hf-detail__files">
-                      {r.siblings
-                        .filter(f => !f.rfilename.toLowerCase().endsWith('.gguf'))
-                        .slice(0, 5)
-                        .map(f => (
-                          <span key={f.rfilename} className="hf-detail__file">{f.rfilename}</span>
-                        ))}
                     </div>
                   </div>
                 )}
