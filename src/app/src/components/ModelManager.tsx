@@ -651,7 +651,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const renderHfRow = (r: HFModelResult) => {
     const isExpanded = expandedHfModel === r.id;
     const pipelineTag = r.pipeline_tag || '';
-    const displayTags = r.tags
+    const displayTags = (r.tags || [])
       .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
       .slice(0, 5);
     const hfPullPercent = pullingHf[r.id];
