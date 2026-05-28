@@ -699,7 +699,7 @@ export interface HFModelResult {
   likes: number;
   downloads: number;
   tags: string[];
-  lastModified: string;
+  createdAt?: string;
   pipeline_tag?: string;
 }
 

@@ -773,10 +773,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                     )}
                   </>
                 )}
-                <div className="detail__field">
-                  <span className="detail__label">Last Modified</span>
-                  <span className="detail__value">{new Date(r.lastModified).toLocaleDateString()}</span>
-                </div>
+                {r.createdAt && (
+                  <div className="detail__field">
+                    <span className="detail__label">Created</span>
+                    <span className="detail__value">{new Date(r.createdAt).toLocaleDateString()}</span>
+                  </div>
+                )}
               </div>
               <div className="detail__source">
                 {isLoadingVariants && (
