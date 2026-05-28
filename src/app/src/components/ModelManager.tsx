@@ -135,6 +135,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
   const [hfLoading, setHfLoading] = useState(false);
   const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
+  const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
 
   const refresh = useCallback(async () => {
     if (!api.isConnected) return;
@@ -276,6 +277,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     };
 
     await api.pullModel(name, callbacks);
+  };
+
+  const handleHfPull = async (hfId: string, ggufFile: string) => {
+    if (pullingHf[hfId] !== undefined) return;
+    // Create a user.* model name from the HF repo (e.g. "user.TheBloke/Llama-2-7B-GGUF")
+    const modelName = `user.${hfId}`;
+    const checkpoint = `${hfId}:${ggufFile}`;
+    setPullingHf(p => ({ ...p, [hfId]: 0 }));
+
+    const callbacks: PullCallbacks = {
+      onProgress: (data) => {
+        if (data.percent !== undefined) {
+          setPullingHf(p => ({ ...p, [hfId]: data.percent! }));
+        }
+      },
+      onComplete: () => {
+        setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+        refresh();
+      },
+      onError: (err) => {
+        console.error('HF pull failed:', err);
+        setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
+      },
+    };
+
+    await api.pullModel(modelName, callbacks, { checkpoint, recipe: 'llamacpp' });
   };
 
   /* ── Derived data ────────────────────────────────────────── */
@@ -627,6 +654,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const displayTags = r.tags
       .filter(t => t !== 'gguf' && t !== 'transformers' && t !== 'pytorch' && t !== 'safetensors')
       .slice(0, 5);
+    const hfPullPercent = pullingHf[r.id];
+    const isHfPulling = hfPullPercent !== undefined;
+
+    // Filter to only GGUF files from siblings
+    const ggufFiles = (r.siblings || [])
+      .map(f => f.rfilename)
+      .filter(f => f.toLowerCase().endsWith('.gguf'));
 
     return (
       <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
@@ -649,6 +683,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             </div>
           </div>
           <div className="row__right">
+            {isHfPulling ? (
+              <div className="row__progress">
+                <div className="row__progress-bar">
+                  <div className="row__progress-fill" style={{ width: `${hfPullPercent}%` }} />
+                </div>
+                <span className="row__progress-text">{hfPullPercent.toFixed(0)}%</span>
+              </div>
+            ) : ggufFiles.length > 0 ? (
+              <button
+                className="row__action row__action--download"
+                onClick={(e) => { e.stopPropagation(); setExpandedHfModel(r.id); }}
+                title="Expand to pick a GGUF file to download"
+              >
+                ↓ Download
+              </button>
+            ) : null}
             <a
               className="row__action row__action--hf-link"
               href={`https://huggingface.co/${r.id}`}
@@ -656,7 +706,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
             >
-              🤗 View on HuggingFace
+              🤗 View
             </a>
             <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </div>
@@ -682,16 +732,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </div>
               </div>
               <div className="detail__source">
-                {r.siblings && r.siblings.length > 0 && (
+                {ggufFiles.length > 0 && (
                   <div className="detail__field">
-                    <span className="detail__label">Files ({r.siblings.length})</span>
-                    <div className="hf-detail__files">
-                      {r.siblings.slice(0, 10).map(f => (
-                        <span key={f.rfilename} className="hf-detail__file">{f.rfilename}</span>
+                    <span className="detail__label">GGUF Files — pick one to download</span>
+                    <div className="hf-detail__gguf-list">
+                      {ggufFiles.map(f => (
+                        <button
+                          key={f}
+                          className="hf-detail__gguf-btn"
+                          disabled={isHfPulling}
+                          onClick={() => handleHfPull(r.id, f)}
+                        >
+                          <span className="hf-detail__gguf-name">{f}</span>
+                          <span className="hf-detail__gguf-action">↓ Download</span>
+                        </button>
                       ))}
-                      {r.siblings.length > 10 && (
-                        <span className="hf-detail__file hf-detail__file--more">+{r.siblings.length - 10} more</span>
-                      )}
+                    </div>
+                  </div>
+                )}
+                {r.siblings && r.siblings.length > ggufFiles.length && (
+                  <div className="detail__field">
+                    <span className="detail__label">Other Files ({r.siblings.length - ggufFiles.length})</span>
+                    <div className="hf-detail__files">
+                      {r.siblings
+                        .filter(f => !f.rfilename.toLowerCase().endsWith('.gguf'))
+                        .slice(0, 5)
+                        .map(f => (
+                          <span key={f.rfilename} className="hf-detail__file">{f.rfilename}</span>
+                        ))}
                     </div>
                   </div>
                 )}
