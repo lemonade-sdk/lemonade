@@ -691,8 +691,9 @@ export async function searchHuggingFace(
     direction: '-1',
     limit: '20',
   });
+  // expand[]=siblings returns file listings so we can show GGUF download buttons
   const resp = await fetch(
-    `https://huggingface.co/api/models?${params}`,
+    `https://huggingface.co/api/models?${params}&expand[]=siblings`,
     { signal },
   );
   if (!resp.ok) return [];
