@@ -670,7 +670,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <div className="row__text">
               <span className="row__name">{r.id}</span>
               <span className="row__sub">
-                {pipelineTag && `${pipelineTag} · `}
+                🦙 llama.cpp · {pipelineTag && `${pipelineTag} · `}
                 {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
               </span>
               {displayTags.length > 0 && (
