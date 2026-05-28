@@ -79,6 +79,7 @@ export interface PullCallbacks {
   onProgress?: (data: { percent?: number; [key: string]: unknown }) => void;
   onComplete?: (data: Record<string, unknown>) => void;
   onError?: (err: Error) => void;
+  signal?: AbortSignal;
 }
 
 export interface PullVariant {
@@ -474,7 +475,7 @@ class LemonadeAPI {
   // ── SSE: Pull (model download) ──────────────────────────────────
 
   async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: { checkpoint?: string; recipe?: string }): Promise<void> {
-    const { onProgress, onComplete, onError } = callbacks;
+    const { onProgress, onComplete, onError, signal } = callbacks;
     try {
       const body: Record<string, unknown> = { model: modelName, stream: true };
       if (opts?.checkpoint) body.checkpoint = opts.checkpoint;
@@ -482,31 +483,45 @@ class LemonadeAPI {
       const resp = await this._fetch('/api/v1/pull', {
         method: 'POST',
         body,
+        signal,
       });
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
       let buf = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop()!;
+      try {
+        while (true) {
+          if (signal?.aborted) {
+            await reader.cancel();
+            break;
+          }
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop()!;
 
-        for (const line of lines) {
-          if (line.startsWith('event:')) continue;
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (d.percent !== undefined) onProgress?.(d);
-            else onComplete?.(d);
-          } catch {}
+          for (const line of lines) {
+            if (line.startsWith('event:')) continue;
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const d = JSON.parse(line.slice(6));
+              if (d.percent !== undefined) onProgress?.(d);
+              else onComplete?.(d);
+            } catch {}
+          }
+        }
+      } finally {
+        if (signal?.aborted) {
+          reader.cancel().catch(() => {});
         }
       }
-      onComplete?.({});
-      this._notifyModelsChanged();
+      if (!signal?.aborted) {
+        onComplete?.({});
+        this._notifyModelsChanged();
+      }
     } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
       onError?.(err as Error);
     }
   }

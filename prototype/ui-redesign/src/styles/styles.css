@@ -1809,6 +1809,25 @@ input, textarea {
   text-align: right;
 }
 
+.row__action--cancel {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  padding: 2px 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+
+.row__action--cancel:hover {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 /* ── Model Detail (expanded) ──────────────────────────────── */
 
 .row__detail {
