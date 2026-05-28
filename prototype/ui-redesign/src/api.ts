@@ -449,12 +449,15 @@ class LemonadeAPI {
 
   // ── SSE: Pull (model download) ──────────────────────────────────
 
-  async pullModel(modelName: string, callbacks: PullCallbacks = {}): Promise<void> {
+  async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: { checkpoint?: string; recipe?: string }): Promise<void> {
     const { onProgress, onComplete, onError } = callbacks;
     try {
+      const body: Record<string, unknown> = { model: modelName, stream: true };
+      if (opts?.checkpoint) body.checkpoint = opts.checkpoint;
+      if (opts?.recipe) body.recipe = opts.recipe;
       const resp = await this._fetch('/api/v1/pull', {
         method: 'POST',
-        body: { model: modelName, stream: true },
+        body,
       });
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
