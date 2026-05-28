@@ -197,6 +197,11 @@ int RuntimeConfig::ctx_size() const {
     return config_["ctx_size"].get<int>();
 }
 
+bool RuntimeConfig::model_auto_update() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("model_auto_update", false);
+}
+
 bool RuntimeConfig::offline() const {
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
@@ -384,7 +389,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
     } else if (key == "no_broadcast" || key == "offline" ||
                key == "no_fetch_executables" ||
-               key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
+               key == "disable_model_filtering" || key == "enable_dgpu_gtt" ||
+               key == "model_auto_update") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + key + "' must be a boolean");
         }

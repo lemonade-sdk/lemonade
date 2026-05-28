@@ -9,6 +9,7 @@
   "no_broadcast": false,
   "extra_models_dir": "",
   "models_dir": "auto",
+  "model_auto_update": false,
   "ctx_size": 4096,
   "offline": false,
   "no_fetch_executables": false,

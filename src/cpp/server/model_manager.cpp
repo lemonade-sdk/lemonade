@@ -951,6 +951,48 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
+bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
+    std::vector<std::string> candidate_keys;
+
+    if (auto canon = parse_canonical_id(model_name)) {
+        if (canon->source == ModelSource::Registered) {
+            candidate_keys.push_back(canon->bare_name);
+        }
+    } else if (!model_name.empty()) {
+        candidate_keys.push_back(model_name);
+    }
+
+    if (candidate_keys.empty()) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json latest_user_models = load_optional_json(get_user_models_file());
+        if (!latest_user_models.is_object()) {
+            return false;
+        }
+
+        bool found = false;
+        for (const auto& key : candidate_keys) {
+            if (latest_user_models.contains(key)) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            return false;
+        }
+
+        user_models_ = std::move(latest_user_models);
+        cache_valid_ = false;
+    }
+
+    build_cache();
+    return true;
+}
+
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
@@ -2231,6 +2273,10 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             continue;
         }
 
+        const bool user_controlled_model = is_user_model_name(name) ||
+                                         name.rfind("extra.", 0) == 0 ||
+                                         info.source == "local_upload";
+
         // Check recipe support using the centralized system_info recipes structure
         std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
         if (!unsupported_reason.empty()) {
@@ -2242,7 +2288,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Filter out models that are too large for system RAM
         // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
+        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
                 std::ostringstream oss;
@@ -2333,14 +2379,18 @@ void ModelManager::register_user_model(const std::string& model_name,
         model_entry["source"] = source;
     }
 
-    json updated_user_models = user_models_;
-    updated_user_models[clean_name] = model_entry;
-
-    save_user_models(updated_user_models);
-    user_models_ = updated_user_models;
-
-    // Add new model to cache incrementally
-    add_model_to_cache("user." + clean_name);
+    // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
+    // can otherwise both start from the same in-memory registry snapshot and the
+    // later save can drop the first model, producing a hard "Model not found" on
+    // the next auto-load.
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json updated_user_models = user_models_.is_object() ? user_models_ : json::object();
+        updated_user_models[clean_name] = model_entry;
+        save_user_models(updated_user_models);
+        user_models_ = std::move(updated_user_models);
+        cache_valid_ = false;
+    }
 }
 
 // Find the FLM executable: install dir on Windows, system PATH on Linux.
@@ -2529,11 +2579,12 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
 bool ModelManager::is_model_downloaded(const std::string& model_name) {
     // Build cache if needed
     build_cache();
-
     // O(1) lookup - download status is in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    const std::string canonical_name = alias_it != public_model_aliases_.end()
+        ? alias_it->second
+        : model_name;
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
         return it->second.downloaded;
@@ -2542,10 +2593,19 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    // Use FLM pull for FLM models, otherwise download from HuggingFace. Honor
+    // do_not_upgrade here as a defensive guard too: several auto-load paths call
+    // this helper directly, and they must not contact Hugging Face when the
+    // current cache already contains a valid model and auto-update is disabled.
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
+        if (do_not_upgrade && is_model_downloaded(info.model_name)) {
+            LOG(INFO, "ModelManager")
+                << "Model already downloaded and do_not_upgrade=true, using cached version: "
+                << info.model_name << std::endl;
+            return;
+        }
         download_from_huggingface(info, progress_callback);
     }
 
@@ -2916,6 +2976,59 @@ static void materialize_unchanged_files_from_sibling_snapshots(const json& manif
     }
 }
 
+
+static bool manifest_files_are_equivalent_in_snapshot(const json& manifest,
+                                                       const std::string& selected_download_path,
+                                                       const fs::path& candidate_snapshot) {
+    if (selected_download_path.empty() || candidate_snapshot.empty() || !safe_exists(candidate_snapshot)) {
+        return false;
+    }
+
+    if (safe_exists(candidate_snapshot / ".download_manifest.json")) {
+        return false;
+    }
+
+    const fs::path selected_snapshot = path_from_utf8(selected_download_path);
+    bool saw_selected_file = false;
+    std::error_code ec;
+
+    const std::string default_download_path = manifest.value("download_path", "");
+    for (const auto& file_desc : manifest["files"]) {
+        const std::string filename = file_desc.value("name", "");
+        if (filename.empty()) {
+            continue;
+        }
+
+        const std::string file_download_path = file_desc.value("download_path", default_download_path);
+        if (file_download_path != selected_download_path) {
+            continue;
+        }
+
+        saw_selected_file = true;
+        const fs::path relative_file = path_from_utf8(filename);
+        const fs::path selected_file = selected_snapshot / relative_file;
+        const fs::path candidate_file = candidate_snapshot / relative_file;
+        const fs::path candidate_partial = path_from_utf8(path_to_utf8(candidate_file) + ".partial");
+
+        if (!fs::is_regular_file(selected_file, ec)) {
+            ec.clear();
+            return false;
+        }
+        if (!fs::is_regular_file(candidate_file, ec) || safe_exists(candidate_partial)) {
+            ec.clear();
+            return false;
+        }
+
+        const bool same_file = fs::equivalent(selected_file, candidate_file, ec);
+        if (ec || !same_file) {
+            ec.clear();
+            return false;
+        }
+    }
+
+    return saw_selected_file;
+}
+
 bool ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
     // Download each file with robust retry and resume support
     int file_index = 0;
@@ -3253,8 +3366,9 @@ bool ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 // IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
 // file list, then downloads any missing files. It does NOT check do_not_upgrade.
 //
-// The caller (download_model) is responsible for checking do_not_upgrade and
-// calling is_model_downloaded() before invoking this function.
+// Callers should avoid this path when do_not_upgrade=true and a model is already
+// cached. download_registered_model() also enforces that guard defensively for
+// direct auto-load call sites.
 //
 // Download capabilities by backend:
 //   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
@@ -3570,7 +3684,18 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
 
         const std::string previous_ref = repo_previous_refs.count(repo_id) ? repo_previous_refs[repo_id] : "";
-        if (downloaded_new_bytes || previous_ref.empty() || previous_ref == repo_hash) {
+        const auto snapshot_it = repo_snapshot_paths.find(repo_id);
+        const bool previous_snapshot_matches_selected_files =
+            snapshot_it != repo_snapshot_paths.end() &&
+            !previous_ref.empty() &&
+            previous_ref != repo_hash &&
+            manifest_files_are_equivalent_in_snapshot(
+                manifest,
+                snapshot_it->second,
+                cache_it->second / "snapshots" / previous_ref);
+
+        if (downloaded_new_bytes || previous_ref.empty() || previous_ref == repo_hash ||
+            !previous_snapshot_matches_selected_files) {
             write_hf_ref_main(cache_it->second, repo_hash);
             LOG(INFO, "ModelManager") << "Updated refs/main for " << repo_id
                                       << " to " << repo_hash << std::endl;
@@ -3578,14 +3703,15 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             LOG(INFO, "ModelManager") << "Keeping refs/main for " << repo_id
                                       << " at " << previous_ref
                                       << " because latest snapshot " << repo_hash
-                                      << " did not require downloading new bytes" << std::endl;
+                                      << " did not require downloading new bytes "
+                                      << "and the active snapshot already points at the verified files" << std::endl;
 
             // If this pull only materialized already-cached files into the latest
-            // snapshot, refs/main intentionally stays on the previous active
-            // snapshot. Remove the unused new snapshot so future cache scans do
-            // not treat it as an active candidate. Never remove the active ref.
-            const auto snapshot_it = repo_snapshot_paths.find(repo_id);
-            if (snapshot_it != repo_snapshot_paths.end() && !previous_ref.empty() && previous_ref != repo_hash) {
+            // snapshot and those files are equivalent to the active snapshot,
+            // refs/main intentionally stays on the previous active snapshot.
+            // Remove the unused new snapshot so future cache scans do not treat
+            // it as an active candidate. Never remove the active ref.
+            if (snapshot_it != repo_snapshot_paths.end()) {
                 fs::path unused_snapshot = path_from_utf8(snapshot_it->second);
                 fs::path active_snapshot;
                 auto cache_it_for_ref = repo_cache_paths.find(repo_id);
@@ -4125,12 +4251,24 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-    auto it = models_cache_.find(canonical_name);
-    if (it != models_cache_.end()) {
-        return it->second;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        auto it = models_cache_.find(canonical_name);
+        if (it != models_cache_.end()) {
+            return it->second;
+        }
+    }
+
+    if (refresh_user_models_from_disk_for_lookup(model_name)) {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        auto it = models_cache_.find(canonical_name);
+        if (it != models_cache_.end()) {
+            return it->second;
+        }
     }
 
     throw std::runtime_error("Model not found: " + model_name);
@@ -4157,10 +4295,23 @@ bool ModelManager::model_exists(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-    return models_cache_.find(canonical_name) != models_cache_.end();
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        if (models_cache_.find(canonical_name) != models_cache_.end()) {
+            return true;
+        }
+    }
+
+    if (refresh_user_models_from_disk_for_lookup(model_name)) {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        return models_cache_.find(canonical_name) != models_cache_.end();
+    }
+
+    return false;
 }
 
 std::optional<std::string> ModelManager::validate_collection_request(
@@ -4187,34 +4338,45 @@ std::optional<std::string> ModelManager::validate_collection_request(
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
-    // Direct match in server_models_ (built-ins are keyed bare).
-    if (server_models_.contains(model_name)) {
-        return true;
-    }
-    if (auto canon = parse_canonical_id(model_name)) {
-        switch (canon->source) {
-            case ModelSource::Registered:
-                return user_models_.contains(canon->bare_name);
-            case ModelSource::Builtin:
-                return server_models_.contains(canon->bare_name);
-            case ModelSource::Imported:
-                // extra.* models are filesystem-discovered; not in either JSON registry.
-                return false;
+    auto exists_in_registries = [this](const std::string& name) -> bool {
+        // Direct match in server_models_ (built-ins are keyed bare).
+        if (server_models_.contains(name)) {
+            return true;
         }
+        if (auto canon = parse_canonical_id(name)) {
+            switch (canon->source) {
+                case ModelSource::Registered:
+                    return user_models_.contains(canon->bare_name);
+                case ModelSource::Builtin:
+                    return server_models_.contains(canon->bare_name);
+                case ModelSource::Imported:
+                    // extra.* models are filesystem-discovered; not in either JSON registry.
+                    return false;
+            }
+        }
+        return false;
+    };
+
+    if (exists_in_registries(model_name)) {
+        return true;
     }
 
     std::string canonical_name = resolve_model_name(model_name);
-    if (auto canon = parse_canonical_id(canonical_name)) {
-        switch (canon->source) {
-            case ModelSource::Registered:
-                return user_models_.contains(canon->bare_name);
-            case ModelSource::Builtin:
-                return server_models_.contains(canon->bare_name);
-            case ModelSource::Imported:
-                return false;
-        }
+    if (exists_in_registries(canonical_name) || server_models_.contains(canonical_name)) {
+        return true;
     }
-    return server_models_.contains(canonical_name);
+
+    // If a stale warm cache caused the alias/registry lookup to miss, reload the
+    // persisted user registry before reporting a hard "not found".
+    if (refresh_user_models_from_disk_for_lookup(model_name)) {
+        if (exists_in_registries(model_name)) {
+            return true;
+        }
+        canonical_name = resolve_model_name(model_name);
+        return exists_in_registries(canonical_name) || server_models_.contains(canonical_name);
+    }
+
+    return false;
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
@@ -4243,8 +4405,22 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         return false;
     };
 
-    if (!try_resolve(model_name)) {
-        try_resolve(resolve_model_name(model_name));
+    bool resolved = try_resolve(model_name);
+    if (!resolved) {
+        std::string canonical_name = resolve_model_name(model_name);
+        if (canonical_name != model_name) {
+            resolved = try_resolve(canonical_name);
+        }
+    }
+
+    if (!resolved && refresh_user_models_from_disk_for_lookup(model_name)) {
+        resolved = try_resolve(model_name);
+        if (!resolved) {
+            std::string canonical_name = resolve_model_name(model_name);
+            if (canonical_name != model_name) {
+                resolved = try_resolve(canonical_name);
+            }
+        }
     }
 
     json* model_json = nullptr;

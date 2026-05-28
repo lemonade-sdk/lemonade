@@ -123,6 +123,8 @@ pub struct AppSettings {
     pub repeat_penalty: TypedSetting,
     pub enable_thinking: TypedSetting,
     pub collapse_thinking_by_default: TypedSetting,
+    #[serde(rename = "modelAutoUpdate")]
+    pub model_auto_update: TypedSetting,
     // Renderer's TS type is `baseURL` (uppercase URL acronym). The default
     // rename_all = "camelCase" would emit `baseUrl`, which the renderer's
     // mergeWithDefaultSettings cannot find on the post-save round-trip.
@@ -158,6 +160,10 @@ impl Default for AppSettings {
                 use_default: true,
             },
             collapse_thinking_by_default: TypedSetting {
+                value: Value::Bool(false),
+                use_default: true,
+            },
+            model_auto_update: TypedSetting {
                 value: Value::Bool(false),
                 use_default: true,
             },
@@ -253,6 +259,7 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
         &mut s.collapse_thinking_by_default,
         extract_bool,
     );
+    apply_typed_setting(incoming, "modelAutoUpdate", &mut s.model_auto_update, extract_bool);
     apply_typed_setting(incoming, "baseURL", &mut s.base_url, extract_string);
     apply_typed_setting(incoming, "apiKey", &mut s.api_key, extract_string);
 
@@ -396,6 +403,7 @@ mod tests {
     fn round_trip_preserves_renderer_keys() {
         let incoming = json!({
             "baseURL": { "value": "http://example:1234", "useDefault": false },
+            "modelAutoUpdate": { "value": true, "useDefault": false },
             "apiKey": { "value": "secret", "useDefault": false },
             "tts": {
                 "model": { "value": "kokoro-v1", "useDefault": true },
@@ -421,6 +429,7 @@ mod tests {
         // The output must use exactly the keys the renderer expects.
         assert!(serialized.get("baseURL").is_some(), "baseURL key missing");
         assert!(serialized.get("baseUrl").is_none(), "baseUrl (lowercase) leaked");
+        assert!(serialized.get("modelAutoUpdate").is_some(), "modelAutoUpdate key missing");
 
         let tts = serialized.get("tts").and_then(|v| v.as_object()).expect("tts object");
         assert!(tts.contains_key("enableTTS"), "enableTTS key missing");

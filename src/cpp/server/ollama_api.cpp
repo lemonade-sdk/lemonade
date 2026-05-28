@@ -1,5 +1,6 @@
 #include "lemon/ollama_api.h"
 #include "lemon/model_types.h"
+#include "lemon/runtime_config.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
@@ -233,15 +234,28 @@ void OllamaApi::auto_load_model(const std::string& model) {
     LOG(INFO, "OllamaApi") << "Auto-loading model: " << name << std::endl;
 
     if (!model_manager_->model_exists(name)) {
+        if (model_manager_->model_exists_unfiltered(name)) {
+            std::string reason = model_manager_->get_model_filter_reason(name);
+            throw std::runtime_error(
+                "model '" + name + "' is registered but is not available on this system" +
+                (reason.empty() ? std::string() : ": " + reason));
+        }
         throw std::runtime_error("model '" + name + "' not found");
     }
 
     auto info = model_manager_->get_model_info(name);
+    auto* runtime_config = RuntimeConfig::global();
+    const bool model_auto_update = runtime_config && runtime_config->model_auto_update();
+    const bool model_downloaded = model_manager_->is_model_downloaded(name);
 
-    // Download if not cached
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(name)) {
-        LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
-        model_manager_->download_registered_model(info, true);
+    // Download if not cached; when enabled, also check for selected model-artifact updates.
+    if (info.recipe != "flm" && (!model_downloaded || model_auto_update)) {
+        if (model_downloaded && model_auto_update) {
+            LOG(INFO, "OllamaApi") << "Model auto update enabled, checking Hugging Face..." << std::endl;
+        } else {
+            LOG(INFO, "OllamaApi") << "Model not cached, downloading..." << std::endl;
+        }
+        model_manager_->download_registered_model(info, !model_auto_update);
         info = model_manager_->get_model_info(name);
     }
 

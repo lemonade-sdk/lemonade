@@ -18,6 +18,7 @@ Real download/SHA corruption smoke test:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import time
 import uuid
@@ -234,6 +235,50 @@ class ServerDownloadRegistryTests(ServerTestBase):
         )
         response.raise_for_status()
         return response.json()
+
+    def test_003_user_model_lookup_refreshes_after_external_registry_write(self):
+        """A user.* lookup should reload user_models.json instead of failing on a stale warm cache."""
+        cache_dir = os.environ.get("LEMONADE_CACHE_DIR")
+        if not cache_dir:
+            self.skipTest("set LEMONADE_CACHE_DIR to exercise user registry refresh")
+
+        # Build the cache first so the following file write simulates a registry
+        # update that happens after startup cache warmup.
+        response = requests.get(f"http://localhost:{PORT}/api/v1/models", timeout=TIMEOUT_DEFAULT)
+        response.raise_for_status()
+
+        user_models_path = Path(cache_dir) / "user_models.json"
+        original_bytes = user_models_path.read_bytes() if user_models_path.exists() else None
+
+        model_name = f"user.CacheRefresh-{uuid.uuid4().hex[:8]}-GGUF"
+        bare_name = model_name[len("user."):]
+
+        try:
+            if original_bytes:
+                user_models = json.loads(original_bytes.decode("utf-8"))
+                if not isinstance(user_models, dict):
+                    user_models = {}
+            else:
+                user_models = {}
+
+            user_models[bare_name] = {
+                "checkpoint": "unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M",
+                "recipe": "llamacpp",
+                "labels": ["llm", "custom"],
+                "suggested": True,
+                "size": 0.001,
+            }
+            user_models_path.parent.mkdir(parents=True, exist_ok=True)
+            user_models_path.write_text(json.dumps(user_models), encoding="utf-8")
+
+            info = self._get_model_info(model_name)
+            self.assertIn(info.get("id"), {bare_name, model_name})
+            self.assertEqual(info.get("recipe"), "llamacpp")
+        finally:
+            if original_bytes is None:
+                user_models_path.unlink(missing_ok=True)
+            else:
+                user_models_path.write_bytes(original_bytes)
 
     def _find_downloaded_gguf(self, model_name) -> Path:
         info = self._get_model_info(model_name)
