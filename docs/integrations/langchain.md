@@ -28,7 +28,7 @@ LangChain supports any OpenAI-compatible backend via `ChatOpenAI`. Point it to L
 from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
-    base_url="http://localhost:13305/v1",
+    base_url="http://localhost:13305/api/v1",
     api_key="lemonade",           # required by LangChain but unused by Lemonade
     model="Llama-3.2-3B-Instruct-Hybrid",  # any model you have pulled
 )
@@ -53,7 +53,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 llm = ChatOpenAI(
-    base_url="http://localhost:13305/v1",
+    base_url="http://localhost:13305/api/v1",
     api_key="lemonade",
     model="Llama-3.2-3B-Instruct-Hybrid",
 )
@@ -73,6 +73,12 @@ print(response.content)
 
 This example builds a full Retrieval-Augmented Generation pipeline using Lemonade as the LLM backend — fully local and offline.
 
+**Additional prerequisite:** pull the embedding model before running:
+
+```bash
+lemonade pull nomic-embed-text-v1-GGUF
+```
+
 ```bash
 pip install langchain langchain-openai langchain-community langchain-chroma langchain-text-splitters pypdf
 ```
@@ -87,9 +93,10 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
 # ── Connect to Lemonade ──────────────────────────────────
-LEMONADE_BASE_URL = "http://localhost:13305/v1"
-LEMONADE_API_KEY  = "lemonade"
-MODEL_NAME        = "Llama-3.2-3B-Instruct-Hybrid"
+LEMONADE_BASE_URL   = "http://localhost:13305/api/v1"
+LEMONADE_API_KEY    = "lemonade"
+MODEL_NAME          = "Llama-3.2-3B-Instruct-Hybrid"
+EMBEDDING_MODEL     = "nomic-embed-text-v1-GGUF"
 
 llm = ChatOpenAI(
     base_url=LEMONADE_BASE_URL,
@@ -97,9 +104,15 @@ llm = ChatOpenAI(
     model=MODEL_NAME,
 )
 
+# Requires the embedding model to be pulled first:
+#   lemonade pull nomic-embed-text-v1-GGUF
+# check_embedding_ctx_length=False disables LangChain's OpenAI-specific
+# tokenizer check, which fails against non-OpenAI providers.
 embeddings = OpenAIEmbeddings(
     base_url=LEMONADE_BASE_URL,
     api_key=LEMONADE_API_KEY,
+    model=EMBEDDING_MODEL,
+    check_embedding_ctx_length=False,
 )
 
 # ── Load and chunk your PDF ──────────────────────────────
@@ -148,7 +161,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 llm = ChatOpenAI(
-    base_url="http://localhost:13305/v1",
+    base_url="http://localhost:13305/api/v1",
     api_key="lemonade",
     model="Llama-3.2-3B-Instruct-Hybrid",
 )
@@ -171,7 +184,7 @@ print(result)
 |---|---|
 | `Connection refused` | Make sure Lemonade Server is running (`lemonade status`) |
 | `Model not found` | Pull the model first: `lemonade pull MODEL_NAME` |
-| `Embeddings not working` | Check if your Lemonade version supports the embeddings endpoint |
+| `Embeddings not working` | Pull the model first: `lemonade pull nomic-embed-text-v1-GGUF`. Make sure `model=` and `check_embedding_ctx_length=False` are set in `OpenAIEmbeddings` |
 | Slow responses | Use a smaller model (e.g. 3B instead of 7B) |
 
 ---
