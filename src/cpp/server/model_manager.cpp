@@ -1250,7 +1250,7 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
                 return filepath;
             }
         }
-        
+
         // Case 5: Local quant-token fallback.
         //
         // Keep the existing resolver cases above as the primary logic: exact
@@ -2424,7 +2424,9 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 
     // O(1) lookup - download status is in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = models_cache_.find(model_name);
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
         return it->second.downloaded;
     }
