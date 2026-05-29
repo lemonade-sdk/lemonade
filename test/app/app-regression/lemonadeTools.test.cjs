@@ -41,6 +41,26 @@ const tests = [
     },
   },
   {
+    name: 'image tools keep default size optional for token-efficient tool calls',
+    run() {
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
+      assert.deepEqual(byName.generate_image.function.parameters.required, ['prompt']);
+      assert.deepEqual(byName.edit_image.function.parameters.required, ['prompt']);
+      const generateProps = byName.generate_image.function.parameters.properties;
+      const editProps = byName.edit_image.function.parameters.properties;
+      assertIncludes(
+        generateProps.size.description,
+        'omit to use the {image_size} default',
+        'The planner should not have to emit a default size argument for every image request.',
+      );
+      assert.ok(!('aspect_ratio' in generateProps), 'Aspect ratio should be handled by size/prompt parsing, not extra planner schema.');
+      assert.ok(!('orientation' in generateProps), 'Orientation aliases should stay executor-side, not planner-side.');
+      assert.ok(!('aspect_ratio' in editProps), 'Edit schema should stay as compact as generate schema.');
+      assert.ok(!('orientation' in editProps), 'Edit schema should not duplicate orientation aliases.');
+    },
+  },
+  {
     name: 'buildLemonadeTools keeps component matching separate from planner matching',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
@@ -60,7 +80,26 @@ const tests = [
     },
   },
   {
-    name: 'image-size placeholders are materialized from the shared image config',
+    name: 'unavailable tool instructions are omitted from the planner prompt',
+    run() {
+      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      const definitions = readToolDefinitions();
+      assertIncludes(definitions.system_prompt, '{tool_instructions}', 'Conditional instructions should be injected at runtime.');
+      assert.ok(!definitions.system_prompt.includes('flow_shift'), 'Static prompt should not mention image-only options.');
+      assertMatches(
+        source,
+        /enabledToolNames\.has\('generate_image'\)[\s\S]*?enabledToolNames\.has\('edit_image'\)[\s\S]*?IMAGE_SIZE_INSTRUCTIONS/,
+        'Image options should only be added when an image generation or edit tool is available.',
+      );
+      assertMatches(
+        source,
+        /enabledToolNames\.has\('analyze_image'\)[\s\S]*?VISION_INSTRUCTIONS/,
+        'Vision instructions should only be added when the vision tool is available.',
+      );
+    },
+  },
+  {
+    name: 'image-size placeholders are materialized from the shared 2:1 image config',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
       const config = readSource(IMAGE_CONFIG);

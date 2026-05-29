@@ -5,31 +5,50 @@ import { getCollectionComponents } from './collectionModels';
 import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
 
-// Neutral fallback used for actual image API requests. Do not use the old
-// collection canvas default here; otherwise missing planner args still generate
-// 512x256 / 256x512-looking images.
-const DEFAULT_IMAGE_SIZE = '512x512';
+// Fallback used for actual image API requests when the planner does not pass
+// a size. Keep it shared with collection image hints so defaults stay in sync.
+const DEFAULT_IMAGE_SIZE = COLLECTION_IMAGE_SIZE;
 const MAX_IMAGE_DIMENSION = 2048;
 
-const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
-  '1:1': '512x512',
-  '16:9': '1024x576',
-  '9:16': '576x1024',
-  '4:3': '768x576',
-  '3:4': '576x768',
-  '3:2': '768x512',
-  '2:3': '512x768',
+type ImageSizePreset = {
+  size: string;
+  ratios?: string[];
+  hints?: string[];
 };
 
-const ORIENTATION_TO_SIZE: Record<string, string> = {
-  square: '512x512',
-  landscape: '768x512',
-  wide: '768x512',
-  horizontal: '768x512',
-  portrait: '512x768',
-  vertical: '512x768',
-  tall: '512x768',
-};
+// Keep user-facing aliases in one compact table. The planner schema stays
+// token-light; these synonyms are executor fallbacks for natural-language
+// prompts such as "vertical", "banner", or "16:9".
+const IMAGE_SIZE_PRESETS: ImageSizePreset[] = [
+  { size: DEFAULT_IMAGE_SIZE, ratios: ['2:1'], hints: ['landscape', 'wide', 'widescreen', 'horizontal', 'banner'] },
+  { size: '512x512', ratios: ['1:1'], hints: ['square'] },
+  { size: '1024x576', ratios: ['16:9'] },
+  { size: '576x1024', ratios: ['9:16'] },
+  { size: '768x576', ratios: ['4:3'] },
+  { size: '576x768', ratios: ['3:4'] },
+  { size: '768x512', ratios: ['3:2'] },
+  { size: '512x768', ratios: ['2:3'], hints: ['portrait', 'vertical', 'tall'] },
+];
+
+const ASPECT_RATIO_TO_SIZE: Record<string, string> = Object.fromEntries(
+  IMAGE_SIZE_PRESETS.flatMap(preset => (preset.ratios ?? []).map(ratio => [ratio, preset.size])),
+);
+
+const SIZE_HINT_TO_SIZE: Record<string, string> = Object.fromEntries(
+  IMAGE_SIZE_PRESETS.flatMap(preset => (preset.hints ?? []).map(hint => [hint, preset.size])),
+);
+
+const IMAGE_EDIT_INSTRUCTIONS =
+  '\nIMPORTANT: When an image has already been generated in this conversation and the user wants to add, remove, change, modify, or adjust it, use edit_image rather than generate_image. The edit_image tool automatically uses the most recent image as its source.';
+
+const IMAGE_SIZE_INSTRUCTIONS =
+  `\nWhen generating or editing images, pass size or width+height only when the user provides exact dimensions. For aspect-ratio or orientation requests, either pass an obvious concrete size or keep the hint in the prompt; otherwise omit size arguments and let the executor use its ${DEFAULT_IMAGE_SIZE} default. Preserve explicit image options such as steps, cfg_scale, seed, sample_method, and flow_shift as tool arguments.`;
+
+const VISION_INSTRUCTIONS =
+  "\nWhen the user sends an image (as an image_url in their message), use analyze_image to look at the image before responding about it.";
+
+const TRANSCRIPTION_INSTRUCTIONS =
+  "\nWhen you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call transcribe_audio to transcribe it — the audio data is handled automatically by the system.";
 
 // Types
 export interface LemonadeToolDef {
@@ -132,11 +151,19 @@ export function buildLemonadeTools(
     }
   }
 
+  const enabledToolNames = new Set(tools.map(t => t.function.name));
+  const toolInstructions = [
+    enabledToolNames.has('edit_image') ? IMAGE_EDIT_INSTRUCTIONS : '',
+    (enabledToolNames.has('generate_image') || enabledToolNames.has('edit_image')) ? IMAGE_SIZE_INSTRUCTIONS : '',
+    enabledToolNames.has('analyze_image') ? VISION_INSTRUCTIONS : '',
+    enabledToolNames.has('transcribe_audio') ? TRANSCRIPTION_INSTRUCTIONS : '',
+  ].join('');
+
   const toolList = tools.map(t => `- ${t.function.name}: ${t.function.description}`).join('\n');
   const toolGuidance = guidance.length ? `\n${guidance.join('\n')}` : '';
   const systemPrompt = toolDefinitions.system_prompt
     .replace('{tool_list}', toolList)
-    .replace('{tool_guidance}', toolGuidance);
+    .replace('{tool_instructions}', toolInstructions);
 
   return { tools, systemPrompt, models };
 }
@@ -160,21 +187,23 @@ export async function executeLemonadeTool(
     args = {};
   }
 
-  const hasPreviousImage = context.previousArtifacts.some(a => a.type === 'image');
   const modelLabels = modelsData?.[model]?.labels ?? [];
   const modelSupportsEdit = modelLabels.includes('edit');
-  const effectiveName = (funcName === 'generate_image' && hasPreviousImage && modelSupportsEdit) ? 'edit_image' : funcName;
 
-  if (effectiveName === 'generate_image' || effectiveName === 'edit_image') {
-    return executeImageTool(effectiveName, args, model, context, signal);
+  if (funcName === 'edit_image' && modelsData && !modelSupportsEdit) {
+    return { type: 'text', text: `Image editing is not available for model: ${model}` };
   }
-  if (effectiveName === 'text_to_speech') {
+
+  if (funcName === 'generate_image' || funcName === 'edit_image') {
+    return executeImageTool(funcName, args, model, context, signal);
+  }
+  if (funcName === 'text_to_speech') {
     return executeTTSTool(args, model, signal);
   }
-  if (effectiveName === 'transcribe_audio') {
+  if (funcName === 'transcribe_audio') {
     return executeTranscriptionTool(args, model, context, signal);
   }
-  if (effectiveName === 'analyze_image') {
+  if (funcName === 'analyze_image') {
     return executeVisionTool(args, model, context, signal);
   }
 
@@ -192,6 +221,11 @@ async function executeImageTool(
   const isEdit = effectiveName === 'edit_image';
 
   if (isEdit) {
+    const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
+    if (!lastImage) {
+      throw new Error('Image edit requested, but no previous image is available as a source.');
+    }
+
     // /images/edits requires multipart/form-data
     const formData = new FormData();
     formData.append('model', model);
@@ -202,15 +236,12 @@ async function executeImageTool(
     appendOptionalImageFormArgs(args, formData);
 
     // Attach the most recent image as the source file
-    const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
-    if (lastImage) {
-      const binaryStr = atob(lastImage.data);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      formData.append('image', new Blob([bytes], { type: lastImage.mime || 'image/png' }), 'image.png');
+    const binaryStr = atob(lastImage.data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
     }
+    formData.append('image', new Blob([bytes], { type: lastImage.mime || 'image/png' }), 'image.png');
 
     const response = await serverFetch('/images/edits', {
       method: 'POST',
@@ -302,12 +333,13 @@ function inferSizeFromRatioOrOrientation(args: Record<string, any>): string {
 
   if (typeof args.orientation === 'string') {
     const orientation = args.orientation.trim().toLowerCase();
-    if (ORIENTATION_TO_SIZE[orientation]) return ORIENTATION_TO_SIZE[orientation];
+    if (SIZE_HINT_TO_SIZE[orientation]) return SIZE_HINT_TO_SIZE[orientation];
   }
 
-  if (/\b(square)\b|(?<!\d)1\s*[:/]\s*1(?!\d)/.test(text)) return '512x512';
-  if (/\b(portrait|vertical|tall)\b/.test(text)) return '512x768';
-  if (/\b(landscape|wide|widescreen|horizontal|banner)\b/.test(text)) return '768x512';
+  for (const [hint, size] of Object.entries(SIZE_HINT_TO_SIZE)) {
+    const pattern = new RegExp(`\\b${hint}\\b`);
+    if (pattern.test(text)) return size;
+  }
 
   return '';
 }
@@ -329,12 +361,21 @@ function coerceInteger(value: any): number | null {
   return null;
 }
 
+function coerceNumber(value: any): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 function copyOptionalImageArgs(args: Record<string, any>, body: Record<string, any>): void {
   const steps = coerceInteger(args.steps);
   if (steps !== null && steps > 0) body.steps = steps;
 
-  const cfgScale = Number(args.cfg_scale);
-  if (Number.isFinite(cfgScale) && cfgScale > 0) body.cfg_scale = cfgScale;
+  const cfgScale = coerceNumber(args.cfg_scale);
+  if (cfgScale !== null && cfgScale > 0) body.cfg_scale = cfgScale;
 
   const seed = coerceInteger(args.seed);
   if (seed !== null) body.seed = seed;
@@ -343,8 +384,8 @@ function copyOptionalImageArgs(args: Record<string, any>, body: Record<string, a
     body.sample_method = args.sample_method.trim();
   }
 
-  const flowShift = Number(args.flow_shift);
-  if (Number.isFinite(flowShift) && flowShift > 0) body.flow_shift = flowShift;
+  const flowShift = coerceNumber(args.flow_shift);
+  if (flowShift !== null && flowShift > 0) body.flow_shift = flowShift;
 }
 
 function appendOptionalImageFormArgs(args: Record<string, any>, formData: FormData): void {

@@ -17,9 +17,13 @@ you'll have everything in one click. Otherwise, pull the models below
 individually via `lemonade pull <name>`.
 
 Usage:
-    python examples/lemonade_tools.py "Generate a 512x512 image of a sunset"
-    python examples/lemonade_tools.py "Generate a 16:9 cyberpunk street with seed 1234 and 20 steps"
+    python examples/lemonade_tools.py "Generate an image of a sunset"
+    python examples/lemonade_tools.py "Generate a 2:1 cyberpunk street with seed 1234 and 20 steps"
     python examples/lemonade_tools.py "Say hello world out loud"
+
+For image edits, set IMAGE_MODEL below to an installed model with the
+"edit" label, generate an image first, then ask to modify it in the
+same prompt, for example: "Generate a robot, then make its eyes blue".
 """
 
 import base64
@@ -41,51 +45,55 @@ LEMONADE_URL = "http://localhost:13305/v1"
 # Edit these to match models you have installed. Defaults are small so
 # they fit on most hardware (and match LMX-Omni-5.5B-Lite).
 LLM_MODEL = "Qwen3.5-4B-MTP-GGUF"  # any model with the "tool-calling" label
-IMAGE_MODEL = "SD-Turbo"  # any model with the "image" label
+IMAGE_MODEL = "SD-Turbo"  # any model with the "image" label; edits require "edit"
 TTS_MODEL = "kokoro-v1"  # any model with the "tts" label
 
-DEFAULT_IMAGE_SIZE = "512x512"
+DEFAULT_IMAGE_SIZE = "640x320"
 MAX_IMAGES_PER_CALL = 4
 MAX_IMAGE_DIMENSION = 2048
 
+IMAGE_SIZE_PRESETS = [
+    {"size": DEFAULT_IMAGE_SIZE, "ratios": ["2:1"], "hints": ["landscape", "wide", "widescreen", "horizontal", "banner"]},
+    {"size": "512x512", "ratios": ["1:1"], "hints": ["square"]},
+    {"size": "1024x576", "ratios": ["16:9"]},
+    {"size": "576x1024", "ratios": ["9:16"]},
+    {"size": "768x576", "ratios": ["4:3"]},
+    {"size": "576x768", "ratios": ["3:4"]},
+    {"size": "768x512", "ratios": ["3:2"]},
+    {"size": "512x768", "ratios": ["2:3"], "hints": ["portrait", "vertical", "tall"]},
+]
+
 ASPECT_RATIO_TO_SIZE = {
-    "1:1": "512x512",
-    "16:9": "1024x576",
-    "9:16": "576x1024",
-    "4:3": "768x576",
-    "3:4": "576x768",
-    "3:2": "768x512",
-    "2:3": "512x768",
+    ratio: preset["size"]
+    for preset in IMAGE_SIZE_PRESETS
+    for ratio in preset.get("ratios", [])
 }
 
-ORIENTATION_TO_SIZE = {
-    "square": "512x512",
-    "landscape": "768x512",
-    "wide": "768x512",
-    "horizontal": "768x512",
-    "portrait": "512x768",
-    "vertical": "512x768",
-    "tall": "512x768",
+SIZE_HINT_TO_SIZE = {
+    hint: preset["size"]
+    for preset in IMAGE_SIZE_PRESETS
+    for hint in preset.get("hints", [])
 }
 
 
-def image_generation_properties() -> dict[str, Any]:
-    """Tool schema shared by generate_image and downstream examples."""
+def image_tool_properties(prompt_description: str) -> dict[str, Any]:
+    """Tool schema shared by generate_image and edit_image.
+
+    The schema intentionally avoids separate aspect_ratio/orientation
+    parameters. Natural-language hints stay in the prompt and are resolved by
+    the executor, so the planner does not need to spend tokens on aliases such
+    as portrait/vertical/tall that all map to the same size.
+    """
     return {
         "prompt": {
             "type": "string",
-            "description": (
-                "A detailed description of the image to generate. Do not put "
-                "size-only instructions here when a size/width/height argument can be used."
-            ),
+            "description": prompt_description,
         },
         "size": {
             "type": "string",
             "description": (
-                "Output image size as WIDTHxHEIGHT pixels. Always set this for image "
-                "generation/editing. Use exact user dimensions when provided. Default to "
-                "512x512 when no size/orientation is specified. Examples: 512x512, "
-                "768x512, 512x768, 1024x576, 576x1024."
+                "Optional output image size as WIDTHxHEIGHT pixels. Use exact user "
+                f"dimensions when provided; otherwise omit to use the {DEFAULT_IMAGE_SIZE} default."
             ),
         },
         "width": {
@@ -97,15 +105,6 @@ def image_generation_properties() -> dict[str, Any]:
             "type": "integer",
             "description": "Optional output height in pixels. Use with width when dimensions are provided separately.",
             "minimum": 64,
-        },
-        "aspect_ratio": {
-            "type": "string",
-            "description": "Optional aspect ratio, for example 1:1, 16:9, 9:16, 4:3, or 3:4.",
-        },
-        "orientation": {
-            "type": "string",
-            "enum": ["square", "landscape", "portrait"],
-            "description": "Optional orientation when no exact dimensions are provided.",
         },
         "steps": {
             "type": "integer",
@@ -140,26 +139,24 @@ def image_generation_properties() -> dict[str, Any]:
     }
 
 
-# Tool definitions — same format src/app/src/renderer/utils/toolDefinitions.json uses
-TOOLS = [
-    {
+def image_tool_definition(name: str, description: str, prompt_description: str) -> dict[str, Any]:
+    return {
         "type": "function",
         "function": {
-            "name": "generate_image",
-            "description": (
-                "Generate a new image from a text description. Always pass size. "
-                "Pass through explicitly requested image options such as width, height, "
-                "aspect_ratio, orientation, steps, cfg_scale, seed, sample_method, flow_shift, or n."
-            ),
+            "name": name,
+            "description": description,
             "parameters": {
                 "type": "object",
-                "properties": image_generation_properties(),
-                "required": ["prompt", "size"],
+                "properties": image_tool_properties(prompt_description),
+                "required": ["prompt"],
                 "additionalProperties": False,
             },
         },
-    },
-    {
+    }
+
+
+def text_to_speech_tool_definition() -> dict[str, Any]:
+    return {
         "type": "function",
         "function": {
             "name": "text_to_speech",
@@ -181,20 +178,51 @@ TOOLS = [
                 "additionalProperties": False,
             },
         },
-    },
-]
+    }
 
-SYSTEM_PROMPT = (
-    "You are a helpful assistant with access to tools for generating images "
-    "and converting text to speech. Use the appropriate tool when the user "
-    "asks for an image or audio. When generating images, always pass a size. "
-    "If exact dimensions are requested, preserve them as WIDTHxHEIGHT. If only "
-    "orientation/aspect ratio is requested, choose: square/1:1 -> 512x512, "
-    "landscape/wide -> 768x512, portrait/vertical -> 512x768, 16:9 -> 1024x576, "
-    "9:16 -> 576x1024, 4:3 -> 768x576, 3:4 -> 576x768. If no size is requested, "
-    "use 512x512. Preserve steps, cfg_scale, seed, sample_method, flow_shift, "
-    "and n as tool arguments. After using a tool, briefly describe what you did."
-)
+
+def model_has_label(models: dict[str, Any], model_name: str, label: str) -> bool:
+    return label in (models.get(model_name, {}).get("labels") or [])
+
+
+def build_tools(models: dict[str, Any]) -> list[dict[str, Any]]:
+    tools = []
+    if model_has_label(models, IMAGE_MODEL, "image"):
+        tools.append(
+            image_tool_definition(
+                "generate_image",
+                "Generate a new image from scratch based on a text description.",
+                "A detailed description of the image to generate. Keep orientation/aspect-ratio words in the prompt unless passing an exact size.",
+            )
+        )
+        if model_has_label(models, IMAGE_MODEL, "edit"):
+            tools.append(
+                image_tool_definition(
+                    "edit_image",
+                    "Edit or modify the most recently generated image. Use this for changes to an existing image, not for a brand new image.",
+                    "A description of the edit to apply. Keep orientation/aspect-ratio words in the prompt unless passing an exact size.",
+                )
+            )
+    if model_has_label(models, TTS_MODEL, "tts"):
+        tools.append(text_to_speech_tool_definition())
+    return tools
+
+
+def build_system_prompt(tools: list[dict[str, Any]]) -> str:
+    names = {tool["function"]["name"] for tool in tools}
+    instructions = [
+        "You are a helpful assistant. Use the listed tools when the user's request matches one of them.",
+    ]
+    if "edit_image" in names:
+        instructions.append(
+            "When the user wants to change a generated image, call edit_image rather than generate_image."
+        )
+    if {"generate_image", "edit_image"} & names:
+        instructions.append(
+            "For images, pass size or width+height only for exact dimensions. For aspect-ratio or orientation requests, pass a concrete size only when obvious; otherwise keep the hint in the prompt and let the executor resolve it. Omit size args to use the default. Preserve steps, cfg_scale, seed, sample_method, flow_shift, and n when requested."
+        )
+    instructions.append("After using a tool, briefly describe what you did.")
+    return "\n".join(instructions)
 
 
 def _coerce_int(value: Any) -> int | None:
@@ -246,7 +274,6 @@ def _parse_size_from_text(text: str) -> str | None:
         if parsed:
             return parsed
 
-    # Also support phrases such as "width 768 height 512".
     width_match = re.search(r"\bwidth\s*[:=]?\s*(\d{2,4})\b", text, re.IGNORECASE)
     height_match = re.search(r"\bheight\s*[:=]?\s*(\d{2,4})\b", text, re.IGNORECASE)
     if width_match and height_match:
@@ -258,9 +285,7 @@ def _parse_size_from_text(text: str) -> str | None:
 
 
 def _normalize_aspect_ratio(value: str) -> str:
-    compact = value.strip().lower().replace(" ", "")
-    compact = compact.replace("/", ":")
-    return compact
+    return value.strip().lower().replace(" ", "").replace("/", ":")
 
 
 def _size_from_ratio_or_orientation(args: dict[str, Any]) -> str | None:
@@ -285,15 +310,12 @@ def _size_from_ratio_or_orientation(args: dict[str, Any]) -> str | None:
     orientation_value = args.get("orientation")
     if isinstance(orientation_value, str):
         orientation = orientation_value.strip().lower()
-        if orientation in ORIENTATION_TO_SIZE:
-            return ORIENTATION_TO_SIZE[orientation]
+        if orientation in SIZE_HINT_TO_SIZE:
+            return SIZE_HINT_TO_SIZE[orientation]
 
-    if re.search(r"\b(square|1\s*[:/]\s*1)\b", text):
-        return "512x512"
-    if re.search(r"\b(portrait|vertical|tall)\b", text):
-        return "512x768"
-    if re.search(r"\b(landscape|wide|widescreen|horizontal|banner)\b", text):
-        return "768x512"
+    for hint, size in SIZE_HINT_TO_SIZE.items():
+        if re.search(rf"\b{hint}\b", text):
+            return size
 
     return None
 
@@ -306,7 +328,7 @@ def resolve_image_size(args: dict[str, Any]) -> str:
     2. args.width + args.height
     3. explicit dimensions embedded in prompt text
     4. aspect ratio / orientation arguments or words
-    5. neutral square default
+    5. 640x320 2:1 default
     """
     raw_size = args.get("size")
     if isinstance(raw_size, str):
@@ -342,12 +364,7 @@ def resolve_image_count(args: dict[str, Any]) -> int:
 
 
 def build_image_extra_body(args: dict[str, Any]) -> dict[str, Any]:
-    """Collect optional Lemonade/sd-cpp image parameters.
-
-    Lemonade's SD backend reads steps, cfg_scale, sample_method, flow_shift,
-    and seed from the top-level request and embeds the compatible sd.cpp args
-    in the forwarded prompt.
-    """
+    """Collect optional Lemonade/sd-cpp image parameters."""
     extra: dict[str, Any] = {}
 
     steps = _coerce_int(args.get("steps"))
@@ -384,15 +401,14 @@ def save_generated_images(result: Any, stem: str = "output") -> list[Path]:
     return paths
 
 
-def execute_tool(client: OpenAI, tool_call: Any) -> str:
+def execute_tool(client: OpenAI, tool_call: Any, previous_images: list[Path]) -> str:
     name = tool_call.function.name
     args = json.loads(tool_call.function.arguments or "{}")
 
-    if name == "generate_image":
+    if name in {"generate_image", "edit_image"}:
         size = resolve_image_size(args)
         n = resolve_image_count(args)
         extra_body = build_image_extra_body(args)
-
         request_args: dict[str, Any] = {
             "model": IMAGE_MODEL,
             "prompt": args.get("prompt", ""),
@@ -403,13 +419,24 @@ def execute_tool(client: OpenAI, tool_call: Any) -> str:
         if extra_body:
             request_args["extra_body"] = extra_body
 
-        result = client.images.generate(**request_args)
-        paths = save_generated_images(result)
+        if name == "edit_image":
+            if not previous_images:
+                return "No previous image is available to edit. Generate an image first."
+            with previous_images[-1].open("rb") as source_image:
+                result = client.images.edit(image=source_image, **request_args)
+            paths = save_generated_images(result, "edited_output")
+            action = "edited"
+        else:
+            result = client.images.generate(**request_args)
+            paths = save_generated_images(result)
+            action = "generated"
+
+        previous_images.extend(paths)
         joined_paths = ", ".join(str(path) for path in paths)
         options = {"size": size, "n": n, **extra_body}
-        print(f"  -> Image saved to {joined_paths}")
+        print(f"  -> Image {action} and saved to {joined_paths}")
         print(f"  -> Image options: {json.dumps(options, ensure_ascii=False)}")
-        return f"Image generated and saved to {joined_paths}. Options used: {options}."
+        return f"Image {action} and saved to {joined_paths}. Options used: {options}."
 
     if name == "text_to_speech":
         audio = client.audio.speech.create(
@@ -424,10 +451,8 @@ def execute_tool(client: OpenAI, tool_call: Any) -> str:
     return f"Unknown tool: {name}"
 
 
-def preflight_models() -> None:
-    """Hit /v1/models?show_all=true and fail loudly if any hardcoded
-    model name isn't present. Without this, the first tool call just
-    returns a 404 and it's not obvious what went wrong."""
+def preflight_models() -> dict[str, Any]:
+    """Hit /v1/models?show_all=true and fail loudly if hardcoded model names are missing."""
     try:
         with urllib.request.urlopen(
             f"{LEMONADE_URL}/models?show_all=true", timeout=5
@@ -453,21 +478,28 @@ def preflight_models() -> None:
         print("this script to match models you already have.", file=sys.stderr)
         sys.exit(1)
 
+    return models
+
 
 def main() -> None:
     prompt = (
         " ".join(sys.argv[1:])
         if len(sys.argv) > 1
-        else "Generate a 512x512 image of a cat in space with seed 1234"
+        else "Generate an image of a cat in space with seed 1234"
     )
     print(f"User: {prompt}\n")
 
-    preflight_models()
+    models = preflight_models()
+    tools = build_tools(models)
+    if not tools:
+        print("No demo tools are available for the configured models.", file=sys.stderr)
+        sys.exit(1)
 
     client = OpenAI(base_url=LEMONADE_URL, api_key="not-needed")
+    previous_images: list[Path] = []
 
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt(tools)},
         {"role": "user", "content": prompt},
     ]
 
@@ -476,7 +508,7 @@ def main() -> None:
         response = client.chat.completions.create(
             model=LLM_MODEL,
             messages=messages,
-            tools=TOOLS,
+            tools=tools,
         )
 
         message = response.choices[0].message
@@ -489,7 +521,7 @@ def main() -> None:
 
         for tool_call in message.tool_calls:
             print(f"  [Tool] {tool_call.function.name}({tool_call.function.arguments})")
-            result = execute_tool(client, tool_call)
+            result = execute_tool(client, tool_call, previous_images)
             messages.append(
                 {
                     "role": "tool",
