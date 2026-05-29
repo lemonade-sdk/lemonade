@@ -211,8 +211,10 @@ static const EnvMapping env_mappings[] = {
     {"LEMONADE_WHISPERCPP_ARGS",         "whispercpp", "args"},
     {"LEMONADE_WHISPERCPP_CPU_ARGS",     "whispercpp", "cpu_args"},
     {"LEMONADE_WHISPERCPP_NPU_ARGS",     "whispercpp", "npu_args"},
+    {"LEMONADE_WHISPERCPP_VULKAN_ARGS",  "whispercpp", "vulkan_args"},
     {"LEMONADE_WHISPERCPP_CPU_BIN",      "whispercpp", "cpu_bin"},
     {"LEMONADE_WHISPERCPP_NPU_BIN",      "whispercpp", "npu_bin"},
+    {"LEMONADE_WHISPERCPP_VULKAN_BIN",   "whispercpp", "vulkan_bin"},
     // sdcpp
     {"LEMONADE_SDCPP",                   "sdcpp", "backend"},
     {"LEMONADE_SDCPP_ARGS",              "sdcpp", "args"},
