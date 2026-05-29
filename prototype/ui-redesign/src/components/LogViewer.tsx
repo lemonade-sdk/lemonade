@@ -71,8 +71,12 @@ const LogViewer: React.FC = () => {
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    // Directly set scrollTop — don't fight the scroll handler
+    // Set scrollTop to max. Use rAF to ensure the virtual container
+    // has rendered at the new height before we scroll.
     el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
   }, []);
 
   const handleScroll = useCallback(() => {
@@ -396,7 +400,17 @@ const LogViewer: React.FC = () => {
           onClick={() => {
             autoScrollRef.current = true;
             setAutoScroll(true);
-            scrollToBottom();
+            // Force scroll position to max, then re-apply after render
+            // to account for virtual container height changes
+            const el = containerRef.current;
+            if (el) {
+              el.scrollTop = el.scrollHeight;
+              setScrollTop(el.scrollTop);
+              requestAnimationFrame(() => {
+                el.scrollTop = el.scrollHeight;
+                setScrollTop(el.scrollTop);
+              });
+            }
           }}
         >
           ↓ Jump to bottom
