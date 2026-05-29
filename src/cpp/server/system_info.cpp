@@ -191,6 +191,12 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         }},
     }},
 
+    // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
+    {"sd-cpp", "vulkan", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+        {"amd_gpu", {}},
+    }},
+
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
     {"sd-cpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
