@@ -130,6 +130,10 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
       </div>
 
       <div className="settings-content">
+        <span className="settings-description" style={{ display: 'block', marginBottom: '12px' }}>
+          Only OpenAI-compatible chat completion providers are supported.
+        </span>
+
         {mode === 'add' && (
           <div className="form-section">
             <label className="form-label">Quick-fill</label>

@@ -1378,6 +1378,23 @@ static std::vector<std::string> parse_cloud_labels_header(const std::string& raw
     return out;
 }
 
+// Parse an integer header (e.g. X-Lemonade-Cloud-Context-Length); 0 if absent
+// or malformed.
+static int64_t cloud_header_int(const httplib::Request& req, const char* name) {
+    const std::string v = req.get_header_value(name);
+    if (v.empty()) return 0;
+    try { return std::stoll(v); } catch (...) { return 0; }
+}
+
+// Parse a double header (e.g. X-Lemonade-Cloud-Cost-Input); `fallback` if
+// absent or malformed.
+static double cloud_header_double(const httplib::Request& req, const char* name,
+                                  double fallback) {
+    const std::string v = req.get_header_value(name);
+    if (v.empty()) return fallback;
+    try { return std::stod(v); } catch (...) { return fallback; }
+}
+
 bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json) {
     // Only act on requests targeting a cloud-recipe model. We do NOT inject
     // for local backends because the body is forwarded verbatim to the
@@ -1405,7 +1422,10 @@ bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& req
     if (has_cloud_headers) {
         model_manager_->register_cloud_model(
             model_name, upstream_id,
-            parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")));
+            parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")),
+            cloud_header_int(req, "X-Lemonade-Cloud-Context-Length"),
+            cloud_header_double(req, "X-Lemonade-Cloud-Cost-Input", -1.0),
+            cloud_header_double(req, "X-Lemonade-Cloud-Cost-Output", -1.0));
     }
 
     if (!model_manager_->model_exists(model_name)) {
@@ -1540,6 +1560,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     if (info.max_context_window > 0) {
         model_json["max_context_window"] = info.max_context_window;
+    }
+
+    // Per-million-token pricing in USD, when the provider reported it (cloud
+    // models from OpenRouter/Together). Display only.
+    if (info.cost_input_per_million >= 0) {
+        model_json["cost_input_per_million"] = info.cost_input_per_million;
+    }
+    if (info.cost_output_per_million >= 0) {
+        model_json["cost_output_per_million"] = info.cost_output_per_million;
     }
 
     // Add image_defaults if present (for sd-cpp models)
@@ -3200,7 +3229,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             model_manager_->register_cloud_model(
                 model_name,
                 req.get_header_value("X-Lemonade-Cloud-Upstream-Model"),
-                parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")));
+                parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")),
+                cloud_header_int(req, "X-Lemonade-Cloud-Context-Length"),
+                cloud_header_double(req, "X-Lemonade-Cloud-Cost-Input", -1.0),
+                cloud_header_double(req, "X-Lemonade-Cloud-Cost-Output", -1.0));
         }
 
         // Get model info
@@ -3479,12 +3511,22 @@ void Server::handle_cloud_discover(const httplib::Request& req, httplib::Respons
 
         nlohmann::json data = nlohmann::json::array();
         for (const auto& info : models) {
-            data.push_back({
+            nlohmann::json entry = {
                 {"id", info.model_name},
                 {"checkpoint", info.checkpoint()},
                 {"cloud_provider", info.cloud_provider},
                 {"labels", info.labels},
-            });
+            };
+            if (info.max_context_window > 0) {
+                entry["max_context_window"] = info.max_context_window;
+            }
+            if (info.cost_input_per_million >= 0) {
+                entry["cost_input_per_million"] = info.cost_input_per_million;
+            }
+            if (info.cost_output_per_million >= 0) {
+                entry["cost_output_per_million"] = info.cost_output_per_million;
+            }
+            data.push_back(std::move(entry));
         }
         nlohmann::json response = {{"object", "list"}, {"data", data}};
         res.set_content(response.dump(), "application/json");

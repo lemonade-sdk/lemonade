@@ -507,6 +507,25 @@ json Router::get_all_loaded_models() const {
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
 
+        // Static metadata from the registry entry. Cloud models carry the
+        // provider-reported context window + per-million-token cost (filled in
+        // by register_cloud_model from the X-Lemonade-Cloud-* headers); local
+        // models surface their runtime context via recipe_options instead.
+        try {
+            const ModelInfo reg_info = model_manager_->get_model_info(server->get_model_name());
+            if (reg_info.max_context_window > 0) {
+                model_info["max_context_window"] = reg_info.max_context_window;
+            }
+            if (reg_info.cost_input_per_million >= 0) {
+                model_info["cost_input_per_million"] = reg_info.cost_input_per_million;
+            }
+            if (reg_info.cost_output_per_million >= 0) {
+                model_info["cost_output_per_million"] = reg_info.cost_output_per_million;
+            }
+        } catch (...) {
+            // Registry entry not found (raced with a delete) — skip static metadata.
+        }
+
         // Convert timestamp to milliseconds since epoch
         auto time_point = server->get_last_access_time();
         auto duration = time_point.time_since_epoch();

@@ -21,6 +21,9 @@ export interface ModelInfo {
   components?: string[];
   max_prompt_length?: number;
   max_context_window?: number;
+  // Cloud models only: USD per 1M tokens, when the provider reports it.
+  cost_input_per_million?: number;
+  cost_output_per_million?: number;
   mmproj?: string;
   source?: string;
   model_name?: string;
@@ -293,6 +296,7 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
         // the wrong model id and 404s.
         const checkpointEntries: Array<{ id: string; checkpoint: string }> = [];
         const labelEntries: Array<{ id: string; labels: string[] }> = [];
+        const metaEntries: Array<{ id: string; contextLength?: number; costInput?: number; costOutput?: number }> = [];
         for (const entry of list) {
           if (!entry?.id || typeof entry.id !== 'string') continue;
           const info: ModelInfo = {
@@ -313,6 +317,13 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
           if (Array.isArray(entry.labels)) {
             info.labels = entry.labels.filter((l: unknown): l is string => typeof l === 'string');
           }
+          // Static metadata the provider reported (context window + per-1M cost).
+          const ctx = typeof entry.max_context_window === 'number' ? entry.max_context_window : undefined;
+          const costIn = typeof entry.cost_input_per_million === 'number' ? entry.cost_input_per_million : undefined;
+          const costOut = typeof entry.cost_output_per_million === 'number' ? entry.cost_output_per_million : undefined;
+          if (ctx !== undefined) info.max_context_window = ctx;
+          if (costIn !== undefined) info.cost_input_per_million = costIn;
+          if (costOut !== undefined) info.cost_output_per_million = costOut;
           out[entry.id] = info;
           if (typeof entry.checkpoint === 'string' && entry.checkpoint.length > 0) {
             checkpointEntries.push({ id: entry.id, checkpoint: entry.checkpoint });
@@ -320,9 +331,13 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
           if (info.labels && info.labels.length > 0) {
             labelEntries.push({ id: entry.id, labels: info.labels });
           }
+          if (ctx !== undefined || costIn !== undefined || costOut !== undefined) {
+            metaEntries.push({ id: entry.id, contextLength: ctx, costInput: costIn, costOutput: costOut });
+          }
         }
         serverConfig.setCloudModelCheckpoints(name, checkpointEntries);
         serverConfig.setCloudModelLabels(name, labelEntries);
+        serverConfig.setCloudModelMeta(name, metaEntries);
         return out;
       } catch (err) {
         console.warn(`Cloud discovery failed for provider '${name}':`, err);
@@ -338,24 +353,33 @@ export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
   // Server is the source of truth for built-in + user models.
   // Cloud models live client-side now (each client manages its own
   // credentials per AGENTS.md Invariant #11), so we discover them via
-  // /internal/cloud/discover and merge into the same map. Built-ins win on
-  // key collision — EXCEPT for labels: once a cloud model is loaded it gets
-  // lazily registered server-side and shows up in /models too, but that
-  // built-in entry can carry fewer capability labels than discovery computed
-  // (e.g. just "cloud", dropping "vision"). Letting it clobber would hide the
-  // image-upload button after load, so we union the labels on collision.
+  // /internal/cloud/discover and merge into the same map.
+  //
+  // Collisions: once a cloud model is loaded it gets lazily registered
+  // server-side and also appears in /models, but that bare entry carries
+  // degraded metadata (suggested=false, fewer/no capability labels) compared
+  // to what discovery computed. For a cloud-recipe id, DISCOVERY WINS so the
+  // catalog keeps the model's real suggested flag, vision/tool labels, etc.
+  // (otherwise loaded models drop out of the suggested catalog and the
+  // image-upload button vanishes). For any non-cloud collision the built-in
+  // entry still wins, but we preserve discovery's capability labels.
   const [builtIns, cloud] = await Promise.all([
     fetchBuiltInModelsFromAPI(),
     fetchCloudModelsFromProviders(),
   ]);
-  const merged: ModelsData = { ...cloud };
-  for (const [id, info] of Object.entries(builtIns)) {
+  const merged: ModelsData = { ...builtIns };
+  for (const [id, cloudInfo] of Object.entries(cloud)) {
     const existing = merged[id];
-    if (existing) {
-      const labels = Array.from(new Set([...(existing.labels ?? []), ...(info.labels ?? [])]));
-      merged[id] = { ...info, labels };
+    if (existing && existing.recipe !== 'cloud') {
+      // Genuine clash with a local/built-in model of the same id (shouldn't
+      // happen with provider-namespaced cloud ids, but be safe): keep the
+      // built-in, just union in discovery's capability labels.
+      const labels = Array.from(new Set([...(existing.labels ?? []), ...(cloudInfo.labels ?? [])]));
+      merged[id] = { ...existing, labels };
     } else {
-      merged[id] = info;
+      // No collision, or the existing entry is the bare lazily-registered
+      // cloud copy — discovery wins.
+      merged[id] = cloudInfo;
     }
   }
   return merged;

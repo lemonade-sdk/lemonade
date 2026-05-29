@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string_view>
+#include <utility>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -206,10 +207,16 @@ std::vector<std::string> capability_labels(const json& m) {
                           m.contains("supported_parameters") ||
                           m.contains("modalities") || m.contains("input_modalities");
     if (!has_meta && m.contains("id") && m["id"].is_string()) {
-        const std::string id = m["id"].get<std::string>();
+        // Lowercase for matching: providers without metadata (Together) use
+        // mixed case in ids, e.g. "Qwen/Qwen2.5-VL-72B-Instruct" — a
+        // case-sensitive "-vl" would miss it.
+        std::string id = m["id"].get<std::string>();
+        std::transform(id.begin(), id.end(), id.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (id_contains(id, "gpt-4o") || id_contains(id, "gpt-4.1") ||
             id_contains(id, "gpt-5") || id_contains(id, "-vl") ||
-            id_contains(id, "vision") || id_contains(id, "llava")) {
+            id_contains(id, "vision") || id_contains(id, "llava") ||
+            id_contains(id, "pixtral")) {
             vision = true;
         }
         // Modern OpenAI chat / reasoning models all support tool calling.
@@ -227,6 +234,41 @@ std::vector<std::string> capability_labels(const json& m) {
     if (tools) labels.push_back("tool-calling");
     if (reasoning) labels.push_back("reasoning");
     return labels;
+}
+
+// Normalise a model's pricing to USD per 1,000,000 tokens. Returns
+// {input, output}; a component is -1 when the provider doesn't report it
+// (or reports 0, which is ambiguous across providers and not worth showing).
+//   OpenRouter: pricing.prompt / pricing.completion as USD-per-token strings.
+//   Together:   pricing.input / pricing.output as USD-per-million numbers.
+//   Fireworks:  no pricing field -> {-1, -1}.
+std::pair<double, double> parse_cloud_cost(const json& m) {
+    std::pair<double, double> cost{-1.0, -1.0};
+    if (!m.contains("pricing") || !m["pricing"].is_object()) {
+        return cost;
+    }
+    const auto& p = m["pricing"];
+    auto to_num = [](const json& v) -> double {
+        if (v.is_number()) return v.get<double>();
+        if (v.is_string()) {
+            try { return std::stod(v.get<std::string>()); } catch (...) {}
+        }
+        return -1.0;
+    };
+    if (p.contains("prompt") || p.contains("completion")) {
+        // OpenRouter: per-token -> per-million.
+        const double in = to_num(p.value("prompt", json(nullptr)));
+        const double out = to_num(p.value("completion", json(nullptr)));
+        if (in > 0) cost.first = in * 1e6;
+        if (out > 0) cost.second = out * 1e6;
+    } else if (p.contains("input") || p.contains("output")) {
+        // Together: already per-million.
+        const double in = to_num(p.value("input", json(nullptr)));
+        const double out = to_num(p.value("output", json(nullptr)));
+        if (in > 0) cost.first = in;
+        if (out > 0) cost.second = out;
+    }
+    return cost;
 }
 
 // Build the user-facing model name from a provider's upstream id, applying
@@ -728,6 +770,15 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         for (auto& cap : capability_labels(m)) {
             info.labels.push_back(std::move(cap));
         }
+        // Static metadata the providers publish (all three give context_length;
+        // OpenRouter/Together also give pricing). Surfaced in /models, /health
+        // and the discover response — display only, never affects routing.
+        if (m.contains("context_length") && m["context_length"].is_number_integer()) {
+            info.max_context_window = m["context_length"].get<int64_t>();
+        }
+        const auto cost = parse_cloud_cost(m);
+        info.cost_input_per_million = cost.first;
+        info.cost_output_per_million = cost.second;
         models.push_back(std::move(info));
     }
 

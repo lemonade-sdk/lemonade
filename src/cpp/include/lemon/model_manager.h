@@ -93,6 +93,11 @@ struct ModelInfo {
     // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
     // (e.g., "fireworks"). Empty for non-cloud recipes.
     std::string cloud_provider;
+    // Per-token price in USD per 1,000,000 tokens, when the provider reports it
+    // (OpenRouter, Together). <0 means unknown (e.g. Fireworks doesn't publish
+    // pricing in /v1/models). Used for display only — never affects routing.
+    double cost_input_per_million = -1.0;
+    double cost_output_per_million = -1.0;
 
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
@@ -146,11 +151,21 @@ public:
     // capabilities (e.g. image input) would be lost once it appears in
     // /models. "cloud" is always included; duplicates are dropped.
     //
-    // Idempotent: re-registering an existing entry only updates the upstream
-    // id and merges in any newly-supplied capability labels.
+    // max_context_window and cost_*_per_million are the discovery-time static
+    // metadata the client forwards via X-Lemonade-Cloud-Context-Length /
+    // -Cost-Input / -Cost-Output, for the same reason as the labels: lazy
+    // registration has no provider metadata, so /models and /health would
+    // otherwise report nothing for cloud models. 0 / <0 mean "unknown".
+    //
+    // Idempotent: re-registering an existing entry updates the upstream id,
+    // merges in newly-supplied capability labels, and fills in any
+    // metadata fields that weren't known before.
     void register_cloud_model(const std::string& model_name,
                               const std::string& upstream_id_hint = "",
-                              const std::vector<std::string>& capability_labels = {});
+                              const std::vector<std::string>& capability_labels = {},
+                              int64_t max_context_window = 0,
+                              double cost_input_per_million = -1.0,
+                              double cost_output_per_million = -1.0);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,

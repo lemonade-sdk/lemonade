@@ -2206,7 +2206,10 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
 void ModelManager::register_cloud_model(const std::string& model_name,
                                         const std::string& upstream_id_hint,
-                                        const std::vector<std::string>& capability_labels) {
+                                        const std::vector<std::string>& capability_labels,
+                                        int64_t max_context_window,
+                                        double cost_input_per_million,
+                                        double cost_output_per_million) {
     // "cloud" plus the client-supplied capability labels (vision / tool-calling
     // / reasoning), de-duplicated and order-preserved.
     auto build_labels = [&capability_labels]() {
@@ -2260,6 +2263,16 @@ void ModelManager::register_cloud_model(const std::string& model_name,
                 existing->second.labels.push_back(l);
             }
         }
+        // Fill in metadata that wasn't known at first registration.
+        if (max_context_window > 0 && existing->second.max_context_window <= 0) {
+            existing->second.max_context_window = max_context_window;
+        }
+        if (cost_input_per_million >= 0 && existing->second.cost_input_per_million < 0) {
+            existing->second.cost_input_per_million = cost_input_per_million;
+        }
+        if (cost_output_per_million >= 0 && existing->second.cost_output_per_million < 0) {
+            existing->second.cost_output_per_million = cost_output_per_million;
+        }
         return;
     }
 
@@ -2269,11 +2282,18 @@ void ModelManager::register_cloud_model(const std::string& model_name,
     info.cloud_provider = provider;
     info.checkpoints["main"] = upstream_id;
     info.downloaded = true; // No local artifact — execution is remote.
-    info.suggested = false;
+    // Suggested for the same reason discovery marks these models suggested:
+    // the user explicitly configured this provider. Keeping it false made a
+    // loaded cloud model drop out of the Model Manager's suggested catalog
+    // once it appeared in /models.
+    info.suggested = true;
     info.type = ModelType::LLM;
     info.device = DEVICE_NONE;
     info.source = "cloud";
     info.labels = build_labels();
+    info.max_context_window = max_context_window > 0 ? max_context_window : 0;
+    info.cost_input_per_million = cost_input_per_million;
+    info.cost_output_per_million = cost_output_per_million;
     info.recipe_options = RecipeOptions(info.recipe, json::object());
     models_cache_[model_name] = info;
     LOG(DEBUG, "ModelManager") << "Lazy-registered cloud model: " << model_name
