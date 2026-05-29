@@ -6,7 +6,7 @@ runs:
     - name: Clean up Lemonade-related processes
       shell: bash
       run: |
-        # GitHub runs bash composite steps with error handling enabled.
+        # GitHub composite steps may run with strict error handling.
         # Cleanup must be best-effort and must never fail the real test job.
         set +e
 
@@ -18,8 +18,14 @@ runs:
         TEMP_ROOT="${RUNNER_TEMP:-/tmp}"
         CURRENT_PID="$$"
 
+        # Default: safest behavior for shared self-hosted runners.
+        # Set LEMONADE_CLEANUP_ALLOW_UNSCOPED_TARGETS=1 only on dedicated CI hosts
+        # if you intentionally want to kill unscoped Lemonade-like listeners.
+        ALLOW_UNSCOPED_TARGETS="${LEMONADE_CLEANUP_ALLOW_UNSCOPED_TARGETS:-0}"
+
         echo "Workspace root: $WORKSPACE_ROOT"
         echo "Runner temp:    $TEMP_ROOT"
+        echo "Allow unscoped target kills: $ALLOW_UNSCOPED_TARGETS"
 
         read_pid_cmdline() {
             local pid="$1"
@@ -39,8 +45,10 @@ runs:
                 return 0
             fi
 
+            # Keep this intentionally narrow. Do not match "actions-runner"
+            # broadly because normal job workspaces often live under that path.
             case "$cmdline" in
-                *cleanup-processes-linux*|*actions-runner*|*Runner.Listener*|*Runner.Worker*)
+                *Runner.Listener*|*Runner.Worker*)
                     return 0
                     ;;
             esac
@@ -52,7 +60,25 @@ runs:
             local cmdline="$1"
 
             case "$cmdline" in
-                *lemonade*|*lemond*|*llama*|*stable-diffusion*|*whisper*|*tts*|*server_llm.py*|*server_sd.py*|*server_tts.py*|*server_whisper.py*)
+                *lemonade*|*lemond*)
+                    return 0
+                    ;;
+                *llama-server*|*llama-cli*|*llama-bench*|*llamacpp*)
+                    return 0
+                    ;;
+                *sd-server*|*stable-diffusion*|*server_sd.py*)
+                    return 0
+                    ;;
+                *whisper-server*|*whispercpp*|*server_whisper.py*)
+                    return 0
+                    ;;
+                *flm*|*fastflowlm*|*server_llm.py*)
+                    return 0
+                    ;;
+                *kokoro-server*|*kokoros*|*tts-server*|*server_tts.py*)
+                    return 0
+                    ;;
+                *vllm-server*)
                     return 0
                     ;;
             esac
@@ -82,9 +108,31 @@ runs:
             return 1
         }
 
+        terminate_pid() {
+            local pid="$1"
+            local reason="$2"
+            local cmdline="$3"
+
+            echo "  Terminating PID $pid ($reason): $cmdline"
+            kill "$pid" 2>/dev/null || true
+
+            for _ in 1 2 3 4 5; do
+                if [ ! -d "/proc/$pid" ]; then
+                    return 0
+                fi
+                sleep 0.3
+            done
+
+            if [ -d "/proc/$pid" ]; then
+                echo "  Force-killing PID $pid ($reason): $cmdline"
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        }
+
         kill_pid_if_safe() {
             local pid="$1"
             local reason="$2"
+            local policy="${3:-require_scope}"
             local cmdline
 
             if [ -z "$pid" ] || [ ! -d "/proc/$pid" ]; then
@@ -101,12 +149,29 @@ runs:
                 return 0
             fi
 
-            if is_target_like_process "$cmdline" || is_scoped_to_this_job "$pid" "$cmdline"; then
-                echo "  Killing PID $pid ($reason): $cmdline"
-                kill -9 "$pid" 2>/dev/null || true
-            else
-                echo "  Skipping unscoped non-target PID $pid ($reason): $cmdline"
-            fi
+            case "$policy" in
+                require_scope)
+                    if is_scoped_to_this_job "$pid" "$cmdline"; then
+                        terminate_pid "$pid" "$reason" "$cmdline"
+                    else
+                        echo "  Skipping unscoped PID $pid ($reason): $cmdline"
+                    fi
+                    ;;
+
+                require_scope_or_allowed_target)
+                    if is_scoped_to_this_job "$pid" "$cmdline"; then
+                        terminate_pid "$pid" "$reason" "$cmdline"
+                    elif is_target_like_process "$cmdline" && [ "$ALLOW_UNSCOPED_TARGETS" = "1" ]; then
+                        terminate_pid "$pid" "$reason; unscoped target allowed" "$cmdline"
+                    else
+                        echo "  Skipping unscoped PID $pid ($reason): $cmdline"
+                    fi
+                    ;;
+
+                *)
+                    echo "  Unknown cleanup policy '$policy'; skipping PID $pid"
+                    ;;
+            esac
         }
 
         kill_exact_name() {
@@ -114,7 +179,7 @@ runs:
             local pids
 
             echo ""
-            echo "Killing exact process name: $name"
+            echo "Checking exact process name: $name"
 
             pids="$(pgrep -x "$name" 2>/dev/null || true)"
             if [ -z "$pids" ]; then
@@ -123,7 +188,7 @@ runs:
             fi
 
             for pid in $pids; do
-                kill_pid_if_safe "$pid" "exact name $name"
+                kill_pid_if_safe "$pid" "exact name $name" "require_scope"
             done
         }
 
@@ -161,10 +226,10 @@ runs:
             fi
 
             for pid in $pids; do
-                kill_pid_if_safe "$pid" "TCP port $port listener"
+                kill_pid_if_safe "$pid" "TCP port $port listener" "require_scope_or_allowed_target"
             done
 
-            sleep 0.3
+            sleep 0.5
 
             if command -v ss >/dev/null 2>&1; then
                 if ss -ltnp "sport = :$port" 2>/dev/null | grep -q ":$port"; then
@@ -205,7 +270,7 @@ runs:
                 fi
 
                 if is_target_like_process "$cmdline" && is_scoped_to_this_job "$pid" "$cmdline"; then
-                    kill_pid_if_safe "$pid" "workspace-scoped target"
+                    kill_pid_if_safe "$pid" "workspace-scoped target" "require_scope"
                     killed_any="true"
                 fi
             done
@@ -223,17 +288,19 @@ runs:
             local lines
 
             if command -v pgrep >/dev/null 2>&1; then
-                lines="$(pgrep -af "lemond|lemonade|llama|stable-diffusion|whisper|tts|server_llm.py|server_sd.py|server_tts.py|server_whisper.py" 2>/dev/null \
-                    | grep -v "cleanup-processes-linux" \
-                    | grep -v "Runner.Worker" \
-                    | grep -v "Runner.Listener" || true)"
+                lines="$(
+                    pgrep -af "lemond|lemonade|llama-server|llama-cli|llama-bench|llamacpp|sd-server|stable-diffusion|whisper-server|whispercpp|flm|fastflowlm|kokoro-server|kokoros|tts-server|vllm-server|server_llm.py|server_sd.py|server_tts.py|server_whisper.py" 2>/dev/null \
+                        | grep -v "cleanup-processes-linux" \
+                        | grep -v "Runner.Worker" \
+                        | grep -v "Runner.Listener" || true
+                )"
                 if [ -n "$lines" ]; then
                     echo "$lines"
                     found="true"
                 fi
             else
                 ps aux \
-                    | grep -E "lemond|lemonade|llama|stable-diffusion|whisper|tts|server_llm.py|server_sd.py|server_tts.py|server_whisper.py" \
+                    | grep -E "lemond|lemonade|llama-server|llama-cli|llama-bench|llamacpp|sd-server|stable-diffusion|whisper-server|whispercpp|flm|fastflowlm|kokoro-server|kokoros|tts-server|vllm-server|server_llm.py|server_sd.py|server_tts.py|server_whisper.py" \
                     | grep -v grep \
                     | grep -v "cleanup-processes-linux" || true
             fi
@@ -255,9 +322,14 @@ runs:
             llama-server \
             llama-cli \
             llama-bench \
+            sd-server \
             stable-diffusion \
             whisper-server \
-            tts-server; do
+            flm \
+            kokoro-server \
+            kokoros \
+            tts-server \
+            vllm-server; do
             kill_exact_name "$proc_name"
         done
 
