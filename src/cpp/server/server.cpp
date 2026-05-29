@@ -1352,6 +1352,32 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
+// Parse a comma-separated X-Lemonade-Cloud-Labels header (e.g.
+// "vision,tool-calling") into a trimmed, non-empty label list. The client
+// sends the capability labels it learned at discovery so register_cloud_model
+// can preserve them on the server entry (see register_cloud_model).
+static std::vector<std::string> parse_cloud_labels_header(const std::string& raw) {
+    std::vector<std::string> out;
+    std::string cur;
+    auto flush = [&]() {
+        const size_t b = cur.find_first_not_of(" \t");
+        if (b != std::string::npos) {
+            const size_t e = cur.find_last_not_of(" \t");
+            out.push_back(cur.substr(b, e - b + 1));
+        }
+        cur.clear();
+    };
+    for (const char c : raw) {
+        if (c == ',') {
+            flush();
+        } else {
+            cur.push_back(c);
+        }
+    }
+    flush();
+    return out;
+}
+
 bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json) {
     // Only act on requests targeting a cloud-recipe model. We do NOT inject
     // for local backends because the body is forwarded verbatim to the
@@ -1370,14 +1396,16 @@ bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& req
     // Cloud models are discovered client-side now; the server cache won't
     // have them unless the client previously sent a request for the same
     // name. If the request has cloud headers and the model name fits the
-    // "<provider>/<upstream_id>" convention, lazy-register it so Router
+    // "<provider>.<upstream_id>" convention, lazy-register it so Router
     // can construct CloudServer. The upstream id hint comes from the
     // X-Lemonade-Cloud-Upstream-Model header — required for providers
     // whose public id differs from what their API expects (Fireworks).
     // register_cloud_model is idempotent and a no-op for names without a
-    // slash, so this is safe to call always.
+    // dot, so this is safe to call always.
     if (has_cloud_headers) {
-        model_manager_->register_cloud_model(model_name, upstream_id);
+        model_manager_->register_cloud_model(
+            model_name, upstream_id,
+            parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")));
     }
 
     if (!model_manager_->model_exists(model_name)) {
@@ -3167,11 +3195,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // request body); /load uses "model_name" and doesn't carry a creds
         // payload, so we register directly off the headers when present.
         // Harmless when the headers are absent or the model name lacks a
-        // slash — register_cloud_model is a no-op in those cases.
+        // dot — register_cloud_model is a no-op in those cases.
         if (req.has_header("X-Lemonade-Cloud-Key") || req.has_header("X-Lemonade-Cloud-Base-Url")) {
             model_manager_->register_cloud_model(
                 model_name,
-                req.get_header_value("X-Lemonade-Cloud-Upstream-Model"));
+                req.get_header_value("X-Lemonade-Cloud-Upstream-Model"),
+                parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")));
         }
 
         // Get model info

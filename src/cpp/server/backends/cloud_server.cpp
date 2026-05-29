@@ -119,11 +119,114 @@ bool is_chat_model(const json& m) {
         }
     }
 
+    // Together AI doesn't use any of the fields above; it tags each model
+    // with a "type" (chat / language / code / image / embedding / rerank /
+    // moderation / audio). Trust it: text-generating types are chat/completion
+    // capable, everything else is not.
+    if (m.contains("type") && m["type"].is_string()) {
+        const std::string t = m["type"].get<std::string>();
+        if (t == "chat" || t == "language" || t == "code") return true;
+        if (t == "image" || t == "embedding" || t == "rerank" ||
+            t == "moderation" || t == "audio") return false;
+    }
+
     return infer_type(m["id"].get<std::string>()) == ModelType::LLM;
 }
 
 std::vector<std::string> chat_labels() {
     return {"cloud"};
+}
+
+// Detect capability labels (vision / tool-calling / reasoning) from a
+// /v1/models entry and normalise the divergent fields providers use into
+// lemonade's shared label vocabulary, so cloud models gate inputs exactly
+// like local ones (the UI offers image upload iff "vision" is present, etc.).
+//
+// Strategy mirrors is_chat_model: trust structured provider metadata first,
+// fall back to id patterns only for providers that publish none (OpenAI).
+// When a signal is absent the capability defaults OFF — under-offering an
+// input is safer than letting the client attach an image the provider rejects
+// (the per-model override exists for the cases auto-detection can't cover).
+//
+// Recognised signals:
+//   vision — supports_image_input (Fireworks); supports_vision/vision bools;
+//            architecture.input_modalities ⊇ "image" (OpenRouter);
+//            modalities/input_modalities ⊇ "image".
+//   tools  — supports_tools (Fireworks); supported_parameters ⊇ "tools"
+//            (OpenRouter); capabilities ⊇ "tools"/"function_calling";
+//            function_calling/supports_function_calling bools.
+//   reason — supported_parameters ⊇ "reasoning"; reasoning/supports_reasoning.
+std::vector<std::string> capability_labels(const json& m) {
+    std::vector<std::string> labels;
+    if (!m.is_object()) return labels;
+
+    auto flag = [&](const char* key) -> bool {
+        return m.contains(key) && m[key].is_boolean() && m[key].get<bool>();
+    };
+    auto array_has = [](const json& arr, const char* needle) -> bool {
+        if (!arr.is_array()) return false;
+        for (const auto& e : arr) {
+            if (e.is_string() && e.get<std::string>() == needle) return true;
+        }
+        return false;
+    };
+
+    // ---- vision ----
+    bool vision = flag("supports_image_input") || flag("supports_vision") ||
+                  flag("vision") ||
+                  array_has(m.value("modalities", json::array()), "image") ||
+                  array_has(m.value("input_modalities", json::array()), "image");
+    if (!vision && m.contains("architecture") && m["architecture"].is_object()) {
+        vision = array_has(m["architecture"].value("input_modalities", json::array()),
+                           "image");
+    }
+
+    // ---- tool-calling ----
+    const json params = m.value("supported_parameters", json::array());
+    const json caps = m.value("capabilities", json::array());
+    bool tools = flag("supports_tools") || flag("function_calling") ||
+                 flag("supports_function_calling") ||
+                 array_has(params, "tools") || array_has(params, "tool_choice") ||
+                 array_has(caps, "tools") || array_has(caps, "function_calling") ||
+                 array_has(caps, "tool_calling");
+
+    // ---- reasoning ----
+    bool reasoning = flag("reasoning") || flag("supports_reasoning") ||
+                     array_has(params, "reasoning") ||
+                     array_has(params, "include_reasoning");
+
+    // ---- id-pattern fallback for metadata-barren providers (OpenAI) ----
+    // Only consulted when the entry carries no structured capability hints at
+    // all, so an authoritative "false" from a provider is never overridden.
+    const bool has_meta = m.contains("supports_image_input") ||
+                          m.contains("supports_vision") || m.contains("vision") ||
+                          m.contains("supports_tools") ||
+                          m.contains("function_calling") ||
+                          m.contains("architecture") || m.contains("capabilities") ||
+                          m.contains("supported_parameters") ||
+                          m.contains("modalities") || m.contains("input_modalities");
+    if (!has_meta && m.contains("id") && m["id"].is_string()) {
+        const std::string id = m["id"].get<std::string>();
+        if (id_contains(id, "gpt-4o") || id_contains(id, "gpt-4.1") ||
+            id_contains(id, "gpt-5") || id_contains(id, "-vl") ||
+            id_contains(id, "vision") || id_contains(id, "llava")) {
+            vision = true;
+        }
+        // Modern OpenAI chat / reasoning models all support tool calling.
+        if (id_contains(id, "gpt-4") || id_contains(id, "gpt-5") ||
+            id_contains(id, "o1") || id_contains(id, "o3") || id_contains(id, "o4")) {
+            tools = true;
+        }
+        if (id_contains(id, "o1") || id_contains(id, "o3") || id_contains(id, "o4") ||
+            id_contains(id, "reason") || id_contains(id, "-thinking")) {
+            reasoning = true;
+        }
+    }
+
+    if (vision) labels.push_back("vision");
+    if (tools) labels.push_back("tool-calling");
+    if (reasoning) labels.push_back("reasoning");
+    return labels;
 }
 
 // Build the user-facing model name from a provider's upstream id, applying
@@ -141,15 +244,19 @@ std::vector<std::string> chat_labels() {
 //      party models ("fireworks/...") would render as
 //      "fireworks/fireworks/...".
 //
+// The provider namespace is joined with a "." separator (matching the
+// "user."/"extra." namespacing used elsewhere); the cleaned upstream id keeps
+// its own native "/" separators.
+//
 // Examples:
 //   provider="fireworks", id="accounts/fireworks/models/deepseek-v4-pro"
-//     -> "fireworks/deepseek-v4-pro"
+//     -> "fireworks.deepseek-v4-pro"
 //   provider="fireworks", id="accounts/trilogy/models/cogsci-..."
-//     -> "fireworks/trilogy/cogsci-..."
+//     -> "fireworks.trilogy/cogsci-..."
 //   provider="openai",    id="gpt-4o"
-//     -> "openai/gpt-4o"
+//     -> "openai.gpt-4o"
 //   provider="together",  id="meta-llama/Llama-3.3-70B-Instruct-Turbo"
-//     -> "together/meta-llama/Llama-3.3-70B-Instruct-Turbo"
+//     -> "together.meta-llama/Llama-3.3-70B-Instruct-Turbo"
 std::string build_public_name(const std::string& provider, const std::string& upstream_id) {
     std::string cleaned = upstream_id;
 
@@ -174,7 +281,7 @@ std::string build_public_name(const std::string& provider, const std::string& up
         cleaned = cleaned.substr(lead_dedup.size());
     }
 
-    return provider + "/" + cleaned;
+    return provider + "." + cleaned;
 }
 
 } // namespace
@@ -570,13 +677,22 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    if (!body.contains("data") || !body["data"].is_array()) {
+    // Provider responses come in two shapes: the OpenAI envelope
+    // {"object":"list","data":[...]} (OpenAI, Fireworks, OpenRouter) and a
+    // bare top-level array [...] (Together AI). Accept both.
+    const json* model_array = nullptr;
+    if (body.is_array()) {
+        model_array = &body;
+    } else if (body.contains("data") && body["data"].is_array()) {
+        model_array = &body["data"];
+    } else {
         LOG(WARNING, "Cloud") << "/v1/models response from provider '" << provider
-                              << "' missing 'data' array" << std::endl;
+                              << "' is neither a JSON array nor an object with a 'data' array"
+                              << std::endl;
         return models;
     }
 
-    for (const auto& m : body["data"]) {
+    for (const auto& m : *model_array) {
         // Chat-only by design. CloudServer implements chat_completion /
         // completion against OpenAI v1; embeddings, audio, reranking, and
         // image use diverging wire formats across providers and belong in
@@ -591,7 +707,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         std::string upstream_id = m["id"].get<std::string>();
 
         ModelInfo info;
-        // Public name = "<provider>/<cleaned_upstream_id>". The cleanup
+        // Public name = "<provider>.<cleaned_upstream_id>". The cleanup
         // rules in build_public_name() are content-pattern based and apply
         // universally to any provider — see the function comment for the
         // examples and rationale.
@@ -609,6 +725,9 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         info.type = ModelType::LLM;
         info.device = DEVICE_NONE;
         info.labels = chat_labels();
+        for (auto& cap : capability_labels(m)) {
+            info.labels.push_back(std::move(cap));
+        }
         models.push_back(std::move(info));
     }
 

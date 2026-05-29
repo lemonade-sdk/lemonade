@@ -138,9 +138,19 @@ public:
     // "accounts/fireworks/models/kimi-k2p5"). Falls back to the slash-
     // parsed half if empty.
     //
-    // Idempotent: re-registering an existing entry is a no-op.
+    // capability_labels carries the discovery-time capability tags (e.g.
+    // "vision", "tool-calling", "reasoning") that the client learned from the
+    // provider's /v1/models response and forwards via the X-Lemonade-Cloud-
+    // Labels header. Lazy registration has no access to provider metadata, so
+    // without this the entry would only carry "cloud" and the model's real
+    // capabilities (e.g. image input) would be lost once it appears in
+    // /models. "cloud" is always included; duplicates are dropped.
+    //
+    // Idempotent: re-registering an existing entry only updates the upstream
+    // id and merges in any newly-supplied capability labels.
     void register_cloud_model(const std::string& model_name,
-                              const std::string& upstream_id_hint = "");
+                              const std::string& upstream_id_hint = "",
+                              const std::vector<std::string>& capability_labels = {});
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,

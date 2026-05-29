@@ -194,6 +194,7 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
               <button
                 type="button"
                 className="settings-reset-button"
+                style={{ fontSize: '12px', padding: '4px 10px' }}
                 onClick={() => setReplaceKey(true)}
               >
                 Replace
@@ -213,6 +214,7 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
               <button
                 type="button"
                 className="settings-reset-button"
+                style={{ fontSize: '12px', padding: '4px 10px' }}
                 onClick={() => setRevealKey((v) => !v)}
               >
                 {revealKey ? 'Hide' : 'Show'}
@@ -239,8 +241,8 @@ const CloudProviderModal: React.FC<CloudProviderModalProps> = ({
         <button className="settings-reset-button" onClick={onClose} disabled={isSaving}>
           Cancel
         </button>
-        <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
-          {isSaving ? 'Saving…' : mode === 'add' ? 'Add provider' : 'Save changes'}
+        <button className="settings-save-button" onClick={handleSave} disabled={isSaving}>
+          {isSaving ? 'Saving…' : mode === 'add' ? 'Add Provider' : 'Save Changes'}
         </button>
       </div>
     </>

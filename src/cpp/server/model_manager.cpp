@@ -2205,21 +2205,36 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 }
 
 void ModelManager::register_cloud_model(const std::string& model_name,
-                                        const std::string& upstream_id_hint) {
-    // Convention: "<provider>/<upstream_id>". Anything without a slash, or
-    // with an empty provider/upstream half, is rejected — the chat handler
-    // will surface a model_not_found error to the client.
-    const auto slash = model_name.find('/');
-    if (slash == std::string::npos || slash == 0 || slash + 1 >= model_name.size()) {
+                                        const std::string& upstream_id_hint,
+                                        const std::vector<std::string>& capability_labels) {
+    // "cloud" plus the client-supplied capability labels (vision / tool-calling
+    // / reasoning), de-duplicated and order-preserved.
+    auto build_labels = [&capability_labels]() {
+        std::vector<std::string> out = {"cloud"};
+        for (const auto& l : capability_labels) {
+            if (!l.empty() &&
+                std::find(out.begin(), out.end(), l) == out.end()) {
+                out.push_back(l);
+            }
+        }
+        return out;
+    };
+    // Convention: "<provider>.<upstream_id>". Provider names contain no dots
+    // (validated client-side as [a-z0-9_-]+), so the first "." is always the
+    // namespace separator. Anything without a dot, or with an empty
+    // provider/upstream half, is rejected — the chat handler will surface a
+    // model_not_found error to the client.
+    const auto dot = model_name.find('.');
+    if (dot == std::string::npos || dot == 0 || dot + 1 >= model_name.size()) {
         return;
     }
-    const std::string provider = model_name.substr(0, slash);
+    const std::string provider = model_name.substr(0, dot);
     // Prefer the client-supplied raw upstream id; some providers (Fireworks,
     // OpenRouter) clean their public ids in a way that's not reversible
-    // server-side. Fall back to the slash-parsed half for providers whose
+    // server-side. Fall back to the dot-parsed half for providers whose
     // public id IS the upstream id (e.g. OpenAI).
     const std::string upstream_id = upstream_id_hint.empty()
-        ? model_name.substr(slash + 1)
+        ? model_name.substr(dot + 1)
         : upstream_id_hint;
 
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
@@ -2234,6 +2249,17 @@ void ModelManager::register_cloud_model(const std::string& model_name,
             LOG(DEBUG, "ModelManager") << "Updated upstream id for cloud model: "
                                         << model_name << " -> " << upstream_id_hint << std::endl;
         }
+        // Merge in any newly-supplied capability labels (e.g. a bare entry
+        // registered by an older request, now upgraded once the client sends
+        // X-Lemonade-Cloud-Labels). Never drop labels already present.
+        for (const auto& l : capability_labels) {
+            if (!l.empty() &&
+                std::find(existing->second.labels.begin(),
+                          existing->second.labels.end(), l) ==
+                    existing->second.labels.end()) {
+                existing->second.labels.push_back(l);
+            }
+        }
         return;
     }
 
@@ -2247,7 +2273,7 @@ void ModelManager::register_cloud_model(const std::string& model_name,
     info.type = ModelType::LLM;
     info.device = DEVICE_NONE;
     info.source = "cloud";
-    info.labels = {"cloud"};
+    info.labels = build_labels();
     info.recipe_options = RecipeOptions(info.recipe, json::object());
     models_cache_[model_name] = info;
     LOG(DEBUG, "ModelManager") << "Lazy-registered cloud model: " << model_name

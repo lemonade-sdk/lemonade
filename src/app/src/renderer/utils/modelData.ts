@@ -292,6 +292,7 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
         // round-trip server-side; without this the upstream API call uses
         // the wrong model id and 404s.
         const checkpointEntries: Array<{ id: string; checkpoint: string }> = [];
+        const labelEntries: Array<{ id: string; labels: string[] }> = [];
         for (const entry of list) {
           if (!entry?.id || typeof entry.id !== 'string') continue;
           const info: ModelInfo = {
@@ -316,8 +317,12 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
           if (typeof entry.checkpoint === 'string' && entry.checkpoint.length > 0) {
             checkpointEntries.push({ id: entry.id, checkpoint: entry.checkpoint });
           }
+          if (info.labels && info.labels.length > 0) {
+            labelEntries.push({ id: entry.id, labels: info.labels });
+          }
         }
         serverConfig.setCloudModelCheckpoints(name, checkpointEntries);
+        serverConfig.setCloudModelLabels(name, labelEntries);
         return out;
       } catch (err) {
         console.warn(`Cloud discovery failed for provider '${name}':`, err);
@@ -333,11 +338,25 @@ export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
   // Server is the source of truth for built-in + user models.
   // Cloud models live client-side now (each client manages its own
   // credentials per AGENTS.md Invariant #11), so we discover them via
-  // /internal/cloud/discover and merge into the same map. Built-ins
-  // win on key collision — the merge order matters.
+  // /internal/cloud/discover and merge into the same map. Built-ins win on
+  // key collision — EXCEPT for labels: once a cloud model is loaded it gets
+  // lazily registered server-side and shows up in /models too, but that
+  // built-in entry can carry fewer capability labels than discovery computed
+  // (e.g. just "cloud", dropping "vision"). Letting it clobber would hide the
+  // image-upload button after load, so we union the labels on collision.
   const [builtIns, cloud] = await Promise.all([
     fetchBuiltInModelsFromAPI(),
     fetchCloudModelsFromProviders(),
   ]);
-  return { ...cloud, ...builtIns };
+  const merged: ModelsData = { ...cloud };
+  for (const [id, info] of Object.entries(builtIns)) {
+    const existing = merged[id];
+    if (existing) {
+      const labels = Array.from(new Set([...(existing.labels ?? []), ...(info.labels ?? [])]));
+      merged[id] = { ...info, labels };
+    } else {
+      merged[id] = info;
+    }
+  }
+  return merged;
 };

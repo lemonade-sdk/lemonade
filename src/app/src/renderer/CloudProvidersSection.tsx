@@ -146,6 +146,8 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
     const apiKey = result.apiKey ?? existing?.apiKey ?? '';
     merged.cloudProviders[result.name] = { baseUrl: result.baseUrl, apiKey };
     await window.api.saveSettings(merged);
+    // No cache to refresh: serverConfig.fetch() reads cloud creds straight
+    // from settings per request, so the next request picks this up.
 
     // Probe the just-saved provider so the user sees an immediate count
     // (or learns the creds are wrong before they leave the panel).

@@ -626,6 +626,75 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
+    def test_012d_cloud_load_requires_creds_headers(self):
+        """Regression: a cloud-recipe model is only loadable when the client
+        sends the per-request cloud credential headers.
+
+        Cloud models are discovered client-side, so the server has no record
+        of them until a request carrying X-Lemonade-Cloud-* headers lazy-
+        registers one. Without the headers /load must return a clean 404
+        (never a silent failure); with them, /load succeeds (cloud "load" is
+        local bookkeeping — no upstream network call, so a dummy base URL is
+        fine). Guards the bug where the client dropped the headers and users
+        saw an opaque "Model not found".
+        """
+        # Unique, never-registered names so this test is independent of any
+        # real provider configuration and of test ordering.
+        unconfigured = "testcloud.regression-unconfigured"
+        configured = "testcloud.regression-configured"
+
+        # 1) Without creds headers -> 404 Model not found.
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": unconfigured},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            404,
+            "Loading a cloud model without X-Lemonade-Cloud-* headers must 404",
+        )
+
+        # 2) With creds headers -> 200 (base URL is never contacted at load
+        # time, so a dummy endpoint is fine).
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": configured},
+            headers={
+                "X-Lemonade-Cloud-Key": "dummy-key",
+                "X-Lemonade-Cloud-Base-Url": "http://127.0.0.1:1/v1",
+                "X-Lemonade-Cloud-Upstream-Model": "vendor/regression-configured",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            resp.status_code,
+            200,
+            f"Cloud /load WITH creds headers should succeed; got "
+            f"{resp.status_code}: {resp.text}",
+        )
+
+        # It should now be registered + loaded under its public name.
+        health = requests.get(
+            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        loaded_names = [
+            m["model_name"] for m in health.get("all_models_loaded", [])
+        ]
+        self.assertIn(
+            configured,
+            loaded_names,
+            "Cloud model should be loaded after a /load with creds headers",
+        )
+
+        # Cleanup so the fake model doesn't leak into later tests.
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": configured},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        print("[OK] Cloud /load enforces creds headers (404 without, 200 with)")
+
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
         # First load a model

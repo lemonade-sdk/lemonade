@@ -267,6 +267,11 @@ function buildModelList(
     const members: { label: string; name: string; info: ModelInfo }[] = [];
     for (const m of models) {
       if (consumed.has(m.name)) continue;
+      // Cloud models are grouped under their provider and rendered with the
+      // provider prefix stripped; keep them as flat individual rows rather
+      // than folding them into local model families (whose labels assume the
+      // bare/canonical-prefixed local naming, not "<provider>.<model>").
+      if (m.info.recipe === 'cloud') continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
       const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
@@ -701,14 +706,15 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
-      // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks Cloud")
-      // are synthesised in recipeBucketKey and won't be in
-      // RECIPE_DISPLAY_NAMES, so format them here.
+      // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks") are
+      // synthesised in recipeBucketKey and won't be in RECIPE_DISPLAY_NAMES,
+      // so format them here. The bucket is labelled with the provider's
+      // registered name (with camel/acronym casing restored) — no " Cloud"
+      // suffix, matching how the model names themselves are prefixed.
       if (key.endsWith('-cloud') && key !== 'cloud') {
         const provider = key.slice(0, -'-cloud'.length);
-        const display = PROVIDER_DISPLAY_NAMES[provider]
+        return PROVIDER_DISPLAY_NAMES[provider]
           ?? `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
-        return `${display} Cloud`;
       }
       return RECIPE_DISPLAY_NAMES[key] || key;
     } else {
@@ -1535,7 +1541,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
       nameTooltip = `Omni Model with ${components.length} component models:\n${lines.join('\n')}`;
-    } else if (displayName || getModelDisplayName(modelName) !== modelName) {
+    } else if (displayName || getModelDisplayName(modelName, modelInfo) !== modelName) {
       nameTooltip = modelName;
     }
 
@@ -1549,7 +1555,7 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName))}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName, modelInfo))}</span>
             {modelInfo.recipe !== 'cloud' && (
               <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
             )}
