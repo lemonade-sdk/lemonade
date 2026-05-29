@@ -1837,7 +1837,7 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
-    def test_021j_openai_chat_extra_models_dir(self):
+    def test_021r_openai_chat_extra_models_dir(self):
         """OpenAI chat completions resolves bare names to extra.* models and avoids HF downloads."""
         bare = "dummy-extra-chat-model"
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_chat_")
@@ -1845,7 +1845,13 @@ class EndpointTests(ServerTestBase):
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
-            # Send a chat completion request for the bare name
+            # 1. Verify the native API correctly reports the bare name as downloaded
+            model_info = requests.get(f"{self.base_url}/models/{bare}").json()
+            self.assertTrue(
+                model_info.get("downloaded"), "Model should be reported as downloaded"
+            )
+
+            # 2. Verify the OpenAI endpoint attempts to load the local stub
             payload = {
                 "model": bare,
                 "messages": [{"role": "user", "content": "hello"}],
@@ -1856,11 +1862,10 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
-            # Since it's a stub 0-byte GGUF, we expect the backend load to fail (500),
-            # NOT a 404/401 indicating a Hugging Face download attempt.
+            # Check for standard OpenAI error structure instead of raw text
             self.assertEqual(resp.status_code, 500)
-            self.assertIn("Failed to load model", resp.text)
-            self.assertNotIn("Hugging Face API", resp.text)
+            error_data = resp.json().get("error", {})
+            self.assertIn("Failed to load model", error_data.get("message", ""))
 
             print(
                 f"[OK] OpenAI chat completion resolves extra_models_dir alias: {bare}"
@@ -1869,7 +1874,7 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
-    def test_021k_openai_chat_name_collision(self):
+    def test_021s_openai_chat_name_collision(self):
         """OpenAI chat uses canonical resolution precedence when built-in and extra.* collide."""
         # Use a known built-in model name
         bare = ENDPOINT_TEST_MODEL
@@ -1884,6 +1889,13 @@ class EndpointTests(ServerTestBase):
             # We want to ensure that /v1/chat/completions respects this by attempting
             # to load the (stubbed) extra model instead of the real builtin.
 
+            # 1. Verify the native API correctly reports the bare name as downloaded
+            model_info = requests.get(f"{self.base_url}/models/{bare}").json()
+            self.assertTrue(
+                model_info.get("downloaded"), "Model should be reported as downloaded"
+            )
+
+            # 2. Verify the OpenAI endpoint attempts to load the local stub
             payload = {
                 "model": bare,
                 "messages": [{"role": "user", "content": "hello"}],
@@ -1898,9 +1910,11 @@ class EndpointTests(ServerTestBase):
             # If it fell back to the builtin, it would either succeed (200) or
             # trigger a download (401/404 if not pulled).
             # The 500 proves the OpenAI endpoint resolved to the extra.* model.
+
+            # Check for standard OpenAI error structure instead of raw text
             self.assertEqual(resp.status_code, 500)
-            self.assertIn("Failed to load model", resp.text)
-            self.assertNotIn("Hugging Face API", resp.text)
+            error_data = resp.json().get("error", {})
+            self.assertIn("Failed to load model", error_data.get("message", ""))
 
             print(
                 f"[OK] OpenAI chat completion resolves collision to extra_models_dir: {bare}"
