@@ -323,23 +323,24 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
 
     json snapshot = router.get_metrics_snapshot();
     const json loaded_models = snapshot.value("loaded_models", json::array());
+    const json model_metrics = snapshot.value("model_metrics", json::array());
 
     metrics.describe("lemonade_loaded_models", "Number of models currently loaded in Lemonade.", "gauge");
     metrics.sample("lemonade_loaded_models", {}, static_cast<double>(loaded_models.size()));
 
-    metrics.describe("lemonade_model_info", "Metadata for each loaded Lemonade model.", "gauge");
-    metrics.describe("lemonade_model_input_tokens", "Latest input token count reported by a loaded model.", "gauge");
-    metrics.describe("lemonade_model_output_tokens", "Latest output token count reported by a loaded model.", "gauge");
-    metrics.describe("lemonade_model_prompt_tokens", "Latest prompt token count reported by a loaded model.", "gauge");
-    metrics.describe("lemonade_model_time_to_first_token_seconds", "Latest time to first token reported by a loaded model.", "gauge");
-    metrics.describe("lemonade_model_tokens_per_second", "Latest generation throughput reported by a loaded model.", "gauge");
-    metrics.describe("lemonade_model_requests_total", "Cumulative inference requests observed for a loaded model.", "counter");
-    metrics.describe("lemonade_model_input_tokens_total", "Cumulative input tokens observed for a loaded model.", "counter");
-    metrics.describe("lemonade_model_output_tokens_total", "Cumulative output tokens observed for a loaded model.", "counter");
-    metrics.describe("lemonade_model_prompt_tokens_total", "Cumulative prompt tokens observed for a loaded model.", "counter");
+    metrics.describe("lemonade_model_info", "Metadata for each Lemonade model observed by this process.", "gauge");
+    metrics.describe("lemonade_model_loaded", "Whether this model is currently loaded in Lemonade.", "gauge");
+    metrics.describe("lemonade_model_input_tokens", "Latest input token count reported by a model.", "gauge");
+    metrics.describe("lemonade_model_output_tokens", "Latest output token count reported by a model.", "gauge");
+    metrics.describe("lemonade_model_prompt_tokens", "Latest prompt token count reported by a model.", "gauge");
+    metrics.describe("lemonade_model_time_to_first_token_seconds", "Latest time to first token reported by a model.", "gauge");
+    metrics.describe("lemonade_model_tokens_per_second", "Latest generation throughput reported by a model.", "gauge");
+    metrics.describe("lemonade_model_requests_total", "Cumulative inference requests observed for a model.", "counter");
+    metrics.describe("lemonade_model_input_tokens_total", "Cumulative input tokens observed for a model.", "counter");
+    metrics.describe("lemonade_model_output_tokens_total", "Cumulative output tokens observed for a model.", "counter");
+    metrics.describe("lemonade_model_prompt_tokens_total", "Cumulative prompt tokens observed for a model.", "counter");
 
-    std::set<std::string> described_backend_metrics;
-    for (const auto& model : loaded_models) {
+    for (const auto& model : model_metrics) {
         std::map<std::string, std::string> labels = {
             {"model_name", model.value("model_name", "")},
             {"checkpoint", model.value("checkpoint", "")},
@@ -349,6 +350,7 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
         };
 
         metrics.sample("lemonade_model_info", labels, 1.0);
+        metrics.sample("lemonade_model_loaded", labels, model.value("loaded", false) ? 1.0 : 0.0);
 
         const json telemetry = model.value("telemetry", json::object());
         double metric_value = 0.0;
@@ -376,7 +378,17 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
                             telemetry.value("output_tokens_total", 0ULL));
         metrics.sample_uint("lemonade_model_prompt_tokens_total", labels,
                             telemetry.value("prompt_tokens_total", 0ULL));
+    }
 
+    std::set<std::string> described_backend_metrics;
+    for (const auto& model : loaded_models) {
+        std::map<std::string, std::string> labels = {
+            {"model_name", model.value("model_name", "")},
+            {"checkpoint", model.value("checkpoint", "")},
+            {"type", model.value("type", "")},
+            {"device", model.value("device", "")},
+            {"recipe", model.value("recipe", "")}
+        };
         append_llamacpp_backend_metrics(metrics, model, labels, described_backend_metrics);
     }
 

@@ -151,47 +151,21 @@ public:
 
     // Forward streaming requests to the wrapped server (public for Router access)
     // Virtual so backends can transform request (e.g., FLM needs checkpoint in model field)
+    using TelemetryCallback = std::function<void(int input_tokens,
+                                                int output_tokens,
+                                                double time_to_first_token,
+                                                double tokens_per_second)>;
+
     virtual void forward_streaming_request(const std::string& endpoint,
                                            const std::string& request_body,
                                            httplib::DataSink& sink,
                                            bool sse = true,
-                                           long timeout_seconds = 0);
+                                           long timeout_seconds = 0,
+                                           TelemetryCallback telemetry_callback = nullptr);
 
     // Get the server address
     std::string get_address() const {
         return get_base_url() + "/v1";
-    }
-
-    // Get telemetry data
-    Telemetry get_telemetry() const { return telemetry_; }
-
-    // Set telemetry data (for non-streaming requests)
-    void set_telemetry(int input_tokens, int output_tokens,
-                      double time_to_first_token, double tokens_per_second) {
-        telemetry_.input_tokens = input_tokens;
-        telemetry_.output_tokens = output_tokens;
-        telemetry_.time_to_first_token = time_to_first_token;
-        telemetry_.tokens_per_second = tokens_per_second;
-    }
-
-    void record_telemetry(int input_tokens, int output_tokens,
-                          double time_to_first_token, double tokens_per_second) {
-        set_telemetry(input_tokens, output_tokens, time_to_first_token, tokens_per_second);
-        telemetry_.request_count_total++;
-        if (input_tokens > 0) {
-            telemetry_.input_tokens_total += static_cast<uint64_t>(input_tokens);
-        }
-        if (output_tokens > 0) {
-            telemetry_.output_tokens_total += static_cast<uint64_t>(output_tokens);
-        }
-    }
-
-    // Set prompt_tokens field from usage
-    void set_prompt_tokens(int prompt_tokens) {
-        telemetry_.prompt_tokens = prompt_tokens;
-        if (prompt_tokens > 0) {
-            telemetry_.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
-        }
     }
 
 protected:
@@ -220,7 +194,6 @@ protected:
     std::string server_name_;
     int port_;
     ProcessHandle process_handle_;
-    Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager

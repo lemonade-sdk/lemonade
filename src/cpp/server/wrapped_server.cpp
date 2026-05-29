@@ -152,7 +152,8 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
                                               httplib::DataSink& sink,
                                               bool sse,
-                                              long timeout_seconds) {
+                                              long timeout_seconds,
+                                              TelemetryCallback telemetry_callback) {
     if (!is_process_running()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
@@ -169,11 +170,13 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
             // Use StreamingProxy to forward the SSE stream with telemetry callback
             // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
             StreamingProxy::forward_sse_stream(url, request_body, sink,
-                [this](const StreamingProxy::TelemetryData& telemetry) {
-                    record_telemetry(telemetry.input_tokens,
-                                     telemetry.output_tokens,
-                                     telemetry.time_to_first_token,
-                                     telemetry.tokens_per_second);
+                [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {
+                    if (telemetry_callback) {
+                        telemetry_callback(telemetry.input_tokens,
+                                           telemetry.output_tokens,
+                                           telemetry.time_to_first_token,
+                                           telemetry.tokens_per_second);
+                    }
                 },
                 timeout_seconds
             );
