@@ -1837,88 +1837,29 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
-    def test_021r_openai_chat_extra_models_dir(self):
-        """OpenAI chat completions resolves bare names to extra.* models and avoids HF downloads."""
-        bare = "dummy-extra-chat-model"
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_chat_")
-        self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
-
-        prior_dir = self._set_extra_models_dir(extra_dir)
-        try:
-            # 1. Verify the native API correctly reports the bare name as downloaded
-            model_info = requests.get(f"{self.base_url}/models/{bare}").json()
-            self.assertTrue(
-                model_info.get("downloaded"), "Model should be reported as downloaded"
-            )
-
-            # 2. Verify the OpenAI endpoint attempts to load the local stub
-            payload = {
-                "model": bare,
-                "messages": [{"role": "user", "content": "hello"}],
-            }
-            resp = requests.post(
-                f"http://localhost:{PORT}/v1/chat/completions",
-                json=payload,
-                timeout=TIMEOUT_DEFAULT,
-            )
-
-            # Check for standard OpenAI error structure instead of raw text
-            self.assertEqual(resp.status_code, 500)
-            error_data = resp.json().get("error", {})
-            self.assertIn("Failed to load model", error_data.get("message", ""))
-
-            print(
-                f"[OK] OpenAI chat completion resolves extra_models_dir alias: {bare}"
-            )
-        finally:
-            self._set_extra_models_dir(prior_dir)
-            shutil.rmtree(extra_dir, ignore_errors=True)
-
-    def test_021s_openai_chat_name_collision(self):
-        """OpenAI chat uses canonical resolution precedence when built-in and extra.* collide."""
-        # Use a known built-in model name
+    def test_021r_openai_chat_extra_models_precedence(self):
+        """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
+        # Use a built-in model name to prove precedence and alias resolution simultaneously
         bare = ENDPOINT_TEST_MODEL
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
-
-        # Create a stub extra model with the exact same name
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
-            # We already know from test_021h that extra.* wins precedence over builtin.*
-            # We want to ensure that /v1/chat/completions respects this by attempting
-            # to load the (stubbed) extra model instead of the real builtin.
-
-            # 1. Verify the native API correctly reports the bare name as downloaded
-            model_info = requests.get(f"{self.base_url}/models/{bare}").json()
-            self.assertTrue(
-                model_info.get("downloaded"), "Model should be reported as downloaded"
-            )
-
-            # 2. Verify the OpenAI endpoint attempts to load the local stub
-            payload = {
-                "model": bare,
-                "messages": [{"role": "user", "content": "hello"}],
-            }
+            # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
+            payload = {"model": bare, "messages": [{"role": "user", "content": "hi"}]}
             resp = requests.post(
                 f"http://localhost:{PORT}/v1/chat/completions",
                 json=payload,
                 timeout=TIMEOUT_DEFAULT,
             )
 
-            # The extra model is a 0-byte stub, so loading will fail with 500.
-            # If it fell back to the builtin, it would either succeed (200) or
-            # trigger a download (401/404 if not pulled).
-            # The 500 proves the OpenAI endpoint resolved to the extra.* model.
-
-            # Check for standard OpenAI error structure instead of raw text
             self.assertEqual(resp.status_code, 500)
-            error_data = resp.json().get("error", {})
-            self.assertIn("Failed to load model", error_data.get("message", ""))
-
-            print(
-                f"[OK] OpenAI chat completion resolves collision to extra_models_dir: {bare}"
+            self.assertIn(
+                "Failed to load model", resp.json().get("error", {}).get("message", "")
             )
+
+            print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
