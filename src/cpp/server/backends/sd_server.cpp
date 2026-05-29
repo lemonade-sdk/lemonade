@@ -111,7 +111,15 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
-    } else {
+        } else if (resolved_backend == "vulkan") {
+    #ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
+    #elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip";
+    #else
+        throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
+    #endif
+        } else {
         // CPU build (default)
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
