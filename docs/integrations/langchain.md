@@ -193,7 +193,7 @@ print(result)
 
 - **100% offline** — no API keys, no internet required after setup
 - **Drop-in replacement** — change one URL to switch from OpenAI to local
-- **Full LangChain ecosystem** — use chains, agents, RAG, memory — everything works
+- **Full LangChain ecosystem** — chains, prompt templates, and RAG pipelines work out of the box
 - **Privacy** — your documents never leave your machine
 
 ---
