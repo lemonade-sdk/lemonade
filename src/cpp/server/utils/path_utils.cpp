@@ -269,6 +269,11 @@ std::string find_executable_in_path(const std::string& executable_name) {
 
 bool is_ggml_hip_plugin_available() {
 #ifdef __linux__
+    // Allow distros/packagers that install outside the FHS paths below
+    // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
+    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env && fs::is_regular_file(env)) {
+        return true;
+    }
     // On Linux x86_64, check common system library paths for the HIP plugin
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
