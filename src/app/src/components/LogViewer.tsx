@@ -6,6 +6,9 @@ import api, { LogEntry, LogStreamHandle } from '../api';
 const MAX_CLIENT_LOGS = 2000;
 const RECONNECT_DELAY = 5000;
 const BOTTOM_THRESHOLD = 60;
+const LINE_HEIGHT = 22;
+const OVERSCAN = 10;
+const BATCH_INTERVAL = 100; // ms — batch incoming entries
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const;
 type LogLevel = typeof LOG_LEVELS[number];
@@ -51,37 +54,99 @@ const LogViewer: React.FC = () => {
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('disconnected');
   const [autoScroll, setAutoScroll] = useState(true);
   const [isSettingLevel, setIsSettingLevel] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewHeight, setViewHeight] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<LogStreamHandle | null>(null);
   const lastSeqRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
-  const isProgrammaticRef = useRef(false);
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const batchRef = useRef<LogEntry[]>([]);
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userScrollingRef = useRef(false);
 
   /* ── Auto-scroll ─────────────────────────────────────────── */
 
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    isProgrammaticRef.current = true;
+    // Directly set scrollTop — don't fight the scroll handler
     el.scrollTop = el.scrollHeight;
-    // Use a timer instead of rAF — scroll events from the assignment
-    // can arrive after rAF fires, incorrectly disabling auto-scroll
-    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = setTimeout(() => { isProgrammaticRef.current = false; }, 150);
   }, []);
 
   const handleScroll = useCallback(() => {
-    if (isProgrammaticRef.current) return;
     const el = containerRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + BOTTOM_THRESHOLD;
-    autoScrollRef.current = nearBottom;
-    setAutoScroll(nearBottom);
+    setScrollTop(el.scrollTop);
+
+    // Only update auto-scroll if the user is actively scrolling (not programmatic)
+    if (userScrollingRef.current) {
+      const nearBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + BOTTOM_THRESHOLD;
+      autoScrollRef.current = nearBottom;
+      setAutoScroll(nearBottom);
+    }
   }, []);
+
+  // Track user-initiated scrolls via pointer/keyboard events
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onUserScrollStart = () => { userScrollingRef.current = true; };
+    const onUserScrollEnd = () => { userScrollingRef.current = false; };
+
+    el.addEventListener('pointerdown', onUserScrollStart);
+    el.addEventListener('pointerup', onUserScrollEnd);
+    el.addEventListener('keydown', onUserScrollStart);
+    el.addEventListener('keyup', onUserScrollEnd);
+    // Wheel is always user-initiated
+    el.addEventListener('wheel', () => {
+      userScrollingRef.current = true;
+      // Reset after a short delay since wheel has no "end" event
+      setTimeout(() => { userScrollingRef.current = false; }, 200);
+    }, { passive: true });
+
+    return () => {
+      el.removeEventListener('pointerdown', onUserScrollStart);
+      el.removeEventListener('pointerup', onUserScrollEnd);
+      el.removeEventListener('keydown', onUserScrollStart);
+      el.removeEventListener('keyup', onUserScrollEnd);
+    };
+  }, []);
+
+  // Measure container height on mount and resize
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setViewHeight(el.clientHeight);
+    });
+    ro.observe(el);
+    setViewHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  /* ── Batch incoming entries ──────────────────────────────── */
+
+  const flushBatch = useCallback(() => {
+    batchTimerRef.current = null;
+    const batch = batchRef.current;
+    if (batch.length === 0) return;
+    batchRef.current = [];
+
+    setLogs(prev => {
+      const merged = [...prev, ...batch];
+      return merged.length > MAX_CLIENT_LOGS ? merged.slice(-MAX_CLIENT_LOGS) : merged;
+    });
+  }, []);
+
+  const enqueuEntry = useCallback((entry: LogEntry) => {
+    batchRef.current.push(entry);
+    if (!batchTimerRef.current) {
+      batchTimerRef.current = setTimeout(flushBatch, BATCH_INTERVAL);
+    }
+  }, [flushBatch]);
 
   /* ── Connect to log stream ───────────────────────────────── */
 
@@ -121,15 +186,12 @@ const LogViewer: React.FC = () => {
       },
       onEntry: (entry) => {
         lastSeqRef.current = entry.seq;
-        setLogs(prev => {
-          const next = [...prev, entry];
-          return next.length > MAX_CLIENT_LOGS ? next.slice(-MAX_CLIENT_LOGS) : next;
-        });
+        enqueuEntry(entry);
       },
     }, lastSeqRef.current);
 
     streamRef.current = handle;
-  }, []);
+  }, [enqueuEntry]);
 
   useEffect(() => {
     // Health check is needed for websocket_port — connect stream as soon as it's ready
@@ -153,7 +215,7 @@ const LogViewer: React.FC = () => {
     return () => {
       if (streamRef.current) streamRef.current.close();
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+      if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
     };
   }, [connect]);
 
@@ -197,8 +259,8 @@ const LogViewer: React.FC = () => {
   // Use useLayoutEffect so scroll happens synchronously after DOM update
   // (must be after filteredLogs declaration to avoid temporal dead zone)
   useLayoutEffect(() => {
-    if (autoScroll) scrollToBottom();
-  }, [filteredLogs.length, autoScroll, scrollToBottom]);
+    if (autoScrollRef.current) scrollToBottom();
+  }, [filteredLogs.length, scrollToBottom]);
 
   // Re-scroll when the view becomes visible (user switches back to Logs tab)
   useEffect(() => {
@@ -215,6 +277,13 @@ const LogViewer: React.FC = () => {
     observer.observe(el);
     return () => observer.disconnect();
   }, [scrollToBottom]);
+
+  /* ── Virtual scroll calculation ──────────────────────────── */
+
+  const totalHeight = filteredLogs.length * LINE_HEIGHT;
+  const startIdx = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN);
+  const endIdx = Math.min(filteredLogs.length, Math.ceil((scrollTop + viewHeight) / LINE_HEIGHT) + OVERSCAN);
+  const visibleLogs = filteredLogs.slice(startIdx, endIdx);
 
   /* ── Status indicator ────────────────────────────────────── */
 
@@ -290,7 +359,7 @@ const LogViewer: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Log output ───────────────────────────────────── */}
+      {/* ── Log output (virtualized) ────────────────────── */}
       <div
         className="logs-output"
         ref={containerRef}
@@ -303,18 +372,21 @@ const LogViewer: React.FC = () => {
               : `No entries match "${searchQuery || filterLevel}+" filter`}
           </div>
         ) : (
-          filteredLogs.map(entry => (
-            <div className={`logs-line ${severityClass(entry.severity)}`} key={entry.seq}>
-              <span className="logs-line__time">{entry.timestamp.split(' ')[1] || entry.timestamp}</span>
-              <span className={`logs-line__badge ${severityClass(entry.severity)}`}>
-                {severityBadge(entry.severity)}
-              </span>
-              <span className="logs-line__tag">{entry.tag}</span>
-              <span className="logs-line__text">{entry.line}</span>
+          <div className="logs-virtual" style={{ height: totalHeight, position: 'relative' }}>
+            <div style={{ position: 'absolute', top: startIdx * LINE_HEIGHT, left: 0, right: 0 }}>
+              {visibleLogs.map(entry => (
+                <div className={`logs-line ${severityClass(entry.severity)}`} key={entry.seq}>
+                  <span className="logs-line__time">{entry.timestamp.split(' ')[1] || entry.timestamp}</span>
+                  <span className={`logs-line__badge ${severityClass(entry.severity)}`}>
+                    {severityBadge(entry.severity)}
+                  </span>
+                  <span className="logs-line__tag">{entry.tag}</span>
+                  <span className="logs-line__text">{entry.line}</span>
+                </div>
+              ))}
             </div>
-          ))
+          </div>
         )}
-        <div ref={endRef} />
       </div>
 
       {/* ── Jump to bottom ───────────────────────────────── */}

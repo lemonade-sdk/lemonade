@@ -4095,9 +4095,9 @@ input, textarea {
   padding: 1px var(--space-4);
   gap: var(--space-2);
   border-left: 3px solid transparent;
-  transition: background 0.1s;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 22px;
+  height: 22px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .logs-line:hover {
