@@ -126,6 +126,7 @@ namespace {
 using hsa_status_t = int32_t;
 using hsa_agent_info_t = int32_t;
 using hsa_amd_memory_pool_info_t = int32_t;
+using hsa_amd_memory_pool_location_t = int32_t;
 using hsa_device_type_t = int32_t;
 using hsa_amd_segment_t = int32_t;
 
@@ -153,6 +154,10 @@ constexpr hsa_amd_segment_t HSA_AMD_SEGMENT_GLOBAL = 0;
 constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_SEGMENT = 0;
 constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS = 1;
 constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_SIZE = 2;
+constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_LOCATION = 17;
+
+constexpr hsa_amd_memory_pool_location_t HSA_AMD_MEMORY_POOL_LOCATION_CPU = 0;
+constexpr hsa_amd_memory_pool_location_t HSA_AMD_MEMORY_POOL_LOCATION_GPU = 1;
 
 constexpr uint32_t HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_KERNARG_INIT = 1;
 constexpr uint64_t HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU = (1ull << 0);
@@ -282,7 +287,7 @@ hsa_status_t collect_hsa_memory_pool_info(hsa_amd_memory_pool_t pool, void* data
         return HSA_STATUS_SUCCESS;
     }
 
-    hsa_amd_memory_pool_location_t location = HSA_AMD_MEMORY_POOL_LOCATION_UNKNOWN;
+    hsa_amd_memory_pool_location_t location = HSA_AMD_MEMORY_POOL_LOCATION_CPU;
     if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &location) != HSA_STATUS_SUCCESS) {
         return HSA_STATUS_SUCCESS;
     }
