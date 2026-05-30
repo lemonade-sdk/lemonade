@@ -100,7 +100,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
-    env_vars.push_back({"ESPEAK_DATA_PATH", exe_dir.string() + "espeak-ng-data"});
+    env_vars.push_back({"ESPEAK_DATA_PATH", (exe_dir / "espeak-ng-data").string()});
 #ifndef _WIN32
     std::string lib_path = exe_dir.string();
     // Preserve existing LD_LIBRARY_PATH if it exists

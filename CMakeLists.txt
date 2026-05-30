@@ -86,11 +86,15 @@ find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
-    pkg_check_modules(HTTPLIB QUIET cpp-httplib>=${MIN_HTTPLIB_VERSION})
+    # Debian ships the package as `cpp-httplib`, Nixpkgs as `httplib` — search
+    # both. No IMPORTED_TARGET: we build our own interface target below so we
+    # can skip the .pc Cflags (see there for why).
+    pkg_search_module(HTTPLIB QUIET
+        cpp-httplib>=${MIN_HTTPLIB_VERSION}
+        httplib>=${MIN_HTTPLIB_VERSION})
     pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
-find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
 # Verify CLI11 version if found
 if(CLI11_INCLUDE_DIRS)
     if(EXISTS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp")
@@ -316,6 +320,22 @@ if(NOT USE_SYSTEM_HTTPLIB)
             ${zstd_SOURCE_DIR}/lib
             ${zstd_SOURCE_DIR}/lib/common
         )
+    endif()
+else()
+    # System cpp-httplib: a local interface target carrying the include dirs
+    # and link lib (empty for a header-only install like Nixpkgs, the compiled
+    # .so on Debian). We deliberately skip HTTPLIB_CFLAGS_OTHER: the .pc Cflags
+    # carry cpp-httplib's feature macros (-DCPPHTTPLIB_OPENSSL_SUPPORT, etc.),
+    # which would flip on header features needing link deps (libcrypto) we
+    # don't provide. Created at top level, so it is visible to the cli/tray
+    # subdirs added later.
+    add_library(lemonade-httplib INTERFACE)
+    target_include_directories(lemonade-httplib INTERFACE ${HTTPLIB_INCLUDE_DIRS})
+    if(HTTPLIB_LINK_LIBRARIES)
+        target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LINK_LIBRARIES})
+    else()
+        target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARIES})
+        target_link_directories(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARY_DIRS})
     endif()
 endif()
 
@@ -640,7 +660,7 @@ endif()
 target_link_libraries(lemonade-server-core PUBLIC nlohmann_json::nlohmann_json)
 
 if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(lemonade-server-core PUBLIC cpp-httplib)
+    target_link_libraries(lemonade-server-core PUBLIC lemonade-httplib)
 else()
     target_link_libraries(lemonade-server-core PUBLIC httplib::httplib)
 endif()
@@ -664,10 +684,6 @@ if(USE_SYSTEM_ZSTD)
     target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
     target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
-endif()
-
-if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-    target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
