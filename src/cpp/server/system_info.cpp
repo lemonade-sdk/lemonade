@@ -195,6 +195,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"sd-cpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
         {"amd_gpu", {}},
+        {"nvidia_gpu", {}},
     }},
 
     // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
