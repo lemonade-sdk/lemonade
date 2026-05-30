@@ -42,6 +42,9 @@ OLLAMA_BASE_URL = f"http://localhost:{PORT}"
 class OllamaTests(ServerTestBase):
     """Tests for Ollama-compatible API endpoints."""
 
+    # Pin sd-cpp to CPU for this no-GPU API compatibility suite.
+    additional_server_args = ["--sdcpp", "cpu"]
+    
     _model_pulled = False
 
     @classmethod

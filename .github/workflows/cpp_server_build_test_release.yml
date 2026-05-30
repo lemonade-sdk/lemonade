@@ -953,12 +953,6 @@ jobs:
 
       - name: Set HF_HOME environment variable
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
-      
-      - name: Install Vulkan runtime
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libvulkan1 vulkan-tools
 
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
