@@ -1549,11 +1549,49 @@ json ModelManager::load_optional_json(const std::string& path) {
 
 static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
-    fs::path dir = fs::path(save_path).parent_path();
+    fs::path target = path_from_utf8(save_path);
+    fs::path dir = target.parent_path();
     fs::create_directories(dir);
 
-    LOG(INFO, "ModelManager") << "Saving " << fs::path(save_path).filename() << std::endl;
-    JsonUtils::save_to_file(to_save, save_path);
+    LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
+
+    // Write via a sibling temp file and then rename into place. Readers that
+    // refresh user_models.json on a cache miss should never observe a truncated
+    // or half-written registry, which could otherwise surface as a transient
+    // hard "Model not found" during auto-load.
+    fs::path tmp = target;
+    tmp += ".tmp";
+    {
+        std::ofstream file(tmp, std::ios::trunc);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open file for writing: " + path_to_utf8(tmp));
+        }
+        try {
+            file << to_save.dump(2);
+            file.flush();
+        } catch (const json::exception& e) {
+            throw std::runtime_error("Failed to write JSON to file " + path_to_utf8(tmp) + ": " + e.what());
+        }
+        if (!file) {
+            throw std::runtime_error("Failed to flush JSON file: " + path_to_utf8(tmp));
+        }
+    }
+
+    std::error_code ec;
+    fs::rename(tmp, target, ec);
+#ifdef _WIN32
+    if (ec) {
+        ec.clear();
+        fs::remove(target, ec);
+        ec.clear();
+        fs::rename(tmp, target, ec);
+    }
+#endif
+    if (ec) {
+        std::error_code cleanup_ec;
+        fs::remove(tmp, cleanup_ec);
+        throw std::runtime_error("Failed to replace JSON file " + save_path + ": " + ec.message());
+    }
 }
 
 void ModelManager::save_user_models(const json& user_models) {
@@ -2380,12 +2418,16 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
 
     // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
-    // can otherwise both start from the same in-memory registry snapshot and the
-    // later save can drop the first model, producing a hard "Model not found" on
-    // the next auto-load.
+    // can otherwise both start from the same registry snapshot and the later
+    // save can drop the first model, producing a hard "Model not found" on the
+    // next auto-load. Read the latest disk copy under the same process mutex so
+    // stale in-memory state cannot overwrite another registration.
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        json updated_user_models = user_models_.is_object() ? user_models_ : json::object();
+        json updated_user_models = load_optional_json(get_user_models_file());
+        if (!updated_user_models.is_object()) {
+            updated_user_models = json::object();
+        }
         updated_user_models[clean_name] = model_entry;
         save_user_models(updated_user_models);
         user_models_ = std::move(updated_user_models);
@@ -2619,12 +2661,16 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
         auto it = models_cache_.find(info.model_name);
         if (it != models_cache_.end())
         {
-            json updated_user_models = user_models_;
+            json updated_user_models = load_optional_json(get_user_models_file());
+            if (!updated_user_models.is_object()) {
+                updated_user_models = json::object();
+            }
             auto model = updated_user_models.find(strip_user_model_prefix(canonical_model_name));
             if (model != updated_user_models.end()) {
                 (*model)["size"] = it->second.size;
-                user_models_ = updated_user_models;
                 save_user_models(updated_user_models);
+                user_models_ = std::move(updated_user_models);
+                cache_valid_ = false;
             }
         }
     }
@@ -4106,10 +4152,15 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
-            json updated_user_models = user_models_;
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            json updated_user_models = load_optional_json(get_user_models_file());
+            if (!updated_user_models.is_object()) {
+                updated_user_models = json::object();
+            }
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
-            user_models_ = updated_user_models;
+            user_models_ = std::move(updated_user_models);
+            cache_valid_ = false;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -4135,10 +4186,15 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
 
         if (is_user_model_name(canonical_model_name)) {
-            json updated_user_models = user_models_;
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            json updated_user_models = load_optional_json(get_user_models_file());
+            if (!updated_user_models.is_object()) {
+                updated_user_models = json::object();
+            }
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
-            user_models_ = updated_user_models;
+            user_models_ = std::move(updated_user_models);
+            cache_valid_ = false;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -4225,10 +4281,15 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Remove from user models if it's a user model
     if (is_user_model_name(canonical_model_name)) {
-        json updated_user_models = user_models_;
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json updated_user_models = load_optional_json(get_user_models_file());
+        if (!updated_user_models.is_object()) {
+            updated_user_models = json::object();
+        }
         updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
         save_user_models(updated_user_models);
-        user_models_ = updated_user_models;
+        user_models_ = std::move(updated_user_models);
+        cache_valid_ = false;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
 
