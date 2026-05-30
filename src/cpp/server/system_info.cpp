@@ -3193,7 +3193,7 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
     std::vector<GPUInfo> gpus;
     std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
 
-    if (!fs::exists(kfd_path)) {
+    if (!fs::exists(kfd_path) || !fs::is_directory(kfd_path)) {
         auto dxg_gpus = query_dxg_amd_gpus(gpu_type);
         if (!dxg_gpus.empty()) {
             return dxg_gpus;
@@ -3257,9 +3257,18 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
     }
 
     if (gpus.empty()) {
+        // KFD topology can exist but provide no usable GPU nodes in some WSL/container setups.
+        // Fall back to ROCm HSA agent probing via /dev/dxg before reporting failure.
+        auto dxg_gpus = query_dxg_amd_gpus(gpu_type);
+        if (!dxg_gpus.empty()) {
+            return dxg_gpus;
+        }
+
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
+        gpu.error = is_dxg_rocm_environment()
+            ? "No AMD " + gpu_type + " GPU found in KFD nodes or through HSA runtime on /dev/dxg"
+            : "No AMD " + gpu_type + " GPU found in KFD nodes";
         gpus.push_back(gpu);
     }
 
