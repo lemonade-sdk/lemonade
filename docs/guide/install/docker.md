@@ -78,7 +78,6 @@ docker run -d \
   -v lemonade-recipe:/root/.cache/lemonade \
   -v /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro \
   -v /opt/rocm/lib:/opt/rocm/lib:ro \
-  -v /opt/rocm/share/rocdxg:/opt/rocm/share/rocdxg:ro \
   -e LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib:/usr/lib/wsl/lib:/usr/lib \
   -e LEMONADE_LLAMACPP=rocm \
   --device=/dev/dxg \
