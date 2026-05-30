@@ -736,7 +736,7 @@ elseif(UNIX)
 
     # Link libcap for capability management on Linux
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        target_link_libraries(lemonade-server-core PUBLIC ${CMAKE_DL_LIBS})
+        target_link_libraries(lemonade-server-core PRIVATE ${CMAKE_DL_LIBS})
 
         if(PkgConfig_FOUND)
             pkg_check_modules(LIBCAP QUIET libcap)
