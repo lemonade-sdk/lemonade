@@ -41,6 +41,7 @@
 #endif
 
 #ifdef __linux__
+#include <dlfcn.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -115,6 +116,320 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1200", "gfx120X"},
     {"gfx1201", "gfx120X"},
 };
+
+#ifdef __linux__
+namespace {
+
+// Minimal HSA ABI surface for runtime dlopen probing.
+// Keep values aligned with ROCm headers so this works even when headers are
+// not present at build time (for example inside release Docker builds).
+using hsa_status_t = int32_t;
+using hsa_agent_info_t = int32_t;
+using hsa_amd_memory_pool_info_t = int32_t;
+using hsa_amd_memory_pool_location_t = int32_t;
+using hsa_device_type_t = int32_t;
+using hsa_amd_segment_t = int32_t;
+
+struct hsa_agent_t {
+    uint64_t handle;
+};
+
+struct hsa_amd_memory_pool_t {
+    uint64_t handle;
+};
+
+constexpr hsa_status_t HSA_STATUS_SUCCESS = 0x0;
+constexpr hsa_status_t HSA_STATUS_ERROR_INVALID_ARGUMENT = 0x1001;
+
+constexpr hsa_agent_info_t HSA_AGENT_INFO_NAME = 0;
+constexpr hsa_agent_info_t HSA_AGENT_INFO_VENDOR_NAME = 1;
+constexpr hsa_agent_info_t HSA_AGENT_INFO_DEVICE = 17;
+constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_PRODUCT_NAME = 0xA009;
+constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_MEMORY_PROPERTIES = 0xA114;
+
+constexpr hsa_device_type_t HSA_DEVICE_TYPE_CPU = 0;
+constexpr hsa_device_type_t HSA_DEVICE_TYPE_GPU = 1;
+
+constexpr hsa_amd_segment_t HSA_AMD_SEGMENT_GLOBAL = 0;
+constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_SEGMENT = 0;
+constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS = 1;
+constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_SIZE = 2;
+constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_LOCATION = 17;
+
+constexpr hsa_amd_memory_pool_location_t HSA_AMD_MEMORY_POOL_LOCATION_CPU = 0;
+constexpr hsa_amd_memory_pool_location_t HSA_AMD_MEMORY_POOL_LOCATION_GPU = 1;
+
+constexpr uint32_t HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_KERNARG_INIT = 1;
+constexpr uint8_t HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU = (1u << 0);
+
+using HsaAgentCallback = hsa_status_t (*)(hsa_agent_t, void*);
+using HsaMemoryPoolCallback = hsa_status_t (*)(hsa_amd_memory_pool_t, void*);
+
+struct RocmAgentInfo {
+    std::string display_name;
+    std::string arch_name;
+    bool is_integrated = false;
+    double vram_gb = 0.0;
+};
+
+struct HsaRuntimeApi {
+    void* handle = nullptr;
+    hsa_status_t (*init)() = nullptr;
+    hsa_status_t (*shut_down)() = nullptr;
+    hsa_status_t (*iterate_agents)(HsaAgentCallback, void*) = nullptr;
+    hsa_status_t (*agent_get_info)(hsa_agent_t, hsa_agent_info_t, void*) = nullptr;
+    hsa_status_t (*amd_agent_iterate_memory_pools)(hsa_agent_t, HsaMemoryPoolCallback, void*) = nullptr;
+    hsa_status_t (*amd_memory_pool_get_info)(hsa_amd_memory_pool_t, hsa_amd_memory_pool_info_t, void*) = nullptr;
+};
+
+std::string trim_copy(const std::string& value) {
+    const auto start = value.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) {
+        return "";
+    }
+
+    const auto end = value.find_last_not_of(" \t\n\r");
+    return value.substr(start, end - start + 1);
+}
+
+std::string to_lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+    return value;
+}
+
+bool is_dxg_rocm_environment() {
+    return fs::exists("/dev/dxg");
+}
+
+double round_gb(double value_gb) {
+    return std::round(value_gb * 10.0) / 10.0;
+}
+
+template <typename T>
+bool load_hsa_symbol(void* handle, const char* symbol_name, T& symbol) {
+    dlerror();
+    void* raw_symbol = dlsym(handle, symbol_name);
+    const char* error = dlerror();
+    if (error != nullptr || raw_symbol == nullptr) {
+        symbol = nullptr;
+        return false;
+    }
+
+    symbol = reinterpret_cast<T>(raw_symbol);
+    return true;
+}
+
+bool load_hsa_runtime(HsaRuntimeApi& api) {
+    static const std::vector<std::string> HSA_RUNTIME_CANDIDATES = {
+        "libhsa-runtime64.so.1",
+        "libhsa-runtime64.so",
+        "/opt/rocm/lib/libhsa-runtime64.so.1",
+        "/opt/rocm/lib/libhsa-runtime64.so"
+    };
+
+    for (const auto& candidate : HSA_RUNTIME_CANDIDATES) {
+        api.handle = dlopen(candidate.c_str(), RTLD_LAZY | RTLD_LOCAL);
+        if (!api.handle) {
+            continue;
+        }
+
+        if (load_hsa_symbol(api.handle, "hsa_init", api.init) &&
+            load_hsa_symbol(api.handle, "hsa_shut_down", api.shut_down) &&
+            load_hsa_symbol(api.handle, "hsa_iterate_agents", api.iterate_agents) &&
+            load_hsa_symbol(api.handle, "hsa_agent_get_info", api.agent_get_info) &&
+            load_hsa_symbol(api.handle, "hsa_amd_agent_iterate_memory_pools", api.amd_agent_iterate_memory_pools) &&
+            load_hsa_symbol(api.handle, "hsa_amd_memory_pool_get_info", api.amd_memory_pool_get_info)) {
+            return true;
+        }
+
+        dlclose(api.handle);
+        api = HsaRuntimeApi{};
+    }
+
+    return false;
+}
+
+void unload_hsa_runtime(HsaRuntimeApi& api) {
+    if (api.handle != nullptr) {
+        dlclose(api.handle);
+        api = HsaRuntimeApi{};
+    }
+}
+
+struct HsaPoolQueryContext {
+    HsaRuntimeApi* api = nullptr;
+    double largest_global_pool_gb = 0.0;
+};
+
+hsa_status_t collect_hsa_memory_pool_info(hsa_amd_memory_pool_t pool, void* data) {
+    auto* context = static_cast<HsaPoolQueryContext*>(data);
+    if (!context || !context->api) {
+        return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+    }
+
+    hsa_amd_segment_t segment = HSA_AMD_SEGMENT_GLOBAL;
+    if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_SEGMENT, &segment) != HSA_STATUS_SUCCESS) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    if (segment != HSA_AMD_SEGMENT_GLOBAL) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    hsa_amd_memory_pool_location_t location = HSA_AMD_MEMORY_POOL_LOCATION_CPU;
+    if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &location) != HSA_STATUS_SUCCESS) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    if (location != HSA_AMD_MEMORY_POOL_LOCATION_GPU) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    uint32_t global_flags = 0;
+    if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS, &global_flags) != HSA_STATUS_SUCCESS) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    if ((global_flags & HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_KERNARG_INIT) != 0) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    size_t pool_size = 0;
+    if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_SIZE, &pool_size) != HSA_STATUS_SUCCESS) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    const double pool_gb = round_gb(static_cast<double>(pool_size) / (1024.0 * 1024.0 * 1024.0));
+    context->largest_global_pool_gb = std::max(context->largest_global_pool_gb, pool_gb);
+    return HSA_STATUS_SUCCESS;
+}
+
+struct HsaAgentQueryContext {
+    HsaRuntimeApi* api = nullptr;
+    std::vector<RocmAgentInfo>* agents = nullptr;
+    std::set<std::string>* seen_agents = nullptr;
+};
+
+hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
+    auto* context = static_cast<HsaAgentQueryContext*>(data);
+    if (!context || !context->api || !context->agents || !context->seen_agents) {
+        return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+    }
+
+    hsa_device_type_t device_type = HSA_DEVICE_TYPE_CPU;
+    if (context->api->agent_get_info(agent, HSA_AGENT_INFO_DEVICE, &device_type) != HSA_STATUS_SUCCESS ||
+        device_type != HSA_DEVICE_TYPE_GPU) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    char arch_name[64] = {0};
+    char marketing_name[64] = {0};
+    char vendor_name[64] = {0};
+
+    if (context->api->agent_get_info(agent, HSA_AGENT_INFO_NAME, arch_name) != HSA_STATUS_SUCCESS ||
+        context->api->agent_get_info(agent, HSA_AGENT_INFO_VENDOR_NAME, vendor_name) != HSA_STATUS_SUCCESS) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    // Product name availability varies across ROCm/WSL runtime builds.
+    // Treat it as optional and fall back to the arch name when unavailable.
+    if (context->api->agent_get_info(agent, static_cast<hsa_agent_info_t>(HSA_AMD_AGENT_INFO_PRODUCT_NAME), marketing_name) != HSA_STATUS_SUCCESS) {
+        marketing_name[0] = '\0';
+    }
+
+    const std::string vendor = to_lower_copy(trim_copy(vendor_name));
+    const std::string arch = trim_copy(arch_name);
+    const std::string marketing = trim_copy(marketing_name);
+    if (vendor.find("amd") == std::string::npos || to_lower_copy(arch).find("gfx") != 0) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    HsaPoolQueryContext pool_context;
+    pool_context.api = context->api;
+    context->api->amd_agent_iterate_memory_pools(agent, collect_hsa_memory_pool_info, &pool_context);
+
+    RocmAgentInfo rocm_agent;
+    rocm_agent.arch_name = arch;
+    if (!marketing.empty() && marketing != arch) {
+        rocm_agent.display_name = marketing + " (" + arch + ")";
+    } else if (!marketing.empty()) {
+        rocm_agent.display_name = marketing;
+    } else {
+        rocm_agent.display_name = arch;
+    }
+
+        uint8_t memory_properties[8] = {0};
+    if (context->api->agent_get_info(
+            agent,
+            HSA_AMD_AGENT_INFO_MEMORY_PROPERTIES,
+            memory_properties) == HSA_STATUS_SUCCESS) {
+        rocm_agent.is_integrated =
+            (memory_properties[0] & HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU) != 0;
+    }
+    rocm_agent.vram_gb = pool_context.largest_global_pool_gb;
+
+    // Include the HSA agent handle so two identical GPUs are kept as distinct devices.
+    const std::string dedupe_key = rocm_agent.display_name + "|" + rocm_agent.arch_name + "|" + std::to_string(agent.handle);
+    if (context->seen_agents->insert(dedupe_key).second) {
+        context->agents->push_back(rocm_agent);
+    }
+
+    return HSA_STATUS_SUCCESS;
+}
+
+std::vector<RocmAgentInfo> query_rocm_agents_via_hsa_runtime() {
+    std::vector<RocmAgentInfo> agents;
+
+    if (!is_dxg_rocm_environment()) {
+        return agents;
+    }
+
+    HsaRuntimeApi api;
+    if (!load_hsa_runtime(api)) {
+        return agents;
+    }
+
+    if (api.init() != HSA_STATUS_SUCCESS) {
+        unload_hsa_runtime(api);
+        return agents;
+    }
+
+    std::set<std::string> seen_agents;
+    HsaAgentQueryContext context;
+    context.api = &api;
+    context.agents = &agents;
+    context.seen_agents = &seen_agents;
+
+    api.iterate_agents(collect_hsa_agent_info, &context);
+    api.shut_down();
+    unload_hsa_runtime(api);
+    return agents;
+}
+
+std::vector<RocmAgentInfo> query_rocm_agents() {
+    return query_rocm_agents_via_hsa_runtime();
+}
+
+std::vector<GPUInfo> query_dxg_amd_gpus(const std::string& gpu_type) {
+    std::vector<GPUInfo> gpus;
+    for (const auto& agent : query_rocm_agents()) {
+        if ((gpu_type == "integrated" && !agent.is_integrated) ||
+            (gpu_type == "discrete" && agent.is_integrated)) {
+            continue;
+        }
+
+        GPUInfo gpu;
+        gpu.name = agent.display_name;
+        gpu.available = true;
+        gpu.vram_gb = agent.vram_gb;
+        gpus.push_back(gpu);
+    }
+
+    return gpus;
+}
+
+}  // namespace
+#endif
 
 // ============================================================================
 // Recipe/Backend definition table - single source of truth for support matrix
@@ -1473,6 +1788,17 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
+
+    std::smatch gfx_match;
+    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
+        std::string arch = gfx_match[1].str();
+        auto it = ROCM_ARCH_MAPPING.find(arch);
+        if (it != ROCM_ARCH_MAPPING.end()) {
+            return it->second;
+        }
+
+        return arch;
+    }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
     if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
@@ -2868,10 +3194,17 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
     std::vector<GPUInfo> gpus;
     std::string kfd_path = "/sys/class/kfd/kfd/topology/nodes";
 
-    if (!fs::exists(kfd_path)) {
+    if (!fs::exists(kfd_path) || !fs::is_directory(kfd_path)) {
+        auto dxg_gpus = query_dxg_amd_gpus(gpu_type);
+        if (!dxg_gpus.empty()) {
+            return dxg_gpus;
+        }
+
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "No KFD nodes found (AMD GPU driver not loaded or no GPU present)";
+        gpu.error = is_dxg_rocm_environment()
+            ? "No AMD GPU detected through HSA runtime on /dev/dxg"
+            : "No KFD nodes found (AMD GPU driver not loaded or no GPU present)";
         gpus.push_back(gpu);
         return gpus;
     }
@@ -2925,9 +3258,18 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
     }
 
     if (gpus.empty()) {
+        // KFD topology can exist but provide no usable GPU nodes in some WSL/container setups.
+        // Fall back to ROCm HSA agent probing via /dev/dxg before reporting failure.
+        auto dxg_gpus = query_dxg_amd_gpus(gpu_type);
+        if (!dxg_gpus.empty()) {
+            return dxg_gpus;
+        }
+
         GPUInfo gpu;
         gpu.available = false;
-        gpu.error = "No AMD " + gpu_type + " GPU found in KFD nodes";
+        gpu.error = is_dxg_rocm_environment()
+            ? "No AMD " + gpu_type + " GPU found in KFD nodes or through HSA runtime on /dev/dxg"
+            : "No AMD " + gpu_type + " GPU found in KFD nodes";
         gpus.push_back(gpu);
     }
 
