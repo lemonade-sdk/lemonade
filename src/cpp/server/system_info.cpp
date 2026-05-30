@@ -201,17 +201,6 @@ bool is_dxg_rocm_environment() {
     return fs::exists("/dev/dxg");
 }
 
-bool is_amd_discrete_gpu_name(const std::string& device_name) {
-    std::string lower_name = to_lower_copy(device_name);
-    for (const auto& keyword : AMD_DISCRETE_GPU_KEYWORDS) {
-        if (lower_name.find(keyword) != std::string::npos) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 double round_gb(double value_gb) {
     return std::round(value_gb * 10.0) / 10.0;
 }
