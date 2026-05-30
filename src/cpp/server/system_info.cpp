@@ -144,6 +144,7 @@ constexpr hsa_agent_info_t HSA_AGENT_INFO_NAME = 0;
 constexpr hsa_agent_info_t HSA_AGENT_INFO_VENDOR_NAME = 1;
 constexpr hsa_agent_info_t HSA_AGENT_INFO_DEVICE = 17;
 constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_PRODUCT_NAME = 0xA009;
+constexpr hsa_agent_info_t HSA_AMD_AGENT_INFO_MEMORY_PROPERTIES = 0xA114;
 
 constexpr hsa_device_type_t HSA_DEVICE_TYPE_CPU = 0;
 constexpr hsa_device_type_t HSA_DEVICE_TYPE_GPU = 1;
@@ -154,6 +155,7 @@ constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS = 1;
 constexpr hsa_amd_memory_pool_info_t HSA_AMD_MEMORY_POOL_INFO_SIZE = 2;
 
 constexpr uint32_t HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_KERNARG_INIT = 1;
+constexpr uint64_t HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU = (1ull << 0);
 
 using HsaAgentCallback = hsa_status_t (*)(hsa_agent_t, void*);
 using HsaMemoryPoolCallback = hsa_status_t (*)(hsa_amd_memory_pool_t, void*);
@@ -362,9 +364,14 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
         rocm_agent.display_name = arch;
     }
 
-    const std::string classification_name = marketing.empty() ? rocm_agent.display_name : marketing;
-    rocm_agent.is_integrated = !is_amd_discrete_gpu_name(classification_name) &&
-        (to_lower_copy(arch).find("gfx1150") == 0 || to_lower_copy(arch).find("gfx1151") == 0);
+    uint64_t memory_properties = 0;
+    if (context->api->agent_get_info(
+            agent,
+            HSA_AMD_AGENT_INFO_MEMORY_PROPERTIES,
+            &memory_properties) == HSA_STATUS_SUCCESS) {
+        rocm_agent.is_integrated =
+            (memory_properties & HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU) != 0;
+    }
     rocm_agent.vram_gb = pool_context.largest_global_pool_gb;
 
     // Include the HSA agent handle so two identical GPUs are kept as distinct devices.
