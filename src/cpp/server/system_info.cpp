@@ -367,7 +367,8 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
         (to_lower_copy(arch).find("gfx1150") == 0 || to_lower_copy(arch).find("gfx1151") == 0);
     rocm_agent.vram_gb = pool_context.largest_global_pool_gb;
 
-    const std::string dedupe_key = rocm_agent.display_name + "|" + rocm_agent.arch_name;
+    // Include the HSA agent handle so two identical GPUs are kept as distinct devices.
+    const std::string dedupe_key = rocm_agent.display_name + "|" + rocm_agent.arch_name + "|" + std::to_string(agent.handle);
     if (context->seen_agents->insert(dedupe_key).second) {
         context->agents->push_back(rocm_agent);
     }
