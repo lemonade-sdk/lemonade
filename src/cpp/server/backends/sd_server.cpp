@@ -231,6 +231,7 @@ void SDServer::load(const std::string& model_name,
                 << std::endl;
             args.push_back("--vae-tiling");
         }
+        args.push_back("--diffusion-fa");
     }
 
     std::set<std::string> reserved_flags = {
