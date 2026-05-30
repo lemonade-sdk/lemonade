@@ -160,7 +160,7 @@ constexpr hsa_amd_memory_pool_location_t HSA_AMD_MEMORY_POOL_LOCATION_CPU = 0;
 constexpr hsa_amd_memory_pool_location_t HSA_AMD_MEMORY_POOL_LOCATION_GPU = 1;
 
 constexpr uint32_t HSA_AMD_MEMORY_POOL_GLOBAL_FLAG_KERNARG_INIT = 1;
-constexpr uint64_t HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU = (1ull << 0);
+constexpr uint8_t HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU = (1u << 0);
 
 using HsaAgentCallback = hsa_status_t (*)(hsa_agent_t, void*);
 using HsaMemoryPoolCallback = hsa_status_t (*)(hsa_amd_memory_pool_t, void*);
@@ -369,13 +369,13 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
         rocm_agent.display_name = arch;
     }
 
-    uint64_t memory_properties = 0;
+        uint8_t memory_properties[8] = {0};
     if (context->api->agent_get_info(
             agent,
             HSA_AMD_AGENT_INFO_MEMORY_PROPERTIES,
-            &memory_properties) == HSA_STATUS_SUCCESS) {
+            memory_properties) == HSA_STATUS_SUCCESS) {
         rocm_agent.is_integrated =
-            (memory_properties & HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU) != 0;
+            (memory_properties[0] & HSA_AMD_MEMORY_PROPERTY_AGENT_IS_APU) != 0;
     }
     rocm_agent.vram_gb = pool_context.largest_global_pool_gb;
 
