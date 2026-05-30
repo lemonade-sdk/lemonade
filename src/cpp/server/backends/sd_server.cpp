@@ -31,6 +31,10 @@ bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
 }
 
+bool is_gfx115x_arch(const std::string& arch) {
+    return arch == "gfx1150" || arch == "gfx1151" || arch == "gfx1152";
+}
+
 std::string resolve_sdcpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         std::string channel = "stable";
@@ -217,6 +221,16 @@ void SDServer::load(const std::string& model_name,
 
     if (is_debug()) {
         args.push_back("-v");
+    }
+
+    if (resolved_backend == "vulkan") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (is_gfx115x_arch(rocm_arch)) {
+            LOG(INFO, "SDServer")
+                << "Applying Vulkan gfx115X VAE workaround: --vae-tiling"
+                << std::endl;
+            args.push_back("--vae-tiling");
+        }
     }
 
     std::set<std::string> reserved_flags = {
