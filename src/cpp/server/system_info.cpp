@@ -331,9 +331,14 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
     char vendor_name[64] = {0};
 
     if (context->api->agent_get_info(agent, HSA_AGENT_INFO_NAME, arch_name) != HSA_STATUS_SUCCESS ||
-        context->api->agent_get_info(agent, HSA_AGENT_INFO_VENDOR_NAME, vendor_name) != HSA_STATUS_SUCCESS ||
-        context->api->agent_get_info(agent, static_cast<hsa_agent_info_t>(HSA_AMD_AGENT_INFO_PRODUCT_NAME), marketing_name) != HSA_STATUS_SUCCESS) {
+        context->api->agent_get_info(agent, HSA_AGENT_INFO_VENDOR_NAME, vendor_name) != HSA_STATUS_SUCCESS) {
         return HSA_STATUS_SUCCESS;
+    }
+
+    // Product name availability varies across ROCm/WSL runtime builds.
+    // Treat it as optional and fall back to the arch name when unavailable.
+    if (context->api->agent_get_info(agent, static_cast<hsa_agent_info_t>(HSA_AMD_AGENT_INFO_PRODUCT_NAME), marketing_name) != HSA_STATUS_SUCCESS) {
+        marketing_name[0] = '\0';
     }
 
     const std::string vendor = to_lower_copy(trim_copy(vendor_name));
