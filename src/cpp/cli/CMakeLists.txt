@@ -33,7 +33,7 @@ target_link_libraries(lemonade PRIVATE
 
 # Link httplib based on what's available (set by parent CMakeLists.txt)
 if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(lemonade PRIVATE cpp-httplib)
+    target_link_libraries(lemonade PRIVATE lemonade-httplib)
 else()
     target_link_libraries(lemonade PRIVATE httplib::httplib)
 endif()
@@ -67,10 +67,6 @@ target_include_directories(lemonade PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
-
-if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-    target_include_directories(lemonade PRIVATE ${HTTPLIB_INCLUDE_DIRS})
-endif()
 
 # Set output directory to build root
 set_target_properties(lemonade PROPERTIES
