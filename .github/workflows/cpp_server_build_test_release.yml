@@ -825,8 +825,8 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm"
-            runner: [Windows, rocm]
+            backends: "cpu rocm vulkan"
+            runner: [Windows, rocm, vulkan]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
@@ -923,8 +923,8 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm"
-            runner: [Linux, rocm]
+            backends: "cpu rocm vulkan"
+            runner: [Linux, vulkan, rocm]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
