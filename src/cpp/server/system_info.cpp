@@ -280,6 +280,15 @@ hsa_status_t collect_hsa_memory_pool_info(hsa_amd_memory_pool_t pool, void* data
         return HSA_STATUS_SUCCESS;
     }
 
+    hsa_amd_memory_pool_location_t location = HSA_AMD_MEMORY_POOL_LOCATION_UNKNOWN;
+    if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_LOCATION, &location) != HSA_STATUS_SUCCESS) {
+        return HSA_STATUS_SUCCESS;
+    }
+
+    if (location != HSA_AMD_MEMORY_POOL_LOCATION_GPU) {
+        return HSA_STATUS_SUCCESS;
+    }
+
     uint32_t global_flags = 0;
     if (context->api->amd_memory_pool_get_info(pool, HSA_AMD_MEMORY_POOL_INFO_GLOBAL_FLAGS, &global_flags) != HSA_STATUS_SUCCESS) {
         return HSA_STATUS_SUCCESS;
