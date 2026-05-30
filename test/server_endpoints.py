@@ -1837,6 +1837,33 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021r_openai_chat_extra_models_precedence(self):
+        """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
+        # Use a built-in model name to prove precedence and alias resolution simultaneously
+        bare = ENDPOINT_TEST_MODEL
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
+        self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
+            payload = {"model": bare, "messages": [{"role": "user", "content": "hi"}]}
+            resp = requests.post(
+                f"http://localhost:{PORT}/v1/chat/completions",
+                json=payload,
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            self.assertEqual(resp.status_code, 500)
+            self.assertIn(
+                "Failed to load model", resp.json().get("error", {}).get("message", "")
+            )
+
+            print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""
         import sys
