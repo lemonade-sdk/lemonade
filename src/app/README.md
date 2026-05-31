@@ -81,11 +81,28 @@ npx playwright install
 This prototype showcases the **redesigned UI** with capability-keyed presets (v1.4):
 
 ### UI Panels
-- **Chat** — multi-turn conversation with streaming support, preset selector, sampling controls
-- **Models** — model registry with load/unload, categorized view (Loaded / Installed / Available)
+- **Chat** — multi-turn conversation with streaming support, scoped user/guest history, omni-capable composer routing, preset selector, sampling controls
+- **Models** — model registry with load/unload, custom model/custom omni registration, categorized view (Loaded / Downloaded / Registry / HuggingFace)
 - **Backends** — device-first capability matrix, backend versions and status
 - **Connect / Discover** — integration showcase and curated model feed
-- **Presets** (NEW) — capability-keyed preset system with chat (Balanced, Quality, Fast, Creative, Long Context, Code) and image (Sharp, Quick) starters
+- **Presets** — capability-keyed preset system with chat/omni (Balanced, Quality, Fast, Creative, Long Context, Code) and image (Sharp, Quick) starters
+
+### Multimodal / Omni Mode
+- **Omni capability detection** recognizes loaded models marked as `omni`, `multimodal`, `vision`, VLM, LLaVA, Pixtral, Qwen-VL, MiniCPM-V, Mllama, GPT-4o-style, and similar names or labels.
+- **Omni composer mode** keeps those models in chat instead of misrouting them as plain LLMs or image/audio utility models. Text, image attachments, and one audio attachment are sent through `/api/v1/chat/completions` using OpenAI-style multimodal content parts.
+- **Specialized modes remain explicit:** image models route to `/api/v1/images/generations`, transcription models to `/api/v1/audio/transcriptions`, and TTS models to `/api/v1/audio/speech`.
+
+### Custom Models
+- **Custom model form** on the Models page lets a user register a local/HuggingFace checkpoint or path, recipe/backend, labels, and capability.
+- **Custom Omni models** are first-class: choose `Omni` in the capability dropdown and the composer treats the model as multimodal chat even if the server health response later lacks perfect capability metadata.
+- **Scoped per user:** custom definitions are saved under the active guest/user storage scope. Guest custom models are shared on the browser; signed-in users get private custom definitions.
+- **Load path:** custom models call `/api/v1/load` with `model_name`, `checkpoint`, `recipe`, `type`, and labels so a future production implementation can map this form directly to server-side model registry creation.
+
+### Local Users / Privacy Prototype
+- **Guest mode is shared:** users can chat without signing in. If guest history is enabled, it is visible to anyone using the same browser profile.
+- **Named local users:** users can create an account with name + password. Passwords are salted and hashed with PBKDF2 in browser storage; raw passwords are never stored.
+- **Scoped data:** conversations, active chat, tools setting, user presets, and custom model definitions are namespaced under `lemonade:<storageScope>:...`. Signed-in users see only their own local profile data.
+- **Deletion rules:** guests can delete shared guest data, signed-in users can delete their own scoped data/account, and the first local account is admin with an all-local-user-data reset. The account UI lives in `src/features/accounts/` so it can be extracted/replaced by server-backed auth for production.
 
 ### Presets v1.4 Features
 - **Capability-keyed compatibility** — presets declare `applies_to: [capability]` and models declare `labels`; runtime matches by label intersection
@@ -102,8 +119,10 @@ src/
   index.html            # HTML shell
   App.tsx               # Root component
   api.ts                # API client (health, models, chat/completions, etc.)
-  presetStore.ts        # Presets state & v1.4 capability-keyed data model
+  presetStore.ts        # Scoped presets state & v1.4 capability-keyed data model
   components/           # React components (Chat, Models, Backends, Presets, etc.)
+  features/accounts/    # Extractable local user/session prototype
+  features/customModels/# Extractable custom model + custom omni prototype
   hooks/                # Custom React hooks
   styles/               # CSS modules and global styles
   tools/                # Utility functions
@@ -161,8 +180,10 @@ Playwright waits up to 60 seconds by default (see `playwright.config.ts`). If te
 
 - **Single codebase, dual delivery:** The same React source powers both web-served and desktop (Tauri) builds. Platform-specific code uses feature detection, not separate branches.
 - **Real-server-first development:** Runtime calls go to Lemonade-compatible `/api/v1/...` endpoints. Tests that need deterministic data should mock those network routes explicitly.
-- **Local client state:** Per-client settings live in browser storage only when the UI explicitly opts into persistence. The Connect screen can clear all Lemonade local/session data.
-- **Presets are client-side:** Presets are not persisted to the server; they're computed locally based on the model registry and user adjustments.
+- **Local client state:** Conversation history is opt-in and now scoped to either the shared guest space or a signed-in local user. The account menu controls profile deletion; admin can clear every local profile.
+- **Client-only auth caveat:** The account prototype protects data by browser-storage namespace and password-hash login, but production must enforce users, sessions, and authorization on the backend.
+- **Custom model caveat:** Custom model records are prototype metadata; production should validate checkpoint paths, allowed recipes, and permissions server-side before loading.
+- **Presets are client-side:** Presets are not persisted to the server; they're computed locally based on the model registry and user adjustments, and user-created presets are scoped per local user/guest space.
 
 ## Next Steps
 

@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api, { ConnectionStatus, friendlyErrorMessage, normalizeBaseUrl } from '../api';
+import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
+  accountSession: AccountSession;
+  onLocalDataReset: () => void;
+  onSessionChange: (session: AccountSession) => void;
 }
 
-const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
+const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLocalDataReset, onSessionChange }) => {
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
   const [rememberApiKey, setRememberApiKey] = useState(Boolean(api.apiKey));
@@ -55,16 +59,31 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
   };
 
   const handleClearLocalData = () => {
-    const ok = window.confirm('Clear all Lemonade local data on this device? This removes conversations, active chat, presets, server URL, API key, tool settings, and UI preferences from browser storage.');
+    const target = accountSession.role === 'admin'
+      ? 'all scoped user/guest data plus global connection settings'
+      : `${describeSession(accountSession)} data plus global connection settings`;
+    const ok = window.confirm(`Clear ${target} on this device? Other signed-in users are protected unless you are admin.`);
     if (!ok) return;
+
+    if (accountSession.role === 'admin') {
+      onSessionChange(clearAllAccountsAndScopedData());
+    } else {
+      clearCurrentSessionData(accountSession);
+    }
+
     for (const store of [localStorage, sessionStorage]) {
-      Object.keys(store).filter(k => k.startsWith('lemonade_')).forEach(k => store.removeItem(k));
+      Object.keys(store)
+        .filter(k => k === 'lemonade_base_url' || k === 'lemonade_api_key' || k === 'lemonade_current_view' || k === 'lemonade_theme')
+        .forEach(k => store.removeItem(k));
     }
     api.setSessionApiKey('');
     setHost(api.baseUrl);
     setApiKey('');
     setRememberApiKey(false);
-    setNotice('Local Lemonade data was cleared on this device.');
+    onLocalDataReset();
+    setNotice(accountSession.role === 'admin'
+      ? 'Admin cleared all scoped local user data and global connection settings.'
+      : 'Current profile data and global connection settings were cleared.');
     setError(null);
   };
 
@@ -128,7 +147,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
           className="btn btn--ghost"
           onClick={handleClearLocalData}
         >
-          Clear all local data
+          Clear permitted local data
         </button>
 
         <div className="connect__status">

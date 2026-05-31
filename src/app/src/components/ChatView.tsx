@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import api, { ChatMessage, ChatCompletionStats, LoadedModel, friendlyErrorMessage } from '../api';
+import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
 import { useChatStreaming, ToolCallEntry } from '../hooks/useChatStreaming';
 import {
@@ -7,6 +7,7 @@ import {
   canUseChatCompletions,
   capabilityBadge,
   capabilityFromLoaded,
+  capabilityFromModelInfo,
   capabilityIcon,
   capabilityLabel,
   modelDisplayName,
@@ -17,6 +18,8 @@ import {
   snapshotFromLoaded,
   snapshotFromName,
 } from '../modelCapabilities';
+import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
+import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -41,17 +44,21 @@ interface Conversation {
   schemaVersion?: number;
 }
 
-const STORAGE_KEY = 'lemonade_conversations';
-const ACTIVE_KEY = 'lemonade_active_conversation';
-const PERSIST_KEY = 'lemonade_persist_conversations';
-const STORAGE_VERSION = 2;
+const STORAGE_KEY = 'conversations';
+const ACTIVE_KEY = 'active_conversation';
+const PERSIST_KEY = 'persist_conversations';
+const STORAGE_VERSION = 3;
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function loadPersistencePreference(): boolean {
-  try { return localStorage.getItem(PERSIST_KEY) === 'true'; } catch { return false; }
+function scopedKey(scope: string, key: string): string {
+  return scopedStorageKey(scope, key);
+}
+
+function loadPersistencePreference(scope: string): boolean {
+  try { return localStorage.getItem(scopedKey(scope, PERSIST_KEY)) === 'true'; } catch { return false; }
 }
 
 function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
@@ -100,10 +107,10 @@ function normalizeConversation(raw: unknown): Conversation | null {
   };
 }
 
-function loadConversations(persist: boolean): Conversation[] {
+function loadConversations(persist: boolean, scope: string): Conversation[] {
   if (!persist) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scopedKey(scope, STORAGE_KEY));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     const list: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.conversations) ? parsed.conversations : []);
@@ -112,11 +119,11 @@ function loadConversations(persist: boolean): Conversation[] {
   return [];
 }
 
-function saveConversations(convos: Conversation[], persist: boolean) {
+function saveConversations(convos: Conversation[], persist: boolean, scope: string) {
   if (!persist) {
     try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(ACTIVE_KEY);
+      localStorage.removeItem(scopedKey(scope, STORAGE_KEY));
+      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
     } catch { /* ignore */ }
     return;
   }
@@ -134,22 +141,22 @@ function saveConversations(convos: Conversation[], persist: boolean) {
       audioName: undefined,
     })),
   }));
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
+  try { localStorage.setItem(scopedKey(scope, STORAGE_KEY), JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
 }
 
-function loadActiveId(persist: boolean): string | null {
+function loadActiveId(persist: boolean, scope: string): string | null {
   if (!persist) return null;
-  try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
+  try { return localStorage.getItem(scopedKey(scope, ACTIVE_KEY)); } catch { return null; }
 }
 
-function saveActiveId(id: string | null, persist: boolean) {
+function saveActiveId(id: string | null, persist: boolean, scope: string) {
   try {
     if (!persist) {
-      localStorage.removeItem(ACTIVE_KEY);
+      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
     } else if (id) {
-      localStorage.setItem(ACTIVE_KEY, id);
+      localStorage.setItem(scopedKey(scope, ACTIVE_KEY), id);
     } else {
-      localStorage.removeItem(ACTIVE_KEY);
+      localStorage.removeItem(scopedKey(scope, ACTIVE_KEY));
     }
   } catch { /* ignore */ }
 }
@@ -185,9 +192,10 @@ interface ChatViewProps {
   loadedModels: LoadedModel[];
   onModelSelect: (model: string) => void;
   onRefresh: () => void;
+  accountSession: AccountSession;
 }
 
-const TOOLS_KEY = 'lemonade_use_tools';
+const TOOLS_KEY = 'use_tools';
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
 
@@ -220,23 +228,43 @@ async function imageToBase64(file: File | Blob): Promise<string> {
   });
 }
 
+async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; input_audio: { data: string; format: string } }> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const comma = dataUrl.indexOf(',');
+  const payload = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  const lowerName = file.name.toLowerCase();
+  const mime = file.type.toLowerCase();
+  const format = mime.includes('mpeg') || lowerName.endsWith('.mp3') ? 'mp3'
+    : mime.includes('wav') || lowerName.endsWith('.wav') ? 'wav'
+      : mime.includes('webm') || lowerName.endsWith('.webm') ? 'webm'
+        : mime.includes('ogg') || lowerName.endsWith('.ogg') ? 'ogg'
+          : 'wav';
+  return { type: 'input_audio', input_audio: { data: payload, format } };
+}
+
 function friendlyChatError(message: string): string {
   const cleaned = message.replace(/^Error:\s*/i, '').trim();
   if (!cleaned) return "I couldn't complete that request. Please check the server logs for details.";
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh }) => {
-  const [persistHistory, setPersistHistory] = useState(loadPersistencePreference);
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference()));
-  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference()));
+const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh, accountSession }) => {
+  const storageScope = accountSession.storageScope;
+  const [persistHistory, setPersistHistory] = useState(() => loadPersistencePreference(storageScope));
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference(storageScope), storageScope));
+  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference(storageScope), storageScope));
   const [inputValue, setInputValue] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [railExpanded, setRailExpanded] = useState(true);
   const [useTools, setUseTools] = useState(() => {
-    try { return localStorage.getItem(TOOLS_KEY) === 'true'; } catch { return false; }
+    try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
   });
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -250,16 +278,41 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     () => loadedModels.find(m => m.model_name === currentModel) || null,
     [loadedModels, currentModel],
   );
-  const currentModelSnapshot = useMemo(
-    () => snapshotFromLoaded(currentLoadedModel) || snapshotFromName(currentModel, loadedModels),
-    [currentLoadedModel, currentModel, loadedModels],
+  const currentCustomModelInfo = useMemo(
+    () => loadCustomModels(storageScope).map(customModelToModelInfo).find(m => (m.name || m.id) === currentModel) || null,
+    [storageScope, currentModel],
   );
+  const currentModelSnapshot = useMemo(() => {
+    const loadedSnapshot = snapshotFromLoaded(currentLoadedModel);
+    if (currentCustomModelInfo) {
+      const customCapability = capabilityFromModelInfo(currentCustomModelInfo);
+      const customSnapshot = {
+        name: currentModel || currentCustomModelInfo.name || currentCustomModelInfo.id,
+        type: String((currentCustomModelInfo as any).type || customCapability || 'unknown'),
+        capability: customCapability,
+        recipe: String((currentCustomModelInfo as any).recipe || ''),
+        checkpoint: String((currentCustomModelInfo as any).checkpoint || ''),
+        device: currentLoadedModel?.device,
+      };
+      if (!loadedSnapshot || loadedSnapshot.capability === 'unknown' || loadedSnapshot.capability === 'chat') return customSnapshot;
+      return { ...loadedSnapshot, recipe: loadedSnapshot.recipe || customSnapshot.recipe, checkpoint: loadedSnapshot.checkpoint || customSnapshot.checkpoint };
+    }
+    return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
+  }, [currentLoadedModel, currentCustomModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
-  const selectableModels = useMemo(
-    () => loadedModels.filter(canSelectInComposer),
-    [loadedModels],
+  const customModelInfos = useMemo(
+    () => loadCustomModels(storageScope).map(customModelToModelInfo),
+    [storageScope],
   );
-  const modeSupportsChatCompletions = currentLoadedModel ? canUseChatCompletions(currentLoadedModel) : currentCapability === 'chat';
+  const capabilityForLoaded = useCallback((model: LoadedModel) => {
+    const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
+    return customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(model);
+  }, [customModelInfos]);
+  const selectableModels = useMemo(
+    () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'tts'].includes(capabilityForLoaded(m))),
+    [loadedModels, capabilityForLoaded],
+  );
+  const modeSupportsChatCompletions = currentLoadedModel ? canUseChatCompletions(currentLoadedModel) : (currentCapability === 'chat' || currentCapability === 'omni');
   const modeSupportsTools = modeSupportsChatCompletions;
 
   useEffect(() => {
@@ -326,14 +379,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
-    saveConversations(conversations, persistHistory);
-    try { localStorage.setItem(PERSIST_KEY, String(persistHistory)); } catch { /* ignore */ }
-  }, [conversations, persistHistory]);
+    saveConversations(conversations, persistHistory, storageScope);
+    try { localStorage.setItem(scopedKey(storageScope, PERSIST_KEY), String(persistHistory)); } catch { /* ignore */ }
+  }, [conversations, persistHistory, storageScope]);
 
   // Persist active conversation id
   useEffect(() => {
-    saveActiveId(activeId, persistHistory);
-  }, [activeId, persistHistory]);
+    saveActiveId(activeId, persistHistory, storageScope);
+  }, [activeId, persistHistory, storageScope]);
 
   // Active ID can point at stale/missing data after manual localStorage edits or migrations.
   useEffect(() => {
@@ -459,7 +512,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const hasImages = pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio'
       ? audioFiles.length > 0
-      : (!!text || hasImages);
+      : (!!text || hasImages || (currentCapability === 'omni' && audioFiles.length > 0));
     if (!canSubmitContent || isBusy) return;
     if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
 
@@ -553,12 +606,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }));
 
     // Add the new user message
-    if (images?.length) {
+    if (images?.length || (currentCapability === 'omni' && audioFiles.length > 0)) {
+      const audioParts = currentCapability === 'omni'
+        ? await Promise.all(audioFiles.slice(0, 1).map(audioToInputAudio))
+        : [];
       chatMessages.push({
         role: 'user' as const,
         content: [
-          { type: 'text' as const, text },
-          ...images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+          { type: 'text' as const, text: text || (audioFiles[0] ? `Please respond to this audio file: ${audioFiles[0].name}` : '') },
+          ...(images || []).map(url => ({ type: 'image_url' as const, image_url: { url } })),
+          ...audioParts,
         ],
       });
     } else {
@@ -579,11 +636,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   // ── Attachment handling ────────────────────────────────────
 
   const addAttachments = useCallback(async (files: File[]) => {
-    if (currentCapability === 'audio') {
+    if (currentCapability === 'audio' || currentCapability === 'omni') {
       const audioFiles = files.filter(f => f.type.startsWith('audio/'));
-      if (audioFiles.length === 0) return;
-      setPendingAudioFiles(audioFiles.slice(0, 1));
-      return;
+      if (audioFiles.length > 0) {
+        setPendingAudioFiles(audioFiles.slice(0, 1));
+        if (currentCapability === 'audio') return;
+      }
     }
 
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
@@ -648,22 +706,26 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, [handleSend]);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
-  const canAttach = currentCapability === 'chat' || currentCapability === 'audio';
-  const fileAccept = currentCapability === 'audio' ? 'audio/*' : 'image/*';
+  const canAttach = currentCapability === 'chat' || currentCapability === 'omni' || currentCapability === 'audio';
+  const fileAccept = currentCapability === 'audio' ? 'audio/*' : (currentCapability === 'omni' ? 'image/*,audio/*' : 'image/*');
   const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio'
     ? pendingAudioFiles.length > 0
-    : (!!inputValue.trim() || pendingImages.length > 0));
+    : (!!inputValue.trim() || pendingImages.length > 0 || (currentCapability === 'omni' && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
-    ? 'Connect to a server to start…'
-    : currentCapability === 'image'
+    ? 'Draft a message — connect and load a model to send…'
+    : currentCapability === 'omni'
+      ? `Message ${currentModel} with text, images, or audio…`
+      : currentCapability === 'image'
       ? `Describe an image for ${currentModel}…`
       : currentCapability === 'audio'
         ? `Attach an audio file to transcribe with ${currentModel}…`
         : currentCapability === 'tts'
           ? `Text to speak with ${currentModel}…`
           : `Message ${currentModel}…`;
-  const composerHint = currentCapability === 'image'
-    ? 'Image mode · prompt becomes /images/generations'
+  const composerHint = currentCapability === 'omni'
+    ? 'Omni mode · text, image and audio are routed through chat completions'
+    : currentCapability === 'image'
+      ? 'Image mode · prompt becomes /images/generations'
     : currentCapability === 'audio'
       ? 'Audio mode · attach one audio file for /audio/transcriptions'
       : currentCapability === 'tts'
@@ -740,9 +802,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         <div className="rail__privacy">
           <label className="rail__privacy-toggle">
             <input type="checkbox" checked={persistHistory} onChange={handlePersistenceToggle} />
-            <span>Local history {persistHistory ? 'ON' : 'OFF'}</span>
+            <span>{accountSession.isGuest ? 'Shared guest history' : 'Private local history'} {persistHistory ? 'ON' : 'OFF'}</span>
           </label>
-          <span className="rail__privacy-note">Media is never persisted.</span>
+          <span className="rail__privacy-note">{describeSession(accountSession)} · Media is never persisted.</span>
         </div>
       </aside>
 
@@ -755,11 +817,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
               currentModel={currentModel}
               onModelSelect={onModelSelect}
               onChipClick={(text) => setInputValue(text)}
+              customModelInfos={customModelInfos}
             />
           ) : (
             <div className="thread">
               {messages.map((msg, i) => (
-                <MessageBubble key={i} message={msg} activeModel={currentModelSnapshot} onOptionSelect={handleOptionSelect} />
+                <MessageBubble key={i} message={msg} activeModel={currentModelSnapshot} userLabel={accountSession.isGuest ? 'Guest' : accountSession.name} onOptionSelect={handleOptionSelect} />
               ))}
 
               {isStreaming && (
@@ -831,7 +894,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                 onChange={e => onModelSelect(e.target.value)}
               >
                 {selectableModels.map(m => {
-                  const cap = capabilityFromLoaded(m);
+                  const cap = capabilityForLoaded(m);
                   return <option key={m.model_name} value={m.model_name}>{capabilityIcon(cap)} {m.model_name} · {capabilityLabel(cap)}</option>;
                 })}
               </select>
@@ -845,7 +908,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             onClick={() => {
               const next = !useTools;
               setUseTools(next);
-              try { localStorage.setItem(TOOLS_KEY, String(next)); } catch { /* ignore */ }
+              try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(next)); } catch { /* ignore */ }
             }}
             disabled={!modeSupportsTools}
             title={modeSupportsTools
@@ -887,8 +950,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             className="composer__attach"
             onClick={() => fileInputRef.current?.click()}
             disabled={!canAttach || !currentModel || isBusy || pendingImages.length >= MAX_IMAGES}
-            title={currentCapability === 'audio' ? 'Attach audio' : 'Attach image'}
-            aria-label={currentCapability === 'audio' ? 'Attach audio' : 'Attach image'}
+            title={currentCapability === 'audio' ? 'Attach audio' : currentCapability === 'omni' ? 'Attach image or audio' : 'Attach image'}
+            aria-label={currentCapability === 'audio' ? 'Attach audio' : currentCapability === 'omni' ? 'Attach image or audio' : 'Attach image'}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
@@ -910,7 +973,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            disabled={!currentModel || isBusy || currentCapability === 'audio'}
+            disabled={isBusy || currentCapability === 'audio'}
             rows={1}
           />
           {isStreaming ? (
@@ -937,16 +1000,17 @@ interface EmptyStateProps {
   currentModel: string | null;
   onModelSelect: (model: string) => void;
   onChipClick: (text: string) => void;
+  customModelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onChipClick }) => (
+const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onChipClick, customModelInfos }) => (
   <>
     <div className="hero">
       <h1 className="hero__title">What's on your mind?</h1>
       <p className="hero__subtitle">
         {loadedModels.length > 0
           ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Choose the right mode, then start fresh.`
-          : 'Connect to a server and load a chat, image, audio, or TTS model to begin.'}
+          : 'Connect to a server and load a chat, omni, image, audio, or TTS model to begin.'}
       </p>
 
       <div className="chips" role="list">
@@ -977,8 +1041,9 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
         </div>
         <div className="active-models">
           {loadedModels.map(m => {
-            const cap = capabilityFromLoaded(m);
-            const selectable = canSelectInComposer(m);
+            const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
+            const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
+            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'tts'].includes(cap);
             const isActive = currentModel === m.model_name;
             return (
               <div className="active-card" key={m.model_name}>
@@ -1080,15 +1145,15 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; onOptionSelect?: (text: string) => void }> = ({ message, activeModel, onOptionSelect }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
   if (message.role === 'user') {
     return (
       <article className="message message--user">
-        <div className="message__avatar">Y</div>
+        <div className="message__avatar">{userLabel.charAt(0).toUpperCase()}</div>
         <div className="message__body">
-          <div className="message__author">You</div>
+          <div className="message__author">{userLabel}</div>
           {message.images && message.images.length > 0 && (
             <div className="message__images">
               {message.images.map((src, i) => (

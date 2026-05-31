@@ -1,6 +1,6 @@
 import type { ModelInfo } from './api';
 
-export type Capability = 'chat' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
+export type Capability = 'chat' | 'omni' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
 export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'auto';
 
 export interface RecipeOptions {
@@ -41,8 +41,18 @@ export interface Preset {
   starter: boolean;
 }
 
-export const LS_USER_PRESETS = 'lemonade_user_presets';
-export const LS_APPLIED_PRESETS = 'lemonade_applied_presets';
+export const LS_USER_PRESETS = 'user_presets';
+export const LS_APPLIED_PRESETS = 'applied_presets';
+
+let activeStorageScope = 'guest:shared';
+
+export function setPresetStorageScope(scope: string): void {
+  activeStorageScope = scope || 'guest:shared';
+}
+
+function scopedPresetKey(key: string): string {
+  return `lemonade:${activeStorageScope}:${key}`;
+}
 
 export const STARTERS: Preset[] = [
   { id: 's-balanced', name: 'Balanced', description: 'Sensible defaults. Good first pick for everyday chat.', applies_to: ['chat'], recipe_options: { ctx_size: 4096 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
@@ -57,6 +67,7 @@ export const STARTERS: Preset[] = [
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
   chat: 'Chat',
+  omni: 'Omni',
   image: 'Image',
   transcription: 'Transcription',
   tts: 'TTS',
@@ -72,6 +83,8 @@ const LABEL_MAP: Record<string, Capability> = {
   vision: 'vision',
   'tool-calling': 'chat',
   llm: 'chat',
+  omni: 'omni',
+  multimodal: 'omni',
   audio: 'transcription',
   transcription: 'transcription',
   tts: 'tts',
@@ -97,6 +110,8 @@ export function labelsFor(model: ModelInfo | string | null | undefined): Capabil
   if (recipeText.includes('sd-cpp')) caps.push('image');
   if (name.includes('embed')) caps.push('embedding');
   if (name.includes('rerank')) caps.push('reranking');
+  const nameHasOmni = /omni|multimodal|vision|llava|qwen.*vl|pixtral|minicpm.*v|mllama/.test(name);
+  if (nameHasOmni) caps.push('omni', 'vision');
   const unique = [...new Set(caps)];
   return unique.length > 0 ? unique : ['chat'];
 }
@@ -126,7 +141,7 @@ export function sanitizePreset(p: Partial<Preset>): Preset | null {
 
 export function loadUserPresets(): Preset[] {
   try {
-    const raw = localStorage.getItem(LS_USER_PRESETS);
+    const raw = localStorage.getItem(scopedPresetKey(LS_USER_PRESETS));
     if (raw) return (JSON.parse(raw) as Partial<Preset>[]).map(sanitizePreset).filter((p): p is Preset => !!p);
   } catch {}
   return [];
@@ -134,18 +149,18 @@ export function loadUserPresets(): Preset[] {
 
 export function loadApplied(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(LS_APPLIED_PRESETS);
+    const raw = localStorage.getItem(scopedPresetKey(LS_APPLIED_PRESETS));
     if (raw) return JSON.parse(raw);
   } catch {}
   return {};
 }
 
 export function saveUserPresets(presets: Preset[]): void {
-  localStorage.setItem(LS_USER_PRESETS, JSON.stringify(presets));
+  localStorage.setItem(scopedPresetKey(LS_USER_PRESETS), JSON.stringify(presets));
 }
 
 export function saveApplied(applied: Record<string, string>): void {
-  localStorage.setItem(LS_APPLIED_PRESETS, JSON.stringify(applied));
+  localStorage.setItem(scopedPresetKey(LS_APPLIED_PRESETS), JSON.stringify(applied));
 }
 
 export function allStoredPresets(): Preset[] {
