@@ -5,6 +5,7 @@ import AccountMenu from './features/accounts/AccountMenu';
 import { AccountSession, currentSession } from './features/accounts/accountStore';
 import { setPresetStorageScope } from './presetStore';
 import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
+import { findModelInfoByName, isCollectionFullyLoaded, isCollectionModel, withVirtualLoadedCollections } from './features/collections/collectionModels';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
@@ -126,17 +127,44 @@ const App: React.FC = () => {
 
   const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
     const customInfos = loadCustomModels(accountSession.storageScope).map(customModelToModelInfo);
+    const knownInfos = [...customInfos, ...api.allModels];
+    const enriched = withVirtualLoadedCollections(loaded, knownInfos).map(model => {
+      const info = findModelInfoByName(knownInfos, model.model_name);
+      if (!info) return model;
+      const cap = capabilityFromModelInfo(info);
+      return {
+        ...model,
+        type: cap === 'unknown' ? model.type : cap,
+        recipe: model.recipe || String((info as any).recipe || ''),
+        checkpoint: model.checkpoint || String((info as any).checkpoint || ''),
+      };
+    });
     const customSelectable = (name: string) => {
-      const info = customInfos.find(m => (m.name || m.id) === name);
+      const info = findModelInfoByName(customInfos, name);
       if (!info) return false;
       const cap = capabilityFromModelInfo(info);
       return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
     };
-    setLoadedModels(loaded);
+    const infoSelectable = (name: string) => {
+      const info = findModelInfoByName(knownInfos, name);
+      if (!info) return false;
+      const cap = capabilityFromModelInfo(info);
+      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+    };
+    setLoadedModels(enriched);
     setCurrentModel(current => {
-      if (current && loaded.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name)))) return current;
-      return selectPreferredLoadedModel(loaded)?.model_name
-        || loaded.find(m => customSelectable(m.model_name))?.model_name
+      if (current && enriched.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name) || infoSelectable(m.model_name)))) return current;
+      if (current) {
+        const info = findModelInfoByName(knownInfos, current);
+        if (info && isCollectionModel(info) && isCollectionFullyLoaded(info, loaded)) return current;
+      }
+      const virtualOmni = enriched.find(model => {
+        const info = findModelInfoByName(knownInfos, model.model_name);
+        return info && isCollectionModel(info);
+      });
+      return virtualOmni?.model_name
+        || selectPreferredLoadedModel(enriched)?.model_name
+        || enriched.find(m => customSelectable(m.model_name) || infoSelectable(m.model_name))?.model_name
         || null;
     });
   }, [accountSession.storageScope]);
@@ -176,8 +204,11 @@ const App: React.FC = () => {
       if (result) applyLoadedModels(result.health.all_models_loaded);
       else refreshGlobalModels();
     });
-    api.connect().then(connected => {
-      if (connected) refreshGlobalModels();
+    api.connect().then(async connected => {
+      if (!connected) return;
+      const result = await api.refresh().catch(() => null);
+      if (result) applyLoadedModels(result.health.all_models_loaded);
+      else refreshGlobalModels();
     });
     return () => { unsubStatus(); unsubModels(); };
   }, [applyLoadedModels]);
