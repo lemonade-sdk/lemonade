@@ -386,7 +386,25 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/12-responsive-mobile.png', fullPage: true });
   });
 
-  test('13 — Presets view renders zones and slide-over', async ({ page }) => {
+  test('13 — Presets v1.4 renders capability flow and stages bindings', async ({ page }) => {
+    let loadCalls = 0;
+    await page.addInitScript(() => {
+      localStorage.removeItem('lemonade_user_presets');
+      localStorage.removeItem('lemonade_applied_presets');
+    });
+    await page.route('**/api/v1/models**', async route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [
+          { id: 'llama-chat', name: 'llama-chat', labels: ['llm'], recipe: 'llamacpp' },
+          { id: 'sd-image', name: 'sd-image', labels: ['image'], recipe: 'sd-cpp' },
+        ],
+      }),
+    }));
+    await page.route('**/api/v1/load', async route => {
+      loadCalls++;
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ok' }) });
+    });
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
 
@@ -407,24 +425,24 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(lede).toContainText('sampling');
 
     // Zone: Bundled starters (scope to recipes view to avoid hitting Models zones)
-    const recipesView = page.locator('.recipes');
+    const recipesView = page.locator('.recipes').last();
     const starterZone = recipesView.locator('.zone').first();
     await expect(starterZone.locator('.zone__title')).toContainText('Bundled starters');
 
     // Should have 8 starter cards
-    const starterCards = page.locator('[data-recipe-grid="starters"] .recipe-card');
+    const starterCards = recipesView.locator('[data-recipe-grid="starters"] .recipe-card');
     await expect(starterCards).toHaveCount(8);
 
     // Starter badge on first card
     await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');
 
-    // Recipe chip visible on cards (shows recipe name like "llama.cpp")
-    await expect(starterCards.first().locator('.cap-chip')).toBeVisible();
+    // Capability chip visible on cards (v1.4 applies_to schema)
+    await expect(starterCards.first().locator('.cap-chip')).toContainText('Chat');
+    await expect(starterCards.nth(6).locator('.cap-chip')).toContainText('Image');
 
-    // Zone: Your presets
-    const yoursCards = page.locator('[data-recipe-grid="yours"] .recipe-card');
-    const yoursCount = await yoursCards.count();
-    console.log(`User presets: ${yoursCount}`);
+    // Zone: Your presets is genuinely empty on first run
+    await expect(recipesView.locator('[data-empty="yours"]')).toBeVisible();
+    await expect(recipesView.locator('[data-empty="yours"]')).toContainText('Pick a starter, clone it, or save from a model');
 
     // Click a preset card to open slide-over
     await starterCards.first().click();
@@ -433,25 +451,58 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Slide-over has preset name
     await expect(page.locator('.slideover__title')).toBeVisible();
 
-    // Slide-over shows recipe chip
-    await expect(page.locator('.slideover .cap-chip')).toBeVisible();
+    // Slide-over shows capability chips
+    await expect(page.locator('.slideover .cap-chip').first()).toContainText('Chat');
 
-    // Slide-over has recipe options section
-    await expect(page.locator('.slideover h3').getByText('Recipe options')).toBeVisible();
+    // Slide-over has primary behavior controls and closed advanced engine options
+    await expect(page.locator('.slideover h3').getByText('Behavior')).toBeVisible();
+    await expect(page.locator('.slideover details.preset-advanced')).not.toHaveAttribute('open', '');
 
     // Slide-over has form controls (sliders for ctx_size, etc.)
     await expect(page.locator('.slideover .slider').first()).toBeVisible();
 
-    // Close slide-over
+    // Incompatible model options are disabled with an explanation tooltip
+    const imageOption = page.locator('[data-recipe-apply-target] option[value="sd-image"]');
+    await expect(imageOption).toBeDisabled();
+    await expect(imageOption).toHaveAttribute('title', /Incompatible/);
+
+    // Applying stages the binding only; it does not POST /load immediately.
+    await page.locator('[data-recipe-apply-target]').selectOption('llama-chat');
+    await page.locator('.slideover .btn--primary').getByText('Apply').click();
+    await expect(page.locator('.preset-success')).toContainText('Will apply on next load');
+    expect(loadCalls).toBe(0);
+
     await page.locator('.slideover__close').click();
-    await page.waitForFunction(() => {
-      return !document.querySelector('.slideover.is-open');
-    });
+    await page.waitForFunction(() => !document.querySelector('.slideover.is-open'));
+    await expect(recipesView.locator('[data-applied-row="llama-chat"] .preset-status-chip')).toContainText('Will apply on next load');
 
     // New Preset button visible
     await expect(page.locator('.recipes__actions .btn--primary')).toContainText('New Preset');
 
     await page.screenshot({ path: 'screenshots/13-presets-view.png', fullPage: true });
+  });
+
+  test('13b — Presets import rejects legacy schema', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.removeItem('lemonade_user_presets');
+      localStorage.removeItem('lemonade_applied_presets');
+    });
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipes');
+
+    await page.locator('.dropdown__trigger').click();
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.locator('.dropdown__item').getByText('From file…').click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      name: 'legacy-preset.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ id: 'legacy', name: 'Legacy', recipe: 'llamacpp' })),
+    });
+
+    await expect(page.locator('.preset-error')).toContainText('This file uses the legacy schema. Use the v1.4 export instead.');
   });
 
   test('14 — Backends view shows matrix and device info', async ({ page }) => {

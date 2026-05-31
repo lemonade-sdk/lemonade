@@ -3059,6 +3059,44 @@ input, textarea {
   padding: var(--space-8) var(--space-4);
 }
 
+.preset-empty-title { font-weight: 700; color: var(--text-primary); margin: 0 0 var(--space-2); }
+.preset-empty-copy { color: var(--text-secondary); margin: 0; }
+.preset-empty-actions { display: flex; justify-content: center; gap: var(--space-2); margin-top: var(--space-4); }
+.preset-help, .preset-valid-keys {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0 0 var(--space-3);
+}
+.preset-error { color: var(--danger); font-size: 12px; margin: var(--space-2) 0 0; }
+.preset-success { color: var(--success); font-size: 12px; margin: var(--space-2) 0 0; }
+.preset-status-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(250,225,24,.22);
+  background: rgba(250,225,24,.10);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.preset-cap-button {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.preset-cap-button:disabled { cursor: default; }
+.preset-advanced summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-3);
+}
+
 /* ---------- Tiny button variant ---------- */
 
 .btn--tiny {
