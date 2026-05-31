@@ -41,6 +41,7 @@ CAPABILITIES = {
             "backends": [
                 "vulkan",
                 "rocm",
+                "cuda",
                 "metal",
                 "cpu",
                 "system",

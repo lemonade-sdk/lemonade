@@ -1251,6 +1251,82 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
             }
         }
 
+        // Case 5: Local quant-token fallback.
+        //
+        // Keep the existing resolver cases above as the primary logic: exact
+        // filenames, suffix matches, and folder-based sharding are more
+        // specific and preserve the CHECKPOINT:VARIANT contract.
+        //
+        // Some GGUF repositories name files with the quant token in the middle,
+        // for example:
+        //   Qwen3.6-27B-MTP-IMAT-IQ4_XS-Q8nextn.gguf
+        // for variant:
+        //   IQ4_XS
+        // That file does not end with IQ4_XS.gguf, so mirror the downloader's
+        // GGUF variant enumeration over the files that are already present in
+        // the local HF cache before declaring the model missing.
+        //
+        // HF cache paths have an extra snapshots/<revision>/ prefix that is not
+        // part of the repository-relative filename. Strip it before calling
+        // enumerate_gguf_variants(); otherwise the enumerator treats
+        // "snapshots" as a top-level sharded-folder variant and never extracts
+        // the quant token from the actual GGUF filename.
+        std::vector<std::string> relative_gguf_files;
+        std::map<std::string, std::string> absolute_by_relative;
+        auto repo_relative_from_cache_relative = [](std::string rel) {
+            std::replace(rel.begin(), rel.end(), '\\', '/');
+
+            static const std::string snapshots_prefix = "snapshots/";
+            if (rel.rfind(snapshots_prefix, 0) == 0) {
+                size_t revision_end = rel.find('/', snapshots_prefix.size());
+                if (revision_end != std::string::npos && revision_end + 1 < rel.size()) {
+                    rel = rel.substr(revision_end + 1);
+                }
+            }
+
+            return rel;
+        };
+
+        for (const auto& filepath : all_gguf_files) {
+            std::string relative_path = path_to_utf8(
+                path_from_utf8(filepath).lexically_relative(model_cache_path_fs));
+            relative_path = repo_relative_from_cache_relative(relative_path);
+
+            // Multiple HF snapshots can contain the same repo-relative file.
+            // Keep the first absolute path from the sorted all_gguf_files list
+            // so duplicates do not create false ambiguity.
+            if (absolute_by_relative.emplace(relative_path, filepath).second) {
+                relative_gguf_files.push_back(relative_path);
+            }
+        }
+
+        std::vector<std::string> enumerated_matches;
+        auto local_variants = lemon::enumerate_gguf_variants(relative_gguf_files);
+        for (const auto& local_variant : local_variants.variants) {
+            if (to_lower(local_variant.name) != variant_lower) {
+                continue;
+            }
+
+            auto it = absolute_by_relative.find(local_variant.primary_file);
+            if (it != absolute_by_relative.end()) {
+                enumerated_matches.push_back(it->second);
+            }
+        }
+
+        if (enumerated_matches.size() == 1) {
+            LOG(INFO, "ModelManager")
+                << "Resolved local GGUF variant '" << variant
+                << "' via quant-token fallback: " << enumerated_matches[0] << std::endl;
+            return enumerated_matches[0];
+        }
+
+        if (enumerated_matches.size() > 1) {
+            LOG(WARNING, "ModelManager")
+                << "Multiple local GGUF files matched variant '" << variant
+                << "' via quant-token fallback; refusing to guess" << std::endl;
+            return "";
+        }
+
         // No match found for the requested GGUF variant. Do not fall back to
         // another quantization in the same Hugging Face repo; otherwise a
         // custom download with a different quant can make a built-in model
@@ -1424,6 +1500,50 @@ static bool check_component_downloaded(const ModelInfo& info,
     return true;
 }
 
+static bool has_partial_files(const fs::path& dir) {
+    std::error_code ec;
+    if (!safe_is_directory(dir)) return false;
+    // Non-recursive scan for .partial markers to confirm folder integrity
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+        if (entry.path().extension() == ".partial") {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool is_checkpoint_path_complete(const std::string& path_str) {
+    if (path_str.empty()) return false;
+
+    fs::path resolved(path_str);
+    if (!safe_exists(resolved)) return false;
+
+    // A manifest or .partial file indicates an interrupted multi-file download
+    fs::path marker_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
+    if (safe_exists(marker_dir / ".download_manifest.json")) return false;
+
+    if (safe_is_directory(resolved)) {
+        if (has_partial_files(marker_dir)) return false;
+    } else if (safe_exists(path_from_utf8(path_str + ".partial"))) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Returns true if all files required by the model recipe are present and complete.
+ * Note: npu_cache is skipped as it is managed lazily by the flm-npu backend.
+ */
+static bool are_required_checkpoints_complete(const ModelInfo& info) {
+    for (const auto& [type, _] : info.checkpoints) {
+        if (type == "npu_cache") continue;
+
+        if (!is_checkpoint_path_complete(info.resolved_path(type))) return false;
+    }
+    return true;
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -1564,43 +1684,7 @@ void ModelManager::build_cache() {
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
         } else {
-            // Check if model file/dir exists
-            bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
-
-            if (file_exists) {
-                // Also check for incomplete downloads:
-                // 1. Check for .download_manifest.json in snapshot directory
-                // 2. Check for any .partial files
-                fs::path resolved(info.resolved_path());
-
-                // For directories (OGA models), check within the directory
-                // For files (GGUF models), check in parent directory
-                fs::path snapshot_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
-
-                // Check for manifest (indicates incomplete multi-file download)
-                fs::path manifest_path = snapshot_dir / ".download_manifest.json";
-                bool has_manifest = safe_exists(manifest_path);
-
-                // Check for .partial files
-                bool has_partial = false;
-                if (safe_is_directory(resolved)) {
-                    // For directories, scan for any .partial files inside
-                    std::error_code ec;
-                    for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
-                        if (entry.path().extension() == ".partial") {
-                            has_partial = true;
-                            break;
-                        }
-                    }
-                } else {
-                    // For files, check if the specific file has a .partial version
-                    has_partial = safe_exists(info.resolved_path() + ".partial");
-                }
-
-                info.downloaded = !has_manifest && !has_partial;
-            } else {
-                info.downloaded = false;
-            }
+            info.downloaded = are_required_checkpoints_complete(info);
         }
 
         if (info.downloaded) {
@@ -1703,33 +1787,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
     } else {
-        bool file_exists = !info.resolved_path().empty() && safe_exists(info.resolved_path());
-
-        if (file_exists) {
-            // Check for incomplete downloads
-            fs::path resolved(info.resolved_path());
-            fs::path snapshot_dir = safe_is_directory(resolved) ? resolved : resolved.parent_path();
-
-            fs::path manifest_path = snapshot_dir / ".download_manifest.json";
-            bool has_manifest = safe_exists(manifest_path);
-
-            bool has_partial = false;
-            if (safe_is_directory(resolved)) {
-                std::error_code ec;
-                for (const auto& entry : fs::directory_iterator(snapshot_dir, ec)) {
-                    if (entry.path().extension() == ".partial") {
-                        has_partial = true;
-                        break;
-                    }
-                }
-            } else {
-                has_partial = safe_exists(info.resolved_path() + ".partial");
-            }
-
-            info.downloaded = !has_manifest && !has_partial;
-        } else {
-            info.downloaded = false;
-        }
+        info.downloaded = are_required_checkpoints_complete(info);
     }
 
     populate_static_max_context_window(info);
@@ -2348,7 +2406,9 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 
     // O(1) lookup - download status is in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = models_cache_.find(model_name);
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
         return it->second.downloaded;
     }
