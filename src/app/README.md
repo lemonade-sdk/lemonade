@@ -1,69 +1,176 @@
 # Lemonade UI Redesign Prototype
 
-A static HTML/CSS/JS visualization of the redesigned lemonade UI. **Not production
-code** — this is a design prototype for evaluating the direction before committing
-to a real React port.
+A **React 19 + TypeScript + webpack** proof-of-concept for the next-generation Lemonade UI. This prototype is built side-by-side with the existing `src/app/` and `src/web-app/` in the main codebase and runs with **mocked APIs by default** (no `lemond` required to demo the UI). It's designed to work both as a web app and as a desktop Tauri application — a single React codebase powering both delivery channels.
 
-## Run it
+**Not production code** — this is an active design and engineering POC on branch `feat/ui-testing`. See [`.squad/decisions.md`](../../.squad/decisions.md) for the design rationale and capability-keyed presets architecture (v1.4).
 
-From this directory:
+## Prerequisites
+
+- **Node.js 20+** (check `package.json` `engines` field for exact requirement)
+- **npm 10+**
+- Optional: a running `lemond` instance if you want to point the prototype at a real server
+
+## Quick Start
+
+### Install dependencies
 
 ```bash
-python -m http.server 8080
+npm install
 ```
 
-Then open <http://localhost:8080>.
+### Run the dev server
 
-No build step. No dependencies. Plain HTML, CSS custom properties, and a small JS
-file for view switching and slide-over open/close.
+```bash
+npm run dev
+```
 
-## What's in here
+Opens at **http://localhost:8080** with hot-module reloading via webpack-dev-server.
 
-| File | What it is |
-|------|-----------|
-| `index.html`   | Single-page app, all 4 views toggleable from the top nav |
-| `tokens.css`   | Design tokens — color, type scale, space, radii, motion |
-| `styles.css`   | Layout + component styles, all expressed in tokens |
-| `app.js`       | Tiny imperative DOM glue (no framework) |
+## Build & Distribution
 
-## What to look at
+### Production build
 
-Open it and click through the top nav in this order:
+```bash
+npm run build
+```
 
-1. **Chat** — the hero view. Single view with two internal states:
-   - *Empty state* (default): greeting card, capability chips, loaded-models row, conversation rail expanded on the left, composer at the bottom, status pill in the bottom-left.
-   - *Thread state*: click any conversation in the left rail to swap into a populated thread with code block, per-message inline metrics, and a simulated streaming cursor on the last reply. The "+ New chat" pill at the top of the rail returns to the empty state.
-2. **Models** — one list, three zones (Loaded / Installed / Available), filter chips at the top (none preselected — click to filter), capability badges replacing colored dots. Click any row to open the slide-over detail panel. There's a hidden empty-state sketch inside `.manager__body` (`<div class="empty-state" hidden>`) — drop the `hidden` attribute in DevTools to preview the fresh-install state.
-3. **Backends** — device-first matrix (rows = devices, columns = capabilities). Update banner at top. Toggle "Show technical details" to reveal git SHAs. Empty matrix cells are now a clean em-dash with screen-reader text rather than filler copy.
-4. **Connect** — tabs for Connect (3rd-party app integration) and Discover (curated model + persona feed). Discover cards get an accent left-edge strip and a softer warm tint to differentiate from Connect.
+Outputs optimized bundles to `dist/`.
 
-## What's new in v1.1 (audit pass)
+### Watch mode (for development)
 
-- **Chat is now one view, not two.** Top nav dropped the redundant "Conversation" tab. The chat view carries its own empty ↔ thread state internally, driven by left-rail selection and the "+ New chat" pill.
-- **Filter chips no longer pre-select.** The "Chat" capability filter used to be on by default, which made the filter row read like nav tabs. All chips now start off.
-- **Selected vs hover are now visually distinct.** Selected rail items get an accent left-edge marker plus a tinted gradient background; hover is just `surface-2`.
-- **Focus rings everywhere.** `:focus-visible` accent ring on rail items, chips, buttons, tabs, and the new-chat pill for keyboard navigation.
-- **Fixed broken hovers.** `.cell__swap` and `.row__action--ghost` previously had identical default and hover backgrounds — they now actually respond.
-- **Hardcoded `#c89a3a` retired.** Replaced with a new `--accent-deep` token; the lemon dot and assistant avatar gradients now flow entirely through tokens.
-- **"Active in chat" is no longer a button.** It's a non-interactive `success`-colored status label, distinct from the "Switch to ▸" pill in the active-models cards.
-- **Empty state component sketched** for Models view (hidden by default — see above).
-- **Discover cards differentiated** from Connect via accent left strip and a faint warm gradient.
+```bash
+npm run watch
+```
 
-## What's mocked
+Incrementally rebuilds on file changes.
 
-Everything. There is no backend, no `lemond` connection, no real model loading,
-no real chat streaming. The composer accepts text but doesn't send anywhere. The
-slide-over panel always shows the same content shape with the row's data swapped
-in. Filter chips toggle visual state but don't actually filter the rows.
+## Testing
 
-## Design rationale
+### Headless tests (CI mode)
 
-Lives in [`.squad/decisions.md`](../../.squad/decisions.md) — search for the
-2026-05-15 entry titled *"UI/UX redesign study — competitive review + screenshot
-critique"*. The proposals there are the spec this prototype is rendering.
+```bash
+npm test
+```
 
-## Browser support
+Runs all Playwright tests headless via Chromium. Artifacts are saved to:
+- `test-results/` — JUnit XML, JSON, and HTML reports
+- `screenshots/` — screenshots on failure
 
-Tested mental model: latest Chromium / WebKit / Firefox. Uses `backdrop-filter`
-(WebKit-prefixed where needed), CSS custom properties, CSS grid. Honors
-`prefers-reduced-motion`.
+### Headed tests (visible browser)
+
+```bash
+npm run test:headed
+```
+
+Opens the browser so you can watch the tests run step-by-step.
+
+### First run setup
+
+On first run, Playwright may ask to install browser binaries:
+
+```bash
+npx playwright install
+```
+
+## What's Implemented
+
+This prototype showcases the **redesigned UI** with capability-keyed presets (v1.4):
+
+### UI Panels
+- **Chat** — multi-turn conversation with streaming support, preset selector, sampling controls
+- **Models** — model registry with load/unload, categorized view (Loaded / Installed / Available)
+- **Backends** — device-first capability matrix, backend versions and status
+- **Connect / Discover** — integration showcase and curated model feed
+- **Presets** (NEW) — capability-keyed preset system with chat (Balanced, Quality, Fast, Creative, Long Context, Code) and image (Sharp, Quick) starters
+
+### Presets v1.4 Features
+- **Capability-keyed compatibility** — presets declare `applies_to: [capability]` and models declare `labels`; runtime matches by label intersection
+- **Staged bindings** — when you adjust preset settings (temperature, top-p, etc.), they show "Will apply on next load" — no immediate server calls
+- **Sampling wired** — temperature, top_p, top_k, repeat_penalty settings are forwarded to `/api/v1/chat/completions`
+- **Advanced disclosure** — backend hint field behind an Advanced toggle for power users
+- **Distinct image presets** — Steps and CFG scale controls for image generation, separate from chat sampling
+
+## Project Structure
+
+```
+src/
+  index.tsx              # React entry point
+  index.html            # HTML shell
+  App.tsx               # Root component
+  api.ts                # API client (health, models, chat/completions, etc.)
+  presetStore.ts        # Presets state & v1.4 capability-keyed data model
+  components/           # React components (Chat, Models, Backends, Presets, etc.)
+  hooks/                # Custom React hooks
+  styles/               # CSS modules and global styles
+  tools/                # Utility functions
+
+tests/
+  features.spec.ts      # Playwright test suite
+
+webpack.config.js       # Webpack configuration (dev server, loaders, bundles)
+playwright.config.ts    # Playwright configuration (baseURL, browsers, output dirs)
+tsconfig.json           # TypeScript configuration
+```
+
+## Pointing at a Real Server
+
+By default, the prototype uses mocked APIs (responses without calling `lemond`). To point at a live server:
+
+1. Check `src/api.ts` for the `BASE_URL` constant
+2. Adjust it to your server (e.g., `http://localhost:8000`) or use the in-UI settings panel if implemented
+3. Optionally set `LEMONADE_API_KEY` in your environment if the server requires authentication
+
+The mock can be toggled in the code without a rebuild — see `src/api.ts` for the `USE_MOCK` flag.
+
+## Troubleshooting
+
+### Port 8080 is already in use
+
+```bash
+npm run dev -- --port 9000
+```
+
+Webpack dev server will bind to the next available port, or specify one explicitly with `--port`.
+
+### Playwright browser not found
+
+```bash
+npx playwright install chromium
+```
+
+This downloads the Chromium binary used by Playwright tests.
+
+### Hot reload isn't working
+
+Check that webpack-dev-server is running (it should print the URL). If you edited a file and the page didn't update, try:
+- Hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
+- Restart `npm run dev`
+
+### "Connection refused" when pointing at a real lemond
+
+Verify the server is running (`lemond` or `lemonade launch`), check the base URL in `api.ts`, and ensure no firewall is blocking the port. Try `curl http://localhost:8000/api/v1/health` from the terminal.
+
+### Test timeouts or failures
+
+Playwright waits up to 60 seconds by default (see `playwright.config.ts`). If tests time out:
+- Check that `npm run dev` is running on port 8080
+- Verify network connectivity (especially for real-server tests)
+- Run `npm run test:headed` to see what the browser is actually doing
+
+## Design & Architecture Notes
+
+- **Single codebase, dual delivery:** The same React source powers both web-served and desktop (Tauri) builds. Platform-specific code uses feature detection, not separate branches.
+- **Mocked-first development:** The mock API in `src/api.ts` makes the prototype runnable without `lemond`. Real `lemond` is optional for advanced testing.
+- **Local client state:** Per-client settings (base URL, API key, zoom, layout preferences) live in the client's `localStorage` — never on the server.
+- **Presets are client-side:** Presets are not persisted to the server; they're computed locally based on the model registry and user adjustments.
+
+## Next Steps
+
+To integrate this prototype into the main codebase:
+
+1. Coordinate with Kyle and the team on the next milestone (web app only vs. Tauri desktop first)
+2. Move approved UI components to `src/web-app/` or `src/app/` as appropriate
+3. Wire real API calls (remove the mock layer) once the server contract is finalized
+4. Update the main `CMakeLists.txt` build targets and Web app webpack if needed
+
+See [`.squad/decisions.md`](../../.squad/decisions.md) and [`.squad/agents/mattingly/history.md`](../../.squad/agents/mattingly/history.md) for the full decision trail and learnings.
