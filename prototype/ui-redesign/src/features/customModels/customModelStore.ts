@@ -9,6 +9,7 @@ export interface CustomModelComponentRoles {
   llm?: string;
   vision?: string;
   image?: string;
+  edit?: string;
   transcription?: string;
   speech?: string;
 }
@@ -112,6 +113,7 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
     llm: normalizeComponentName(draft.componentRoles?.llm),
     vision: normalizeComponentName(draft.componentRoles?.vision),
     image: normalizeComponentName(draft.componentRoles?.image),
+    edit: normalizeComponentName(draft.componentRoles?.edit),
     transcription: normalizeComponentName(draft.componentRoles?.transcription),
     speech: normalizeComponentName(draft.componentRoles?.speech),
   };

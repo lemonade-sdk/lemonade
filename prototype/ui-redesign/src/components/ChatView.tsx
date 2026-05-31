@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
-import { useChatStreaming, ToolCallEntry } from '../hooks/useChatStreaming';
+import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import {
   canSelectInComposer,
   canUseChatCompletions,
@@ -22,6 +22,8 @@ import {
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
+import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
+import { buildOmniToolRuntime } from '../tools/omniTools';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -201,6 +203,62 @@ const TOOLS_KEY = 'use_tools';
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
 
+const LEMONADE_TOOL_RUNTIME: ChatToolRuntime = {
+  tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
+  execute: executeTool as unknown as ChatToolRuntime['execute'],
+};
+
+function composeToolRuntimes(runtimes: Array<ChatToolRuntime | null | undefined>): ChatToolRuntime | null {
+  const active = runtimes.filter((runtime): runtime is ChatToolRuntime => !!runtime && runtime.tools.length > 0);
+  if (active.length === 0) return null;
+  if (active.length === 1) return active[0];
+
+  const tools: Record<string, unknown>[] = [];
+  const byName = new Map<string, ChatToolRuntime>();
+  const prompts: string[] = [];
+
+  for (const runtime of active) {
+    if (runtime.systemPrompt) prompts.push(runtime.systemPrompt);
+    for (const tool of runtime.tools) {
+      const name = String((tool as any).function?.name || '');
+      if (!name || byName.has(name)) continue;
+      tools.push(tool);
+      byName.set(name, runtime);
+    }
+  }
+
+  return {
+    tools,
+    systemPrompt: prompts.join('\n\n'),
+    execute: async call => {
+      const runtime = byName.get(call.function.name);
+      if (!runtime) {
+        return {
+          tool_call_id: call.id,
+          role: 'tool',
+          content: JSON.stringify({ error: `Unknown tool: ${call.function.name}` }),
+          error: true,
+          displayResult: `Error: unknown tool ${call.function.name}`,
+        };
+      }
+      return runtime.execute(call);
+    },
+  };
+}
+
+function collectToolArtifacts(toolCalls?: ToolCallEntry[]): ToolArtifact[] {
+  return (toolCalls || []).flatMap(call => call.artifacts || []);
+}
+
+function collectConversationImages(messages: Message[]): string[] {
+  const images: string[] = [];
+  for (const message of messages) {
+    if (message.images?.length) images.push(...message.images);
+    if (message.generatedImages?.length) images.push(...message.generatedImages);
+  }
+  return images;
+}
+
 /** Resize and compress an image file to base64 data URL */
 async function imageToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -362,15 +420,26 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
     const model = streamModelsRef.current[convoId] || null;
     delete streamModelsRef.current[convoId];
+    const artifacts = collectToolArtifacts(toolCalls);
+    const generatedImages = artifacts.filter(a => a.type === 'image').map(a => a.url);
+    const generatedAudio = artifacts.find(a => a.type === 'audio');
+    const mediaFallback = generatedImages.length > 0
+      ? `Generated ${generatedImages.length} image${generatedImages.length === 1 ? '' : 's'} from your prompt.`
+      : generatedAudio
+        ? 'Generated speech audio from your text.'
+        : '';
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, {
         role: 'assistant',
-        content: stats.content,
+        content: stats.content || mediaFallback,
         thinking: stats.reasoning || undefined,
         toolCalls,
         stats,
         model,
+        generatedImages: generatedImages.length > 0 ? generatedImages : undefined,
+        audioUrl: generatedAudio?.url,
+        audioName: generatedAudio?.name,
       }],
       updatedAt: Date.now(),
     }));
@@ -543,6 +612,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     let convoId = activeId;
     const modelSnapshot = currentModelSnapshot;
     const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
+    const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
 
     // Create a new conversation if none is active
     if (!convoId) {
@@ -590,59 +660,88 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     let requestImages = images;
     let includeDirectAudioParts = currentCapability === 'omni' && audioFiles.length > 0;
 
+    const omniRuntime = collectionInfo
+      ? buildOmniToolRuntime(collectionInfo, knownModelInfos, {
+          attachedImages: images || [],
+          attachedAudioFiles: audioFiles,
+          previousImages: collectConversationImages(currentMessages),
+        })
+      : null;
+
     if (collectionInfo) {
-      const visionComponent = hasImages ? getVisionChatComponent(collectionInfo, knownModelInfos) : null;
       const primaryChatComponent = getPrimaryChatComponent(collectionInfo, knownModelInfos);
-      requestModelName = visionComponent || primaryChatComponent || currentModel;
-      requestImages = visionComponent ? images : undefined;
-      includeDirectAudioParts = false;
-      if (hasImages && !visionComponent) {
-        requestText = `${requestText || 'Please respond to the attached image.'}\n\n[Omni collection note: no vision-capable component is configured for this custom/registry collection, so the image itself was not sent.]`.trim();
-      }
-      if (audioFiles.length > 0) {
-        const transcriptionComponent = getAudioTranscriptionComponent(collectionInfo, knownModelInfos);
-        if (transcriptionComponent) {
-          try {
-            const transcript = await api.audioTranscription(transcriptionComponent, audioFiles[0]);
-            requestText = `${requestText || 'Please respond to this audio file.'}\n\nAudio transcript (${audioFiles[0].name}):\n${transcript}`.trim();
-          } catch (err) {
-            appendAssistantMessage(convoId, {
-              content: friendlyChatError(friendlyErrorMessage(err)),
-              model: modelSnapshot,
-              isError: true,
-            });
-            return;
+      if (omniRuntime) {
+        requestModelName = primaryChatComponent || currentModel;
+        requestImages = undefined;
+        includeDirectAudioParts = false;
+
+        const placeholders: string[] = [];
+        if (hasImages) placeholders.push(...(images || []).map((_, i) => `[User provided image #${i + 1}]`));
+        if (audioFiles.length > 0) placeholders.push(...audioFiles.slice(0, 1).map((file, i) => `[User provided audio file #${i + 1}: ${file.name}]`));
+        if (placeholders.length > 0) {
+          requestText = `${requestText || 'Please respond to the attached media.'}\n\n${placeholders.join('\n')}`.trim();
+        }
+      } else {
+        const visionComponent = hasImages ? getVisionChatComponent(collectionInfo, knownModelInfos) : null;
+        requestModelName = visionComponent || primaryChatComponent || currentModel;
+        requestImages = visionComponent ? images : undefined;
+        includeDirectAudioParts = false;
+        if (hasImages && !visionComponent) {
+          requestText = `${requestText || 'Please respond to the attached image.'}\n\n[Omni collection note: no vision-capable component is configured for this custom/registry collection, so the image itself was not sent.]`.trim();
+        }
+        if (audioFiles.length > 0) {
+          const transcriptionComponent = getAudioTranscriptionComponent(collectionInfo, knownModelInfos);
+          if (transcriptionComponent) {
+            try {
+              const transcript = await api.audioTranscription(transcriptionComponent, audioFiles[0]);
+              requestText = `${requestText || 'Please respond to this audio file.'}\n\nAudio transcript (${audioFiles[0].name}):\n${transcript}`.trim();
+            } catch (err) {
+              appendAssistantMessage(convoId, {
+                content: friendlyChatError(friendlyErrorMessage(err)),
+                model: modelSnapshot,
+                isError: true,
+              });
+              return;
+            }
+          } else {
+            requestText = `${requestText || 'Please respond to this audio file.'}\n\n[Omni collection note: no audio transcription component is configured for this collection.]`.trim();
           }
-        } else {
-          requestText = `${requestText || 'Please respond to this audio file.'}\n\n[Omni collection note: no audio transcription component is configured for this collection.]`.trim();
         }
       }
     }
 
+    const toolRuntime = composeToolRuntimes([
+      omniRuntime,
+      useTools && modeSupportsTools ? LEMONADE_TOOL_RUNTIME : null,
+    ]);
+
     // Build chat history from the conversation's current messages + new user message.
     // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
-    const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const chatMessages: ChatMessage[] = [];
 
-    // Inject a system prompt when tools are enabled so the model knows to use them.
+    const systemPrompts: string[] = [];
+    if (omniRuntime?.systemPrompt) systemPrompts.push(omniRuntime.systemPrompt);
+
+    // Inject a system prompt when Lemonade tools are enabled so the model knows to use them.
     // Keep this privacy-safe: no backend URLs, API keys, PIDs, or local paths.
     if (useTools && modeSupportsTools) {
       const loadedList = loadedModels.length > 0
         ? loadedModels.map(m => `${m.model_name} (${capabilityLabel(capabilityFromLoaded(m))})`).join(', ')
         : 'none';
-      chatMessages.push({
-        role: 'system' as const,
-        content: [
-          'You are a helpful assistant integrated with a local AI inference app called Lemonade.',
-          'Use available tools when the user asks about local models, backends, hardware capability, or server health.',
-          'When presenting choices, use the ask_question tool so the UI can render clickable options.',
-          '',
-          'RICH CONTENT: Responses are rendered as Markdown with code blocks, Mermaid diagrams, HTML snippets, and LaTeX math.',
-          '',
-          `Currently loaded model names and capabilities: ${loadedList}`,
-          `Active composer model: ${currentModel || 'none'}`,
-        ].join('\n'),
-      });
+      systemPrompts.push([
+        'You are a helpful assistant integrated with a local AI inference app called Lemonade.',
+        'Use Lemonade management tools when the user asks about local models, backends, hardware capability, or server health.',
+        'When presenting choices, use the ask_question tool so the UI can render clickable options.',
+        '',
+        'RICH CONTENT: Responses are rendered as Markdown with code blocks, Mermaid diagrams, HTML snippets, and LaTeX math.',
+        '',
+        `Currently loaded model names and capabilities: ${loadedList}`,
+        `Active composer model: ${currentModel || 'none'}`,
+      ].join('\n'));
+    }
+
+    if (systemPrompts.length > 0) {
+      chatMessages.push({ role: 'system' as const, content: systemPrompts.join('\n\n') });
     }
 
     const historyMessages = currentMessages.filter(m => {
@@ -682,7 +781,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }
 
     streamModelsRef.current[convoId] = modelSnapshot;
-    await streaming.send(convoId, requestModelName, chatMessages, useTools && modeSupportsTools);
+    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

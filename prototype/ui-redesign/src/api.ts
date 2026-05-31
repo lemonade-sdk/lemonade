@@ -79,6 +79,18 @@ function normalizeModels(data: unknown): ModelsData {
   return { data: Array.isArray(obj.data) ? obj.data as ModelInfo[] : [] };
 }
 
+function blobFromDataUrl(dataUrl: string): Blob {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+  if (!match) throw new Error('Expected an image data URL for editing.');
+  const mime = match[1] || 'image/png';
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || '';
+  const binary = isBase64 ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface HealthData {
@@ -504,13 +516,36 @@ class LemonadeAPI {
     return images;
   }
 
-  async textToSpeech(model: string, input: string, voice = 'alloy'): Promise<{ url: string; blob: Blob }> {
+  async textToSpeech(model: string, input: string, voice = 'alloy', opts: Record<string, unknown> = {}): Promise<{ url: string; blob: Blob }> {
     const resp = await this._fetch('/api/v1/audio/speech', {
       method: 'POST',
-      body: { model, input, voice },
+      body: { ...opts, model, input, voice },
     });
     const blob = await resp.blob();
     return { blob, url: URL.createObjectURL(blob) };
+  }
+
+  async imageEdit(model: string, prompt: string, imageDataUrl: string, opts: Record<string, unknown> = {}): Promise<string[]> {
+    const requestedSize = typeof opts.size === 'string' ? opts.size : '1024x1024';
+    const imageBlob = blobFromDataUrl(imageDataUrl);
+    const form = new FormData();
+    form.append('model', model);
+    form.append('prompt', prompt);
+    form.append('size', requestedSize);
+    form.append('response_format', 'b64_json');
+    form.append('n', String(typeof opts.n === 'number' ? opts.n : 1));
+    form.append('image', imageBlob, 'image.png');
+
+    const data = await this._json<Record<string, any>>('/api/v1/images/edits', {
+      method: 'POST',
+      body: form,
+    });
+    const items = Array.isArray(data.data) ? data.data : [];
+    const images = items
+      .map((item: any) => item?.b64_json ? `data:image/png;base64,${item.b64_json}` : item?.url)
+      .filter((url: unknown): url is string => typeof url === 'string' && url.length > 0);
+    if (images.length === 0) throw new Error('Image edit endpoint returned no image data.');
+    return images;
   }
 
   async audioTranscription(model: string, file: File): Promise<string> {
@@ -922,6 +957,27 @@ class LemonadeAPI {
       clearInterval(statsInterval);
       onError?.(err as Error);
     }
+  }
+
+  async chatCompletionOnce(
+    model: string,
+    messages: ChatMessage[],
+    params: Record<string, unknown> = {},
+  ): Promise<string> {
+    const data = await this._json<Record<string, any>>('/api/v1/chat/completions', {
+      method: 'POST',
+      body: { model, messages, stream: false, ...samplingForModel(model), ...params },
+    });
+    if (data.error) {
+      throw new Error(data.error?.message || 'Chat completion failed');
+    }
+    const message = data.choices?.[0]?.message;
+    const content = message?.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim();
+    }
+    return '';
   }
 
   // ── Connection management ───────────────────────────────────────
