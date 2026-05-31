@@ -40,7 +40,7 @@ const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   kokoro: [],
 };
 
-const CAPABILITIES: Capability[] = ['chat', 'image', 'transcription', 'tts', 'embedding', 'reranking', 'vision', 'code'];
+const CAPABILITIES: Capability[] = ['chat', 'omni', 'image', 'transcription', 'tts', 'embedding', 'reranking', 'vision', 'code'];
 
 function modelName(model: ModelInfo): string {
   return model.id || model.name || model.display_name || 'unknown';
@@ -64,7 +64,7 @@ function paramsPreview(preset: Preset): string {
   if (cap === 'image') {
     return `${ro.steps ?? '—'} steps · cfg ${ro.cfg_scale != null ? ro.cfg_scale.toFixed(1) : '—'}`;
   }
-  if (cap === 'chat' || cap === 'code' || cap === 'vision') {
+  if (cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision') {
     return `temp ${sp.temperature != null ? sp.temperature.toFixed(2) : '—'} · ctx ${ro.ctx_size ?? '—'}`;
   }
   return 'client-side preset';
@@ -476,7 +476,7 @@ const SlideoverContent: React.FC<{
   const selectedModel = models.find(m => modelName(m) === applyTarget);
   const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
   const validKeys = RECIPE_KEYS[engineHint] || [];
-  const hasChat = appliesTo.some(cap => cap === 'chat' || cap === 'code' || cap === 'vision');
+  const hasChat = appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = appliesTo.includes('image');
 
   const toggleCap = (cap: Capability) => {
@@ -604,7 +604,7 @@ function buildRecipeOptions(
   sdcppArgs: string,
 ): RecipeOptions {
   const opts: RecipeOptions = {};
-  if (appliesTo.some(cap => cap === 'chat' || cap === 'code' || cap === 'vision')) opts.ctx_size = ctxSize;
+  if (appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) opts.ctx_size = ctxSize;
   if (appliesTo.includes('image')) {
     opts.steps = steps;
     opts.cfg_scale = cfgScale;
@@ -619,7 +619,7 @@ function buildRecipeOptions(
 }
 
 function buildSampling(appliesTo: Capability[], temperature: number, topP: number, topK: number, repeatPenalty: number): SamplingParams {
-  if (!appliesTo.some(cap => cap === 'chat' || cap === 'code' || cap === 'vision')) return {};
+  if (!appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) return {};
   return { temperature, top_p: topP, top_k: topK, repeat_penalty: repeatPenalty };
 }
 

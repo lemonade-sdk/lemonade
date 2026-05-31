@@ -54,7 +54,7 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
     device: String(model.device || ''),
     backend_url: String(model.backend_url || ''),
     pid: Number(model.pid || 0),
-    type: String(model.type || 'llm').toLowerCase(),
+    type: String(model.type || 'unknown').toLowerCase(),
     last_use: Number(model.last_use || Date.now()),
     recipe_options: isObject(model.recipe_options) ? model.recipe_options : undefined,
   };
@@ -252,6 +252,7 @@ export type LemonadeRequestInit = Omit<RequestInit, 'body'> & { body?: unknown }
 export type ChatMessageContent = string | null | Array<
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: string } }
 >;
 
 export interface ChatMessage {

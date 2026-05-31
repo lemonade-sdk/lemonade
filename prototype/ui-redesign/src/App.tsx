@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
-import { canSelectInComposer, selectPreferredLoadedModel } from './modelCapabilities';
+import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
+import AccountMenu from './features/accounts/AccountMenu';
+import { AccountSession, currentSession } from './features/accounts/accountStore';
+import { setPresetStorageScope } from './presetStore';
+import { customModelToModelInfo, loadCustomModels } from './features/customModels/customModelStore';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
@@ -90,6 +94,26 @@ const App: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [accountSession, setAccountSession] = useState<AccountSession>(() => {
+    const session = currentSession();
+    setPresetStorageScope(session.storageScope);
+    return session;
+  });
+  const [accountResetNonce, setAccountResetNonce] = useState(0);
+
+
+  useEffect(() => {
+    setPresetStorageScope(accountSession.storageScope);
+  }, [accountSession.storageScope]);
+
+  const handleAccountSessionChange = useCallback((next: AccountSession) => {
+    setPresetStorageScope(next.storageScope);
+    setAccountSession(next);
+  }, []);
+
+  const handleAccountDataReset = useCallback(() => {
+    setAccountResetNonce(n => n + 1);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -101,12 +125,21 @@ const App: React.FC = () => {
   }, []);
 
   const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
+    const customInfos = loadCustomModels(accountSession.storageScope).map(customModelToModelInfo);
+    const customSelectable = (name: string) => {
+      const info = customInfos.find(m => (m.name || m.id) === name);
+      if (!info) return false;
+      const cap = capabilityFromModelInfo(info);
+      return cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts';
+    };
     setLoadedModels(loaded);
     setCurrentModel(current => {
-      if (current && loaded.some(m => m.model_name === current && canSelectInComposer(m))) return current;
-      return selectPreferredLoadedModel(loaded)?.model_name || null;
+      if (current && loaded.some(m => m.model_name === current && (canSelectInComposer(m) || customSelectable(m.model_name)))) return current;
+      return selectPreferredLoadedModel(loaded)?.model_name
+        || loaded.find(m => customSelectable(m.model_name))?.model_name
+        || null;
     });
-  }, []);
+  }, [accountSession.storageScope]);
 
   const setView = useCallback((v: View) => {
     setViewState(v);
@@ -205,6 +238,11 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right">
+          <AccountMenu
+            session={accountSession}
+            onSessionChange={handleAccountSessionChange}
+            onDataReset={handleAccountDataReset}
+          />
           <button className="titlebar__theme-toggle" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
@@ -219,8 +257,10 @@ const App: React.FC = () => {
         <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="chat">
             <ChatView
+              key={`${accountSession.storageScope}:${accountResetNonce}`}
               currentModel={currentModel}
               loadedModels={loadedModels}
+              accountSession={accountSession}
               onModelSelect={handleModelSelect}
               onRefresh={handleRefreshModels}
             />
@@ -231,12 +271,13 @@ const App: React.FC = () => {
             <ModelManager
               onModelSelect={handleModelSelect}
               selectedModel={currentModel}
+              accountSession={accountSession}
             />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'presets' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="presets">
-            <PresetManager loadedModels={loadedModels} />
+            <PresetManager key={accountSession.storageScope} loadedModels={loadedModels} />
           </ViewErrorBoundary>
         </div>
         <div style={{ display: view === 'backends' ? 'contents' : 'none' }}>
@@ -256,7 +297,12 @@ const App: React.FC = () => {
         </div>
         <div style={{ display: view === 'connect' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="connect">
-            <ConnectView status={status} />
+            <ConnectView
+              status={status}
+              accountSession={accountSession}
+              onLocalDataReset={handleAccountDataReset}
+              onSessionChange={handleAccountSessionChange}
+            />
           </ViewErrorBoundary>
         </div>
       </div>

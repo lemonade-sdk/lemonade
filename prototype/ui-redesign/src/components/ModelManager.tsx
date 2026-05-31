@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage } from '../api';
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel } from '../modelCapabilities';
+import type { AccountSession } from '../features/accounts/accountStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -48,6 +50,7 @@ function modelType(m: ModelInfo): string {
 function typeColor(type: string): string {
   switch (type) {
     case 'llm': return 'var(--accent)';
+    case 'omni': return '#facc15';
     case 'image': return '#c084fc';
     case 'audio': return '#60a5fa';
     case 'tts': return '#34d399';
@@ -61,6 +64,9 @@ function labelDisplay(label: string): string {
   const map: Record<string, string> = {
     'tool-calling': '🔧 Tools',
     'vision': '👁 Vision',
+    'omni': '✦ Omni',
+    'multimodal': '✦ Multimodal',
+    'vision-language': '✦ Vision Language',
     'reasoning': '🧠 Reasoning',
     'coding': '💻 Code',
     'hot': '🔥 Popular',
@@ -106,11 +112,12 @@ const RECIPE_BADGES: Record<string, string> = {
 
 /* ── Filter / search types ─────────────────────────────────── */
 
-type FilterTab = 'all' | 'llm' | 'image' | 'audio' | 'tts' | 'embedding';
+type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: 'all', label: 'All', icon: '✦' },
   { key: 'llm', label: 'LLM', icon: '💬' },
+  { key: 'omni', label: 'Omni', icon: '✦' },
   { key: 'image', label: 'Image', icon: '🎨' },
   { key: 'audio', label: 'Audio', icon: '🎤' },
   { key: 'tts', label: 'TTS', icon: '🔊' },
@@ -122,9 +129,10 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
 interface ModelManagerProps {
   onModelSelect: (model: string) => void;
   selectedModel: string | null;
+  accountSession: AccountSession;
 }
 
-const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedModel }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedModel, accountSession }) => {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
@@ -145,6 +153,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const pullHfAbortRef = useRef<Record<string, AbortController>>({});
   const [hfVariants, setHfVariants] = useState<Record<string, PullVariantsResult>>({}); // hf id → variants data
   const [hfVariantsLoading, setHfVariantsLoading] = useState<Record<string, boolean>>({}); // hf id → loading
+
+  const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [customDraft, setCustomDraft] = useState({
+    name: '',
+    displayName: '',
+    checkpoint: '',
+    recipe: 'llamacpp',
+    capability: 'chat' as CustomModelCapability,
+    maxContextWindow: '4096',
+    labels: '',
+  });
+
+  const reloadCustomModels = useCallback(() => {
+    setCustomModels(loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
+  }, [accountSession.storageScope]);
+
+  useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
 
   const refresh = useCallback(async () => {
     if (!api.isConnected) return;
@@ -214,7 +241,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const name = modelName(model);
     setLoadingModel(name);
     try {
-      await api.loadModel(name);
+      await api.loadModel(name, customLoadOptions(model));
       await refresh();
       onModelSelect(name);
     } catch { /* keep going */ }
@@ -230,6 +257,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if ((model as any).custom) {
+      if (!confirm(`Delete custom model definition "${model.display_name || name}"? This does not remove external model files.`)) return;
+      deleteCustomModel(accountSession.storageScope, String((model as any).id || name));
+      reloadCustomModels();
+      return;
+    }
     if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
     setLoadingModel(name);
     try {
@@ -293,7 +326,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         await refresh();
         setLoadingModel(name);
         try {
-          await api.loadModel(name);
+          await api.loadModel(name, customLoadOptions(model));
           await refresh();
           onModelSelect(name);
         } catch { /* keep going */ }
@@ -359,6 +392,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setHfVariantsLoading(prev => ({ ...prev, [hfId]: false }));
   };
 
+
+  const handleCustomDraftChange = (patch: Partial<typeof customDraft>) => {
+    setCustomDraft(prev => ({ ...prev, ...patch }));
+    setCustomError(null);
+  };
+
+  const handleSaveCustomModel = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomError(null);
+    try {
+      const saved = upsertCustomModel(accountSession.storageScope, {
+        name: customDraft.name,
+        displayName: customDraft.displayName,
+        checkpoint: customDraft.checkpoint,
+        recipe: customDraft.recipe,
+        capability: customDraft.capability,
+        maxContextWindow: customDraft.maxContextWindow.trim() && Number.isFinite(Number(customDraft.maxContextWindow)) ? Number(customDraft.maxContextWindow) : undefined,
+        labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
+      });
+      reloadCustomModels();
+      setShowCustomForm(false);
+      setSearchQuery(saved.name);
+      setCustomDraft({ name: '', displayName: '', checkpoint: '', recipe: customDraft.capability === 'omni' ? 'llamacpp' : 'llamacpp', capability: 'chat', maxContextWindow: '4096', labels: '' });
+    } catch (err) {
+      setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
+    }
+  };
+
   /* ── Derived data ────────────────────────────────────────── */
 
   const loadedNames = useMemo(
@@ -366,17 +427,32 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     [loadedModels]
   );
 
+  const allModels = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: ModelInfo[] = [];
+    for (const m of customModels) {
+      const name = modelName(m).toLowerCase();
+      seen.add(name);
+      merged.push(m);
+    }
+    for (const m of models) {
+      const name = modelName(m).toLowerCase();
+      if (!seen.has(name)) merged.push(m);
+    }
+    return merged;
+  }, [customModels, models]);
+
   const { downloaded, available } = useMemo(() => {
     const dl: ModelInfo[] = [];
     const av: ModelInfo[] = [];
-    for (const m of models) {
+    for (const m of allModels) {
       const name = modelName(m);
       if (loadedNames.has(name)) continue;
       if ((m as any).downloaded) dl.push(m);
       else av.push(m);
     }
     return { downloaded: dl, available: av };
-  }, [models, loadedNames]);
+  }, [allModels, loadedNames]);
 
   const applyFilter = useCallback((list: ModelInfo[]) => {
     let filtered = list;
@@ -413,7 +489,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return loadedModels.filter(m => {
       // Type filter
       if (filterTab !== 'all') {
-        const cap = capabilityFromLoaded(m);
+        const info = allModels.find(mi => modelName(mi) === m.model_name);
+        const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
         const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
         if (filterTab === 'embedding') {
           if (type !== 'embedding' && type !== 'reranking') return false;
@@ -426,7 +503,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       }
       return true;
     });
-  }, [loadedModels, filterTab, searchQuery]);
+  }, [loadedModels, filterTab, searchQuery, allModels]);
 
   // Available zone: show first N unless expanded or searching
   const AVAILABLE_INITIAL = 20;
@@ -439,9 +516,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   // HuggingFace results — exclude models already in local registry
   const filteredHfResults = useMemo(() => {
     if (hfResults.length === 0) return [];
-    const localIds = new Set(models.map(m => modelName(m).toLowerCase()));
+    const localIds = new Set(allModels.map(m => modelName(m).toLowerCase()));
     return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
-  }, [hfResults, models]);
+  }, [hfResults, allModels]);
 
   /* ── Toggle detail ───────────────────────────────────────── */
   const toggleDetail = (name: string) => {
@@ -545,10 +622,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   const renderRunningModel = (m: LoadedModel) => {
-    const cap = capabilityFromLoaded(m);
+    const info = allModels.find(mi => modelName(mi) === m.model_name);
+    const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
     const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
     const isActive = selectedModel === m.model_name;
-    const selectable = canSelectInComposer(m);
+    const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
     return (
       <div className={`row row--running${isActive ? ' row--active' : ''}`} key={m.model_name}>
         <div className="row__content" onClick={() => toggleDetail(m.model_name)}>
@@ -584,11 +662,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               className="row__action row__action--delete"
               onClick={(e) => {
                 e.stopPropagation();
-                const info = models.find(mi => modelName(mi) === m.model_name);
-                if (info) handleDelete(info);
+                const infoForDelete = allModels.find(mi => modelName(mi) === m.model_name);
+                if (infoForDelete) handleDelete(infoForDelete);
               }}
               disabled={loadingModel === m.model_name}
-              title="Delete model files"
+              title={info && (info as any).custom ? 'Delete custom model definition' : 'Delete model files'}
             >
               🗑
             </button>
@@ -598,7 +676,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
         {expandedModel === m.model_name && (() => {
           // find matching ModelInfo for detail
-          const info = models.find(mi => modelName(mi) === m.model_name);
+          const info = allModels.find(mi => modelName(mi) === m.model_name);
           if (!info) return null;
           // Merge loaded model's live recipe_options over static registry data
           const liveCtx = m.recipe_options?.ctx_size as number | undefined;
@@ -666,7 +744,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               </div>
             ) : isDownloaded ? (
               <>
-                <span className="row__status-pill row__status-pill--ready">Ready</span>
+                <span className="row__status-pill row__status-pill--ready">{(m as any).custom ? 'Custom' : 'Ready'}</span>
                 <button
                   className="row__action"
                   onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
@@ -678,7 +756,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   className="row__action row__action--delete"
                   onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
                   disabled={isLoading}
-                  title="Delete model files"
+                  title={(m as any).custom ? 'Delete custom model definition' : 'Delete model files'}
                 >
                   🗑
                 </button>
@@ -894,7 +972,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             </span>
             <span className="manager__stat-sep">·</span>
             <span className="manager__stat">
-              <span className="manager__stat-num">{models.length}</span> available
+              <span className="manager__stat-num">{allModels.length}</span> available
             </span>
             {totalPulling > 0 && (
               <>
@@ -923,6 +1001,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <button className="manager__search-clear" onClick={() => setSearchQuery('')}>×</button>
             )}
           </div>
+          <button className="btn btn--ghost manager__custom-btn" onClick={() => setShowCustomForm(v => !v)}>+ Custom model</button>
           <div className="manager__filters">
             {FILTER_TABS.map(tab => (
               <button
@@ -939,6 +1018,47 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       </div>
 
       <div className="manager__body">
+
+        {showCustomForm && (
+          <section className="zone custom-model-form" aria-label="Add custom model">
+            <div className="zone__head">
+              <span className="zone__dot zone__dot--available" />
+              <span className="zone__title">Custom model</span>
+              <span className="zone__rule" />
+            </div>
+            <form className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
+              <label>Model name
+                <input value={customDraft.name} onChange={e => handleCustomDraftChange({ name: e.target.value })} placeholder="user.my-model" />
+              </label>
+              <label>Display name
+                <input value={customDraft.displayName} onChange={e => handleCustomDraftChange({ displayName: e.target.value })} placeholder="My custom model" />
+              </label>
+              <label>Capability
+                <select value={customDraft.capability} onChange={e => handleCustomDraftChange({ capability: e.target.value as CustomModelCapability, recipe: e.target.value === 'image' ? 'sd-cpp' : e.target.value === 'audio' ? 'whispercpp' : e.target.value === 'tts' ? 'kokoro' : 'llamacpp' })}>
+                  {CUSTOM_CAPABILITIES.map(c => <option key={c.value} value={c.value}>{c.label} — {c.hint}</option>)}
+                </select>
+              </label>
+              <label>Recipe/backend
+                <input value={customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} placeholder="llamacpp" />
+              </label>
+              <label className="custom-model-form__wide">Checkpoint, HF repo, or local path
+                <input value={customDraft.checkpoint} onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })} placeholder="org/model:Q4_K_M.gguf or /path/to/model.gguf" />
+              </label>
+              <label>Context tokens
+                <input value={customDraft.maxContextWindow} onChange={e => handleCustomDraftChange({ maxContextWindow: e.target.value })} inputMode="numeric" placeholder="4096" />
+              </label>
+              <label>Extra labels
+                <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
+              </label>
+              {customError && <div className="custom-model-form__error">⚠ {customError}</div>}
+              <div className="custom-model-form__actions">
+                <button className="btn btn--primary" type="submit">Save custom model</button>
+                <button className="btn btn--ghost" type="button" onClick={() => setShowCustomForm(false)}>Cancel</button>
+              </div>
+            </form>
+          </section>
+        )}
+
         {/* Running zone */}
         {filteredRunning.length > 0 && (
           <section className="zone zone--running">
