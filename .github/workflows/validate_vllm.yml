@@ -163,9 +163,13 @@ jobs:
           .venv/bin/python "${VALIDATION_ARGS[@]}" || EXIT_CODE=$?
 
           # Shut the server down cleanly so logs flush.
-          curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
+          if ! curl -sf -X POST http://127.0.0.1:13305/internal/shutdown; then
+            echo "lemond shutdown endpoint did not respond; continuing cleanup"
+          fi
           sleep 2
-          kill "$LEMOND_PID" 2>/dev/null || true
+          if ! kill "$LEMOND_PID" 2>/dev/null; then
+            echo "lemond PID $LEMOND_PID is already stopped"
+          fi
 
           exit $EXIT_CODE
 
@@ -308,4 +312,4 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
-            
+

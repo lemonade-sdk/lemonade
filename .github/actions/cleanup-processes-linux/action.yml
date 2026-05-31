@@ -377,7 +377,7 @@ runs:
 
             # CI Linux runners are expected to provide ss. Avoid tool probing here;
             # if the runner image is missing ss, the cleanup log should show that directly.
-            ss -H -ltnp "sport = :$port" 2>/dev/null \
+            ss -H -ltnp "sport = :$port" \
                 | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p'
         }
 
@@ -572,4 +572,4 @@ runs:
 
         # Always succeed. Cleanup problems should be warnings, not CI blockers.
         exit 0
-        
+
