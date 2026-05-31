@@ -4,7 +4,7 @@
     "vulkan": "b9253",
     "rocm-stable": "b9247",
     "rocm-nightly": "b1274",
-    "cuda": "b1016",
+    "cuda": "b9436",
     "metal": "b9253",
     "cpu": "b9253"
   },

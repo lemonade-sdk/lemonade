@@ -73,7 +73,7 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "a100", "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"
 };
 
-// CUDA Compute Capability targets that the Phqen1x/llama.cpp-builds release pipeline
+// CUDA Compute Capability targets that the lemonade-sdk/llama.cpp release pipeline
 // publishes binaries for. Each entry is a literal `sm_XX` token that appears in the
 // release asset filename (e.g. llama-ubuntu-cuda-sm_86-x64.tar.xz).
 // Empty string means "no CUDA binary for this compute capability" — skip for

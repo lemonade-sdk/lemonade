@@ -104,7 +104,7 @@ namespace lemon::backends {
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
         // Use the auto-detect form `-xf` (instead of `-xzf`) so we transparently
-        // handle .tar.gz, .tar.xz, .tar.bz2, etc. — the Phqen1x/llamacpp-cuda
+        // handle .tar.gz, .tar.xz, .tar.bz2, etc. — the lemonade-sdk/llama.cpp
         // Linux release ships .tar.xz.
 #ifdef _WIN32
         if (!is_native_tar_available()) {
@@ -165,7 +165,7 @@ namespace lemon::backends {
             }
         }
         // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
-        // Phqen1x/llama.cpp-builds have no top-level directory — files sit at the
+        // lemonade-sdk/llama.cpp have no top-level directory — files sit at the
         // archive root. Stripping would discard every entry and produce an empty dir.
         command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
 #else
