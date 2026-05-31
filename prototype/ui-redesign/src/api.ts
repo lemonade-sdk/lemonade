@@ -4,6 +4,8 @@
  * and model downloads, and health polling.
  */
 
+import { recipeOptionsForModel, samplingForModel } from './presetStore';
+
 const DEFAULT_BASE_URL = 'http://localhost:13305';
 const LS_BASE_URL = 'lemonade_base_url';
 const LS_API_KEY = 'lemonade_api_key';
@@ -314,7 +316,8 @@ class LemonadeAPI {
   }
 
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>): Promise<unknown> {
-    const body: Record<string, unknown> = { model_name: modelName, ...recipeOptions };
+    const stagedOptions = recipeOptionsForModel(modelName);
+    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
     return result;
@@ -558,7 +561,7 @@ class LemonadeAPI {
     const statsInterval = onStats ? setInterval(emitStats, 200) : undefined;
 
     try {
-      const body: Record<string, unknown> = { model, messages, stream: true, ...(params || {}) };
+      const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model), ...(params || {}) };
       if (tools && tools.length > 0) body.tools = tools;
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
