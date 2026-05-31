@@ -165,7 +165,7 @@ jobs:
           # Shut the server down cleanly so logs flush.
           curl -sf -X POST http://127.0.0.1:13305/internal/shutdown || true
           sleep 2
-          kill $LEMOND_PID 2>/dev/null || true
+          kill "$LEMOND_PID" 2>/dev/null || true
 
           exit $EXIT_CODE
 
@@ -308,3 +308,4 @@ jobs:
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+            

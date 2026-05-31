@@ -22,6 +22,7 @@ runs:
         # Safe default for shared self-hosted runners: never kill unscoped processes.
         # Set LEMONADE_CLEANUP_ALLOW_UNSCOPED_TARGETS=1 only on dedicated CI hosts.
         ALLOW_UNSCOPED_TARGETS="${LEMONADE_CLEANUP_ALLOW_UNSCOPED_TARGETS:-0}"
+        FORCE_KILL="${LEMONADE_CLEANUP_FORCE_KILL:-0}"
 
         # Keep the cleanup backend-agnostic. New backends should not need changes here
         # unless they introduce additional long-lived CI ports or opt-out of normal CI env.
@@ -44,6 +45,7 @@ runs:
         fi
         echo "Configured CI ports:   $CLEANUP_PORTS"
         echo "Allow unscoped kills:  $ALLOW_UNSCOPED_TARGETS"
+        echo "Force-kill fallback:   $FORCE_KILL"
         echo "Remove install dir:    ${LEMONADE_CLEANUP_REMOVE_INSTALL_DIR:-auto}"
 
         read_pid_cmdline() {
@@ -58,12 +60,12 @@ runs:
 
         read_pid_cwd() {
             local pid="$1"
-            readlink "/proc/$pid/cwd" 2>/dev/null || true
+            readlink "/proc/$pid/cwd" 2>/dev/null
         }
 
         read_pid_exe() {
             local pid="$1"
-            readlink "/proc/$pid/exe" 2>/dev/null || true
+            readlink "/proc/$pid/exe" 2>/dev/null
         }
 
         read_pid_ppid() {
@@ -254,26 +256,32 @@ runs:
             local cmdline="$3"
 
             echo "  Sending SIGTERM to PID $pid ($reason): $cmdline"
-            kill -TERM "$pid" 2>/dev/null || true
+            kill -TERM "$pid" 2>/dev/null
 
-            for _ in 1 2 3 4 5; do
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
                 if ! pid_exists "$pid"; then
                     echo "  PID $pid exited after SIGTERM"
                     return 0
                 fi
-                sleep 0.3
+                sleep 0.5
             done
 
-            if pid_exists "$pid"; then
-                echo "  Sending SIGKILL to PID $pid ($reason): $cmdline"
-                kill -KILL "$pid" 2>/dev/null || true
+            if ! pid_exists "$pid"; then
+                echo "  PID $pid exited after SIGTERM"
+                return 0
             fi
 
-            sleep 0.3
-            if pid_exists "$pid"; then
-                echo "  WARNING: PID $pid is still present after SIGKILL"
+            if [ "$FORCE_KILL" = "1" ]; then
+                echo "  Sending SIGKILL to PID $pid ($reason; force-kill fallback enabled): $cmdline"
+                kill -KILL "$pid" 2>/dev/null
+                sleep 0.3
+                if pid_exists "$pid"; then
+                    echo "  WARNING: PID $pid is still present after SIGKILL"
+                else
+                    echo "  PID $pid exited after SIGKILL"
+                fi
             else
-                echo "  PID $pid exited after SIGKILL"
+                echo "  WARNING: PID $pid did not exit after SIGTERM; leaving it running because LEMONADE_CLEANUP_FORCE_KILL is not enabled"
             fi
         }
 
@@ -353,7 +361,7 @@ runs:
             echo ""
             echo "Step 1: PID-file cleanup"
 
-            pids="$(collect_pid_file_pids | grep -E '^[0-9]+$' | sort -u || true)"
+            pids="$(collect_pid_file_pids | grep -E '^[0-9]+$' | sort -u)"
             if [ -z "$pids" ]; then
                 echo "  No Lemonade PID files found"
                 return 0
@@ -367,18 +375,10 @@ runs:
         port_listener_pids() {
             local port="$1"
 
-            if command -v lsof >/dev/null 2>&1; then
-                lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
-            fi
-
-            if command -v fuser >/dev/null 2>&1; then
-                fuser -n tcp "$port" 2>/dev/null | tr ' ' '\n' || true
-            fi
-
-            if command -v ss >/dev/null 2>&1; then
-                ss -H -ltnp "sport = :$port" 2>/dev/null \
-                    | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' || true
-            fi
+            # CI Linux runners are expected to provide ss. Avoid tool probing here;
+            # if the runner image is missing ss, the cleanup log should show that directly.
+            ss -H -ltnp "sport = :$port" 2>/dev/null \
+                | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p'
         }
 
         cleanup_port_listener() {
@@ -389,7 +389,7 @@ runs:
             echo ""
             echo "Step 2: TCP port $port cleanup"
 
-            pids="$(port_listener_pids "$port" | grep -E '^[0-9]+$' | sort -u || true)"
+            pids="$(port_listener_pids "$port" | grep -E '^[0-9]+$' | sort -u)"
             if [ -z "$pids" ]; then
                 echo "  No listener PID found for TCP port $port"
                 return 0
@@ -401,13 +401,11 @@ runs:
 
             sleep 0.5
 
-            if command -v ss >/dev/null 2>&1; then
-                if ss -ltnp "sport = :$port" 2>/dev/null | grep -q ":$port"; then
-                    echo "  WARNING: TCP port $port still appears occupied"
-                    ss -ltnp "sport = :$port" 2>/dev/null || true
-                else
-                    echo "  TCP port $port is free"
-                fi
+            if ss -ltnp "sport = :$port" | grep -q ":$port"; then
+                echo "  WARNING: TCP port $port still appears occupied"
+                ss -ltnp "sport = :$port"
+            else
+                echo "  TCP port $port is free"
             fi
         }
 
@@ -459,28 +457,15 @@ runs:
             local found="false"
             local lines
 
-            if command -v pgrep >/dev/null 2>&1; then
-                lines="$(
-                    pgrep -af "$PROCESS_HINT_REGEX" 2>/dev/null \
-                        | grep -v "cleanup-processes-linux" \
-                        | grep -v "Runner.Worker" \
-                        | grep -v "Runner.Listener" || true
-                )"
-                if [ -n "$lines" ]; then
-                    echo "$lines"
-                    found="true"
-                fi
-            else
-                lines="$(
-                    ps aux 2>/dev/null \
-                        | grep -Ei "$PROCESS_HINT_REGEX" \
-                        | grep -v grep \
-                        | grep -v "cleanup-processes-linux" || true
-                )"
-                if [ -n "$lines" ]; then
-                    echo "$lines"
-                    found="true"
-                fi
+            lines="$(
+                pgrep -af "$PROCESS_HINT_REGEX" 2>/dev/null \
+                    | grep -v "cleanup-processes-linux" \
+                    | grep -v "Runner.Worker" \
+                    | grep -v "Runner.Listener"
+            )"
+            if [ -n "$lines" ]; then
+                echo "$lines"
+                found="true"
             fi
 
             if [ "$found" = "true" ]; then
@@ -496,17 +481,17 @@ runs:
             echo ""
             echo "Cleaning up Lemonade lock, PID, and log files..."
 
-            rm -f "$tmp_root"/lemonade*.lock 2>/dev/null || true
-            rm -f "$tmp_root"/lemonade*.pid 2>/dev/null || true
-            rm -f "$tmp_root"/lemond*.pid 2>/dev/null || true
-            rm -f "$tmp_root"/lemonade*.log 2>/dev/null || true
-            rm -f "$tmp_root"/lemonade-server*.log 2>/dev/null || true
-            rm -f "$tmp_root"/lemond*.log 2>/dev/null || true
+            rm -f "$tmp_root"/lemonade*.lock 2>/dev/null
+            rm -f "$tmp_root"/lemonade*.pid 2>/dev/null
+            rm -f "$tmp_root"/lemond*.pid 2>/dev/null
+            rm -f "$tmp_root"/lemonade*.log 2>/dev/null
+            rm -f "$tmp_root"/lemonade-server*.log 2>/dev/null
+            rm -f "$tmp_root"/lemond*.log 2>/dev/null
 
             if [ -n "$RUNTIME_ROOT" ]; then
-                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.lock 2>/dev/null || true
-                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.pid 2>/dev/null || true
-                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.log 2>/dev/null || true
+                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.lock 2>/dev/null
+                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.pid 2>/dev/null
+                rm -f "$RUNTIME_ROOT"/lemonade/lemonade*.log 2>/dev/null
             fi
 
             echo "Runtime files cleaned."
@@ -553,7 +538,7 @@ runs:
             fi
 
             if should_remove_installation_dir; then
-                rm -rf "$install_dir" 2>/dev/null || true
+                rm -rf "$install_dir" 2>/dev/null
                 echo "Removed: $install_dir"
             else
                 echo "Preserved: $install_dir"
@@ -587,3 +572,4 @@ runs:
 
         # Always succeed. Cleanup problems should be warnings, not CI blockers.
         exit 0
+        
