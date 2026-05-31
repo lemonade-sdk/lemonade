@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage } from '../api';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage, DownloadProgressEvent } from '../api';
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel } from '../modelCapabilities';
 import type { AccountSession } from '../features/accounts/accountStore';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
+import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -19,11 +20,13 @@ function modelName(m: ModelInfo): string {
 function recipeIcon(recipe: string): string {
   switch (recipe) {
     case 'llamacpp': return '🦙';
+    case 'vllm': return '🚀';
     case 'flm': return '⚡';
     case 'ryzenai-llm': return '🔶';
     case 'sd-cpp': return '🎨';
     case 'whispercpp': return '🎤';
     case 'kokoro': return '🔊';
+    case 'collection.omni': return '✦';
     case 'collection': return '📦';
     default: return '🤖';
   }
@@ -32,11 +35,13 @@ function recipeIcon(recipe: string): string {
 function recipeLabel(recipe: string): string {
   switch (recipe) {
     case 'llamacpp': return 'llama.cpp';
+    case 'vllm': return 'vLLM';
     case 'flm': return 'FastFlowLM';
     case 'ryzenai-llm': return 'RyzenAI';
     case 'sd-cpp': return 'Stable Diffusion';
     case 'whispercpp': return 'Whisper';
     case 'kokoro': return 'Kokoro TTS';
+    case 'collection.omni': return 'Omni Collection';
     case 'collection': return 'Collection';
     default: return recipe;
   }
@@ -107,7 +112,9 @@ function formatBytes(bytes: number): string {
 
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: '🦙 llama.cpp',
+  vllm: '🚀 vLLM',
   'ryzenai-llm': '🔷 RyzenAI',
+  'collection.omni': '✦ Omni Collection',
 };
 
 /* ── Filter / search types ─────────────────────────────────── */
@@ -135,6 +142,7 @@ interface ModelManagerProps {
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedModel, accountSession }) => {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState(api.status);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model → percent
   const pullAbortRef = useRef<Record<string, AbortController>>({});
@@ -165,6 +173,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     capability: 'chat' as CustomModelCapability,
     maxContextWindow: '4096',
     labels: '',
+    omniSource: 'single' as 'single' | 'collection',
+    llmComponent: '',
+    visionComponent: '',
+    imageComponent: '',
+    transcriptionComponent: '',
+    speechComponent: '',
   });
 
   const reloadCustomModels = useCallback(() => {
@@ -187,6 +201,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   // Re-fetch when server connection status changes (e.g. connects after initial mount)
   useEffect(() => {
     const unsub = api.onStatusChange((status) => {
+      setConnectionStatus(status);
       if (status === 'connected') refresh();
     });
     return unsub;
@@ -196,6 +211,51 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   useEffect(() => {
     return api.onModelsChanged(() => { refresh(); });
   }, [refresh]);
+
+  const applyServerDownloads = useCallback((downloads: DownloadProgressEvent[]) => {
+    const active: Record<string, number> = {};
+    let sawCompletedModel = false;
+    downloads.forEach(download => {
+      const type = String(download.type || '').toLowerCase();
+      const id = String(download.id || '');
+      if (type && type !== 'model') return;
+      if (!type && id && !id.startsWith('model:')) return;
+      const name = String(download.model_name || download.name || (id.startsWith('model:') ? id.slice('model:'.length) : '')).trim();
+      if (!name) return;
+      const status = String(download.status || '').toLowerCase();
+      const isActive = download.running === true || status === 'downloading' || status === 'paused';
+      if (isActive) active[name] = typeof download.percent === 'number' ? download.percent : 0;
+      if (download.complete || status === 'completed' || status === 'error' || status === 'cancelled') sawCompletedModel = true;
+    });
+    setPulling(prev => {
+      const next: Record<string, number> = {};
+      Object.entries(prev).forEach(([name, value]) => {
+        if (pullAbortRef.current[name]) next[name] = value;
+      });
+      return { ...next, ...active };
+    });
+    if (sawCompletedModel) refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (connectionStatus !== 'connected') return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        applyServerDownloads(await api.downloads());
+      } catch {
+        // Older servers might not expose /downloads; normal SSE fallback still works.
+      }
+      if (!cancelled) timer = setTimeout(tick, 2000);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [applyServerDownloads, connectionStatus]);
 
   /* ── HuggingFace debounced search ────────────────────────── */
 
@@ -241,6 +301,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const name = modelName(model);
     setLoadingModel(name);
     try {
+      if ((model as any).custom) {
+        await api.pullModel(name, {}, customRegistrationOptions(model));
+      }
       await api.loadModel(name, customLoadOptions(model));
       await refresh();
       onModelSelect(name);
@@ -250,7 +313,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const handleUnload = async (model: LoadedModel) => {
     setLoadingModel(model.model_name);
-    await api.unloadModel(model.model_name);
+    const virtualComponents = Array.isArray(model.recipe_options?.components) && model.recipe_options?.virtual_collection === true
+      ? model.recipe_options.components.filter((component): component is string => typeof component === 'string')
+      : [];
+    if (virtualComponents.length > 0) {
+      await Promise.allSettled(virtualComponents.map(component => api.unloadModel(component)));
+    } else {
+      await api.unloadModel(model.model_name);
+    }
     await refresh();
     setLoadingModel(null);
   };
@@ -299,11 +369,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       signal: ac.signal,
     };
 
-    await api.pullModel(name, callbacks);
+    await api.pullModel(name, callbacks, customRegistrationOptions(model));
   };
 
-  const handleCancelPull = (name: string) => {
+  const handleCancelPull = async (name: string) => {
     pullAbortRef.current[name]?.abort();
+    await api.controlDownload(`model:${name}`, 'cancel').catch(() => undefined);
     delete pullAbortRef.current[name];
     setPulling(p => { const next = { ...p }; delete next[name]; return next; });
   };
@@ -339,7 +410,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       signal: ac.signal,
     };
 
-    await api.pullModel(name, callbacks);
+    await api.pullModel(name, callbacks, customRegistrationOptions(model));
   };
 
   const handleHfPull = async (hfId: string, variantName: string, recipe: string) => {
@@ -374,8 +445,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     await api.pullModel(modelName, callbacks, { checkpoint, recipe });
   };
 
-  const handleCancelHfPull = (hfId: string) => {
+  const handleCancelHfPull = async (hfId: string) => {
     pullHfAbortRef.current[hfId]?.abort();
+    const vdata = hfVariants[hfId];
+    const suggestedName = vdata?.suggested_name || hfId.split('/').pop() || hfId;
+    await api.controlDownload(`model:user.${suggestedName}`, 'cancel').catch(() => undefined);
     delete pullHfAbortRef.current[hfId];
     setPullingHf(p => { const next = { ...p }; delete next[hfId]; return next; });
   };
@@ -398,10 +472,28 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setCustomError(null);
   };
 
+  const defaultRecipeForCapability = (capability: CustomModelCapability, omniSource: 'single' | 'collection' = customDraft.omniSource) => {
+    if (capability === 'image') return 'sd-cpp';
+    if (capability === 'audio') return 'whispercpp';
+    if (capability === 'tts') return 'kokoro';
+    if (capability === 'omni' && omniSource === 'collection') return 'collection.omni';
+    return 'llamacpp';
+  };
+
   const handleSaveCustomModel = (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
     try {
+      const componentRoles = {
+        llm: customDraft.llmComponent,
+        vision: customDraft.visionComponent,
+        image: customDraft.imageComponent,
+        transcription: customDraft.transcriptionComponent,
+        speech: customDraft.speechComponent,
+      };
+      const components = customDraft.omniSource === 'collection'
+        ? Object.values(componentRoles).map(v => v.trim()).filter(Boolean)
+        : [];
       const saved = upsertCustomModel(accountSession.storageScope, {
         name: customDraft.name,
         displayName: customDraft.displayName,
@@ -410,22 +502,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         capability: customDraft.capability,
         maxContextWindow: customDraft.maxContextWindow.trim() && Number.isFinite(Number(customDraft.maxContextWindow)) ? Number(customDraft.maxContextWindow) : undefined,
         labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
+        components,
+        componentRoles,
       });
       reloadCustomModels();
       setShowCustomForm(false);
       setSearchQuery(saved.name);
-      setCustomDraft({ name: '', displayName: '', checkpoint: '', recipe: customDraft.capability === 'omni' ? 'llamacpp' : 'llamacpp', capability: 'chat', maxContextWindow: '4096', labels: '' });
+      setCustomDraft({ name: '', displayName: '', checkpoint: '', recipe: 'llamacpp', capability: 'chat', maxContextWindow: '4096', labels: '', omniSource: 'single', llmComponent: '', visionComponent: '', imageComponent: '', transcriptionComponent: '', speechComponent: '' });
     } catch (err) {
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
     }
   };
 
   /* ── Derived data ────────────────────────────────────────── */
-
-  const loadedNames = useMemo(
-    () => new Set(loadedModels.map(m => m.model_name)),
-    [loadedModels]
-  );
 
   const allModels = useMemo(() => {
     const seen = new Set<string>();
@@ -442,13 +531,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return merged;
   }, [customModels, models]);
 
+  const displayLoadedModels = useMemo(
+    () => withVirtualLoadedCollections(loadedModels, allModels),
+    [loadedModels, allModels]
+  );
+
+  const loadedNames = useMemo(
+    () => new Set(displayLoadedModels.map(m => m.model_name)),
+    [displayLoadedModels]
+  );
+
   const { downloaded, available } = useMemo(() => {
     const dl: ModelInfo[] = [];
     const av: ModelInfo[] = [];
     for (const m of allModels) {
       const name = modelName(m);
       if (loadedNames.has(name)) continue;
-      if ((m as any).downloaded) dl.push(m);
+      if ((m as any).downloaded || isCollectionFullyDownloaded(m, allModels)) dl.push(m);
       else av.push(m);
     }
     return { downloaded: dl, available: av };
@@ -485,8 +584,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   // Filter running models by search/type too
   const filteredRunning = useMemo(() => {
-    if (filterTab === 'all' && !searchQuery.trim()) return loadedModels;
-    return loadedModels.filter(m => {
+    if (filterTab === 'all' && !searchQuery.trim()) return displayLoadedModels;
+    return displayLoadedModels.filter(m => {
       // Type filter
       if (filterTab !== 'all') {
         const info = allModels.find(mi => modelName(mi) === m.model_name);
@@ -503,7 +602,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       }
       return true;
     });
-  }, [loadedModels, filterTab, searchQuery, allModels]);
+  }, [displayLoadedModels, filterTab, searchQuery, allModels]);
 
   // Available zone: show first N unless expanded or searching
   const AVAILABLE_INITIAL = 20;
@@ -548,6 +647,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const recipe = (m as any).recipe || '';
     const maxCtx = liveCtxSize || (m as any).max_context_window;
     const compositeModels = (m as any).composite_models || [];
+    const collectionComponents = getCollectionComponents(m);
     const url = hfUrl(checkpoint);
 
     return (
@@ -610,6 +710,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </div>
               </div>
             )}
+            {collectionComponents.length > 0 && (
+              <div className="detail__field">
+                <span className="detail__label">Omni components</span>
+                <div className="detail__caps">
+                  {collectionComponents.map(component => (
+                    <span key={component} className="detail__cap">{component}</span>
+                  ))}
+                </div>
+              </div>
+            )}
             {url && (
               <a className="detail__hf-link" href={url} target="_blank" rel="noopener noreferrer">
                 🤗 View on Hugging Face
@@ -625,6 +735,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const info = allModels.find(mi => modelName(mi) === m.model_name);
     const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
     const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
+    const componentCount = Array.isArray(m.recipe_options?.components) ? m.recipe_options.components.length : 0;
     const isActive = selectedModel === m.model_name;
     const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
     return (
@@ -639,6 +750,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <span className="row__sub">
                 {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
                 {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
+                {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
               </span>
             </div>
           </div>
@@ -708,6 +820,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const renderModelRow = (m: ModelInfo, isDownloaded: boolean) => {
     const name = modelName(m);
     const type = modelType(m);
+    const isCollection = isCollectionModel(m);
     const isLoading = loadingModel === name;
     const pullPercent = pulling[name];
     const isPulling = pullPercent !== undefined;
@@ -723,6 +836,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <span className="row__name">{m.display_name || name}</span>
               <span className="row__sub">
                 {recipeLabel((m as any).recipe || '')}
+                {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
                 {m.size ? ` · ${formatSize(m.size)}` : ''}
                 {(m as any).max_context_window ? ` · ${((m as any).max_context_window / 1024).toFixed(0)}K ctx` : ''}
               </span>
@@ -954,7 +1068,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, []);
 
   /* ── Stats ───────────────────────────────────────────────── */
-  const totalDownloaded = downloaded.length + loadedModels.length;
+  const showManagerEmpty = filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0;
+  const totalDownloaded = downloaded.length + displayLoadedModels.length;
   const totalPulling = Object.keys(pulling).length;
 
   return (
@@ -964,7 +1079,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <h1>Models</h1>
           <div className="manager__stats">
             <span className="manager__stat">
-              <span className="manager__stat-num">{loadedModels.length}</span> running
+              <span className="manager__stat-num">{displayLoadedModels.length}</span> running
             </span>
             <span className="manager__stat-sep">·</span>
             <span className="manager__stat">
@@ -1034,16 +1149,56 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <input value={customDraft.displayName} onChange={e => handleCustomDraftChange({ displayName: e.target.value })} placeholder="My custom model" />
               </label>
               <label>Capability
-                <select value={customDraft.capability} onChange={e => handleCustomDraftChange({ capability: e.target.value as CustomModelCapability, recipe: e.target.value === 'image' ? 'sd-cpp' : e.target.value === 'audio' ? 'whispercpp' : e.target.value === 'tts' ? 'kokoro' : 'llamacpp' })}>
+                <select value={customDraft.capability} onChange={e => {
+                  const nextCapability = e.target.value as CustomModelCapability;
+                  handleCustomDraftChange({
+                    capability: nextCapability,
+                    omniSource: nextCapability === 'omni' ? customDraft.omniSource : 'single',
+                    recipe: defaultRecipeForCapability(nextCapability, nextCapability === 'omni' ? customDraft.omniSource : 'single'),
+                  });
+                }}>
                   {CUSTOM_CAPABILITIES.map(c => <option key={c.value} value={c.value}>{c.label} — {c.hint}</option>)}
                 </select>
               </label>
+              {customDraft.capability === 'omni' && (
+                <label>Omni source
+                  <select value={customDraft.omniSource} onChange={e => {
+                    const omniSource = e.target.value as 'single' | 'collection';
+                    handleCustomDraftChange({ omniSource, recipe: defaultRecipeForCapability('omni', omniSource) });
+                  }}>
+                    <option value="single">Single multimodal model checkpoint</option>
+                    <option value="collection">Omni collection from loaded/downloaded components</option>
+                  </select>
+                </label>
+              )}
               <label>Recipe/backend
                 <input value={customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} placeholder="llamacpp" />
               </label>
               <label className="custom-model-form__wide">Checkpoint, HF repo, or local path
                 <input value={customDraft.checkpoint} onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })} placeholder="org/model:Q4_K_M.gguf or /path/to/model.gguf" />
               </label>
+              {customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && (
+                <>
+                  <div className="custom-model-form__hint custom-model-form__wide">
+                    Build a custom Omni wrapper from existing model names. The LLM component is used for text chat; the vision/audio components are used when matching media is attached.
+                  </div>
+                  <label>LLM component
+                    <input value={customDraft.llmComponent} onChange={e => handleCustomDraftChange({ llmComponent: e.target.value })} placeholder="llama-3.2-3b-instruct" />
+                  </label>
+                  <label>Vision component
+                    <input value={customDraft.visionComponent} onChange={e => handleCustomDraftChange({ visionComponent: e.target.value })} placeholder="llava-v1.6 or vision model name" />
+                  </label>
+                  <label>Image component
+                    <input value={customDraft.imageComponent} onChange={e => handleCustomDraftChange({ imageComponent: e.target.value })} placeholder="image generator model name" />
+                  </label>
+                  <label>Audio transcript component
+                    <input value={customDraft.transcriptionComponent} onChange={e => handleCustomDraftChange({ transcriptionComponent: e.target.value })} placeholder="whisper transcription model name" />
+                  </label>
+                  <label>Speech component
+                    <input value={customDraft.speechComponent} onChange={e => handleCustomDraftChange({ speechComponent: e.target.value })} placeholder="TTS model name" />
+                  </label>
+                </>
+              )}
               <label>Context tokens
                 <input value={customDraft.maxContextWindow} onChange={e => handleCustomDraftChange({ maxContextWindow: e.target.value })} inputMode="numeric" placeholder="4096" />
               </label>
@@ -1134,15 +1289,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           )}
         </section>
 
-        {filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0 && (
-          <div className="manager__empty">
-            <span className="manager__empty-icon">{api.isConnected ? '🤖' : '🔌'}</span>
-            <p>{api.isConnected
-              ? 'No models found matching your search.'
-              : 'Connect to a Lemonade server to see models.'
-            }</p>
-          </div>
-        )}
+        <div className={`manager__empty${showManagerEmpty ? '' : ' manager__empty--hidden'}`} aria-hidden={!showManagerEmpty}>
+          <span className="manager__empty-icon">{api.isConnected ? '🤖' : '🔌'}</span>
+          <p>{api.isConnected
+            ? 'No models found matching your search.'
+            : 'Connect to a Lemonade server to see models.'
+          }</p>
+        </div>
       </div>
     </div>
   );

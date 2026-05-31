@@ -16,10 +16,12 @@ import {
   ModelSnapshot,
   selectPreferredLoadedModel,
   snapshotFromLoaded,
+  snapshotFromModelInfo,
   snapshotFromName,
 } from '../modelCapabilities';
 import { AccountSession, describeSession, scopedStorageKey } from '../features/accounts/accountStore';
 import { customModelToModelInfo, loadCustomModels } from '../features/customModels/customModelStore';
+import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -278,9 +280,31 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     () => loadedModels.find(m => m.model_name === currentModel) || null,
     [loadedModels, currentModel],
   );
+  const customModelInfos = useMemo(
+    () => loadCustomModels(storageScope).map(customModelToModelInfo),
+    [storageScope],
+  );
+  const knownModelInfos = useMemo(
+    () => {
+      const seen = new Set<string>();
+      const infos: ModelInfo[] = [];
+      [...customModelInfos, ...api.allModels].forEach(info => {
+        const name = String((info as any).model_name || info.name || info.id || '').toLowerCase();
+        if (!name || seen.has(name)) return;
+        seen.add(name);
+        infos.push(info);
+      });
+      return infos;
+    },
+    [customModelInfos, loadedModels],
+  );
   const currentCustomModelInfo = useMemo(
-    () => loadCustomModels(storageScope).map(customModelToModelInfo).find(m => (m.name || m.id) === currentModel) || null,
-    [storageScope, currentModel],
+    () => findModelInfoByName(customModelInfos, currentModel) || null,
+    [customModelInfos, currentModel],
+  );
+  const currentKnownModelInfo = useMemo(
+    () => findModelInfoByName(knownModelInfos, currentModel) || null,
+    [knownModelInfos, currentModel],
   );
   const currentModelSnapshot = useMemo(() => {
     const loadedSnapshot = snapshotFromLoaded(currentLoadedModel);
@@ -297,13 +321,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       if (!loadedSnapshot || loadedSnapshot.capability === 'unknown' || loadedSnapshot.capability === 'chat') return customSnapshot;
       return { ...loadedSnapshot, recipe: loadedSnapshot.recipe || customSnapshot.recipe, checkpoint: loadedSnapshot.checkpoint || customSnapshot.checkpoint };
     }
+    const knownSnapshot = snapshotFromModelInfo(currentKnownModelInfo);
+    if (knownSnapshot && (!loadedSnapshot || loadedSnapshot.capability === 'unknown' || (loadedSnapshot.capability === 'chat' && knownSnapshot.capability !== 'chat'))) {
+      return { ...knownSnapshot, device: currentLoadedModel?.device };
+    }
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
-  }, [currentLoadedModel, currentCustomModelInfo, currentModel, loadedModels]);
+  }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
-  const customModelInfos = useMemo(
-    () => loadCustomModels(storageScope).map(customModelToModelInfo),
-    [storageScope],
-  );
   const capabilityForLoaded = useCallback((model: LoadedModel) => {
     const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
     return customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(model);
@@ -518,6 +542,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     let convoId = activeId;
     const modelSnapshot = currentModelSnapshot;
+    const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
 
     // Create a new conversation if none is active
     if (!convoId) {
@@ -558,6 +583,40 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     if (!modeSupportsChatCompletions) {
       await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles);
       return;
+    }
+
+    let requestModelName = currentModel;
+    let requestText = text;
+    let requestImages = images;
+    let includeDirectAudioParts = currentCapability === 'omni' && audioFiles.length > 0;
+
+    if (collectionInfo) {
+      const visionComponent = hasImages ? getVisionChatComponent(collectionInfo, knownModelInfos) : null;
+      const primaryChatComponent = getPrimaryChatComponent(collectionInfo, knownModelInfos);
+      requestModelName = visionComponent || primaryChatComponent || currentModel;
+      requestImages = visionComponent ? images : undefined;
+      includeDirectAudioParts = false;
+      if (hasImages && !visionComponent) {
+        requestText = `${requestText || 'Please respond to the attached image.'}\n\n[Omni collection note: no vision-capable component is configured for this custom/registry collection, so the image itself was not sent.]`.trim();
+      }
+      if (audioFiles.length > 0) {
+        const transcriptionComponent = getAudioTranscriptionComponent(collectionInfo, knownModelInfos);
+        if (transcriptionComponent) {
+          try {
+            const transcript = await api.audioTranscription(transcriptionComponent, audioFiles[0]);
+            requestText = `${requestText || 'Please respond to this audio file.'}\n\nAudio transcript (${audioFiles[0].name}):\n${transcript}`.trim();
+          } catch (err) {
+            appendAssistantMessage(convoId, {
+              content: friendlyChatError(friendlyErrorMessage(err)),
+              model: modelSnapshot,
+              isError: true,
+            });
+            return;
+          }
+        } else {
+          requestText = `${requestText || 'Please respond to this audio file.'}\n\n[Omni collection note: no audio transcription component is configured for this collection.]`.trim();
+        }
+      }
     }
 
     // Build chat history from the conversation's current messages + new user message.
@@ -606,24 +665,24 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }));
 
     // Add the new user message
-    if (images?.length || (currentCapability === 'omni' && audioFiles.length > 0)) {
-      const audioParts = currentCapability === 'omni'
+    if (requestImages?.length || includeDirectAudioParts) {
+      const audioParts = includeDirectAudioParts
         ? await Promise.all(audioFiles.slice(0, 1).map(audioToInputAudio))
         : [];
       chatMessages.push({
         role: 'user' as const,
         content: [
-          { type: 'text' as const, text: text || (audioFiles[0] ? `Please respond to this audio file: ${audioFiles[0].name}` : '') },
-          ...(images || []).map(url => ({ type: 'image_url' as const, image_url: { url } })),
+          { type: 'text' as const, text: requestText || (audioFiles[0] ? `Please respond to this audio file: ${audioFiles[0].name}` : '') },
+          ...(requestImages || []).map(url => ({ type: 'image_url' as const, image_url: { url } })),
           ...audioParts,
         ],
       });
     } else {
-      chatMessages.push({ role: 'user' as const, content: text });
+      chatMessages.push({ role: 'user' as const, content: requestText });
     }
 
     streamModelsRef.current[convoId] = modelSnapshot;
-    await streaming.send(convoId, currentModel, chatMessages, useTools && modeSupportsTools);
+    await streaming.send(convoId, requestModelName, chatMessages, useTools && modeSupportsTools);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

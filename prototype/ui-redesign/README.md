@@ -195,3 +195,11 @@ To integrate this prototype into the main codebase:
 4. Update the main `CMakeLists.txt` build targets and Web app webpack if needed
 
 See [`.squad/decisions.md`](../../.squad/decisions.md) and [`.squad/agents/mattingly/history.md`](../../.squad/agents/mattingly/history.md) for the full decision trail and learnings.
+
+### Follow-up fixes in this prototype package
+
+- Omni registry/custom collection models stay selectable as the Omni wrapper even when lemond reports the loaded runtime as individual vLLM/llama/vision/audio components.
+- Model typing is deliberately conservative: vLLM and plain LLM recipes stay in LLM mode; only explicit Omni/multimodal/VL metadata or collection recipes become Omni.
+- Model downloads are started with server-owned persistence (`subscribe: false`) and the Models page polls `/api/v1/downloads`, so active downloads reappear after refresh/new tab on servers that expose the downloads API.
+- Custom Omni collections can be created from named text, vision, image, transcription, and speech components.
+- Account popovers use an opaque raised surface so labels remain readable over the model grid.

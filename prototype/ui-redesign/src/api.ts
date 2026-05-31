@@ -153,6 +153,28 @@ export interface PullCallbacks {
   signal?: AbortSignal;
 }
 
+export interface DownloadProgressEvent {
+  id?: string;
+  type?: 'model' | 'backend' | string;
+  model_name?: string;
+  name?: string;
+  status?: 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled' | string;
+  running?: boolean;
+  file?: string;
+  file_index?: number;
+  total_files?: number;
+  bytes_downloaded?: number;
+  bytes_total?: number;
+  percent?: number;
+  total_download_size?: number;
+  cumulative_bytes_downloaded?: number;
+  overall_bytes_downloaded?: number;
+  completed_files_bytes?: number;
+  complete?: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
 export interface PullVariant {
   name: string;
   primary_file: string;
@@ -631,6 +653,38 @@ class LemonadeAPI {
     });
   }
 
+  // ── Persistent downloads ───────────────────────────────────────
+
+  async downloads(): Promise<DownloadProgressEvent[]> {
+    const data = await this._json<unknown>('/api/v1/downloads', { cache: 'no-store' } as LemonadeRequestInit);
+    if (Array.isArray(data)) return data as DownloadProgressEvent[];
+    if (isObject(data) && Array.isArray(data.downloads)) return data.downloads as DownloadProgressEvent[];
+    return [];
+  }
+
+  async controlDownload(downloadId: string, action: 'pause' | 'resume' | 'cancel' | 'remove'): Promise<unknown> {
+    const result = await this._json('/api/v1/downloads/control', {
+      method: 'POST',
+      body: { id: downloadId, action },
+    });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  private _downloadModelName(download: DownloadProgressEvent): string {
+    const id = typeof download.id === 'string' ? download.id : '';
+    const modelName = String(download.model_name || download.name || '').trim();
+    if (modelName) return modelName;
+    return id.startsWith('model:') ? id.slice('model:'.length) : id;
+  }
+
+  private _isMatchingModelDownload(download: DownloadProgressEvent, modelName: string): boolean {
+    const target = modelName.trim().toLowerCase();
+    const candidate = this._downloadModelName(download).trim().toLowerCase();
+    const id = String(download.id || '').toLowerCase();
+    return candidate === target || id === `model:${target}` || id.endsWith(`:${target}`);
+  }
+
   // ── Pull variants (HF model file discovery) ────────────────────
 
   async pullVariants(checkpoint: string): Promise<PullVariantsResult> {
@@ -639,17 +693,61 @@ class LemonadeAPI {
 
   // ── SSE: Pull (model download) ──────────────────────────────────
 
-  async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: { checkpoint?: string; recipe?: string }): Promise<void> {
+  async pullModel(modelName: string, callbacks: PullCallbacks = {}, opts?: Record<string, unknown>): Promise<void> {
     const { onProgress, onComplete, onError, signal } = callbacks;
     try {
-      const body: Record<string, unknown> = { model: modelName, stream: true };
-      if (opts?.checkpoint) body.checkpoint = opts.checkpoint;
-      if (opts?.recipe) body.recipe = opts.recipe;
+      const body: Record<string, unknown> = {
+        ...(opts || {}),
+        model_name: modelName,
+        model: modelName,
+        stream: true,
+        // Let lemond own the download so progress survives F5/new tabs.
+        // Browser SSE is still supported below for older servers.
+        subscribe: false,
+      };
       const resp = await this._fetch('/api/v1/pull', {
         method: 'POST',
         body,
         signal,
       });
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const initial = await resp.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
+        onProgress?.({ percent: typeof initial.percent === 'number' ? initial.percent : 0, ...initial });
+        const started = performance.now();
+        let lastMatch: DownloadProgressEvent | null = null;
+        while (!signal?.aborted) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const downloads = await this.downloads().catch(() => []);
+          const match = downloads.find(download => this._isMatchingModelDownload(download, modelName));
+          if (match) {
+            lastMatch = match;
+            const percent = typeof match.percent === 'number' ? match.percent : undefined;
+            onProgress?.({ ...match, percent });
+            if (match.error || match.status === 'error') {
+              throw new Error(String(match.error || `Download failed for ${modelName}.`));
+            }
+            if (match.status === 'cancelled') return;
+            if (match.complete || match.status === 'completed') {
+              onComplete?.({ ...match });
+              this._notifyModelsChanged();
+              return;
+            }
+          } else if (lastMatch && (lastMatch.complete || lastMatch.status === 'completed')) {
+            onComplete?.({ ...lastMatch });
+            this._notifyModelsChanged();
+            return;
+          } else if (!lastMatch && performance.now() - started > 3000) {
+            // Some lemond versions only acknowledge a registration/pull that is immediately complete.
+            onComplete?.(initial);
+            this._notifyModelsChanged();
+            return;
+          }
+        }
+        return;
+      }
+
       const reader = resp.body!.getReader();
       const dec = new TextDecoder();
       let buf = '';

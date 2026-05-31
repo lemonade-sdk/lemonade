@@ -12,13 +12,43 @@ export interface ModelSnapshot {
 }
 
 const TYPE_TO_CAPABILITY: Record<string, ModelCapability> = {
-  llm: 'chat', chat: 'chat', vision: 'omni', vlm: 'omni', vl: 'omni', omni: 'omni', multimodal: 'omni',
-  'vision-language': 'omni', 'audio-chat': 'omni', realtime: 'omni', image: 'image', diffusion: 'image',
-  audio: 'audio', transcription: 'audio', 'realtime-transcription': 'audio', tts: 'tts', speech: 'tts',
+  llm: 'chat', chat: 'chat', text: 'chat', language: 'chat',
+  vision: 'omni', vlm: 'omni', 'vision-language': 'omni', omni: 'omni', multimodal: 'omni', 'multi-modal': 'omni',
+  'audio-chat': 'omni', realtime: 'omni',
+  image: 'image', diffusion: 'image', 'image-generation': 'image',
+  audio: 'audio', transcription: 'audio', 'realtime-transcription': 'audio', asr: 'audio',
+  tts: 'tts', speech: 'tts', 'text-to-speech': 'tts',
   embedding: 'embedding', embeddings: 'embedding', reranking: 'reranking', reranker: 'reranking',
 };
 
-const OMNI_NAME_HINTS = ['omni','gpt-4o','gpt4o','o4-','vision','vlm','vl-','-vl','llava','bakllava','moondream','minicpm-v','minicpmv','qwen-vl','qwen2-vl','qwen2.5-vl','qwen3-vl','pixtral','mllama','multi-modal','multimodal','phi-4-multimodal','gemma-3','gemma3','audio-chat','speech-chat'];
+const NON_CHAT_RECIPE_HINTS: Array<[string, ModelCapability]> = [
+  ['stable-diffusion', 'image'], ['diffusion', 'image'], ['sd-cpp', 'image'],
+  ['whisper', 'audio'], ['asr', 'audio'],
+  ['kokoro', 'tts'], ['text-to-speech', 'tts'], ['tts', 'tts'],
+  ['embedding', 'embedding'], ['rerank', 'reranking'],
+];
+
+const CHAT_RECIPE_HINTS = new Set(['llamacpp', 'flm', 'ryzenai-llm', 'vllm']);
+
+const EXPLICIT_OMNI_NAME_PATTERNS = [
+  /(^|[._\-/])omni([._\-/]|$)/,
+  /(^|[._\-/])multimodal([._\-/]|$)/,
+  /(^|[._\-/])multi-modal([._\-/]|$)/,
+  /(^|[._\-/])vision-language([._\-/]|$)/,
+  /(^|[._\-/])vlm([._\-/]|$)/,
+  /(^|[._\-/])vl([._\-/]|$)/,
+  /(^|[._\-/])llava([._\-/]|$)/,
+  /(^|[._\-/])bakllava([._\-/]|$)/,
+  /(^|[._\-/])moondream([._\-/]|$)/,
+  /(^|[._\-/])pixtral([._\-/]|$)/,
+  /(^|[._\-/])mllama([._\-/]|$)/,
+  /(^|[._\-/])qwen\d*(?:\.\d+)?-vl([._\-/]|$)/,
+  /(^|[._\-/])minicpm-v([._\-/]|$)/,
+  /(^|[._\-/])minicpmv([._\-/]|$)/,
+  /(^|[._\-/])phi-4-multimodal([._\-/]|$)/,
+  /(^|[._\-/])audio-chat([._\-/]|$)/,
+  /(^|[._\-/])speech-chat([._\-/]|$)/,
+];
 
 export function normalizeModelType(type?: string | null): string {
   return (type || 'unknown').toLowerCase().trim() || 'unknown';
@@ -30,65 +60,76 @@ export function capabilityFromType(type?: string | null): ModelCapability {
 
 export function capabilityFromRecipe(recipe?: string | null): ModelCapability {
   const r = normalizeModelType(recipe);
-  if (r === 'sd-cpp' || r.includes('stable-diffusion') || r.includes('diffusion')) return 'image';
-  if (r === 'whispercpp' || r.includes('whisper')) return 'audio';
-  if (r === 'kokoro' || r.includes('tts')) return 'tts';
-  if (r.includes('omni') || r.includes('multimodal') || r.includes('vision')) return 'omni';
-  if (r === 'llamacpp' || r === 'flm' || r === 'ryzenai-llm' || r === 'vllm') return 'chat';
+  if (!r || r === 'unknown') return 'unknown';
+  if (r === 'collection.omni' || r.includes('collection.omni')) return 'omni';
+  if (r === 'collection') return 'omni';
+  for (const [hint, cap] of NON_CHAT_RECIPE_HINTS) {
+    if (r === hint || r.includes(hint)) return cap;
+  }
+  if (r.includes('omni') || r.includes('multimodal') || r.includes('vision-language')) return 'omni';
+  if (CHAT_RECIPE_HINTS.has(r)) return 'chat';
   return 'unknown';
 }
 
 export function capabilityFromName(name?: string | null): ModelCapability {
   const n = normalizeModelType(name);
   if (!n || n === 'unknown') return 'unknown';
-  if (OMNI_NAME_HINTS.some(hint => n.includes(hint))) return 'omni';
   if (n.includes('embed')) return 'embedding';
   if (n.includes('rerank')) return 'reranking';
+  if (EXPLICIT_OMNI_NAME_PATTERNS.some(pattern => pattern.test(n))) return 'omni';
   return 'unknown';
 }
 
 export function capabilityFromLabels(labels?: string[]): ModelCapability {
-  const lower = (labels || []).map(l => l.toLowerCase());
-  const hasOmni = lower.some(l => ['omni','multimodal','vision-language','audio-chat','chat-transcription','realtime'].includes(l));
-  const hasVisionInput = lower.some(l => l === 'vision' || l === 'image-input' || l === 'vlm');
-  const hasAudioInput = lower.some(l => l === 'audio-input' || l === 'speech-input');
-  const hasChatLike = lower.some(l => l === 'chat' || l === 'tool-calling' || l === 'reasoning' || l === 'coding' || l === 'llm' || l === 'vision');
-  if (hasOmni || (hasChatLike && (hasVisionInput || hasAudioInput))) return 'omni';
-  if (lower.some(l => l === 'image' || l === 'edit' || l === 'upscaling')) return 'image';
-  if (lower.some(l => l === 'tts' || l === 'speech')) return 'tts';
-  if (lower.some(l => l === 'transcription' || l === 'realtime-transcription' || l === 'audio')) return 'audio';
+  const lower = (labels || []).map(l => l.toLowerCase().trim()).filter(Boolean);
+  const set = new Set(lower);
+
+  if (lower.some(l => l === 'image' || l === 'image-generation' || l === 'edit' || l === 'upscaling')) return 'image';
+  if (lower.some(l => l === 'tts' || l === 'speech' || l === 'text-to-speech')) return 'tts';
+  if (lower.some(l => l === 'transcription' || l === 'realtime-transcription' || l === 'asr')) return 'audio';
   if (lower.some(l => l === 'embeddings' || l === 'embedding')) return 'embedding';
   if (lower.some(l => l === 'reranking' || l === 'reranker')) return 'reranking';
-  if (hasChatLike) return 'chat';
+
+  const hasExplicitOmni = lower.some(l => ['omni', 'multimodal', 'multi-modal', 'vision-language', 'vlm', 'image-input', 'audio-input', 'audio-chat', 'chat-transcription', 'realtime'].includes(l));
+  const hasChatLike = lower.some(l => ['chat', 'tool-calling', 'tools', 'reasoning', 'coding', 'code', 'llm'].includes(l));
+  const hasInputModality = lower.some(l => ['image-input', 'vision-language', 'vlm', 'audio-input', 'audio-chat', 'chat-transcription', 'realtime'].includes(l));
+
+  if (hasExplicitOmni || (hasChatLike && hasInputModality)) return 'omni';
+  if (hasChatLike || set.has('vision')) return 'chat';
   return 'unknown';
+}
+
+function preferNonChat(cap: ModelCapability): boolean {
+  return cap !== 'chat' && cap !== 'unknown';
 }
 
 export function capabilityFromLoaded(model?: LoadedModel | null): ModelCapability {
   if (!model) return 'unknown';
-  const typeCap = capabilityFromType(model.type);
-  if (typeCap !== 'chat' && typeCap !== 'unknown') return typeCap;
   const recipeCap = capabilityFromRecipe(model.recipe);
-  if (recipeCap !== 'chat' && recipeCap !== 'unknown') return recipeCap;
+  if (preferNonChat(recipeCap)) return recipeCap;
+  const typeCap = capabilityFromType(model.type);
+  if (preferNonChat(typeCap)) return typeCap;
   const nameCap = capabilityFromName(`${model.model_name} ${model.checkpoint || ''}`);
-  if (nameCap === 'omni') return 'omni';
-  if (typeCap === 'chat') return 'chat';
-  if (recipeCap === 'chat') return 'chat';
+  if (preferNonChat(nameCap)) return nameCap;
+  if (typeCap === 'chat' || recipeCap === 'chat') return 'chat';
   return nameCap;
 }
 
 export function capabilityFromModelInfo(model: ModelInfo): ModelCapability {
+  const recipeCap = capabilityFromRecipe((model as any).recipe);
+  if (preferNonChat(recipeCap)) return recipeCap;
+
   const direct = capabilityFromType((model as any).type);
-  if (direct !== 'chat' && direct !== 'unknown') return direct;
+  if (preferNonChat(direct)) return direct;
+
   const fromLabels = capabilityFromLabels(model.labels || []);
-  if (fromLabels !== 'chat' && fromLabels !== 'unknown') return fromLabels;
-  const fromRecipe = capabilityFromRecipe((model as any).recipe);
-  if (fromRecipe !== 'chat' && fromRecipe !== 'unknown') return fromRecipe;
-  const nameCap = capabilityFromName(`${model.id || ''} ${model.name || ''} ${model.display_name || ''} ${String((model as any).checkpoint || '')}`);
-  if (nameCap === 'omni') return 'omni';
-  if (fromLabels === 'chat') return 'chat';
-  if (direct === 'chat') return 'chat';
-  if (fromRecipe === 'chat') return 'chat';
-  return nameCap;
+  if (preferNonChat(fromLabels)) return fromLabels;
+
+  const nameCap = capabilityFromName(`${model.id || ''} ${model.name || ''} ${model.display_name || ''} ${String((model as any).model_name || '')} ${String((model as any).checkpoint || '')}`);
+  if (preferNonChat(nameCap)) return nameCap;
+
+  if (fromLabels === 'chat' || direct === 'chat' || recipeCap === 'chat') return 'chat';
+  return 'unknown';
 }
 
 export function canUseChatCompletions(model?: LoadedModel | null): boolean {
@@ -122,6 +163,20 @@ export function capabilityIcon(capability: ModelCapability): string {
 export function snapshotFromLoaded(model?: LoadedModel | null): ModelSnapshot | null {
   if (!model) return null;
   return { name: model.model_name, type: normalizeModelType(model.type), capability: capabilityFromLoaded(model), recipe: model.recipe, device: model.device, checkpoint: model.checkpoint };
+}
+
+export function snapshotFromModelInfo(model?: ModelInfo | null): ModelSnapshot | null {
+  if (!model) return null;
+  const name = String((model as any).model_name || model.name || model.id || '').trim();
+  if (!name) return null;
+  const capability = capabilityFromModelInfo(model);
+  return {
+    name,
+    type: String((model as any).type || capability || 'unknown'),
+    capability,
+    recipe: String((model as any).recipe || ''),
+    checkpoint: String((model as any).checkpoint || ''),
+  };
 }
 
 export function snapshotFromName(name: string | null | undefined, loadedModels: LoadedModel[]): ModelSnapshot | null {
