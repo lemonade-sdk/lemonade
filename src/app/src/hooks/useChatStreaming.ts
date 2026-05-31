@@ -1,8 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api, { ChatMessage, LiveStreamStats, ChatCompletionStats } from '../api';
-import { LEMONADE_TOOLS, executeTool, ToolCall } from '../tools/lemonadeTools';
+import { LEMONADE_TOOLS, executeTool, ToolCall, ToolResult } from '../tools/lemonadeTools';
+
+export type { ToolCall } from '../tools/lemonadeTools';
 
 const MAX_TOOL_ROUNDS = 5;
+
+export interface ToolArtifact {
+  type: 'image' | 'audio';
+  url: string;
+  name?: string;
+  mime?: string;
+}
+
+export interface ToolExecutionPayload extends ToolResult {
+  displayResult?: string;
+  artifacts?: ToolArtifact[];
+  error?: boolean;
+}
+
+export interface ChatToolRuntime {
+  tools: Record<string, unknown>[];
+  execute: (call: ToolCall) => Promise<ToolExecutionPayload>;
+  systemPrompt?: string;
+}
+
+const DEFAULT_TOOL_RUNTIME: ChatToolRuntime = {
+  tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
+  execute: executeTool as unknown as (call: ToolCall) => Promise<ToolExecutionPayload>,
+};
 
 /** Produce a short human-readable summary of a tool result */
 function summarizeResult(toolName: string, data: Record<string, unknown>): string {
@@ -32,7 +58,9 @@ export interface ToolCallEntry {
   rawArgs?: string;
   result: string;
   status: 'running' | 'done' | 'error';
+  artifacts?: ToolArtifact[];
 }
+
 
 interface StreamState {
   content: string;
@@ -49,7 +77,7 @@ export interface ChatStreamingResult {
   streamingConvoIds: Set<string>;
   getStream: (convoId: string) => StreamState | undefined;
   getLiveStats: (convoId: string) => LiveStreamStats | undefined;
-  send: (convoId: string, model: string, messages: ChatMessage[], useTools?: boolean) => Promise<void>;
+  send: (convoId: string, model: string, messages: ChatMessage[], tools?: boolean | ChatToolRuntime | null) => Promise<void>;
   stop: (convoId: string) => { content: string; thinking?: string } | null;
 }
 
@@ -94,7 +122,10 @@ export function useChatStreaming(
     [liveStats],
   );
 
-  const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[], useTools = false) => {
+  const send = useCallback(async (convoId: string, model: string, messages: ChatMessage[], tools: boolean | ChatToolRuntime | null = false) => {
+    const runtime: ChatToolRuntime | null = tools === true
+      ? DEFAULT_TOOL_RUNTIME
+      : (tools && typeof tools === 'object' ? tools : null);
     setActiveStreams(prev => ({ ...prev, [convoId]: { content: '', thinking: '', toolCalls: [] } }));
     setThinkingExpanded(false);
 
@@ -109,7 +140,7 @@ export function useChatStreaming(
     const runCompletion = async (): Promise<void> => {
       return new Promise<void>((resolve, reject) => {
         api.chatCompletion(model, fullMessages, {
-          tools: useTools ? LEMONADE_TOOLS as unknown as Record<string, unknown>[] : undefined,
+          tools: runtime?.tools?.length ? runtime.tools : undefined,
           onReasoning: (_token, fullReasoning) => {
             const buf = tokenBufferRef.current;
             if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
@@ -154,20 +185,26 @@ export function useChatStreaming(
 
             // Execute all tool calls in parallel
             const results = await Promise.all(
-              toolCalls.map(tc => executeTool(tc as ToolCall))
+              toolCalls.map(tc => runtime!.execute(tc as ToolCall))
             );
 
             // Update entries with results
             for (let j = 0; j < runningEntries.length; j++) {
               const r = results[j];
               const entry = runningEntries[j];
+              entry.artifacts = r.artifacts;
+              if (r.displayResult) {
+                entry.result = r.displayResult;
+                entry.status = r.error ? 'error' : 'done';
+                continue;
+              }
               try {
                 const parsed = JSON.parse(r.content);
                 entry.result = parsed.error ? `Error: ${parsed.error}` : summarizeResult(entry.name, parsed);
                 entry.status = parsed.error ? 'error' : 'done';
               } catch {
                 entry.result = r.content.slice(0, 200);
-                entry.status = 'done';
+                entry.status = r.error ? 'error' : 'done';
               }
             }
 

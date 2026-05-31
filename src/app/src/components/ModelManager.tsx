@@ -120,6 +120,24 @@ const RECIPE_BADGES: Record<string, string> = {
 /* ── Filter / search types ─────────────────────────────────── */
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding';
+type CustomFormMode = 'model' | 'omni-collection';
+type OmniComponentRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
+type CustomModelDraftState = {
+  name: string;
+  displayName: string;
+  checkpoint: string;
+  recipe: string;
+  capability: CustomModelCapability;
+  maxContextWindow: string;
+  labels: string;
+  omniSource: 'single' | 'collection';
+  llmComponent: string;
+  visionComponent: string;
+  imageComponent: string;
+  editComponent: string;
+  transcriptionComponent: string;
+  speechComponent: string;
+};
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: 'all', label: 'All', icon: '✦' },
@@ -130,6 +148,243 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: 'tts', label: 'TTS', icon: '🔊' },
   { key: 'embedding', label: 'Embed', icon: '📐' },
 ];
+
+function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraftState {
+  const isOmniCollection = mode === 'omni-collection';
+  return {
+    name: '',
+    displayName: '',
+    checkpoint: '',
+    recipe: isOmniCollection ? 'collection.omni' : 'llamacpp',
+    capability: isOmniCollection ? 'omni' : 'chat',
+    maxContextWindow: '4096',
+    labels: '',
+    omniSource: isOmniCollection ? 'collection' : 'single',
+    llmComponent: '',
+    visionComponent: '',
+    imageComponent: '',
+    editComponent: '',
+    transcriptionComponent: '',
+    speechComponent: '',
+  };
+}
+
+function loadedIsVirtualOmniCollection(model: LoadedModel): boolean {
+  const recipe = String(model.recipe || '').toLowerCase();
+  const components = model.recipe_options?.components;
+  return (recipe === 'collection.omni' || recipe === 'collection')
+    && model.recipe_options?.virtual_collection === true
+    && Array.isArray(components)
+    && components.some(component => typeof component === 'string' && component.trim().length > 0);
+}
+
+type OmniComponentOptionSource = 'custom' | 'downloaded' | 'registered';
+
+interface OmniComponentOption {
+  id: string;
+  label: string;
+  detail: string;
+  source: OmniComponentOptionSource;
+  downloaded: boolean;
+  custom: boolean;
+  recipe: string;
+  labels: string[];
+}
+
+const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; placeholder: string; help: string; required?: boolean }> = {
+  llm: {
+    label: 'Planner LLM',
+    placeholder: 'Search downloaded, registry, or custom LLMs…',
+    help: 'Required planner model for chat and tool calls.',
+    required: true,
+  },
+  vision: {
+    label: 'Vision',
+    placeholder: 'Search vision/VLM components…',
+    help: 'Optional model used for image analysis.',
+  },
+  image: {
+    label: 'Image generation',
+    placeholder: 'Search image generation components…',
+    help: 'Optional model used to generate images.',
+  },
+  edit: {
+    label: 'Image editing',
+    placeholder: 'Search image edit components…',
+    help: 'Optional model used to edit existing images.',
+  },
+  transcription: {
+    label: 'Transcription',
+    placeholder: 'Search Whisper/audio components…',
+    help: 'Optional speech-to-text model.',
+  },
+  speech: {
+    label: 'Text to speech',
+    placeholder: 'Search TTS/speech components…',
+    help: 'Optional text-to-speech model.',
+  },
+};
+
+const NON_PLANNER_LABELS = new Set(['image', 'image-generation', 'edit', 'upscaling', 'speech', 'tts', 'text-to-speech', 'transcription', 'embeddings', 'embedding', 'reranking', 'reranker']);
+
+function lowerLabels(m: ModelInfo): string[] {
+  return (m.labels || []).map(label => label.toLowerCase().trim()).filter(Boolean);
+}
+
+function hasAnyLabel(m: ModelInfo, labels: string[]): boolean {
+  const wanted = new Set(labels.map(label => label.toLowerCase()));
+  return lowerLabels(m).some(label => wanted.has(label));
+}
+
+function isOmniComponentEligible(m: ModelInfo, role: OmniComponentRole): boolean {
+  if (isCollectionModel(m)) return false;
+  const cap = capabilityFromModelInfo(m);
+  const labels = lowerLabels(m);
+
+  switch (role) {
+    case 'llm':
+      return cap === 'chat' || cap === 'omni' || !labels.some(label => NON_PLANNER_LABELS.has(label));
+    case 'vision':
+      return cap === 'omni' || hasAnyLabel(m, ['vision', 'vlm', 'vision-language', 'image-input']);
+    case 'image':
+      return cap === 'image' || hasAnyLabel(m, ['image', 'image-generation', 'diffusion']);
+    case 'edit':
+      return hasAnyLabel(m, ['edit', 'image-edit', 'image-editing', 'upscaling']);
+    case 'transcription':
+      return cap === 'audio' || hasAnyLabel(m, ['audio', 'transcription', 'realtime-transcription', 'asr']);
+    case 'speech':
+      return cap === 'tts' || hasAnyLabel(m, ['tts', 'speech', 'text-to-speech']);
+    default:
+      return false;
+  }
+}
+
+function omniComponentOptionFromModel(m: ModelInfo): OmniComponentOption {
+  const id = modelName(m);
+  const downloaded = Boolean((m as any).downloaded);
+  const custom = Boolean((m as any).custom);
+  const recipe = String((m as any).recipe || '');
+  const labels = lowerLabels(m);
+  const source: OmniComponentOptionSource = custom ? 'custom' : downloaded ? 'downloaded' : 'registered';
+  const detailParts = [
+    custom ? 'custom' : downloaded ? 'downloaded' : 'registered · will download when pulled',
+    recipeLabel(recipe),
+    labels.slice(0, 3).map(labelDisplay).join(', '),
+  ].filter(Boolean);
+  return {
+    id,
+    label: String(m.display_name || id),
+    detail: detailParts.join(' · '),
+    source,
+    downloaded,
+    custom,
+    recipe,
+    labels,
+  };
+}
+
+function compareOmniComponentOptions(a: OmniComponentOption, b: OmniComponentOption): number {
+  const sourceRank: Record<OmniComponentOptionSource, number> = { custom: 0, downloaded: 1, registered: 2 };
+  const diff = sourceRank[a.source] - sourceRank[b.source];
+  if (diff !== 0) return diff;
+  return a.label.localeCompare(b.label);
+}
+
+interface OmniComponentPickerProps {
+  role: OmniComponentRole;
+  value: string;
+  options: OmniComponentOption[];
+  onChange: (value: string) => void;
+  onHuggingFaceSearch?: (query: string) => void;
+}
+
+const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, options, onChange, onHuggingFaceSearch }) => {
+  const config = OMNI_COMPONENT_ROLE_CONFIG[role];
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = options.find(option => option.id === value);
+  const queryText = query.trim().toLowerCase();
+  const visibleOptions = useMemo(() => {
+    const filtered = queryText
+      ? options.filter(option => {
+        const haystack = `${option.label} ${option.id} ${option.detail} ${option.recipe} ${option.labels.join(' ')}`.toLowerCase();
+        return haystack.includes(queryText);
+      })
+      : options;
+    return filtered.slice(0, 40);
+  }, [options, queryText]);
+  const groups: Array<{ source: OmniComponentOptionSource; label: string; options: OmniComponentOption[] }> = [
+    { source: 'custom' as OmniComponentOptionSource, label: 'Custom models', options: visibleOptions.filter(option => option.source === 'custom') },
+    { source: 'downloaded' as OmniComponentOptionSource, label: 'Downloaded locally', options: visibleOptions.filter(option => option.source === 'downloaded') },
+    { source: 'registered' as OmniComponentOptionSource, label: 'Registered registry models', options: visibleOptions.filter(option => option.source === 'registered') },
+  ].filter(group => group.options.length > 0);
+
+  return (
+    <div className="omni-component-picker">
+      <label className="omni-component-picker__label" title={config.help}>{config.label}{config.required ? ' *' : ''}</label>
+      <div className="omni-component-picker__control">
+        <input
+          value={open ? query : (selected ? selected.label : '')}
+          onFocus={() => { setOpen(true); setQuery(''); }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          placeholder={config.placeholder}
+          aria-label={`${config.label} component`}
+          autoComplete="off"
+        />
+        {value && !config.required && (
+          <button
+            type="button"
+            className="omni-component-picker__clear"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => onChange('')}
+            title={`Clear ${config.label}`}
+          >×</button>
+        )}
+        <span className="omni-component-picker__chevron">⌄</span>
+        {open && (
+          <div className="omni-component-picker__menu" role="listbox">
+            {groups.length > 0 ? groups.map(group => (
+              <div className="omni-component-picker__group" key={group.source}>
+                <div className="omni-component-picker__group-label">{group.label}</div>
+                {group.options.map(option => (
+                  <button
+                    type="button"
+                    key={option.id}
+                    className={`omni-component-picker__option${option.id === value ? ' omni-component-picker__option--selected' : ''}`}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => { onChange(option.id); setQuery(''); setOpen(false); }}
+                    role="option"
+                    aria-selected={option.id === value}
+                  >
+                    <span className="omni-component-picker__option-name">{option.label}</span>
+                    <span className="omni-component-picker__option-id">{option.id}</span>
+                    <span className="omni-component-picker__option-detail">{option.detail}</span>
+                  </button>
+                ))}
+              </div>
+            )) : (
+              <div className="omni-component-picker__empty">
+                No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
+              </div>
+            )}
+            {queryText.length >= 2 && onHuggingFaceSearch && (
+              <button
+                type="button"
+                className="omni-component-picker__hf-search"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); }}
+              >
+                🤗 Search HuggingFace for “{query.trim()}”
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="omni-component-picker__help">{selected ? selected.detail : config.help}</div>
+    </div>
+  );
+};
 
 /* ── Component ─────────────────────────────────────────────── */
 
@@ -165,21 +420,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [customModels, setCustomModels] = useState<ModelInfo[]>(() => loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
-  const [customDraft, setCustomDraft] = useState({
-    name: '',
-    displayName: '',
-    checkpoint: '',
-    recipe: 'llamacpp',
-    capability: 'chat' as CustomModelCapability,
-    maxContextWindow: '4096',
-    labels: '',
-    omniSource: 'single' as 'single' | 'collection',
-    llmComponent: '',
-    visionComponent: '',
-    imageComponent: '',
-    transcriptionComponent: '',
-    speechComponent: '',
-  });
+  const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
 
   const reloadCustomModels = useCallback(() => {
     setCustomModels(loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
@@ -261,7 +502,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   useEffect(() => {
     const q = searchQuery.trim();
-    if (q.length < 2) {
+    if (q.length < 2 || filterTab === 'omni') {
       setHfResults([]);
       setHfLoading(false);
       setHfError(null);
@@ -292,7 +533,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       clearTimeout(timer);
       ac.abort();
     };
-  }, [searchQuery]);
+  }, [searchQuery, filterTab]);
 
   /* ── Actions ─────────────────────────────────────────────── */
 
@@ -467,8 +708,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
 
-  const handleCustomDraftChange = (patch: Partial<typeof customDraft>) => {
+  const handleCustomDraftChange = (patch: Partial<CustomModelDraftState>) => {
     setCustomDraft(prev => ({ ...prev, ...patch }));
+    setCustomError(null);
+  };
+
+  const openCustomForm = (mode: CustomFormMode = 'model') => {
+    setCustomDraft(createEmptyCustomDraft(mode));
+    setCustomError(null);
+    setShowCustomForm(true);
+  };
+
+  const closeCustomForm = () => {
+    setShowCustomForm(false);
     setCustomError(null);
   };
 
@@ -484,10 +736,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     e.preventDefault();
     setCustomError(null);
     try {
+      if (customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && !customDraft.llmComponent.trim()) {
+        throw new Error('Select a planner LLM for the Omni collection.');
+      }
       const componentRoles = {
         llm: customDraft.llmComponent,
         vision: customDraft.visionComponent,
         image: customDraft.imageComponent,
+        edit: customDraft.editComponent,
         transcription: customDraft.transcriptionComponent,
         speech: customDraft.speechComponent,
       };
@@ -508,7 +764,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       reloadCustomModels();
       setShowCustomForm(false);
       setSearchQuery(saved.name);
-      setCustomDraft({ name: '', displayName: '', checkpoint: '', recipe: 'llamacpp', capability: 'chat', maxContextWindow: '4096', labels: '', omniSource: 'single', llmComponent: '', visionComponent: '', imageComponent: '', transcriptionComponent: '', speechComponent: '' });
+      setCustomDraft(createEmptyCustomDraft());
     } catch (err) {
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
     }
@@ -530,6 +786,39 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     }
     return merged;
   }, [customModels, models]);
+
+  const omniComponentOptions = useMemo(() => {
+    const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
+      llm: [],
+      vision: [],
+      image: [],
+      edit: [],
+      transcription: [],
+      speech: [],
+    };
+    const seenByRole: Record<OmniComponentRole, Set<string>> = {
+      llm: new Set<string>(),
+      vision: new Set<string>(),
+      image: new Set<string>(),
+      edit: new Set<string>(),
+      transcription: new Set<string>(),
+      speech: new Set<string>(),
+    };
+    for (const m of allModels) {
+      for (const role of Object.keys(roles) as OmniComponentRole[]) {
+        if (!isOmniComponentEligible(m, role)) continue;
+        const option = omniComponentOptionFromModel(m);
+        const key = option.id.toLowerCase();
+        if (seenByRole[role].has(key)) continue;
+        seenByRole[role].add(key);
+        roles[role].push(option);
+      }
+    }
+    for (const role of Object.keys(roles) as OmniComponentRole[]) {
+      roles[role].sort(compareOmniComponentOptions);
+    }
+    return roles;
+  }, [allModels]);
 
   const displayLoadedModels = useMemo(
     () => withVirtualLoadedCollections(loadedModels, allModels),
@@ -556,9 +845,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const applyFilter = useCallback((list: ModelInfo[]) => {
     let filtered = list;
 
-    // Type filter
+    // Type filter. The Omni tab is intentionally collection-only: single VLMs
+    // are useful chat/vision models, but they are not Omni collections.
     if (filterTab !== 'all') {
       filtered = filtered.filter(m => {
+        if (filterTab === 'omni') return isCollectionModel(m);
         const type = modelType(m);
         if (filterTab === 'embedding') return type === 'embedding' || type === 'reranking';
         return type === filterTab;
@@ -589,11 +880,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       // Type filter
       if (filterTab !== 'all') {
         const info = allModels.find(mi => modelName(mi) === m.model_name);
-        const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
-        const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
-        if (filterTab === 'embedding') {
-          if (type !== 'embedding' && type !== 'reranking') return false;
-        } else if (type !== filterTab) return false;
+        if (filterTab === 'omni') {
+          if (!(info ? isCollectionModel(info) : loadedIsVirtualOmniCollection(m))) return false;
+        } else {
+          const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
+          const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
+          if (filterTab === 'embedding') {
+            if (type !== 'embedding' && type !== 'reranking') return false;
+          } else if (type !== filterTab) return false;
+        }
       }
       // Search
       if (searchQuery.trim()) {
@@ -615,9 +910,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   // HuggingFace results — exclude models already in local registry
   const filteredHfResults = useMemo(() => {
     if (hfResults.length === 0) return [];
+    // The Omni filter is collection-only. HuggingFace search returns individual
+    // GGUF checkpoints, so showing them here would leak LLMs into the Omni tab.
+    if (filterTab === 'omni') return [];
     const localIds = new Set(allModels.map(m => modelName(m).toLowerCase()));
     return hfResults.filter(r => !localIds.has(r.id.toLowerCase()));
-  }, [hfResults, allModels]);
+  }, [hfResults, allModels, filterTab]);
 
   /* ── Toggle detail ───────────────────────────────────────── */
   const toggleDetail = (name: string) => {
@@ -1069,8 +1367,41 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   /* ── Stats ───────────────────────────────────────────────── */
   const showManagerEmpty = filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0;
+  const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
+  const customFormTitle = isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model';
+  const showHuggingFaceZone = filterTab !== 'omni';
   const totalDownloaded = downloaded.length + displayLoadedModels.length;
   const totalPulling = Object.keys(pulling).length;
+  const updateOmniComponent = (role: OmniComponentRole, value: string) => {
+    if (role === 'llm') {
+      const selectedInfo = allModels.find(m => modelName(m) === value);
+      const plannerHasVision = !!selectedInfo && isOmniComponentEligible(selectedInfo, 'vision');
+      const visionWasPlannerDefault = !customDraft.visionComponent || customDraft.visionComponent === customDraft.llmComponent;
+      handleCustomDraftChange({
+        llmComponent: value,
+        ...(plannerHasVision && visionWasPlannerDefault ? { visionComponent: value } : {}),
+        ...(!plannerHasVision && customDraft.visionComponent === customDraft.llmComponent ? { visionComponent: '' } : {}),
+      });
+      return;
+    }
+    if (role === 'image') {
+      const selectedInfo = allModels.find(m => modelName(m) === value);
+      const imageHasEdit = !!selectedInfo && isOmniComponentEligible(selectedInfo, 'edit');
+      const editWasImageDefault = !customDraft.editComponent || customDraft.editComponent === customDraft.imageComponent;
+      handleCustomDraftChange({
+        imageComponent: value,
+        ...(imageHasEdit && editWasImageDefault ? { editComponent: value } : {}),
+        ...(!imageHasEdit && customDraft.editComponent === customDraft.imageComponent ? { editComponent: '' } : {}),
+      });
+      return;
+    }
+    handleCustomDraftChange({ [`${role}Component`]: value } as Partial<CustomModelDraftState>);
+  };
+  const searchHuggingFaceFromPicker = (query: string) => {
+    setFilterTab('all');
+    setSearchQuery(query);
+    setShowAllAvailable(true);
+  };
 
   return (
     <div className="manager">
@@ -1116,7 +1447,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <button className="manager__search-clear" onClick={() => setSearchQuery('')}>×</button>
             )}
           </div>
-          <button className="btn btn--ghost manager__custom-btn" onClick={() => setShowCustomForm(v => !v)}>+ Custom model</button>
+          <div className="manager__custom-actions">
+            <button className="btn btn--ghost manager__custom-btn" onClick={() => (showCustomForm && !isCustomOmniCollectionDraft) ? closeCustomForm() : openCustomForm('model')}>+ Custom model</button>
+            <button className="btn btn--ghost manager__custom-btn manager__custom-btn--omni" onClick={() => openCustomForm('omni-collection')}>+ Omni collection</button>
+          </div>
           <div className="manager__filters">
             {FILTER_TABS.map(tab => (
               <button
@@ -1135,10 +1469,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       <div className="manager__body">
 
         {showCustomForm && (
-          <section className="zone custom-model-form" aria-label="Add custom model">
+          <section className="zone custom-model-form" aria-label={`Add ${customFormTitle}`}>
             <div className="zone__head">
               <span className="zone__dot zone__dot--available" />
-              <span className="zone__title">Custom model</span>
+              <span className="zone__title">{customFormTitle}</span>
+              {isCustomOmniCollectionDraft && <span className="zone__count">collection wrapper</span>}
               <span className="zone__rule" />
             </div>
             <form className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
@@ -1161,42 +1496,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </select>
               </label>
               {customDraft.capability === 'omni' && (
-                <label>Omni source
+                <label>Omni type
                   <select value={customDraft.omniSource} onChange={e => {
                     const omniSource = e.target.value as 'single' | 'collection';
                     handleCustomDraftChange({ omniSource, recipe: defaultRecipeForCapability('omni', omniSource) });
                   }}>
-                    <option value="single">Single multimodal model checkpoint</option>
-                    <option value="collection">Omni collection from loaded/downloaded components</option>
+                    <option value="single">Single multimodal checkpoint</option>
+                    <option value="collection">Collection wrapper from existing components</option>
                   </select>
                 </label>
               )}
               <label>Recipe/backend
-                <input value={customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} placeholder="llamacpp" />
+                <input value={customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} placeholder={isCustomOmniCollectionDraft ? 'collection.omni' : 'llamacpp'} />
               </label>
-              <label className="custom-model-form__wide">Checkpoint, HF repo, or local path
-                <input value={customDraft.checkpoint} onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })} placeholder="org/model:Q4_K_M.gguf or /path/to/model.gguf" />
+              <label className="custom-model-form__wide">{isCustomOmniCollectionDraft ? 'Optional collection checkpoint/alias' : 'Checkpoint, HF repo, or local path'}
+                <input
+                  value={customDraft.checkpoint}
+                  onChange={e => handleCustomDraftChange({ checkpoint: e.target.value })}
+                  placeholder={isCustomOmniCollectionDraft ? 'Optional; first component is used when left empty' : 'org/model:Q4_K_M.gguf or /path/to/model.gguf'}
+                />
               </label>
               {customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && (
                 <>
                   <div className="custom-model-form__hint custom-model-form__wide">
-                    Build a custom Omni wrapper from existing model names. The LLM component is used for text chat; the vision/audio components are used when matching media is attached.
+                    Build a visible Omni collection from downloaded, registered, or custom models. Pick components from the searchable dropdowns; use the HuggingFace zone to download/register new components before selecting them here.
                   </div>
-                  <label>LLM component
-                    <input value={customDraft.llmComponent} onChange={e => handleCustomDraftChange({ llmComponent: e.target.value })} placeholder="llama-3.2-3b-instruct" />
-                  </label>
-                  <label>Vision component
-                    <input value={customDraft.visionComponent} onChange={e => handleCustomDraftChange({ visionComponent: e.target.value })} placeholder="llava-v1.6 or vision model name" />
-                  </label>
-                  <label>Image component
-                    <input value={customDraft.imageComponent} onChange={e => handleCustomDraftChange({ imageComponent: e.target.value })} placeholder="image generator model name" />
-                  </label>
-                  <label>Audio transcript component
-                    <input value={customDraft.transcriptionComponent} onChange={e => handleCustomDraftChange({ transcriptionComponent: e.target.value })} placeholder="whisper transcription model name" />
-                  </label>
-                  <label>Speech component
-                    <input value={customDraft.speechComponent} onChange={e => handleCustomDraftChange({ speechComponent: e.target.value })} placeholder="TTS model name" />
-                  </label>
+                  <OmniComponentPicker role="llm" value={customDraft.llmComponent} options={omniComponentOptions.llm} onChange={value => updateOmniComponent('llm', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+                  <OmniComponentPicker role="vision" value={customDraft.visionComponent} options={omniComponentOptions.vision} onChange={value => updateOmniComponent('vision', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+                  <OmniComponentPicker role="image" value={customDraft.imageComponent} options={omniComponentOptions.image} onChange={value => updateOmniComponent('image', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+                  <OmniComponentPicker role="edit" value={customDraft.editComponent} options={omniComponentOptions.edit} onChange={value => updateOmniComponent('edit', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+                  <OmniComponentPicker role="transcription" value={customDraft.transcriptionComponent} options={omniComponentOptions.transcription} onChange={value => updateOmniComponent('transcription', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
+                  <OmniComponentPicker role="speech" value={customDraft.speechComponent} options={omniComponentOptions.speech} onChange={value => updateOmniComponent('speech', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                 </>
               )}
               <label>Context tokens
@@ -1207,8 +1537,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               </label>
               {customError && <div className="custom-model-form__error">⚠ {customError}</div>}
               <div className="custom-model-form__actions">
-                <button className="btn btn--primary" type="submit">Save custom model</button>
-                <button className="btn btn--ghost" type="button" onClick={() => setShowCustomForm(false)}>Cancel</button>
+                <button className="btn btn--primary" type="submit">Save {isCustomOmniCollectionDraft ? 'Omni collection' : 'custom model'}</button>
+                <button className="btn btn--ghost" type="button" onClick={closeCustomForm}>Cancel</button>
               </div>
             </form>
           </section>
@@ -1261,8 +1591,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </section>
         )}
 
-        {/* HuggingFace zone — always visible */}
-        <section className="zone zone--hf">
+        {/* HuggingFace zone — registry checkpoint search, hidden for collection-only Omni tab */}
+        {showHuggingFaceZone && <section className="zone zone--hf">
           <div className="zone__head">
             <span className="zone__dot zone__dot--hf" />
             <span className="zone__title">HuggingFace</span>
@@ -1287,7 +1617,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <span>{searchQuery.trim().length < 2 ? 'Type at least 2 characters to search HuggingFace' : 'No HuggingFace results for this query'}</span>
             </div>
           )}
-        </section>
+        </section>}
 
         <div className={`manager__empty${showManagerEmpty ? '' : ' manager__empty--hidden'}`} aria-hidden={!showManagerEmpty}>
           <span className="manager__empty-icon">{api.isConnected ? '🤖' : '🔌'}</span>
