@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
+import { canSelectInComposer, selectPreferredLoadedModel } from './modelCapabilities';
 import ChatView from './components/ChatView';
 import ModelManager from './components/ModelManager';
 import ConnectView from './components/ConnectView';
@@ -99,6 +100,14 @@ const App: React.FC = () => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
 
+  const applyLoadedModels = useCallback((loaded: LoadedModel[]) => {
+    setLoadedModels(loaded);
+    setCurrentModel(current => {
+      if (current && loaded.some(m => m.model_name === current && canSelectInComposer(m))) return current;
+      return selectPreferredLoadedModel(loaded)?.model_name || null;
+    });
+  }, []);
+
   const setView = useCallback((v: View) => {
     setViewState(v);
     try { localStorage.setItem('lemonade_current_view', v); } catch { /* ignore */ }
@@ -124,17 +133,21 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const unsub = api.onStatusChange(setStatus);
-    api.connect().then(connected => {
-      if (connected) {
-        const loaded = api.loadedModels;
-        setLoadedModels(loaded);
-        const llm = loaded.find(m => m.type === 'llm');
-        if (llm) setCurrentModel(llm.model_name);
-      }
+    const unsubStatus = api.onStatusChange(setStatus);
+    const refreshGlobalModels = () => {
+      const loaded = api.loadedModels;
+      applyLoadedModels(loaded);
+    };
+    const unsubModels = api.onModelsChanged(async () => {
+      const result = await api.refresh().catch(() => null);
+      if (result) applyLoadedModels(result.health.all_models_loaded);
+      else refreshGlobalModels();
     });
-    return () => { unsub(); };
-  }, []);
+    api.connect().then(connected => {
+      if (connected) refreshGlobalModels();
+    });
+    return () => { unsubStatus(); unsubModels(); };
+  }, [applyLoadedModels]);
 
   // App-level health polling: skip when Dashboard is active (it polls every 2s)
   useEffect(() => {
@@ -148,15 +161,13 @@ const App: React.FC = () => {
 
   const handleRefreshModels = useCallback(async () => {
     const result = await api.refresh();
-    if (result) {
-      setLoadedModels(result.health.all_models_loaded);
-    }
-  }, []);
+    if (result) applyLoadedModels(result.health.all_models_loaded);
+  }, [applyLoadedModels]);
 
   const handleModelSelect = useCallback((modelName: string) => {
     setCurrentModel(modelName);
     setView('chat');
-  }, []);
+  }, [setView]);
 
   return (
     <div className="app">

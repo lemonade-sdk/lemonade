@@ -1,68 +1,175 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import api, { ChatMessage, ChatCompletionStats, LoadedModel } from '../api';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import api, { ChatMessage, ChatCompletionStats, LoadedModel, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
 import { useChatStreaming, ToolCallEntry } from '../hooks/useChatStreaming';
+import {
+  canSelectInComposer,
+  canUseChatCompletions,
+  capabilityBadge,
+  capabilityFromLoaded,
+  capabilityIcon,
+  capabilityLabel,
+  modelDisplayName,
+  modelInitial,
+  ModelCapability,
+  ModelSnapshot,
+  selectPreferredLoadedModel,
+  snapshotFromLoaded,
+  snapshotFromName,
+} from '../modelCapabilities';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  images?: string[];  // base64 data URLs for user messages with images
+  images?: string[];  // transient base64 data URLs for user messages with images
+  generatedImages?: string[]; // transient generated image data URLs
+  audioUrl?: string; // transient object URL for TTS output
+  audioName?: string;
   thinking?: string;
   stats?: ChatCompletionStats;
   toolCalls?: ToolCallEntry[];
+  model?: ModelSnapshot | null;
+  isError?: boolean;
 }
 
 interface Conversation {
   id: string;
   title: string;
-  model: string | null;
+  model: ModelSnapshot | null;
   messages: Message[];
   updatedAt: number;
+  schemaVersion?: number;
 }
 
 const STORAGE_KEY = 'lemonade_conversations';
 const ACTIVE_KEY = 'lemonade_active_conversation';
+const PERSIST_KEY = 'lemonade_persist_conversations';
+const STORAGE_VERSION = 2;
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function loadConversations(): Conversation[] {
+function loadPersistencePreference(): boolean {
+  try { return localStorage.getItem(PERSIST_KEY) === 'true'; } catch { return false; }
+}
+
+function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    return { name: raw, type: 'unknown', capability: 'unknown' };
+  }
+  if (typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const name = typeof obj.name === 'string' ? obj.name : (typeof obj.model_name === 'string' ? obj.model_name : '');
+  if (!name) return null;
+  const capability = typeof obj.capability === 'string' ? obj.capability as ModelCapability : 'unknown';
+  return {
+    name,
+    type: typeof obj.type === 'string' ? obj.type : 'unknown',
+    capability,
+    recipe: typeof obj.recipe === 'string' ? obj.recipe : undefined,
+    device: typeof obj.device === 'string' ? obj.device : undefined,
+    checkpoint: typeof obj.checkpoint === 'string' ? obj.checkpoint : undefined,
+  };
+}
+
+function normalizeConversation(raw: unknown): Conversation | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const id = typeof obj.id === 'string' ? obj.id : generateId();
+  const messagesRaw = Array.isArray(obj.messages) ? obj.messages : [];
+  const messages = messagesRaw
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map(m => ({
+      role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
+      content: typeof m.content === 'string' ? m.content : '',
+      thinking: typeof m.thinking === 'string' ? m.thinking : undefined,
+      stats: m.stats as ChatCompletionStats | undefined,
+      toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
+      model: normalizeSnapshot(m.model),
+      isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
+    }));
+  return {
+    id,
+    title: typeof obj.title === 'string' && obj.title.trim() ? obj.title : deriveTitle(messages),
+    model: normalizeSnapshot(obj.model),
+    messages,
+    updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : Date.now(),
+    schemaVersion: STORAGE_VERSION,
+  };
+}
+
+function loadConversations(persist: boolean): Conversation[] {
+  if (!persist) return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const list: unknown[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.conversations) ? parsed.conversations : []);
+    return list.map(normalizeConversation).filter((c): c is Conversation => !!c);
   } catch { /* ignore */ }
   return [];
 }
 
-function saveConversations(convos: Conversation[]) {
-  // Strip base64 images before persisting — they're too large for localStorage
+function saveConversations(convos: Conversation[], persist: boolean) {
+  if (!persist) {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_KEY);
+    } catch { /* ignore */ }
+    return;
+  }
+  // Strip transient/generated media before persisting. Image prompts are redacted
+  // so private context around an image does not leak into localStorage.
   const stripped = convos.map(c => ({
     ...c,
-    messages: c.messages.map(m => m.images ? { ...m, images: undefined } : m),
+    schemaVersion: STORAGE_VERSION,
+    messages: c.messages.map(m => ({
+      ...m,
+      content: m.images?.length ? '[image prompt not persisted]' : m.content,
+      images: undefined,
+      generatedImages: undefined,
+      audioUrl: undefined,
+      audioName: undefined,
+    })),
   }));
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped)); } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, conversations: stripped })); } catch { /* ignore */ }
 }
 
-function loadActiveId(): string | null {
+function loadActiveId(persist: boolean): string | null {
+  if (!persist) return null;
   try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
 }
 
-function saveActiveId(id: string | null) {
+function saveActiveId(id: string | null, persist: boolean) {
   try {
-    if (id) localStorage.setItem(ACTIVE_KEY, id);
-    else localStorage.removeItem(ACTIVE_KEY);
+    if (!persist) {
+      localStorage.removeItem(ACTIVE_KEY);
+    } else if (id) {
+      localStorage.setItem(ACTIVE_KEY, id);
+    } else {
+      localStorage.removeItem(ACTIVE_KEY);
+    }
   } catch { /* ignore */ }
+}
+
+function titleFromInput(text: string, hasImages: boolean, audioFiles: File[] = []): string {
+  const clean = text.trim();
+  if (clean) return clean.slice(0, 50) + (clean.length > 50 ? '…' : '');
+  if (audioFiles.length > 0) return `Audio: ${audioFiles[0].name}`.slice(0, 50);
+  if (hasImages) return 'Image conversation';
+  return 'New conversation';
 }
 
 function deriveTitle(messages: Message[]): string {
   const first = messages.find(m => m.role === 'user');
   if (!first) return 'New conversation';
-  const text = first.content.slice(0, 50);
-  return text.length < first.content.length ? text + '…' : text;
+  return titleFromInput(first.content, !!first.images?.length);
+}
+
+function isPersistableAssistantMessage(m: Message): boolean {
+  return !(m.isError || /^Error:/i.test(m.content));
 }
 
 function timeAgo(ts: number): string {
@@ -113,11 +220,20 @@ async function imageToBase64(file: File | Blob): Promise<string> {
   });
 }
 
+function friendlyChatError(message: string): string {
+  const cleaned = message.replace(/^Error:\s*/i, '').trim();
+  if (!cleaned) return "I couldn't complete that request. Please check the server logs for details.";
+  return `I couldn't complete that request.\n\n${cleaned}`;
+}
+
 const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModelSelect, onRefresh }) => {
-  const [conversations, setConversations] = useState<Conversation[]>(loadConversations);
-  const [activeId, setActiveId] = useState<string | null>(loadActiveId);
+  const [persistHistory, setPersistHistory] = useState(loadPersistencePreference);
+  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference()));
+  const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference()));
   const [inputValue, setInputValue] = useState('');
   const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
+  const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [railExpanded, setRailExpanded] = useState(true);
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(TOOLS_KEY) === 'true'; } catch { return false; }
@@ -128,13 +244,47 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
+  const streamModelsRef = useRef<Record<string, ModelSnapshot | null>>({});
+
+  const currentLoadedModel = useMemo(
+    () => loadedModels.find(m => m.model_name === currentModel) || null,
+    [loadedModels, currentModel],
+  );
+  const currentModelSnapshot = useMemo(
+    () => snapshotFromLoaded(currentLoadedModel) || snapshotFromName(currentModel, loadedModels),
+    [currentLoadedModel, currentModel, loadedModels],
+  );
+  const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  const selectableModels = useMemo(
+    () => loadedModels.filter(canSelectInComposer),
+    [loadedModels],
+  );
+  const modeSupportsChatCompletions = currentLoadedModel ? canUseChatCompletions(currentLoadedModel) : currentCapability === 'chat';
+  const modeSupportsTools = modeSupportsChatCompletions;
+
+  useEffect(() => {
+    const currentStillUsable = currentModel && loadedModels.some(m => m.model_name === currentModel && canSelectInComposer(m));
+    if (currentStillUsable || loadedModels.length === 0) return;
+    const preferred = selectPreferredLoadedModel(loadedModels);
+    if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
+  }, [currentModel, loadedModels, onModelSelect]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
   }, []);
 
+  const appendAssistantMessage = useCallback((convoId: string, message: Omit<Message, 'role'>) => {
+    updateConversation(convoId, c => ({
+      ...c,
+      messages: [...c.messages, { role: 'assistant', ...message }],
+      updatedAt: Date.now(),
+    }));
+  }, [updateConversation]);
+
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
+    const model = streamModelsRef.current[convoId] || null;
+    delete streamModelsRef.current[convoId];
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, {
@@ -143,24 +293,28 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         thinking: stats.reasoning || undefined,
         toolCalls,
         stats,
+        model,
       }],
       updatedAt: Date.now(),
     }));
   }, [updateConversation]);
 
   const handleStreamError = useCallback((convoId: string, message: string) => {
-    updateConversation(convoId, c => ({
-      ...c,
-      messages: [...c.messages, { role: 'assistant', content: `Error: ${message}` }],
-      updatedAt: Date.now(),
-    }));
-  }, [updateConversation]);
+    const model = streamModelsRef.current[convoId] || null;
+    delete streamModelsRef.current[convoId];
+    appendAssistantMessage(convoId, {
+      content: friendlyChatError(message),
+      model,
+      isError: true,
+    });
+  }, [appendAssistantMessage]);
 
   const streaming = useChatStreaming(handleStreamDone, handleStreamError);
 
   // Derived: is the CURRENT conversation streaming?
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
+  const isBusy = isStreaming || capabilityBusy;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
@@ -170,15 +324,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
 
-  // Persist conversations to localStorage whenever they change
+  // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
-    saveConversations(conversations);
-  }, [conversations]);
+    saveConversations(conversations, persistHistory);
+    try { localStorage.setItem(PERSIST_KEY, String(persistHistory)); } catch { /* ignore */ }
+  }, [conversations, persistHistory]);
 
   // Persist active conversation id
   useEffect(() => {
-    saveActiveId(activeId);
-  }, [activeId]);
+    saveActiveId(activeId, persistHistory);
+  }, [activeId, persistHistory]);
+
+  // Active ID can point at stale/missing data after manual localStorage edits or migrations.
+  useEffect(() => {
+    if (activeId && !conversations.some(c => c.id === activeId)) {
+      setActiveId(null);
+    }
+  }, [activeId, conversations]);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
@@ -191,7 +353,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent, streamingThinking, scrollToBottom]);
+  }, [messages, streamingContent, streamingThinking, capabilityBusy, scrollToBottom]);
 
   // Auto-scroll the thinking content box when sticky
   useEffect(() => {
@@ -226,7 +388,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const handleStop = useCallback(() => {
     if (!activeId) return;
+    const model = streamModelsRef.current[activeId] || currentModelSnapshot;
     const partial = streaming.stop(activeId);
+    delete streamModelsRef.current[activeId];
     if (partial) {
       updateConversation(activeId, c => ({
         ...c,
@@ -234,83 +398,148 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           role: 'assistant' as const,
           content: partial.content,
           thinking: partial.thinking,
+          model,
         }],
         updatedAt: Date.now(),
       }));
     }
-  }, [activeId, streaming, updateConversation]);
+  }, [activeId, currentModelSnapshot, streaming, updateConversation]);
+
+  const runCapabilityRequest = useCallback(async (
+    convoId: string,
+    model: ModelSnapshot,
+    text: string,
+    audioFiles: File[],
+  ) => {
+    setCapabilityBusy(true);
+    try {
+      if (model.capability === 'image') {
+        if (!text) throw new Error('Image mode needs a text prompt.');
+        const images = await api.imageGeneration(model.name, text);
+        appendAssistantMessage(convoId, {
+          content: `Generated ${images.length} image${images.length === 1 ? '' : 's'} from your prompt.`,
+          generatedImages: images,
+          model,
+        });
+      } else if (model.capability === 'tts') {
+        if (!text) throw new Error('TTS mode needs text to speak.');
+        const audio = await api.textToSpeech(model.name, text);
+        appendAssistantMessage(convoId, {
+          content: 'Generated speech audio from your text.',
+          audioUrl: audio.url,
+          audioName: `${model.name}.wav`,
+          model,
+        });
+      } else if (model.capability === 'audio') {
+        const file = audioFiles[0];
+        if (!file) throw new Error('Audio mode needs an audio file to transcribe.');
+        const transcript = await api.audioTranscription(model.name, file);
+        appendAssistantMessage(convoId, {
+          content: transcript,
+          model,
+        });
+      } else {
+        throw new Error(`${capabilityLabel(model.capability)} models cannot be used from the chat composer yet.`);
+      }
+      onRefresh();
+    } catch (err) {
+      appendAssistantMessage(convoId, {
+        content: friendlyChatError(friendlyErrorMessage(err)),
+        model,
+        isError: true,
+      });
+    } finally {
+      setCapabilityBusy(false);
+    }
+  }, [appendAssistantMessage, onRefresh]);
 
   const handleSend = async (overrideText?: string) => {
     const text = (overrideText ?? inputValue).trim();
-    if ((!text && pendingImages.length === 0) || isStreaming) return;
-    if (!api.isConnected || !currentModel) return;
+    const audioFiles = [...pendingAudioFiles];
+    const hasImages = pendingImages.length > 0;
+    const canSubmitContent = currentCapability === 'audio'
+      ? audioFiles.length > 0
+      : (!!text || hasImages);
+    if (!canSubmitContent || isBusy) return;
+    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
 
     let convoId = activeId;
+    const modelSnapshot = currentModelSnapshot;
 
     // Create a new conversation if none is active
     if (!convoId) {
       const newConvo: Conversation = {
         id: generateId(),
-        title: text.slice(0, 50) + (text.length > 50 ? '…' : ''),
-        model: currentModel,
+        title: titleFromInput(text, hasImages, audioFiles),
+        model: modelSnapshot,
         messages: [],
         updatedAt: Date.now(),
+        schemaVersion: STORAGE_VERSION,
       };
       convoId = newConvo.id;
       setConversations(prev => [newConvo, ...prev]);
       setActiveId(convoId);
     }
 
-    const images = pendingImages.length > 0 ? [...pendingImages] : undefined;
-    const userMessage: Message = { role: 'user', content: text, images };
+    const images = hasImages ? [...pendingImages] : undefined;
+    const userMessage: Message = {
+      role: 'user',
+      content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
+      images,
+      audioName: audioFiles[0]?.name,
+      model: modelSnapshot,
+    };
     updateConversation(convoId, c => ({
       ...c,
       messages: [...c.messages, userMessage],
-      model: currentModel,
+      model: modelSnapshot,
+      title: c.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : c.title,
       updatedAt: Date.now(),
     }));
 
     setInputValue('');
     setPendingImages([]);
+    setPendingAudioFiles([]);
     thinkingSticky.current = true;
 
-    // Build chat history from the conversation's current messages + new user message
+    if (!modeSupportsChatCompletions) {
+      await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles);
+      return;
+    }
+
+    // Build chat history from the conversation's current messages + new user message.
+    // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     const chatMessages: ChatMessage[] = [];
 
-    // Inject a system prompt when tools are enabled so the model knows to use them
-    if (useTools) {
+    // Inject a system prompt when tools are enabled so the model knows to use them.
+    // Keep this privacy-safe: no backend URLs, API keys, PIDs, or local paths.
+    if (useTools && modeSupportsTools) {
       const loadedList = loadedModels.length > 0
-        ? loadedModels.map(m => `${m.model_name} (${m.recipe}, ${m.device})`).join(', ')
+        ? loadedModels.map(m => `${m.model_name} (${capabilityLabel(capabilityFromLoaded(m))})`).join(', ')
         : 'none';
       chatMessages.push({
         role: 'system' as const,
         content: [
-          'You are a helpful assistant integrated with a local AI inference server called Lemonade.',
-          'You have tools to manage models, check hardware and system info, inspect backends, control the server, and present interactive choices to the user via ask_question.',
+          'You are a helpful assistant integrated with a local AI inference app called Lemonade.',
+          'Use available tools when the user asks about local models, backends, hardware capability, or server health.',
+          'When presenting choices, use the ask_question tool so the UI can render clickable options.',
           '',
-          'IMPORTANT: Use your tools proactively whenever the user asks about models, hardware, backends, server status, or anything the tools can answer.',
-          'Do NOT guess or say you cannot help — call the appropriate tool first, then answer based on the result.',
-          'When a user wants to load a model and hasn\'t specified a recipe, call get_model_info first to check available recipes, then use ask_question to let them choose.',
-          'When presenting options or choices to the user, ALWAYS use the ask_question tool — it renders interactive clickable buttons in the UI. Never list choices as plain text when ask_question is available.',
-          'When asked what tools you have, list ALL tools including ask_question.',
+          'RICH CONTENT: Responses are rendered as Markdown with code blocks, Mermaid diagrams, HTML snippets, and LaTeX math.',
           '',
-          'RICH CONTENT: Your responses are rendered as Markdown with extra capabilities:',
-          '- Standard Markdown (headings, bold, italic, lists, links, tables)',
-          '- Code blocks with syntax highlighting (use ```language)',
-          '- Mermaid diagrams: use ```mermaid code blocks to render flowcharts, sequence diagrams, state diagrams, etc. The user can toggle between the rendered diagram and the source.',
-          '- Inline HTML: basic HTML tags (tables, details/summary, div, span, etc.) are rendered. Use when Markdown tables are insufficient or for richer formatting.',
-          '- LaTeX math: use $inline$ or $$block$$ for math equations.',
-          'Use these capabilities when they help communicate — e.g. a mermaid flowchart to show model loading flow, an HTML table for complex data, etc.',
-          '',
-          `Currently loaded models: ${loadedList}`,
-          `Active chat model: ${currentModel || 'none'}`,
-          `Server: ${api.isConnected ? 'connected' : 'disconnected'}`,
+          `Currently loaded model names and capabilities: ${loadedList}`,
+          `Active composer model: ${currentModel || 'none'}`,
         ].join('\n'),
       });
     }
 
-    chatMessages.push(...currentMessages.map(m => {
+    const historyMessages = currentMessages.filter(m => {
+      if (m.role === 'assistant' && !isPersistableAssistantMessage(m)) return false;
+      if (m.generatedImages?.length || m.audioUrl) return false;
+      return true;
+    });
+
+    chatMessages.push(...historyMessages.map(m => {
       if (m.images?.length) {
         return {
           role: m.role,
@@ -336,7 +565,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       chatMessages.push({ role: 'user' as const, content: text });
     }
 
-    await streaming.send(convoId, currentModel, chatMessages, useTools);
+    streamModelsRef.current[convoId] = modelSnapshot;
+    await streaming.send(convoId, currentModel, chatMessages, useTools && modeSupportsTools);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -346,39 +576,47 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }
   };
 
-  // ── Image handling ──────────────────────────────────────────
+  // ── Attachment handling ────────────────────────────────────
 
-  const addImages = useCallback(async (files: File[]) => {
+  const addAttachments = useCallback(async (files: File[]) => {
+    if (currentCapability === 'audio') {
+      const audioFiles = files.filter(f => f.type.startsWith('audio/'));
+      if (audioFiles.length === 0) return;
+      setPendingAudioFiles(audioFiles.slice(0, 1));
+      return;
+    }
+
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
     const remaining = MAX_IMAGES - pendingImages.length;
     const toProcess = imageFiles.slice(0, remaining);
     const encoded = await Promise.all(toProcess.map(imageToBase64));
     setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
-  }, [pendingImages.length]);
+  }, [currentCapability, pendingImages.length]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
     for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) {
-        const file = items[i].getAsFile();
+      const item = items[i];
+      if (item.type.startsWith('image/') || item.type.startsWith('audio/')) {
+        const file = item.getAsFile();
         if (file) files.push(file);
       }
     }
     if (files.length > 0) {
       e.preventDefault();
-      addImages(files);
+      addAttachments(files);
     }
-  }, [addImages]);
+  }, [addAttachments]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const files = Array.from(e.dataTransfer.files);
-    addImages(files);
-  }, [addImages]);
+    addAttachments(files);
+  }, [addAttachments]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -387,12 +625,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    addImages(files);
+    addAttachments(files);
     e.target.value = '';
-  }, [addImages]);
+  }, [addAttachments]);
 
   const removeImage = useCallback((index: number) => {
     setPendingImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const removeAudio = useCallback(() => {
+    setPendingAudioFiles([]);
+  }, []);
+
+  const handlePersistenceToggle = useCallback(() => {
+    setPersistHistory(prev => !prev);
   }, []);
 
   // ── Option select from assistant messages ───────────────────
@@ -401,7 +647,28 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     handleSend(text);
   }, [handleSend]);
 
-  const hasMessages = messages.length > 0 || isStreaming;
+  const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
+  const canAttach = currentCapability === 'chat' || currentCapability === 'audio';
+  const fileAccept = currentCapability === 'audio' ? 'audio/*' : 'image/*';
+  const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio'
+    ? pendingAudioFiles.length > 0
+    : (!!inputValue.trim() || pendingImages.length > 0));
+  const composerPlaceholder = !currentModel
+    ? 'Connect to a server to start…'
+    : currentCapability === 'image'
+      ? `Describe an image for ${currentModel}…`
+      : currentCapability === 'audio'
+        ? `Attach an audio file to transcribe with ${currentModel}…`
+        : currentCapability === 'tts'
+          ? `Text to speak with ${currentModel}…`
+          : `Message ${currentModel}…`;
+  const composerHint = currentCapability === 'image'
+    ? 'Image mode · prompt becomes /images/generations'
+    : currentCapability === 'audio'
+      ? 'Audio mode · attach one audio file for /audio/transcriptions'
+      : currentCapability === 'tts'
+        ? 'TTS mode · text becomes /audio/speech'
+        : '⏎ to send · Shift+⏎ for newline · Paste or drop images';
 
   return (
     <div className={`chat ${railExpanded ? 'rail-expanded' : ''}`}>
@@ -435,37 +702,48 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         </div>
 
         <ul className="rail__list" role="listbox">
-          {conversations.map(c => (
-            <li
-              className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
-              key={c.id}
-              role="option"
-              onClick={() => handleSelectConversation(c.id)}
-            >
-              <span className="rail__item-title">
-                {c.title || deriveTitle(c.messages)}
-              </span>
-              <span className="rail__item-meta">
-                {streaming.streamingConvoIds.has(c.id) && (
-                  <span className="rail__streaming-badge">● generating</span>
-                )}
-                <span className="rail__model-badge">
-                  {(c.model || '').split('-')[0]?.toLowerCase() || 'llm'}
+          {conversations.map(c => {
+            const badge = capabilityBadge(c.model?.capability || 'chat');
+            return (
+              <li
+                className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+                key={c.id}
+                role="option"
+                onClick={() => handleSelectConversation(c.id)}
+              >
+                <span className="rail__item-title">
+                  {c.title || deriveTitle(c.messages)}
                 </span>
-                <span>{timeAgo(c.updatedAt)}</span>
-              </span>
-              <button
-                className="rail__item-delete"
-                onClick={(e) => handleDeleteConversation(e, c.id)}
-                aria-label="Delete conversation"
-                title="Delete"
-              >×</button>
-            </li>
-          ))}
+                <span className="rail__item-meta">
+                  {streaming.streamingConvoIds.has(c.id) && (
+                    <span className="rail__streaming-badge">● generating</span>
+                  )}
+                  <span className={`rail__model-badge rail__model-badge--${badge}`}>
+                    {badge}
+                  </span>
+                  <span>{timeAgo(c.updatedAt)}</span>
+                </span>
+                <button
+                  className="rail__item-delete"
+                  onClick={(e) => handleDeleteConversation(e, c.id)}
+                  aria-label="Delete conversation"
+                  title="Delete"
+                >×</button>
+              </li>
+            );
+          })}
           {conversations.length === 0 && (
             <li className="rail__empty">No conversations yet</li>
           )}
         </ul>
+
+        <div className="rail__privacy">
+          <label className="rail__privacy-toggle">
+            <input type="checkbox" checked={persistHistory} onChange={handlePersistenceToggle} />
+            <span>Local history {persistHistory ? 'ON' : 'OFF'}</span>
+          </label>
+          <span className="rail__privacy-note">Media is never persisted.</span>
+        </div>
       </aside>
 
       {/* Main pane */}
@@ -481,16 +759,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           ) : (
             <div className="thread">
               {messages.map((msg, i) => (
-                <MessageBubble key={i} message={msg} currentModel={currentModel} onOptionSelect={handleOptionSelect} />
+                <MessageBubble key={i} message={msg} activeModel={currentModelSnapshot} onOptionSelect={handleOptionSelect} />
               ))}
 
               {isStreaming && (
                 <article className="message message--assistant">
                   <div className="message__avatar">
-                    {(currentModel || 'A').charAt(0).toUpperCase()}
+                    {modelInitial(currentModelSnapshot)}
                   </div>
                   <div className="message__body">
-                    <div className="message__author">{currentModel || 'Assistant'}</div>
+                    <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
                         <summary>Thinking…</summary>
@@ -498,7 +776,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                           className="message__thinking-content"
                           ref={thinkingContentRef}
                           onScroll={handleThinkingScroll}
-                        >{streamingThinking}</div>
+                        >
+                          <MarkdownMessage content={streamingThinking} isComplete={false} />
+                        </div>
                       </details>
                     )}
                     {streamingToolCalls.length > 0 && <ToolCallsDisplay calls={streamingToolCalls} onOptionSelect={handleOptionSelect} />}
@@ -521,6 +801,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                   </div>
                 </article>
               )}
+
+              {capabilityBusy && !isStreaming && (
+                <article className="message message--assistant">
+                  <div className="message__avatar">{capabilityIcon(currentCapability)}</div>
+                  <div className="message__body">
+                    <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                    <div className="message__content message__content--pending">
+                      <span className="streaming-cursor" aria-hidden="true" />
+                      Working in {capabilityLabel(currentCapability)} mode…
+                    </div>
+                  </div>
+                </article>
+              )}
             </div>
           )}
         </div>
@@ -529,7 +822,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       {/* Composer */}
       <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
-          {loadedModels.length > 1 && (
+          {selectableModels.length > 0 && (
             <div className="composer__model-picker">
               <span className="composer__model-label">Model</span>
               <select
@@ -537,12 +830,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                 value={currentModel || ''}
                 onChange={e => onModelSelect(e.target.value)}
               >
-                {loadedModels.map(m => (
-                  <option key={m.model_name} value={m.model_name}>{m.model_name}</option>
-                ))}
+                {selectableModels.map(m => {
+                  const cap = capabilityFromLoaded(m);
+                  return <option key={m.model_name} value={m.model_name}>{capabilityIcon(cap)} {m.model_name} · {capabilityLabel(cap)}</option>;
+                })}
               </select>
             </div>
           )}
+          <span className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)}`}>
+            {capabilityIcon(currentCapability)} {capabilityLabel(currentCapability)} mode
+          </span>
           <button
             className={`composer__tools-toggle ${useTools ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => {
@@ -550,10 +847,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
               setUseTools(next);
               try { localStorage.setItem(TOOLS_KEY, String(next)); } catch { /* ignore */ }
             }}
-            title={useTools ? 'Lemonade tools enabled — click to disable' : 'Enable lemonade tools (model management via chat)'}
-            aria-pressed={useTools}
+            disabled={!modeSupportsTools}
+            title={modeSupportsTools
+              ? (useTools ? 'Lemonade tools enabled — click to disable' : 'Enable lemonade tools (model management via chat)')
+              : 'Tools are only available for chat-completion models'}
+            aria-pressed={useTools && modeSupportsTools}
           >
-            🛠 Tools {useTools ? 'ON' : 'OFF'}
+            🛠 Tools {useTools && modeSupportsTools ? 'ON' : 'OFF'}
           </button>
         </div>
         {streamingToolStatus && (
@@ -572,13 +872,23 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             ))}
           </div>
         )}
+        {pendingAudioFiles.length > 0 && (
+          <div className="composer__files">
+            {pendingAudioFiles.map((file, i) => (
+              <div key={`${file.name}-${i}`} className="composer__file-chip">
+                <span>🎙 {file.name}</span>
+                <button onClick={removeAudio} aria-label="Remove audio file">×</button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="composer__bar">
           <button
             className="composer__attach"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!currentModel || isStreaming || pendingImages.length >= MAX_IMAGES}
-            title="Attach image"
-            aria-label="Attach image"
+            disabled={!canAttach || !currentModel || isBusy || pendingImages.length >= MAX_IMAGES}
+            title={currentCapability === 'audio' ? 'Attach audio' : 'Attach image'}
+            aria-label={currentCapability === 'audio' ? 'Attach audio' : 'Attach image'}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
@@ -587,20 +897,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
-            multiple
+            accept={fileAccept}
+            multiple={currentCapability !== 'audio'}
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
           <textarea
             ref={inputRef}
             className="composer__input"
-            placeholder={currentModel ? `Message ${currentModel}…` : 'Connect to a server to start…'}
+            placeholder={composerPlaceholder}
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            disabled={!currentModel || isStreaming}
+            disabled={!currentModel || isBusy || currentCapability === 'audio'}
             rows={1}
           />
           {isStreaming ? (
@@ -609,12 +919,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             <button
               className="composer__send"
               onClick={() => handleSend()}
-              disabled={(!inputValue.trim() && pendingImages.length === 0) || !currentModel}
+              disabled={!canSubmit}
               aria-label="Send"
             >↑</button>
           )}
         </div>
-        <div className="composer__hint">⏎ to send · Shift+⏎ for newline · Paste or drop images</div>
+        <div className="composer__hint">{composerHint}</div>
       </div>
     </div>
   );
@@ -635,8 +945,8 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
       <h1 className="hero__title">What's on your mind?</h1>
       <p className="hero__subtitle">
         {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Pick a thread or start fresh.`
-          : 'Connect to a server and load a model to begin.'}
+          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} loaded. Choose the right mode, then start fresh.`
+          : 'Connect to a server and load a chat, image, audio, or TTS model to begin.'}
       </p>
 
       <div className="chips" role="list">
@@ -648,13 +958,13 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
           <span className="chip__icon" aria-hidden="true">💻</span>
           Code review
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Explain this concept simply')}>
-          <span className="chip__icon" aria-hidden="true">💡</span>
-          Explain something
+        <button className="chip" role="listitem" onClick={() => onChipClick('Create an image of a cozy lemonade stand at sunset')}>
+          <span className="chip__icon" aria-hidden="true">🖼</span>
+          Create image
         </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('Help me write a function that')}>
-          <span className="chip__icon" aria-hidden="true">⚡</span>
-          Write code
+        <button className="chip" role="listitem" onClick={() => onChipClick('Turn this text into natural speech')}>
+          <span className="chip__icon" aria-hidden="true">🔊</span>
+          Text to speech
         </button>
       </div>
     </div>
@@ -666,27 +976,34 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
           <span className="section-label__rule" />
         </div>
         <div className="active-models">
-          {loadedModels.map(m => (
-            <div className="active-card" key={m.model_name}>
-              <div className="active-card__head">
-                <div>
-                  <div className="active-card__name">{m.model_name}</div>
-                  <div className="active-card__meta">{m.recipe} · {m.checkpoint || 'default'}</div>
+          {loadedModels.map(m => {
+            const cap = capabilityFromLoaded(m);
+            const selectable = canSelectInComposer(m);
+            const isActive = currentModel === m.model_name;
+            return (
+              <div className="active-card" key={m.model_name}>
+                <div className="active-card__head">
+                  <div>
+                    <div className="active-card__name">{m.model_name}</div>
+                    <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
+                  </div>
+                  <span className="active-card__device">{m.device || 'device unknown'}</span>
                 </div>
-                <span className="active-card__device">{m.device}</span>
+                <div className="active-card__badges">
+                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}>{capabilityIcon(cap)} {capabilityLabel(cap)}</span>
+                </div>
+                {isActive ? (
+                  <span className="active-card__status">● Active {capabilityLabel(cap)} mode</span>
+                ) : selectable ? (
+                  <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
+                    Use in {capabilityLabel(cap)} mode ▸
+                  </button>
+                ) : (
+                  <span className="active-card__status active-card__status--muted">Utility model only</span>
+                )}
               </div>
-              <div className="active-card__badges">
-                <span className={`cap-badge cap-badge--${m.type === 'llm' ? 'chat' : m.type}`}>{m.type}</span>
-              </div>
-              {currentModel === m.model_name ? (
-                <span className="active-card__status">● Active in chat</span>
-              ) : m.type === 'llm' ? (
-                <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                  Switch to ▸
-                </button>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </>
     )}
@@ -763,7 +1080,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; currentModel: string | null; onOptionSelect?: (text: string) => void }> = ({ message, currentModel, onOptionSelect }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; onOptionSelect?: (text: string) => void }> = ({ message, activeModel, onOptionSelect }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
   if (message.role === 'user') {
@@ -779,31 +1096,55 @@ const MessageBubble: React.FC<{ message: Message; currentModel: string | null; o
               ))}
             </div>
           )}
-          <div className="message__content"><p>{message.content}</p></div>
+          {message.audioName && (
+            <div className="message__file-chip">🎙 {message.audioName}</div>
+          )}
+          {message.content && (
+            <div className="message__content message__content--user">
+              <MarkdownMessage content={message.content} />
+            </div>
+          )}
         </div>
       </article>
     );
   }
 
+  const displayModel = message.model || activeModel;
+  const articleClass = `message message--assistant${message.isError ? ' message--error' : ''}`;
+
   return (
-    <article className="message message--assistant">
+    <article className={articleClass}>
       <div className="message__avatar">
-        {(currentModel || 'A').charAt(0).toUpperCase()}
+        {message.isError ? '!' : modelInitial(displayModel)}
       </div>
       <div className="message__body">
-        <div className="message__author">{currentModel || 'Assistant'}</div>
+        <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
         {message.thinking && (
           <details
             className="message__thinking"
             open={thinkingOpen}
             onToggle={e => setThinkingOpen((e.target as HTMLDetailsElement).open)}
           >
-            <summary>Thought for {message.stats?.reasoningTokens || '?'} tokens</summary>
-            <div className="message__thinking-content">{message.thinking}</div>
+            <summary>Reasoning {message.stats?.reasoningTokens ? `· ${message.stats.reasoningTokens} tokens` : ''}</summary>
+            <div className="message__thinking-content">
+              <MarkdownMessage content={message.thinking} />
+            </div>
           </details>
         )}
         {message.toolCalls && <ToolCallsDisplay calls={message.toolCalls} onOptionSelect={onOptionSelect} />}
-        <MarkdownMessage content={message.content} onOptionSelect={onOptionSelect} />
+        {message.content && <MarkdownMessage content={message.content} onOptionSelect={onOptionSelect} />}
+        {message.generatedImages && message.generatedImages.length > 0 && (
+          <div className="message__images message__images--generated">
+            {message.generatedImages.map((src, i) => (
+              <img key={i} src={src} alt={`Generated image ${i + 1}`} className="message__image message__image--generated" />
+            ))}
+          </div>
+        )}
+        {message.audioUrl && (
+          <div className="message__audio">
+            <audio controls src={message.audioUrl}>Your browser does not support audio playback.</audio>
+          </div>
+        )}
         {message.stats && (
           <div className="message__metrics">
             <span>{message.stats.tps} tok/s</span>

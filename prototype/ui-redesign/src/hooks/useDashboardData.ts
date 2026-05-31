@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount } from '../api';
+import api, { HealthData, StatsData, SystemStatsData, SlotData, LoadedModel, LogStreamHandle, getCacheTokenCount, friendlyErrorMessage } from '../api';
 
 /* ── History ring buffer ───────────────────────────────────── */
 
@@ -105,6 +105,8 @@ export interface DashboardData {
   slots: SlotData[];
   slotLive: Record<number, SlotLiveTps>;
   lastError: string | null;
+  slotsUnsupported: boolean;
+  slotStatus: string;
   paused: boolean;
   setPaused: React.Dispatch<React.SetStateAction<boolean>>;
   counters: SessionCounters;
@@ -136,10 +138,13 @@ export function useDashboardData(): DashboardData {
   const [slotHistory, setSlotHistory] = useState<Record<number, SlotHistoryPoint[]>>({});
   const [slotLive, setSlotLive] = useState<Record<number, SlotLiveTps>>({});
   const [lastError, setLastError] = useState<string | null>(null);
+  const [slotsUnsupported, setSlotsUnsupported] = useState(false);
+  const [slotStatus, setSlotStatus] = useState('Slot telemetry is waiting for a compatible backend.');
   const [paused, setPaused] = useState(false);
 
   const countersRef = useRef<SessionCounters>(initCounters());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const failureCountRef = useRef(0);
   const slotWindowRef = useRef(new Map<number, { ts: number; decoded: number; prompted: number }[]>());
   const targetAggRef = useRef({
     tps: 0, ppTps: 0,
@@ -211,19 +216,39 @@ export function useDashboardData(): DashboardData {
 
   const poll = useCallback(async () => {
     try {
+      let healthError: unknown = null;
       const [h, st, ss] = await Promise.all([
-        api.health().catch(() => null),
+        api.health().catch((err) => { healthError = err; return null; }),
         api.stats().catch(() => null),
         api.systemStats().catch(() => null),
       ]);
 
-      if (h) setHealth(h);
+      if (!h) throw healthError || new Error(api.lastConnectionError || 'Server health endpoint is unavailable.');
+      failureCountRef.current = 0;
+
+      setHealth(h);
       if (st) setStats(st);
       if (ss) setSysStats(ss);
 
       let slotData: SlotData[] = [];
-      if (h && h.all_models_loaded.some(m => m.recipe === 'llamacpp' || m.recipe === 'vllm')) {
-        try { slotData = await api.slots(); } catch {}
+      const loaded = Array.isArray(h.all_models_loaded) ? h.all_models_loaded : [];
+      const supportsSlots = loaded.some(m => m.recipe === 'llamacpp' || m.recipe === 'vllm');
+      if (supportsSlots) {
+        try {
+          const response = await api.slots();
+          slotData = Array.isArray(response) ? response : [];
+          setSlotsUnsupported(false);
+          setSlotStatus(slotData.length > 0 ? 'Slot telemetry is live.' : 'Compatible backend loaded, but no slot activity is currently reported.');
+        } catch (err) {
+          slotData = [];
+          setSlotsUnsupported(true);
+          setSlotStatus(`Slot telemetry unavailable: ${friendlyErrorMessage(err)}`);
+        }
+      } else {
+        setSlotsUnsupported(loaded.length > 0);
+        setSlotStatus(loaded.length > 0
+          ? 'Loaded models do not expose llama.cpp/vLLM slot telemetry.'
+          : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
       }
       setSlots(slotData);
 
@@ -252,7 +277,7 @@ export function useDashboardData(): DashboardData {
         return live?.isActive || s.is_processing;
       }).length;
       const totalSlots = slotData.length;
-      const totalCache = slotData.reduce((a, s) => a + (s.cache_tokens?.length || 0), 0);
+      const totalCache = slotData.reduce((a, s) => a + getCacheTokenCount(s), 0);
       const totalCtx = slotData.reduce((a, s) => a + s.n_ctx, 0);
       const cacheUtil = totalCtx > 0 ? (totalCache / totalCtx) * 100 : null;
 
@@ -269,8 +294,12 @@ export function useDashboardData(): DashboardData {
       tgt.cacheUtil = cacheUtil;
 
       setLastError(null);
-    } catch (err: any) {
-      setLastError(err.message || 'Poll failed');
+    } catch (err) {
+      failureCountRef.current += 1;
+      setLastError(`${friendlyErrorMessage(err)}${failureCountRef.current >= 3 ? ' Polling paused after repeated failures.' : ''}`);
+      setSlots([]);
+      setSlotLive({});
+      if (failureCountRef.current >= 3) setPaused(true);
     }
   }, [computeAggregates]);
 
@@ -294,8 +323,20 @@ export function useDashboardData(): DashboardData {
   useEffect(() => {
     const wsPort = health?.websocket_port;
     if (!wsPort) return;
+    let cancelled = false;
+
+    const scheduleReconnect = () => {
+      if (cancelled || pausedRef.current) return;
+      if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
+      wsReconnectRef.current = setTimeout(connectWs, 5000);
+    };
 
     const connectWs = () => {
+      if (cancelled || pausedRef.current) return;
+      if (wsReconnectRef.current) {
+        clearTimeout(wsReconnectRef.current);
+        wsReconnectRef.current = null;
+      }
       if (wsHandleRef.current) wsHandleRef.current.close();
 
       const handle = api.connectLogStream({
@@ -340,7 +381,7 @@ export function useDashboardData(): DashboardData {
         },
         onDisconnected: () => {
           wsHandleRef.current = null;
-          wsReconnectRef.current = setTimeout(connectWs, 5000);
+          scheduleReconnect();
         },
       });
 
@@ -350,11 +391,13 @@ export function useDashboardData(): DashboardData {
     connectWs();
 
     return () => {
+      cancelled = true;
       if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
       if (wsHandleRef.current) wsHandleRef.current.close();
+      wsReconnectRef.current = null;
       wsHandleRef.current = null;
     };
-  }, [health?.websocket_port]);
+  }, [health?.websocket_port, paused]);
 
   /* ── Interpolation ticker — smooth 200ms chart updates ───── */
 
@@ -483,7 +526,7 @@ export function useDashboardData(): DashboardData {
 
   return {
     health, stats, sysStats, slots, slotLive,
-    lastError, paused, setPaused,
+    lastError, slotsUnsupported, slotStatus, paused, setPaused,
     counters, getSlotTarget, loadedModels,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,

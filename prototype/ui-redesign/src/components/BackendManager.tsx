@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import api from '../api';
+import api, { friendlyErrorMessage } from '../api';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -14,7 +14,7 @@ interface DeviceInfo {
 }
 
 interface BackendInfo {
-  devices: string[];
+  devices?: string[];
   state: 'installed' | 'installable' | 'unsupported' | 'update_required' | 'update_available' | 'action_required';
   version: string;
   message: string;
@@ -33,9 +33,9 @@ interface SystemInfoData {
   'OS Version': string;
   lemonade_version: string;
   devices: {
-    cpu: DeviceInfo;
-    amd_gpu: DeviceInfo[];
-    nvidia_gpu: DeviceInfo[];
+    cpu?: DeviceInfo;
+    amd_gpu?: DeviceInfo[];
+    nvidia_gpu?: DeviceInfo[];
     amd_npu?: DeviceInfo;
     metal?: DeviceInfo;
   };
@@ -61,37 +61,54 @@ const RECIPE_CAPABILITY: Record<string, string> = {
   whispercpp:     'Audio',
   'sd-cpp':       'Image',
   kokoro:         'TTS',
-  flm:            'LLM',         // NPU LLM — same column
-  'ryzenai-llm':  'LLM',         // NPU LLM — same column
+  flm:            'LLM',
+  'ryzenai-llm':  'LLM',
   vllm:           'LLM',
 };
 
 /** Device display order */
-const DEVICE_ORDER = ['cpu', 'amd_gpu', 'nvidia_gpu', 'metal', 'amd_npu'] as const;
-const DEVICE_LABELS: Record<string, string> = {
+const DEVICE_ORDER = ['cpu', 'nvidia_gpu', 'amd_gpu', 'metal', 'amd_npu', 'gpu', 'accelerator', 'unknown'] as const;
+type DeviceKey = typeof DEVICE_ORDER[number];
+
+const DEVICE_LABELS: Record<DeviceKey, string> = {
   cpu:         'CPU',
-  amd_gpu:     'GPU',
-  nvidia_gpu:  'GPU (NVIDIA)',
+  amd_gpu:     'GPU (AMD)',
+  nvidia_gpu:  'GPU (NVIDIA / CUDA)',
   metal:       'GPU (Metal)',
   amd_npu:     'NPU',
+  gpu:         'GPU',
+  accelerator: 'Accelerator',
+  unknown:     'Other device',
 };
 
-/** Backend → which device row it belongs to */
-const BACKEND_DEVICE: Record<string, string> = {
+/** Backend → fallback row when the server does not expose BackendInfo.devices */
+const BACKEND_DEVICE: Record<string, DeviceKey> = {
   cpu:            'cpu',
-  vulkan:         'amd_gpu',
+  system:         'cpu',
+  vulkan:         'gpu',
+  directml:       'gpu',
+  dml:            'gpu',
+  cuda:           'nvidia_gpu',
+  cuda11:         'nvidia_gpu',
+  cuda12:         'nvidia_gpu',
+  'cuda-11':      'nvidia_gpu',
+  'cuda-12':      'nvidia_gpu',
+  nvidia:         'nvidia_gpu',
   rocm:           'amd_gpu',
   'rocm-stable':  'amd_gpu',
   'rocm-nightly': 'amd_gpu',
   metal:          'metal',
   npu:            'amd_npu',
-  system:         'cpu',
+  ryzenai:        'amd_npu',
 };
 
 /** Capability columns */
 const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS'] as const;
 
-/* ── State badge ───────────────────────────────────────────── */
+type CapabilityCol = typeof CAPABILITY_COLS[number];
+type CellEntry = { recipe: string; backend: string; info: BackendInfo };
+
+/* ── Helpers ─────────────────────────────────────────────── */
 
 function stateBadge(state: BackendInfo['state']): { label: string; cls: string } {
   switch (state) {
@@ -105,11 +122,37 @@ function stateBadge(state: BackendInfo['state']): { label: string; cls: string }
   }
 }
 
+function uniq<T>(values: T[]): T[] {
+  return Array.from(new Set(values));
+}
+
+function normalizeDeviceToken(token: string): DeviceKey {
+  const t = token.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (!t || t === 'unknown') return 'unknown';
+  if (t.includes('cuda') || t.includes('nvidia')) return 'nvidia_gpu';
+  if (t.includes('rocm') || t.includes('amd') || t.includes('radeon')) return 'amd_gpu';
+  if (t.includes('metal') || t.includes('apple')) return 'metal';
+  if (t.includes('npu') || t.includes('ryzenai')) return 'amd_npu';
+  if (t.includes('cpu') || t.includes('system')) return 'cpu';
+  if (t.includes('gpu') || t.includes('vulkan') || t.includes('directml') || t === 'dml') return 'gpu';
+  if (t.includes('accelerator')) return 'accelerator';
+  return 'unknown';
+}
+
+function devicesForBackend(backend: string, info: BackendInfo): DeviceKey[] {
+  const fromServer = Array.isArray(info.devices)
+    ? info.devices.map(normalizeDeviceToken).filter(Boolean)
+    : [];
+  if (fromServer.length > 0) return uniq(fromServer);
+  return [BACKEND_DEVICE[backend] || normalizeDeviceToken(backend)];
+}
+
 /* ── Component ─────────────────────────────────────────────── */
 
 const BackendManager: React.FC = () => {
   const [sysInfo, setSysInfo] = useState<SystemInfoData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showTech, setShowTech] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -119,10 +162,11 @@ const BackendManager: React.FC = () => {
   const fetchInfo = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const data = await api.systemInfo() as unknown as SystemInfoData;
       setSysInfo(data);
     } catch (err) {
-      console.error('Failed to fetch system-info', err);
+      setError(friendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -134,13 +178,18 @@ const BackendManager: React.FC = () => {
 
   const toast = useCallback((msg: string) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 3500);
+    window.setTimeout(() => setToastMsg(null), 3500);
   }, []);
 
-  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false) => {
+  const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false, skipConfirm = false) => {
     const key = `${recipe}:${backend}`;
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
+    if (!skipConfirm) {
+      const verb = isUpdate ? 'update' : 'install';
+      const ok = window.confirm(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend} can change local Lemonade runtime files. Continue with this ${verb}?`);
+      if (!ok) return;
+    }
     setInstalling(key);
     toast(`${actionLabel} ${RECIPE_LABELS[recipe] || recipe} · ${backend}…`);
     try {
@@ -153,7 +202,6 @@ const BackendManager: React.FC = () => {
         onComplete: async () => {
           toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
           setInstalling(null);
-          // Re-fetch system info and verify the state actually changed
           try {
             const fresh = await api.systemInfo() as unknown as SystemInfoData;
             setSysInfo(fresh);
@@ -172,20 +220,22 @@ const BackendManager: React.FC = () => {
           setInstalling(null);
         },
       });
-    } catch (err: any) {
-      toast(`✗ ${actionLabel} failed: ${err.message || err}`);
+    } catch (err) {
+      toast(`✗ ${actionLabel} failed: ${friendlyErrorMessage(err)}`);
       setInstalling(null);
     }
   }, [fetchInfo, toast]);
 
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
+    const ok = window.confirm(`Uninstall ${RECIPE_LABELS[recipe] || recipe} · ${backend}? This removes local backend runtime files.`);
+    if (!ok) return;
     try {
       setInstalling(`${recipe}:${backend}`);
       await api.uninstallBackend(recipe, backend);
       toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
       fetchInfo();
-    } catch (err: any) {
-      toast(`✗ Uninstall failed: ${err.message || err}`);
+    } catch (err) {
+      toast(`✗ Uninstall failed: ${friendlyErrorMessage(err)}`);
     } finally {
       setInstalling(null);
     }
@@ -196,13 +246,14 @@ const BackendManager: React.FC = () => {
     const updates: { recipe: string; backend: string }[] = [];
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       for (const [backend, bInfo] of Object.entries(recipeInfo.backends)) {
-        if (bInfo.state === 'update_required' || bInfo.state === 'update_available') {
-          updates.push({ recipe, backend });
-        }
+        if (bInfo.state === 'update_required' || bInfo.state === 'update_available') updates.push({ recipe, backend });
       }
     }
+    if (updates.length === 0) return;
+    const ok = window.confirm(`Update ${updates.length} backend${updates.length > 1 ? 's' : ''}? This can change local Lemonade runtime files.`);
+    if (!ok) return;
     for (const { recipe, backend } of updates) {
-      await handleInstall(recipe, backend, true);
+      await handleInstall(recipe, backend, true, true);
     }
   }, [sysInfo, handleInstall]);
 
@@ -212,37 +263,43 @@ const BackendManager: React.FC = () => {
 
   /* ── Build the matrix ─────────────────────────────────── */
 
-  // Determine which devices are available
-  const availableDevices = useMemo(() => {
-    if (!sysInfo) return [] as string[];
-    const devs: string[] = [];
+  const detectedDevices = useMemo(() => {
+    if (!sysInfo) return [] as DeviceKey[];
+    const devs: DeviceKey[] = [];
     if (sysInfo.devices.cpu?.available) devs.push('cpu');
-    if (sysInfo.devices.amd_gpu?.length > 0 && sysInfo.devices.amd_gpu.some(g => g.available)) devs.push('amd_gpu');
-    if (sysInfo.devices.nvidia_gpu?.length > 0 && sysInfo.devices.nvidia_gpu.some(g => g.available)) devs.push('nvidia_gpu');
+    if ((sysInfo.devices.nvidia_gpu || []).some(g => g.available)) devs.push('nvidia_gpu');
+    if ((sysInfo.devices.amd_gpu || []).some(g => g.available)) devs.push('amd_gpu');
     if (sysInfo.devices.metal?.available) devs.push('metal');
     if (sysInfo.devices.amd_npu?.available) devs.push('amd_npu');
     return devs;
   }, [sysInfo]);
 
-  // Build matrix cells: device × capability → list of {recipe, backend, info}
-  type CellEntry = { recipe: string; backend: string; info: BackendInfo };
   const matrixCells = useMemo(() => {
     if (!sysInfo?.recipes) return new Map<string, CellEntry[]>();
     const cells = new Map<string, CellEntry[]>();
 
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      const cap = RECIPE_CAPABILITY[recipe] || 'LLM';
+      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
-        const device = BACKEND_DEVICE[backend] || 'cpu';
-        const key = `${device}:${cap}`;
-        if (!cells.has(key)) cells.set(key, []);
-        cells.get(key)!.push({ recipe, backend, info: backendInfo });
+        for (const device of devicesForBackend(backend, backendInfo)) {
+          const key = `${device}:${cap}`;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key)!.push({ recipe, backend, info: backendInfo });
+        }
       }
     }
     return cells;
   }, [sysInfo]);
 
-  // Check if any updates available
+  const matrixRows = useMemo(() => {
+    const referenced = new Set<DeviceKey>();
+    for (const key of matrixCells.keys()) {
+      const device = key.split(':')[0] as DeviceKey;
+      if (DEVICE_ORDER.includes(device)) referenced.add(device);
+    }
+    return DEVICE_ORDER.filter(d => detectedDevices.includes(d) || referenced.has(d));
+  }, [detectedDevices, matrixCells]);
+
   const updatesAvailable = useMemo(() => {
     if (!sysInfo?.recipes) return 0;
     let count = 0;
@@ -256,12 +313,12 @@ const BackendManager: React.FC = () => {
 
   /* ── Device detail row ────────────────────────────────── */
 
-  const deviceDetail = useCallback((deviceKey: string): string => {
+  const deviceDetail = useCallback((deviceKey: DeviceKey): string => {
     if (!sysInfo) return '';
     switch (deviceKey) {
       case 'cpu': return sysInfo.devices.cpu?.name || '';
-      case 'amd_gpu': return sysInfo.devices.amd_gpu?.map(g => g.name).join(', ') || '';
-      case 'nvidia_gpu': return sysInfo.devices.nvidia_gpu?.map(g => g.name).join(', ') || '';
+      case 'amd_gpu': return (sysInfo.devices.amd_gpu || []).map(g => g.name).join(', ') || '';
+      case 'nvidia_gpu': return (sysInfo.devices.nvidia_gpu || []).map(g => g.name).join(', ') || '';
       case 'metal': return sysInfo.devices.metal?.name || '';
       case 'amd_npu': return sysInfo.devices.amd_npu?.name || '';
       default: return '';
@@ -298,7 +355,14 @@ const BackendManager: React.FC = () => {
           </label>
         </div>
 
-        {/* Update banner */}
+        {error && (
+          <div className="banner banner--error" data-backends-error>
+            <span className="banner__icon" aria-hidden="true">⚠</span>
+            <span className="banner__text">Could not load backend system info: {error}</span>
+            <button className="banner__action" onClick={fetchInfo} disabled={loading}>Retry</button>
+          </div>
+        )}
+
         {updatesAvailable > 0 && (
           <div className="banner banner--warn" data-backends-banner>
             <span className="banner__icon" aria-hidden="true">⚠</span>
@@ -313,113 +377,113 @@ const BackendManager: React.FC = () => {
           </div>
         )}
 
-        {/* Version + system summary */}
         {sysInfo && (
           <div className="backends__summary">
             <span className="backends__version">
-              Lemonade {sysInfo.lemonade_version}
+              Lemonade {sysInfo.lemonade_version || 'unknown'}
             </span>
-            <span className="backends__os">{sysInfo['OS Version']}</span>
+            <span className="backends__os">{sysInfo['OS Version'] || 'OS unknown'}</span>
           </div>
         )}
       </div>
 
-      {/* ── Device × Capability matrix ─────────────────── */}
-      <div className="matrix" data-backends-matrix>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Device</th>
-              {CAPABILITY_COLS.map(c => (
-                <th scope="col" key={c}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {DEVICE_ORDER.filter(d => availableDevices.includes(d)).map(deviceKey => (
-              <tr key={deviceKey}>
-                <th scope="row">
-                  {DEVICE_LABELS[deviceKey]}
-                  {showTech && (
-                    <div className="cell__device-detail">{deviceDetail(deviceKey)}</div>
-                  )}
-                </th>
-                {CAPABILITY_COLS.map(cap => {
-                  const key = `${deviceKey}:${cap}`;
-                  const entries = matrixCells.get(key);
-                  if (!entries || entries.length === 0) {
+      {matrixRows.length === 0 ? (
+        <div className="matrix matrix--empty" data-backends-matrix-empty>
+          <div className="hf-zone__empty">
+            <span>🧩</span>
+            <span>No backend/device data is available for this Lemonade server yet.</span>
+          </div>
+        </div>
+      ) : (
+        <div className="matrix" data-backends-matrix>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Device</th>
+                {CAPABILITY_COLS.map(c => (
+                  <th scope="col" key={c}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {matrixRows.map(deviceKey => (
+                <tr key={deviceKey}>
+                  <th scope="row">
+                    {DEVICE_LABELS[deviceKey]}
+                    {showTech && (
+                      <div className="cell__device-detail">{deviceDetail(deviceKey) || 'reported by backend metadata'}</div>
+                    )}
+                  </th>
+                  {CAPABILITY_COLS.map(cap => {
+                    const key = `${deviceKey}:${cap}`;
+                    const entries = matrixCells.get(key);
+                    if (!entries || entries.length === 0) {
+                      return (
+                        <td className="matrix__empty" key={cap}>
+                          <span aria-hidden="true">—</span>
+                        </td>
+                      );
+                    }
                     return (
-                      <td className="matrix__empty" key={cap}>
-                        <span aria-hidden="true">—</span>
+                      <td key={cap}>
+                        {entries.map(({ recipe, backend, info }) => {
+                          const badge = stateBadge(info.state);
+                          const isInstalling = installing === `${recipe}:${backend}`;
+                          return (
+                            <div className="cell" key={`${recipe}-${backend}`}
+                              data-cell={`${recipe}:${backend}`}>
+                              <span className="cell__name">
+                                {RECIPE_LABELS[recipe] || recipe}
+                                {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
+                              </span>
+                              <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
+                              {showTech && info.version && <span className="cell__sha">{info.version}</span>}
+                              {showTech && info.message && <span className="cell__message">{info.message}</span>}
+                              <div className="cell__actions">
+                                {(info.state === 'installable') && (
+                                  <button
+                                    className="cell__swap"
+                                    disabled={isInstalling}
+                                    onClick={() => handleInstall(recipe, backend)}>
+                                    {isInstalling ? 'Installing…' : 'Install'}
+                                  </button>
+                                )}
+                                {(info.state === 'update_required' || info.state === 'update_available') && (
+                                  <button
+                                    className="cell__swap"
+                                    disabled={isInstalling}
+                                    onClick={() => handleInstall(recipe, backend, true)}>
+                                    {isInstalling ? 'Updating…' : 'Update'}
+                                  </button>
+                                )}
+                                {info.state === 'action_required' && info.action && (
+                                  <button className="cell__swap" onClick={() => handleAction(info.action)}>
+                                    Setup guide ▸
+                                  </button>
+                                )}
+                                {info.state === 'installed' && info.can_uninstall && (
+                                  <button
+                                    className="cell__swap cell__swap--danger"
+                                    disabled={isInstalling}
+                                    onClick={() => handleUninstall(recipe, backend)}>
+                                    Uninstall
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </td>
                     );
-                  }
-                  return (
-                    <td key={cap}>
-                      {entries.map(({ recipe, backend, info }) => {
-                        const badge = stateBadge(info.state);
-                        const isInstalling = installing === `${recipe}:${backend}`;
-                        return (
-                          <div className="cell" key={`${recipe}-${backend}`}
-                            data-cell={`${recipe}:${backend}`}>
-                            <span className="cell__name">
-                              {RECIPE_LABELS[recipe] || recipe}
-                              {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
-                            </span>
-                            <span className={`cell__badge ${badge.cls}`}>
-                              {badge.label}
-                            </span>
-                            {showTech && info.version && (
-                              <span className="cell__sha">{info.version}</span>
-                            )}
-                            <div className="cell__actions">
-                              {(info.state === 'installable') && (
-                                <button
-                                  className="cell__swap"
-                                  disabled={isInstalling}
-                                  onClick={() => handleInstall(recipe, backend)}>
-                                  {isInstalling ? 'Installing…' : 'Install'}
-                                </button>
-                              )}
-                              {(info.state === 'update_required' || info.state === 'update_available') && (
-                                <button
-                                  className="cell__swap"
-                                  disabled={isInstalling}
-                                  onClick={() => handleInstall(recipe, backend, true)}>
-                                  {isInstalling ? 'Updating…' : 'Update'}
-                                </button>
-                              )}
-                              {info.state === 'action_required' && info.action && (
-                                <button className="cell__swap"
-                                  onClick={() => handleAction(info.action)}>
-                                  Setup guide ▸
-                                </button>
-                              )}
-                              {info.state === 'installed' && info.can_uninstall && (
-                                <button
-                                  className="cell__swap cell__swap--danger"
-                                  disabled={isInstalling}
-                                  onClick={() => handleUninstall(recipe, backend)}>
-                                  Uninstall
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Toast */}
-      {toastMsg && (
-        <div className="backends__toast" data-backends-toast>{toastMsg}</div>
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
     </section>
   );
 };

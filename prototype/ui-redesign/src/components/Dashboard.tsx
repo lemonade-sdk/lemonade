@@ -151,7 +151,7 @@ const SmoothChart = React.memo<{
       <Tooltip
         contentStyle={CHART_TOOLTIP_STYLE}
         labelStyle={{ display: 'none' }}
-        formatter={(value: number) => [`${value.toFixed(1)}${unit}`, undefined]}
+        formatter={(value) => [`${Number(value ?? 0).toFixed(1)}${unit}`, '']}
         isAnimationActive={false}
       />
       {series.map(s => (
@@ -196,7 +196,7 @@ const POLL_INTERVAL = 2000;
 const Dashboard: React.FC = () => {
   const {
     health, stats, sysStats, slots, slotLive,
-    lastError, paused, setPaused,
+    lastError, slotsUnsupported, slotStatus, paused, setPaused,
     counters, getSlotTarget, loadedModels,
     latestTps, latestPP, activeSlotCount, overallCacheUtil,
     hasGpu, hasNpu, modelsByType,
@@ -285,7 +285,7 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* ═══ Parallel Slots — Per-Slot Metrics ═══ */}
-        {slots.length > 0 && (
+        {slots.length > 0 ? (
           <div className="dash2-card">
             <h2 className="dash2-card__h">
               Parallel Slots
@@ -326,6 +326,13 @@ const Dashboard: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+        ) : (
+          <div className="dash2-card dash2-card--notice">
+            <h2 className="dash2-card__h">Parallel Slots</h2>
+            <p className="dash2-card__text">
+              {slotsUnsupported ? 'No compatible slot data for the loaded backend.' : 'No slot data yet.'} {slotStatus}
+            </p>
           </div>
         )}
 

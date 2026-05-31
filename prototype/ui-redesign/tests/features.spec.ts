@@ -1,4 +1,20 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
+
+const realServerRequired = /^(06|07|08|09|10|11|21)\b/;
+
+test.beforeEach(async ({ page }, testInfo) => {
+  const originalScreenshot = page.screenshot.bind(page);
+  page.screenshot = ((options: Parameters<Page['screenshot']>[0] = {}) => {
+    const rawPath = typeof options.path === 'string' ? options.path : undefined;
+    const path = rawPath?.startsWith('screenshots/')
+      ? testInfo.outputPath(rawPath.replace(/^screenshots\//, ''))
+      : rawPath;
+    return originalScreenshot({ ...options, ...(path ? { path } : {}) });
+  }) as Page['screenshot'];
+
+  test.skip(realServerRequired.test(testInfo.title) && process.env.LEMONADE_REAL_SERVER !== '1',
+    'Real-server smoke tests are opt-in. Set LEMONADE_REAL_SERVER=1 and start lemond first.');
+});
 
 test.describe('Lemonade UI — Feature Parity', () => {
 
@@ -213,10 +229,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const placeholder = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
     if (!placeholder || !placeholder.startsWith('Message ')) {
-      console.log('No model loaded — skipping chat test');
       await page.screenshot({ path: 'screenshots/08-no-model.png', fullPage: true });
-      return;
     }
+    expect(placeholder ?? '', 'Real-server chat smoke requires a loaded chat model').toMatch(/^Message /);
 
     // Type and send a message
     const input = page.locator('.composer__input');
@@ -263,8 +278,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const placeholder09 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
     if (!placeholder09 || !placeholder09.startsWith('Message ')) {
       await page.screenshot({ path: 'screenshots/09-no-model.png', fullPage: true });
-      return;
     }
+    expect(placeholder09 ?? '', 'Markdown rendering test requires a loaded chat model').toMatch(/^Message /);
 
     // Ask for code
     await page.locator('.composer__input').fill('Write a hello world function in Python. Use a code block.');
@@ -307,8 +322,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const placeholder10 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
     if (!placeholder10 || !placeholder10.startsWith('Message ')) {
       await page.screenshot({ path: 'screenshots/10-no-model.png', fullPage: true });
-      return;
     }
+    expect(placeholder10 ?? '', 'Thinking-model test requires a loaded chat model').toMatch(/^Message /);
 
     // Ask something that triggers reasoning
     await page.locator('.composer__input').fill('What is 2+2? Think step by step.');
@@ -344,8 +359,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const placeholder11 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
     if (!placeholder11 || !placeholder11.startsWith('Message ')) {
       await page.screenshot({ path: 'screenshots/11-no-model.png', fullPage: true });
-      return;
     }
+    expect(placeholder11 ?? '', 'New-chat real-server test requires a loaded chat model').toMatch(/^Message /);
 
     // Send a message
     await page.locator('.composer__input').fill('Hi');
