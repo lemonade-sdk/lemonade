@@ -62,6 +62,7 @@ const LogViewer: React.FC = () => {
   const lastSeqRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldReconnectRef = useRef(true);
   const batchRef = useRef<LogEntry[]>([]);
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userScrollingRef = useRef(false);
@@ -105,17 +106,19 @@ const LogViewer: React.FC = () => {
     el.addEventListener('keydown', onUserScrollStart);
     el.addEventListener('keyup', onUserScrollEnd);
     // Wheel is always user-initiated
-    el.addEventListener('wheel', () => {
+    const onWheel = () => {
       userScrollingRef.current = true;
       // Reset after a short delay since wheel has no "end" event
-      setTimeout(() => { userScrollingRef.current = false; }, 200);
-    }, { passive: true });
+      window.setTimeout(() => { userScrollingRef.current = false; }, 200);
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
 
     return () => {
       el.removeEventListener('pointerdown', onUserScrollStart);
       el.removeEventListener('pointerup', onUserScrollEnd);
       el.removeEventListener('keydown', onUserScrollStart);
       el.removeEventListener('keyup', onUserScrollEnd);
+      el.removeEventListener('wheel', onWheel);
     };
   }, []);
 
@@ -155,6 +158,11 @@ const LogViewer: React.FC = () => {
   /* ── Connect to log stream ───────────────────────────────── */
 
   const connect = useCallback(() => {
+    shouldReconnectRef.current = true;
+    if (reconnectRef.current) {
+      clearTimeout(reconnectRef.current);
+      reconnectRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.close();
       streamRef.current = null;
@@ -167,7 +175,8 @@ const LogViewer: React.FC = () => {
       onDisconnected: () => {
         setConnStatus('disconnected');
         streamRef.current = null;
-        // Auto-reconnect
+        if (!shouldReconnectRef.current) return;
+        if (reconnectRef.current) clearTimeout(reconnectRef.current);
         reconnectRef.current = setTimeout(connect, RECONNECT_DELAY);
       },
       onError: (msg) => {
@@ -198,14 +207,18 @@ const LogViewer: React.FC = () => {
   }, [enqueuEntry]);
 
   useEffect(() => {
+    shouldReconnectRef.current = true;
     // Health check is needed for websocket_port — connect stream as soon as it's ready
     // Fetch server log level in parallel (non-blocking)
     const tryConnect = async () => {
+      if (!shouldReconnectRef.current) return;
       try {
         await api.health();
         connect();
       } catch {
         setConnStatus('error');
+        if (!shouldReconnectRef.current) return;
+        if (reconnectRef.current) clearTimeout(reconnectRef.current);
         reconnectRef.current = setTimeout(tryConnect, RECONNECT_DELAY);
       }
     };
@@ -217,9 +230,13 @@ const LogViewer: React.FC = () => {
     }).catch(() => {});
 
     return () => {
+      shouldReconnectRef.current = false;
       if (streamRef.current) streamRef.current.close();
       if (reconnectRef.current) clearTimeout(reconnectRef.current);
       if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+      streamRef.current = null;
+      reconnectRef.current = null;
+      batchTimerRef.current = null;
     };
   }, [connect]);
 

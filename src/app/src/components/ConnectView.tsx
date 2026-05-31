@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import api, { ConnectionStatus } from '../api';
+import api, { ConnectionStatus, friendlyErrorMessage, normalizeBaseUrl } from '../api';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -8,19 +8,64 @@ interface ConnectViewProps {
 const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
+  const [rememberApiKey, setRememberApiKey] = useState(Boolean(api.apiKey));
   const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(api.lastConnectionError);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setHost(api.baseUrl);
     setApiKey(api.apiKey);
+    setRememberApiKey(Boolean(api.apiKey));
+    setError(api.lastConnectionError);
   }, []);
 
   const handleConnect = async () => {
     setConnecting(true);
-    api.baseUrl = host;
-    api.apiKey = apiKey;
-    await api.connect();
-    setConnecting(false);
+    setError(null);
+    setNotice(null);
+    let normalized: string;
+    try {
+      normalized = normalizeBaseUrl(host);
+    } catch (err) {
+      setError(friendlyErrorMessage(err));
+      setConnecting(false);
+      return;
+    }
+
+    try {
+      api.baseUrl = normalized;
+      if (rememberApiKey) api.apiKey = apiKey;
+      else {
+        api.setSessionApiKey(apiKey);
+        api.clearStoredApiKey();
+      }
+      const connected = await api.connect();
+      if (!connected) {
+        setError(api.lastConnectionError || `Could not connect to ${normalized}.`);
+      } else {
+        setHost(normalized);
+        setNotice(`Connected to ${normalized}.`);
+      }
+    } catch (err) {
+      setError(friendlyErrorMessage(err));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleClearLocalData = () => {
+    const ok = window.confirm('Clear all Lemonade local data on this device? This removes conversations, active chat, presets, server URL, API key, tool settings, and UI preferences from browser storage.');
+    if (!ok) return;
+    for (const store of [localStorage, sessionStorage]) {
+      Object.keys(store).filter(k => k.startsWith('lemonade_')).forEach(k => store.removeItem(k));
+    }
+    api.setSessionApiKey('');
+    setHost(api.baseUrl);
+    setApiKey('');
+    setRememberApiKey(false);
+    setNotice('Local Lemonade data was cleared on this device.');
+    setError(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -41,7 +86,9 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
             onChange={e => setHost(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="http://localhost:13305"
+            aria-invalid={Boolean(error)}
           />
+          <span className="form-field__hint">Use a full http:// or https:// URL. Connection errors show the exact endpoint.</span>
         </div>
 
         <div className="form-field">
@@ -54,7 +101,19 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
             onKeyDown={handleKeyDown}
             placeholder="sk-…"
           />
+          <label className="connect__checkbox">
+            <input
+              type="checkbox"
+              checked={rememberApiKey}
+              onChange={e => setRememberApiKey(e.target.checked)}
+            />
+            <span>Remember API key in local browser storage</span>
+          </label>
+          <span className="form-field__hint">When unchecked, the key is only kept in memory for this browser session.</span>
         </div>
+
+        {error && <div className="connect__error">⚠ {error}</div>}
+        {notice && <div className="connect__notice">{notice}</div>}
 
         <button
           type="submit"
@@ -64,14 +123,22 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status }) => {
           {connecting ? 'Connecting…' : 'Connect'}
         </button>
 
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={handleClearLocalData}
+        >
+          Clear all local data
+        </button>
+
         <div className="connect__status">
           <span className={`connect__status-dot ${
             status === 'connected' ? 'connect__status-dot--connected' :
             status === 'connecting' ? 'connect__status-dot--connecting' : ''
           }`} />
           <span>
-            {status === 'connected' ? 'Connected' :
-             status === 'connecting' ? 'Connecting…' :
+            {status === 'connected' ? `Connected to ${api.baseUrl}` :
+             status === 'connecting' ? `Connecting to ${host || api.baseUrl}…` :
              'Disconnected'}
           </span>
         </div>

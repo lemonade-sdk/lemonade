@@ -1,6 +1,6 @@
 # Lemonade UI Redesign Prototype
 
-A **React 19 + TypeScript + webpack** proof-of-concept for the next-generation Lemonade UI. This prototype is built side-by-side with the existing `src/app/` and `src/web-app/` in the main codebase and runs with **mocked APIs by default** (no `lemond` required to demo the UI). It's designed to work both as a web app and as a desktop Tauri application — a single React codebase powering both delivery channels.
+A **React 19 + TypeScript + webpack** proof-of-concept for the next-generation Lemonade UI. This prototype is built side-by-side with the existing `src/app/` and `src/web-app/` in the main codebase and now runs **real-server-first** against `lemond` at `http://localhost:13305` by default. It is designed to work both as a web app and as a desktop Tauri application — a single React codebase powering both delivery channels.
 
 **Not production code** — this is an active design and engineering POC on branch `feat/ui-testing`. See [`.squad/decisions.md`](../../.squad/decisions.md) for the design rationale and capability-keyed presets architecture (v1.4).
 
@@ -8,7 +8,7 @@ A **React 19 + TypeScript + webpack** proof-of-concept for the next-generation L
 
 - **Node.js 20+** (check `package.json` `engines` field for exact requirement)
 - **npm 10+**
-- Optional: a running `lemond` instance if you want to point the prototype at a real server
+- Optional for UI-only review, recommended for functional testing: a running `lemond` instance at `http://localhost:13305` or a custom URL entered in Connect
 
 ## Quick Start
 
@@ -52,9 +52,13 @@ Incrementally rebuilds on file changes.
 npm test
 ```
 
-Runs all Playwright tests headless via Chromium. Artifacts are saved to:
-- `test-results/` — JUnit XML, JSON, and HTML reports
-- `screenshots/` — screenshots on failure
+Runs all UI-safe Playwright tests headless via Chromium. Real-server smoke tests are opt-in so they fail fast instead of silently passing without a running server or loaded model:
+
+```bash
+LEMONADE_REAL_SERVER=1 npm test
+```
+
+Artifacts are saved under Playwright's per-test output folders, so screenshots from repeated runs are not overwritten.
 
 ### Headed tests (visible browser)
 
@@ -112,15 +116,11 @@ playwright.config.ts    # Playwright configuration (baseURL, browsers, output di
 tsconfig.json           # TypeScript configuration
 ```
 
-## Pointing at a Real Server
+## Connecting to a Server
 
-By default, the prototype uses mocked APIs (responses without calling `lemond`). To point at a live server:
+The prototype stores the Lemonade server URL in local browser state and defaults to `http://localhost:13305`. Use the Connect screen to change it; the field validates `http://` / `https://` URLs before attempting a request and shows the exact endpoint plus HTTP/network error on failure. API keys can be kept session-only or explicitly persisted.
 
-1. Check `src/api.ts` for the `BASE_URL` constant
-2. Adjust it to your server (e.g., `http://localhost:8000`) or use the in-UI settings panel if implemented
-3. Optionally set `LEMONADE_API_KEY` in your environment if the server requires authentication
-
-The mock can be toggled in the code without a rebuild — see `src/api.ts` for the `USE_MOCK` flag.
+Core API paths are normalized to `/api/v1/...` in `src/api.ts`. Mocked responses are no longer the default runtime path; use Playwright route mocks in tests when a deterministic mocked scenario is needed.
 
 ## Troubleshooting
 
@@ -148,7 +148,7 @@ Check that webpack-dev-server is running (it should print the URL). If you edite
 
 ### "Connection refused" when pointing at a real lemond
 
-Verify the server is running (`lemond` or `lemonade launch`), check the base URL in `api.ts`, and ensure no firewall is blocking the port. Try `curl http://localhost:8000/api/v1/health` from the terminal.
+Verify the server is running (`lemond` or `lemonade launch`), check the URL in the Connect screen, and ensure no firewall is blocking the port. Try `curl http://localhost:13305/api/v1/health` from the terminal, or replace the port with your configured server URL.
 
 ### Test timeouts or failures
 
@@ -160,8 +160,8 @@ Playwright waits up to 60 seconds by default (see `playwright.config.ts`). If te
 ## Design & Architecture Notes
 
 - **Single codebase, dual delivery:** The same React source powers both web-served and desktop (Tauri) builds. Platform-specific code uses feature detection, not separate branches.
-- **Mocked-first development:** The mock API in `src/api.ts` makes the prototype runnable without `lemond`. Real `lemond` is optional for advanced testing.
-- **Local client state:** Per-client settings (base URL, API key, zoom, layout preferences) live in the client's `localStorage` — never on the server.
+- **Real-server-first development:** Runtime calls go to Lemonade-compatible `/api/v1/...` endpoints. Tests that need deterministic data should mock those network routes explicitly.
+- **Local client state:** Per-client settings live in browser storage only when the UI explicitly opts into persistence. The Connect screen can clear all Lemonade local/session data.
 - **Presets are client-side:** Presets are not persisted to the server; they're computed locally based on the model registry and user adjustments.
 
 ## Next Steps
@@ -170,7 +170,7 @@ To integrate this prototype into the main codebase:
 
 1. Coordinate with Kyle and the team on the next milestone (web app only vs. Tauri desktop first)
 2. Move approved UI components to `src/web-app/` or `src/app/` as appropriate
-3. Wire real API calls (remove the mock layer) once the server contract is finalized
+3. Keep API calls aligned with the finalized `/api/v1/...` server contract and add route-level mocks only for deterministic tests
 4. Update the main `CMakeLists.txt` build targets and Web app webpack if needed
 
 See [`.squad/decisions.md`](../../.squad/decisions.md) and [`.squad/agents/mattingly/history.md`](../../.squad/agents/mattingly/history.md) for the full decision trail and learnings.

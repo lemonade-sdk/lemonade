@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace } from '../api';
+import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage } from '../api';
+import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel } from '../modelCapabilities';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -40,17 +41,8 @@ function recipeLabel(recipe: string): string {
 }
 
 function modelType(m: ModelInfo): string {
-  const labels = m.labels || [];
-  const recipe = (m as any).recipe || '';
-  if (recipe === 'sd-cpp') return 'image';
-  if (recipe === 'whispercpp') return 'audio';
-  if (recipe === 'kokoro') return 'tts';
-  if (labels.includes('embeddings')) return 'embedding';
-  if (labels.includes('reranking')) return 'reranking';
-  if (labels.includes('transcription') || labels.includes('realtime-transcription')) return 'audio';
-  if (labels.includes('tts')) return 'tts';
-  if (labels.includes('image')) return 'image';
-  return 'llm';
+  const cap = capabilityFromModelInfo(m);
+  return cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
 }
 
 function typeColor(type: string): string {
@@ -147,6 +139,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   // HuggingFace search state
   const [hfResults, setHfResults] = useState<HFModelResult[]>([]);
   const [hfLoading, setHfLoading] = useState(false);
+  const [hfError, setHfError] = useState<string | null>(null);
   const [expandedHfModel, setExpandedHfModel] = useState<string | null>(null);
   const [pullingHf, setPullingHf] = useState<Record<string, number>>({}); // hf id → percent
   const pullHfAbortRef = useRef<Record<string, AbortController>>({});
@@ -184,20 +177,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     if (q.length < 2) {
       setHfResults([]);
       setHfLoading(false);
+      setHfError(null);
       setExpandedHfModel(null);
       return;
     }
 
     setHfLoading(true);
+    setHfError(null);
     const ac = new AbortController();
 
     const timer = setTimeout(async () => {
       try {
         const results = await searchHuggingFace(q, ac.signal);
         setHfResults(results);
-      } catch {
-        // Network error / aborted — fail silently
-        if (!ac.signal.aborted) setHfResults([]);
+        setHfError(null);
+      } catch (err) {
+        if (!ac.signal.aborted) {
+          setHfResults([]);
+          setHfError(friendlyErrorMessage(err));
+        }
       } finally {
         if (!ac.signal.aborted) setHfLoading(false);
       }
@@ -217,8 +215,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setLoadingModel(name);
     try {
       await api.loadModel(name);
-      onModelSelect(name);
       await refresh();
+      onModelSelect(name);
     } catch { /* keep going */ }
     setLoadingModel(null);
   };
@@ -296,8 +294,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         setLoadingModel(name);
         try {
           await api.loadModel(name);
-          onModelSelect(name);
           await refresh();
+          onModelSelect(name);
         } catch { /* keep going */ }
         setLoadingModel(null);
       },
@@ -415,7 +413,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return loadedModels.filter(m => {
       // Type filter
       if (filterTab !== 'all') {
-        const type = m.type || 'llm';
+        const cap = capabilityFromLoaded(m);
+        const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
         if (filterTab === 'embedding') {
           if (type !== 'embedding' && type !== 'reranking') return false;
         } else if (type !== filterTab) return false;
@@ -546,8 +545,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   const renderRunningModel = (m: LoadedModel) => {
-    const type = m.type || 'llm';
+    const cap = capabilityFromLoaded(m);
+    const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
     const isActive = selectedModel === m.model_name;
+    const selectable = canSelectInComposer(m);
     return (
       <div className={`row row--running${isActive ? ' row--active' : ''}`} key={m.model_name}>
         <div className="row__content" onClick={() => toggleDetail(m.model_name)}>
@@ -558,18 +559,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <div className="row__text">
               <span className="row__name">{m.model_name}</span>
               <span className="row__sub">
-                {recipeLabel(m.recipe)} · {m.device.toUpperCase()}
-                {type !== 'llm' && ` · ${type}`}
+                {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
+                {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
               </span>
             </div>
           </div>
           <div className="row__right">
             <span className="row__status-pill row__status-pill--running">
-              <span className="row__pulse" /> Running
+              <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
             </span>
-            {type === 'llm' && !isActive && (
+            {selectable && !isActive && (
               <button className="row__action" onClick={(e) => { e.stopPropagation(); onModelSelect(m.model_name); }}>
-                Use for Chat
+                Use in {capabilityLabel(cap)} mode
               </button>
             )}
             <button
@@ -997,6 +998,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <div className="hf-zone__loading">
               <span className="hf-zone__spinner" />
               <span>Searching HuggingFace…</span>
+            </div>
+          ) : hfError ? (
+            <div className="hf-zone__empty hf-zone__empty--error">
+              <span>⚠</span>
+              <span>HuggingFace search is unavailable: {hfError}</span>
             </div>
           ) : searchQuery.trim().length >= 2 && filteredHfResults.length > 0 ? (
             filteredHfResults.map(r => renderHfRow(r))

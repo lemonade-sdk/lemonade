@@ -31,6 +31,10 @@ module.exports = (env, argv) => ({
     clean: true,
   },
   optimization: {
+    // Prototype build: keep production output deterministic and fast. The full
+    // dependency graph is large enough that default Terser minification can
+    // stall local verification, while the UI is still under active review.
+    minimize: false,
     splitChunks: {
       chunks: 'all',
       cacheGroups: {

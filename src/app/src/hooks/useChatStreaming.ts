@@ -112,13 +112,13 @@ export function useChatStreaming(
           tools: useTools ? LEMONADE_TOOLS as unknown as Record<string, unknown>[] : undefined,
           onReasoning: (_token, fullReasoning) => {
             const buf = tokenBufferRef.current;
-            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '' };
+            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].thinking = fullReasoning;
             if (!thinkingExpanded) setThinkingExpanded(true);
           },
           onToken: (_token, full) => {
             const buf = tokenBufferRef.current;
-            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '' };
+            if (!buf[convoId]) buf[convoId] = { content: '', thinking: '', toolCalls: [] };
             buf[convoId].content = full;
           },
           onStats: (stats) => {
