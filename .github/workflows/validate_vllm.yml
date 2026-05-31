@@ -188,10 +188,10 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          pkill -9 -f lemond 2>/dev/null || true
-          pkill -9 -f "vllm" 2>/dev/null || true
-          pkill -9 -f "resource_tracker" 2>/dev/null || true
+        uses: ./.github/actions/cleanup-processes-linux
+        env:
+          # Keep this workflow-specific hint narrow; ownership checks in the action remain the safety boundary.
+          LEMONADE_CLEANUP_PROCESS_HINT_REGEX: 'lemond|lemonade|vllm|resource_tracker'
 
   # ========================================================================
   # Create PR if validation passed (schedule or workflow_dispatch only)
