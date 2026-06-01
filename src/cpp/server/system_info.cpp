@@ -2209,6 +2209,12 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
     // CUDA runtime ordinals and nvidia-smi/NVML indices can differ on mixed systems.
     // Passing a numeric nvidia-smi index can therefore accidentally expose the wrong GPU
     // (e.g. selecting sm_120 but making an sm_89 RTX 4090 visible as CUDA0).
+    //
+    // Only restrict CUDA_VISIBLE_DEVICES when there are mixed architectures that need
+    // hiding. If every available NVIDIA GPU matches the target arch, returning empty
+    // string lets the CUDA runtime enumerate them all without UUID filtering — which
+    // avoids driver-level UUID mismatches seen on some single-arch systems (e.g. RTX 50
+    // Blackwell where UUID-based filtering can cause "no CUDA-capable device detected").
     std::vector<std::string> devices_to_expose;
     if (arch.empty()) {
         return "";
@@ -2225,6 +2231,7 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
             return "";
         }
 
+        bool has_other_arch = false;
         int ordinal = 0;
         for (const auto& gpu : devices["nvidia_gpu"]) {
             if (!gpu.value("available", false)) {
@@ -2241,8 +2248,15 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
                     // than UUIDs because numeric CUDA ordinals can differ from nvidia-smi indices.
                     devices_to_expose.push_back(std::to_string(ordinal));
                 }
+            } else {
+                has_other_arch = true;
             }
             ordinal++;
+        }
+
+        // No mixed architectures — no need to restrict CUDA_VISIBLE_DEVICES.
+        if (!has_other_arch) {
+            return "";
         }
     } catch (...) {
         devices_to_expose.clear();
