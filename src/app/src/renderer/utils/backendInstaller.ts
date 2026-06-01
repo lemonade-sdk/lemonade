@@ -470,7 +470,10 @@ export async function deleteModel(modelName: string): Promise<void> {
  * - Download Manager progress tracking (always on by default)
  * - Pause/cancel from Download Manager UI (throws DownloadAbortError)
  * - Custom model registration data
- * - Dispatches `modelsUpdated` event on success
+ *
+ * The streaming download path dispatches `modelsUpdated` on success. The
+ * `registrationOnly` fast path does not — it transfers no bytes, so its
+ * callers are responsible for refreshing the models context.
  *
  * @throws DownloadAbortError if the user pauses or cancels via Download Manager
  * @throws Error on download failure
