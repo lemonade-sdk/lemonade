@@ -212,7 +212,7 @@ private:
     void resolve_all_model_paths(ModelInfo& info);
 
     // Download from a JSON manifest
-    bool download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
+    void download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback);
 
     // Download from Hugging Face
     void download_from_huggingface(const ModelInfo& info,
@@ -238,11 +238,6 @@ private:
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
     mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
     mutable bool cache_valid_ = false;
-
-    // Refresh user_models.json on-demand when a user.* lookup misses the cache.
-    // This keeps startup cache warmup / external registry writes from causing
-    // stale hard "Model not found" failures for registered user models.
-    bool refresh_user_models_from_disk_for_lookup(const std::string& model_name);
 
     void rebuild_public_model_aliases_locked();
 };

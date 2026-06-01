@@ -31,7 +31,6 @@ public:
     int max_loaded_models() const;
     std::string models_dir() const;
     int ctx_size() const;
-    bool model_auto_update() const;
 
     // Feature flags
     bool offline() const;

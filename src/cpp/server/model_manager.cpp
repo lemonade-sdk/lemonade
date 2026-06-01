@@ -379,47 +379,6 @@ static std::string repo_id_to_cache_dir_name(const std::string& repo_id) {
     return cache_dir_name;
 }
 
-static std::string read_hf_ref_main(const fs::path& model_cache_path) {
-    fs::path refs_main_path = model_cache_path / "refs" / "main";
-    std::ifstream refs_file(refs_main_path);
-    if (!refs_file.is_open()) {
-        return "";
-    }
-
-    std::string ref;
-    std::getline(refs_file, ref);
-    ref.erase(0, ref.find_first_not_of(" \t\r\n"));
-    size_t last = ref.find_last_not_of(" \t\r\n");
-    if (last == std::string::npos) {
-        return "";
-    }
-    ref.erase(last + 1);
-    return ref;
-}
-
-static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
-    std::string ref = read_hf_ref_main(model_cache_path);
-    if (ref.empty()) {
-        return fs::path();
-    }
-
-    fs::path snapshot_path = model_cache_path / "snapshots" / ref;
-    return safe_exists(snapshot_path) ? snapshot_path : fs::path();
-}
-
-static void write_hf_ref_main(const fs::path& model_cache_path, const std::string& commit_hash) {
-    if (commit_hash.empty()) {
-        return;
-    }
-
-    fs::path refs_dir = model_cache_path / "refs";
-    fs::create_directories(refs_dir);
-    std::ofstream refs_file(refs_dir / "main");
-    if (refs_file.is_open()) {
-        refs_file << commit_hash;
-    }
-}
-
 static std::string checkpoint_to_repo_id(std::string checkpoint) {
     std::string repo_id = checkpoint;
 
@@ -951,48 +910,6 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
-bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
-    std::vector<std::string> candidate_keys;
-
-    if (auto canon = parse_canonical_id(model_name)) {
-        if (canon->source == ModelSource::Registered) {
-            candidate_keys.push_back(canon->bare_name);
-        }
-    } else if (!model_name.empty()) {
-        candidate_keys.push_back(model_name);
-    }
-
-    if (candidate_keys.empty()) {
-        return false;
-    }
-
-    json latest_user_models = load_optional_json(get_user_models_file());
-    if (!latest_user_models.is_object()) {
-        return false;
-    }
-
-    bool found = false;
-    for (const auto& key : candidate_keys) {
-        if (latest_user_models.contains(key)) {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        user_models_ = std::move(latest_user_models);
-        cache_valid_ = false;
-    }
-
-    build_cache();
-    return true;
-}
-
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
@@ -1254,39 +1171,18 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
             return model_cache_path;  // Return directory path even if not found
         }
 
-        // Prefer the active HF snapshot recorded in refs/main. This lets
-        // Lemonade keep using the previous snapshot when upstream only changed
-        // README/metadata and the requested model artifacts are unchanged.
-        auto collect_gguf_files = [](const fs::path& search_root) {
-            std::vector<std::string> files;
-            if (search_root.empty() || !safe_exists(search_root)) {
-                return files;
-            }
-
-            std::error_code ec;
-            for (const auto& entry : fs::recursive_directory_iterator(search_root, safe_dir_options, ec)) {
-                if (ec) break;
-                if (!entry.is_regular_file(ec)) {
-                    ec.clear();
-                    continue;
-                }
-
+        // Collect all GGUF files (exclude mmproj files)
+        std::vector<std::string> all_gguf_files;
+        for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
+            if (entry.is_regular_file()) {
                 std::string filename = entry.path().filename().string();
                 std::string filename_lower = filename;
                 std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
 
                 if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
-                    files.push_back(path_to_utf8(entry.path()));
+                    all_gguf_files.push_back(path_to_utf8(entry.path()));
                 }
             }
-            return files;
-        };
-
-        std::vector<std::string> all_gguf_files = collect_gguf_files(active_hf_snapshot_path(model_cache_path_fs));
-        if (all_gguf_files.empty()) {
-            // Backward-compatible fallback for caches without refs/main and for
-            // partially migrated/manual HF cache layouts.
-            all_gguf_files = collect_gguf_files(model_cache_path_fs);
         }
 
         if (all_gguf_files.empty()) {
@@ -1440,34 +1336,6 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
 
     // Everything else
     if (!variant.empty()) {
-        // Prefer refs/main for auxiliary checkpoints too (for example mmproj),
-        // so companion files stay on the same active snapshot as the main model
-        // when unchanged artifacts are reused across README-only commits.
-        fs::path active_snapshot = active_hf_snapshot_path(model_cache_path_fs);
-        if (!active_snapshot.empty()) {
-            fs::path direct_variant_path = active_snapshot / path_from_utf8(variant);
-            if (safe_exists(direct_variant_path)) {
-                return path_to_utf8(direct_variant_path);
-            }
-
-            std::error_code ec;
-            for (const auto& entry : fs::recursive_directory_iterator(active_snapshot, safe_dir_options, ec)) {
-                if (ec) break;
-                if (entry.is_regular_file(ec)) {
-                    std::string filename = entry.path().filename().string();
-                    if (filename == variant) {
-                        return path_to_utf8(entry.path());
-                    }
-                } else if (entry.is_directory(ec)) {
-                    fs::path variant_path = entry.path() / path_from_utf8(variant);
-                    if (safe_exists(variant_path)) {
-                        return path_to_utf8(variant_path);
-                    }
-                }
-                ec.clear();
-            }
-        }
-
         // Try to find the exact variant in snapshots subdirectories
         if (safe_exists(model_cache_path_fs)) {
             for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
@@ -1549,49 +1417,11 @@ json ModelManager::load_optional_json(const std::string& path) {
 
 static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
-    fs::path target = path_from_utf8(save_path);
-    fs::path dir = target.parent_path();
+    fs::path dir = fs::path(save_path).parent_path();
     fs::create_directories(dir);
 
-    LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
-
-    // Write via a sibling temp file and then rename into place. Readers that
-    // refresh user_models.json on a cache miss should never observe a truncated
-    // or half-written registry, which could otherwise surface as a transient
-    // hard "Model not found" during auto-load.
-    fs::path tmp = target;
-    tmp += ".tmp";
-    {
-        std::ofstream file(tmp, std::ios::trunc);
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file for writing: " + path_to_utf8(tmp));
-        }
-        try {
-            file << to_save.dump(2);
-            file.flush();
-        } catch (const json::exception& e) {
-            throw std::runtime_error("Failed to write JSON to file " + path_to_utf8(tmp) + ": " + e.what());
-        }
-        if (!file) {
-            throw std::runtime_error("Failed to flush JSON file: " + path_to_utf8(tmp));
-        }
-    }
-
-    std::error_code ec;
-    fs::rename(tmp, target, ec);
-#ifdef _WIN32
-    if (ec) {
-        ec.clear();
-        fs::remove(target, ec);
-        ec.clear();
-        fs::rename(tmp, target, ec);
-    }
-#endif
-    if (ec) {
-        std::error_code cleanup_ec;
-        fs::remove(tmp, cleanup_ec);
-        throw std::runtime_error("Failed to replace JSON file " + save_path + ": " + ec.message());
-    }
+    LOG(INFO, "ModelManager") << "Saving " << fs::path(save_path).filename() << std::endl;
+    JsonUtils::save_to_file(to_save, save_path);
 }
 
 void ModelManager::save_user_models(const json& user_models) {
@@ -1673,7 +1503,6 @@ static bool check_component_downloaded(const ModelInfo& info,
 static bool has_partial_files(const fs::path& dir) {
     std::error_code ec;
     if (!safe_is_directory(dir)) return false;
-
     // Non-recursive scan for .partial markers to confirm folder integrity
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         if (entry.path().extension() == ".partial") {
@@ -1746,7 +1575,6 @@ static bool are_required_checkpoints_complete(const ModelInfo& info) {
             return false;
         }
     }
-
     return true;
 }
 
@@ -2311,9 +2139,6 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             continue;
         }
 
-        const bool user_controlled_model = is_user_model_name(name) ||
-                                         name.rfind("extra.", 0) == 0 ||
-                                         info.source == "local_upload";
 
         // Check recipe support using the centralized system_info recipes structure
         std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
@@ -2326,7 +2151,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Filter out models that are too large for system RAM
         // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
+        if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
                 std::ostringstream oss;
@@ -2417,22 +2242,14 @@ void ModelManager::register_user_model(const std::string& model_name,
         model_entry["source"] = source;
     }
 
-    // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
-    // can otherwise both start from the same registry snapshot and the later
-    // save can drop the first model, producing a hard "Model not found" on the
-    // next auto-load. Read the latest disk copy under the same process mutex so
-    // stale in-memory state cannot overwrite another registration.
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        json updated_user_models = load_optional_json(get_user_models_file());
-        if (!updated_user_models.is_object()) {
-            updated_user_models = json::object();
-        }
-        updated_user_models[clean_name] = model_entry;
-        save_user_models(updated_user_models);
-        user_models_ = std::move(updated_user_models);
-        cache_valid_ = false;
-    }
+    json updated_user_models = user_models_;
+    updated_user_models[clean_name] = model_entry;
+
+    save_user_models(updated_user_models);
+    user_models_ = updated_user_models;
+
+    // Add new model to cache incrementally
+    add_model_to_cache("user." + clean_name);
 }
 
 // Find the FLM executable: install dir on Windows, system PATH on Linux.
@@ -2635,19 +2452,10 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    // Use FLM pull for FLM models, otherwise download from HuggingFace. Honor
-    // do_not_upgrade here as a defensive guard too: several auto-load paths call
-    // this helper directly, and they must not contact Hugging Face when the
-    // current cache already contains a valid model and auto-update is disabled.
+    // Use FLM pull for FLM models, otherwise download from HuggingFace
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
-        if (do_not_upgrade && is_model_downloaded(info.model_name)) {
-            LOG(INFO, "ModelManager")
-                << "Model already downloaded and do_not_upgrade=true, using cached version: "
-                << info.model_name << std::endl;
-            return;
-        }
         download_from_huggingface(info, progress_callback);
     }
 
@@ -2661,16 +2469,12 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
         auto it = models_cache_.find(info.model_name);
         if (it != models_cache_.end())
         {
-            json updated_user_models = load_optional_json(get_user_models_file());
-            if (!updated_user_models.is_object()) {
-                updated_user_models = json::object();
-            }
+            json updated_user_models = user_models_;
             auto model = updated_user_models.find(strip_user_model_prefix(canonical_model_name));
             if (model != updated_user_models.end()) {
                 (*model)["size"] = it->second.size;
+                user_models_ = updated_user_models;
                 save_user_models(updated_user_models);
-                user_models_ = std::move(updated_user_models);
-                cache_valid_ = false;
             }
         }
     }
@@ -2944,208 +2748,11 @@ void ModelManager::download_model(const std::string& model_name,
 /**
  * Download everything from download manifest.
  */
-static bool has_hash_metadata(const json& file_desc) {
-    return (file_desc.contains("hash") && file_desc["hash"].is_object()) ||
-           (file_desc.contains("sha256") && file_desc["sha256"].is_string());
-}
-
-static bool regular_files_have_same_content(const fs::path& lhs, const fs::path& rhs) {
-    std::error_code ec;
-    if (!fs::is_regular_file(lhs, ec)) {
-        ec.clear();
-        return false;
-    }
-    if (!fs::is_regular_file(rhs, ec)) {
-        ec.clear();
-        return false;
-    }
-
-    const auto lhs_size = fs::file_size(lhs, ec);
-    if (ec) {
-        ec.clear();
-        return false;
-    }
-    const auto rhs_size = fs::file_size(rhs, ec);
-    if (ec || lhs_size != rhs_size) {
-        ec.clear();
-        return false;
-    }
-
-    std::ifstream lhs_stream(lhs, std::ios::binary);
-    std::ifstream rhs_stream(rhs, std::ios::binary);
-    if (!lhs_stream.is_open() || !rhs_stream.is_open()) {
-        return false;
-    }
-
-    constexpr size_t buffer_size = 1024 * 1024;
-    std::vector<char> lhs_buffer(buffer_size);
-    std::vector<char> rhs_buffer(buffer_size);
-
-    while (lhs_stream.good() && rhs_stream.good()) {
-        lhs_stream.read(lhs_buffer.data(), static_cast<std::streamsize>(lhs_buffer.size()));
-        rhs_stream.read(rhs_buffer.data(), static_cast<std::streamsize>(rhs_buffer.size()));
-
-        const std::streamsize lhs_count = lhs_stream.gcount();
-        const std::streamsize rhs_count = rhs_stream.gcount();
-        if (lhs_count != rhs_count) {
-            return false;
-        }
-        if (lhs_count == 0) {
-            break;
-        }
-        if (std::memcmp(lhs_buffer.data(), rhs_buffer.data(), static_cast<size_t>(lhs_count)) != 0) {
-            return false;
-        }
-    }
-
-    return !lhs_stream.bad() && !rhs_stream.bad();
-}
-
-static void materialize_unchanged_files_from_sibling_snapshots(const json& manifest) {
-    std::string default_download_path = manifest.value("download_path", "");
-
-    for (const auto& file_desc : manifest["files"]) {
-        if (!has_hash_metadata(file_desc)) continue;
-
-        std::string filename = file_desc.value("name", "");
-        std::string download_path = file_desc.value("download_path", default_download_path);
-        size_t expected_size = file_desc.value("size", 0);
-
-        if (filename.empty() || download_path.empty()) continue;
-
-        fs::path snapshot_dir = path_from_utf8(download_path);
-        fs::path snapshots_root = snapshot_dir.parent_path();
-        fs::path target = snapshot_dir / path_from_utf8(filename);
-        fs::path partial = path_from_utf8(path_to_utf8(target) + ".partial");
-
-        if (safe_exists(target) || safe_exists(partial) || !safe_exists(snapshots_root)) {
-            continue;
-        }
-
-        std::error_code ec;
-        for (const auto& entry : fs::directory_iterator(snapshots_root, ec)) {
-            if (ec) break;
-            if (!entry.is_directory(ec)) {
-                ec.clear();
-                continue;
-            }
-
-            fs::path candidate = entry.path() / path_from_utf8(filename);
-            if (candidate == target || !fs::is_regular_file(candidate, ec)) {
-                ec.clear();
-                continue;
-            }
-
-            auto candidate_size = fs::file_size(candidate, ec);
-            if (ec || candidate_size == 0) {
-                ec.clear();
-                continue;
-            }
-
-            if (expected_size > 0 && candidate_size != expected_size) {
-                LOG(DEBUG, "ModelManager")
-                    << "Sibling snapshot candidate size differs from manifest metadata; "
-                    << "letting hash verification decide: "
-                    << path_to_utf8(candidate)
-                    << " expected=" << expected_size
-                    << " actual=" << candidate_size << std::endl;
-            }
-
-            fs::create_directories(target.parent_path(), ec);
-            if (ec) {
-                ec.clear();
-                continue;
-            }
-
-            fs::create_hard_link(candidate, target, ec);
-            if (ec) {
-                ec.clear();
-                fs::copy_file(candidate, target, fs::copy_options::none, ec);
-            }
-
-            if (!ec) {
-                LOG(INFO, "ModelManager")
-                    << "Reused unchanged cached file from sibling snapshot: "
-                    << path_to_utf8(candidate) << " -> " << path_to_utf8(target)
-                    << std::endl;
-            }
-            break;
-        }
-    }
-}
-
-
-static bool manifest_files_are_equivalent_in_snapshot(const json& manifest,
-                                                       const std::string& selected_download_path,
-                                                       const fs::path& candidate_snapshot) {
-    if (selected_download_path.empty() || candidate_snapshot.empty() || !safe_exists(candidate_snapshot)) {
-        return false;
-    }
-
-    if (safe_exists(candidate_snapshot / ".download_manifest.json")) {
-        return false;
-    }
-
-    const fs::path selected_snapshot = path_from_utf8(selected_download_path);
-    bool saw_selected_file = false;
-    std::error_code ec;
-
-    const std::string default_download_path = manifest.value("download_path", "");
-    for (const auto& file_desc : manifest["files"]) {
-        const std::string filename = file_desc.value("name", "");
-        if (filename.empty()) {
-            continue;
-        }
-
-        const std::string file_download_path = file_desc.value("download_path", default_download_path);
-        if (file_download_path != selected_download_path) {
-            continue;
-        }
-
-        saw_selected_file = true;
-        const fs::path relative_file = path_from_utf8(filename);
-        const fs::path selected_file = selected_snapshot / relative_file;
-        const fs::path candidate_file = candidate_snapshot / relative_file;
-        const fs::path candidate_partial = path_from_utf8(path_to_utf8(candidate_file) + ".partial");
-
-        if (!fs::is_regular_file(selected_file, ec)) {
-            ec.clear();
-            return false;
-        }
-        if (!fs::is_regular_file(candidate_file, ec) || safe_exists(candidate_partial)) {
-            ec.clear();
-            return false;
-        }
-
-        bool same_file = fs::equivalent(selected_file, candidate_file, ec);
-        if (ec) {
-            ec.clear();
-            same_file = false;
-        }
-
-        if (!same_file && regular_files_have_same_content(selected_file, candidate_file)) {
-            same_file = true;
-            LOG(INFO, "ModelManager")
-                << "Sibling snapshot files are content-equivalent after copy fallback: "
-                << path_to_utf8(candidate_file) << " -> " << path_to_utf8(selected_file)
-                << std::endl;
-        }
-
-        if (!same_file) {
-            return false;
-        }
-    }
-
-    return saw_selected_file;
-}
-
-bool ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
+void ModelManager::download_from_manifest(const json& manifest, std::map<std::string, std::string>& headers, DownloadProgressCallback progress_callback) {
     // Download each file with robust retry and resume support
     int file_index = 0;
     std::string download_path = manifest["download_path"].get<std::string>();
     int total_files = manifest["files_count"].get<int>();
-    bool performed_network_transfer = false;
-
     auto ends_with_ignore_case_local = [](std::string value, std::string suffix) {
         std::transform(value.begin(), value.end(), value.begin(), ::tolower);
         std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::tolower);
@@ -3165,7 +2772,6 @@ bool ModelManager::download_from_manifest(const json& manifest, std::map<std::st
                magic[2] == 'U' && magic[3] == 'F';
     };
 
-    materialize_unchanged_files_from_sibling_snapshots(manifest);
 
     // Compute total download size across all files for accurate progress reporting
     size_t total_download_size = 0;
@@ -3359,9 +2965,6 @@ bool ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         }
 
         if (result.success) {
-            if (result.bytes_downloaded > 0) {
-                performed_network_transfer = true;
-            }
             LOG(INFO, "ModelManager") << "Downloaded: " << filename << std::endl;
 
             // Emit completion event for already-complete files that were skipped
@@ -3467,8 +3070,6 @@ bool ModelManager::download_from_manifest(const json& manifest, std::map<std::st
             "Run the command again to resume."
         );
     }
-
-    return performed_network_transfer;
 }
 
 // Download model files from HuggingFace
@@ -3476,9 +3077,8 @@ bool ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 // IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
 // file list, then downloads any missing files. It does NOT check do_not_upgrade.
 //
-// Callers should avoid this path when do_not_upgrade=true and a model is already
-// cached. download_registered_model() also enforces that guard defensively for
-// direct auto-load call sites.
+// The caller (download_model) is responsible for checking do_not_upgrade and
+// calling is_model_downloaded() before invoking this function.
 //
 // Download capabilities by backend:
 //   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
@@ -3499,11 +3099,6 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     fs::path model_cache_path = hf_cache_path / repo_id_to_cache_dir_name(main_repo_id);
     fs::create_directories(model_cache_path);
-
-    std::map<std::string, fs::path> repo_cache_paths;
-    std::map<std::string, std::string> repo_previous_refs;
-    repo_cache_paths[main_repo_id] = model_cache_path;
-    repo_previous_refs[main_repo_id] = read_hf_ref_main(model_cache_path);
 
     // Get HF token if available
     std::map<std::string, std::string> headers;
@@ -3551,9 +3146,15 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
     fs::create_directories(snapshot_path);
 
-    // refs/main is advanced only after the selected files are successfully
-    // downloaded or verified. This keeps Lemonade on the previous active
-    // snapshot for README-only upstream commits that do not change artifacts.
+    // Create refs/main file pointing to this commit (matching huggingface_hub behavior)
+    fs::path refs_dir = model_cache_path / "refs";
+    fs::create_directories(refs_dir);
+    fs::path refs_main_path = refs_dir / "main";
+    std::ofstream refs_file(refs_main_path);
+    if (refs_file.is_open()) {
+        refs_file << commit_hash;
+        refs_file.close();
+    }
 
     // Extract list of all files in the repository
     std::vector<std::string> repo_files;
@@ -3671,13 +3272,17 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         }
 
         fs::path other_cache_path = hf_cache_path / repo_id_to_cache_dir_name(repo_id);
-        repo_cache_paths[repo_id] = other_cache_path;
-        repo_previous_refs[repo_id] = read_hf_ref_main(other_cache_path);
         fs::path other_snapshot = other_cache_path / "snapshots" / other_hash;
         fs::create_directories(other_snapshot);
 
-        // refs/main for auxiliary repos is advanced only after successful
-        // download/verification, matching the main repo behavior.
+        // Create refs/main file (matching huggingface_hub behavior)
+        fs::path other_refs_dir = other_cache_path / "refs";
+        fs::create_directories(other_refs_dir);
+        std::ofstream other_refs_file(other_refs_dir / "main");
+        if (other_refs_file.is_open()) {
+            other_refs_file << other_hash;
+            other_refs_file.close();
+        }
 
         repo_snapshot_paths[repo_id] = path_to_utf8(other_snapshot);
         repo_commit_hashes[repo_id] = other_hash;
@@ -3773,82 +3378,12 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
 
-    const bool performed_network_transfer = download_from_manifest(manifest, headers, progress_callback);
+    download_from_manifest(manifest, headers, progress_callback);
 
     // All files validated - remove manifest to mark download as complete
     if (fs::exists(manifest_path)) {
         fs::remove(manifest_path);
         LOG(INFO, "ModelManager") << "Removed download manifest (download complete)" << std::endl;
-    }
-
-    // Advance refs/main only after success. If no network transfer was needed
-    // (for example a README-only upstream commit where all requested artifacts
-    // were reused from sibling snapshots and hash-verified), keep refs/main on
-    // the previous active snapshot. Real model updates download new bytes and
-    // advance refs/main to the new commit.
-    const bool downloaded_new_bytes = performed_network_transfer;
-    for (const auto& [repo_id, repo_hash] : repo_commit_hashes) {
-        auto cache_it = repo_cache_paths.find(repo_id);
-        if (cache_it == repo_cache_paths.end()) {
-            continue;
-        }
-
-        const std::string previous_ref = repo_previous_refs.count(repo_id) ? repo_previous_refs[repo_id] : "";
-        const auto snapshot_it = repo_snapshot_paths.find(repo_id);
-        const bool previous_snapshot_matches_selected_files =
-            snapshot_it != repo_snapshot_paths.end() &&
-            !previous_ref.empty() &&
-            previous_ref != repo_hash &&
-            manifest_files_are_equivalent_in_snapshot(
-                manifest,
-                snapshot_it->second,
-                cache_it->second / "snapshots" / previous_ref);
-
-        if (downloaded_new_bytes || previous_ref.empty() || previous_ref == repo_hash ||
-            !previous_snapshot_matches_selected_files) {
-            write_hf_ref_main(cache_it->second, repo_hash);
-            LOG(INFO, "ModelManager") << "Updated refs/main for " << repo_id
-                                      << " to " << repo_hash << std::endl;
-        } else {
-            LOG(INFO, "ModelManager") << "Keeping refs/main for " << repo_id
-                                      << " at " << previous_ref
-                                      << " because latest snapshot " << repo_hash
-                                      << " did not require downloading new bytes "
-                                      << "and the active snapshot already points at the verified files" << std::endl;
-
-            // If this pull only materialized already-cached files into the latest
-            // snapshot and those files are equivalent to the active snapshot,
-            // refs/main intentionally stays on the previous active snapshot.
-            // Remove the unused new snapshot so future cache scans do not treat
-            // it as an active candidate. Never remove the active ref.
-            if (snapshot_it != repo_snapshot_paths.end()) {
-                fs::path unused_snapshot = path_from_utf8(snapshot_it->second);
-                fs::path active_snapshot;
-                auto cache_it_for_ref = repo_cache_paths.find(repo_id);
-                if (cache_it_for_ref != repo_cache_paths.end()) {
-                    active_snapshot = cache_it_for_ref->second / "snapshots" / previous_ref;
-                }
-
-                std::error_code cmp_ec;
-                const bool is_active_snapshot =
-                    !active_snapshot.empty() &&
-                    fs::equivalent(unused_snapshot, active_snapshot, cmp_ec);
-                if (cmp_ec) {
-                    cmp_ec.clear();
-                }
-
-                if (!is_active_snapshot) {
-                    std::error_code remove_ec;
-                    fs::remove_all(unused_snapshot, remove_ec);
-                    if (remove_ec) {
-                        LOG(WARNING, "ModelManager")
-                            << "Could not remove unused snapshot after no-transfer pull: "
-                            << path_to_utf8(unused_snapshot)
-                            << " (" << remove_ec.message() << ")" << std::endl;
-                    }
-                }
-            }
-        }
     }
 
     // Send completion event
@@ -4152,15 +3687,10 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
-            json updated_user_models = load_optional_json(get_user_models_file());
-            if (!updated_user_models.is_object()) {
-                updated_user_models = json::object();
-            }
+            json updated_user_models = user_models_;
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
-            user_models_ = std::move(updated_user_models);
-            cache_valid_ = false;
+            user_models_ = updated_user_models;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -4186,15 +3716,10 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
 
         if (is_user_model_name(canonical_model_name)) {
-            std::lock_guard<std::mutex> lock(models_cache_mutex_);
-            json updated_user_models = load_optional_json(get_user_models_file());
-            if (!updated_user_models.is_object()) {
-                updated_user_models = json::object();
-            }
+            json updated_user_models = user_models_;
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
-            user_models_ = std::move(updated_user_models);
-            cache_valid_ = false;
+            user_models_ = updated_user_models;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -4281,15 +3806,10 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Remove from user models if it's a user model
     if (is_user_model_name(canonical_model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        json updated_user_models = load_optional_json(get_user_models_file());
-        if (!updated_user_models.is_object()) {
-            updated_user_models = json::object();
-        }
+        json updated_user_models = user_models_;
         updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
         save_user_models(updated_user_models);
-        user_models_ = std::move(updated_user_models);
-        cache_valid_ = false;
+        user_models_ = updated_user_models;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
 
@@ -4376,24 +3896,12 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        auto it = models_cache_.find(canonical_name);
-        if (it != models_cache_.end()) {
-            return it->second;
-        }
-    }
-
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        auto it = models_cache_.find(canonical_name);
-        if (it != models_cache_.end()) {
-            return it->second;
-        }
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    auto it = models_cache_.find(canonical_name);
+    if (it != models_cache_.end()) {
+        return it->second;
     }
 
     throw std::runtime_error("Model not found: " + model_name);
@@ -4420,23 +3928,10 @@ bool ModelManager::model_exists(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        if (models_cache_.find(canonical_name) != models_cache_.end()) {
-            return true;
-        }
-    }
-
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        return models_cache_.find(canonical_name) != models_cache_.end();
-    }
-
-    return false;
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    auto alias_it = public_model_aliases_.find(model_name);
+    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    return models_cache_.find(canonical_name) != models_cache_.end();
 }
 
 std::optional<std::string> ModelManager::validate_collection_request(
@@ -4463,45 +3958,34 @@ std::optional<std::string> ModelManager::validate_collection_request(
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
-    auto exists_in_registries = [this](const std::string& name) -> bool {
-        // Direct match in server_models_ (built-ins are keyed bare).
-        if (server_models_.contains(name)) {
-            return true;
-        }
-        if (auto canon = parse_canonical_id(name)) {
-            switch (canon->source) {
-                case ModelSource::Registered:
-                    return user_models_.contains(canon->bare_name);
-                case ModelSource::Builtin:
-                    return server_models_.contains(canon->bare_name);
-                case ModelSource::Imported:
-                    // extra.* models are filesystem-discovered; not in either JSON registry.
-                    return false;
-            }
-        }
-        return false;
-    };
-
-    if (exists_in_registries(model_name)) {
+    // Direct match in server_models_ (built-ins are keyed bare).
+    if (server_models_.contains(model_name)) {
         return true;
+    }
+    if (auto canon = parse_canonical_id(model_name)) {
+        switch (canon->source) {
+            case ModelSource::Registered:
+                return user_models_.contains(canon->bare_name);
+            case ModelSource::Builtin:
+                return server_models_.contains(canon->bare_name);
+            case ModelSource::Imported:
+                // extra.* models are filesystem-discovered; not in either JSON registry.
+                return false;
+        }
     }
 
     std::string canonical_name = resolve_model_name(model_name);
-    if (exists_in_registries(canonical_name) || server_models_.contains(canonical_name)) {
-        return true;
-    }
-
-    // If a stale warm cache caused the alias/registry lookup to miss, reload the
-    // persisted user registry before reporting a hard "not found".
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        if (exists_in_registries(model_name)) {
-            return true;
+    if (auto canon = parse_canonical_id(canonical_name)) {
+        switch (canon->source) {
+            case ModelSource::Registered:
+                return user_models_.contains(canon->bare_name);
+            case ModelSource::Builtin:
+                return server_models_.contains(canon->bare_name);
+            case ModelSource::Imported:
+                return false;
         }
-        canonical_name = resolve_model_name(model_name);
-        return exists_in_registries(canonical_name) || server_models_.contains(canonical_name);
     }
-
-    return false;
+    return server_models_.contains(canonical_name);
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
@@ -4530,22 +4014,8 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         return false;
     };
 
-    bool resolved = try_resolve(model_name);
-    if (!resolved) {
-        std::string canonical_name = resolve_model_name(model_name);
-        if (canonical_name != model_name) {
-            resolved = try_resolve(canonical_name);
-        }
-    }
-
-    if (!resolved && refresh_user_models_from_disk_for_lookup(model_name)) {
-        resolved = try_resolve(model_name);
-        if (!resolved) {
-            std::string canonical_name = resolve_model_name(model_name);
-            if (canonical_name != model_name) {
-                resolved = try_resolve(canonical_name);
-            }
-        }
+    if (!try_resolve(model_name)) {
+        try_resolve(resolve_model_name(model_name));
     }
 
     json* model_json = nullptr;

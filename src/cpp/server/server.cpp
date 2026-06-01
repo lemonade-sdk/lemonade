@@ -1310,39 +1310,27 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // Log the auto-loading action
     LOG(INFO, "Server") << "Auto-loading model: " << requested_model << std::endl;
 
-    // Get model info. A user-registered model can be intentionally hidden
-    // from the public/suggested list by backend or size filters; report that
-    // explicitly instead of surfacing a misleading "not found" autoload error.
+    // Get model info
     if (!model_manager_->model_exists(requested_model)) {
-        if (model_manager_->model_exists_unfiltered(requested_model)) {
-            std::string reason = model_manager_->get_model_filter_reason(requested_model);
-            throw std::runtime_error(
-                "Model is registered but is not available on this system: " +
-                requested_model + (reason.empty() ? std::string() : ". " + reason));
-        }
         throw std::runtime_error("Model not found: " + requested_model);
     }
 
     auto info = model_manager_->get_model_info(requested_model);
-    const bool model_auto_update = config_ && config_->model_auto_update();
-    const bool model_downloaded = model_manager_->is_model_downloaded(requested_model);
 
-    // Download model if not cached (first-time use). When model_auto_update is
-    // enabled, also check Hugging Face for a newer selected model artifact before
-    // loading. README-only upstream commits are still ignored by the sticky-ref
-    // logic in ModelManager because they do not transfer/verify new model bytes.
-    if (info.recipe != "flm" && (!model_downloaded || model_auto_update)) {
-        if (model_downloaded && model_auto_update) {
-            LOG(INFO, "Server") << "Model auto update enabled, checking Hugging Face before load..." << std::endl;
-        } else {
-            LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
-            LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
-        }
-        model_manager_->download_registered_model(info, !model_auto_update);
-        LOG(INFO, "Server") << "Model download/update check complete: " << requested_model << std::endl;
+    // Download model if not cached (first-time use)
+    // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
+    // This means:
+    //   - If model is NOT downloaded: Download it from HuggingFace
+    //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
+    // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
+    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+        LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
+        LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
+        model_manager_->download_registered_model(info, true);
+        LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
 
-        // CRITICAL: Refresh model info after download/update check to get the
-        // correct resolved_path now that refs/main may have advanced.
+        // CRITICAL: Refresh model info after download to get correct resolved_path
+        // The resolved_path is computed based on filesystem, so we need fresh info now that files exist
         info = model_manager_->get_model_info(requested_model);
     }
 

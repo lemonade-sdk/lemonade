@@ -18,7 +18,6 @@ Real download/SHA corruption smoke test:
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import time
 import uuid
@@ -236,79 +235,6 @@ class ServerDownloadRegistryTests(ServerTestBase):
         response.raise_for_status()
         return response.json()
 
-    def test_003_user_model_lookup_refreshes_after_external_registry_write(self):
-        """A user.* lookup should reload user_models.json instead of failing on a stale warm cache."""
-        cache_dir = os.environ.get("LEMONADE_CACHE_DIR")
-        if not cache_dir:
-            self.skipTest("set LEMONADE_CACHE_DIR to exercise user registry refresh")
-
-        # Build the cache first so the following file write simulates a registry
-        # update that happens after startup cache warmup.
-        response = requests.get(f"http://localhost:{PORT}/api/v1/models", timeout=TIMEOUT_DEFAULT)
-        response.raise_for_status()
-
-        user_models_path = Path(cache_dir) / "user_models.json"
-        original_bytes = user_models_path.read_bytes() if user_models_path.exists() else None
-
-        model_name = f"user.CacheRefresh-{uuid.uuid4().hex[:8]}-GGUF"
-        bare_name = model_name[len("user."):]
-
-        try:
-            if original_bytes:
-                user_models = json.loads(original_bytes.decode("utf-8"))
-                if not isinstance(user_models, dict):
-                    user_models = {}
-            else:
-                user_models = {}
-
-            user_models[bare_name] = {
-                "checkpoint": "unsloth/SmolLM2-135M-Instruct-GGUF:Q4_K_M",
-                "recipe": "llamacpp",
-                "labels": ["llm", "custom"],
-                "suggested": True,
-                "size": 0.001,
-            }
-            user_models_path.parent.mkdir(parents=True, exist_ok=True)
-            user_models_path.write_text(json.dumps(user_models), encoding="utf-8")
-
-            info = self._get_model_info(model_name)
-            self.assertIn(info.get("id"), {bare_name, model_name})
-            self.assertEqual(info.get("recipe"), "llamacpp")
-        finally:
-            if original_bytes is None:
-                user_models_path.unlink(missing_ok=True)
-            else:
-                user_models_path.write_bytes(original_bytes)
-
-    def test_003_model_auto_update_config_round_trips_as_server_setting(self):
-        """model_auto_update is server-owned runtime config, not client app settings."""
-        config_url = f"http://localhost:{PORT}/internal/config"
-        set_url = f"http://localhost:{PORT}/internal/set"
-
-        response = requests.get(config_url, timeout=TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        original = bool(response.json().get("model_auto_update", False))
-
-        try:
-            for value in (not original, original):
-                with self.subTest(model_auto_update=value):
-                    set_response = requests.post(
-                        set_url,
-                        json={"model_auto_update": value},
-                        timeout=TIMEOUT_DEFAULT,
-                    )
-                    set_response.raise_for_status()
-
-                    config_response = requests.get(config_url, timeout=TIMEOUT_DEFAULT)
-                    config_response.raise_for_status()
-                    self.assertEqual(config_response.json().get("model_auto_update"), value)
-        finally:
-            requests.post(
-                set_url,
-                json={"model_auto_update": original},
-                timeout=TIMEOUT_DEFAULT,
-            ).raise_for_status()
-
     def _find_downloaded_gguf(self, model_name) -> Path:
         info = self._get_model_info(model_name)
         checkpoint = info.get("checkpoint") or ""
@@ -360,6 +286,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
         model_name = f"Definitely-Not-A-Real-Download-Test-Model-{uuid.uuid4().hex}"
         download_id = f"model:{model_name}"
 
+        # Use an intentionally unknown model so the test exercises the registry
+        # path without downloading a real model from Hugging Face. The initial
+        # response should still be a JSON job snapshot, not an SSE stream.
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/pull",
             json={
@@ -376,32 +305,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
         self.assertEqual(snapshot.get("type"), "model")
         self.assertEqual(snapshot.get("model_name"), model_name)
         self.assertIn(snapshot.get("status"), {"downloading", "error"})
-        self._assert_completed_job_schema(snapshot)
-
-        duplicate = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={
-                "model": model_name,
-                "stream": True,
-                "subscribe": False,
-            },
-            timeout=TIMEOUT_DEFAULT,
-        )
-        duplicate.raise_for_status()
-        self.assertEqual(duplicate.json().get("id"), download_id)
-
-        rows_after_duplicate = [
-            item for item in self._get_downloads() if item.get("id") == download_id
-        ]
-        self.assertEqual(
-            len(rows_after_duplicate),
-            1,
-            "duplicate server-owned /pull must not create duplicate registry rows",
-        )
 
         terminal = self._wait_for_status(download_id, {"error"})
         self.assertIn("error", terminal)
-        self.assertIn("unknown_model", terminal.get("code", ""))
 
         removed = self._control_download(download_id, "remove")
         self.assertEqual(removed.get("status"), "ok")
@@ -412,30 +318,15 @@ class ServerDownloadRegistryTests(ServerTestBase):
             "removed download job should not remain visible",
         )
 
-    def test_002_download_control_validates_required_fields_actions_and_missing_rows(self):
-        """The control endpoint rejects malformed requests and treats remove-on-missing as idempotent."""
-        base = f"http://localhost:{PORT}/api/v1/downloads/control"
-        cases = [
-            ({"action": "remove"}, 400, "required"),
-            ({"id": "model:missing"}, 400, "required"),
-            ({"id": "model:missing", "action": "pause"}, 404, "not found"),
-            ({"id": "model:missing", "action": "bogus"}, 404, "not found"),
-        ]
-        for payload, status, error_text in cases:
-            with self.subTest(payload=payload):
-                response = requests.post(base, json=payload, timeout=TIMEOUT_DEFAULT)
-                self.assertEqual(response.status_code, status)
-                body = response.json()
-                self.assertIn("error", body)
-                self.assertIn(error_text, body["error"].lower())
-
-        remove_missing = requests.post(
-            base,
-            json={"id": "model:missing", "action": "remove"},
+    def test_002_download_control_validates_required_fields(self):
+        """The control endpoint rejects malformed requests with a client error."""
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/downloads/control",
+            json={"action": "remove"},
             timeout=TIMEOUT_DEFAULT,
         )
-        remove_missing.raise_for_status()
-        self.assertEqual(remove_missing.json(), {"status": "ok", "missing": True})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.json())
 
     def test_003_real_tiny_model_download_completes_and_exposes_terminal_snapshot(self):
         """Optional CI smoke test: a real small model reaches completed/running=false."""
@@ -563,6 +454,7 @@ class ServerDownloadRegistryTests(ServerTestBase):
         self.assertEqual(reused_gguf.stat().st_mtime_ns, original_mtime_ns)
         self.assertEqual(_sha256_file(reused_gguf), original_sha256)
         self.assertEqual(_git_blob_sha1_file(reused_gguf), original_git_sha1)
+
 
 if __name__ == "__main__":
     run_server_tests(ServerDownloadRegistryTests, "SERVER DOWNLOAD REGISTRY TESTS")

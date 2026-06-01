@@ -3,7 +3,6 @@ import { ChevronRight } from './components/Icons';
 import {
   AppSettings,
   BASE_SETTING_VALUES,
-  BooleanSetting,
   NumericSettingKey,
   clampNumericSettingValue,
   createDefaultSettings,
@@ -13,18 +12,11 @@ import {
 import ConnectionSettings from './tabs/ConnectionSettings';
 import TTSSettings from './tabs/TTSSettings';
 import LLMChatSettings from './tabs/LLMChatSettings';
-import ModelManagerSettings from './tabs/ModelManagerSettings';
-import { getServerBaseUrl, serverConfig, serverFetch } from './utils/serverConfig';
 
 interface SettingsPanelProps {
   isVisible: boolean;
   searchQuery?: string;
 }
-
-const createDefaultModelAutoUpdateSetting = (): BooleanSetting => ({
-  value: false,
-  useDefault: true,
-});
 
 const numericSettingsConfig: Array<{
   key: NumericSettingKey;
@@ -55,11 +47,10 @@ const numericSettingsConfig: Array<{
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = '' }) => {
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
-  const [modelAutoUpdate, setModelAutoUpdate] = useState<BooleanSetting>(createDefaultModelAutoUpdateSetting());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set(['connection_settings', 'model_manager_settings', 'llm_chat_settings', 'tts_settings'])
+    new Set(['connection_settings', 'llm_chat_settings', 'tts_settings'])
   );
 
   useEffect(() => {
@@ -70,37 +61,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         setIsLoading(true);
       }
 
-      let merged = createDefaultSettings();
-      let nextModelAutoUpdate = createDefaultModelAutoUpdateSetting();
-
       try {
-        if (window.api?.getSettings) {
-          const stored = await window.api.getSettings();
-          merged = mergeWithDefaultSettings(stored);
-        }
-      } catch (error) {
-        console.error('Failed to load app settings:', error);
-      }
-
-      try {
-        await serverConfig.waitForInit();
-        const serverUrl = getServerBaseUrl();
-        const configResponse = await serverFetch(`${serverUrl}/internal/config`, { cache: 'no-store' });
-        if (configResponse.ok) {
-          const serverConfigJson = await configResponse.json();
-          if (typeof serverConfigJson?.model_auto_update === 'boolean') {
-            nextModelAutoUpdate = {
-              value: serverConfigJson.model_auto_update,
-              useDefault: serverConfigJson.model_auto_update === createDefaultModelAutoUpdateSetting().value,
-            };
+        if (!window.api?.getSettings) {
+          if (isMounted) {
+            setSettings(createDefaultSettings());
           }
+          return;
+        }
+
+        const stored = await window.api.getSettings();
+        if (isMounted) {
+          setSettings(mergeWithDefaultSettings(stored));
         }
       } catch (error) {
-        console.warn('Could not load server model-manager settings:', error);
+        console.error('Failed to load settings:', error);
+        if (isMounted) {
+          setSettings(createDefaultSettings());
+        }
       } finally {
         if (isMounted) {
-          setSettings(merged);
-          setModelAutoUpdate(nextModelAutoUpdate);
           setIsLoading(false);
         }
       }
@@ -130,17 +109,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         useDefault: false,
       },
     }));
-  };
-
-  const handleModelAutoUpdateChange = (value: boolean) => {
-    setModelAutoUpdate({
-      value,
-      useDefault: false,
-    });
-  };
-
-  const handleResetModelAutoUpdate = () => {
-    setModelAutoUpdate(createDefaultModelAutoUpdateSetting());
   };
 
   const handleTTSSettingChange = (key: string, value: string | boolean) => {
@@ -229,33 +197,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
 
   const handleReset = () => {
     setSettings(createDefaultSettings());
-    setModelAutoUpdate(createDefaultModelAutoUpdateSetting());
   };
 
   const handleSave = async () => {
+    if (!window.api?.saveSettings) {
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const saved = window.api?.saveSettings
-        ? await window.api.saveSettings(settings)
-        : settings;
-
-      await serverConfig.waitForInit();
-      const serverUrl = getServerBaseUrl();
-      const configResponse = await serverFetch(`${serverUrl}/internal/set`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model_auto_update: modelAutoUpdate.value }),
-      });
-      if (!configResponse.ok) {
-        const body = await configResponse.text();
-        throw new Error(body || `Server config update failed with status ${configResponse.status}`);
-      }
-
+      const saved = await window.api.saveSettings(settings);
       setSettings(mergeWithDefaultSettings(saved));
-      setModelAutoUpdate({
-        value: modelAutoUpdate.value,
-        useDefault: modelAutoUpdate.value === createDefaultModelAutoUpdateSetting().value,
-      });
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert('Failed to save settings. Please try again.');
@@ -292,14 +244,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
       settingCount: 2,
     },
     {
-      id: 'model_manager_settings',
-      label: 'Model Manager',
-      keywords: [
-        'model manager', 'model auto update', 'auto update', 'hugging face', 'snapshot', 'cache'
-      ],
-      settingCount: 1,
-    },
-    {
       id: 'llm_chat_settings',
       label: 'LLM',
       keywords: [
@@ -333,12 +277,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
           settings={settings}
           onValueChangeFunc={handleTextInputChange}
           onResetFunc={handleResetField}
-        />;
-      case 'model_manager_settings':
-        return <ModelManagerSettings
-          modelAutoUpdate={modelAutoUpdate}
-          onBooleanChangeFunc={handleModelAutoUpdateChange}
-          onResetFunc={handleResetModelAutoUpdate}
         />;
       case 'llm_chat_settings':
         return <LLMChatSettings

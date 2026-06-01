@@ -89,8 +89,7 @@ namespace lemon::backends {
                                         const std::string& repo,
                                         const std::string& filename,
                                         const std::string& backend,
-                                        DownloadProgressCallback progress_cb = nullptr,
-                                        bool force = false);
+                                        DownloadProgressCallback progress_cb = nullptr);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);

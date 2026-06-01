@@ -440,78 +440,47 @@ namespace lemon::backends {
                                            const std::string& repo,
                                            const std::string& filename,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb,
-                                           bool force) {
-        std::string install_dir = get_install_directory(spec.recipe, backend);
-        std::string version_file = get_version_file(install_dir);
+                                           DownloadProgressCallback progress_cb) {
+        std::string install_dir;
+        std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
-        const bool external_backend = !exe_path.empty();
-        bool needs_install = false;
+        bool needs_install = exe_path.empty();
 
-        if (external_backend) {
-            // Explicit user path / config override. Never delete or replace it,
-            // even when force=true.
-            LOG(DEBUG, spec.log_name()) << "Using external backend binary: "
-                                        << exe_path << std::endl;
-        } else {
+        if (needs_install) {
+            install_dir = get_install_directory(spec.recipe, backend);
+            version_file = get_version_file(install_dir);
+
+            // Check if already installed with correct version
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
-            const bool has_executable = !exe_path.empty();
-            const bool has_version_file = fs::exists(version_file);
-            std::string installed_version;
+            needs_install = exe_path.empty();
 
-            if (has_version_file) {
+            if (!needs_install && fs::exists(version_file)) {
+                std::string installed_version;
                 std::ifstream vf(version_file);
                 std::getline(vf, installed_version);
                 vf.close();
-            }
 
-            const bool version_matches =
-                has_version_file && installed_version == expected_version;
-
-            needs_install = force || !has_executable || !version_matches;
-
-            if (force && fs::exists(install_dir)) {
-                LOG(INFO, spec.log_name())
-                    << "Force reinstall requested for " << spec.binary
-                    << " (" << expected_version << ")" << std::endl;
-                fs::remove_all(install_dir);
-                exe_path.clear();
-            } else if (has_executable && !version_matches) {
-                if (!has_version_file) {
-                    // If the executable exists but version.txt is missing, SystemInfo
-                    // reports update_required because it cannot prove the installed
-                    // binary matches the current Lemonade baseline. Treat this like a
-                    // version mismatch rather than a 0B no-op completion.
-                    LOG(INFO, spec.log_name())
-                        << "Installed executable is missing version.txt; reinstalling "
-                        << spec.binary << " version " << expected_version << std::endl;
-                } else {
-                    LOG(INFO, spec.log_name())
-                        << "Upgrading " << spec.binary << " from "
-                        << installed_version << " to " << expected_version
-                        << std::endl;
+                if (installed_version != expected_version) {
+                    LOG(INFO, spec.log_name()) << "Upgrading " << spec.binary << " from " << installed_version
+                            << " to " << expected_version << std::endl;
+                    needs_install = true;
+                    fs::remove_all(install_dir);
                 }
-
+            } else if (!needs_install && !expected_version.empty()) {
+                // If the executable exists but version.txt is missing, SystemInfo
+                // reports update_required because it cannot prove the installed
+                // binary matches the current Lemonade baseline. Treat this like a
+                // version mismatch rather than a 0B no-op completion.
+                LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
+                        << spec.binary << " version " << expected_version << std::endl;
+                needs_install = true;
                 fs::remove_all(install_dir);
-                exe_path.clear();
-            }
-
-            if (!has_executable) {
-                LOG(DEBUG, spec.log_name())
-                    << spec.binary << " not found in install directory: "
-                    << install_dir << std::endl;
             }
         }
 
         if (needs_install) {
             LOG(INFO, spec.log_name()) << "Installing " << spec.binary << " (version: "
                     << expected_version << ")" << std::endl;
-
-            // Start managed installs from a clean directory. This avoids mixing
-            // a previous partial extraction with a freshly downloaded archive.
-            if (!external_backend && fs::exists(install_dir)) {
-                fs::remove_all(install_dir);
-            }
 
             // Create install directory
             fs::create_directories(install_dir);
