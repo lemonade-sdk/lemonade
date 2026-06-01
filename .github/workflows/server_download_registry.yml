@@ -19,6 +19,9 @@ env:
   PYTHONIOENCODING: utf-8
   HF_HOME: ${{ github.workspace }}/hf-cache
   LEMONADE_CACHE_DIR: ${{ github.workspace }}/ci-cache
+  LEMONADE_RUN_REAL_DOWNLOAD_TESTS: "1"
+  LEMONADE_DOWNLOAD_TEST_MODEL: Tiny-Test-Model-GGUF
+  LEMONADE_DOWNLOAD_REAL_TEST_WAIT_SECONDS: "300"
 
 jobs:
   server-download-registry-tests:
@@ -78,7 +81,7 @@ jobs:
           cat "$RUNNER_TEMP/lemond-download-registry.log" || true
           exit 1
 
-      - name: Run server download registry tests
+      - name: Run server download registry and SHA corruption tests
         shell: bash
         run: |
           set -euo pipefail

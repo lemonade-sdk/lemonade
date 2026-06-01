@@ -3054,15 +3054,13 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
     // mode and nvidia-smi fails. Provides the full model name and GPU UUID, which
     // is enough for identify_cuda_arch_from_name() to determine the sm_XX family.
     // (No compute_capability here; family is resolved from the name.)
-    LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; "
-        << "falling back to /proc/driver/nvidia/gpus" << std::endl;
     {
         fs::path gpus_dir = "/proc/driver/nvidia/gpus";
         std::error_code ec;
         if (fs::exists(gpus_dir, ec) && fs::is_directory(gpus_dir, ec)) {
+            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
             std::string driver_version = get_nvidia_driver_version();
             double vram = get_nvidia_vram();
-            int ordinal = 0;
             for (const auto& entry : fs::directory_iterator(gpus_dir, ec)) {
                 fs::path info_path = entry.path() / "information";
                 std::ifstream info_file(info_path);
@@ -3085,7 +3083,6 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
 
                 if (!model.empty()) {
                     GPUInfo gpu;
-                    gpu.index          = ordinal++;
                     gpu.name           = model;
                     gpu.uuid           = uuid;
                     gpu.available      = true;
