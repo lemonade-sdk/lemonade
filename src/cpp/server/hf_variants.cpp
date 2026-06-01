@@ -257,13 +257,15 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
     }
     for (const auto& kv : file_sizes) total_repo_size += kv.second;
 
-    // Suggested name = component after the last '/'.
+    // Keep the Hugging Face namespace in the suggested name so repos with the
+    // same leaf name but different owners do not collide in user_models.json.
+    // Example:
+    //   LiquidAI/LFM2.5-8B-A1B-GGUF:Q8_0
+    //   unsloth/LFM2.5-8B-A1B-GGUF:Q8_0
+    // become distinct user model names instead of both becoming
+    // LFM2.5-8B-A1B-GGUF-Q8_0.
     std::string suggested_name = checkpoint;
-    {
-        size_t slash = checkpoint.find_last_of('/');
-        if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
-    }
-
+    
     // ONNX RyzenAI branch: synthesize a 1-element variant set.
     if (!has_gguf && has_onnx && has_genai_config) {
         nlohmann::json vj;
