@@ -237,6 +237,14 @@ private:
     std::string admin_api_key_;
     NetworkBeacon udp_beacon_;
 
+    // Semantic router subprocess
+    void start_semantic_router();
+    void stop_semantic_router();
+    bool wait_for_semantic_router(int timeout_seconds = 30);
+    std::thread semantic_router_thread_;
+    std::atomic<bool> semantic_router_running_{false};
+    int semantic_router_port_ = 8765;
+
     // CPU usage tracking
 #if defined(__linux__) || defined(_WIN32)
     struct CpuStats {

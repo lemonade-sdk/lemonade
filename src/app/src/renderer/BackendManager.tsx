@@ -5,6 +5,7 @@ import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import CloudProvidersSection from './CloudProvidersSection';
+import SemanticRoutingSection from './SemanticRoutingSection';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
@@ -174,11 +175,20 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     />
   );
 
+  const routingSection = (
+    <SemanticRoutingSection
+      searchQuery={searchQuery}
+      showError={showError}
+      showSuccess={showSuccess}
+    />
+  );
+
   if (visibleGroups.length === 0) {
     return (
       <>
         <div className="left-panel-empty-state">No local backends match your current filter.</div>
         {cloudSection}
+        {routingSection}
       </>
     );
   }
@@ -208,6 +218,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
         </div>
       ))}
       {cloudSection}
+      {routingSection}
     </>
   );
 };

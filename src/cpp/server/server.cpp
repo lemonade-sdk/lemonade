@@ -8,6 +8,7 @@
 #include <cstring>
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/runtime_config.h"
@@ -158,6 +159,53 @@ bool is_quiet_polling_path(const std::string& path) {
            path == "/v0/stats" || path == "/v1/stats";
 }
 
+// Query the semantic router Python service to determine routing decision.
+// Returns a JSON object with {action, model, reason} or empty if service unavailable.
+json query_semantic_router(const std::string& prompt, int port = 8765) {
+    try {
+        httplib::Client cli("127.0.0.1", port);
+        cli.set_connection_timeout(0, 400 * 1000);  // 200ms connection timeout
+        cli.set_read_timeout(2, 0);                 // 2 second read timeout (signals can take time)
+
+        json request_body = {{"prompt", prompt}};
+        auto res = cli.Post("/route", request_body.dump(), "application/json");
+
+        if (!res) {
+            LOG(DEBUG, "SemanticRouter") << "Service unavailable (fail-open): "
+                << httplib::to_string(res.error()) << std::endl;
+            return json::object();
+        }
+
+        if (res->status != 200) {
+            LOG(DEBUG, "SemanticRouter") << "Service returned status " << res->status
+                << " (fail-open)" << std::endl;
+            return json::object();
+        }
+
+        auto response = json::parse(res->body);
+        LOG(DEBUG, "SemanticRouter") << "Routing decision: " << response.dump() << std::endl;
+        return response;
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "SemanticRouter") << "Error querying router (fail-open): " << e.what() << std::endl;
+        return json::object();
+    }
+}
+
+// Extract the last user message from a chat completions request
+std::string extract_last_user_prompt(const json& request_json) {
+    if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
+        return "";
+    }
+    const auto& messages = request_json["messages"];
+    for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+        if ((*it).contains("role") && (*it)["role"] == "user" &&
+            (*it).contains("content") && (*it)["content"].is_string()) {
+            return (*it)["content"].get<std::string>();
+        }
+    }
+    return "";
+}
+
 } // namespace
 
 
@@ -209,6 +257,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         config_->websocket_port());
 
     start_model_cache_warmup();
+
+    // Start semantic router Python service in background
+    start_semantic_router();
 }
 
 void Server::start_model_cache_warmup() {
@@ -227,6 +278,121 @@ void Server::start_model_cache_warmup() {
             LOG(WARNING, "Server") << "Model list cache warmup failed with unknown error" << std::endl;
         }
     });
+}
+
+void Server::start_semantic_router() {
+    if (semantic_router_thread_.joinable()) {
+        return;
+    }
+
+    semantic_router_thread_ = std::thread([this]() {
+        try {
+            LOG(INFO, "SemanticRouter") << "Starting semantic router service on port "
+                << semantic_router_port_ << "..." << std::endl;
+
+            // Find Python executable
+            std::string python_cmd = "python";
+#ifdef _WIN32
+            // Try python3 first, fall back to python
+            std::string version_output;
+            if (utils::ProcessManager::run_command("python3 --version", version_output, 5) == 0) {
+                python_cmd = "python3";
+            }
+#else
+            python_cmd = "python3";
+#endif
+
+            // Get the semantic router module path (relative to lemonade installation)
+            std::string module_path = "semantic_router.service";
+
+            // Build command: python -m semantic_router.service --port 8765
+            std::vector<std::string> args = {
+                "-m", module_path,
+                "--port", std::to_string(semantic_router_port_)
+            };
+
+            // Set PYTHONPATH to include src/python directory for development
+            // In production, the package should be installed
+            std::vector<std::pair<std::string, std::string>> env_vars;
+            fs::path exe_dir = fs::path(utils::get_executable_dir());
+            fs::path src_python = exe_dir.parent_path() / "src" / "python";
+            if (fs::exists(src_python)) {
+                std::string pythonpath = src_python.string();
+                const char* existing = std::getenv("PYTHONPATH");
+                if (existing && strlen(existing) > 0) {
+#ifdef _WIN32
+                    pythonpath = pythonpath + ";" + existing;
+#else
+                    pythonpath = pythonpath + ":" + existing;
+#endif
+                }
+                env_vars.push_back({"PYTHONPATH", pythonpath});
+                LOG(DEBUG, "SemanticRouter") << "Set PYTHONPATH=" << pythonpath << std::endl;
+            }
+
+            // Start the process
+            auto handle = utils::ProcessManager::start_process(
+                python_cmd, args, "", true, false, env_vars);
+
+            if (handle.pid <= 0) {
+                LOG(WARNING, "SemanticRouter") << "Failed to start semantic router process" << std::endl;
+                return;
+            }
+
+            LOG(INFO, "SemanticRouter") << "Semantic router process started (PID: "
+                << handle.pid << ")" << std::endl;
+
+            // Wait for the service to be ready
+            if (wait_for_semantic_router(60)) {
+                LOG(INFO, "SemanticRouter") << "Semantic router service is ready" << std::endl;
+                semantic_router_running_ = true;
+            } else {
+                LOG(WARNING, "SemanticRouter") << "Semantic router service did not become ready in time (non-fatal)" << std::endl;
+            }
+
+            // Keep the process running until shutdown
+            while (!shutdown_requested_ && utils::ProcessManager::is_running(handle)) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+            // Cleanup
+            if (utils::ProcessManager::is_running(handle)) {
+                utils::ProcessManager::stop_process(handle);
+            }
+            semantic_router_running_ = false;
+
+        } catch (const std::exception& e) {
+            LOG(WARNING, "SemanticRouter") << "Semantic router failed: " << e.what()
+                << " (non-fatal, routing will be skipped)" << std::endl;
+        }
+    });
+}
+
+void Server::stop_semantic_router() {
+    semantic_router_running_ = false;
+    if (semantic_router_thread_.joinable()) {
+        semantic_router_thread_.join();
+    }
+}
+
+bool Server::wait_for_semantic_router(int timeout_seconds) {
+    auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(timeout_seconds)) {
+        try {
+            httplib::Client cli("127.0.0.1", semantic_router_port_);
+            cli.set_connection_timeout(0, 500 * 1000);  // 500ms
+            cli.set_read_timeout(0, 500 * 1000);
+
+            auto res = cli.Get("/health");
+            if (res && res->status == 200) {
+                return true;
+            }
+        } catch (...) {
+            // Ignore errors, keep trying
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    return false;
 }
 
 void Server::setup_http_servers() {
@@ -250,6 +416,7 @@ void Server::setup_http_servers() {
 
 Server::~Server() {
     cancel_download_jobs();
+    stop_semantic_router();
     stop();
 }
 
@@ -1616,6 +1783,41 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "Tools JSON: " << request_json["tools"].dump() << std::endl;
         } else {
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
+        }
+
+        // Semantic routing: query Python router service for routing decision.
+        // The router evaluates security signals (jailbreak, PII) and routing
+        // signals (keywords, complexity) to decide whether to block, redirect
+        // to a different model, or allow the request to proceed.
+        std::string user_prompt = extract_last_user_prompt(request_json);
+        if (!user_prompt.empty()) {
+            auto routing = query_semantic_router(user_prompt);
+            if (!routing.empty()) {
+                std::string action = routing.value("action", "allow");
+
+                if (action == "block") {
+                    std::string reason = routing.value("reason", "Request blocked by semantic router");
+                    LOG(INFO, "SemanticRouter") << "Blocked request: " << reason << std::endl;
+                    res.status = 403;
+                    json error_response = {
+                        {"error", {
+                            {"message", reason},
+                            {"type", "content_policy_violation"},
+                            {"code", "semantic_router_blocked"}
+                        }}
+                    };
+                    res.set_content(error_response.dump(), "application/json");
+                    return;
+                }
+
+                if (action == "redirect" && routing.contains("model") && routing["model"].is_string()) {
+                    std::string target_model = routing["model"].get<std::string>();
+                    std::string reason = routing.value("reason", "Semantic router redirect");
+                    LOG(INFO, "SemanticRouter") << "Redirecting to model: " << target_model
+                        << " (" << reason << ")" << std::endl;
+                    request_json["model"] = target_model;
+                }
+            }
         }
 
         // inject_cloud_creds also lazy-registers the cloud model in

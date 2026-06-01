@@ -47,6 +47,16 @@ export interface CloudProviderConfig {
   apiKey: string;
 }
 
+// Semantic routing configuration. When enabled, prompts are analyzed
+// and automatically routed to the most appropriate model based on
+// jailbreak/PII detection, keyword matching, and complexity scoring.
+export interface SemanticRoutingConfig {
+  enabled: boolean;
+  configYaml: string;  // Inline YAML config
+  servicePort: number; // Port for Python semantic router service
+  lastValidated?: string;  // ISO timestamp of last successful validation
+}
+
 export interface AppSettings {
   temperature: NumericSetting;
   topK: NumericSetting;
@@ -57,6 +67,7 @@ export interface AppSettings {
   baseURL: StringSetting;
   apiKey: StringSetting;
   cloudProviders: Record<string, CloudProviderConfig>;
+  semanticRouting: SemanticRoutingConfig;
   layout: LayoutSettings;
   tts: TTSSettings;
 }
@@ -107,6 +118,12 @@ export const DEFAULT_TTS_SETTINGS: TTSSettings = {
   enableUserTTS: { value: false, useDefault: true }
 };
 
+export const DEFAULT_SEMANTIC_ROUTING: SemanticRoutingConfig = {
+  enabled: false,
+  configYaml: '',
+  servicePort: 8765,
+};
+
 export const createDefaultSettings = (): AppSettings => ({
   temperature: { value: BASE_SETTING_VALUES.temperature, useDefault: true },
   topK: { value: BASE_SETTING_VALUES.topK, useDefault: true },
@@ -117,6 +134,7 @@ export const createDefaultSettings = (): AppSettings => ({
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   cloudProviders: {},
+  semanticRouting: { ...DEFAULT_SEMANTIC_ROUTING },
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
   tts: {...DEFAULT_TTS_SETTINGS}
 });
@@ -133,6 +151,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   cloudProviders: Object.fromEntries(
     Object.entries(settings.cloudProviders ?? {}).map(([k, v]) => [k, { ...v }])
   ),
+  semanticRouting: { ...settings.semanticRouting },
   layout: { ...settings.layout },
   tts: { ...settings.tts },
 });
@@ -262,6 +281,23 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
       }
     }
     defaults.cloudProviders = merged;
+  }
+
+  // Merge semantic routing settings
+  const rawSemanticRouting = (incoming as any).semanticRouting;
+  if (rawSemanticRouting && typeof rawSemanticRouting === 'object') {
+    if (typeof rawSemanticRouting.enabled === 'boolean') {
+      defaults.semanticRouting.enabled = rawSemanticRouting.enabled;
+    }
+    if (typeof rawSemanticRouting.configYaml === 'string') {
+      defaults.semanticRouting.configYaml = rawSemanticRouting.configYaml;
+    }
+    if (typeof rawSemanticRouting.servicePort === 'number') {
+      defaults.semanticRouting.servicePort = rawSemanticRouting.servicePort;
+    }
+    if (typeof rawSemanticRouting.lastValidated === 'string') {
+      defaults.semanticRouting.lastValidated = rawSemanticRouting.lastValidated;
+    }
   }
 
   // Merge layout settings
