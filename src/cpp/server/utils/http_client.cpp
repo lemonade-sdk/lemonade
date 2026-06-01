@@ -789,7 +789,6 @@ DownloadResult HttpClient::download_file(const std::string& url,
             fs::remove(partial_path_fs, remove_partial_ec);
             final_result.success = true;
             final_result.bytes_downloaded = 0;
-            final_result.verified_hash = hash_result.actual;
             LOG(INFO, "Download") << "File already exists and hash verified; removed stale partial: "
                                   << output_path << std::endl;
             return final_result;
@@ -814,7 +813,6 @@ DownloadResult HttpClient::download_file(const std::string& url,
             if (hash_result.ok) {
                 final_result.success = true;
                 final_result.bytes_downloaded = 0;
-                final_result.verified_hash = hash_result.actual;
                 LOG(INFO, "Download") << "File already exists and hash verified: "
                                       << output_path << std::endl;
                 return final_result;
@@ -921,7 +919,6 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
                     break;
                 }
-                final_result.verified_hash = hash_result.actual;
                 LOG(INFO, "Download") << "Hash verified for " << output_path << std::endl;
             }
 

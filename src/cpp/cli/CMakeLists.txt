@@ -17,7 +17,6 @@ if(NOT TARGET lemonade-digest-crypto)
     endif()
 
     add_library(lemonade-digest-crypto INTERFACE)
-    target_compile_definitions(lemonade-digest-crypto INTERFACE LEMONADE_USE_MBEDTLS_DIGEST)
 
     if(MBEDCRYPTO_FOUND)
         message(STATUS "Using system mbedcrypto for download digest verification")
