@@ -3047,6 +3047,55 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
         return gpus;
     }
 
+    // Secondary: /proc/driver/nvidia/gpus/*/information — readable whenever the
+    // nvidia kernel module is loaded, even when the GPU is in Optimus power-save
+    // mode and nvidia-smi fails. Provides the full model name and GPU UUID, which
+    // is enough for identify_cuda_arch_from_name() to determine the sm_XX family.
+    // (No compute_capability here; family is resolved from the name.)
+    LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; "
+        << "falling back to /proc/driver/nvidia/gpus" << std::endl;
+    {
+        fs::path gpus_dir = "/proc/driver/nvidia/gpus";
+        std::error_code ec;
+        if (fs::exists(gpus_dir, ec) && fs::is_directory(gpus_dir, ec)) {
+            std::string driver_version = get_nvidia_driver_version();
+            double vram = get_nvidia_vram();
+            int ordinal = 0;
+            for (const auto& entry : fs::directory_iterator(gpus_dir, ec)) {
+                fs::path info_path = entry.path() / "information";
+                std::ifstream info_file(info_path);
+                if (!info_file.is_open()) continue;
+
+                std::string model;
+                std::string uuid;
+                std::string line;
+                while (std::getline(info_file, line)) {
+                    if (line.rfind("Model:", 0) == 0) {
+                        model = line.substr(6);
+                        size_t s = model.find_first_not_of(" \t");
+                        if (s != std::string::npos) model = model.substr(s);
+                    } else if (line.rfind("GPU UUID:", 0) == 0) {
+                        uuid = line.substr(9);
+                        size_t s = uuid.find_first_not_of(" \t");
+                        if (s != std::string::npos) uuid = uuid.substr(s);
+                    }
+                }
+
+                if (!model.empty()) {
+                    GPUInfo gpu;
+                    gpu.index          = ordinal++;
+                    gpu.name           = model;
+                    gpu.uuid           = uuid;
+                    gpu.available      = true;
+                    gpu.driver_version = driver_version;
+                    if (vram > 0.0) gpu.vram_gb = vram;
+                    gpus.push_back(gpu);
+                }
+            }
+            if (!gpus.empty()) return gpus;
+        }
+    }
+
     // Fallback: lspci (for systems where nvidia-smi is unavailable)
     FILE* pipe = popen("lspci 2>/dev/null | grep -iE 'vga|3d|display'", "r");
     if (!pipe) {
