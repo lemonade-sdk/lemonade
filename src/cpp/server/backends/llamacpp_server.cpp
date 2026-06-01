@@ -535,10 +535,6 @@ void LlamaCppServer::load(const std::string& model_name,
         const char* existing_prime = std::getenv("__NV_PRIME_RENDER_OFFLOAD");
         if (!existing_prime || existing_prime[0] == '\0') {
             env_vars.push_back({"__NV_PRIME_RENDER_OFFLOAD", "1"});
-            const char* existing_provider = std::getenv("__NV_PRIME_RENDER_OFFLOAD_PROVIDER");
-            if (!existing_provider || existing_provider[0] == '\0') {
-                env_vars.push_back({"__NV_PRIME_RENDER_OFFLOAD_PROVIDER", "NVIDIA-G0"});
-            }
             LOG(INFO, "LlamaCpp") << "Setting __NV_PRIME_RENDER_OFFLOAD=1 for PRIME Offload compatibility" << std::endl;
         }
 #endif
