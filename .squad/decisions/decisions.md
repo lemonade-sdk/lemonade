@@ -1,5 +1,16 @@
 # Decisions
 
+## 2026-06-01: Mattingly review note — accounts and Omni collection standardization
+
+fl0rianr's UI prototype work introduces two patterns that should be standardized before promotion out of `prototype/ui-redesign/`.
+
+1. **Scoped local users:** `features/accounts/accountStore.ts` namespaces client-owned state by `guest:shared` or `user:<id>`. This is a good POC mechanism for many-clients-one-server, but it is not a production auth boundary; any production account/auth decision should be explicit and should not silently move per-client data into `lemond`.
+2. **Omni collections:** `features/collections/collectionModels.ts` and `features/customModels/customModelStore.ts` treat `collection.omni` as a virtual client-side model composed from existing component model names/roles. If this graduates, the team should decide whether `collection.omni` remains UI-only metadata, becomes a registry concept, or maps to an existing backend/router concept.
+
+Recommendation: keep both patterns client-side for the POC, but schedule an architecture decision before wiring either into `src/app/` or `src/web-app/`.
+
+---
+
 ## 2026-05-31: User directive — model defaults
 **By:** Kyle Poineal (via Copilot)
 **What:** Default all spawned agents to `claude-sonnet-4.6`. Scribe stays on `claude-haiku-4.5`. The coordinator (Squad) is not a spawnable agent and continues to use whatever the session runs on.
