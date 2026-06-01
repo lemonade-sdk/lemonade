@@ -2131,11 +2131,11 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                         std::string name = gpu.value("name", "unknown");
                         std::string family = gpu.value("family", "");
                         std::string cc = gpu.value("compute_capability", "");
-                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: " << name;
-                        if (!cc.empty()) LOG(INFO, "ModelManager") << " (compute " << cc << ", " << (family.empty() ? "unsupported arch" : family) << ")";
-                        else if (!family.empty()) LOG(INFO, "ModelManager") << " (" << family << ")";
-                        else LOG(INFO, "ModelManager") << " (arch unknown — nvidia-smi may have failed)";
-                        LOG(INFO, "ModelManager") << std::endl;
+                        std::string suffix;
+                        if (!cc.empty()) suffix = " (compute " + cc + ", " + (family.empty() ? "unsupported arch" : family) + ")";
+                        else if (!family.empty()) suffix = " (" + family + ")";
+                        else suffix = " (arch unknown -- nvidia-smi may have failed)";
+                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: " << name << suffix << std::endl;
                     } else if (gpu.contains("error")) {
                         LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: " << gpu["error"].get<std::string>() << std::endl;
                     }
