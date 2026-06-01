@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -43,6 +44,76 @@ namespace lemon::backends {
         if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
         return nullptr;
+    }
+
+    static std::string hash_string_from_json(const json& node) {
+        if (node.is_string()) {
+            return node.get<std::string>();
+        }
+        if (!node.is_object()) {
+            return "";
+        }
+        if (node.contains("digest") && node["digest"].is_string()) {
+            return node["digest"].get<std::string>();
+        }
+        if (node.contains("sha256") && node["sha256"].is_string()) {
+            return "sha256:" + node["sha256"].get<std::string>();
+        }
+        if (node.contains("algorithm") && node["algorithm"].is_string() &&
+            node.contains("value") && node["value"].is_string()) {
+            return node["algorithm"].get<std::string>() + ":" + node["value"].get<std::string>();
+        }
+        return "";
+    }
+
+    static std::string lookup_hash_path(const json& root, const std::vector<std::string>& path) {
+        const json* current = &root;
+        for (const auto& part : path) {
+            if (!current->is_object() || !current->contains(part)) {
+                return "";
+            }
+            current = &((*current)[part]);
+        }
+        return hash_string_from_json(*current);
+    }
+
+    static std::string lookup_expected_asset_hash(const std::string& recipe,
+                                                  const std::string& backend,
+                                                  const std::string& version,
+                                                  const std::string& repo,
+                                                  const std::string& filename) {
+        try {
+            const std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            const json config = utils::JsonUtils::load_from_file(config_path);
+
+            const std::vector<std::vector<std::string>> candidate_paths = {
+                {"checksums", "github", repo, version, filename},
+                {"checksums", repo, version, filename},
+                {"checksums", recipe, backend, version, filename},
+                {"checksums", recipe, version, filename},
+                {"checksums", recipe, filename},
+                {"artifact_hashes", "github", repo, version, filename},
+                {"artifact_hashes", repo, version, filename},
+                {"artifact_hashes", recipe, backend, version, filename},
+                {"artifact_hashes", recipe, version, filename},
+                {"artifact_hashes", filename}
+            };
+
+            for (const auto& path : candidate_paths) {
+                // Skip repo-keyed shapes when no repo is available (e.g. TheRock).
+                if (std::find(path.begin(), path.end(), std::string()) != path.end()) {
+                    continue;
+                }
+                std::string hash = lookup_hash_path(config, path);
+                if (!hash.empty()) {
+                    return hash;
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG(DEBUG, "BackendUtils") << "Could not load backend artifact checksums: "
+                                       << e.what() << std::endl;
+        }
+        return "";
     }
 
 #ifdef _WIN32
@@ -364,7 +435,12 @@ namespace lemon::backends {
         return version;
     }
 
-    void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb) {
+    void BackendUtils::install_from_github(const BackendSpec& spec,
+                                           const std::string& expected_version,
+                                           const std::string& repo,
+                                           const std::string& filename,
+                                           const std::string& backend,
+                                           DownloadProgressCallback progress_cb) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -380,7 +456,6 @@ namespace lemon::backends {
 
             if (!needs_install && fs::exists(version_file)) {
                 std::string installed_version;
-
                 std::ifstream vf(version_file);
                 std::getline(vf, installed_version);
                 vf.close();
@@ -505,8 +580,12 @@ namespace lemon::backends {
                     http_progress_cb = utils::create_throttled_progress_callback();
                 }
 
+                utils::DownloadOptions archive_download_opts;
+                archive_download_opts.expected_hash = lookup_expected_asset_hash(
+                    spec.recipe, backend, expected_version, repo, filename);
+
                 auto download_result = utils::HttpClient::download_file(
-                    url, zip_path, http_progress_cb);
+                    url, zip_path, http_progress_cb, {}, archive_download_opts);
 
                 if (!download_result.success) {
                     throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
@@ -557,8 +636,12 @@ namespace lemon::backends {
                         part_http_cb = utils::create_throttled_progress_callback();
                     }
 
+                    utils::DownloadOptions part_download_opts;
+                    part_download_opts.expected_hash = lookup_expected_asset_hash(
+                        spec.recipe, backend, expected_version, repo, part_filename);
+
                     auto part_result = utils::HttpClient::download_file(
-                        part_url, part_path, part_http_cb);
+                        part_url, part_path, part_http_cb, {}, part_download_opts);
 
                     if (!part_result.success) {
                         combined.close();
@@ -812,10 +895,19 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
+        // TheRock asset verification stays metadata-driven. Once upstream publishes
+        // per-asset checksums, backend_versions.json can provide them without
+        // changing download code. Until then this remains an optional lookup.
+        utils::DownloadOptions therock_download_opts;
+        therock_download_opts.expected_hash = lookup_expected_asset_hash(
+            "therock", arch, version, "", filename);
+
         auto download_result = utils::HttpClient::download_file(
             url,
             tarball_path,
-            http_progress_cb
+            http_progress_cb,
+            {},
+            therock_download_opts
         );
 
         if (!download_result.success) {
