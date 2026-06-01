@@ -255,7 +255,7 @@ AI tools can draft documentation faster than most people can type. That speed co
 - [ ] Every parameter name and default verified against the source code or a live server.
 - [ ] All CLI commands, curl commands, and test script invocations run locally and produced the expected output.
 - [ ] All links resolve to real pages.
-- [ ] Prose meets style requirements: direct, confident, no filler phrases, no slop-style patterns (see failure-mode table above).
+- [ ] Prose meets all style requirements in this guide and avoids AI-generated prose patterns.
 - [ ] All executable content (code examples, curl commands, scripts) uses real Lemonade model names and endpoints from the registry, not `<your-model-here>` placeholders.
 - [ ] Every sentence that restates the heading, defines an obvious term, or describes what's visible in the adjacent code has been removed.
 - [ ] For edits to existing docs: compared against the previous version and confirmed that no prerequisites, warnings, links, examples, commands, or product-specific constraints were removed.
