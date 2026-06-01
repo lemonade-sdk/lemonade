@@ -99,7 +99,7 @@ const tests = [
     },
   },
   {
-    name: 'image-size placeholders are materialized from the shared 2:1 image config',
+    name: 'image-size placeholders are materialized from the shared image config',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
       const config = readSource(IMAGE_CONFIG);
