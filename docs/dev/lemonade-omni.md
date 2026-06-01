@@ -2,11 +2,23 @@
 
 **Lemonade Omni Models** provide true all-to-all omni-modality to users and apps. They accomplish this by unifying the capabilities of a collection of an LLM, an image model, an ASR model, and a TTS model — everything a multimodal agent needs to chat, generate images, transcribe audio, and speak responses out loud.
 
-Under the hood, Lemonade Omni Models are powered by **OmniRouter** — Lemonade's pattern for exposing each modality as an OpenAI-compatible tool that an existing LLM agent can call against Lemonade's endpoints.
+Under the hood, Lemonade Omni Models are powered by **OmniRouter** — Lemonade's pattern for exposing each modality as an OpenAI-compatible tool. OmniRouter is the engine; you choose who drives the loop.
 
-You bring the LLM loop. Lemonade brings the local tools.
+## Two ways to use Omni models
 
-## How OmniRouter works
+| | **Client-side OmniRouter** (bring your own loop) | **Server-side orchestration** (`/chat/completions`) |
+|---|---|---|
+| Who runs the tool loop | Your app | Lemonade |
+| You send | Tool calls to `/v1/images/generations`, `/v1/audio/speech`, … | A normal chat to the **collection model name** |
+| You write | The system prompt + agentic loop | Nothing — the server injects the reference prompt and tools |
+| Media comes back as | Raw endpoint responses you render yourself | Embedded in the assistant message (markdown image / `<audio>` data-URIs) |
+| Best for | Apps that already have an agent and want full control | Any OpenAI-compatible frontend (e.g. **Open WebUI**) |
+
+**Which should I pick?** If you already run an agent loop, use the client-side path for maximum control. If you want it to "just work" in an existing chat UI, point that UI at Lemonade and chat with the collection model — the server does the rest.
+
+The two paths are distinguished by the model name you address: target a **collection** name for server-side orchestration, or a **component LLM** name to drive your own loop.
+
+## How client-side OmniRouter works
 
 1. Describe the tools to your LLM in OpenAI tool-calling format.
 2. The LLM decides which tool to call and with what arguments.
@@ -15,6 +27,21 @@ You bring the LLM loop. Lemonade brings the local tools.
 5. The LLM continues until it either calls another tool or returns a final response.
 
 The tool schemas OmniRouter provides are plain JSON. They do not require a Lemonade-specific client library, and the endpoints they target use OpenAI-compatible request and response shapes.
+
+## Server-side orchestration
+
+Send a normal `POST /v1/chat/completions` whose `model` is the **collection name** (e.g. `LMX-Omni-5.5B-Lite`). Lemonade injects the reference system prompt and tools, runs an internal tool-calling loop against the chat component, executes the omni tools (image gen/edit, text-to-speech) by routing to the matching component, and returns one OpenAI-compatible response. Generated media is embedded directly in the assistant message:
+
+- **images** → markdown `![generated image](data:image/png;base64,…)`
+- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
+
+Both streaming (`stream: true`, SSE `chat.completion.chunk` frames — media arrives as a content delta the moment its tool finishes) and non-streaming are supported.
+
+**System-prompt merging.** If your request includes a system message, it is preserved — the omni tool instructions are *prepended* to it. A generic persona ("you are a helpful legal assistant") composes cleanly. Don't hand-author omni tool descriptions when targeting the collection name; the server already does.
+
+**Tool merging (middleware).** Any `tools` you send are merged with the omni tools. The server resolves omni tool calls itself and returns any of *your* tool calls to you as a normal `finish_reason: "tool_calls"` response to execute and resume — so a frontend's own tools (Open WebUI's native function-calling, custom business tools) keep working alongside omni media. In a turn that mixes both, omni media is folded into the assistant `content` while your calls are returned in the same message's `tool_calls`.
+
+**Scope.** Server-side orchestration covers `generate_image`, `edit_image`, and `text_to_speech`. The `transcribe_audio` and `analyze_image` tools remain client-side (path 1) tools — most chat frontends transcribe audio themselves before sending and pass images straight through to the model.
 
 ## The omni models
 
@@ -25,7 +52,7 @@ An **omni model** is a virtual model made up of components, registered with `rec
 | **LMX-Omni-52B-Halo** | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
 | **LMX-Omni-5.5B-Lite** | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
 
-Omni models are hidden from the default `/v1/models` listing so OpenAI-compatible clients don't see "LMX-Omni-52B-Halo" as if it were an LLM. They surface with `?show_all=true` and appear in the Lemonade desktop app's Model Manager under the **Lemonade** category.
+Once all of an omni model's components are downloaded, it appears in the default `/v1/models` listing (and Ollama `/api/tags`) — because the server orchestrates `/chat/completions` for it, it behaves as a genuine OpenAI-compatible chat model. Not-yet-downloaded omni models surface with `?show_all=true`, and all of them appear in the Lemonade desktop app's Model Manager under the **Lemonade** category.
 
 ### Naming scheme
 
@@ -74,7 +101,7 @@ python examples/lemonade_tools.py "Say hello world out loud"
 
 [`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py) shows the full agentic loop — tool definitions, LLM call with `tools=[...]`, executing each `tool_call`, and feeding the result back. Fewer than 150 lines of Python.
 
-## Using your own agent
+## Using your own agent (client-side)
 
 Integrate OmniRouter into an existing agent by following the pattern in [`examples/lemonade_tools.py`](https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py):
 

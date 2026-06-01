@@ -96,6 +96,27 @@ curl -X POST http://localhost:13305/v1/chat/completions \
       }'
 ```
 
+### Omni / collection models (server-side tools)
+
+When `model` names an Omni **collection** model (`recipe: "collection.omni"`), this endpoint runs an internal tool-calling loop instead of a plain completion. The server injects the reference system prompt and tools, routes to the collection's chat component, executes the omni tools (image generation/editing, text-to-speech) against the matching components, and returns one OpenAI-compatible response. Generated media is embedded in the assistant `content`:
+
+- **images** → markdown `![generated image](data:image/png;base64,…)`
+- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
+
+Both `stream: true` (SSE `chat.completion.chunk` frames — media arrives as a content delta the moment its tool finishes) and non-streaming are supported.
+
+**Middleware semantics.** An app-provided system prompt is merged (the omni instructions are prepended to your persona, not overwritten). App-provided `tools` are merged with the omni tools: the server resolves omni tool calls itself and returns any of *your* tool calls to you as a normal `finish_reason: "tool_calls"` response to execute and resume. Rule of thumb — target the **collection name** to let the server drive the loop; target a **component LLM name** to drive your own loop. See [Lemonade Omni Models](../dev/lemonade-omni.md) for the full model.
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "LMX-Omni-5.5B-Lite",
+        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+        "stream": false
+      }'
+```
+
 ### Response format
 
 === "Non-streaming responses"

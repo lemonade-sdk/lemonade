@@ -74,6 +74,27 @@ title="YouTube video player" frameborder="0" allowfullscreen></iframe>
         </div>
     3. Click the "Save" button in the bottom right of the page, then return to <http://localhost:8080>.
 
+## Recommended: use a Lemonade Mix (LMX) model
+
+The simplest way to get **image generation, image editing, and text-to-speech** in Open WebUI is a **Lemonade Mix (LMX / Omni)** model. An LMX model bundles a chat LLM with image and speech models and orchestrates them *on the server*, so it behaves like a single multimodal chat model — no separate Image-engine configuration and no tool-calling mode to toggle. When you ask for a picture, the image comes back inline; when you ask it to speak, an audio player appears.
+
+1. Install an LMX model. Either open the Lemonade Model Manager at <http://localhost:13305>, find a model with the **OMNI** label (for example **LMX-Omni-5.5B-Lite**), and click "+", or pull it from the command line:
+
+    ```bash
+    lemonade pull LMX-Omni-5.5B-Lite
+    ```
+
+2. In Open WebUI, open the model dropdown in the top-left and select your LMX model (it appears automatically once all of its components are downloaded, using the connection you configured above).
+
+3. Just chat:
+    - "Draw a red apple on a table." → the generated image renders inline.
+    - "Say *hello world* out loud." → an audio player appears that you can play.
+    - "Now make the apple green." → the image is edited (on LMX models whose image component supports editing).
+
+> No per-model Image-Generation toggle or Native function-calling change is required — the LMX model does the orchestration for you. If you also enable Open WebUI's own tools, they keep working: the server runs the omni tools and passes your tools back to Open WebUI to execute.
+
+For the full design (the two ways to use these models, and the underlying OmniRouter), see [Lemonade Omni Models](../dev/lemonade-omni.md). For plain (non-LMX) LLMs, the manual Stable Diffusion setup in [Image Generation](#image-generation) below is the alternative.
+
 ## Using Open WebUI with Lemonade
 
 Now that everything is configured, you are ready to interact with an LLM!
