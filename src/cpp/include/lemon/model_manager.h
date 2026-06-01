@@ -128,44 +128,22 @@ public:
                             const json& model_data,
                             const std::string& source = "");
 
-    // Lazily register a cloud-recipe ModelInfo from a client-supplied
-    // request. Cloud models are discovered + persisted client-side now
-    // (see CloudServer header), so the server's cache normally has no
-    // entry for them — but Router::load_model still needs a ModelInfo to
-    // construct CloudServer. The chat handlers call this when they see
-    // X-Lemonade-Cloud-* headers on a request whose model name uses the
-    // "<provider>/<upstream_id>" convention.
+    // Register the cloud models a client discovered for one provider into the
+    // in-memory cache. Cloud creds stay client-side (Invariant #11), but the
+    // model list does NOT — Router::load_model needs a ModelInfo to construct
+    // CloudServer, and /models + /health read their static metadata (context
+    // window, per-token cost, capability labels) from here. The chat/load
+    // handlers therefore no longer carry any of that metadata per request;
+    // they only forward the per-request credentials. This is called from
+    // POST /internal/cloud/discover with the ModelInfos returned by
+    // CloudServer::discover_models (which already carry name, checkpoint,
+    // labels, context window and cost).
     //
-    // upstream_id_hint: the raw provider-side id (from
-    // X-Lemonade-Cloud-Upstream-Model header). Required when the model
-    // name's post-slash half doesn't match what the provider expects
-    // (Fireworks public id "fireworks/kimi-k2p5" → upstream
-    // "accounts/fireworks/models/kimi-k2p5"). Falls back to the slash-
-    // parsed half if empty.
-    //
-    // capability_labels carries the discovery-time capability tags (e.g.
-    // "vision", "tool-calling", "reasoning") that the client learned from the
-    // provider's /v1/models response and forwards via the X-Lemonade-Cloud-
-    // Labels header. Lazy registration has no access to provider metadata, so
-    // without this the entry would only carry "cloud" and the model's real
-    // capabilities (e.g. image input) would be lost once it appears in
-    // /models. "cloud" is always included; duplicates are dropped.
-    //
-    // max_context_window and cost_*_per_million are the discovery-time static
-    // metadata the client forwards via X-Lemonade-Cloud-Context-Length /
-    // -Cost-Input / -Cost-Output, for the same reason as the labels: lazy
-    // registration has no provider metadata, so /models and /health would
-    // otherwise report nothing for cloud models. 0 / <0 mean "unknown".
-    //
-    // Idempotent: re-registering an existing entry updates the upstream id,
-    // merges in newly-supplied capability labels, and fills in any
-    // metadata fields that weren't known before.
-    void register_cloud_model(const std::string& model_name,
-                              const std::string& upstream_id_hint = "",
-                              const std::vector<std::string>& capability_labels = {},
-                              int64_t max_context_window = 0,
-                              double cost_input_per_million = -1.0,
-                              double cost_output_per_million = -1.0);
+    // Reseed semantics: replaces this provider's previously-registered cloud
+    // entries (so a model the provider stopped exposing disappears); other
+    // providers' entries are left intact. Credentials are never stored here.
+    void register_discovered_cloud_models(const std::string& provider,
+                                          const std::vector<ModelInfo>& models);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,

@@ -38,11 +38,11 @@ const loadProvidersFromSettings = async (): Promise<Record<string, CloudProvider
 // performs with the supplied creds (never persisted server-side). The
 // response shape is {object: "list", data: [{id, ...}, ...]}.
 //
-// Side effect: populates serverConfig's model-name -> upstream-id cache
-// so subsequent chat requests can attach X-Lemonade-Cloud-Upstream-Model.
-// Without this, a freshly-added provider's first chat request would hit
-// the slash-parse fallback (wrong upstream id for providers that clean
-// their public ids).
+// Side effects: (1) lemond registers the discovered models server-side
+// (names + upstream id + labels + context + cost, never the creds) so
+// load/chat work; (2) we record the model names in serverConfig so a chat
+// request for a provider whose creds were removed fails loud instead of
+// 404ing opaquely.
 const discoverModelCount = async (
   name: string,
   cfg: CloudProviderConfig,
@@ -58,13 +58,10 @@ const discoverModelCount = async (
     if (!response.ok) return null;
     const body = await response.json();
     const list = Array.isArray(body?.data) ? body.data : [];
-    const checkpointEntries: Array<{ id: string; checkpoint: string }> = [];
-    for (const entry of list) {
-      if (typeof entry?.id === 'string' && typeof entry?.checkpoint === 'string' && entry.checkpoint.length > 0) {
-        checkpointEntries.push({ id: entry.id, checkpoint: entry.checkpoint });
-      }
-    }
-    serverConfig.setCloudModelCheckpoints(name, checkpointEntries);
+    const ids = list
+      .map((entry: any) => entry?.id)
+      .filter((id: unknown): id is string => typeof id === 'string');
+    serverConfig.setKnownCloudModels(name, ids);
     return list.length;
   } catch {
     return null;

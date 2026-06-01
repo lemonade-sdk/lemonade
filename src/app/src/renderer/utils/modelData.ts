@@ -157,6 +157,15 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         return acc;
       }
 
+      // Cloud models come exclusively from client discovery
+      // (fetchCloudModelsFromProviders): this client only knows the providers
+      // it has configured, whereas /models may also list cloud models another
+      // client registered — which this client can't use (no creds) and
+      // shouldn't display. Skipping them here keeps the two sources disjoint.
+      if (model.recipe === 'cloud') {
+        return acc;
+      }
+
       const modelInfo: ModelInfo = {
         checkpoint: model.checkpoint,
         recipe: model.recipe,
@@ -289,14 +298,12 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
         const body = await response.json();
         const list = Array.isArray(body?.data) ? body.data : [];
         const out: ModelsData = {};
-        // Feed the model_name->upstream_id mapping back into serverConfig so
-        // future cloud chat requests can attach X-Lemonade-Cloud-Upstream-Model.
-        // Providers like Fireworks expose cleaned public ids that don't
-        // round-trip server-side; without this the upstream API call uses
-        // the wrong model id and 404s.
-        const checkpointEntries: Array<{ id: string; checkpoint: string }> = [];
-        const labelEntries: Array<{ id: string; labels: string[] }> = [];
-        const metaEntries: Array<{ id: string; contextLength?: number; costInput?: number; costOutput?: number }> = [];
+        // The server registered these models (and their upstream id / labels /
+        // context / cost) during this same discovery call, so chat/load only
+        // needs to forward credentials — we just record the model names so
+        // serverConfig.fetch can tell a cloud model with missing creds apart
+        // from a local one.
+        const ids: string[] = [];
         for (const entry of list) {
           if (!entry?.id || typeof entry.id !== 'string') continue;
           const info: ModelInfo = {
@@ -318,26 +325,13 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
             info.labels = entry.labels.filter((l: unknown): l is string => typeof l === 'string');
           }
           // Static metadata the provider reported (context window + per-1M cost).
-          const ctx = typeof entry.max_context_window === 'number' ? entry.max_context_window : undefined;
-          const costIn = typeof entry.cost_input_per_million === 'number' ? entry.cost_input_per_million : undefined;
-          const costOut = typeof entry.cost_output_per_million === 'number' ? entry.cost_output_per_million : undefined;
-          if (ctx !== undefined) info.max_context_window = ctx;
-          if (costIn !== undefined) info.cost_input_per_million = costIn;
-          if (costOut !== undefined) info.cost_output_per_million = costOut;
+          if (typeof entry.max_context_window === 'number') info.max_context_window = entry.max_context_window;
+          if (typeof entry.cost_input_per_million === 'number') info.cost_input_per_million = entry.cost_input_per_million;
+          if (typeof entry.cost_output_per_million === 'number') info.cost_output_per_million = entry.cost_output_per_million;
           out[entry.id] = info;
-          if (typeof entry.checkpoint === 'string' && entry.checkpoint.length > 0) {
-            checkpointEntries.push({ id: entry.id, checkpoint: entry.checkpoint });
-          }
-          if (info.labels && info.labels.length > 0) {
-            labelEntries.push({ id: entry.id, labels: info.labels });
-          }
-          if (ctx !== undefined || costIn !== undefined || costOut !== undefined) {
-            metaEntries.push({ id: entry.id, contextLength: ctx, costInput: costIn, costOutput: costOut });
-          }
+          ids.push(entry.id);
         }
-        serverConfig.setCloudModelCheckpoints(name, checkpointEntries);
-        serverConfig.setCloudModelLabels(name, labelEntries);
-        serverConfig.setCloudModelMeta(name, metaEntries);
+        serverConfig.setKnownCloudModels(name, ids);
         return out;
       } catch (err) {
         console.warn(`Cloud discovery failed for provider '${name}':`, err);
@@ -350,37 +344,16 @@ const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
 };
 
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  // Server is the source of truth for built-in + user models.
-  // Cloud models live client-side now (each client manages its own
-  // credentials per AGENTS.md Invariant #11), so we discover them via
-  // /internal/cloud/discover and merge into the same map.
-  //
-  // Collisions: once a cloud model is loaded it gets lazily registered
-  // server-side and also appears in /models, but that bare entry carries
-  // degraded metadata (suggested=false, fewer/no capability labels) compared
-  // to what discovery computed. For a cloud-recipe id, DISCOVERY WINS so the
-  // catalog keeps the model's real suggested flag, vision/tool labels, etc.
-  // (otherwise loaded models drop out of the suggested catalog and the
-  // image-upload button vanishes). For any non-cloud collision the built-in
-  // entry still wins, but we preserve discovery's capability labels.
+  // Built-in + user models come from the server's /models (its source of
+  // truth). Cloud models come from client discovery only — this client
+  // discovers exactly the providers it has configured, so it never shows
+  // another client's cloud models (which it couldn't use without their
+  // credentials, per AGENTS.md Invariant #11). fetchBuiltInModelsFromAPI
+  // drops cloud-recipe entries for the same reason, so the two sets are
+  // disjoint and a plain spread is enough.
   const [builtIns, cloud] = await Promise.all([
     fetchBuiltInModelsFromAPI(),
     fetchCloudModelsFromProviders(),
   ]);
-  const merged: ModelsData = { ...builtIns };
-  for (const [id, cloudInfo] of Object.entries(cloud)) {
-    const existing = merged[id];
-    if (existing && existing.recipe !== 'cloud') {
-      // Genuine clash with a local/built-in model of the same id (shouldn't
-      // happen with provider-namespaced cloud ids, but be safe): keep the
-      // built-in, just union in discovery's capability labels.
-      const labels = Array.from(new Set([...(existing.labels ?? []), ...(cloudInfo.labels ?? [])]));
-      merged[id] = { ...existing, labels };
-    } else {
-      // No collision, or the existing entry is the bare lazily-registered
-      // cloud copy — discovery wins.
-      merged[id] = cloudInfo;
-    }
-  }
-  return merged;
+  return { ...builtIns, ...cloud };
 };

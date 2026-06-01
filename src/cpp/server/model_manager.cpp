@@ -2204,101 +2204,40 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     return filtered;
 }
 
-void ModelManager::register_cloud_model(const std::string& model_name,
-                                        const std::string& upstream_id_hint,
-                                        const std::vector<std::string>& capability_labels,
-                                        int64_t max_context_window,
-                                        double cost_input_per_million,
-                                        double cost_output_per_million) {
-    // "cloud" plus the client-supplied capability labels (vision / tool-calling
-    // / reasoning), de-duplicated and order-preserved.
-    auto build_labels = [&capability_labels]() {
-        std::vector<std::string> out = {"cloud"};
-        for (const auto& l : capability_labels) {
-            if (!l.empty() &&
-                std::find(out.begin(), out.end(), l) == out.end()) {
-                out.push_back(l);
-            }
-        }
-        return out;
-    };
-    // Convention: "<provider>.<upstream_id>". Provider names contain no dots
-    // (validated client-side as [a-z0-9_-]+), so the first "." is always the
-    // namespace separator. Anything without a dot, or with an empty
-    // provider/upstream half, is rejected — the chat handler will surface a
-    // model_not_found error to the client.
-    const auto dot = model_name.find('.');
-    if (dot == std::string::npos || dot == 0 || dot + 1 >= model_name.size()) {
+void ModelManager::register_discovered_cloud_models(const std::string& provider,
+                                                    const std::vector<ModelInfo>& models) {
+    if (provider.empty()) {
         return;
     }
-    const std::string provider = model_name.substr(0, dot);
-    // Prefer the client-supplied raw upstream id; some providers (Fireworks,
-    // OpenRouter) clean their public ids in a way that's not reversible
-    // server-side. Fall back to the dot-parsed half for providers whose
-    // public id IS the upstream id (e.g. OpenAI).
-    const std::string upstream_id = upstream_id_hint.empty()
-        ? model_name.substr(dot + 1)
-        : upstream_id_hint;
 
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto existing = models_cache_.find(model_name);
-    if (existing != models_cache_.end()) {
-        // Idempotent in the common case, but update the upstream id if the
-        // current registration was a slash-parse fallback and the client is
-        // now telling us the real upstream. Otherwise leave it.
-        if (!upstream_id_hint.empty() &&
-            existing->second.checkpoints["main"] != upstream_id_hint) {
-            existing->second.checkpoints["main"] = upstream_id_hint;
-            LOG(DEBUG, "ModelManager") << "Updated upstream id for cloud model: "
-                                        << model_name << " -> " << upstream_id_hint << std::endl;
+
+    // Reseed semantics: drop this provider's previously-registered cloud
+    // entries before inserting the fresh list, so a model the provider no
+    // longer exposes disappears from the cache (mirrors the client's
+    // per-provider reseed). Other providers' entries are untouched.
+    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+            it = models_cache_.erase(it);
+        } else {
+            ++it;
         }
-        // Merge in any newly-supplied capability labels (e.g. a bare entry
-        // registered by an older request, now upgraded once the client sends
-        // X-Lemonade-Cloud-Labels). Never drop labels already present.
-        for (const auto& l : capability_labels) {
-            if (!l.empty() &&
-                std::find(existing->second.labels.begin(),
-                          existing->second.labels.end(), l) ==
-                    existing->second.labels.end()) {
-                existing->second.labels.push_back(l);
-            }
-        }
-        // Fill in metadata that wasn't known at first registration.
-        if (max_context_window > 0 && existing->second.max_context_window <= 0) {
-            existing->second.max_context_window = max_context_window;
-        }
-        if (cost_input_per_million >= 0 && existing->second.cost_input_per_million < 0) {
-            existing->second.cost_input_per_million = cost_input_per_million;
-        }
-        if (cost_output_per_million >= 0 && existing->second.cost_output_per_million < 0) {
-            existing->second.cost_output_per_million = cost_output_per_million;
-        }
-        return;
     }
 
-    ModelInfo info;
-    info.model_name = model_name;
-    info.recipe = "cloud";
-    info.cloud_provider = provider;
-    info.checkpoints["main"] = upstream_id;
-    info.downloaded = true; // No local artifact — execution is remote.
-    // Suggested for the same reason discovery marks these models suggested:
-    // the user explicitly configured this provider. Keeping it false made a
-    // loaded cloud model drop out of the Model Manager's suggested catalog
-    // once it appeared in /models.
-    info.suggested = true;
-    info.type = ModelType::LLM;
-    info.device = DEVICE_NONE;
-    info.source = "cloud";
-    info.labels = build_labels();
-    info.max_context_window = max_context_window > 0 ? max_context_window : 0;
-    info.cost_input_per_million = cost_input_per_million;
-    info.cost_output_per_million = cost_output_per_million;
-    info.recipe_options = RecipeOptions(info.recipe, json::object());
-    models_cache_[model_name] = info;
-    LOG(DEBUG, "ModelManager") << "Lazy-registered cloud model: " << model_name
-                                << " (provider=" << provider
-                                << ", upstream=" << upstream_id << ")" << std::endl;
+    for (const auto& m : models) {
+        if (m.recipe != "cloud" || m.model_name.empty()) {
+            continue;
+        }
+        ModelInfo info = m;
+        // discover_models() populates name/checkpoint/labels/context/cost but
+        // not recipe_options; Router needs it to construct CloudServer.
+        info.recipe_options = RecipeOptions("cloud", json::object());
+        models_cache_[info.model_name] = std::move(info);
+    }
+
+    LOG(DEBUG, "ModelManager") << "Registered " << models.size()
+                                << " discovered cloud model(s) for provider '"
+                                << provider << "'" << std::endl;
 }
 
 void ModelManager::register_user_model(const std::string& model_name,

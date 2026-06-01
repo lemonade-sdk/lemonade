@@ -508,9 +508,9 @@ json Router::get_all_loaded_models() const {
         model_info["recipe_options"] = recipe_options.to_json();
 
         // Static metadata from the registry entry. Cloud models carry the
-        // provider-reported context window + per-million-token cost (filled in
-        // by register_cloud_model from the X-Lemonade-Cloud-* headers); local
-        // models surface their runtime context via recipe_options instead.
+        // provider-reported context window + per-million-token cost (recorded
+        // at discovery by register_discovered_cloud_models); local models
+        // surface their runtime context via recipe_options instead.
         try {
             const ModelInfo reg_info = model_manager_->get_model_info(server->get_model_name());
             if (reg_info.max_context_window > 0) {

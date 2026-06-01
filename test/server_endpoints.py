@@ -626,74 +626,136 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
-    def test_012d_cloud_load_requires_creds_headers(self):
-        """Regression: a cloud-recipe model is only loadable when the client
-        sends the per-request cloud credential headers.
+    def test_012d_cloud_discovery_registers_then_load(self):
+        """Regression: a cloud-recipe model becomes loadable only after the
+        client runs discovery, which registers it server-side.
 
-        Cloud models are discovered client-side, so the server has no record
-        of them until a request carrying X-Lemonade-Cloud-* headers lazy-
-        registers one. Without the headers /load must return a clean 404
-        (never a silent failure); with them, /load succeeds (cloud "load" is
-        local bookkeeping — no upstream network call, so a dummy base URL is
-        fine). Guards the bug where the client dropped the headers and users
-        saw an opaque "Model not found".
+        Cloud creds stay client-side, but the model list does not: discovery
+        (POST /internal/cloud/discover) registers the discovered models so
+        Router can construct a CloudServer. Per request the client then only
+        forwards the credentials (no upstream id / labels / context / cost) —
+        the server already learned them at discovery.
+
+        This test stands up a tiny in-process OpenAI-compatible /v1/models
+        endpoint, runs discovery against it, then loads the registered model.
+        /load makes no upstream call (load is local bookkeeping), so dummy
+        creds are fine. Guards: (a) an undiscovered cloud name 404s cleanly;
+        (b) discovery registers; (c) the registered model loads.
         """
-        # Unique, never-registered names so this test is independent of any
-        # real provider configuration and of test ordering.
-        unconfigured = "testcloud.regression-unconfigured"
-        configured = "testcloud.regression-configured"
+        import json as _json
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
 
-        # 1) Without creds headers -> 404 Model not found.
+        # 1) An undiscovered cloud-looking name is not loadable -> clean 404.
         resp = requests.post(
             f"{self.base_url}/load",
-            json={"model_name": unconfigured},
+            json={"model_name": "testcloud.never-discovered"},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
             resp.status_code,
             404,
-            "Loading a cloud model without X-Lemonade-Cloud-* headers must 404",
+            "Loading a cloud model that was never discovered must 404",
         )
 
-        # 2) With creds headers -> 200 (base URL is never contacted at load
-        # time, so a dummy endpoint is fine).
-        resp = requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": configured},
-            headers={
-                "X-Lemonade-Cloud-Key": "dummy-key",
-                "X-Lemonade-Cloud-Base-Url": "http://127.0.0.1:1/v1",
-                "X-Lemonade-Cloud-Upstream-Model": "vendor/regression-configured",
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(
-            resp.status_code,
-            200,
-            f"Cloud /load WITH creds headers should succeed; got "
-            f"{resp.status_code}: {resp.text}",
-        )
+        # 2) Stand up a fake provider that answers GET /v1/models with one
+        # chat model, so discovery has something to register.
+        # build_public_name leaves a flat "vendor/model" id untouched and joins
+        # it to the provider with a dot, so the public name is predictable.
+        upstream_id = "vendor/regression-model"
+        public_name = f"testcloud.{upstream_id}"
 
-        # It should now be registered + loaded under its public name.
-        health = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        ).json()
-        loaded_names = [
-            m["model_name"] for m in health.get("all_models_loaded", [])
-        ]
-        self.assertIn(
-            configured,
-            loaded_names,
-            "Cloud model should be loaded after a /load with creds headers",
-        )
+        class _FakeProvider(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if self.path.rstrip("/").endswith("/models"):
+                    payload = _json.dumps(
+                        {
+                            "object": "list",
+                            "data": [{"id": upstream_id, "object": "model"}],
+                        }
+                    ).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
 
-        # Cleanup so the fake model doesn't leak into later tests.
-        requests.post(
-            f"{self.base_url}/unload",
-            json={"model_name": configured},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        print("[OK] Cloud /load enforces creds headers (404 without, 200 with)")
+            def log_message(self, *_args):  # silence per-request logging
+                pass
+
+        httpd = HTTPServer(("127.0.0.1", 0), _FakeProvider)
+        fake_port = httpd.server_address[1]
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
+
+        try:
+            base_url = f"http://127.0.0.1:{fake_port}/v1"
+
+            # 3) Discovery registers the provider's chat models server-side.
+            # /internal/* is not quad-prefixed, so call it at the root rather
+            # than under self.base_url (which includes /api/v1).
+            discover_url = f"http://localhost:{PORT}/internal/cloud/discover"
+            resp = requests.post(
+                discover_url,
+                json={
+                    "provider": "testcloud",
+                    "base_url": base_url,
+                    "api_key": "dummy-key",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"discover failed: {resp.text}"
+            )
+            discovered = [m["id"] for m in resp.json().get("data", [])]
+            self.assertIn(
+                public_name,
+                discovered,
+                f"discover should return {public_name}; got {discovered}",
+            )
+
+            # 4) The discovered model now loads (no upstream call at load time).
+            resp = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": public_name},
+                headers={
+                    "X-Lemonade-Cloud-Key": "dummy-key",
+                    "X-Lemonade-Cloud-Base-Url": base_url,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                resp.status_code,
+                200,
+                f"Cloud /load after discovery should succeed; got "
+                f"{resp.status_code}: {resp.text}",
+            )
+
+            health = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            ).json()
+            loaded_names = [
+                m["model_name"] for m in health.get("all_models_loaded", [])
+            ]
+            self.assertIn(
+                public_name,
+                loaded_names,
+                "Discovered cloud model should be loaded after /load",
+            )
+
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+        print("[OK] Cloud discovery registers models; load works only after")
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""

@@ -23,22 +23,15 @@ class ServerConfig {
   private port: number = 13305;
   private explicitBaseUrl: string | null = null;
   private apiKey: string | null = null;
-  // model_name (e.g., "fireworks.kimi-k2p5") -> upstream id
-  // (e.g., "accounts/fireworks/models/kimi-k2p5"). Populated from cloud
-  // discovery responses so fetch() can attach X-Lemonade-Cloud-Upstream-Model
-  // and the server forwards the right id upstream.
-  private cloudModelCheckpoints: Map<string, string> = new Map();
-  // model_name -> capability labels (e.g. ["cloud","vision","tool-calling"])
-  // learned at discovery. Sent via X-Lemonade-Cloud-Labels on load/chat so the
-  // server's lazily-registered entry keeps the model's real capabilities
-  // instead of collapsing to just "cloud" (which would erase image/tool
-  // support once the model shows up in /models).
-  private cloudModelLabels: Map<string, string[]> = new Map();
-  // model_name -> provider-reported static metadata (context window + per-1M
-  // token cost) learned at discovery. Sent via X-Lemonade-Cloud-Context-Length
-  // / -Cost-Input / -Cost-Output on load/chat so the server's registered entry
-  // (and thus /models + /health) reports it.
-  private cloudModelMeta: Map<string, { contextLength?: number; costInput?: number; costOutput?: number }> = new Map();
+  // Names of models the client discovered as cloud models (e.g.
+  // "fireworks.kimi-k2p5"), reseeded per provider at discovery. Used only to
+  // tell "cloud model whose provider creds aren't configured" apart from a
+  // plain local model, so fetch() can fail loud instead of firing a
+  // credential-less request the server rejects with an opaque 404. The
+  // server learns the upstream id / labels / context / cost at discovery
+  // (POST /internal/cloud/discover), so none of that is sent per request —
+  // fetch() only attaches the credentials.
+  private knownCloudModels: Set<string> = new Set();
   private portListeners: Set<PortChangeListener> = new Set();
   private urlListeners: Set<UrlChangeListener> = new Set();
   private isDiscovering: boolean = false;
@@ -179,64 +172,20 @@ class ServerConfig {
     return entry ? { provider: prefix, entry } : null;
   }
 
-  // Called by modelData.ts after each cloud discovery so fetch() can
-  // attach the right upstream id per request. Replaces (does not merge)
-  // the entries for the named provider — if discovery returned a smaller
-  // list this time, stale entries are dropped.
-  setCloudModelCheckpoints(provider: string, entries: Array<{ id: string; checkpoint: string }>): void {
-    // Drop any previous entries for this provider before reseeding.
+  // Called by the discovery paths after each cloud discovery. Reseeds the set
+  // of known cloud model names for one provider (replaces this provider's
+  // prior entries, so a model the provider stopped exposing is forgotten).
+  // Used only by fetch() to distinguish a cloud model with missing creds from
+  // a local model — the server learns everything else at discovery.
+  setKnownCloudModels(provider: string, ids: string[]): void {
     const prefix = `${provider}.`;
-    for (const key of Array.from(this.cloudModelCheckpoints.keys())) {
-      if (key.startsWith(prefix)) {
-        this.cloudModelCheckpoints.delete(key);
+    for (const name of Array.from(this.knownCloudModels)) {
+      if (name.startsWith(prefix)) {
+        this.knownCloudModels.delete(name);
       }
     }
-    for (const entry of entries) {
-      if (entry?.id && entry?.checkpoint) {
-        this.cloudModelCheckpoints.set(entry.id, entry.checkpoint);
-      }
-    }
-  }
-
-  // Reseed the model_name -> capability-labels map for a provider (replaces
-  // this provider's prior entries). Mirrors setCloudModelCheckpoints; called
-  // by modelData.ts after each discovery so load/chat can forward
-  // X-Lemonade-Cloud-Labels.
-  setCloudModelLabels(provider: string, entries: Array<{ id: string; labels: string[] }>): void {
-    const prefix = `${provider}.`;
-    for (const key of Array.from(this.cloudModelLabels.keys())) {
-      if (key.startsWith(prefix)) {
-        this.cloudModelLabels.delete(key);
-      }
-    }
-    for (const entry of entries) {
-      if (entry?.id && Array.isArray(entry.labels) && entry.labels.length > 0) {
-        this.cloudModelLabels.set(entry.id, entry.labels);
-      }
-    }
-  }
-
-  // Reseed model_name -> static metadata (context window + per-1M cost) for a
-  // provider. Mirrors setCloudModelLabels; forwarded on load/chat so /models
-  // and /health report it.
-  setCloudModelMeta(
-    provider: string,
-    entries: Array<{ id: string; contextLength?: number; costInput?: number; costOutput?: number }>,
-  ): void {
-    const prefix = `${provider}.`;
-    for (const key of Array.from(this.cloudModelMeta.keys())) {
-      if (key.startsWith(prefix)) {
-        this.cloudModelMeta.delete(key);
-      }
-    }
-    for (const entry of entries) {
-      if (entry?.id) {
-        this.cloudModelMeta.set(entry.id, {
-          contextLength: entry.contextLength,
-          costInput: entry.costInput,
-          costOutput: entry.costOutput,
-        });
-      }
+    for (const id of ids) {
+      if (id) this.knownCloudModels.add(id);
     }
   }
 
@@ -478,49 +427,23 @@ class ServerConfig {
       }
 
       // Only dotted names can be cloud models ("<provider>.<id>"); skip the
-      // settings read entirely for plain local names.
+      // settings read entirely for plain local names. The server already knows
+      // the model's upstream id / labels / context / cost from discovery, so
+      // we attach only the credentials here.
       if (typeof modelField === 'string' && modelField.indexOf('.') > 0) {
         const resolved = await this.resolveCloudProvider(modelField);
         if (resolved) {
-          const cloudHeaders: Record<string, string> = {
+          options.headers = {
+            ...options.headers,
             'X-Lemonade-Cloud-Key': resolved.entry.apiKey,
             'X-Lemonade-Cloud-Base-Url': resolved.entry.baseUrl,
           };
-          // Some providers (Fireworks, OpenRouter) clean their public model
-          // ids in a way that doesn't round-trip server-side. Pass the raw
-          // upstream id from the discovery response so the server forwards
-          // exactly what the provider's API expects.
-          const upstream = this.cloudModelCheckpoints.get(modelField);
-          if (upstream) {
-            cloudHeaders['X-Lemonade-Cloud-Upstream-Model'] = upstream;
-          }
-          // Forward the discovery-time capability labels so the server's
-          // lazily-registered entry keeps vision/tool-calling/etc. (see #2).
-          const labels = this.cloudModelLabels.get(modelField);
-          if (labels && labels.length > 0) {
-            cloudHeaders['X-Lemonade-Cloud-Labels'] = labels.join(',');
-          }
-          // Forward provider-reported static metadata so the server's
-          // registered entry (and /models + /health) carries it.
-          const meta = this.cloudModelMeta.get(modelField);
-          if (meta) {
-            if (typeof meta.contextLength === 'number' && meta.contextLength > 0) {
-              cloudHeaders['X-Lemonade-Cloud-Context-Length'] = String(meta.contextLength);
-            }
-            if (typeof meta.costInput === 'number' && meta.costInput >= 0) {
-              cloudHeaders['X-Lemonade-Cloud-Cost-Input'] = String(meta.costInput);
-            }
-            if (typeof meta.costOutput === 'number' && meta.costOutput >= 0) {
-              cloudHeaders['X-Lemonade-Cloud-Cost-Output'] = String(meta.costOutput);
-            }
-          }
-          options.headers = { ...options.headers, ...cloudHeaders };
-        } else if (this.cloudModelCheckpoints.has(modelField)) {
-          // The model was discovered as a cloud model (it's in the checkpoint
-          // map) but no provider creds resolve for it now — the provider is
-          // not configured (or was removed) on this client. Fail loud instead
-          // of firing a credential-less request that the server rejects with
-          // an opaque "Model not found" 404.
+        } else if (this.knownCloudModels.has(modelField)) {
+          // The model was discovered as a cloud model but no provider creds
+          // resolve for it now — the provider is not configured (or was
+          // removed) on this client. Fail loud instead of firing a
+          // credential-less request that the server rejects with an opaque
+          // "Model not found" 404.
           const prefix = modelField.slice(0, modelField.indexOf('.'));
           throw new Error(
             `"${modelField}" is a cloud model, but no API key is configured for ` +

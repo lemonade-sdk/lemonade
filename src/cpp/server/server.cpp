@@ -1352,92 +1352,30 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
-// Parse a comma-separated X-Lemonade-Cloud-Labels header (e.g.
-// "vision,tool-calling") into a trimmed, non-empty label list. The client
-// sends the capability labels it learned at discovery so register_cloud_model
-// can preserve them on the server entry (see register_cloud_model).
-static std::vector<std::string> parse_cloud_labels_header(const std::string& raw) {
-    std::vector<std::string> out;
-    std::string cur;
-    auto flush = [&]() {
-        const size_t b = cur.find_first_not_of(" \t");
-        if (b != std::string::npos) {
-            const size_t e = cur.find_last_not_of(" \t");
-            out.push_back(cur.substr(b, e - b + 1));
-        }
-        cur.clear();
-    };
-    for (const char c : raw) {
-        if (c == ',') {
-            flush();
-        } else {
-            cur.push_back(c);
-        }
-    }
-    flush();
-    return out;
-}
-
-// Parse an integer header (e.g. X-Lemonade-Cloud-Context-Length); 0 if absent
-// or malformed.
-static int64_t cloud_header_int(const httplib::Request& req, const char* name) {
-    const std::string v = req.get_header_value(name);
-    if (v.empty()) return 0;
-    try { return std::stoll(v); } catch (...) { return 0; }
-}
-
-// Parse a double header (e.g. X-Lemonade-Cloud-Cost-Input); `fallback` if
-// absent or malformed.
-static double cloud_header_double(const httplib::Request& req, const char* name,
-                                  double fallback) {
-    const std::string v = req.get_header_value(name);
-    if (v.empty()) return fallback;
-    try { return std::stod(v); } catch (...) { return fallback; }
-}
-
 bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json) {
-    // Only act on requests targeting a cloud-recipe model. We do NOT inject
-    // for local backends because the body is forwarded verbatim to the
-    // backend subprocess (llama-server, flm, etc.), and we don't want
-    // cloud API keys ending up in those processes' request logs.
+    // Only act on requests targeting an already-registered cloud-recipe model.
+    // Cloud models are registered when the client runs discovery
+    // (POST /internal/cloud/discover); the per-request path only forwards the
+    // credentials. We do NOT inject for local backends because their request
+    // body is forwarded verbatim to the backend subprocess (llama-server, flm,
+    // etc.), and we don't want cloud API keys in those processes' logs.
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
         return false;
     }
     const std::string model_name = request_json["model"].get<std::string>();
 
-    const std::string key = req.get_header_value("X-Lemonade-Cloud-Key");
-    const std::string base_url = req.get_header_value("X-Lemonade-Cloud-Base-Url");
-    const std::string upstream_id = req.get_header_value("X-Lemonade-Cloud-Upstream-Model");
-    const bool has_cloud_headers = !key.empty() || !base_url.empty();
-
-    // Cloud models are discovered client-side now; the server cache won't
-    // have them unless the client previously sent a request for the same
-    // name. If the request has cloud headers and the model name fits the
-    // "<provider>.<upstream_id>" convention, lazy-register it so Router
-    // can construct CloudServer. The upstream id hint comes from the
-    // X-Lemonade-Cloud-Upstream-Model header — required for providers
-    // whose public id differs from what their API expects (Fireworks).
-    // register_cloud_model is idempotent and a no-op for names without a
-    // dot, so this is safe to call always.
-    if (has_cloud_headers) {
-        model_manager_->register_cloud_model(
-            model_name, upstream_id,
-            parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")),
-            cloud_header_int(req, "X-Lemonade-Cloud-Context-Length"),
-            cloud_header_double(req, "X-Lemonade-Cloud-Cost-Input", -1.0),
-            cloud_header_double(req, "X-Lemonade-Cloud-Cost-Output", -1.0));
-    }
-
     if (!model_manager_->model_exists(model_name)) {
         return false;
     }
-    const auto info = model_manager_->get_model_info(model_name);
-    if (info.recipe != "cloud") {
+    if (model_manager_->get_model_info(model_name).recipe != "cloud") {
         return false;
     }
-    if (!has_cloud_headers) {
-        // No client-supplied creds. CloudServer will fall back to the
-        // LEMONADE_<PROVIDER>_API_KEY / _BASE_URL env vars on its own.
+
+    // Per-request credentials. Absent ones fall back to the
+    // LEMONADE_<PROVIDER>_API_KEY / _BASE_URL env vars inside CloudServer.
+    const std::string key = req.get_header_value("X-Lemonade-Cloud-Key");
+    const std::string base_url = req.get_header_value("X-Lemonade-Cloud-Base-Url");
+    if (key.empty() && base_url.empty()) {
         return false;
     }
 
@@ -1618,10 +1556,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
-        // inject_cloud_creds also lazy-registers the cloud model in
-        // ModelManager (no-op for non-cloud paths), so it must run before
-        // auto_load_model_if_needed — otherwise the "model_not_found" check
-        // fires before we ever get a chance to register.
+        // For cloud-recipe models, copy the per-request credential headers
+        // into the body so CloudServer can forward them (no-op otherwise).
         bool request_modified = inject_cloud_creds(req, request_json);
 
         // Handle model loading/switching
@@ -1828,8 +1764,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
-        // Must run before auto_load to lazy-register cloud models. See
-        // handle_chat_completions for the rationale.
+        // Copy per-request cloud credential headers into the body for
+        // cloud-recipe models (no-op otherwise).
         bool request_modified = inject_cloud_creds(req, request_json);
 
         // Handle model loading/switching (same logic as chat_completions)
@@ -2957,8 +2893,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
-        // Must run before auto_load to lazy-register cloud models. See
-        // handle_chat_completions for the rationale.
+        // Copy per-request cloud credential headers into the body for
+        // cloud-recipe models (no-op otherwise).
         bool request_modified = inject_cloud_creds(req, request_json);
 
         // Handle model loading/switching using helper function
@@ -3219,21 +3155,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
 
-        // Lazy-register cloud models on /load. The chat handlers use
-        // inject_cloud_creds for this (keyed off the "model" field in the
-        // request body); /load uses "model_name" and doesn't carry a creds
-        // payload, so we register directly off the headers when present.
-        // Harmless when the headers are absent or the model name lacks a
-        // dot — register_cloud_model is a no-op in those cases.
-        if (req.has_header("X-Lemonade-Cloud-Key") || req.has_header("X-Lemonade-Cloud-Base-Url")) {
-            model_manager_->register_cloud_model(
-                model_name,
-                req.get_header_value("X-Lemonade-Cloud-Upstream-Model"),
-                parse_cloud_labels_header(req.get_header_value("X-Lemonade-Cloud-Labels")),
-                cloud_header_int(req, "X-Lemonade-Cloud-Context-Length"),
-                cloud_header_double(req, "X-Lemonade-Cloud-Cost-Input", -1.0),
-                cloud_header_double(req, "X-Lemonade-Cloud-Cost-Output", -1.0));
-        }
+        // Cloud models are registered when the client runs discovery
+        // (POST /internal/cloud/discover), so a cloud model reaching /load is
+        // already in the cache. /load carries no creds payload; CloudServer
+        // reads the per-request X-Lemonade-Cloud-Key / -Base-Url headers (or
+        // env-var fallback) when a request is actually forwarded.
 
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
@@ -3508,6 +3434,12 @@ void Server::handle_cloud_discover(const httplib::Request& req, httplib::Respons
         // "auth probably wrong" or "upstream returned no chat models"; the
         // client surfaces that to the user.
         auto models = backends::CloudServer::discover_models(provider, api_key, base_url);
+
+        // Register the discovered models (names + static metadata, never the
+        // credentials) so Router can construct CloudServer on load/chat and
+        // /models + /health can report context window / cost / labels without
+        // the client having to re-send them on every request.
+        model_manager_->register_discovered_cloud_models(provider, models);
 
         nlohmann::json data = nlohmann::json::array();
         for (const auto& info : models) {
