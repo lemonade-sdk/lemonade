@@ -4,6 +4,15 @@ Lemonade's documentation is a first-class part of the product. Per our [philosop
 
 This guide covers style, structure, and the contribution process for both community authors and AI-assisted contributions.
 
+- [Principles](#principles)
+- [Voice and Tone](#voice-and-tone)
+- [Document Structure](#document-structure)
+- [Formatting](#formatting)
+- [File and Directory Conventions](#file-and-directory-conventions)
+- [Writing for AI-Assisted Contributions](#writing-for-ai-assisted-contributions)
+- [Community Contribution Process](#community-contribution-process)
+- [Quick Reference](#quick-reference)
+
 ---
 
 ## Principles
@@ -12,7 +21,7 @@ This guide covers style, structure, and the contribution process for both commun
 
 A feature isn't shipped until users can find, understand, and act on it without asking for help. Treat every doc PR the same as a code PR: reviewable, mergeable, improvable.
 
-### Automate the documentation away
+### Simplify instead of documenting
 
 Long docs signal a design problem, not a thoroughness problem. If you find yourself adding paragraph after paragraph of conditionals and edge cases, bring the issue back to the feature and simplify.
 
@@ -20,7 +29,7 @@ Long docs signal a design problem, not a thoroughness problem. If you find yours
 
 "Short" doesn't mean "skip context." It means every sentence earns its place. Remove sentences that restate the title, define terms the reader knows, or describe what's visible in a code example.
 
-### The reader is a capable adult
+### The reader is capable
 
 Don't pad with reassurances ("This is easy!") or apologies ("Unfortunately…"). State facts.
 
@@ -32,10 +41,12 @@ Don't pad with reassurances ("This is easy!") or apologies ("Unfortunately…").
 |---|---|---|
 | Register | Professional and direct | Formal or stiff |
 | Warmth | Welcoming, community-first | Condescending or presumptuous |
-| Pronouns | "you" for the reader; "we" for the project | "the user", "one" |
+| Pronouns | "you" for the reader; "we" for the project. Exception: in developer docs where the reader has their own end-users, use "the user" for the end-user and "you" for the developer. | "one" |
 | Contractions | Fine in prose | Avoid in parameter descriptions or API tables |
 | Emoji | 🍋 in the main README and taglines only | Scattered through guides |
-| Humor | A single dry observation is fine | Extended jokes or memes |
+| Humor | Avoid in technical documentation | Jokes or memes |
+| Figures of speech | Use literal language (global audience) | "Your mileage may vary", idioms, local sayings |
+| Marketing language | State facts: "This feature does X" | "This feature is the best at X" |
 
 **Confident → qualifying → hedging**
 
@@ -118,7 +129,7 @@ Annotate code sparingly — only when the command has a non-obvious flag or the 
 
 Use MkDocs tab syntax when a task has meaningfully different steps per OS. Keep the tab names consistent across documents: `Windows`, `Linux`, `macOS`.
 
-```markdown
+````markdown
 === "Linux"
     ```bash
     sudo apt install lemonade
@@ -126,9 +137,9 @@ Use MkDocs tab syntax when a task has meaningfully different steps per OS. Keep 
 
 === "Windows"
     Download the installer from the releases page.
-```
+````
 
-Don't create tabs for minor differences (a single flag change, a different path). Use a `>` note instead.
+Use tabs whenever the commands differ per platform, even for small differences like a single flag, so snippets remain copy-pastable. Use a `>` note only for differences that are purely informational (a different default path, a version caveat).
 
 ### Tables
 
@@ -138,8 +149,9 @@ Use tables for:
 - Comparisons of 3+ items
 
 Don't use tables for:
-- Two-item comparisons (use a list)
 - Simple key-value pairs when prose reads better
+
+Two-item comparisons are acceptable in a table when the columnar layout genuinely aids readability; use judgment.
 
 Column header convention: Title Case. Align pipes. Include a header separator row.
 
@@ -151,9 +163,9 @@ Column header convention: Title Case. Align pipes. Include a header separator ro
 
 ### Inline formatting
 
-- **Bold**: key terms on first use, UI labels, file names when emphasis aids scanning.
-- `Inline code`: CLI commands, parameter names, file paths, values, environment variables.
-- *Italics*: titles of external works, or occasional emphasis in prose. Not for technical terms.
+- `**Bold**`: key terms on first use, UI labels, file names when emphasis aids scanning.
+- `` `Inline code` ``: CLI commands, parameter names, file paths, values, environment variables.
+- `*Italics*`: titles of external works, or occasional emphasis in prose. Not for technical terms.
 
 Never bold a sentence for general emphasis. If a point is important enough to bold, make it its own sentence or a `>` callout.
 
@@ -235,15 +247,18 @@ AI tools can draft documentation faster than most people can type. That speed co
 | Invented caveats | Warnings about edge cases that don't exist in this codebase |
 | Wrong tone | AI defaults to formal or hedged; Lemonade docs are direct and confident |
 | Generic examples | Examples using placeholder models or endpoints not in the registry |
+| Lossy rewriting | Prerequisites, warnings, examples, version constraints, links, or product-specific details disappear during a "cleanup" rewrite |
+| Slop-style writing | Excessive em dashes, the word "honestly", constructs like "It's not X, it's Y", filler transitions |
 
 ### Checklist before submitting an AI-drafted doc
 
 - [ ] Every parameter name and default verified against the source code or a live server.
-- [ ] All CLI commands run locally and produced the expected output.
+- [ ] All CLI commands, curl commands, and test script invocations run locally and produced the expected output.
 - [ ] All links resolve to real pages.
-- [ ] No sentences that begin with "It is important to note", "Please ensure", or "It's worth mentioning".
-- [ ] Code examples use real Lemonade model names from the registry, not `<your-model-here>`.
-- [ ] The document passes the length test: if it's longer than it needs to be, cut it.
+- [ ] Prose meets style requirements: direct, confident, no filler phrases, no slop-style patterns (see failure-mode table above).
+- [ ] All executable content (code examples, curl commands, scripts) uses real Lemonade model names and endpoints from the registry, not `<your-model-here>` placeholders.
+- [ ] Every sentence that restates the heading, defines an obvious term, or describes what's visible in the adjacent code has been removed.
+- [ ] For edits to existing docs: compared against the previous version and confirmed that no prerequisites, warnings, links, examples, commands, or product-specific constraints were removed.
 - [ ] The document was reviewed by its human author, not just the AI that wrote it.
 
 ### Disclosing AI assistance
@@ -260,35 +275,23 @@ If you use an AI tool to generate review comments on a documentation PR, label t
 
 ## Community Contribution Process
 
-### Before you start
+Before opening a PR, read the [philosophy](./philosophy.md) and ask: does this doc make Lemonade simpler or more complex for a new reader?
 
-- Read the [philosophy](./philosophy.md). Ask yourself: does this doc make Lemonade simpler or more complex for a new reader?
-- For substantial new sections (a new integration guide, a new concept page), post in `#documentation` on the [Discord](https://discord.gg/5xXzkMu8Zk) first. The maintainer for content and guides is `@vgodsoe`.
-- For corrections, typo fixes, or small additions: just open a PR.
+For substantial new sections (a new integration guide, a new concept page), post in `#documentation` on the [Discord](https://discord.gg/5xXzkMu8Zk) first. For corrections, typo fixes, or small additions: just open a PR.
 
 ### What belongs in a documentation PR
 
-A documentation PR should touch one of:
-- A new file for a new feature, integration, or concept.
+- A new file for a new feature, integration, or concept — in the same PR as the code.
 - An update to an existing file to correct errors or reflect new behavior.
 - A structural improvement (reorganizing a directory, adding a missing README).
 
-Don't bundle documentation changes with code changes unless the doc change is a direct consequence of the code change and the combined PR is small.
+Documentation for a new or changed feature belongs in the same PR as the code. "I'll write the docs later" usually means never. A standalone docs-only PR is acceptable only for corrections, structural improvements, or new reference material that has no accompanying code change.
 
-### Review expectations
+### Review and ownership
 
-Documentation PRs are reviewed for:
+Documentation PRs are reviewed for accuracy, alignment with the philosophy, style, and working links. Reviewers will not reject a PR for minor style differences; they will reject for factual errors, broken links, or content that contradicts the philosophy.
 
-1. **Accuracy** — does it match what the code actually does?
-2. **Alignment with the philosophy** — does it make Lemonade simpler to understand?
-3. **Style** — does it follow this guide?
-4. **Links** — do they all resolve?
-
-Reviewers will not reject a PR for minor style differences. They will reject a PR for factual errors, broken links, or content that contradicts the philosophy.
-
-### Maintainer for documentation
-
-`@vgodsoe` is the primary maintainer for content and guides. Assign them on PRs that touch `docs/guide/` or `docs/integrations/`. For API reference (`docs/api/`), also assign the maintainer responsible for the relevant backend or API standard.
+`@jeremyfowers` is the primary maintainer for content and guides. Assign them on PRs that touch `docs/guide/` or `docs/integrations/`. For API reference (`docs/api/`), also assign the maintainer responsible for the relevant backend or API standard.
 
 ---
 
@@ -337,7 +340,7 @@ Run a test prompt. You should see Lemonade's model name appear in [App Name]'s m
 
 ### Template: CLI command reference
 
-```markdown
+````markdown
 ## `lemonade <command>`
 
 [One-sentence description of what the command does.]
@@ -355,4 +358,4 @@ lemonade <command> [OPTIONS]
 ```bash
 lemonade <command> --flag value
 ```
-```
+````
