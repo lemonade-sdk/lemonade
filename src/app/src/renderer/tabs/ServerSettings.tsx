@@ -211,9 +211,10 @@ const ServerSettings: React.FC = () => {
         description={
           <>
             An additional folder the server recursively scans for loose <code>.gguf</code>{' '}
-            files. Imported models appear in the model list with the <code>extra.</code>{' '}
-            prefix. Leave empty to disable. Tip: after changing this, refresh Model Manager
-            to see imported models.
+            files. Imported models appear in Model Manager under their bare filename; the{' '}
+            <code>extra.</code> prefix is only added when the bare name would conflict with an
+            already-registered model. Leave empty to disable. Tip: after changing this, refresh
+            Model Manager to see imported models.
           </>
         }
         placeholder="(none — feature disabled)"

@@ -144,10 +144,10 @@ You can test whether it worked like this:
 Which should return:
 
 ```
-extra.my_custom_model.gguf              Yes         llamacpp
+my_custom_model.gguf                    Yes         llamacpp
 ```
 
-> Note: models imported via `extra_models_dir` will have the `extra.` prefix in the `list` command and `/v1/models` endpoint.
+> Note: imported models keep their bare filename in the `list` command and `/v1/models` endpoint. The `extra.` prefix is only added when the bare name would conflict with an already-registered model — in that case both can coexist (e.g. `Qwen3-Coder-30B-A3B-Instruct-GGUF` and `extra.Qwen3-Coder-30B-A3B-Instruct-GGUF`).
 
 > Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
 
