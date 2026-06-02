@@ -84,6 +84,7 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
+static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 
 static bool has_label(const ModelInfo& info, const std::string& label) {
     return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
@@ -362,6 +363,10 @@ static void populate_static_max_context_window(ModelInfo& info) {
 
 static bool is_user_model_name(const std::string& model_name) {
     return model_name.rfind(USER_MODEL_PREFIX, 0) == 0;
+}
+
+static bool is_extra_model_name(const std::string& model_name) {
+    return model_name.rfind(EXTRA_MODEL_PREFIX, 0) == 0;
 }
 
 static std::string strip_user_model_prefix(const std::string& model_name) {
@@ -2227,6 +2232,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             continue;
         }
 
+        const bool user_controlled_model = is_user_model_name(name) ||
+                                           is_extra_model_name(name) ||
+                                           info.source == "local_upload";
 
         // Check recipe support using the centralized system_info recipes structure
         std::string unsupported_reason = SystemInfo::check_recipe_supported(recipe);
@@ -2239,7 +2247,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
         // Filter out models that are too large for system RAM
         // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && system_ram_gb > 0.0 && info.size > 0.0) {
+        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
                 std::ostringstream oss;
