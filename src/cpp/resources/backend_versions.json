@@ -6,7 +6,8 @@
     "rocm-nightly": "b1274",
     "cuda": "b9436",
     "metal": "b9253",
-    "cpu": "b9253"
+    "cpu": "b9253",
+    "openvino": "b9253"
   },
   "whispercpp": {
     "cpu": "v1.8.4",

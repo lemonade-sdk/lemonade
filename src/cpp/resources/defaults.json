@@ -21,11 +21,13 @@
     "rocm_args": "",
     "vulkan_args": "",
     "cpu_args": "",
+    "openvino_args": "",
     "prefer_system": true,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
     "cuda_bin": "builtin",
-    "cpu_bin": "builtin"
+    "cpu_bin": "builtin",
+    "openvino_bin": "builtin"
   },
   "whispercpp": {
     "backend": "auto",

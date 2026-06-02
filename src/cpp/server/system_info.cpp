@@ -469,6 +469,9 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64"}},
         {"amd_gpu", {}},      // all AMD GPU families
     }},
+    {"llamacpp", "openvino", {"linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
