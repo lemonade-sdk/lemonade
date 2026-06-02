@@ -1766,6 +1766,14 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     }
     if (!is_nvidia) return "";
 
+    // Data-center Blackwell (B100/B200) is compute capability 10.0 (sm_100),
+    // not 12.0 (sm_120) like the consumer/workstation Blackwell parts below.
+    // Resolve it explicitly first so the generic "blackwell" keyword in the
+    // sm_120 row doesn't misclassify a name like "NVIDIA B200 (Blackwell)".
+    if (n.find("b100") != std::string::npos || n.find("b200") != std::string::npos) {
+        return "sm_100";
+    }
+
     // Compact table: {sm_XX, {substrings that identify the architecture}}.
     // Listed highest-to-lowest; first match wins.
     static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
@@ -3060,7 +3068,9 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
         if (fs::exists(gpus_dir, ec) && fs::is_directory(gpus_dir, ec)) {
             LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
             std::string driver_version = get_nvidia_driver_version();
-            double vram = get_nvidia_vram();
+            // VRAM is intentionally left unset here: get_nvidia_vram() reads a
+            // single memory.total value, which would be wrong if applied to
+            // every GPU on a multi-GPU system. /proc has no per-GPU memory.
             for (const auto& entry : fs::directory_iterator(gpus_dir, ec)) {
                 fs::path info_path = entry.path() / "information";
                 std::ifstream info_file(info_path);
@@ -3087,7 +3097,6 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                     gpu.uuid           = uuid;
                     gpu.available      = true;
                     gpu.driver_version = driver_version;
-                    if (vram > 0.0) gpu.vram_gb = vram;
                     gpus.push_back(gpu);
                 }
             }
