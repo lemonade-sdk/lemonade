@@ -1775,12 +1775,14 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     }
 
     // Compact table: {sm_XX, {substrings that identify the architecture}}.
-    // Listed highest-to-lowest; first match wins.
+    // More-specific entries must come before broader ones; first match wins.
+    // sm_100 is listed first as a belt-and-suspenders fallback (the early guard
+    // above already returns before this table is reached for B100/B200).
     static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
+        {"sm_100", {"b100", "b200"}},
         {"sm_120", {"blackwell", "rtx 50", "rtx50", "5090", "5080", "5070", "5060",
                     "rtx pro 6000", "rtx pro 5000", "rtx pro 4500", "rtx pro 4000",
                     "rtx pro 3500", "rtx pro 3000", "rtx pro 2000", "rtx pro 1000"}},
-        {"sm_100", {"b100", "b200"}},
         {"sm_90",  {"h100", "h200"}},
         {"sm_89",  {"rtx 40", "rtx40", "4090", "4080", "4070", "4060", "l40", " l4"}},
         {"sm_80",  {"a100"}},

@@ -79,8 +79,6 @@ _NAME_ARCH_TABLE = [
         ],
         "sm_120",
     ),
-    # Blackwell DC (sm_100)
-    (["b100", "b200"], "sm_100"),
     # Hopper (sm_90)
     (["h100", "h200"], "sm_90"),
     # Ada Lovelace (sm_89)
@@ -228,6 +226,31 @@ class TestIdentifyCudaArchFromName(unittest.TestCase):
             ("NVIDIA B200", "sm_100"),
             ("NVIDIA B200 (Blackwell)", "sm_100"),
             ("NVIDIA B100", "sm_100"),
+        ]
+        for name, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(identify_cuda_arch_from_name(name), expected)
+
+    def test_blackwell_consumer(self):
+        # Generic "Blackwell" keyword and RTX PRO Blackwell → sm_120
+        cases = [
+            ("NVIDIA GeForce RTX 5080", "sm_120"),
+            ("NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU", "sm_120"),
+            ("NVIDIA RTX PRO 6000 Blackwell", "sm_120"),
+            ("NVIDIA RTX PRO 4000 Blackwell", "sm_120"),
+        ]
+        for name, expected in cases:
+            with self.subTest(name=name):
+                self.assertEqual(identify_cuda_arch_from_name(name), expected)
+
+    def test_blackwell_datacenter_guard(self):
+        # B100/B200 must resolve to sm_100 even when "Blackwell" appears in the name
+        cases = [
+            ("NVIDIA B100", "sm_100"),
+            ("NVIDIA B200", "sm_100"),
+            ("NVIDIA B100 Blackwell", "sm_100"),
+            ("NVIDIA B200 Blackwell", "sm_100"),
+            ("NVIDIA B200 (Blackwell)", "sm_100"),
         ]
         for name, expected in cases:
             with self.subTest(name=name):
