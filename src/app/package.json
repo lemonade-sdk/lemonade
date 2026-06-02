@@ -22,7 +22,7 @@
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.2",
+    "@tauri-apps/cli": "^2.0.0",
     "@types/katex": "^0.16.7",
     "@types/node": "^20.10.5",
     "@types/react": "^19.2.2",
@@ -39,10 +39,10 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.0.0",
     "@tauri-apps/plugin-deep-link": "^2.0.0",
-    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "~2.2.2",
     "@tauri-apps/plugin-opener": "^2.0.0",
     "@types/markdown-it": "^14.1.2",
     "highlight.js": "^11.11.1",

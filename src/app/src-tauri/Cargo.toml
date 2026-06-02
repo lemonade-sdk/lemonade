@@ -18,12 +18,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2.11", features = ["protocol-asset", "image-ico"] }
+tauri = { version = "2", features = ["protocol-asset", "image-ico"] }
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-dialog = "2"
+tauri-plugin-dialog = "~2.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
