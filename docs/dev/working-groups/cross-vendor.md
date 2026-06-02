@@ -2,6 +2,8 @@
 
 ## Overview
 
+**Lead:** This working group is led by Ken VanDine, whose handle is @kenvandine on both GitHub and Discord.
+
 **Background:** Lemonade supports a range of hardware and operatings systems (collectively referred to as platforms). However, achieving full support across all mass-market platforms requires additional compilation targets, platform-specific backend support, etc.
 
 **Why:** Developers are far more likely to build on Lemonade if it enables their applications to deploy across all relevant platforms.

@@ -2,6 +2,8 @@
 
 ## Overview
 
+**Lead:** This working group is led by Jeremy Fowers, whose handle is @jeremyfowers on GitHub and @jfowers_amd on Discord.
+
 **Background:** Lemonade Omni Models combine multiple models and backends together to present omni-modal capabilities (e.g., chat and image editing in the same model) that would otherwise not be readily available in local AI.
 
 **Why:** Omni-modality enables natural interactions between end-users and local AI systems, and we believe it is essential for mass adoption of local AI.
