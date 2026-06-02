@@ -566,7 +566,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 
 | Argument | Description |
 |----------|-------------|
-| `MODEL_NAME [MODEL_NAME ...]` | One or more registered model names to benchmark |
+| `MODEL_NAME [MODEL_NAME ...]` | One or more registered model names to benchmark. The list of models will be deduplicated before starting the benchmark. |
 
 ### Options
 
@@ -696,7 +696,7 @@ The comparison table marks each scenario as:
 # Benchmark with default scenarios and all installed backends
 lemonade bench Qwen3-0.6B-GGUF
 
-# Benchmark multiple models in one run
+# Benchmark multiple models in one run. Note that Bonsai-4B is listed twice; it will only be tested once.
 lemonade bench Bonsai-4B-gguf Gemma-4-E4B-it-GGUF Phi-4-mini-instruct-GGUF Qwen3-4B-GGUF Bonsai-4B-gguf Qwen3.5-4B-GGUF
 
 # Benchmark specific backends and context sizes
