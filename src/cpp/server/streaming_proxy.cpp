@@ -31,12 +31,14 @@ void StreamingProxy::forward_sse_stream(
 
             // Check if this chunk contains [DONE]
             std::string chunk(data, length);
-            if (chunk.find("[DONE]") != std::string::npos) {
-                has_done_marker = true;
-            } else if (!has_first_token && chunk.find("data: ") != std::string::npos) {
+            if (!has_first_token && chunk.find("data: ") != std::string::npos) {
                 has_first_token = true;
                 time_to_first_token = std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - start_time).count();
+            }
+
+            if (chunk.find("[DONE]") != std::string::npos) {
+                has_done_marker = true;
             }
 
             // Forward chunk to client immediately
