@@ -307,6 +307,54 @@ async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; inp
   return { type: 'input_audio', input_audio: { data: payload, format } };
 }
 
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (!text) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+const CopyInlineButton: React.FC<{ text: string; title?: string; className?: string }> = ({ text, title = 'Copy', className = '' }) => {
+  const [copied, setCopied] = useState(false);
+  const disabled = !text;
+  const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (disabled) return;
+    try {
+      await copyTextToClipboard(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      className={`copy-inline${copied ? ' copy-inline--copied' : ''}${className ? ` ${className}` : ''}`}
+      onClick={handleClick}
+      disabled={disabled}
+      title={copied ? 'Copied' : title}
+      aria-label={copied ? 'Copied' : title}
+    >
+      {copied ? '✓' : '⧉'}
+    </button>
+  );
+};
+
 function friendlyChatError(message: string): string {
   const cleaned = message.replace(/^Error:\s*/i, '').trim();
   if (!cleaned) return "I couldn't complete that request. Please check the server logs for details.";
@@ -599,63 +647,45 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     }
   }, [appendAssistantMessage, onRefresh]);
 
-  const handleSend = async (overrideText?: string) => {
-    const text = (overrideText ?? inputValue).trim();
-    const audioFiles = [...pendingAudioFiles];
-    const hasImages = pendingImages.length > 0;
-    const canSubmitContent = currentCapability === 'audio'
-      ? audioFiles.length > 0
-      : (!!text || hasImages || (currentCapability === 'omni' && audioFiles.length > 0));
-    if (!canSubmitContent || isBusy) return;
-    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
-
-    let convoId = activeId;
-    const modelSnapshot = currentModelSnapshot;
+  const startAssistantResponse = useCallback(async (
+    convoId: string,
+    modelSnapshot: ModelSnapshot,
+    userMessage: Message,
+    priorMessages: Message[],
+    audioFiles: File[],
+    appendUserToConversation: boolean,
+  ) => {
+    const text = userMessage.content.trim();
+    const images = userMessage.images?.length ? [...userMessage.images] : undefined;
+    const hasImages = !!images?.length;
     const collectionInfo = currentKnownModelInfo && isCollectionModel(currentKnownModelInfo) ? currentKnownModelInfo : null;
-    const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
 
-    // Create a new conversation if none is active
-    if (!convoId) {
-      const newConvo: Conversation = {
-        id: generateId(),
-        title: titleFromInput(text, hasImages, audioFiles),
+    if (appendUserToConversation) {
+      updateConversation(convoId, c => ({
+        ...c,
+        messages: [...c.messages, userMessage],
         model: modelSnapshot,
-        messages: [],
+        title: c.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : c.title,
         updatedAt: Date.now(),
-        schemaVersion: STORAGE_VERSION,
-      };
-      convoId = newConvo.id;
-      setConversations(prev => [newConvo, ...prev]);
-      setActiveId(convoId);
+      }));
     }
 
-    const images = hasImages ? [...pendingImages] : undefined;
-    const userMessage: Message = {
-      role: 'user',
-      content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
-      images,
-      audioName: audioFiles[0]?.name,
-      model: modelSnapshot,
-    };
-    updateConversation(convoId, c => ({
-      ...c,
-      messages: [...c.messages, userMessage],
-      model: modelSnapshot,
-      title: c.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : c.title,
-      updatedAt: Date.now(),
-    }));
-
-    setInputValue('');
-    setPendingImages([]);
-    setPendingAudioFiles([]);
     thinkingSticky.current = true;
 
     if (!modeSupportsChatCompletions) {
+      if (modelSnapshot.capability === 'audio' && audioFiles.length === 0) {
+        appendAssistantMessage(convoId, {
+          content: friendlyChatError('Retrying an audio transcription needs the original audio file. Please attach it again.'),
+          model: modelSnapshot,
+          isError: true,
+        });
+        return;
+      }
       await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles);
       return;
     }
 
-    let requestModelName = currentModel;
+    let requestModelName = currentModel || modelSnapshot.name;
     let requestText = text;
     let requestImages = images;
     let includeDirectAudioParts = currentCapability === 'omni' && audioFiles.length > 0;
@@ -664,14 +694,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       ? buildOmniToolRuntime(collectionInfo, knownModelInfos, {
           attachedImages: images || [],
           attachedAudioFiles: audioFiles,
-          previousImages: collectConversationImages(currentMessages),
+          previousImages: collectConversationImages(priorMessages),
         })
       : null;
 
     if (collectionInfo) {
       const primaryChatComponent = getPrimaryChatComponent(collectionInfo, knownModelInfos);
       if (omniRuntime) {
-        requestModelName = primaryChatComponent || currentModel;
+        requestModelName = primaryChatComponent || requestModelName;
         requestImages = undefined;
         includeDirectAudioParts = false;
 
@@ -683,7 +713,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         }
       } else {
         const visionComponent = hasImages ? getVisionChatComponent(collectionInfo, knownModelInfos) : null;
-        requestModelName = visionComponent || primaryChatComponent || currentModel;
+        requestModelName = visionComponent || primaryChatComponent || requestModelName;
         requestImages = visionComponent ? images : undefined;
         includeDirectAudioParts = false;
         if (hasImages && !visionComponent) {
@@ -715,7 +745,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       useTools && modeSupportsTools ? LEMONADE_TOOL_RUNTIME : null,
     ]);
 
-    // Build chat history from the conversation's current messages + new user message.
+    // Build chat history from the conversation's messages before this user prompt.
     // Do not feed prior friendly UI error messages or generated media artifacts back as assistant context.
     const chatMessages: ChatMessage[] = [];
 
@@ -744,7 +774,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       chatMessages.push({ role: 'system' as const, content: systemPrompts.join('\n\n') });
     }
 
-    const historyMessages = currentMessages.filter(m => {
+    const historyMessages = priorMessages.filter(m => {
       if (m.role === 'assistant' && !isPersistableAssistantMessage(m)) return false;
       if (m.generatedImages?.length || m.audioUrl) return false;
       return true;
@@ -763,7 +793,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       return { role: m.role, content: m.content };
     }));
 
-    // Add the new user message
+    // Add the user message being sent or retried.
     if (requestImages?.length || includeDirectAudioParts) {
       const audioParts = includeDirectAudioParts
         ? await Promise.all(audioFiles.slice(0, 1).map(audioToInputAudio))
@@ -782,7 +812,101 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     streamModelsRef.current[convoId] = modelSnapshot;
     await streaming.send(convoId, requestModelName, chatMessages, toolRuntime);
+  }, [
+    appendAssistantMessage,
+    currentCapability,
+    currentKnownModelInfo,
+    currentModel,
+    knownModelInfos,
+    loadedModels,
+    modeSupportsChatCompletions,
+    modeSupportsTools,
+    runCapabilityRequest,
+    streaming,
+    updateConversation,
+    useTools,
+  ]);
+
+  const handleSend = async (overrideText?: string) => {
+    const text = (overrideText ?? inputValue).trim();
+    const audioFiles = [...pendingAudioFiles];
+    const hasImages = pendingImages.length > 0;
+    const canSubmitContent = currentCapability === 'audio'
+      ? audioFiles.length > 0
+      : (!!text || hasImages || (currentCapability === 'omni' && audioFiles.length > 0));
+    if (!canSubmitContent || isBusy) return;
+    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
+
+    let convoId = activeId;
+    const modelSnapshot = currentModelSnapshot;
+    const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
+
+    // Create a new conversation if none is active
+    if (!convoId) {
+      const newConvo: Conversation = {
+        id: generateId(),
+        title: titleFromInput(text, hasImages, audioFiles),
+        model: modelSnapshot,
+        messages: [],
+        updatedAt: Date.now(),
+        schemaVersion: STORAGE_VERSION,
+      };
+      convoId = newConvo.id;
+      setConversations(prev => [newConvo, ...prev]);
+      setActiveId(convoId);
+    }
+
+    const userMessage: Message = {
+      role: 'user',
+      content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
+      images: hasImages ? [...pendingImages] : undefined,
+      audioName: audioFiles[0]?.name,
+      model: modelSnapshot,
+    };
+
+    setInputValue('');
+    setPendingImages([]);
+    setPendingAudioFiles([]);
+
+    await startAssistantResponse(convoId, modelSnapshot, userMessage, currentMessages, audioFiles, true);
   };
+
+  const handleRetryAssistant = useCallback(async (messageIndex: number) => {
+    if (!activeId || isBusy) return;
+    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
+    const convo = conversations.find(c => c.id === activeId);
+    if (!convo || convo.messages[messageIndex]?.role !== 'assistant') return;
+
+    let userIndex = messageIndex - 1;
+    while (userIndex >= 0 && convo.messages[userIndex].role !== 'user') userIndex--;
+    if (userIndex < 0) return;
+
+    const originalUserMessage = convo.messages[userIndex];
+    if (originalUserMessage.audioName && !originalUserMessage.images?.length && !originalUserMessage.content.trim()) {
+      appendAssistantMessage(activeId, {
+        content: friendlyChatError('Retrying an audio transcription needs the original audio file. Please attach it again.'),
+        model: currentModelSnapshot,
+        isError: true,
+      });
+      return;
+    }
+
+    const trimmedMessages = convo.messages.slice(0, userIndex + 1);
+    setConversations(prev => prev.map(c => c.id === activeId ? {
+      ...c,
+      messages: trimmedMessages,
+      updatedAt: Date.now(),
+    } : c));
+
+    await startAssistantResponse(
+      activeId,
+      currentModelSnapshot,
+      { ...originalUserMessage, model: currentModelSnapshot },
+      trimmedMessages.slice(0, -1),
+      [],
+      false,
+    );
+  }, [activeId, appendAssistantMessage, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -980,7 +1104,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           ) : (
             <div className="thread">
               {messages.map((msg, i) => (
-                <MessageBubble key={i} message={msg} activeModel={currentModelSnapshot} userLabel={accountSession.isGuest ? 'Guest' : accountSession.name} onOptionSelect={handleOptionSelect} />
+                <MessageBubble
+                  key={i}
+                  message={msg}
+                  activeModel={currentModelSnapshot}
+                  userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
+                  onOptionSelect={handleOptionSelect}
+                  onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
+                />
               ))}
 
               {isStreaming && (
@@ -989,7 +1120,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                     {modelInitial(currentModelSnapshot)}
                   </div>
                   <div className="message__body">
-                    <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                    <div className="message__author-row">
+                      <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                      {currentModelSnapshot?.name && <CopyInlineButton text={currentModelSnapshot.name} title="Copy model name" className="copy-inline--author" />}
+                    </div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
                         <summary>Thinking…</summary>
@@ -1027,7 +1161,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                 <article className="message message--assistant">
                   <div className="message__avatar">{capabilityIcon(currentCapability)}</div>
                   <div className="message__body">
-                    <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                    <div className="message__author-row">
+                      <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
+                      {currentModelSnapshot?.name && <CopyInlineButton text={currentModelSnapshot.name} title="Copy model name" className="copy-inline--author" />}
+                    </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor" aria-hidden="true" />
                       Working in {capabilityLabel(currentCapability)} mode…
@@ -1207,7 +1344,10 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
               <div className="active-card" key={m.model_name}>
                 <div className="active-card__head">
                   <div>
-                    <div className="active-card__name">{m.model_name}</div>
+                    <div className="active-card__name-row">
+                      <div className="active-card__name">{m.model_name}</div>
+                      <CopyInlineButton text={m.model_name} title="Copy model name" />
+                    </div>
                     <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
                   </div>
                   <span className="active-card__device">{m.device || 'device unknown'}</span>
@@ -1303,7 +1443,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
   if (message.role === 'user') {
@@ -1341,7 +1481,10 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
         {message.isError ? '!' : modelInitial(displayModel)}
       </div>
       <div className="message__body">
-        <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
+        <div className="message__author-row">
+          <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
+          {!message.isError && displayModel?.name && <CopyInlineButton text={displayModel.name} title="Copy model name" className="copy-inline--author" />}
+        </div>
         {message.thinking && (
           <details
             className="message__thinking"
@@ -1375,6 +1518,21 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             <span>{message.stats.tokens} tokens</span>
           </div>
         )}
+        <div className="message__actions" aria-label="Message actions">
+          <button
+            type="button"
+            className="message__action"
+            onClick={() => copyTextToClipboard(message.content || message.thinking || '')}
+            disabled={!(message.content || message.thinking)}
+          >
+            ⧉ Copy
+          </button>
+          {onRetry && (
+            <button type="button" className="message__action" onClick={onRetry}>
+              ↻ Retry
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );

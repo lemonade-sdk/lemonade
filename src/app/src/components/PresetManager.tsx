@@ -53,6 +53,121 @@ function capChipClass(cap: Capability): string {
   return `cap-chip--${cap}`;
 }
 
+
+const DEFAULT_CONTEXT_SIZE = 4096;
+const DEFAULT_CONTEXT_LIMIT = 131072;
+
+function parseContextSize(value: unknown, fallback = DEFAULT_CONTEXT_SIZE): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.max(1, Math.round(n));
+}
+
+function clampContextSize(value: unknown, max: number, fallback = DEFAULT_CONTEXT_SIZE): number {
+  return Math.min(parseContextSize(value, fallback), Math.max(1, Math.round(max)));
+}
+
+function firstPositiveInt(values: unknown[]): number | null {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return Math.round(n);
+  }
+  return null;
+}
+
+function maxPositiveInt(values: unknown[]): number | null {
+  let max = 0;
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max > 0 ? Math.round(max) : null;
+}
+
+function contextLimitForModel(model?: ModelInfo | null): number | null {
+  if (!model) return null;
+  const direct = firstPositiveInt([
+    (model as any).max_context_window,
+    (model as any).max_ctx_size,
+    (model as any).max_ctx,
+    (model as any).context_window,
+    (model as any).context_length,
+    (model as any).max_sequence_length,
+    (model as any).n_ctx,
+    (model as any).ctx_size,
+  ]);
+  if (direct) return direct;
+
+  const recipes = Array.isArray(model.recipes) ? model.recipes : [];
+  const recipeCandidates: unknown[] = [];
+  for (const recipe of recipes) {
+    if (!recipe || typeof recipe !== 'object') continue;
+    recipeCandidates.push(
+      (recipe as any).max_context_window,
+      (recipe as any).max_ctx_size,
+      (recipe as any).max_ctx,
+      (recipe as any).context_window,
+      (recipe as any).context_length,
+      (recipe as any).max_sequence_length,
+      (recipe as any).n_ctx,
+      (recipe as any).ctx_size,
+    );
+    const options = (recipe as any).recipe_options || (recipe as any).options;
+    if (options && typeof options === 'object') {
+      recipeCandidates.push(
+        (options as any).max_context_window,
+        (options as any).max_ctx_size,
+        (options as any).max_ctx,
+        (options as any).context_window,
+        (options as any).context_length,
+        (options as any).max_sequence_length,
+        (options as any).n_ctx,
+        (options as any).ctx_size,
+      );
+    }
+  }
+  return maxPositiveInt(recipeCandidates);
+}
+
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (!text) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, title = 'Copy model name' }) => {
+  const [copied, setCopied] = useState(false);
+  const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await copyTextToClipboard(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <button type="button" className={`copy-inline${copied ? ' copy-inline--copied' : ''}`} onClick={handleClick} title={copied ? 'Copied' : title} aria-label={copied ? 'Copied' : title}>
+      {copied ? '✓' : '⧉'}
+    </button>
+  );
+};
+
 function primaryCap(preset: Pick<Preset, 'applies_to'>): Capability {
   return preset.applies_to[0] || 'chat';
 }
@@ -322,7 +437,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
                     <div className="applied-row" key={name} data-applied-row={name}>
                       <div className="applied-row__model">
                         <span className="applied-row__model-icon">{name.charAt(0)}</span>
-                        <span className="applied-row__model-name">{name}</span>
+                        <span className="applied-row__model-name-wrap"><span className="applied-row__model-name">{name}</span><CopyInlineButton text={name} /></span>
                       </div>
                       <div className="applied-row__recipe">
                         <PhaseGlyph />
@@ -424,7 +539,7 @@ const SlideoverContent: React.FC<{
   const [description, setDescription] = useState(preset.description);
   const [appliesTo, setAppliesTo] = useState<Capability[]>(preset.applies_to);
   const [engineHint, setEngineHint] = useState<PresetRecipe>(preset.engine_hint || 'auto');
-  const [ctxSize, setCtxSize] = useState(ro.ctx_size ?? 4096);
+  const [ctxSize, setCtxSize] = useState(parseContextSize(ro.ctx_size));
   const [steps, setSteps] = useState(ro.steps ?? 20);
   const [cfgScale, setCfgScale] = useState(ro.cfg_scale ?? 7.0);
   const [imgWidth, setImgWidth] = useState(ro.width ?? 512);
@@ -446,7 +561,7 @@ const SlideoverContent: React.FC<{
     setDescription(preset.description);
     setAppliesTo(preset.applies_to);
     setEngineHint(preset.engine_hint || 'auto');
-    setCtxSize(nextRo.ctx_size ?? 4096);
+    setCtxSize(parseContextSize(nextRo.ctx_size));
     setSteps(nextRo.steps ?? 20);
     setCfgScale(nextRo.cfg_scale ?? 7.0);
     setImgWidth(nextRo.width ?? 512);
@@ -474,7 +589,13 @@ const SlideoverContent: React.FC<{
   }), [preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty]);
 
   const selectedModel = models.find(m => modelName(m) === applyTarget);
+  const selectedModelContextLimit = contextLimitForModel(selectedModel);
+  const ctxSliderMax = selectedModelContextLimit || DEFAULT_CONTEXT_LIMIT;
   const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
+
+  useEffect(() => {
+    if (ctxSize > ctxSliderMax) setCtxSize(ctxSliderMax);
+  }, [ctxSize, ctxSliderMax]);
   const validKeys = RECIPE_KEYS[engineHint] || [];
   const hasChat = appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = appliesTo.includes('image');
@@ -532,7 +653,23 @@ const SlideoverContent: React.FC<{
             <div data-preset-fields="chat">
               <div className="field"><label className="field__label">Creativity</label><div className="field__row"><input type="range" className="slider" min={0} max={2} step={0.05} value={temperature} disabled={isReadOnly} onChange={e => setTemperature(Number(e.target.value))} data-recipe-temp /><span className="field__value">{temperature.toFixed(2)}</span></div></div>
               <div className="field"><label className="field__label">Precision (top_p)</label><div className="field__row"><input type="range" className="slider" min={0} max={1} step={0.01} value={topP} disabled={isReadOnly} onChange={e => setTopP(Number(e.target.value))} data-recipe-top-p /><span className="field__value">{topP.toFixed(2)}</span></div></div>
-              <div className="field"><label className="field__label">Context size</label><div className="field__row"><input type="range" className="slider" min={1024} max={131072} step={1024} value={ctxSize} disabled={isReadOnly} onChange={e => setCtxSize(Number(e.target.value))} data-recipe-ctx /><span className="field__value">{ctxSize.toLocaleString()}</span></div></div>
+              <div className="field">
+                <label className="field__label">Context size</label>
+                <div className="field__row">
+                  <input
+                    type="range"
+                    className="slider"
+                    min={1024}
+                    max={ctxSliderMax}
+                    step={1024}
+                    value={ctxSize}
+                    disabled={isReadOnly}
+                    onChange={e => setCtxSize(clampContextSize(e.target.value, ctxSliderMax, ctxSize))}
+                    data-recipe-ctx
+                  />
+                  <span className="field__value">{ctxSize.toLocaleString()}</span>
+                </div>
+              </div>
               <div className="field"><label className="field__label">top_k</label><div className="field__row"><input type="number" className="input input--narrow" min={1} max={200} value={topK} disabled={isReadOnly} onChange={e => setTopK(Number(e.target.value))} data-recipe-top-k /></div></div>
               <div className="field"><label className="field__label">Repeat penalty</label><div className="field__row"><input type="range" className="slider" min={0.9} max={1.5} step={0.01} value={repeatPenalty} disabled={isReadOnly} onChange={e => setRepeatPenalty(Number(e.target.value))} data-recipe-rp /><span className="field__value">{repeatPenalty.toFixed(2)}</span></div></div>
             </div>

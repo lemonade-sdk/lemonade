@@ -139,12 +139,25 @@ function normalizeDeviceToken(token: string): DeviceKey {
   return 'unknown';
 }
 
-function devicesForBackend(backend: string, info: BackendInfo): DeviceKey[] {
+function devicesForBackend(recipe: string, backend: string, info: BackendInfo): DeviceKey[] {
+  // FastFlowLM is the NPU path in Lemonade. Some older system-info
+  // payloads report its backend token as a generic GPU/DirectML backend,
+  // which placed FLM in the wrong matrix row. Keep the prototype UI
+  // aligned with the actual runtime target.
+  if (recipe === 'flm') return ['amd_npu'];
+
   const fromServer = Array.isArray(info.devices)
     ? info.devices.map(normalizeDeviceToken).filter(Boolean)
     : [];
   if (fromServer.length > 0) return uniq(fromServer);
   return [BACKEND_DEVICE[backend] || normalizeDeviceToken(backend)];
+}
+
+function canShowUninstall(info: BackendInfo): boolean {
+  if (info.can_uninstall === false) return false;
+  return info.state === 'installed'
+    || info.state === 'update_required'
+    || info.state === 'update_available';
 }
 
 /* ── Component ─────────────────────────────────────────────── */
@@ -281,7 +294,7 @@ const BackendManager: React.FC = () => {
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
       const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
-        for (const device of devicesForBackend(backend, backendInfo)) {
+        for (const device of devicesForBackend(recipe, backend, backendInfo)) {
           const key = `${device}:${cap}`;
           if (!cells.has(key)) cells.set(key, []);
           cells.get(key)!.push({ recipe, backend, info: backendInfo });
@@ -461,12 +474,12 @@ const BackendManager: React.FC = () => {
                                     Setup guide ▸
                                   </button>
                                 )}
-                                {info.state === 'installed' && info.can_uninstall && (
+                                {canShowUninstall(info) && (
                                   <button
                                     className="cell__swap cell__swap--danger"
                                     disabled={isInstalling}
                                     onClick={() => handleUninstall(recipe, backend)}>
-                                    Uninstall
+                                    {isInstalling ? 'Working…' : 'Uninstall'}
                                   </button>
                                 )}
                               </div>
