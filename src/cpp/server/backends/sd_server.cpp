@@ -10,11 +10,9 @@
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
 #include <httplib.h>
-#include <cstdlib>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
-#include <stdexcept>
 #include <chrono>
 #include <set>
 #include <random>
@@ -28,32 +26,6 @@ namespace backends {
 
 
 namespace {
-constexpr const char* kImageRequestTimeoutEnv = "LEMONADE_IMAGE_REQUEST_TIMEOUT";
-constexpr long kNoImageRequestTimeout = 0; // libcurl: 0 disables the overall request timeout.
-
-long get_image_request_timeout_seconds() {
-    const char* raw_value = std::getenv(kImageRequestTimeoutEnv);
-    if (raw_value == nullptr || raw_value[0] == '\0') {
-        return kNoImageRequestTimeout;
-    }
-
-    try {
-        std::string raw(raw_value);
-        size_t parsed_chars = 0;
-        long timeout_seconds = std::stol(raw, &parsed_chars);
-        if (parsed_chars != raw.size() || timeout_seconds < 0) {
-            throw std::invalid_argument("invalid image request timeout");
-        }
-        return timeout_seconds;
-    } catch (const std::exception&) {
-        LOG(WARNING, "SDServer") << "Ignoring invalid " << kImageRequestTimeoutEnv
-                                 << "=" << raw_value
-                                 << "; using no overall timeout for image requests"
-                                 << std::endl;
-        return kNoImageRequestTimeout;
-    }
-}
-
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
 }
@@ -518,9 +490,8 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can legitimately exceed the generic global HTTP timeout.
-    // Use an image-specific timeout override, defaulting to no overall timeout.
-    return forward_request("/v1/images/generations", sd_request, get_image_request_timeout_seconds());
+    // Image generation can take 20+ minutes for large models avoid timeout
+    return forward_request("/v1/images/generations", sd_request, 0);
 }
 
 json SDServer::image_edits(const json& request) {
@@ -560,7 +531,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, get_image_request_timeout_seconds());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 json SDServer::image_variations(const json& request) {
@@ -593,7 +564,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, get_image_request_timeout_seconds());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 std::string SDServer::upscale_via_cli(
