@@ -24,7 +24,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "port": 13305,
   "host": "localhost",
   "log_level": "info",
-  "global_timeout": 300,
+  "global_timeout": 600,
   "max_loaded_models": 1,
   "no_broadcast": false,
   "extra_models_dir": "",
@@ -88,7 +88,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
-| `global_timeout` | int | 300 | Timeout in seconds for HTTP, inference, and readiness checks |
+| `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
