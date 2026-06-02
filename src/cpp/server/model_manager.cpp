@@ -2808,17 +2808,13 @@ void ModelManager::download_model(const std::string& model_name,
         }
     }
 
-    // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip entirely
-    // This prevents unnecessary HuggingFace API queries when we just want to use cached models
-    // The do_not_upgrade flag means:
-    //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
-    //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
-    if (do_not_upgrade && is_model_downloaded(model_name)) {
-        LOG(INFO, "ModelManager") << "Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
-        return;
-    }
-
-    // Register user models to user_models.json
+    // Persist registration and recipe options BEFORE the cache-first shortcut
+    // below. A registration/import/overwrite that targets an already-downloaded
+    // model must still update user_models.json and recipe_options.json. The
+    // do_not_upgrade fast return only skips the Hugging Face download/update
+    // check — it must never skip the metadata the caller asked us to record,
+    // otherwise an import that reports success would silently leave the old
+    // checkpoints/options in place.
     if (is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
     }
@@ -2836,6 +2832,17 @@ void ModelManager::download_model(const std::string& model_name,
         }
         model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
         save_model_options(model_info);
+    }
+
+    // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip the
+    // download/HF update check. Registration and recipe options were already
+    // persisted above, so an import/overwrite still takes effect on disk.
+    // The do_not_upgrade flag means:
+    //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
+    //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
+    if (do_not_upgrade && is_model_downloaded(model_name)) {
+        LOG(INFO, "ModelManager") << "Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
+        return;
     }
 
     download_registered_model(model_info, do_not_upgrade, progress_callback);
