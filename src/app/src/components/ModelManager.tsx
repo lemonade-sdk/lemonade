@@ -129,6 +129,29 @@ async function copyTextToClipboard(text: string): Promise<void> {
   textarea.remove();
 }
 
+function safeFileName(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'model';
+}
+
+function exportJsonFile(name: string, data: unknown): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${safeFileName(name)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function implicitCustomModelName(displayName: string, checkpoint: string, fallback = 'custom-model'): string {
+  const fromDisplay = displayName.trim();
+  if (fromDisplay) return fromDisplay;
+  const checkpointName = checkpoint.trim().split(/[\\/]/).pop()?.split(':')[0]?.trim();
+  return checkpointName || fallback;
+}
+
 const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, title = 'Copy model name' }) => {
   const [copied, setCopied] = useState(false);
   const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -161,6 +184,32 @@ const RECIPE_BADGES: Record<string, string> = {
   'ryzenai-llm': '🔷 RyzenAI',
   'collection.omni': '✦ Omni Collection',
 };
+
+type CustomRecipeOption = { value: string; label: string; hint: string };
+
+const CHAT_RECIPE_OPTIONS: CustomRecipeOption[] = [
+  { value: 'llamacpp', label: 'llama.cpp', hint: 'Local GGUF / llama.cpp backend' },
+  { value: 'vllm', label: 'vLLM', hint: 'vLLM backend for compatible models' },
+  { value: 'flm', label: 'FastFlowLM', hint: 'FLM backend for supported AMD NPU models' },
+  { value: 'ryzenai-llm', label: 'RyzenAI', hint: 'RyzenAI LLM backend' },
+];
+
+const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]> = {
+  chat: CHAT_RECIPE_OPTIONS,
+  omni: CHAT_RECIPE_OPTIONS,
+  image: [{ value: 'sd-cpp', label: 'Stable Diffusion', hint: 'Stable Diffusion C++ backend' }],
+  audio: [{ value: 'whispercpp', label: 'Whisper', hint: 'Whisper C++ transcription backend' }],
+  tts: [{ value: 'kokoro', label: 'Kokoro TTS', hint: 'Kokoro text-to-speech backend' }],
+  embedding: [{ value: 'llamacpp', label: 'llama.cpp', hint: 'Embedding through llama.cpp-compatible model' }],
+  reranking: [{ value: 'llamacpp', label: 'llama.cpp', hint: 'Reranking through llama.cpp-compatible model' }],
+};
+
+function recipeOptionsForCustomDraft(capability: CustomModelCapability, omniSource: 'single' | 'collection'): CustomRecipeOption[] {
+  if (capability === 'omni' && omniSource === 'collection') {
+    return [{ value: 'collection.omni', label: 'Omni Collection', hint: 'Virtual wrapper around selected component models' }];
+  }
+  return CUSTOM_RECIPE_OPTIONS[capability] || CHAT_RECIPE_OPTIONS;
+}
 
 /* ── Filter / search types ─────────────────────────────────── */
 
@@ -781,6 +830,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     e.preventDefault();
     setCustomError(null);
     try {
+      if (!customDraft.displayName.trim()) {
+        throw new Error('Enter a model name.');
+      }
       if (customDraft.capability === 'omni' && customDraft.omniSource === 'collection' && !customDraft.llmComponent.trim()) {
         throw new Error('Select a planner LLM for the Omni collection.');
       }
@@ -796,19 +848,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         ? Object.values(componentRoles).map(v => v.trim()).filter(Boolean)
         : [];
       const saved = upsertCustomModel(accountSession.storageScope, {
-        name: customDraft.name,
+        name: implicitCustomModelName(customDraft.displayName, customDraft.checkpoint, customDraft.capability === 'omni' ? 'omni-model' : 'custom-model'),
         displayName: customDraft.displayName,
         checkpoint: customDraft.checkpoint,
-        recipe: customDraft.recipe,
+        recipe: recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource).some(option => option.value === customDraft.recipe) ? customDraft.recipe : recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource)[0]?.value || customDraft.recipe,
         capability: customDraft.capability,
-        maxContextWindow: customDraft.maxContextWindow.trim() && Number.isFinite(Number(customDraft.maxContextWindow)) ? Number(customDraft.maxContextWindow) : undefined,
+        maxContextWindow: customDraft.capability === 'omni' ? undefined : (customDraft.maxContextWindow.trim() && Number.isFinite(Number(customDraft.maxContextWindow)) ? Number(customDraft.maxContextWindow) : undefined),
         labels: customDraft.labels.split(',').map(l => l.trim()).filter(Boolean),
         components,
         componentRoles,
       });
       reloadCustomModels();
       setShowCustomForm(false);
-      setSearchQuery(saved.name);
+      setSearchQuery(saved.display_name || saved.name);
       setCustomDraft(createEmptyCustomDraft());
     } catch (err) {
       setCustomError(err instanceof Error ? err.message : 'Could not save custom model.');
@@ -972,7 +1024,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const renderLabels = (labels: string[]) => {
     if (!labels || labels.length === 0) return null;
     // Filter out the 'llamacpp' label since it's redundant with recipe
-    const displayLabels = labels.filter(l => l !== 'llamacpp');
+    const displayLabels = labels.filter(l => l !== 'llamacpp' && l !== 'custom');
     if (displayLabels.length === 0) return null;
     return (
       <div className="row__labels">
@@ -989,9 +1041,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const checkpoints = (m as any).checkpoints || {};
     const recipe = (m as any).recipe || '';
     const maxCtx = liveCtxSize || (m as any).max_context_window;
+    const showContext = capabilityFromModelInfo(m) !== 'omni' && Boolean(maxCtx);
     const compositeModels = (m as any).composite_models || [];
     const collectionComponents = getCollectionComponents(m);
     const url = hfUrl(checkpoint);
+    const exportData = {
+      ...m,
+      ...(maxCtx ? { max_context_window: maxCtx } : {}),
+    };
 
     return (
       <div className="row__detail">
@@ -1008,7 +1065,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <span className="detail__value">{formatSize(m.size)}</span>
               </div>
             )}
-            {maxCtx && (
+            {showContext && (
               <div className="detail__field">
                 <span className="detail__label">Context</span>
                 <span className="detail__value">{(maxCtx / 1024).toFixed(0)}K tokens</span>
@@ -1068,6 +1125,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 🤗 View on Hugging Face
               </a>
             )}
+            <button
+              type="button"
+              className="detail__json-export"
+              onClick={(event) => { event.stopPropagation(); exportJsonFile(name, exportData); }}
+            >
+              Export JSON
+            </button>
           </div>
         </div>
       </div>
@@ -1089,7 +1153,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               {recipeIcon(m.recipe)}
             </div>
             <div className="row__text">
-              <span className="row__name-wrap"><span className="row__name">{m.model_name}</span><CopyInlineButton text={m.model_name} /></span>
+              <span className="row__name-wrap"><span className="row__name">{m.model_name}</span><CopyInlineButton text={m.model_name} />{info && (info as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
               <span className="row__sub">
                 {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
                 {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
@@ -1176,12 +1240,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               {recipeIcon((m as any).recipe)}
             </div>
             <div className="row__text">
-              <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span><CopyInlineButton text={name} /></span>
+              <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span><CopyInlineButton text={name} />{(m as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
               <span className="row__sub">
                 {recipeLabel((m as any).recipe || '')}
                 {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
                 {m.size ? ` · ${formatSize(m.size)}` : ''}
-                {(m as any).max_context_window ? ` · ${((m as any).max_context_window / 1024).toFixed(0)}K ctx` : ''}
+                {capabilityFromModelInfo(m) !== 'omni' && (m as any).max_context_window ? ` · ${((m as any).max_context_window / 1024).toFixed(0)}K ctx` : ''}
               </span>
               {renderLabels(m.labels || [])}
             </div>
@@ -1201,7 +1265,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               </div>
             ) : isDownloaded ? (
               <>
-                <span className="row__status-pill row__status-pill--ready">{(m as any).custom ? 'Custom' : 'Ready'}</span>
+                <span className="row__status-pill row__status-pill--ready">Ready</span>
                 <button
                   className="row__action"
                   onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
@@ -1414,6 +1478,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const showManagerEmpty = filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
   const customFormTitle = isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model';
+  const customRecipeOptions = recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource);
+  const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const showHuggingFaceZone = filterTab !== 'omni';
   const totalDownloaded = downloaded.length + displayLoadedModels.length;
   const totalPulling = Object.keys(pulling).length;
@@ -1522,10 +1588,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <span className="zone__rule" />
             </div>
             <form className="custom-model-form__grid" onSubmit={handleSaveCustomModel}>
-              <label>Model name
-                <input value={customDraft.name} onChange={e => handleCustomDraftChange({ name: e.target.value })} placeholder="user.my-model" />
-              </label>
-              <label>Display name
+              <label>Name
                 <input value={customDraft.displayName} onChange={e => handleCustomDraftChange({ displayName: e.target.value })} placeholder="My custom model" />
               </label>
               <label>Capability
@@ -1552,7 +1615,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </label>
               )}
               <label>Recipe/backend
-                <input value={customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })} placeholder={isCustomOmniCollectionDraft ? 'collection.omni' : 'llamacpp'} />
+                <select value={selectedCustomRecipe?.value || customDraft.recipe} onChange={e => handleCustomDraftChange({ recipe: e.target.value })}>
+                  {customRecipeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                {selectedCustomRecipe?.hint && <span className="custom-model-form__field-hint">{selectedCustomRecipe.hint}</span>}
               </label>
               <label className="custom-model-form__wide">{isCustomOmniCollectionDraft ? 'Optional collection checkpoint/alias' : 'Checkpoint, HF repo, or local path'}
                 <input
@@ -1574,9 +1640,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   <OmniComponentPicker role="speech" value={customDraft.speechComponent} options={omniComponentOptions.speech} onChange={value => updateOmniComponent('speech', value)} onHuggingFaceSearch={searchHuggingFaceFromPicker} />
                 </>
               )}
-              <label>Context tokens
-                <input value={customDraft.maxContextWindow} onChange={e => handleCustomDraftChange({ maxContextWindow: e.target.value })} inputMode="numeric" placeholder="4096" />
-              </label>
+              {customDraft.capability !== 'omni' && (
+                <label>Context tokens
+                  <input value={customDraft.maxContextWindow} onChange={e => handleCustomDraftChange({ maxContextWindow: e.target.value })} inputMode="numeric" placeholder="4096" />
+                </label>
+              )}
               <label>Extra labels
                 <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
               </label>

@@ -180,7 +180,7 @@ export function useChatStreaming(
             // Append the assistant's tool_calls message
             fullMessages = [
               ...fullMessages,
-              { role: 'assistant' as const, content: null, tool_calls: toolCalls },
+              { role: 'assistant' as const, content: '', tool_calls: toolCalls },
             ];
 
             // Execute all tool calls in parallel
