@@ -1147,12 +1147,28 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         return 1;
     }
 
+    // Deduplicate models while preserving order (first occurrence wins).
+    std::vector<std::string> unique_models;
+    std::unordered_set<std::string> seen_models;
+    for (const auto& model : config.models) {
+        if (seen_models.find(model) == seen_models.end()) {
+            unique_models.push_back(model);
+            seen_models.insert(model);
+        }
+    }
+
+    if (unique_models.size() < config.models.size()) {
+        std::cout << "Note: Removed " << (config.models.size() - unique_models.size())
+                  << " duplicate model(s). Testing " << unique_models.size()
+                  << " unique model(s)." << std::endl;
+    }
+
     const std::string command_timestamp = get_timestamp_iso();
 
     // Preflight: ensure all requested models are available before any benchmark starts.
     // If --auto-pull is enabled, pull missing/not-downloaded models during this phase.
     std::map<std::string, json> model_info_by_name;
-    for (const auto& model : config.models) {
+    for (const auto& model : unique_models) {
         json model_info = client.get_model_info(model);
 
         if (model_info.empty()) {
@@ -1241,7 +1257,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     std::vector<ModelBenchResult> by_model;
 
     // 2. Execute benchmark workflow for each model
-    for (const auto& model : config.models) {
+    for (const auto& model : unique_models) {
         const auto model_it = model_info_by_name.find(model);
         if (model_it == model_info_by_name.end()) {
             std::cerr << "Error: Missing preflight model info for '" << model << "'." << std::endl;
