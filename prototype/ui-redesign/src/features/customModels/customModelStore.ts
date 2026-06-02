@@ -189,8 +189,14 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   if (type) opts.type = type;
   if (labels.length) opts.labels = labels;
   if (components.length) opts.components = components;
-  if ((model as any).component_roles) opts.component_roles = (model as any).component_roles;
-  if ((model as any).max_context_window) opts.ctx_size = (model as any).max_context_window;
+  if ((model as any).component_roles) {
+    const roles = Object.fromEntries(
+      Object.entries((model as any).component_roles as Record<string, unknown>)
+        .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+    );
+    if (Object.keys(roles).length > 0) opts.component_roles = roles;
+  }
+  if (type !== 'omni' && (model as any).max_context_window) opts.ctx_size = (model as any).max_context_window;
   return opts;
 }
 
