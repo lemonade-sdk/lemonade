@@ -421,7 +421,7 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(self.snapshot["log_level"], "info")
 
     def test_default_global_timeout(self):
-        self.assertEqual(self.snapshot["global_timeout"], 300)
+        self.assertEqual(self.snapshot["global_timeout"], 600)
 
     def test_default_max_loaded_models(self):
         self.assertEqual(self.snapshot["max_loaded_models"], 1)
