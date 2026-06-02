@@ -18,11 +18,6 @@ namespace lemon {
 
 namespace {
 
-// Fixed image size for collection-mode image tools. Mirrors COLLECTION_IMAGE_SIZE
-// in src/app/src/renderer/utils/collectionImageConfig.ts (kept in sync manually;
-// both sides target SDServer::resolve_size). 2:1, 64-aligned.
-constexpr const char* IMAGE_SIZE = "512x256";
-
 // Labels that identify a concrete non-chat component. A planner candidate is a
 // component carrying none of these. Mirrors NON_CHAT_PLANNER_LABELS in
 // src/app/src/renderer/utils/modelLabels.ts.
@@ -59,6 +54,21 @@ const json& tool_definitions() {
     return defs;
 }
 
+// Fixed image size for collection-mode image tools, read from toolDefinitions.json
+// (the single source of truth shared with the desktop app's collectionImageConfig.ts;
+// both sides target SDServer::resolve_size). 2:1, 64-aligned. Falls back to a sane
+// default if the field is missing.
+const std::string& image_size() {
+    static const std::string size = [] {
+        const json& defs = tool_definitions();
+        if (defs.contains("image_size") && defs["image_size"].is_string()) {
+            return defs["image_size"].get<std::string>();
+        }
+        return std::string("512x256");
+    }();
+    return size;
+}
+
 std::string new_completion_id() {
     static std::atomic<uint64_t> counter{0};
     return "chatcmpl-omni-" + std::to_string(static_cast<long>(std::time(nullptr))) +
@@ -90,7 +100,7 @@ json materialize_tool(const json& def) {
         for (auto& [key, prop] : tool["function"]["parameters"]["properties"].items()) {
             if (prop.contains("description") && prop["description"].is_string()) {
                 prop["description"] =
-                    replace_all(prop["description"].get<std::string>(), "{image_size}", IMAGE_SIZE);
+                    replace_all(prop["description"].get<std::string>(), "{image_size}", image_size());
             }
         }
     }
@@ -327,7 +337,7 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
             }
             if (!img_b64.empty()) {
                 json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
-                            {"n", 1}, {"size", IMAGE_SIZE}, {"image_data", img_b64},
+                            {"n", 1}, {"size", image_size()}, {"image_data", img_b64},
                             {"image_filename", "image.png"}};
                 LOG(INFO, "Collection") << "image_edits: editing source image (" << img_b64.size()
                                         << " b64 chars)" << std::endl;
@@ -354,7 +364,7 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
         }
 
         json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
-                    {"n", 1}, {"size", IMAGE_SIZE}};
+                    {"n", 1}, {"size", image_size()}};
         LOG(INFO, "Collection") << "image_generations: fresh generation" << std::endl;
         json resp = router_.image_generations(req);
         const std::string b64 = extract_b64(resp);
@@ -603,7 +613,12 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
         // Omni-only turn: loop again so the model can produce its final answer.
     }
 
-    // Hit the iteration cap.
+    // Hit the iteration cap: the planner kept calling tools without ever
+    // returning a final text answer. Log it so a stuck loop is diagnosable
+    // rather than silently truncated.
+    LOG(WARNING, "Collection") << "Tool-calling loop hit the " << MAX_ITERATIONS
+                               << "-iteration cap for collection '" << collection_info.model_name
+                               << "' (" << artifacts.size() << " artifact(s) produced)" << std::endl;
     result.final_text = artifacts.empty() ? "Sorry, I was unable to complete that request." : "";
     result.artifacts = std::move(artifacts);
     result.base_response = std::move(base_response);

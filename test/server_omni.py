@@ -12,9 +12,10 @@ message as data-URIs:
 - speech -> <audio>data:audio/mpeg;base64,...</audio>
 
 These tests drive a conversation against the LMX-Omni-5.5B-Lite collection
-and verify that image generation and text-to-speech produce embedded media.
-Image editing is out of scope here (the Lite collection's SD-Turbo component
-is generation-only).
+and verify that image generation and text-to-speech produce embedded media,
+and that client-supplied (app) tools are merged with the omni tools and
+passed back to the caller rather than executed server-side. Image editing is
+out of scope here (the Lite collection's SD-Turbo component is generation-only).
 
 The wrapped server is the collection's chat (planner) component, llamacpp,
 so --backend selects the llamacpp backend.
@@ -156,6 +157,85 @@ class OmniTests(ServerTestBase):
             chunk_count, 1, f"Should have multiple chunks, got {chunk_count}"
         )
         self._assert_contains(self, complete_response, "data:image/", "image")
+
+    @skip_if_unsupported("collection_chat")
+    def test_003_mixed_omni_and_app_tools(self):
+        """A mixed turn runs an omni tool server-side AND hands an app tool back.
+
+        A collection request may carry the client's own `tools` alongside the
+        server-injected omni tools. The server must do both things in the same
+        request: resolve omni tool calls internally (embedding the media in the
+        assistant content) AND return any app tool call — which it knows nothing
+        about — to the client as a finish_reason: "tool_calls" response to
+        execute and resume.
+
+        We prompt for both an image (the omni `generate_image` tool, reliably
+        exercised by the other tests) and a weather lookup (an app-only
+        `get_current_weather` tool with no matching component). The orchestrator
+        accumulates artifacts across loop iterations, so regardless of whether
+        the planner emits both calls in one turn or across turns, the final
+        response should carry the embedded image and the passed-back app call.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("omni")
+
+        app_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_weather",
+                    "description": "Get the current weather for a city.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city": {
+                                "type": "string",
+                                "description": "The city to look up.",
+                            },
+                        },
+                        "required": ["city"],
+                    },
+                },
+            }
+        ]
+
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Draw a red apple on a table, and also call the "
+                        "get_current_weather tool for Paris."
+                    ),
+                }
+            ],
+            tools=app_tools,
+            stream=False,
+        )
+
+        choice = completion.choices[0]
+        print(f"finish_reason: {choice.finish_reason}")
+
+        # The omni tool was executed server-side: its image is embedded in the
+        # assistant content.
+        self._assert_contains(self, choice.message.content, "data:image/", "image")
+
+        # The app tool was NOT executed: it is handed back for the client to run.
+        self.assertEqual(
+            choice.finish_reason,
+            "tool_calls",
+            "App tool calls must be returned for the client to execute",
+        )
+        tool_calls = choice.message.tool_calls
+        self.assertTrue(tool_calls, "Expected the app tool call to be passed back")
+        called_names = [tc.function.name for tc in tool_calls]
+        print(f"Returned tool calls: {called_names}")
+        self.assertIn(
+            "get_current_weather",
+            called_names,
+            "The server must pass the app tool call back unexecuted",
+        )
 
 
 if __name__ == "__main__":
