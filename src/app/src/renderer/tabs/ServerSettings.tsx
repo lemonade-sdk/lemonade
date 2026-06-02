@@ -40,6 +40,10 @@ interface DirectoryFieldProps {
   // Surface dialog/plugin failures to the parent so they appear in the shared
   // status row instead of becoming unhandled promise rejections.
   onError: (message: string) => void;
+  // Optional extended help text shown in a CSS-only hover popover anchored to
+  // an info (i) icon at the bottom-left of the field. Use this for detail that
+  // would otherwise crowd the short inline description.
+  tooltip?: ReactNode;
 }
 
 const DirectoryField: React.FC<DirectoryFieldProps> = ({
@@ -53,6 +57,7 @@ const DirectoryField: React.FC<DirectoryFieldProps> = ({
   onApply,
   onReset,
   onError,
+  tooltip,
 }) => {
   // Local draft tracks what the user has typed but not yet applied. We re-sync
   // it from `serverValue` whenever the parent reloads, so the input always
@@ -109,8 +114,28 @@ const DirectoryField: React.FC<DirectoryFieldProps> = ({
         title={label}
         disabled={disabled}
       />
-      <div className="settings-path-actions">
-        <button
+      <div className="settings-path-actions">{tooltip ? (
+          <span
+            className="settings-info-tooltip"
+            tabIndex={0}
+            role="button"
+            aria-label="More information"
+          >
+            <svg
+              className="settings-info-tooltip-icon"
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.25" />
+              <circle cx="8" cy="4.5" r="0.95" fill="currentColor" />
+              <rect x="7.25" y="6.75" width="1.5" height="5.25" rx="0.6" fill="currentColor" />
+            </svg>
+            <span className="settings-info-tooltip-bubble" role="tooltip">{tooltip}</span>
+          </span>
+        ) : null}        <button
           type="button"
           className="settings-field-reset"
           onClick={() => { void handleBrowse(); }}
@@ -243,6 +268,16 @@ const ServerSettings: React.FC = () => {
         onApply={applyModelsDir}
         onReset={() => applyModelsDir(MODELS_DIR_AUTO_SENTINEL)}
         onError={handleFieldError}
+        tooltip={
+          <>
+            Use <code>auto</code> to follow the Hugging Face cache
+            (<code>~/.cache/huggingface/hub</code>, or <code>HF_HOME</code> /
+            <code>HF_HUB_CACHE</code> if set). This is a server-wide setting —
+            changes apply to every client connected to this server. Loose
+            <code>.gguf</code> files placed in this folder are <em>not</em> detected;
+            for that, use the Extra Models Folder.
+          </>
+        }
       />
 
       <DirectoryField
@@ -261,6 +296,14 @@ const ServerSettings: React.FC = () => {
         onApply={applyExtraModelsDir}
         onReset={() => applyExtraModelsDir('')}
         onError={handleFieldError}
+        tooltip={
+          <>
+            Imported models appear in Model Manager under their bare filename;
+            the <code>extra.</code> prefix is only added when the bare name would
+            conflict with an already-registered model. Leave empty to disable.
+            Tip: after changing this, refresh Model Manager to see imported models.
+          </>
+        }
       />
 
       {status.kind === 'loading' && (
