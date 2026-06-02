@@ -3081,13 +3081,9 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                 std::string line;
                 while (std::getline(info_file, line)) {
                     if (line.rfind("Model:", 0) == 0) {
-                        model = line.substr(6);
-                        size_t s = model.find_first_not_of(" \t");
-                        if (s != std::string::npos) model = model.substr(s);
+                        model = trim_copy(line.substr(6));
                     } else if (line.rfind("GPU UUID:", 0) == 0) {
-                        uuid = line.substr(9);
-                        size_t s = uuid.find_first_not_of(" \t");
-                        if (s != std::string::npos) uuid = uuid.substr(s);
+                        uuid = trim_copy(line.substr(9));
                     }
                 }
 
