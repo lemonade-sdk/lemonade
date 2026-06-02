@@ -124,3 +124,9 @@ Please see the general [contribution guidelines](../contribute.md), then contact
 |     | Windows | Linux |
 |-----|---------|-------|
 | ARM |         |       |
+
+### Apple Silicon Metal
+
+- [x] LLMs via llama.cpp
+- [x] Image generation and editing via stable-diffusion.cpp
+- [x] Realtime transcription via whisper.cpp
