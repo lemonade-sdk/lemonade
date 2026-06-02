@@ -9,6 +9,7 @@ const {
 const LEMONADE_TOOLS = 'src/app/src/renderer/utils/lemonadeTools.ts';
 const TOOL_DEFINITIONS = 'src/app/src/renderer/utils/toolDefinitions.json';
 const IMAGE_CONFIG = 'src/app/src/renderer/utils/collectionImageConfig.ts';
+const LLM_CHAT_PANEL = 'src/app/src/renderer/components/panels/LLMChatPanel.tsx';
 
 function readToolDefinitions() {
   return JSON.parse(readSource(TOOL_DEFINITIONS));
@@ -54,10 +55,40 @@ const tests = [
         'omit to use the {image_size} default',
         'The planner should not have to emit a default size argument for every image request.',
       );
-      assert.ok(!('aspect_ratio' in generateProps), 'Aspect ratio should be handled by size/prompt parsing, not extra planner schema.');
-      assert.ok(!('orientation' in generateProps), 'Orientation aliases should stay executor-side, not planner-side.');
+      assert.ok(!('aspect_ratio' in generateProps), 'Aspect ratio should not be an extra planner schema field.');
+      assert.ok(!('orientation' in generateProps), 'Orientation should not be an extra planner schema field.');
       assert.ok(!('aspect_ratio' in editProps), 'Edit schema should stay as compact as generate schema.');
       assert.ok(!('orientation' in editProps), 'Edit schema should not duplicate orientation aliases.');
+      for (const props of [generateProps, editProps]) {
+        assert.equal(props.width.maximum, 2048, 'Width schema should match the executor dimension cap.');
+        assert.equal(props.height.maximum, 2048, 'Height schema should match the executor dimension cap.');
+        assertIncludes(props.size.description, 'output canvas size', 'Size should be framed as output canvas, not content detail.');
+        assertIncludes(props.size.description, 'multiples of 64', 'Schema description should match the executor alignment guard.');
+      }
+    },
+  },
+  {
+    name: 'image size resolver does not treat prompt WxH text as canvas size',
+    run() {
+      const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      assert.ok(
+        !source.includes("parseSizeFromText(typeof args.prompt"),
+        'Prompt text like "100x100 pixel-art grid" should not override the image canvas size.',
+      );
+      assertIncludes(
+        source,
+        'do not infer canvas size from prompt text',
+        'The resolver should document why prompt text is not parsed as output dimensions.',
+      );
+      assert.ok(
+        !source.includes('SIZE_HINT_TO_SIZE') && !source.includes('ASPECT_RATIO_TO_SIZE'),
+        'Prompt words such as portrait/square/landscape should not change the default canvas size.',
+      );
+      assertIncludes(
+        source,
+        'value % IMAGE_DIMENSION_STEP === 0',
+        'Explicit dimensions should be 64-aligned so 100x100 falls back to the default.',
+      );
     },
   },
   {
@@ -95,6 +126,34 @@ const tests = [
         source,
         /enabledToolNames\.has\('analyze_image'\)[\s\S]*?VISION_INSTRUCTIONS/,
         'Vision instructions should only be added when the vision tool is available.',
+      );
+    },
+  },
+  {
+    name: 'collection UI skips duplicate generate_image calls in one assistant turn',
+    run() {
+      const source = normalizeWhitespace(readSource(LLM_CHAT_PANEL));
+      assertMatches(
+        source,
+        /funcName === 'generate_image' && artifacts\.some\(a => a\.type === 'image'\)[\s\S]*?Image generation skipped because an image was already generated for this request\./,
+        'Repeated generate_image tool calls in one request should not render duplicate images.',
+      );
+    },
+  },
+  {
+    name: 'collection UI reroutes likely edit intents to edit_image when available',
+    run() {
+      const source = normalizeWhitespace(readSource(LLM_CHAT_PANEL));
+      assertIncludes(source, 'isLikelyImageEditRequest(toolCall)', 'Generate calls with edit-like prompts should be detected.');
+      assertMatches(
+        source,
+        /shouldRerouteToEdit[\s\S]*?lemonadeTools\.models\.edit_image[\s\S]*?withToolName\(toolCall, funcName\)/,
+        'Likely edit requests should use edit_image when the collection exposes it.',
+      );
+      assertIncludes(
+        source,
+        'Image editing is not available for the current collection.',
+        'Edit intent should not silently fall back to generating a new image when no edit tool exists.',
       );
     },
   },

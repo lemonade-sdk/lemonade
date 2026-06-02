@@ -14,21 +14,23 @@
           "properties": {
             "prompt": {
               "type": "string",
-              "description": "A detailed description of the image to generate. Keep user-requested orientation/aspect-ratio words in the prompt unless passing an exact size."
+              "description": "A detailed description of the image to generate. Keep content details such as monitor/screen resolution in the prompt; do not move them into size."
             },
             "size": {
               "type": "string",
-              "description": "Optional output image size as WIDTHxHEIGHT pixels. Use exact user dimensions when provided; otherwise omit to use the {image_size} default. For aspect-ratio/orientation requests, pass a concrete size only when obvious."
+              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Use only when the user explicitly asks for output image dimensions; omit for content details like a monitor or pixel-art resolution. Dimensions must be multiples of 64. Otherwise omit to use the {image_size} default."
             },
             "width": {
               "type": "integer",
               "description": "Optional output width in pixels. Use with height when dimensions are provided separately.",
-              "minimum": 64
+              "minimum": 64,
+              "maximum": 2048
             },
             "height": {
               "type": "integer",
               "description": "Optional output height in pixels. Use with width when dimensions are provided separately.",
-              "minimum": 64
+              "minimum": 64,
+              "maximum": 2048
             },
             "steps": {
               "type": "integer",
@@ -73,21 +75,23 @@
           "properties": {
             "prompt": {
               "type": "string",
-              "description": "A description of the desired edit or modification. Keep user-requested orientation/aspect-ratio words in the prompt unless passing an exact size."
+              "description": "A description of the desired edit or modification. Keep content details such as monitor/screen resolution in the prompt; do not move them into size."
             },
             "size": {
               "type": "string",
-              "description": "Optional output image size as WIDTHxHEIGHT pixels. Use exact user dimensions when provided; otherwise omit to use the {image_size} default. For aspect-ratio/orientation requests, pass a concrete size only when obvious."
+              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Use only when the user explicitly asks for output image dimensions; omit for content details like a monitor or pixel-art resolution. Dimensions must be multiples of 64. Otherwise omit to use the {image_size} default."
             },
             "width": {
               "type": "integer",
               "description": "Optional output width in pixels. Use with height when dimensions are provided separately.",
-              "minimum": 64
+              "minimum": 64,
+              "maximum": 2048
             },
             "height": {
               "type": "integer",
               "description": "Optional output height in pixels. Use with width when dimensions are provided separately.",
-              "minimum": 64
+              "minimum": 64,
+              "maximum": 2048
             },
             "steps": {
               "type": "integer",
@@ -153,7 +157,7 @@
       "prompt_guidance": "When you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call the transcribe_audio tool to transcribe it — the audio data is handled automatically by the system.",
       "function": {
         "name": "transcribe_audio",
-        "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system \u2014 just call this tool with the language parameter.",
+        "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system — just call this tool with the language parameter.",
         "parameters": {
           "type": "object",
           "properties": {

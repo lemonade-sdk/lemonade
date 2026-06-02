@@ -9,40 +9,13 @@ import toolDefinitions from './toolDefinitions.json';
 // a size. Keep it shared with collection image hints so defaults stay in sync.
 const DEFAULT_IMAGE_SIZE = COLLECTION_IMAGE_SIZE;
 const MAX_IMAGE_DIMENSION = 2048;
-
-type ImageSizePreset = {
-  size: string;
-  ratios?: string[];
-  hints?: string[];
-};
-
-// Keep user-facing aliases in one compact table. The planner schema stays
-// token-light; these synonyms are executor fallbacks for natural-language
-// prompts such as "vertical", "banner", or "16:9".
-const IMAGE_SIZE_PRESETS: ImageSizePreset[] = [
-  { size: DEFAULT_IMAGE_SIZE, ratios: ['2:1'], hints: ['landscape', 'wide', 'widescreen', 'horizontal', 'banner'] },
-  { size: '512x512', ratios: ['1:1'], hints: ['square'] },
-  { size: '1024x576', ratios: ['16:9'] },
-  { size: '576x1024', ratios: ['9:16'] },
-  { size: '768x576', ratios: ['4:3'] },
-  { size: '576x768', ratios: ['3:4'] },
-  { size: '768x512', ratios: ['3:2'] },
-  { size: '512x768', ratios: ['2:3'], hints: ['portrait', 'vertical', 'tall'] },
-];
-
-const ASPECT_RATIO_TO_SIZE: Record<string, string> = Object.fromEntries(
-  IMAGE_SIZE_PRESETS.flatMap(preset => (preset.ratios ?? []).map(ratio => [ratio, preset.size])),
-);
-
-const SIZE_HINT_TO_SIZE: Record<string, string> = Object.fromEntries(
-  IMAGE_SIZE_PRESETS.flatMap(preset => (preset.hints ?? []).map(hint => [hint, preset.size])),
-);
+const IMAGE_DIMENSION_STEP = 64;
 
 const IMAGE_EDIT_INSTRUCTIONS =
   '\nIMPORTANT: When an image has already been generated in this conversation and the user wants to add, remove, change, modify, or adjust it, use edit_image rather than generate_image. The edit_image tool automatically uses the most recent image as its source.';
 
 const IMAGE_SIZE_INSTRUCTIONS =
-  `\nWhen generating or editing images, pass size or width+height only when the user provides exact dimensions. For aspect-ratio or orientation requests, either pass an obvious concrete size or keep the hint in the prompt; otherwise omit size arguments and let the executor use its ${DEFAULT_IMAGE_SIZE} default. Preserve explicit image options such as steps, cfg_scale, seed, sample_method, and flow_shift as tool arguments.`;
+  `\nWhen generating or editing images, pass size or width+height only when the user explicitly asks for output/canvas pixel dimensions. Do not turn content details such as a screen, monitor, icon, grid, or pixel-art resolution into the output size. If no explicit canvas size is requested, omit size arguments and let the executor use its ${DEFAULT_IMAGE_SIZE} default. Preserve explicit image options such as steps, cfg_scale, seed, sample_method, and flow_shift as tool arguments.`;
 
 const VISION_INSTRUCTIONS =
   "\nWhen the user sends an image (as an image_url in their message), use analyze_image to look at the image before responding about it.";
@@ -221,11 +194,6 @@ async function executeImageTool(
   const isEdit = effectiveName === 'edit_image';
 
   if (isEdit) {
-    const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
-    if (!lastImage) {
-      throw new Error('Image edit requested, but no previous image is available as a source.');
-    }
-
     // /images/edits requires multipart/form-data
     const formData = new FormData();
     formData.append('model', model);
@@ -236,6 +204,10 @@ async function executeImageTool(
     appendOptionalImageFormArgs(args, formData);
 
     // Attach the most recent image as the source file
+    const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
+    if (!lastImage) {
+      throw new Error('Image edit requested, but no previous image is available as a source.');
+    }
     const binaryStr = atob(lastImage.data);
     const bytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) {
@@ -289,12 +261,10 @@ function resolveImageSize(args: Record<string, any>): string {
   const widthHeightSize = width !== null && height !== null ? formatImageSize(width, height) : '';
   if (widthHeightSize) return widthHeightSize;
 
-  const promptSize = parseSizeFromText(typeof args.prompt === 'string' ? args.prompt : '');
-  if (promptSize) return promptSize;
-
-  const inferredSize = inferSizeFromRatioOrOrientation(args);
-  if (inferredSize) return inferredSize;
-
+  // Be conservative: do not infer canvas size from prompt text. Natural-language
+  // phrases such as "portrait", "square icon", or "100x100 monitor" often
+  // describe image content rather than the requested output canvas. If the
+  // planner does not pass explicit size/width/height args, keep the OOB default.
   return DEFAULT_IMAGE_SIZE;
 }
 
@@ -314,36 +284,6 @@ function parseSizeFromText(text: string): string {
   return '';
 }
 
-function inferSizeFromRatioOrOrientation(args: Record<string, any>): string {
-  const textParts = ['aspect_ratio', 'orientation', 'size', 'prompt']
-    .map(key => typeof args[key] === 'string' ? args[key] : '')
-    .filter(Boolean);
-  const text = textParts.join(' ').toLowerCase();
-
-  if (typeof args.aspect_ratio === 'string') {
-    const ratio = args.aspect_ratio.trim().toLowerCase().replace(/\s+/g, '').replace(/\//g, ':');
-    if (ASPECT_RATIO_TO_SIZE[ratio]) return ASPECT_RATIO_TO_SIZE[ratio];
-  }
-
-  for (const [ratio, size] of Object.entries(ASPECT_RATIO_TO_SIZE)) {
-    const [left, right] = ratio.split(':');
-    const pattern = new RegExp(`(?<!\\d)${left}\\s*[:/]\\s*${right}(?!\\d)`);
-    if (pattern.test(text)) return size;
-  }
-
-  if (typeof args.orientation === 'string') {
-    const orientation = args.orientation.trim().toLowerCase();
-    if (SIZE_HINT_TO_SIZE[orientation]) return SIZE_HINT_TO_SIZE[orientation];
-  }
-
-  for (const [hint, size] of Object.entries(SIZE_HINT_TO_SIZE)) {
-    const pattern = new RegExp(`\\b${hint}\\b`);
-    if (pattern.test(text)) return size;
-  }
-
-  return '';
-}
-
 function formatImageSize(width: number, height: number): string {
   if (isValidImageDimension(width) && isValidImageDimension(height)) {
     return `${width}x${height}`;
@@ -352,7 +292,10 @@ function formatImageSize(width: number, height: number): string {
 }
 
 function isValidImageDimension(value: number): boolean {
-  return Number.isInteger(value) && value >= 64 && value <= MAX_IMAGE_DIMENSION;
+  return Number.isInteger(value)
+    && value >= IMAGE_DIMENSION_STEP
+    && value <= MAX_IMAGE_DIMENSION
+    && value % IMAGE_DIMENSION_STEP === 0;
 }
 
 function coerceInteger(value: any): number | null {
