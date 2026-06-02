@@ -59,7 +59,20 @@ const tests = [
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
       const config = readSource(IMAGE_CONFIG);
-      assertMatches(config, /export const COLLECTION_IMAGE_SIZE = '512x256'/, 'Current collection image size should be explicit.');
+      // The collection image size is a single source of truth in
+      // toolDefinitions.json, shared with the C++ server-side orchestrator.
+      assert.equal(
+        readToolDefinitions().image_size,
+        '512x256',
+        'Collection image size should be declared in toolDefinitions.json.',
+      );
+      // collectionImageConfig.ts derives the value from the JSON rather than
+      // hardcoding it, so the desktop app and server cannot drift.
+      assertMatches(
+        config,
+        /export const COLLECTION_IMAGE_SIZE = toolDefinitions\.image_size/,
+        'COLLECTION_IMAGE_SIZE should be derived from toolDefinitions.image_size.',
+      );
       assertMatches(
         source,
         /prop\.description\.includes\('\{image_size\}'\)[\s\S]*?replaceAll\('\{image_size\}', COLLECTION_IMAGE_SIZE\)/,
