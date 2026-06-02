@@ -169,7 +169,6 @@ const AppContent: React.FC = () => {
     const handleDownloadSignal = (e: any) => {
       const downloads = Array.isArray(e.detail?.downloads) ? e.detail.downloads : downloadTracker.getActiveDownloads();
       openIfActive(downloads);
-      void refreshModels();
     };
 
     const handleChatDownloadComplete = () => {

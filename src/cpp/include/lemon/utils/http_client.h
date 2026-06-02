@@ -53,6 +53,14 @@ struct DownloadOptions {
     int low_speed_limit = 0;       // Minimum bytes/sec before timeout (disabled — 0 = no limit)
     int low_speed_time = 0;        // Seconds below low_speed_limit before timeout (disabled)
     int connect_timeout = 30;         // Connection timeout in seconds
+
+    // Optional content verification. expected_hash accepts plain hex or
+    // prefixed values like "sha256:<hex>", "sha1:<hex>", or
+    // "git-sha1:<hex>". git-sha1 verifies the Git blob object id, i.e.
+    // SHA1("blob <size>\0" + file bytes), which is what Hugging Face uses
+    // for non-LFS file ETags. SHA256 is used for LFS objects and release assets.
+    std::string expected_hash;
+    std::string expected_hash_algorithm;
 };
 
 class HttpClient {
