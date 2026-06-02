@@ -16,6 +16,7 @@ type Status =
   | { kind: 'ready' }
   | { kind: 'saving' }
   | { kind: 'unauthorized' }
+  | { kind: 'forbidden_remote' }
   | { kind: 'error'; message: string }
   | { kind: 'saved' };
 
@@ -148,6 +149,8 @@ const ServerSettings: React.FC = () => {
       setStatus({ kind: 'ready' });
     } else if (result.kind === 'unauthorized') {
       setStatus({ kind: 'unauthorized' });
+    } else if (result.kind === 'forbidden_remote') {
+      setStatus({ kind: 'forbidden_remote' });
     } else {
       setStatus({ kind: 'error', message: result.message });
     }
@@ -161,6 +164,8 @@ const ServerSettings: React.FC = () => {
     if (result.kind !== 'ok') {
       if (result.kind === 'unauthorized') {
         setStatus({ kind: 'unauthorized' });
+      } else if (result.kind === 'forbidden_remote') {
+        setStatus({ kind: 'forbidden_remote' });
       } else {
         setStatus({ kind: 'error', message: result.message });
       }
@@ -180,6 +185,12 @@ const ServerSettings: React.FC = () => {
         kind: 'error',
         message:
           'Saved, but could not re-read the configuration (admin authorization required). Displayed values may be stale.',
+      });
+    } else if (fresh.kind === 'forbidden_remote') {
+      setStatus({
+        kind: 'error',
+        message:
+          'Saved, but could not re-read the configuration (server restricts /internal/* to local clients). Displayed values may be stale.',
       });
     } else {
       setStatus({
@@ -207,7 +218,11 @@ const ServerSettings: React.FC = () => {
 
   const isBusy = status.kind === 'loading' || status.kind === 'saving';
   const isUnauthorized = status.kind === 'unauthorized';
-  const fieldsDisabled = isBusy || isUnauthorized;
+  const isForbiddenRemote = status.kind === 'forbidden_remote';
+  // We keep the inputs visible in every state so the user can see what is
+  // configured (e.g. on a remote server they can still read the values they
+  // typed), but we disable editing whenever the server will reject the write.
+  const fieldsDisabled = isBusy || isUnauthorized || isForbiddenRemote;
 
   const handleFieldError = (message: string) => {
     setStatus({ kind: 'error', message });
@@ -268,9 +283,19 @@ const ServerSettings: React.FC = () => {
       )}
       {status.kind === 'unauthorized' && (
         <div className="settings-description">
-          The server rejected the request. Editing server configuration requires the
-          admin API key (<code>LEMONADE_ADMIN_API_KEY</code>). Set it on the server and
-          in Connection → API Key, then reload.
+          The server rejected the request with HTTP 401. Editing server configuration
+          requires the admin API key (<code>LEMONADE_ADMIN_API_KEY</code>). Set it on
+          the server and in Connection → API Key, then reload.
+        </div>
+      )}
+      {status.kind === 'forbidden_remote' && (
+        <div className="settings-description">
+          This server restricts <code>/internal/*</code> endpoints to local clients
+          (HTTP 403), so server-wide configuration cannot be edited from a remote
+          desktop app. To change <code>models_dir</code> or <code>extra_models_dir</code>,
+          run the desktop app (or <code>lemonade config set</code>) on the same machine
+          as <code>lemond</code>. Setting <code>LEMONADE_ADMIN_API_KEY</code> will not
+          unlock this from a remote client.
         </div>
       )}
       {status.kind === 'error' && (

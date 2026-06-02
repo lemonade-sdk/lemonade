@@ -25,11 +25,13 @@ const MODELS_DIR_AUTO = 'auto';
 export type RuntimeConfigStatus =
   | { kind: 'ok'; modelsDir: string; extraModelsDir: string }
   | { kind: 'unauthorized' }
+  | { kind: 'forbidden_remote' }
   | { kind: 'error'; message: string };
 
 export type RuntimeConfigUpdateResult =
   | { kind: 'ok' }
   | { kind: 'unauthorized' }
+  | { kind: 'forbidden_remote' }
   | { kind: 'error'; message: string };
 
 function buildInternalUrl(path: string): string {
@@ -43,10 +45,17 @@ function authHeaders(): Record<string, string> {
 }
 
 function classifyHttpError(status: number, body: string): RuntimeConfigStatus & RuntimeConfigUpdateResult {
-  if (status === 401 || status === 403) {
-    // /internal/* may require LEMONADE_ADMIN_API_KEY rather than the regular
-    // LEMONADE_API_KEY; surface that distinctly so callers can guide the user.
+  if (status === 401) {
+    // Missing/invalid credentials. /internal/* requires LEMONADE_ADMIN_API_KEY
+    // (rather than the regular LEMONADE_API_KEY) when auth is enabled.
     return { kind: 'unauthorized' } as RuntimeConfigStatus & RuntimeConfigUpdateResult;
+  }
+  if (status === 403) {
+    // /internal/* endpoints are restricted to loopback on the server side. A
+    // 403 means the request reached lemond but was rejected as non-local —
+    // setting LEMONADE_ADMIN_API_KEY will not help. Callers should explain
+    // this is a remote-server limitation, not an auth problem.
+    return { kind: 'forbidden_remote' } as RuntimeConfigStatus & RuntimeConfigUpdateResult;
   }
   return {
     kind: 'error',
@@ -57,8 +66,10 @@ function classifyHttpError(status: number, body: string): RuntimeConfigStatus & 
 /**
  * Fetch the current runtime configuration from lemond.
  *
- * Returns `{ kind: 'unauthorized' }` when the server rejects the request for
- * auth reasons; the UI should explain that admin-level access is required.
+ * Returns `{ kind: 'unauthorized' }` on HTTP 401 (the admin API key is missing
+ * or invalid) and `{ kind: 'forbidden_remote' }` on HTTP 403 (lemond restricts
+ * `/internal/*` to loopback, so a remote client cannot read or write
+ * server-wide config). The UI should surface these distinctly.
  */
 export async function getRuntimeConfig(): Promise<RuntimeConfigStatus> {
   await serverConfig.waitForInit();
