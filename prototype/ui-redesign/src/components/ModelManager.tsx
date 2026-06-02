@@ -110,6 +110,51 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (!text) return;
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
+}
+
+const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, title = 'Copy model name' }) => {
+  const [copied, setCopied] = useState(false);
+  const handleClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await copyTextToClipboard(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      className={`copy-inline${copied ? ' copy-inline--copied' : ''}`}
+      onClick={handleClick}
+      title={copied ? 'Copied' : title}
+      aria-label={copied ? 'Copied' : title}
+    >
+      {copied ? '✓' : '⧉'}
+    </button>
+  );
+};
+
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: '🦙 llama.cpp',
   vllm: '🚀 vLLM',
@@ -1044,7 +1089,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               {recipeIcon(m.recipe)}
             </div>
             <div className="row__text">
-              <span className="row__name">{m.model_name}</span>
+              <span className="row__name-wrap"><span className="row__name">{m.model_name}</span><CopyInlineButton text={m.model_name} /></span>
               <span className="row__sub">
                 {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
                 {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
@@ -1131,7 +1176,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               {recipeIcon((m as any).recipe)}
             </div>
             <div className="row__text">
-              <span className="row__name">{m.display_name || name}</span>
+              <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span><CopyInlineButton text={name} /></span>
               <span className="row__sub">
                 {recipeLabel((m as any).recipe || '')}
                 {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
@@ -1226,7 +1271,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <div className="row__main">
             <div className="row__icon row__icon--hf">🤗</div>
             <div className="row__text">
-              <span className="row__name">{r.id}</span>
+              <span className="row__name-wrap"><span className="row__name">{r.id}</span><CopyInlineButton text={r.id} title="Copy repository name" /></span>
               <span className="row__sub">
                 {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
                 {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes

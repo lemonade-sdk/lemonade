@@ -4862,3 +4862,152 @@ input, textarea {
 .omni-component-picker__hf-search { width: 100%; margin-top: var(--space-2); padding: var(--space-2); border: 1px dashed var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text-secondary); cursor: pointer; text-align: left; }
 .omni-component-picker__hf-search:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--text-primary); }
 @media (max-width: 720px) { .custom-model-form__grid { grid-template-columns: 1fr; } .account-menu__name { display: none; } }
+
+/* Surgical prototype UI fixes: collapsed rail, copy/retry actions, high-context controls */
+.chat:not(.rail-expanded) .rail__list,
+.chat:not(.rail-expanded) .rail__privacy {
+  display: none;
+}
+
+.chat:not(.rail-expanded) .rail__head,
+.chat:not(.rail-expanded) .rail__new-wrap {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.chat:not(.rail-expanded) .rail__new-wrap {
+  display: flex;
+}
+
+.message__author-row,
+.active-card__name-row,
+.row__name-wrap,
+.applied-row__model-name-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.row__name-wrap,
+.applied-row__model-name-wrap {
+  display: flex;
+}
+
+.row__name-wrap .row__name,
+.active-card__name-row .active-card__name,
+.applied-row__model-name-wrap .applied-row__model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-inline {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+
+.copy-inline:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.copy-inline:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.copy-inline--copied {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: var(--success-soft);
+}
+
+.copy-inline--author {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  font-size: 11px;
+  transform: translateY(-1px);
+}
+
+.message__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.message__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+
+.message__action:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.message__action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+
+/* Keep the collapsed conversations toggle available and visible. */
+.chat:not(.rail-expanded) .rail__head {
+  display: flex !important;
+  visibility: visible;
+  flex: 0 0 auto;
+  min-height: 56px;
+}
+
+.chat:not(.rail-expanded) .rail__toggle {
+  display: flex !important;
+  opacity: 1 !important;
+  visibility: visible;
+  pointer-events: auto;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  z-index: 2;
+}
+
+.chat:not(.rail-expanded) .rail__toggle:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+.chat:not(.rail-expanded) .rail__title {
+  display: none;
+}
