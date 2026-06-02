@@ -36,6 +36,9 @@ interface DirectoryFieldProps {
   // Reset to the field's default (which differs between models_dir and
   // extra_models_dir, so it stays a callback rather than a sentinel here).
   onReset: () => Promise<void>;
+  // Surface dialog/plugin failures to the parent so they appear in the shared
+  // status row instead of becoming unhandled promise rejections.
+  onError: (message: string) => void;
 }
 
 const DirectoryField: React.FC<DirectoryFieldProps> = ({
@@ -48,6 +51,7 @@ const DirectoryField: React.FC<DirectoryFieldProps> = ({
   disabled,
   onApply,
   onReset,
+  onError,
 }) => {
   // Local draft tracks what the user has typed but not yet applied. We re-sync
   // it from `serverValue` whenever the parent reloads, so the input always
@@ -61,15 +65,20 @@ const DirectoryField: React.FC<DirectoryFieldProps> = ({
     // Seed the picker with the current path when it's a real directory; for
     // the default sentinel (or empty), let the OS pick the start location.
     const defaultPath = isDefault(draft) ? undefined : draft || undefined;
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      defaultPath,
-      title: dialogTitle,
-    });
-    if (typeof selected === 'string' && selected.length > 0) {
-      setDraft(selected);
-      await onApply(selected);
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath,
+        title: dialogTitle,
+      });
+      // A null return means the user cancelled the dialog — not an error.
+      if (typeof selected === 'string' && selected.length > 0) {
+        setDraft(selected);
+        await onApply(selected);
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -149,18 +158,34 @@ const ServerSettings: React.FC = () => {
   }, [loadConfig]);
 
   const finishApply = async (result: RuntimeConfigUpdateResult) => {
-    if (result.kind === 'ok') {
-      setStatus({ kind: 'saved' });
-      // Re-read so we display whatever the server actually persisted.
-      const fresh = await getRuntimeConfig();
-      if (fresh.kind === 'ok') {
-        setServerModelsDir(fresh.modelsDir);
-        setServerExtraModelsDir(fresh.extraModelsDir);
+    if (result.kind !== 'ok') {
+      if (result.kind === 'unauthorized') {
+        setStatus({ kind: 'unauthorized' });
+      } else {
+        setStatus({ kind: 'error', message: result.message });
       }
-    } else if (result.kind === 'unauthorized') {
-      setStatus({ kind: 'unauthorized' });
+      return;
+    }
+    // Write succeeded — re-read BEFORE claiming "Saved" so we never show
+    // "Saved" alongside stale values if the refresh itself fails.
+    const fresh = await getRuntimeConfig();
+    if (fresh.kind === 'ok') {
+      setServerModelsDir(fresh.modelsDir);
+      setServerExtraModelsDir(fresh.extraModelsDir);
+      setStatus({ kind: 'saved' });
+    } else if (fresh.kind === 'unauthorized') {
+      // Write went through but we lost read access on the follow-up; surface
+      // that explicitly rather than implying the displayed values are current.
+      setStatus({
+        kind: 'error',
+        message:
+          'Saved, but could not re-read the configuration (admin authorization required). Displayed values may be stale.',
+      });
     } else {
-      setStatus({ kind: 'error', message: result.message });
+      setStatus({
+        kind: 'error',
+        message: `Saved, but could not re-read the configuration: ${fresh.message}. Displayed values may be stale.`,
+      });
     }
   };
 
@@ -184,6 +209,10 @@ const ServerSettings: React.FC = () => {
   const isUnauthorized = status.kind === 'unauthorized';
   const fieldsDisabled = isBusy || isUnauthorized;
 
+  const handleFieldError = (message: string) => {
+    setStatus({ kind: 'error', message });
+  };
+
   return (
     <div className="settings-section-container">
       <DirectoryField
@@ -204,6 +233,7 @@ const ServerSettings: React.FC = () => {
         disabled={fieldsDisabled}
         onApply={applyModelsDir}
         onReset={() => applyModelsDir(MODELS_DIR_AUTO_SENTINEL)}
+        onError={handleFieldError}
       />
 
       <DirectoryField
@@ -224,6 +254,7 @@ const ServerSettings: React.FC = () => {
         disabled={fieldsDisabled}
         onApply={applyExtraModelsDir}
         onReset={() => applyExtraModelsDir('')}
+        onError={handleFieldError}
       />
 
       {status.kind === 'loading' && (
