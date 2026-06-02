@@ -5263,6 +5263,19 @@ input::-webkit-calendar-picker-indicator {
     flex: 1;
 }
 
+/* Directory-picker rows (Settings -> Server). Stacks label/Reset, description,
+   text input, and action buttons vertically so the path field can use the full
+   width of the settings panel. */
+.settings-directory-field .settings-text-input {
+    width: 100%;
+}
+
+.settings-directory-field .settings-path-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
 .settings-checkbox-label {
     display: flex;
     align-items: flex-start;

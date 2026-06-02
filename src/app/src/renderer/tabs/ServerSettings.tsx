@@ -87,12 +87,9 @@ const DirectoryField: React.FC<DirectoryFieldProps> = ({
   const atDefault = isDefault(serverValue);
 
   return (
-    <div className={`settings-section ${atDefault ? 'settings-section-default' : ''}`}>
+    <div className={`settings-section settings-directory-field ${atDefault ? 'settings-section-default' : ''}`}>
       <div className="settings-label-row">
-        <label className="settings-label">
-          <span className="settings-label-text">{label}</span>
-          <span className="settings-description">{description}</span>
-        </label>
+        <span className="settings-label-text">{label}</span>
         <button
           type="button"
           className="settings-field-reset"
@@ -102,23 +99,24 @@ const DirectoryField: React.FC<DirectoryFieldProps> = ({
           Reset
         </button>
       </div>
-      <div className="settings-path-row">
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          className="settings-text-input"
-          placeholder={placeholder}
-          title={label}
-          disabled={disabled}
-        />
+      <div className="settings-description">{description}</div>
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        className="settings-text-input"
+        placeholder={placeholder}
+        title={label}
+        disabled={disabled}
+      />
+      <div className="settings-path-actions">
         <button
           type="button"
           className="settings-field-reset"
           onClick={() => { void handleBrowse(); }}
           disabled={disabled}
         >
-          Browse…
+          Browse
         </button>
         <button
           type="button"
@@ -231,14 +229,10 @@ const ServerSettings: React.FC = () => {
   return (
     <div className="settings-section-container">
       <DirectoryField
-        label="Model download folder"
+        label="Model Download Folder"
         description={
           <>
-            Where the server downloads and stores models pulled from Hugging Face. Use{' '}
-            <code>auto</code> to follow the Hugging Face cache
-            (<code>~/.cache/huggingface/hub</code>). This is a server-wide setting — changes
-            apply to every client connected to this server. Loose GGUF files placed in this
-            folder are <em>not</em> detected; for that, use the Extra models folder below.
+            Where the server downloads and stores models pulled from Hugging Face. 
           </>
         }
         placeholder="auto"
@@ -252,14 +246,11 @@ const ServerSettings: React.FC = () => {
       />
 
       <DirectoryField
-        label="Extra models folder"
+        label="Extra Models Folder"
         description={
           <>
             An additional folder the server recursively scans for loose <code>.gguf</code>{' '}
-            files. Imported models appear in Model Manager under their bare filename; the{' '}
-            <code>extra.</code> prefix is only added when the bare name would conflict with an
-            already-registered model. Leave empty to disable. Tip: after changing this, refresh
-            Model Manager to see imported models.
+            files.
           </>
         }
         placeholder="(none — feature disabled)"
