@@ -1352,18 +1352,12 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         // Normal output (single- or multi-model)
         if (config.json_output) {
             json output;
-            if (by_model.size() == 1) {
-                output = to_json(by_model[0].results, by_model[0].model,
-                                 by_model[0].timestamp, config);
-                output["timestamp"] = command_timestamp;
-            } else {
-                output["timestamp"] = command_timestamp;
-                output["models"] = json::array();
-                for (const auto& model_result : by_model) {
-                    output["models"].push_back(
-                        to_json(model_result.results, model_result.model,
-                                model_result.timestamp, config));
-                }
+            output["timestamp"] = command_timestamp;
+            output["models"] = json::array();
+            for (const auto& model_result : by_model) {
+                output["models"].push_back(
+                    to_json(model_result.results, model_result.model,
+                            model_result.timestamp, config));
             }
 
             std::string json_str = output.dump(2);
@@ -1380,18 +1374,12 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
             if (!config.output_file.empty()) {
                 json output;
-                if (by_model.size() == 1) {
-                    output = to_json(by_model[0].results, by_model[0].model,
-                                     by_model[0].timestamp, config);
-                    output["timestamp"] = command_timestamp;
-                } else {
-                    output["timestamp"] = command_timestamp;
-                    output["models"] = json::array();
-                    for (const auto& model_result : by_model) {
-                        output["models"].push_back(
-                            to_json(model_result.results, model_result.model,
-                                    model_result.timestamp, config));
-                    }
+                output["timestamp"] = command_timestamp;
+                output["models"] = json::array();
+                for (const auto& model_result : by_model) {
+                    output["models"].push_back(
+                        to_json(model_result.results, model_result.model,
+                                model_result.timestamp, config));
                 }
                 if (write_json_file(config.output_file, output.dump(2), false)) {
                     std::cout << "JSON results also written to " << config.output_file << std::endl;
@@ -1468,37 +1456,23 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         if (config.json_output) {
             json output;
 
-            if (comparison_results.size() == 1) {
-                const auto& c = comparison_results[0];
-                output = build_comparison_json(*c.results, c.model, c.timestamp, config,
-                                               c.previous_for_model, c.deltas);
-                output["timestamp"] = command_timestamp;
-                output["model_summary"] = {
-                    {"current_models", current_models},
-                    {"previous_models", previous_models},
-                    {"matched_models", matched_models},
-                    {"new_models", new_models},
-                    {"removed_models", removed_models}
-                };
-            } else {
-                output["timestamp"] = command_timestamp;
-                output["compare_file"] = config.compare_file;
-                if (!previous_timestamp.empty()) {
-                    output["previous_timestamp"] = previous_timestamp;
-                }
-                output["model_summary"] = {
-                    {"current_models", current_models},
-                    {"previous_models", previous_models},
-                    {"matched_models", matched_models},
-                    {"new_models", new_models},
-                    {"removed_models", removed_models}
-                };
-                output["models"] = json::array();
-                for (const auto& c : comparison_results) {
-                    output["models"].push_back(
-                        build_comparison_json(*c.results, c.model, c.timestamp, config,
-                                              c.previous_for_model, c.deltas));
-                }
+            output["timestamp"] = command_timestamp;
+            output["compare_file"] = config.compare_file;
+            if (!previous_timestamp.empty()) {
+                output["previous_timestamp"] = previous_timestamp;
+            }
+            output["model_summary"] = {
+                {"current_models", current_models},
+                {"previous_models", previous_models},
+                {"matched_models", matched_models},
+                {"new_models", new_models},
+                {"removed_models", removed_models}
+            };
+            output["models"] = json::array();
+            for (const auto& c : comparison_results) {
+                output["models"].push_back(
+                    build_comparison_json(*c.results, c.model, c.timestamp, config,
+                                          c.previous_for_model, c.deltas));
             }
 
             std::string json_str = output.dump(2);
