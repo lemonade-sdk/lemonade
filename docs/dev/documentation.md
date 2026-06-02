@@ -254,7 +254,7 @@ AI tools can draft documentation faster than most people can type. That speed co
 
 - [ ] Every parameter name and default verified against the source code or a live server.
 - [ ] All CLI commands, curl commands, and test script invocations run locally and produced the expected output.
-- [ ] All links resolve to real pages.
+- [ ] All internal links, anchors, external links, and referenced files resolve correctly.
 - [ ] Prose meets all style requirements in this guide and avoids AI-generated prose patterns.
 - [ ] All executable content (code examples, curl commands, scripts) uses real Lemonade model names and endpoints from the registry, not `<your-model-here>` placeholders.
 - [ ] Every sentence that restates the heading, defines an obvious term, or describes what's visible in the adjacent code has been removed.
@@ -302,7 +302,7 @@ Documentation PRs are reviewed for accuracy, alignment with the philosophy, styl
 | Mistake | Correction |
 |---|---|
 | Documenting the obvious | Remove it. Trust the reader. |
-| Using a table for 2 items | Use a sentence or list instead |
+| Using a table when a list or sentence would be clearer | Use a sentence or list instead |
 | Heading: "Overview" | Rename to the actual topic: "How routing works" |
 | `you should` / `you must` | Just state the requirement: "Run `setup.sh` before building." |
 | Passive voice | Rewrite with an active subject |
