@@ -10,6 +10,7 @@ import {
   DEFAULT_TTS_SETTINGS,
 } from './utils/appSettings';
 import ConnectionSettings from './tabs/ConnectionSettings';
+import ServerSettings from './tabs/ServerSettings';
 import TTSSettings from './tabs/TTSSettings';
 import LLMChatSettings from './tabs/LLMChatSettings';
 
@@ -50,7 +51,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set(['connection_settings', 'llm_chat_settings', 'tts_settings'])
+    new Set(['connection_settings', 'server_settings', 'llm_chat_settings', 'tts_settings'])
   );
 
   useEffect(() => {
@@ -252,6 +253,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
       settingCount: 6,
     },
     {
+      id: 'server_settings',
+      label: 'Server',
+      keywords: [
+        'server', 'models', 'model', 'folder', 'directory', 'download', 'models dir',
+        'models_dir', 'extra models', 'extra_models_dir', 'extra', 'gguf', 'import',
+        'storage', 'cache', 'huggingface'
+      ],
+      settingCount: 2,
+    },
+    {
       id: 'tts_settings',
       label: 'Speech',
       keywords: [
@@ -278,6 +289,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
           onValueChangeFunc={handleTextInputChange}
           onResetFunc={handleResetField}
         />;
+      case 'server_settings':
+        return <ServerSettings />;
       case 'llm_chat_settings':
         return <LLMChatSettings
           settings={settings}

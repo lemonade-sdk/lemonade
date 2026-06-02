@@ -5253,6 +5253,84 @@ input::-webkit-calendar-picker-indicator {
     text-align: left;
 }
 
+.settings-path-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.settings-path-row .settings-text-input {
+    flex: 1;
+}
+
+/* Directory-picker rows (Settings -> Server). Stacks label/Reset, description,
+   text input, and action buttons vertically so the path field can use the full
+   width of the settings panel. */
+.settings-directory-field .settings-text-input {
+    width: 100%;
+}
+
+.settings-directory-field .settings-path-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Info icon + CSS-only hover/focus tooltip used by directory fields. Pure CSS,
+   no JS or new dependencies. Pushed to the left so action buttons stay right-
+   aligned via margin-right: auto. */
+.settings-info-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: auto;
+    width: 12px;
+    height: 12px;
+    color: var(--text-secondary);
+    cursor: help;
+    outline: none;
+}
+
+.settings-info-tooltip-icon {
+    display: block;
+}
+
+.settings-info-tooltip:hover .settings-info-tooltip-icon,
+.settings-info-tooltip:focus-visible .settings-info-tooltip-icon {
+    color: var(--text-primary);
+}
+
+.settings-info-tooltip-bubble {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 10;
+    min-width: 220px;
+    max-width: 320px;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    font-size: 0.7rem;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    pointer-events: none;
+}
+
+.settings-info-tooltip:hover .settings-info-tooltip-bubble,
+.settings-info-tooltip:focus-visible .settings-info-tooltip-bubble {
+    opacity: 1;
+    visibility: visible;
+}
+
 .settings-checkbox-label {
     display: flex;
     align-items: flex-start;

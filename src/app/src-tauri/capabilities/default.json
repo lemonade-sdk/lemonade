@@ -26,6 +26,7 @@
     "opener:allow-open-url",
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text",
-    "deep-link:default"
+    "deep-link:default",
+    "dialog:allow-open"
   ]
 }

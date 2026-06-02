@@ -41,7 +41,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
     "vulkan_args": "",
     "rocm_args": "",
     "cpu_args": "",
-	"device": "",
+    "device": "",
     "prefer_system": false,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
@@ -70,7 +70,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
     "vulkan_bin": "builtin"
   },
   "flm": {
-    "args": "",
+    "args": ""
   },
   "ryzenai": {
     "server_bin": "builtin"
@@ -83,22 +83,24 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 
 ### Settings Reference
 
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `port` | int | 13305 | Port number for the HTTP server |
-| `host` | string | "localhost" | Address to bind for connections |
-| `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
-| `global_timeout` | int | 300 | Timeout in seconds for HTTP, inference, and readiness checks |
-| `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
-| `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
-| `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
-| `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
-| `ctx_size` | int | 4096 | Default context size for LLM models |
-| `offline` | bool | false | Skip model downloads |
-| `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
-| `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
-| `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
-| `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
+| Key                       | Type   | Default     | Description                                                                                                    |
+| ------------------------- | ------ | ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `port`                    | int    | 13305       | Port number for the HTTP server                                                                                |
+| `host`                    | string | "localhost" | Address to bind for connections                                                                                |
+| `log_level`               | string | "info"      | Logging level (trace, debug, info, warning, error, fatal, none)                                                |
+| `global_timeout`          | int    | 300         | Timeout in seconds for HTTP, inference, and readiness checks                                                   |
+| `max_loaded_models`       | int    | 1           | Max models per type slot. Use -1 for unlimited                                                                 |
+| `no_broadcast`            | bool   | false       | Disable UDP broadcasting for server discovery                                                                  |
+| `extra_models_dir`        | string | ""          | Secondary directory to scan for GGUF model files                                                               |
+| `models_dir`              | string | "auto"      | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default                     |
+| `ctx_size`                | int    | 4096        | Default context size for LLM models                                                                            |
+| `offline`                 | bool   | false       | Skip model downloads                                                                                           |
+| `no_fetch_executables`    | bool   | false       | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
+| `disable_model_filtering` | bool   | false       | Show all models regardless of hardware capabilities                                                            |
+| `enable_dgpu_gtt`         | bool   | false       | Include GTT for hardware-based model filtering                                                                 |
+| `rocm_channel`            | string | "stable"    | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details      |
+
+> Tip: in the Lemonade desktop app, `models_dir` and `extra_models_dir` can also be set under **Settings &rarr; Server**.
 
 ### Backend Configuration
 
@@ -153,13 +155,13 @@ Backend-specific settings are nested under their backend name:
 
 Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm_bin`) accepts the same set of values:
 
-| Value | Meaning |
-|---|---|
-| `"builtin"` *(default)* | Use the version of the upstream backend that lemonade pins in its release. Recommended for most users — these versions are tested with this lemonade build. |
-| `""` | Same as `"builtin"`. |
-| `"latest"` | Resolve to the most-recent upstream GitHub release on first install or first status query for that backend, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
-| `"b8664"` / `"v1.8.2"` / etc. | A specific upstream release tag. Lemonade downloads that exact version from GitHub. |
-| `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
+| Value                         | Meaning                                                                                                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"builtin"` _(default)_       | Use the version of the upstream backend that lemonade pins in its release. Recommended for most users — these versions are tested with this lemonade build.                                                               |
+| `""`                          | Same as `"builtin"`.                                                                                                                                                                                                      |
+| `"latest"`                    | Resolve to the most-recent upstream GitHub release on first install or first status query for that backend, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
+| `"b8664"` / `"v1.8.2"` / etc. | A specific upstream release tag. Lemonade downloads that exact version from GitHub.                                                                                                                                       |
+| `"/path/to/bin"`              | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set.                                                            |
 
 > Note: the `latest` setting is experimental.
 
@@ -194,7 +196,7 @@ Changing a `*_bin` value applies live: lemonade unloads any model currently usin
 The `lemonade backends` listing surfaces two upgrade signals for backends pinned to `"latest"`:
 
 - **`update_available`** — A newer upstream release exists than what's installed. The backend keeps running on the installed version; the listed `action` is the install command to apply the upgrade when you're ready.
-- **`update_required`** — The installed version is *older* than the version lemonade ships in this release. This forces an upgrade prompt because running below the lemonade-shipped baseline is not supported.
+- **`update_required`** — The installed version is _older_ than the version lemonade ships in this release. This forces an upgrade prompt because running below the lemonade-shipped baseline is not supported.
 
 Backends pinned to a specific tag (e.g. `b8664`) do not get either signal — they're treated as an explicit user choice.
 
@@ -274,12 +276,12 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 **Authentication Hierarchy:**
 
-| Scenario | `LEMONADE_API_KEY` | `LEMONADE_ADMIN_API_KEY` | Internal Endpoints | Regular API Endpoints |
-|----------|-------------------|--------------------------|-------------------|----------------------|
-| No keys set | (not set) | (not set) | No auth required | No auth required |
-| Only API key | "secret" | (not set) | Requires key | Requires key |
-| Only admin key | (not set) | "admin" | Requires admin key | No auth required |
-| Both keys different | "regular" | "admin" | Requires admin key | Either key accepted |
+| Scenario            | `LEMONADE_API_KEY` | `LEMONADE_ADMIN_API_KEY` | Internal Endpoints | Regular API Endpoints |
+| ------------------- | ------------------ | ------------------------ | ------------------ | --------------------- |
+| No keys set         | (not set)          | (not set)                | No auth required   | No auth required      |
+| Only API key        | "secret"           | (not set)                | Requires key       | Requires key          |
+| Only admin key      | (not set)          | "admin"                  | Requires admin key | No auth required      |
+| Both keys different | "regular"          | "admin"                  | Requires admin key | Either key accepted   |
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
 

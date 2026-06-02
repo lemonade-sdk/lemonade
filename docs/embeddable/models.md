@@ -5,12 +5,12 @@ This guide covers how `lemond` discovers, exposes, and bundles models in an embe
 Contents:
 
 - [Model Organization](#model-organization)
-    - [Sharing Models With Other Apps](#sharing-models-with-other-apps)
-    - [Private Models](#private-models)
-    - [Importing Models to `lemond`](#importing-models-to-lemond)
+  - [Sharing Models With Other Apps](#sharing-models-with-other-apps)
+  - [Private Models](#private-models)
+  - [Importing Models to `lemond`](#importing-models-to-lemond)
 - [Customization](#customization)
-    - [Changing the Built-In Models List](#changing-the-built-in-models-list)
-    - [Per-Model Load Options](#per-model-load-options)
+  - [Changing the Built-In Models List](#changing-the-built-in-models-list)
+  - [Per-Model Load Options](#per-model-load-options)
 - [Bundling Models](#bundling-models)
 
 ## Model Organization
@@ -19,6 +19,8 @@ Contents:
 
 - `models_dir` is the primary model store, where `lemond` will `pull` models to.
 - `extra_models_dir` is a search path for GGUF LLMs that can be imported into `lemond`.
+
+> Tip: in the Lemonade desktop app, `models_dir` and `extra_models_dir` can also be set under **Settings &rarr; Server**.
 
 ### Sharing Models With Other Apps
 
@@ -79,6 +81,7 @@ models--unsloth--Qwen3-0.6B-GGUF
 You may want to share models within your app if `lemond` is not your only inference provider for GGUF LLMs.
 
 There is also a scenario where `lemond`'s Hugging Face Hub-based `pull` methodology is not able to obtain the models you need, for example:
+
 - Hugging Face Hub is blocked in your users' locality.
 - Your GGUF files are not on Hugging Face Hub.
 
@@ -141,10 +144,10 @@ You can test whether it worked like this:
 Which should return:
 
 ```
-extra.my_custom_model.gguf              Yes         llamacpp
+my_custom_model.gguf                    Yes         llamacpp
 ```
 
-> Note: models imported via `extra_models_dir` will have the `extra.` prefix in the `list` command and `/v1/models` endpoint.
+> Note: imported models keep their bare filename in the `list` command and `/v1/models` endpoint. The `extra.` prefix is only added when the bare name would conflict with an already-registered model — in that case both can coexist (e.g. `Qwen3-Coder-30B-A3B-Instruct-GGUF` and `extra.Qwen3-Coder-30B-A3B-Instruct-GGUF`).
 
 > Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
 
