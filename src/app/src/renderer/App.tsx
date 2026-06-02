@@ -369,9 +369,13 @@ const AppContent: React.FC = () => {
       : undefined;
     // An Omni collection whose components are all present needs no download —
     // only its definition gets registered. registrationOnly skips the Download
-    // Manager/progress flow for that case.
+    // Manager/progress flow for that case. Require at least one component:
+    // every() is vacuously true for an empty array, which would otherwise let a
+    // malformed collection (missing/empty components) take the no-download path.
     const collectionFullyDownloaded = requestBody.recipe === 'collection.omni' &&
-      (collectionComponents ?? []).every((component) =>
+      collectionComponents !== undefined &&
+      collectionComponents.length > 0 &&
+      collectionComponents.every((component) =>
         isModelEffectivelyDownloaded(component, modelsData[component], modelsData)
       );
 
