@@ -302,7 +302,7 @@ With the OpenAI SDK:
 client = OpenAI(base_url="http://localhost:13305/v1", api_key="my-secret-key")
 ```
 
-`LEMONADE_ADMIN_API_KEY` provides elevated access including management endpoints (`/v1/params`, `/v1/log-level`, `/internal/*`). Keep admin keys out of client-side code.
+`LEMONADE_ADMIN_API_KEY` provides elevated access including management endpoints (`/v1/log-level`, `/internal/*`). Keep admin keys out of client-side code.
 
 See [API Key and Security](../guide/configuration/README.md#api-key-and-security) for the full authentication hierarchy.
 
@@ -318,14 +318,8 @@ See [API Key and Security](../guide/configuration/README.md#api-key-and-security
 lemonade config set max_loaded_models=2
 ```
 
-Or at runtime via the API:
-
-```python
-requests.post(f"{BASE_URL}/v1/params", json={"max_loaded_models": 2})
-```
-
 **Get performance stats after inference.** `GET /v1/stats` returns TTFT and tokens-per-second from the last request — useful for latency monitoring in your app.
 
 **Stream for interactive UIs.** Streaming reduces perceived latency dramatically. Even a 5-second full-response generation feels fast when tokens appear immediately.
 
-**Check system resources before loading large models.** `GET /v1/system-stats` returns current CPU, RAM, and VRAM usage. `GET /v1/system-info` returns device capabilities and which backends are installed.
+**Check system capabilities before loading large models.** `GET /v1/system-info` returns device capabilities and which backends are installed.

@@ -84,61 +84,6 @@ You can build your own omni model from registered models — see [Register a cus
 
 To distribute a custom omni model to other machines or via Hugging Face, see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
-## Managing collections via the API
-
-Omni collections are registered and managed through the same REST endpoints as regular models.
-
-### Register a collection
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model_name": "user.MyOmniKit",
-        "recipe": "collection.omni",
-        "components": ["Qwen3-0.6B-GGUF", "SD-Turbo", "Whisper-Tiny", "kokoro-v1"]
-      }'
-```
-
-All components must already be registered (built-in models, or previously pulled `user.*` models). Components that are registered but not yet downloaded are pulled automatically as part of this call.
-
-### Query collections
-
-Collections are hidden from the default `/v1/models` listing so they don't appear as plain LLMs to OpenAI-compatible clients. Use `?show_all=true` to include them:
-
-```bash
-curl "http://localhost:13305/v1/models?show_all=true"
-```
-
-You can identify a collection in the response by checking `recipe == "collection.omni"` in each model object. The `labels` array on the collection entry reflects the union of its components' labels.
-
-To discover which models are suitable for a given tool role, filter `GET /v1/models?show_all=true` by label:
-
-```python
-import requests
-
-models = requests.get("http://localhost:13305/v1/models?show_all=true").json()["data"]
-
-image_models     = [m for m in models if "image"         in m.get("labels", [])]
-tts_models       = [m for m in models if "tts"           in m.get("labels", [])]
-asr_models       = [m for m in models if "transcription" in m.get("labels", [])]
-vision_models    = [m for m in models if "vision"        in m.get("labels", [])]
-```
-
-This lets you build a dynamic model picker rather than hardcoding a specific omni model name.
-
-### Delete a collection
-
-Deleting a collection removes only the collection registry entry. Component models remain on disk and can still be used independently.
-
-```bash
-curl -X POST http://localhost:13305/v1/delete \
-  -H "Content-Type: application/json" \
-  -d '{"model_name": "user.MyOmniKit"}'
-```
-
-To also free disk space, delete each component individually after deleting the collection.
-
 ## Component loading behavior
 
 When you load a collection (`POST /v1/load` or the first inference request), Lemonade loads all components eagerly — the LLM, image model, ASR model, and TTS model are all started before the first request returns. This ensures tool calls can be dispatched immediately once the collection is ready, at the cost of higher startup VRAM.
@@ -194,4 +139,3 @@ To identify `chat-transcription` models in your app:
 models = requests.get("http://localhost:13305/v1/models").json()["data"]
 chat_asr_models = [m for m in models if "chat-transcription" in m.get("labels", [])]
 ```
->>>>>>> d5a16588a (docs: fill coverage gaps across API reference, CLI, Omni, and app dev guide)
