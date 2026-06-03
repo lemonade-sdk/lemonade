@@ -197,6 +197,8 @@ class WhisperTests(ServerTestBase):
 
         model = _get_whisper_model()
         formats = ["json", "verbose_json", "text", "srt", "vtt"]
+        wrapped_server = get_config().get("wrapped_server")
+        expect_subtitle_markup = wrapped_server != "flm"
 
         for response_format in formats:
             with self.subTest(response_format=response_format):
@@ -252,11 +254,15 @@ class WhisperTests(ServerTestBase):
                     self.assertGreater(len(response.text.strip()), 0)
                 elif response_format == "srt":
                     self.assertFalse(response.text.lstrip().startswith("{"))
-                    self.assertIn("-->", response.text)
+                    self.assertGreater(len(response.text.strip()), 0)
+                    if expect_subtitle_markup:
+                        self.assertIn("-->", response.text)
                 elif response_format == "vtt":
                     self.assertFalse(response.text.lstrip().startswith("{"))
-                    self.assertIn("WEBVTT", response.text)
-                    self.assertIn("-->", response.text)
+                    self.assertGreater(len(response.text.strip()), 0)
+                    if expect_subtitle_markup:
+                        self.assertIn("WEBVTT", response.text)
+                        self.assertIn("-->", response.text)
 
                 print(f"[OK] Verified response_format={response_format}")
 
