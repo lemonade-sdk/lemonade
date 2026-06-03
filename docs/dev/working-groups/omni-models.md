@@ -22,4 +22,5 @@ Please see the general [contribution guidelines](../contribute.md), then contact
 - [ ] Update the Lemonade website and top-level README to emphasize the developer journey, towards embedding lemond and integrating LMX models.
 - [ ] Lemonade Mix (LMX) omni models are available and useful in Open WebUI. Publish a blog explaining LMX and showing use cases.
 - [ ] Publish Halo Tales, a reference application based on LMX models. Update Lemonade to smooth over any rough edges. Then, publish a blog explaining the LMX developer journey and learnings from making Halo Tales.
+- [ ] Migrate LMX model definitions to Hugging Face to make them searchable as models.
 - [ ] To be continued, based on the learnings from the above...
