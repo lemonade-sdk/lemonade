@@ -4294,6 +4294,79 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
     }
 }
 
+// Resume an interrupted download across an upstream commit-hash change without
+// restarting from zero. The HF API returns the latest commit SHA on every call,
+// so pausing a download and resuming after the repo received new commits yields
+// a different commit_hash and a fresh snapshots/<new_hash>/ — orphaning the
+// previous attempt's .partial / completed files. refs/main is sticky (advanced
+// only on successful completion), so it does not point at an interrupted
+// snapshot; the interrupted attempt is located by its in-progress
+// .download_manifest.json marker instead (at most one per repo cache, removed on
+// completion). Rename that snapshot forward to the new hash so
+// download_from_manifest resumes its files in place. Carrying bytes forward is
+// safe because download_from_manifest verifies each file against the new
+// commit's hash and re-fetches any that changed (see expected_hash handling).
+//
+// Note: when the selected artifacts are unchanged across the commit, the later
+// reuse path (can_reuse_previous_hf_snapshot) may instead keep the completed
+// previous snapshot and drop this migrated copy — that is fine (the previous
+// snapshot is complete and verified); this migration simply becomes a no-op.
+//
+// Scope: this is applied to the MAIN repo only. The single download manifest is
+// written to the main snapshot, so auxiliary checkpoint repos (text encoder, VAE,
+// mmproj, ...) have no .download_manifest.json marker in their own snapshot for
+// this to find — an interrupted auxiliary snapshot is therefore not migrated and
+// is re-downloaded fresh under the new hash (safe; #1950 still verifies what is
+// fetched). Resuming interrupted auxiliary snapshots would require detecting them
+// by a recursive .partial scan instead and is left as a follow-up.
+static void resume_snapshot_across_commit(const fs::path& cache_path,
+                                          const std::string& new_hash) {
+    if (new_hash.empty() || new_hash == "main") return;
+
+    fs::path snapshots_dir = cache_path / "snapshots";
+    if (!safe_exists(snapshots_dir)) return;
+
+    fs::path new_snapshot = snapshots_dir / new_hash;
+    // A same-commit resume already lands in the right directory — nothing to do.
+    if (safe_exists(new_snapshot / ".download_manifest.json")) return;
+
+    // Find the interrupted snapshot (a different hash dir carrying an in-progress
+    // manifest). In normal operation at most one exists, since the manifest is
+    // written before the download and removed on completion; if a crash ever left
+    // more than one, the first by iteration order is taken (still safe — per-file
+    // hash verification re-fetches anything that does not match the new commit).
+    fs::path interrupted;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(snapshots_dir, safe_dir_options, ec)) {
+        if (ec) break;
+        if (!safe_is_directory(entry.path())) continue;
+        if (entry.path().filename() == new_hash) continue;
+        if (safe_exists(entry.path() / ".download_manifest.json")) {
+            interrupted = entry.path();
+            break;
+        }
+    }
+    if (interrupted.empty()) return;
+
+    // Take the new-hash directory's place. download_from_huggingface may have
+    // just created it empty; remove it so the rename can land. Never clobber a
+    // new snapshot that already has content.
+    if (safe_exists(new_snapshot)) {
+        if (!fs::is_empty(new_snapshot, ec) || ec) return;
+        fs::remove(new_snapshot, ec);
+        if (ec) return;
+    }
+    fs::rename(interrupted, new_snapshot, ec);
+    if (ec) {
+        LOG(WARNING, "ModelManager") << "Could not migrate interrupted snapshot "
+            << interrupted.filename().string() << " -> " << new_hash
+            << " to resume download: " << ec.message() << std::endl;
+        return;
+    }
+    LOG(INFO, "ModelManager") << "Resuming interrupted download: migrated snapshot "
+        << interrupted.filename().string() << " -> " << new_hash << std::endl;
+}
+
 // Download model files from HuggingFace
 // =====================================
 // IMPORTANT: This function ALWAYS queries the HuggingFace API to get the repository
@@ -4368,6 +4441,11 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         commit_hash = "main";
         LOG(INFO, "ModelManager") << "Warning: No commit hash found in API response, using 'main'" << std::endl;
     }
+
+    // If a download under a previous commit hash was interrupted, move it forward
+    // to the current hash so its partial/complete files resume instead of being
+    // orphaned. Must run before the snapshot dir below is created.
+    resume_snapshot_across_commit(model_cache_path, commit_hash);
 
     // Create snapshot directory using commit hash
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
