@@ -728,9 +728,14 @@ window.api = {
     },
     saveSettings: async (settings) => {
         localStorage.setItem('lemonade-settings', JSON.stringify(settings));
+        window.dispatchEvent(new CustomEvent('lemonade-settings-updated', { detail: settings }));
         return settings;
     },
-    onSettingsUpdated: () => {},
+    onSettingsUpdated: (callback) => {
+        const handler = (event) => callback(event.detail);
+        window.addEventListener('lemonade-settings-updated', handler);
+        return () => window.removeEventListener('lemonade-settings-updated', handler);
+    },
     getServerPort: () => parseInt(window.location.port) || 13305,
     onServerPortUpdated: () => {},
     getServerAPIKey: async () => {

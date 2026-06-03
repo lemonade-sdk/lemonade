@@ -47,6 +47,13 @@ export interface CloudProviderConfig {
   apiKey: string;
 }
 
+export interface PortSetting {
+  value: number;
+  useDefault: boolean;
+}
+
+export const DEFAULT_WEBSOCKET_PORT = 9000;
+
 export interface AppSettings {
   temperature: NumericSetting;
   topK: NumericSetting;
@@ -59,6 +66,7 @@ export interface AppSettings {
   cloudProviders: Record<string, CloudProviderConfig>;
   layout: LayoutSettings;
   tts: TTSSettings;
+  websocketPort: PortSetting;
 }
 
 type BaseSettingValues = Record<NumericSettingKey, number> & {
@@ -118,7 +126,8 @@ export const createDefaultSettings = (): AppSettings => ({
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
   cloudProviders: {},
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
-  tts: {...DEFAULT_TTS_SETTINGS}
+  tts: {...DEFAULT_TTS_SETTINGS},
+  websocketPort: { value: DEFAULT_WEBSOCKET_PORT, useDefault: true },
 });
 
 export const cloneSettings = (settings: AppSettings): AppSettings => ({
@@ -135,6 +144,7 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   ),
   layout: { ...settings.layout },
   tts: { ...settings.tts },
+  websocketPort: { ...settings.websocketPort },
 });
 
 export const clampNumericSettingValue = (key: NumericSettingKey, value: number): number => {
@@ -306,7 +316,34 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     });
   }
 
+  const rawWebsocketPort = incoming.websocketPort;
+  if (rawWebsocketPort && typeof rawWebsocketPort === 'object') {
+    const useDefault =
+      typeof rawWebsocketPort.useDefault === 'boolean'
+        ? rawWebsocketPort.useDefault
+        : defaults.websocketPort.useDefault;
+    const rawValue = typeof rawWebsocketPort.value === 'number'
+      ? rawWebsocketPort.value
+      : defaults.websocketPort.value;
+    const value = useDefault
+      ? defaults.websocketPort.value
+      : Math.min(Math.max(Math.round(rawValue), 1), 65535);
+
+    defaults.websocketPort = { value, useDefault };
+  }
+
   return defaults;
+};
+
+export const resolveWebsocketPort = (settings?: AppSettings | null): number => {
+  if (!settings || settings.websocketPort.useDefault) {
+    return DEFAULT_WEBSOCKET_PORT;
+  }
+  const port = settings.websocketPort.value;
+  if (Number.isFinite(port) && port >= 1 && port <= 65535) {
+    return Math.round(port);
+  }
+  return DEFAULT_WEBSOCKET_PORT;
 };
 
 export const buildChatRequestOverrides = (settings?: AppSettings | null): Record<string, number | boolean> => {

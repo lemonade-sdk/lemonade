@@ -1,4 +1,4 @@
-import { buildWebSocketUrl, serverFetch } from './serverConfig';
+import { buildWebSocketUrl } from './serverConfig';
 
 export interface LogEntry {
   seq: number;
@@ -23,16 +23,10 @@ export interface LogStreamCallbacks {
 export async function connectLogStream(
   afterSeq: number | null,
   callbacks: LogStreamCallbacks,
+  wsPort: number,
 ): Promise<LogStreamHandle> {
-  // Get websocket port from health endpoint
-  const healthResponse = await serverFetch('/health');
-  if (!healthResponse.ok) {
-    throw new Error(`Failed to fetch health: ${healthResponse.status}`);
-  }
-  const health = await healthResponse.json();
-  const wsPort = health.websocket_port;
-  if (typeof wsPort !== 'number') {
-    throw new Error('Server did not advertise a websocket port');
+  if (!Number.isFinite(wsPort) || wsPort < 1 || wsPort > 65535) {
+    throw new Error(`Invalid WebSocket port: ${wsPort}`);
   }
 
   const wsUrl = buildWebSocketUrl('/logs/stream', wsPort);

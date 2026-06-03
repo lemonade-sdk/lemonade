@@ -1,13 +1,16 @@
 import React from 'react';
 import { AppSettings } from '../utils/appSettings';
 
-interface  ConnectionSettingsProps {
-  settings: AppSettings,
+interface ConnectionSettingsProps {
+  settings: AppSettings;
   onValueChangeFunc: (key: string, value: string) => void;
-  onResetFunc: (key: any) => void
+  onWebsocketPortChange: (value: number) => void;
+  onResetFunc: (key: any) => void;
 }
 
-const ConnectionSettings: React.FC<ConnectionSettingsProps> = ({settings, onValueChangeFunc, onResetFunc}) => {
+const ConnectionSettings: React.FC<ConnectionSettingsProps> = ({
+  settings, onValueChangeFunc, onWebsocketPortChange, onResetFunc,
+}) => {
   return (
     <div className="settings-section-container">
       <div className={`settings-section ${settings.baseURL.useDefault ? "settings-section-default" : ""}`}>
@@ -33,6 +36,33 @@ const ConnectionSettings: React.FC<ConnectionSettingsProps> = ({settings, onValu
           </button>
         </div>
         <input type="text" value={settings['apiKey'].value} onChange={(e) => onValueChangeFunc('apiKey', e.target.value)} className="settings-text-input"/>
+      </div>
+      <div className={`settings-section ${settings.websocketPort.useDefault ? 'settings-section-default' : ''}`}>
+        <div className="settings-label-row">
+          <label className="settings-label">
+            <span className="settings-label-text">Log WebSocket Port</span>
+            <span className="settings-description">
+              Port used to stream server logs in the Logs panel.
+            </span>
+          </label>
+          <button
+            type="button"
+            className="settings-field-reset"
+            onClick={() => onResetFunc('websocketPort')}
+            disabled={settings.websocketPort.useDefault}
+          >
+            Reset
+          </button>
+        </div>
+        <input
+          type="number"
+          min={1}
+          max={65535}
+          step={1}
+          value={settings.websocketPort.value}
+          onChange={(e) => onWebsocketPortChange(Number(e.target.value))}
+          className="settings-text-input"
+        />
       </div>
     </div>
   );

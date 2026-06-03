@@ -8,6 +8,7 @@ import {
   createDefaultSettings,
   mergeWithDefaultSettings,
   DEFAULT_TTS_SETTINGS,
+  DEFAULT_WEBSOCKET_PORT,
 } from './utils/appSettings';
 import ConnectionSettings from './tabs/ConnectionSettings';
 import TTSSettings from './tabs/TTSSettings';
@@ -133,7 +134,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
     }));
   };
 
-  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey' | 'model' | 'userVoice' | 'assistantVoice') => {
+  const handleWebsocketPortChange = (rawValue: number) => {
+    const value = Number.isFinite(rawValue)
+      ? Math.min(Math.max(Math.round(rawValue), 1), 65535)
+      : DEFAULT_WEBSOCKET_PORT;
+    setSettings((prev) => ({
+      ...prev,
+      websocketPort: { value, useDefault: false },
+    }));
+  };
+
+  const handleResetField = (key: NumericSettingKey | 'enableThinking' | 'collapseThinkingByDefault' | 'baseURL' | 'apiKey' | 'websocketPort' | 'model' | 'userVoice' | 'assistantVoice') => {
     setSettings((prev) => {
       if (key === 'enableThinking') {
         return {
@@ -181,6 +192,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
           tts: {
             ...prev.tts,
             assistantVoice: DEFAULT_TTS_SETTINGS.assistantVoice
+          },
+        };
+      }
+
+      if (key === 'websocketPort') {
+        return {
+          ...prev,
+          websocketPort: {
+            value: DEFAULT_WEBSOCKET_PORT,
+            useDefault: true,
           },
         };
       }
@@ -239,9 +260,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
       id: 'connection_settings',
       label: 'Connection',
       keywords: [
-        'connection', 'base url', 'api key', 'server', 'endpoint', 'authentication', 'request'
+        'connection', 'base url', 'api key', 'websocket', 'logs', 'server', 'endpoint', 'authentication', 'request', 'port'
       ],
-      settingCount: 2,
+      settingCount: 3,
     },
     {
       id: 'llm_chat_settings',
@@ -276,6 +297,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         return <ConnectionSettings
           settings={settings}
           onValueChangeFunc={handleTextInputChange}
+          onWebsocketPortChange={handleWebsocketPortChange}
           onResetFunc={handleResetField}
         />;
       case 'llm_chat_settings':

@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { getAPIKey, getServerBaseUrl, onServerUrlChange, serverConfig, serverFetch } from './utils/serverConfig';
+import { getServerBaseUrl, onServerUrlChange, serverConfig, serverFetch } from './utils/serverConfig';
 import { connectLogStream, LogEntry, LogStreamHandle } from './utils/logWebSocketClient';
+import {
+  AppSettings,
+  DEFAULT_WEBSOCKET_PORT,
+  mergeWithDefaultSettings,
+  resolveWebsocketPort,
+} from './utils/appSettings';
 
 interface LogsWindowProps {
   isVisible: boolean;
@@ -29,6 +35,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   const socketRef = useRef<LogStreamHandle | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
+  const [websocketPort, setWebsocketPort] = useState<number>(DEFAULT_WEBSOCKET_PORT);
   const [isInitialized, setIsInitialized] = useState(false);
 
   const isNearBottom = () => {
@@ -52,12 +59,27 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     });
   };
 
+  const loadWebsocketPort = async () => {
+    if (!window.api?.getSettings) {
+      setWebsocketPort(DEFAULT_WEBSOCKET_PORT);
+      return;
+    }
+    try {
+      const stored = await window.api.getSettings();
+      setWebsocketPort(resolveWebsocketPort(mergeWithDefaultSettings(stored as AppSettings | undefined)));
+    } catch (error) {
+      console.error('Failed to load websocket port setting:', error);
+      setWebsocketPort(DEFAULT_WEBSOCKET_PORT);
+    }
+  };
+
   // Initialize server configuration and load the current log level
   useEffect(() => {
     const init = async () => {
       await serverConfig.waitForInit();
       const url = getServerBaseUrl();
       setServerUrl(url);
+      await loadWebsocketPort();
       setIsInitialized(true);
 
       try {
@@ -79,6 +101,14 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     };
 
     init();
+  }, []);
+
+  useEffect(() => {
+    if (!window.api?.onSettingsUpdated) return;
+    const unsubscribe = window.api.onSettingsUpdated((settings) => {
+      setWebsocketPort(resolveWebsocketPort(mergeWithDefaultSettings(settings as AppSettings | undefined)));
+    });
+    return () => unsubscribe?.();
   }, []);
 
   // Listen for URL changes (covers both port changes and explicit URL updates)
@@ -169,7 +199,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
         connectLogStream(lastSeqRef.current, {
           onConnected: () => {
-            console.log('Log stream connected to:', serverUrl);
+            console.log('Log stream connected to:', serverUrl, 'ws port:', websocketPort);
             setConnectionStatus('connected');
           },
           onDisconnected: () => {
@@ -193,7 +223,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           onEntry: (entry) => {
             appendEntries([entry]);
           },
-        }).then((handle) => {
+        }, websocketPort).then((handle) => {
           socketRef.current = handle;
         }).catch((error) => {
           console.error('Failed to connect to log stream:', error);
@@ -228,7 +258,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
         reconnectTimeoutRef.current = null;
       }
     };
-  }, [isVisible, serverUrl, isInitialized]);
+  }, [isVisible, serverUrl, websocketPort, isInitialized]);
 
   const handleClearLogs = () => {
     setLogs([]);
@@ -341,7 +371,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
           <div className="logs-error">
             Failed to connect to Lemonade Server logs.
             <br />
-            Make sure the server is running on {serverUrl}
+            Make sure the server is running on {serverUrl} (WebSocket port {websocketPort})
           </div>
         )}
         <pre className="logs-text">

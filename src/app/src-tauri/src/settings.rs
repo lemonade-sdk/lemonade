@@ -26,6 +26,10 @@ fn default_repeat_penalty() -> f64 {
     1.1
 }
 
+fn default_websocket_port() -> i64 {
+    9000
+}
+
 fn default_layout() -> LayoutSettings {
     LayoutSettings {
         is_chat_visible: true,
@@ -130,6 +134,8 @@ pub struct AppSettings {
     #[serde(rename = "baseURL")]
     pub base_url: TypedSetting,
     pub api_key: TypedSetting,
+    #[serde(rename = "websocketPort")]
+    pub websocket_port: TypedSetting,
     pub layout: LayoutSettings,
     pub tts: TtsSettings,
 }
@@ -167,6 +173,10 @@ impl Default for AppSettings {
             },
             api_key: TypedSetting {
                 value: Value::String(String::new()),
+                use_default: true,
+            },
+            websocket_port: TypedSetting {
+                value: Value::from(default_websocket_port()),
                 use_default: true,
             },
             layout: default_layout(),
@@ -255,6 +265,12 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
     );
     apply_typed_setting(incoming, "baseURL", &mut s.base_url, extract_string);
     apply_typed_setting(incoming, "apiKey", &mut s.api_key, extract_string);
+    apply_typed_setting(
+        incoming,
+        "websocketPort",
+        &mut s.websocket_port,
+        extract_clamped_i64(1, 65535),
+    );
 
     if let Some(raw_layout) = incoming.get("layout").and_then(Value::as_object) {
         let set_bool = |key: &str, slot: &mut bool| {
