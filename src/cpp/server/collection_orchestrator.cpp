@@ -242,6 +242,10 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
 
     const json& defs = tool_definitions();
     std::string tool_list;
+    // Per-tool prompt guidance, collected only for the tools actually included
+    // so the prompt never references a tool the planner doesn't have (e.g.
+    // analyze_image / transcribe_audio, which are not server-side tools).
+    std::string tool_guidance;
     if (defs.contains("tools") && defs["tools"].is_array()) {
         for (const auto& def : defs["tools"]) {
             const std::string name = def.value("function", json::object()).value("name", "");
@@ -275,14 +279,17 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
             tool_list += "- " + name + ": " + desc + "\n";
             result.tools.push_back(std::move(tool));
             result.tool_models[name] = match_model;
+            const std::string guidance = def.value("prompt_guidance", "");
+            if (!guidance.empty()) tool_guidance += "\n" + guidance;
         }
     }
     if (!tool_list.empty() && tool_list.back() == '\n') tool_list.pop_back();
 
     // Build the omni system prompt.
     if (defs.contains("system_prompt") && defs["system_prompt"].is_string()) {
-        result.system_prompt = replace_all(defs["system_prompt"].get<std::string>(),
-                                            "{tool_list}", tool_list);
+        std::string prompt = replace_all(defs["system_prompt"].get<std::string>(),
+                                         "{tool_list}", tool_list);
+        result.system_prompt = replace_all(prompt, "{tool_guidance}", tool_guidance);
     }
 
     // Merge app-provided tools (omni tools win on name collision).

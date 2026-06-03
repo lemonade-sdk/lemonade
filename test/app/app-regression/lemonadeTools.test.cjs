@@ -44,13 +44,18 @@ const tests = [
     name: 'buildLemonadeTools keeps component matching separate from planner matching',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      // The include() helper maps each included tool's name to its resolved model.
       assertMatches(
         source,
-        /requiresLabels[\s\S]*?components\.find[\s\S]*?models\[def\.function\.name\] = match/,
+        /const include = \(def[\s\S]*?models\[def\.function\.name\] = model/,
+        'The include helper should map each tool name to its resolved model.',
+      );
+      assertMatches(
+        source,
+        /requiresLabels[\s\S]*?components\.find[\s\S]*?include\(def, match\)/,
         'Tools with requires_labels should map to a concrete matching component.',
       );
-      const hasPlannerPath = /requiresLlmLabels[\s\S]*?models\[def\.function\.name\] = llmModel/.test(source)
-        || /requiresLlmLabels[\s\S]*?models\[def\.function\.name\] = match/.test(source);
+      const hasPlannerPath = /requiresLlmLabels[\s\S]*?include\(def, llmModel\)/.test(source);
       assert.ok(hasPlannerPath, 'Tools with requires_llm_labels should route through the selected planner path.');
     },
   },
