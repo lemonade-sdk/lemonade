@@ -337,29 +337,8 @@ void SDServer::load(const std::string& model_name,
     }
 #endif
 
-    // CUDA release assets are architecture-specific. Hide incompatible NVIDIA GPUs by
-    // default and keep only GPUs matching the selected release architecture, so
-    // homogeneous multi-GPU systems still offload to multiple matching cards.
     if (is_cuda_backend(resolved_backend)) {
-        const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
-        const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
-
-        if (has_visible_override) {
-            LOG(INFO, "SDServer")
-                << "Respecting existing CUDA_VISIBLE_DEVICES=" << existing_visible_devices
-                << std::endl;
-        } else {
-            std::string cuda_arch = SystemInfo::get_cuda_arch();
-            std::string visible_devices = SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch);
-            if (!cuda_arch.empty() && !visible_devices.empty()) {
-                env_vars.push_back({"CUDA_VISIBLE_DEVICES", visible_devices});
-                LOG(INFO, "SDServer")
-                    << "Restricting CUDA_VISIBLE_DEVICES to " << visible_devices
-                    << " for " << cuda_arch
-                    << " CUDA asset; matching same-arch GPUs remain available for multi-GPU offload"
-                    << std::endl;
-            }
-        }
+        BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
     }
 
     // Launch the server process

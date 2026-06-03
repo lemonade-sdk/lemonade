@@ -506,6 +506,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         }},
     }},
 
+    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Windows/Linux)
+    {"sd-cpp", "cuda", {"windows", "linux"}, {
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+    }},
+
     // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
     {"sd-cpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -513,19 +518,14 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"nvidia_gpu", {}},
     }},
 
-    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Windows/Linux)
-    {"sd-cpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+    // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
+    {"sd-cpp", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
     }},
 
     // stable-diffusion.cpp - Metal backend (macOS arm64)
     {"sd-cpp", "metal", {"macos"}, {
         {"metal", {}},
-    }},
-
-    // stable-diffusion.cpp - CPU backend (Windows/Linux x86_64)
-    {"sd-cpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
     }},
 
     // FLM - NPU (XDNA2)
