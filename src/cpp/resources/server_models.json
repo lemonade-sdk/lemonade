@@ -688,6 +688,16 @@
         ],
         "size": 19.5
     },
+    "Gemma-4-12B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "llamacpp"
+        ],
+        "size": 7.12
+    },
     "Gemma-4-E4B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-F16.gguf",
