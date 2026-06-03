@@ -2100,7 +2100,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
 
         // Build request JSON for router
-        nlohmann::json request_json;
+        nlohmann::json request_json = nlohmann::json::object();
 
         // Extract form fields
         if (req.form.has_field("model")) {
@@ -2117,6 +2117,23 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
         if (req.form.has_field("temperature")) {
             request_json["temperature"] = std::stod(req.form.get_field("temperature"));
+        }
+
+        // Validate response format early
+        std::string response_format = request_json.value("response_format", "json");
+
+        if (response_format != "json" &&
+            response_format != "verbose_json" &&
+            response_format != "text" &&
+            response_format != "srt" &&
+            response_format != "vtt") {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported response_format: " + response_format},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
         }
 
         // Extract audio file
@@ -2170,22 +2187,17 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         // Forward to router
         auto response = router_->audio_transcriptions(request_json);
 
-        // Check for error in response
         if (response.contains("error")) {
             res.status = 500;
             res.set_content(response.dump(), "application/json");
             return;
         }
 
-        // Unwrap text/subtitle formats for OpenAI API compatibility.
-        // Errors and other response formats fall back to standard JSON payloads.
-        std::string response_format = "json";
-        if (request_json.contains("response_format")) {
-            response_format = request_json["response_format"].get<std::string>();
-        }
-
-        if ((response_format == "text" || response_format == "srt" || response_format == "vtt")
-            && response.contains("text") && response["text"].is_string()) {
+        if ((response_format == "text" ||
+             response_format == "srt" ||
+             response_format == "vtt") &&
+            response.contains("text") &&
+            response["text"].is_string()) {
             res.set_content(response["text"].get<std::string>(), "text/plain");
             return;
         }

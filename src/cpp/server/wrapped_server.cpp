@@ -182,7 +182,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
 
 json WrappedServer::forward_multipart_request(const std::string& endpoint,
                                                const std::vector<utils::MultipartField>& fields,
-                                               long timeout_seconds) {
+                                               long timeout_seconds,
+                                               bool allow_plain_text_success) {
     if (!is_process_running()) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
     }
@@ -197,7 +198,18 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
             try {
                 return json::parse(response.body);
             } catch (const json::parse_error&) {
-                return json{{"text", response.body}};
+                if (allow_plain_text_success) {
+                    return json{{"text", response.body}};
+                }
+
+                return ErrorResponse::create(
+                    server_name_ + " returned invalid JSON",
+                    ErrorType::BACKEND_ERROR,
+                    {
+                        {"status_code", response.status_code},
+                        {"response", response.body}
+                    }
+                );
             }
         } else {
             LOG(ERROR, "WrappedServer") << "Backend returned HTTP " << response.status_code

@@ -258,6 +258,30 @@ class WhisperTests(ServerTestBase):
 
                 print(f"[OK] Verified response_format={response_format}")
 
+    def test_002c_transcription_unsupported_response_format(self):
+        """Test unsupported audio transcription response_format is rejected."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        with open(self._test_audio_path, "rb") as audio_file:
+            response = requests.post(
+                f"{self.base_url}/audio/transcriptions",
+                files={"file": ("test_speech.wav", audio_file, "audio/wav")},
+                data={
+                    "model": _get_whisper_model(),
+                    "response_format": "xml",
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        self.assertEqual(response.status_code, 400)
+        result = response.json()
+        self.assertIn("error", result)
+        self.assertEqual(result["error"]["type"], "invalid_request_error")
+        self.assertIn("response_format", result["error"]["message"])
+        print(
+            f"[OK] Correctly rejected unsupported response format: {response.status_code}"
+        )
+
     def test_003_transcription_missing_file_error(self):
         """Test error handling when file is missing."""
         model = _get_whisper_model()
@@ -292,7 +316,7 @@ class WhisperTests(ServerTestBase):
         self.assertIn(
             response.status_code,
             [400, 422],
-            f"Expected 400 or 422 for missing model, got {response.status_code}",
+            f"Expected 400 or 422 for missing model, got {response.status_code}. Response: {response.text}",
         )
         print(f"[OK] Correctly rejected request without model: {response.status_code}")
 
