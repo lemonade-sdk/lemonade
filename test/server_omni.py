@@ -54,6 +54,36 @@ class OmniTests(ServerTestBase):
     # Track if the collection has been pulled (persists across tests)
     _model_pulled = False
 
+    # App-only tool (no matching component) shared by the mixed-tool and
+    # resume tests, plus the prompt that triggers both an omni image call
+    # and this app call, and the client-side "result" used to resume.
+    WEATHER_TOOL = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather for a city.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "city": {
+                            "type": "string",
+                            "description": "The city to look up.",
+                        },
+                    },
+                    "required": ["city"],
+                },
+            },
+        }
+    ]
+
+    WEATHER_RESULT = '{"city": "Paris", "condition": "sunny", "temperature_c": 22}'
+
+    MIXED_TOOL_PROMPT = (
+        "Draw a red apple on a table, and also call the "
+        "get_current_weather tool for Paris."
+    )
+
     @classmethod
     def setUpClass(cls):
         """Verify server, apply runtime config, and pre-pull the collection."""
@@ -210,38 +240,10 @@ class OmniTests(ServerTestBase):
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
-        app_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_current_weather",
-                    "description": "Get the current weather for a city.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "city": {
-                                "type": "string",
-                                "description": "The city to look up.",
-                            },
-                        },
-                        "required": ["city"],
-                    },
-                },
-            }
-        ]
-
         completion = client.chat.completions.create(
             model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "Draw a red apple on a table, and also call the "
-                        "get_current_weather tool for Paris."
-                    ),
-                }
-            ],
-            tools=app_tools,
+            messages=[{"role": "user", "content": self.MIXED_TOOL_PROMPT}],
+            tools=self.WEATHER_TOOL,
             stream=False,
         )
 
@@ -283,38 +285,10 @@ class OmniTests(ServerTestBase):
         client = self.get_openai_client()
         model = self.get_test_model("omni")
 
-        app_tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_current_weather",
-                    "description": "Get the current weather for a city.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "city": {
-                                "type": "string",
-                                "description": "The city to look up.",
-                            },
-                        },
-                        "required": ["city"],
-                    },
-                },
-            }
-        ]
-
         stream = client.chat.completions.create(
             model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "Draw a red apple on a table, and also call the "
-                        "get_current_weather tool for Paris."
-                    ),
-                }
-            ],
-            tools=app_tools,
+            messages=[{"role": "user", "content": self.MIXED_TOOL_PROMPT}],
+            tools=self.WEATHER_TOOL,
             stream=True,
         )
 
@@ -415,6 +389,178 @@ class OmniTests(ServerTestBase):
             "Planner must receive the uploaded image_url and identify it as green; "
             "a text placeholder leaves it blind to the pixels",
         )
+
+    # =========================================================================
+    # APP-TOOL RESUME (MULTI-TURN) TESTS
+    # =========================================================================
+
+    @staticmethod
+    def _collect_stream(stream):
+        """Accumulate a streamed completion into (content, finish_reason, calls).
+
+        Tool calls are reconstructed from the deltas by index; each entry is a
+        dict with the merged "id", "name", and "arguments".
+        """
+        content = ""
+        finish_reason = None
+        calls = {}
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            delta = choice.delta
+            if not delta:
+                continue
+            if delta.content:
+                content += delta.content
+            for tc in delta.tool_calls or []:
+                slot = calls.setdefault(
+                    tc.index, {"id": "", "name": "", "arguments": ""}
+                )
+                if tc.id:
+                    slot["id"] = tc.id
+                if tc.function and tc.function.name:
+                    slot["name"] += tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+        return content, finish_reason, [calls[i] for i in sorted(calls)]
+
+    def _assert_resume_answer(self, finish_reason, content):
+        """Assert the resumed turn produced a final answer using the result."""
+        print(f"finish_reason: {finish_reason}")
+        print(f"Response (resume): {content[:200]}")
+        self.assertEqual(
+            finish_reason,
+            "stop",
+            "The resumed turn should produce a final answer, not another tool call",
+        )
+        self.assertIn(
+            "sunny",
+            content.lower(),
+            "The final answer must incorporate the client-executed tool result; "
+            "dropping tool_calls/tool_call_id in pre-processing breaks the resume",
+        )
+
+    @skip_if_unsupported("collection_chat")
+    def test_006_app_tool_resume(self):
+        """Resuming after a client-executed app tool call reaches the planner.
+
+        The middleware contract is a two-request flow: request 1 returns the
+        app tool call (finish_reason "tool_calls"), the client executes it,
+        appends the assistant message (with its tool_calls) plus a role:"tool"
+        result (with the matching tool_call_id), and re-issues. The collection
+        pre-processing must preserve those fields while sanitizing history —
+        rebuilding messages as bare role/content hands the planner an orphaned
+        tool result, which jinja chat templates reject or mis-render.
+
+        The final answer can only mention the tool's result ("sunny") if the
+        resumed tool-call history survived pre-processing.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("omni")
+
+        messages = [{"role": "user", "content": self.MIXED_TOOL_PROMPT}]
+        completion = client.chat.completions.create(
+            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
+        )
+        choice = completion.choices[0]
+        self._assert_contains(self, choice.message.content, "data:image/", "image")
+        self.assertEqual(choice.finish_reason, "tool_calls")
+        tool_calls = choice.message.tool_calls or []
+        weather = [tc for tc in tool_calls if tc.function.name == "get_current_weather"]
+        self.assertTrue(weather, "Expected the app tool call to be passed back")
+
+        # Execute the tool client-side and resume the conversation, echoing
+        # the assistant turn back exactly as the OpenAI contract specifies.
+        messages.append(
+            {
+                "role": "assistant",
+                "content": choice.message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            }
+        )
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": weather[0].id,
+                "content": self.WEATHER_RESULT,
+            }
+        )
+
+        completion = client.chat.completions.create(
+            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=False
+        )
+        choice = completion.choices[0]
+        self._assert_resume_answer(choice.finish_reason, choice.message.content or "")
+
+    @skip_if_unsupported("collection_chat_streaming")
+    def test_007_app_tool_resume_streaming(self):
+        """Streaming variant of the app-tool resume flow.
+
+        Same two-request contract as test_006 with stream: true on both
+        requests. The streamed tool-call deltas must carry the call id (and
+        index) so the client can build the resume history; the resumed turn
+        must then stream a final answer that uses the tool result.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("omni")
+
+        messages = [{"role": "user", "content": self.MIXED_TOOL_PROMPT}]
+        stream = client.chat.completions.create(
+            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
+        )
+        content, finish_reason, calls = self._collect_stream(stream)
+        self._assert_contains(self, content, "data:image/", "image")
+        self.assertEqual(finish_reason, "tool_calls")
+        weather = [c for c in calls if c["name"] == "get_current_weather"]
+        self.assertTrue(weather, "Expected the app tool call to be passed back")
+        self.assertTrue(
+            weather[0]["id"],
+            "Streamed tool-call deltas must carry the call id for the resume",
+        )
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": content,
+                "tool_calls": [
+                    {
+                        "id": c["id"],
+                        "type": "function",
+                        "function": {
+                            "name": c["name"],
+                            "arguments": c["arguments"],
+                        },
+                    }
+                    for c in calls
+                ],
+            }
+        )
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": weather[0]["id"],
+                "content": self.WEATHER_RESULT,
+            }
+        )
+
+        stream = client.chat.completions.create(
+            model=model, messages=messages, tools=self.WEATHER_TOOL, stream=True
+        )
+        content, finish_reason, _ = self._collect_stream(stream)
+        self._assert_resume_answer(finish_reason, content)
 
 
 if __name__ == "__main__":

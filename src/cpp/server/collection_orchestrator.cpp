@@ -457,6 +457,11 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
         const std::string role = msg.value("role", "");
         const bool is_user = (role == "user");
 
+        // Sanitize in place: replace only `content`, keeping every other field
+        // (tool_calls, tool_call_id, name, ...). A client resuming an app tool
+        // call echoes the assistant turn with its tool_calls plus a role:"tool"
+        // result keyed by tool_call_id — dropping those hands the planner an
+        // orphaned tool result, which strict chat templates reject.
         if (msg.contains("content") && msg["content"].is_string()) {
             std::string img_b64, img_mime;
             std::string cleaned =
@@ -465,13 +470,15 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
                 source_image_b64 = img_b64;
                 source_image_mime = img_mime;
             }
-            processed.push_back({{"role", role}, {"content", std::move(cleaned)}});
+            json out = msg;
+            out["content"] = std::move(cleaned);
+            processed.push_back(std::move(out));
             continue;
         }
         if (!msg.contains("content") || !msg["content"].is_array()) {
-            json out = {{"role", role}};
-            out["content"] = msg.contains("content") ? msg["content"] : json("");
-            processed.push_back(out);
+            json out = msg;
+            if (!out.contains("content")) out["content"] = "";
+            processed.push_back(std::move(out));
             continue;
         }
 
@@ -507,13 +514,13 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
                 new_content.push_back(item);
             }
         }
-        json out = {{"role", role}};
+        json out = msg;
         if (new_content.size() == 1 && new_content[0].value("type", "") == "text") {
             out["content"] = new_content[0]["text"];
         } else {
             out["content"] = new_content.empty() ? json("") : new_content;
         }
-        processed.push_back(out);
+        processed.push_back(std::move(out));
     }
 
     // Prepend (merge) the omni system prompt.
