@@ -1570,6 +1570,27 @@ jobs:
       - name: Make binaries executable
         run: chmod +x build/lemond build/lemonade
 
+      - name: Start lemond server
+        run: |
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "Server is running and healthy (PID $LEMOND_PID)"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          echo "ERROR: Server did not start within 60 seconds"
+          cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
+          exit 1
+
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
