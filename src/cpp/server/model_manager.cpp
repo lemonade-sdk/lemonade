@@ -2306,7 +2306,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                 for (const auto& gpu : nvidia_gpus) {
                     if (gpu.value("available", false)) {
                         std::string name = gpu.value("name", "unknown");
-                        std::string family = gpu.value("family", "");
+                        std::string family = gpu.value("gpu_isa", "");
                         std::string cc = gpu.value("compute_capability", "");
                         std::string suffix;
                         if (!cc.empty()) suffix = " (compute " + cc + ", " + (family.empty() ? "unsupported arch" : family) + ")";
@@ -3740,7 +3740,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             manifest["files"].push_back(file_entry);
         }
     }
-    
+
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
