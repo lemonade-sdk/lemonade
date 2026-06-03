@@ -200,6 +200,23 @@ private:
     std::string get_user_models_file();
     std::string get_recipe_options_file();
 
+    // Collection manifests (recipe="collection.omni" with an HF-repo checkpoint):
+    // the full collection definition lives on Hugging Face as `collection.json`.
+    // fetch_collection_manifest downloads/refreshes it into the HF cache (honoring
+    // do_not_upgrade and offline mode) and returns the parsed manifest object.
+    nlohmann::json fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade);
+
+    // Resolve an HF-backed collection's components at pull time: fetch the manifest,
+    // register any component not already in the registry as a `user.` model, and
+    // return the components as canonical cache names (built-in bare names or `user.X`).
+    std::vector<std::string> resolve_collection_components_from_manifest(
+        const std::string& repo_id, bool do_not_upgrade);
+
+    // Populate a collection's components from a manifest already cached on disk
+    // (offline, no registration). Used by build_cache so a pulled collection keeps
+    // its components across restarts. No-op if the manifest is not cached.
+    void populate_collection_components_from_cache(ModelInfo& info);
+
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
