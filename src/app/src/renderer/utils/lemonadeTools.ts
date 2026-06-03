@@ -18,6 +18,7 @@ export interface LemonadeToolDef {
 interface ToolDefinitionEntry {
   requires_labels?: string[];
   requires_llm_labels?: string[];
+  prompt_guidance?: string;
   function: { name: string; description: string; parameters: Record<string, any> };
 }
 
@@ -73,6 +74,15 @@ export function buildLemonadeTools(
     function: { ...def.function, parameters: substituteParams(def.function.parameters) },
   });
 
+  // Per-tool prompt guidance, collected only for the tools actually included so
+  // the system prompt never references a tool the planner doesn't have.
+  const guidance: string[] = [];
+  const include = (def: ToolDefinitionEntry, model: string) => {
+    tools.push(materialize(def));
+    models[def.function.name] = model;
+    if (def.prompt_guidance) guidance.push(def.prompt_guidance);
+  };
+
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
     const requiresLabels = def.requires_labels;
     const requiresLlmLabels = def.requires_llm_labels;
@@ -84,8 +94,7 @@ export function buildLemonadeTools(
         return labels.some(l => labelSet.has(l));
       });
       if (!match) continue;
-      tools.push(materialize(def));
-      models[def.function.name] = match;
+      include(def, match);
       continue;
     }
 
@@ -93,13 +102,15 @@ export function buildLemonadeTools(
       const labelSet = new Set(requiresLlmLabels);
       const llmLabels = modelsData[llmModel]?.labels ?? [];
       if (!llmLabels.some(l => labelSet.has(l))) continue;
-      tools.push(materialize(def));
-      models[def.function.name] = llmModel;
+      include(def, llmModel);
     }
   }
 
   const toolList = tools.map(t => `- ${t.function.name}: ${t.function.description}`).join('\n');
-  const systemPrompt = toolDefinitions.system_prompt.replace('{tool_list}', toolList);
+  const toolGuidance = guidance.length ? `\n${guidance.join('\n')}` : '';
+  const systemPrompt = toolDefinitions.system_prompt
+    .replace('{tool_list}', toolList)
+    .replace('{tool_guidance}', toolGuidance);
 
   return { tools, systemPrompt, models };
 }

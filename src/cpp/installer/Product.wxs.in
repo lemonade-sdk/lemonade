@@ -204,6 +204,10 @@
         <File Id="bench_scenarios.json" Source="$(var.BuildDir)\Release\resources\bench_scenarios.json" KeyPath="yes" />
       </Component>
 
+      <Component Id="ToolDefinitionsJson" Directory="ResourcesDir" Guid="34fce303-8631-48e5-b6d4-fb22d0ba7b59">
+        <File Id="toolDefinitions.json" Source="$(var.BuildDir)\Release\resources\toolDefinitions.json" KeyPath="yes" />
+      </Component>
+
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
         <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>
