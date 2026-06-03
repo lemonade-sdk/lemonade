@@ -111,21 +111,26 @@ const tests = [
     },
   },
   {
-    name: 'unavailable tool instructions are omitted from the planner prompt',
+    name: 'unavailable tool guidance is omitted from the planner prompt',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
       const definitions = readToolDefinitions();
-      assertIncludes(definitions.system_prompt, '{tool_instructions}', 'Conditional instructions should be injected at runtime.');
+      assertIncludes(definitions.system_prompt, '{tool_guidance}', 'Conditional guidance should be injected at runtime.');
       assert.ok(!definitions.system_prompt.includes('flow_shift'), 'Static prompt should not mention image-only options.');
-      assertMatches(
+      assertIncludes(
         source,
-        /enabledToolNames\.has\('generate_image'\)[\s\S]*?enabledToolNames\.has\('edit_image'\)[\s\S]*?IMAGE_SIZE_INSTRUCTIONS/,
-        'Image options should only be added when an image generation or edit tool is available.',
+        'const guidance: string[] = []',
+        'Planner guidance should be collected only from included tools.',
       );
-      assertMatches(
+      assertIncludes(
         source,
-        /enabledToolNames\.has\('analyze_image'\)[\s\S]*?VISION_INSTRUCTIONS/,
-        'Vision instructions should only be added when the vision tool is available.',
+        'if (def.prompt_guidance) guidance.push(substituteImageSize(def.prompt_guidance));',
+        'Only included tool prompt_guidance should be added to the planner prompt.',
+      );
+      assertIncludes(
+        source,
+        ".replace('{tool_guidance}', toolGuidance)",
+        'The 2071 server/frontend shared prompt should use the tool_guidance placeholder.',
       );
     },
   },
@@ -159,14 +164,15 @@ const tests = [
       assert.ok(!source.includes('EDIT_INTENT_RE'), 'Edit routing should be planner-driven, not regex-driven.');
       assertMatches(source, /const funcName = toolCall\.function\.name;[\s\S]*?executeLemonadeTool\(toolCall, toolModel,/, 'The executed tool should match the planner-selected tool.');
 
-      const lemonadeToolsSource = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
       assertIncludes(
-        lemonadeToolsSource,
-        'Use edit_image when the user asks to modify an existing image',
+        byName.edit_image.prompt_guidance,
+        'use edit_image rather than generate_image',
         'Prompt guidance should tell the planner when to choose edit_image.',
       );
       assertIncludes(
-        lemonadeToolsSource,
+        byName.generate_image.prompt_guidance,
         'Common safe canvas sizes',
         'Prompt guidance should give the planner resolution/aspect choices without executor-side regex rerouting.',
       );
@@ -193,8 +199,18 @@ const tests = [
       );
       assertMatches(
         source,
-        /prop\.description\.includes\('\{image_size\}'\)[\s\S]*?replaceAll\('\{image_size\}', COLLECTION_IMAGE_SIZE\)/,
+        /const substituteImageSize = \(text: string\): string => \([\s\S]*?text\.replace\(\/\\\{image_size\\\}\/g, COLLECTION_IMAGE_SIZE\)/,
+        'Tool parameter descriptions and prompt guidance should share the image-size substitution helper.',
+      );
+      assertIncludes(
+        source,
+        'substituteImageSize(prop.description)',
         'Tool parameter descriptions should replace {image_size} at materialization time.',
+      );
+      assertIncludes(
+        source,
+        'substituteImageSize(def.prompt_guidance)',
+        'Tool prompt guidance should replace {image_size} at materialization time.',
       );
     },
   },
