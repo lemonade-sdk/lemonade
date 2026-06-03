@@ -52,7 +52,7 @@ Example request:
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+    "model_name": "Qwen3-0.6B-GGUF"
   }'
 ```
 
@@ -61,7 +61,7 @@ Response format:
 ```json
 {
   "status":"success",
-  "message":"Installed model: Qwen2.5-0.5B-Instruct-CPU"
+  "message":"Installed model: Qwen3-0.6B-GGUF"
 }
 ```
 
@@ -168,7 +168,7 @@ Example request:
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+    "model_name": "Qwen3-0.6B-GGUF",
     "stream": true,
     "subscribe": false
   }'
@@ -178,9 +178,9 @@ Example response:
 
 ```json
 {
-  "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+  "id": "model:Qwen3-0.6B-GGUF",
   "type": "model",
-  "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+  "model_name": "Qwen3-0.6B-GGUF",
   "status": "downloading",
   "running": true,
   "file": "",
@@ -216,9 +216,9 @@ curl http://localhost:13305/v1/downloads
 ```json
 [
   {
-    "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+    "id": "model:Qwen3-0.6B-GGUF",
     "type": "model",
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+    "model_name": "Qwen3-0.6B-GGUF",
     "status": "downloading",
     "running": true,
     "file": "model.gguf",
@@ -264,7 +264,7 @@ Control a server-owned model download job.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `id` | Yes | Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example `model:Qwen2.5-0.5B-Instruct-CPU`. |
+| `id` | Yes | Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example `model:Qwen3-0.6B-GGUF`. |
 | `action` | Yes | One of `pause`, `cancel`, or `remove`. |
 
 ### Actions
@@ -281,7 +281,7 @@ Control a server-owned model download job.
 curl -X POST http://localhost:13305/v1/downloads/control \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+    "id": "model:Qwen3-0.6B-GGUF",
     "action": "pause"
   }'
 ```
@@ -292,9 +292,9 @@ For `pause` and `cancel`, the endpoint returns the latest job snapshot:
 
 ```json
 {
-  "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+  "id": "model:Qwen3-0.6B-GGUF",
   "type": "model",
-  "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+  "model_name": "Qwen3-0.6B-GGUF",
   "status": "paused",
   "running": false,
   "file": "model.gguf",
@@ -400,7 +400,7 @@ Example request:
 curl -X POST http://localhost:13305/v1/delete \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+    "model_name": "Qwen3-0.6B-GGUF"
   }'
 ```
 
@@ -409,7 +409,7 @@ Response format:
 ```json
 {
   "status":"success",
-  "message":"Deleted model: Qwen2.5-0.5B-Instruct-CPU"
+  "message":"Deleted model: Qwen3-0.6B-GGUF"
 }
 ```
 
@@ -479,7 +479,7 @@ Basic load:
 curl -X POST http://localhost:13305/v1/load \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+    "model_name": "Qwen3-0.6B-GGUF"
   }'
 ```
 
@@ -541,7 +541,7 @@ curl -X POST http://localhost:13305/v1/load \
 ```json
 {
   "status":"success",
-  "message":"Loaded model: Qwen2.5-0.5B-Instruct-CPU"
+  "message":"Loaded model: Qwen3-0.6B-GGUF"
 }
 ```
 
