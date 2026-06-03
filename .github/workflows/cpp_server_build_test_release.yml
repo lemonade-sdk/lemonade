@@ -1570,6 +1570,9 @@ jobs:
       - name: Make binaries executable
         run: chmod +x build/lemond build/lemonade
 
+      - name: Set HF_HOME
+        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
       - name: Start lemond server
         run: |
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
@@ -1597,9 +1600,6 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
-
-      - name: Set HF_HOME
-        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
       - name: Run tests
         env:
