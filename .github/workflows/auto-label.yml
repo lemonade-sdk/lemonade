@@ -1,3 +1,16 @@
+# Auto-label issues and PRs.
+#
+# This workflow runs Claude Haiku over issue/PR title + body to apply
+# engine::*, area::*, and component/type labels, then deterministically
+# applies priority::warm / priority::hot based on community engagement
+# counts (excluding maintainers).
+#
+# *** Labels applied by this workflow are ADVISORY ONLY. ***
+# Do not use them as inputs to CI gates, release gates, security
+# decisions, or any policy check — the model sees untrusted user-supplied
+# title/body content and the classification is best-effort.
+#
+# Add-only — never removes a human-applied label.
 name: Auto-label issues and PRs
 
 on:
@@ -20,6 +33,10 @@ on:
 permissions:
   contents: read
   issues: write
+  # Required for labels on PRs. GITHUB_TOKEN's label-write scope is
+  # checked per resource type — `gh issue edit --add-label` against a
+  # PR number routes through the issues API but the permission check is
+  # against the underlying pull_request resource.
   pull-requests: write
 
 jobs:
@@ -30,7 +47,6 @@ jobs:
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -42,6 +58,9 @@ jobs:
 
       - name: Resolve items and dry-run flag
         id: resolve
+        env:
+          TARGET_INPUT: ${{ inputs.target }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           case "${{ github.event_name }}" in
@@ -54,21 +73,29 @@ jobs:
               echo "dry_run=false" >> "$GITHUB_OUTPUT"
               ;;
             workflow_dispatch)
-              if [ -n "${{ inputs.target }}" ]; then
-                echo "items=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+              if [ -n "$TARGET_INPUT" ]; then
+                if ! [[ "$TARGET_INPUT" =~ ^[0-9]+$ ]]; then
+                  echo "::error::target must be a positive integer (got: $TARGET_INPUT)"
+                  exit 1
+                fi
+                echo "items=$TARGET_INPUT" >> "$GITHUB_OUTPUT"
               else
-                ISSUES=$(gh issue list --state open --limit 500 --json number,labels \
-                  --jq '[.[] | select((.labels | map(.name) | any(startswith("engine::") or startswith("area::"))) | not) | .number] | join(" ")')
-                PRS=$(gh pr list --state open --limit 500 --json number,labels \
-                  --jq '[.[] | select((.labels | map(.name) | any(startswith("engine::") or startswith("area::"))) | not) | .number] | join(" ")')
-                ITEMS=$(echo "$ISSUES $PRS" | xargs)
+                # Backfill: every open issue + PR missing both engine::*
+                # and area::*. /repos/.../issues includes PRs because PRs
+                # are issues in the API model.
+                ITEMS=$(gh api --paginate \
+                  "/repos/${{ github.repository }}/issues?state=open&per_page=100" \
+                  --jq '.[] | select((.labels | map(.name) | any(startswith("engine::") or startswith("area::"))) | not) | .number' \
+                  | xargs)
                 echo "items=$ITEMS" >> "$GITHUB_OUTPUT"
               fi
-              echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+              echo "dry_run=$DRY_RUN_INPUT" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
       - name: Run auto-labeler
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
           ITEMS="${{ steps.resolve.outputs.items }}"

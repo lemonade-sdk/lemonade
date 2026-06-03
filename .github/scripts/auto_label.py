@@ -23,6 +23,12 @@ import sys
 import urllib.error
 import urllib.request
 
+# Priority labels contain emoji; force utf-8 stdout so this runs cleanly
+# on Windows consoles (Linux CI runners are already utf-8).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 MODEL = "claude-haiku-4-5-20251001"
 ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -153,6 +159,121 @@ KNOWN_LABELS = {
     "question",
 }
 
+# Deterministic community-priority labels. Computed from engagement counts
+# (commenters + supporting reactions), excluding anyone with write access so
+# maintainer discussion does not inflate signal.
+PRIORITY_WARM_LABEL = "priority::😎warm"
+PRIORITY_HOT_LABEL = "priority::🔥hot"
+COMMUNITY_WARM_THRESHOLD = 3
+COMMUNITY_HOT_THRESHOLD = 6
+WRITE_PERMISSIONS = {"admin", "write"}
+WRITE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+SUPPORTING_REACTIONS = {"+1", "heart", "hooray", "rocket", "eyes", "laugh"}
+
+
+def gh_api(path):
+    return json.loads(
+        run(["gh", "api", "-H", "Accept: application/vnd.github+json", path])
+    )
+
+
+def gh_api_pages(path):
+    pages = json.loads(
+        run(
+            [
+                "gh",
+                "api",
+                "--paginate",
+                "--slurp",
+                "-H",
+                "Accept: application/vnd.github+json",
+                path,
+            ]
+        )
+    )
+    return [item for page in pages for item in page]
+
+
+def resolve_repo(repo):
+    if repo:
+        return repo
+    return run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]
+    ).strip()
+
+
+def has_write_access(login, repo, cache):
+    if login in cache:
+        return cache[login]
+    try:
+        data = gh_api(f"repos/{repo}/collaborators/{login}/permission")
+    except subprocess.CalledProcessError:
+        cache[login] = False
+        return False
+    cache[login] = data.get("permission") in WRITE_PERMISSIONS
+    return cache[login]
+
+
+def _add_community_user(users, login, author_association, repo, cache):
+    if not login:
+        return
+    if author_association in WRITE_ASSOCIATIONS:
+        return
+    if has_write_access(login, repo, cache):
+        return
+    users.add(login)
+
+
+def community_priority_labels(item_num, existing, repo):
+    """Return (labels, community_user_count) where labels is one of
+    ['priority::🔥hot'], ['priority::😎warm'], or []. Counts the author,
+    commenters, and positive-reaction users, excluding anyone with write
+    access. Idempotent: returns no label if the item already has the
+    target priority label."""
+    issue = gh_api(f"repos/{repo}/issues/{item_num}")
+    comments = gh_api_pages(f"repos/{repo}/issues/{item_num}/comments?per_page=100")
+    reactions = gh_api_pages(f"repos/{repo}/issues/{item_num}/reactions?per_page=100")
+
+    users = set()
+    cache = {}
+
+    _add_community_user(
+        users,
+        (issue.get("user") or {}).get("login"),
+        issue.get("author_association"),
+        repo,
+        cache,
+    )
+
+    for comment in comments:
+        _add_community_user(
+            users,
+            (comment.get("user") or {}).get("login"),
+            comment.get("author_association"),
+            repo,
+            cache,
+        )
+
+    for reaction in reactions:
+        if reaction.get("content") not in SUPPORTING_REACTIONS:
+            continue
+        login = (reaction.get("user") or {}).get("login")
+        if login and not has_write_access(login, repo, cache):
+            users.add(login)
+
+    count = len(users)
+    existing_set = set(existing)
+
+    if count >= COMMUNITY_HOT_THRESHOLD and PRIORITY_HOT_LABEL not in existing_set:
+        return [PRIORITY_HOT_LABEL], count
+    if (
+        count >= COMMUNITY_WARM_THRESHOLD
+        and PRIORITY_WARM_LABEL not in existing_set
+        and PRIORITY_HOT_LABEL not in existing_set
+    ):
+        return [PRIORITY_WARM_LABEL], count
+    return [], count
+
 
 def parse_decision(decision, existing):
     if decision.strip().lower() in {"(none)", "none", ""}:
@@ -187,22 +308,35 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="Print decisions; do not apply")
     p.add_argument("--repo", help="OWNER/REPO; defaults to current repo")
     args = p.parse_args()
+    repo = resolve_repo(args.repo)
 
     for num in args.items:
         item = gh_view(num, args.repo)
         existing = [lbl["name"] for lbl in item.get("labels", [])]
+
         decision = classify(item, num)
-        to_add = parse_decision(decision, existing)
+        llm_labels = parse_decision(decision, existing)
+
+        priority_labels, community_users = community_priority_labels(
+            num, existing + llm_labels, repo
+        )
+        to_add = llm_labels + priority_labels
 
         print(f"\n=== #{num}: {item['title']} ===")
-        print(f"  url:      {item.get('url', '')}")
-        print(f"  existing: {', '.join(existing) if existing else '(none)'}")
-        print(f"  model:    {decision}")
-        print(f"  would add:{' ' + ', '.join(to_add) if to_add else ' (none)'}")
+        print(f"  url:        {item.get('url', '')}")
+        print(f"  existing:   {', '.join(existing) if existing else '(none)'}")
+        print(f"  model:      {decision}")
+        print(f"  llm add:    {', '.join(llm_labels) if llm_labels else '(none)'}")
+        print(
+            f"  priority:   "
+            f"{', '.join(priority_labels) if priority_labels else '(none)'} "
+            f"({community_users} community users)"
+        )
+        print(f"  would add:  {', '.join(to_add) if to_add else '(none)'}")
 
         if not args.dry_run and to_add:
             gh_add_labels(num, to_add, args.repo)
-            print(f"  applied:  {', '.join(to_add)}")
+            print(f"  applied:    {', '.join(to_add)}")
 
 
 if __name__ == "__main__":
