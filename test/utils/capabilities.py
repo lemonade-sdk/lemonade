@@ -170,6 +170,21 @@ CAPABILITIES = {
             },
         },
     },
+    "omni": {
+        # Omni "collection" models run a server-side tool-calling loop. The
+        # wrapped server here is the collection's chat (planner) component,
+        # which is llamacpp — so --backend selects the llamacpp backend.
+        "llamacpp": {
+            "backends": ["vulkan", "rocm", "cpu", "metal"],
+            "supports": {
+                "collection_chat": True,
+                "collection_chat_streaming": True,
+            },
+            "test_models": {
+                "omni": "LMX-Omni-5.5B-Lite",
+            },
+        },
+    },
 }
 
 
