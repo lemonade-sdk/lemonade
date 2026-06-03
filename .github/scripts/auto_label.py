@@ -54,6 +54,13 @@ Area — apply AT MOST ONE total. Same hard rule as engines. Skip if not clearly
 - area::api       — HTTP REST API surface, route handlers, Ollama/Anthropic/OpenAI compat
 - area::tray      — system tray app (LemonadeServer.exe, lemonade-tray)
 
+Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not specific to a particular GPU/compute runtime. Runtime labels complement engine labels — e.g., a Vulkan-only llama.cpp bug gets both `engine::llamacpp` and `runtime::vulkan`:
+- runtime::vulkan — Vulkan path (typically llama.cpp on AMD/Intel/Nvidia GPUs)
+- runtime::rocm   — AMD ROCm path
+- runtime::cuda   — NVIDIA CUDA path
+- runtime::metal  — Apple Metal path (macOS)
+- runtime::cpu    — CPU-only execution path (only when the issue is specifically about CPU fallback / CPU-only behavior, not when CPU is just one of many devices mentioned)
+
 Existing component labels — apply only if clearly relevant. Don't double up with area:: (e.g., don't add `cpp` if area::api fits):
 - cpp     — C++ server-side code that doesn't fit area::api or area::cli
 - app     — Tauri desktop app (src/app/)
@@ -149,6 +156,11 @@ KNOWN_LABELS = {
     "area::installer",
     "area::api",
     "area::tray",
+    "runtime::vulkan",
+    "runtime::rocm",
+    "runtime::cuda",
+    "runtime::metal",
+    "runtime::cpu",
     "cpp",
     "app",
     "web ui",
@@ -158,6 +170,9 @@ KNOWN_LABELS = {
     "documentation",
     "question",
 }
+
+# Label families where at most one label may be applied per item.
+AT_MOST_ONE_PREFIXES = ("engine::", "area::", "runtime::")
 
 # Deterministic community-priority labels. Computed from engagement counts
 # (commenters + supporting reactions), excluding anyone with write access so
@@ -280,23 +295,23 @@ def parse_decision(decision, existing):
         return []
     candidates = [lbl.strip() for lbl in decision.split(",") if lbl.strip()]
     seen = set(existing)
-    existing_engine = any(lbl.startswith("engine::") for lbl in existing)
-    existing_area = any(lbl.startswith("area::") for lbl in existing)
+    # Track which at-most-one prefixes are already represented (either by
+    # an existing label or by something we've already added this pass).
+    # Defends against the model occasionally returning two labels from the
+    # same family despite the prompt's "at most one" rule.
+    used_prefix = {
+        prefix: any(lbl.startswith(prefix) for lbl in existing)
+        for prefix in AT_MOST_ONE_PREFIXES
+    }
     out = []
     for lbl in candidates:
         if lbl not in KNOWN_LABELS or lbl in seen:
             continue
-        # Enforce at-most-one for engine:: and area:: families. The prompt
-        # asks for this, but defend against the model occasionally returning
-        # two — keep the first, drop the rest.
-        if lbl.startswith("engine::"):
-            if existing_engine:
+        prefix = next((p for p in AT_MOST_ONE_PREFIXES if lbl.startswith(p)), None)
+        if prefix is not None:
+            if used_prefix[prefix]:
                 continue
-            existing_engine = True
-        elif lbl.startswith("area::"):
-            if existing_area:
-                continue
-            existing_area = True
+            used_prefix[prefix] = True
         out.append(lbl)
         seen.add(lbl)
     return out
