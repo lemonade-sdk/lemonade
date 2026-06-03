@@ -28,6 +28,10 @@ import requests
 import shutil
 import subprocess
 import sys
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
 import tempfile
 import time
 import unittest
@@ -342,12 +346,25 @@ sys.exit(0)
         result = self.assertCommandSucceeds(["list"])
         output = result.stdout + result.stderr
         print(f"List output: {output}")
+        output_lines = output.splitlines()
+        self.assertIn("Local", output_lines)
+        self.assertIn("Available for Download", output_lines)
+        self.assertLess(
+            output_lines.index("Local"),
+            output_lines.index("Available for Download"),
+        )
 
     def test_021_list_downloaded_flag(self):
         """Test list --downloaded flag."""
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
         print(f"List --downloaded output: {output}")
+        output_lines = output.splitlines()
+        self.assertNotIn("Local", output_lines)
+        self.assertNotIn("Available for Download", output_lines)
+        self.assertIn("Model Name", output)
+        self.assertIn("Downloaded", output)
+        self.assertIn("Details", output)
 
     # =============================================================================
     # Export Tests
