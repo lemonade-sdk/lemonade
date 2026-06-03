@@ -194,7 +194,11 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
                                                          timeout_seconds);
 
         if (response.status_code == 200) {
-            return json::parse(response.body);
+            try {
+                return json::parse(response.body);
+            } catch (const json::parse_error&) {
+                return json{{"text", response.body}};
+            }
         } else {
             LOG(ERROR, "WrappedServer") << "Backend returned HTTP " << response.status_code
                       << " for multipart request: " << response.body << std::endl;

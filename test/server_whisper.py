@@ -191,6 +191,73 @@ class WhisperTests(ServerTestBase):
 
         print(f"[OK] Transcription with language=en: {result['text']}")
 
+    def test_002b_transcription_response_formats(self):
+        """Test audio transcription response_format handling."""
+        self.assertIsNotNone(self._test_audio_path, "Test audio file not downloaded")
+
+        model = _get_whisper_model()
+        formats = ["json", "verbose_json", "text", "srt", "vtt"]
+
+        for response_format in formats:
+            with self.subTest(response_format=response_format):
+                with open(self._test_audio_path, "rb") as audio_file:
+                    files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
+                    data = {
+                        "model": model,
+                        "response_format": response_format,
+                    }
+
+                    response = requests.post(
+                        f"{self.base_url}/audio/transcriptions",
+                        files=files,
+                        data=data,
+                        timeout=TIMEOUT_MODEL_OPERATION,
+                    )
+
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f"Transcription failed for {response_format}: {response.text}",
+                )
+
+                # Verify that the response body matches the requested format.
+                # Standard formats should return parsed JSON, while raw text and subtitles are returned as plain text.
+                if response_format in ["json", "verbose_json"]:
+                    self.assertTrue(
+                        response.headers.get("Content-Type", "").startswith(
+                            "application/json"
+                        )
+                    )
+                else:
+                    self.assertTrue(
+                        response.headers.get("Content-Type", "").startswith(
+                            "text/plain"
+                        )
+                    )
+
+                if response_format == "json":
+                    result = response.json()
+                    self.assertIn("text", result)
+                    self.assertIsInstance(result["text"], str)
+                    self.assertGreater(len(result["text"]), 0)
+                elif response_format == "verbose_json":
+                    result = response.json()
+                    self.assertIn("text", result)
+                    self.assertIn("segments", result)
+                    self.assertIsInstance(result["segments"], list)
+                elif response_format == "text":
+                    self.assertFalse(response.text.lstrip().startswith("{"))
+                    self.assertGreater(len(response.text.strip()), 0)
+                elif response_format == "srt":
+                    self.assertFalse(response.text.lstrip().startswith("{"))
+                    self.assertIn("-->", response.text)
+                elif response_format == "vtt":
+                    self.assertFalse(response.text.lstrip().startswith("{"))
+                    self.assertIn("WEBVTT", response.text)
+                    self.assertIn("-->", response.text)
+
+                print(f"[OK] Verified response_format={response_format}")
+
     def test_003_transcription_missing_file_error(self):
         """Test error handling when file is missing."""
         model = _get_whisper_model()

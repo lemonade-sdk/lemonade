@@ -2173,6 +2173,21 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         // Check for error in response
         if (response.contains("error")) {
             res.status = 500;
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
+        // Unwrap text/subtitle formats for OpenAI API compatibility.
+        // Errors and other response formats fall back to standard JSON payloads.
+        std::string response_format = "json";
+        if (request_json.contains("response_format")) {
+            response_format = request_json["response_format"].get<std::string>();
+        }
+
+        if ((response_format == "text" || response_format == "srt" || response_format == "vtt")
+            && response.contains("text") && response["text"].is_string()) {
+            res.set_content(response["text"].get<std::string>(), "text/plain");
+            return;
         }
 
         res.set_content(response.dump(), "application/json");

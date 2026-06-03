@@ -373,7 +373,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 > **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
 >
-> **Limitations:** Only `wav` audio format and `json` response format are currently supported.
+> **Limitations:** Only `wav` audio input is currently supported. The `response_format` field supports `json`, `verbose_json`, `text`, `srt`, and `vtt`.
 
 ### Parameters
 
@@ -382,7 +382,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 | `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | The response format. Supported values: `json`, `verbose_json`, `text`, `srt`, `vtt`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
