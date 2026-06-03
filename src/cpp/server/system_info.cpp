@@ -91,6 +91,14 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
 // ROCm architecture mapping - maps specific gfx architectures to their family (download target).
 // Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
+    // CDNA1 - AMD Instinct MI100 (Arcturus)
+    {"gfx908",  "gfx908"},   // Direct arch string (from HSA/WSL path)
+    {"gfx9008", "gfx908"},   // KFD-computed string on native Linux (90008 → gfx9008)
+
+    // CDNA2 - AMD Instinct MI200/MI210 (Aldebaran)
+    {"gfx90a",  "gfx90a"},   // Direct arch string (from HSA/WSL path)
+    {"gfx9010", "gfx90a"},   // KFD-computed string on native Linux (90010 → gfx9010)
+
     // RDNA2 family (gfx103X)
     {"gfx1030", "gfx103X"},
     {"gfx1031", "gfx103X"},
@@ -470,7 +478,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx908", "gfx90a", "gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // CDNA1/2 + STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -501,8 +509,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx908", "gfx90a",
+            "gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -551,6 +559,8 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"arm64", "ARM64 processors"},
 
     // AMD GPU architectures (ROCm)
+    {"gfx908",  "AMD Instinct MI100 (CDNA1)"},
+    {"gfx90a",  "AMD Instinct MI200/MI210 (CDNA2)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
@@ -1809,7 +1819,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
     std::smatch gfx_match;
-    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
+    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
         std::string arch = gfx_match[1].str();
         auto it = ROCM_ARCH_MAPPING.find(arch);
         if (it != ROCM_ARCH_MAPPING.end()) {
@@ -1893,6 +1903,19 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("6600") != std::string::npos ||
         device_lower.find("6500") != std::string::npos) {
         return "gfx103X";
+    }
+
+    // CDNA1 GPUs (gfx908 architecture) - AMD Instinct MI100
+    if (device_lower.find("mi100") != std::string::npos ||
+        device_lower.find("arcturus") != std::string::npos) {
+        return "gfx908";
+    }
+
+    // CDNA2 GPUs (gfx90a architecture) - AMD Instinct MI200/MI210
+    if (device_lower.find("mi200") != std::string::npos ||
+        device_lower.find("mi210") != std::string::npos ||
+        device_lower.find("aldebaran") != std::string::npos) {
+        return "gfx90a";
     }
 
     return "";
