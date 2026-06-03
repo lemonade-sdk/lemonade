@@ -728,7 +728,17 @@ void CollectionOrchestrator::chat_completion_stream(const json& request,
         send_content(lr.final_text);
     }
     if (lr.app_tool_calls.is_array() && !lr.app_tool_calls.empty()) {
-        send(json{{"tool_calls", lr.app_tool_calls}}, nullptr);
+        // Normalize to the OpenAI streaming tool-call shape: each delta entry
+        // must carry an integer `index` so clients merge fragments by slot.
+        // The non-streaming message.tool_calls objects we pass through omit it,
+        // and the OpenAI SDK rejects an index-less tool-call delta.
+        json stream_tool_calls = json::array();
+        for (size_t i = 0; i < lr.app_tool_calls.size(); ++i) {
+            json tc = lr.app_tool_calls[i];
+            tc["index"] = static_cast<int>(i);
+            stream_tool_calls.push_back(std::move(tc));
+        }
+        send(json{{"tool_calls", std::move(stream_tool_calls)}}, nullptr);
     }
     send(json::object(), lr.finish_reason);
     send_done();

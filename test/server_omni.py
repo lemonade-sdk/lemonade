@@ -237,6 +237,106 @@ class OmniTests(ServerTestBase):
             "The server must pass the app tool call back unexecuted",
         )
 
+    @skip_if_unsupported("collection_chat_streaming")
+    def test_004_mixed_omni_and_app_tools_streaming(self):
+        """Streaming variant of the mixed omni + app-tool turn.
+
+        Same contract as test_003 but with stream: true. The omni image arrives
+        as a content delta and the app tool call is returned in the streamed
+        deltas. Streaming tool-call deltas MUST carry a per-call integer
+        `index` (OpenAI streaming shape) so clients/SDKs can merge them; a
+        passthrough of the non-streaming message.tool_calls objects omits it and
+        breaks reconstruction. This test asserts that index is present and that
+        the call reconstructs correctly.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("omni")
+
+        app_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_weather",
+                    "description": "Get the current weather for a city.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "city": {
+                                "type": "string",
+                                "description": "The city to look up.",
+                            },
+                        },
+                        "required": ["city"],
+                    },
+                },
+            }
+        ]
+
+        stream = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Draw a red apple on a table, and also call the "
+                        "get_current_weather tool for Paris."
+                    ),
+                }
+            ],
+            tools=app_tools,
+            stream=True,
+        )
+
+        content = ""
+        finish_reason = None
+        # Reconstruct tool calls from streamed deltas, keyed by their index.
+        tool_calls_by_index = {}
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
+            delta = choice.delta
+            if not delta:
+                continue
+            if delta.content:
+                content += delta.content
+            for tc in delta.tool_calls or []:
+                # The streaming contract: every tool-call delta must carry an
+                # integer index so the client can merge fragments by slot.
+                self.assertIsInstance(
+                    tc.index,
+                    int,
+                    "Streamed tool-call deltas must include an integer 'index'",
+                )
+                slot = tool_calls_by_index.setdefault(
+                    tc.index, {"name": "", "arguments": ""}
+                )
+                if tc.function and tc.function.name:
+                    slot["name"] += tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+
+        print(f"finish_reason: {finish_reason}")
+        print(f"Reconstructed tool calls: {tool_calls_by_index}")
+
+        # Omni tool ran server-side: its image arrived as a content delta.
+        self._assert_contains(self, content, "data:image/", "image")
+
+        # App tool was handed back, reconstructable from the streamed deltas.
+        self.assertEqual(
+            finish_reason,
+            "tool_calls",
+            "App tool calls must be returned for the client to execute",
+        )
+        called_names = [slot["name"] for slot in tool_calls_by_index.values()]
+        self.assertIn(
+            "get_current_weather",
+            called_names,
+            "The server must pass the app tool call back unexecuted",
+        )
+
 
 if __name__ == "__main__":
     run_server_tests(OmniTests, "OMNI COLLECTION TESTS", modality="omni")
