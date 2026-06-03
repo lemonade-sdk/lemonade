@@ -66,6 +66,7 @@ private:
         std::map<std::string, std::string> tool_models;   // omni tool name -> component model
                                                           // (its keys are the server-executed tools)
         std::string chat_model;                           // planner / chat component
+        bool chat_supports_vision = false;                // planner carries the "vision" label
     };
 
     // Outcome of the internal loop, formatted by each public entry point.

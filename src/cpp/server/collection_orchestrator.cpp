@@ -240,6 +240,15 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
         result.chat_model = components.front();
     }
 
+    // A vision-capable planner can read uploaded images directly, so the loop
+    // forwards user `image_url` parts to it instead of stripping them to a
+    // placeholder (see run_loop's message pre-processing).
+    if (!result.chat_model.empty()) {
+        const auto& cm_labels = labels[result.chat_model];
+        result.chat_supports_vision =
+            std::find(cm_labels.begin(), cm_labels.end(), "vision") != cm_labels.end();
+    }
+
     const json& defs = tool_definitions();
     std::string tool_list;
     // Per-tool prompt guidance, collected only for the tools actually included
@@ -439,7 +448,11 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
     // wins). Two image carriers exist — base64 data-URIs embedded in a content
     // string (how this server returns generated media; frontends echo it back),
     // and `image_url` content-array parts (user uploads / OpenAI vision format).
-    // Both are stripped to small placeholders so the planner prompt stays tiny.
+    // Embedded data-URIs and generated-image echoes are stripped to small
+    // placeholders so the planner prompt stays tiny. User-uploaded `image_url`
+    // parts are instead forwarded intact when the planner is vision-capable, so
+    // a plain "what's in this image?" turn actually reaches its vision encoder
+    // (it stays an edit source either way).
     for (const auto& msg : messages) {
         const std::string role = msg.value("role", "");
         const bool is_user = (role == "user");
@@ -474,9 +487,15 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
                 }
                 if (is_user) {
                     ++user_image_count;
-                    new_content.push_back({{"type", "text"},
-                                           {"text", "[User provided image #" +
-                                                        std::to_string(user_image_count) + "]"}});
+                    if (toolset.chat_supports_vision) {
+                        // Forward the upload so the vision planner can actually
+                        // read it; already captured above as an edit source.
+                        new_content.push_back(item);
+                    } else {
+                        new_content.push_back({{"type", "text"},
+                                               {"text", "[User provided image #" +
+                                                            std::to_string(user_image_count) + "]"}});
+                    }
                 } else {
                     new_content.push_back({{"type", "text"}, {"text", "[Generated image]"}});
                 }

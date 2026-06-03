@@ -24,6 +24,10 @@ Usage:
     python server_omni.py --wrapped-server llamacpp --backend vulkan
 """
 
+import base64
+import struct
+import zlib
+
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
@@ -78,6 +82,33 @@ class OmniTests(ServerTestBase):
             cls._model_pulled = True
         else:
             print(f"[SETUP] Warning: pull returned {response.status_code}")
+
+    @staticmethod
+    def _solid_color_png_data_uri(r, g, b, size=256):
+        """Build a data-URI for a solid RGB PNG (stdlib only, no Pillow).
+
+        Used to upload a known image to the collection planner so a test can
+        assert the planner actually saw it (by naming the color back).
+        """
+
+        def _chunk(tag, data):
+            return (
+                struct.pack(">I", len(data))
+                + tag
+                + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+            )
+
+        ihdr = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)  # 8-bit RGB
+        row = b"\x00" + bytes((r, g, b)) * size  # filter byte + pixels
+        raw = row * size
+        png = (
+            b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", zlib.compress(raw, 9))
+            + _chunk(b"IEND", b"")
+        )
+        return "data:image/png;base64," + base64.b64encode(png).decode()
 
     @staticmethod
     def _assert_contains(testcase, content, needle, label):
@@ -335,6 +366,54 @@ class OmniTests(ServerTestBase):
             "get_current_weather",
             called_names,
             "The server must pass the app tool call back unexecuted",
+        )
+
+    @skip_if_unsupported("collection_chat")
+    def test_005_image_input_passthrough(self):
+        """An uploaded image must reach the vision-capable planner.
+
+        Regression test for the collection path stripping user `image_url`
+        parts to a text placeholder ("[User provided image #N]") and only
+        keeping the base64 as an edit source. With that bug a plain
+        "what's in this image?" question never reached the planner's vision
+        encoder, so only edit-style flows could use an uploaded image.
+
+        We upload a solid-green image and ask for its dominant color. The
+        planner (Qwen3.5-4B-MTP, a vision model) can only answer "green" if
+        the image_url was passed through; with the placeholder it is blind to
+        the pixels and cannot name the color.
+        """
+        client = self.get_openai_client()
+        model = self.get_test_model("omni")
+
+        image_uri = self._solid_color_png_data_uri(0, 255, 0)
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "What is the dominant color of this image? "
+                                "Answer with a single color word."
+                            ),
+                        },
+                        {"type": "image_url", "image_url": {"url": image_uri}},
+                    ],
+                }
+            ],
+            stream=False,
+        )
+
+        content = completion.choices[0].message.content or ""
+        print(f"Response (image input): {content[:200]}")
+        self.assertIn(
+            "green",
+            content.lower(),
+            "Planner must receive the uploaded image_url and identify it as green; "
+            "a text placeholder leaves it blind to the pixels",
         )
 
 
