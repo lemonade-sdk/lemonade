@@ -428,12 +428,20 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
         }
 
         std::cout << "Local" << std::endl;
-        print_model_table(local_models);
+        if (local_models.empty()) {
+            std::cout << "No local models downloaded." << std::endl;
+        } else {
+            print_model_table(local_models);
+        }
 
         std::cout << std::endl;
 
         std::cout << "Available for Download" << std::endl;
-        print_model_table(available_models);
+        if (available_models.empty()) {
+            std::cout << "No models available for download." << std::endl;
+        } else {
+            print_model_table(available_models);
+        }
 
         return 0;
 
