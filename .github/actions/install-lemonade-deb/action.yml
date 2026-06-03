@@ -51,6 +51,24 @@ runs:
         fi
 
         echo "Extracting .deb package: $DEB_FILE"
+        
+        # This action extracts the .deb instead of installing it system-wide.
+        # Install the package's declared runtime dependencies first, otherwise
+        # newly linked shared libraries such as mbedcrypto are missing when the
+        # extracted binaries are executed below.
+        DEB_DEPENDS=$(dpkg-deb -f "$DEB_FILE" Depends 2>/dev/null || true)
+        if [ -n "$DEB_DEPENDS" ] && command -v apt-get >/dev/null 2>&1; then
+            echo "Installing .deb runtime dependencies: $DEB_DEPENDS"
+            if [ "$(id -u)" -eq 0 ]; then
+                apt-get update
+                apt-get satisfy -y "$DEB_DEPENDS"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get satisfy -y "$DEB_DEPENDS"
+            else
+                echo "No root/passwordless sudo available; assuming runtime dependencies are already installed."
+            fi
+        fi
 
         # Extract the .deb package
         mkdir -p "$EXTRACT_PATH"

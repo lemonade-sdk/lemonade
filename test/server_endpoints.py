@@ -956,7 +956,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] /stats endpoint returned: {list(data.keys())}")
 
-    def test_021_pull_multi(self):
+    def test_021s_pull_multi(self):
         # First delete model if it exists to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
@@ -1091,7 +1091,7 @@ class EndpointTests(ServerTestBase):
                     "checkpoints": {
                         # Use a different main quant than USER_MODEL_NAME so this test's
                         # cleanup does not delete the same shared main file and poison
-                        # later reruns of test_021_pull_multi.
+                        # later reruns of test_021s_pull_multi.
                         "main": SHARED_REPO_MODEL_B_CHECKPOINT,
                         "text_encoder": USER_MODEL_TE_CHECKPOINT,
                         "vae": USER_MODEL_VAE_CHECKPOINT,
