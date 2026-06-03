@@ -420,11 +420,17 @@ sys.exit(0)
         output_lines = output.splitlines()
         self.assertNotIn("Local", output_lines)
         self.assertNotIn("Available for Download", output_lines)
-        self.assertIn("Model Name", output)
-        self.assertIn("Downloaded", output)
-        self.assertIn("Details", output)
 
-        downloaded_models = self._parse_model_table(output)
+        # A fresh cache has no local models yet, so --downloaded may return
+        # the empty local-state message instead of a table.
+        if "No local models downloaded." in output:
+            downloaded_models = []
+        else:
+            self.assertIn("Model Name", output)
+            self.assertIn("Downloaded", output)
+            self.assertIn("Details", output)
+            downloaded_models = self._parse_model_table(output)
+
         for m in downloaded_models:
             self.assertTrue(
                 m["downloaded"],
