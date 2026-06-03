@@ -14,6 +14,10 @@
 
 Please see the general [contribution guidelines](../contribute.md), then contact @kenvandine on Discord to get started.
 
+## Maintanance
+
+Please see the [contribution guide](../contribute.md#maintainers) to see who is responsible for maintaining each backend. Working groups are focused areas of roadmap development, and are a subset of the end-to-end maintainance and support of this project.
+
 ## Roadmap
 
 > Roadmap items may be high-level objectives that may span multiple issues and PRs.

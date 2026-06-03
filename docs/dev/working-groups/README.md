@@ -10,6 +10,10 @@ Charters are reviewed by the community in PRs and committed to this directory. E
 
 Charters are ratified by @jeremyfowers with two primary considerations (in order): 1. ensuring the overall health of the local AI HW/SW ecosystem, and 2. positive feedback of a supermajority of the community. We may adopt a more sophisticated governance model in the future.
 
+## Maintainers
+
+You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end-to-end maintainance and support of this project.
+
 ## Table of Working Groups
 
 | Working Group (link) | Lead (GH handle) | Discord contact | Goal                                                                 |
