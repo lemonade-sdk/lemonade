@@ -18,7 +18,7 @@
             },
             "size": {
               "type": "string",
-              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Use only when the user explicitly asks for output image dimensions; omit for content details like a monitor or pixel-art resolution. Dimensions must be multiples of 64. Otherwise omit to use the {image_size} default."
+              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Omit by default to use {image_size}. Use only when the user explicitly asks for canvas dimensions or aspect ratio. Common choices include 512x512 square, 512x768 portrait, 768x512 landscape, 1024x576 16:9, and 576x1024 9:16. Keep content details like a monitor or pixel-art resolution in the prompt. Dimensions must be multiples of 64."
             },
             "width": {
               "type": "integer",
@@ -62,11 +62,14 @@
           ],
           "additionalProperties": false
         }
-      }
+      },
+      "prompt_guidance": "For image generation, omit size by default to use {image_size}. Only set size or width+height when the user explicitly asks for output/canvas dimensions or aspect ratio. Common safe canvas sizes include {image_size} default/wide, 512x512 square, 512x768 portrait, 768x512 landscape, 1024x576 16:9, and 576x1024 9:16. Keep content details such as screen, monitor, icon, grid, or pixel-art resolution in the prompt; do not move them into size."
     },
     {
-      "requires_labels": ["edit"],
-      "prompt_guidance": "IMPORTANT: When an image has already been generated in this conversation and the user wants to add something, remove something, change, modify, or adjust the image in any way, you MUST use the edit_image tool — NOT generate_image. Only use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source.",
+      "requires_labels": [
+        "edit"
+      ],
+      "prompt_guidance": "When an image already exists in the conversation and the user asks to add, remove, change, modify, or adjust it, use edit_image rather than generate_image. Use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source.",
       "function": {
         "name": "edit_image",
         "description": "Edit or modify the most recent generated image from this conversation. Use this for requested changes to an existing image, not for creating a brand new image.",
@@ -79,7 +82,7 @@
             },
             "size": {
               "type": "string",
-              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Use only when the user explicitly asks for output image dimensions; omit for content details like a monitor or pixel-art resolution. Dimensions must be multiples of 64. Otherwise omit to use the {image_size} default."
+              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Omit by default to use {image_size}. Use only when the user explicitly asks for canvas dimensions or aspect ratio. Common choices include 512x512 square, 512x768 portrait, 768x512 landscape, 1024x576 16:9, and 576x1024 9:16. Keep content details like a monitor or pixel-art resolution in the prompt. Dimensions must be multiples of 64."
             },
             "width": {
               "type": "integer",
@@ -153,11 +156,13 @@
       }
     },
     {
-      "requires_labels": ["transcription"],
-      "prompt_guidance": "When you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call the transcribe_audio tool to transcribe it — the audio data is handled automatically by the system.",
+      "requires_labels": [
+        "transcription"
+      ],
+      "prompt_guidance": "When you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call the transcribe_audio tool to transcribe it \u2014 the audio data is handled automatically by the system.",
       "function": {
         "name": "transcribe_audio",
-        "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system — just call this tool with the language parameter.",
+        "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system \u2014 just call this tool with the language parameter.",
         "parameters": {
           "type": "object",
           "properties": {
@@ -173,7 +178,9 @@
       }
     },
     {
-      "requires_llm_labels": ["vision"],
+      "requires_llm_labels": [
+        "vision"
+      ],
       "prompt_guidance": "When the user sends an image (as an image_url in their message), use the analyze_image tool to look at the image before responding about it.",
       "function": {
         "name": "analyze_image",

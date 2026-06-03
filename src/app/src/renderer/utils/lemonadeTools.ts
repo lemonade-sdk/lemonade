@@ -11,18 +11,6 @@ const DEFAULT_IMAGE_SIZE = COLLECTION_IMAGE_SIZE;
 const MAX_IMAGE_DIMENSION = 2048;
 const IMAGE_DIMENSION_STEP = 64;
 
-const IMAGE_EDIT_INSTRUCTIONS =
-  '\nIMPORTANT: When an image has already been generated in this conversation and the user wants to add, remove, change, modify, or adjust it, use edit_image rather than generate_image. The edit_image tool automatically uses the most recent image as its source.';
-
-const IMAGE_SIZE_INSTRUCTIONS =
-  `\nWhen generating or editing images, pass size or width+height only when the user explicitly asks for output/canvas pixel dimensions. Do not turn content details such as a screen, monitor, icon, grid, or pixel-art resolution into the output size. If no explicit canvas size is requested, omit size arguments and let the executor use its ${DEFAULT_IMAGE_SIZE} default. Preserve explicit image options such as steps, cfg_scale, seed, sample_method, and flow_shift as tool arguments.`;
-
-const VISION_INSTRUCTIONS =
-  "\nWhen the user sends an image (as an image_url in their message), use analyze_image to look at the image before responding about it.";
-
-const TRANSCRIPTION_INSTRUCTIONS =
-  "\nWhen you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call transcribe_audio to transcribe it — the audio data is handled automatically by the system.";
-
 // Types
 export interface LemonadeToolDef {
   type: 'function';
@@ -75,13 +63,17 @@ export function buildLemonadeTools(
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};
 
+  const substituteImageSize = (text: string): string => (
+    text.replace(/\{image_size\}/g, COLLECTION_IMAGE_SIZE)
+  );
+
   const substituteParams = (params: Record<string, any>): Record<string, any> => {
     const props = params?.properties as Record<string, any> | undefined;
     if (!props) return params;
     const newProps: Record<string, any> = {};
     for (const [key, prop] of Object.entries(props)) {
       newProps[key] = typeof prop?.description === 'string' && prop.description.includes('{image_size}')
-        ? { ...prop, description: prop.description.replace(/\{image_size\}/g, COLLECTION_IMAGE_SIZE) }
+        ? { ...prop, description: substituteImageSize(prop.description) }
         : prop;
     }
     return { ...params, properties: newProps };
@@ -98,7 +90,7 @@ export function buildLemonadeTools(
   const include = (def: ToolDefinitionEntry, model: string) => {
     tools.push(materialize(def));
     models[def.function.name] = model;
-    if (def.prompt_guidance) guidance.push(def.prompt_guidance);
+    if (def.prompt_guidance) guidance.push(substituteImageSize(def.prompt_guidance));
   };
 
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
@@ -124,19 +116,12 @@ export function buildLemonadeTools(
     }
   }
 
-  const enabledToolNames = new Set(tools.map(t => t.function.name));
-  const toolInstructions = [
-    enabledToolNames.has('edit_image') ? IMAGE_EDIT_INSTRUCTIONS : '',
-    (enabledToolNames.has('generate_image') || enabledToolNames.has('edit_image')) ? IMAGE_SIZE_INSTRUCTIONS : '',
-    enabledToolNames.has('analyze_image') ? VISION_INSTRUCTIONS : '',
-    enabledToolNames.has('transcribe_audio') ? TRANSCRIPTION_INSTRUCTIONS : '',
-  ].join('');
-
   const toolList = tools.map(t => `- ${t.function.name}: ${t.function.description}`).join('\n');
   const toolGuidance = guidance.length ? `\n${guidance.join('\n')}` : '';
   const systemPrompt = toolDefinitions.system_prompt
     .replace('{tool_list}', toolList)
-    .replace('{tool_instructions}', toolInstructions);
+    .replace('{tool_guidance}', toolGuidance)
+    .replace('{tool_instructions}', toolGuidance);
 
   return { tools, systemPrompt, models };
 }

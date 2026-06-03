@@ -103,31 +103,34 @@ function splitDataUrl(dataUrl: string): { base64: string } {
 }
 
 
-const EDIT_INTENT_RE = /\b(add|adjust|change|edit|fix|modify|remove|replace|recolor|turn|update)\b|\bmake\s+(it|this|the|its)\b/i;
-const NEW_IMAGE_INTENT_RE = /\b(new|another|different|separate|from scratch)\b/i;
-
-function getToolPrompt(toolCall: any): string {
+function getToolArgs(toolCall: any): Record<string, any> {
   try {
     const args = JSON.parse(toolCall?.function?.arguments || '{}');
-    return typeof args?.prompt === 'string' ? args.prompt : '';
+    return args && typeof args === 'object' ? args : {};
   } catch {
-    return '';
+    return {};
   }
 }
 
-function isLikelyImageEditRequest(toolCall: any): boolean {
-  const prompt = getToolPrompt(toolCall);
-  return EDIT_INTENT_RE.test(prompt) && !NEW_IMAGE_INTENT_RE.test(prompt);
-}
-
-function withToolName(toolCall: any, name: string): any {
-  return {
-    ...toolCall,
-    function: {
-      ...toolCall.function,
-      name,
-    },
+function getImageToolRequestKey(toolCall: any): string {
+  const args = getToolArgs(toolCall);
+  const normalize = (value: any): string => {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    return String(value);
   };
+
+  return JSON.stringify({
+    prompt: normalize(args.prompt),
+    size: normalize(args.size),
+    width: normalize(args.width),
+    height: normalize(args.height),
+    steps: normalize(args.steps),
+    cfg_scale: normalize(args.cfg_scale),
+    seed: normalize(args.seed),
+    sample_method: normalize(args.sample_method),
+    flow_shift: normalize(args.flow_shift),
+  });
 }
 
 interface LLMChatPanelProps {
@@ -601,6 +604,10 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
     // artifacts: generated this turn — rendered in the assistant response.
     const artifacts: Artifact[] = [];
 
+    // Track exact repeated generation requests only. Distinct prompts/options
+    // such as "cat" and "dog" or different camera angles remain allowed.
+    const generatedImageRequestKeys = new Set<string>();
+
     // Agentic loop
     const llmMessages = [...processedMessages];
 
@@ -663,30 +670,23 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
       llmMessages.push(assistantMsg);
 
       for (const toolCall of assistantMsg.tool_calls) {
-        const originalFuncName = toolCall.function.name;
-        const hasImageSource = [...sourceArtifacts, ...artifacts].some(a => a.type === 'image');
-        const shouldRerouteToEdit = originalFuncName === 'generate_image'
-          && hasImageSource
-          && isLikelyImageEditRequest(toolCall);
-        const funcName = shouldRerouteToEdit && lemonadeTools.models.edit_image ? 'edit_image' : originalFuncName;
-        const effectiveToolCall = funcName === originalFuncName ? toolCall : withToolName(toolCall, funcName);
+        const funcName = toolCall.function.name;
         const toolModel = lemonadeTools.models[funcName];
+        const imageRequestKey = funcName === 'generate_image' ? getImageToolRequestKey(toolCall) : '';
 
         let resultContent: string;
         let imageAddedThisCall = false;
-        if (shouldRerouteToEdit && !lemonadeTools.models.edit_image) {
-          resultContent = 'Image editing is not available for the current collection.';
-        } else if (toolModel) {
+        if (toolModel) {
           try {
-            if (funcName === 'generate_image' && artifacts.some(a => a.type === 'image')) {
-              resultContent = 'Image generation skipped because an image was already generated for this request.';
+            if (funcName === 'generate_image' && generatedImageRequestKeys.has(imageRequestKey)) {
+              resultContent = 'Duplicate image generation skipped because this exact image request was already generated for this turn.';
             } else {
               const context: ToolExecutionContext = {
                 extractedAudio,
                 extractedImages,
                 previousArtifacts: [...sourceArtifacts, ...artifacts],
               };
-              const result = await executeLemonadeTool(effectiveToolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
+              const result = await executeLemonadeTool(toolCall, toolModel, context, modelsData, abortControllerRef.current?.signal);
 
               if (result.type === 'image' && result.data) {
                 // For edits, replace the last generated image from this turn if
@@ -702,6 +702,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
                   artifacts.push({ type: 'image', data: result.data, mime: result.mime || 'image/png' });
                 }
                 resultContent = funcName === 'edit_image' ? 'Image edited successfully.' : 'Image generated successfully.';
+                if (funcName === 'generate_image') {
+                  generatedImageRequestKeys.add(imageRequestKey);
+                }
                 imageAddedThisCall = true;
               } else if (result.type === 'audio' && result.data) {
                 artifacts.push({ type: 'audio', data: result.data, mime: result.mime || 'audio/wav' });

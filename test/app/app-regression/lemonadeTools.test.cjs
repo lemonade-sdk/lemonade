@@ -52,7 +52,7 @@ const tests = [
       const editProps = byName.edit_image.function.parameters.properties;
       assertIncludes(
         generateProps.size.description,
-        'omit to use the {image_size} default',
+        'Omit by default to use {image_size}',
         'The planner should not have to emit a default size argument for every image request.',
       );
       assert.ok(!('aspect_ratio' in generateProps), 'Aspect ratio should not be an extra planner schema field.');
@@ -130,30 +130,45 @@ const tests = [
     },
   },
   {
-    name: 'collection UI skips duplicate generate_image calls in one assistant turn',
+    name: 'collection UI skips exact duplicate generate_image calls without blocking distinct image requests',
     run() {
       const source = normalizeWhitespace(readSource(LLM_CHAT_PANEL));
-      assertMatches(
+      assertIncludes(
         source,
-        /funcName === 'generate_image' && artifacts\.some\(a => a\.type === 'image'\)[\s\S]*?Image generation skipped because an image was already generated for this request\./,
-        'Repeated generate_image tool calls in one request should not render duplicate images.',
+        'const generatedImageRequestKeys = new Set<string>()',
+        'The duplicate guard should track exact generate_image requests, not just whether any image exists.',
+      );
+      assertIncludes(
+        source,
+        'getImageToolRequestKey(toolCall)',
+        'Duplicate detection should compare prompt/options so distinct image requests still run.',
+      );
+      assertIncludes(
+        source,
+        'Duplicate image generation skipped because this exact image request was already generated for this turn.',
+        'Repeated identical generate_image tool calls in one request should not render duplicate images.',
       );
     },
   },
   {
-    name: 'collection UI reroutes likely edit intents to edit_image when available',
+    name: 'collection UI preserves planner agency for image edit tool choice',
     run() {
       const source = normalizeWhitespace(readSource(LLM_CHAT_PANEL));
-      assertIncludes(source, 'isLikelyImageEditRequest(toolCall)', 'Generate calls with edit-like prompts should be detected.');
-      assertMatches(
-        source,
-        /shouldRerouteToEdit[\s\S]*?lemonadeTools\.models\.edit_image[\s\S]*?withToolName\(toolCall, funcName\)/,
-        'Likely edit requests should use edit_image when the collection exposes it.',
+      assert.ok(!source.includes('isLikelyImageEditRequest'), 'Regex edit-intent parsing should not override the planner tool choice.');
+      assert.ok(!source.includes('withToolName(toolCall'), 'The UI should not rewrite generate_image tool calls into edit_image calls.');
+      assert.ok(!source.includes('EDIT_INTENT_RE'), 'Edit routing should be planner-driven, not regex-driven.');
+      assertMatches(source, /const funcName = toolCall\.function\.name;[\s\S]*?executeLemonadeTool\(toolCall, toolModel,/, 'The executed tool should match the planner-selected tool.');
+
+      const lemonadeToolsSource = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      assertIncludes(
+        lemonadeToolsSource,
+        'Use edit_image when the user asks to modify an existing image',
+        'Prompt guidance should tell the planner when to choose edit_image.',
       );
       assertIncludes(
-        source,
-        'Image editing is not available for the current collection.',
-        'Edit intent should not silently fall back to generating a new image when no edit tool exists.',
+        lemonadeToolsSource,
+        'Common safe canvas sizes',
+        'Prompt guidance should give the planner resolution/aspect choices without executor-side regex rerouting.',
       );
     },
   },
