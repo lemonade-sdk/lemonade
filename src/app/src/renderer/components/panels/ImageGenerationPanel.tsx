@@ -24,7 +24,7 @@ interface ImageSettings {
   cfgScale: number;
   width: number;
   height: number;
-  seed: number;
+  seed: number | '';
   upscaleModel: string;
 }
 
@@ -161,6 +161,8 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
     return serverFetch(endpoint, { method: 'POST', body: formData });
   };
 
+  const resolvedSeed = (): number => imageSettings.seed === '' ? -1 : imageSettings.seed;
+
   const handleImageGeneration = async () => {
     if (imageMode === 'edit') {
       await handleImageEdit();
@@ -194,7 +196,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         response_format: 'b64_json',
       };
 
-      requestBody.seed = imageSettings.seed;
+      requestBody.seed = resolvedSeed();
 
       const genStart = Date.now();
       const genResponse = await serverFetch('/images/generations', {
@@ -293,7 +295,7 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
         form.append('prompt', currentPrompt);
         form.append('steps', String(imageSettings.steps));
         form.append('cfg_scale', String(imageSettings.cfgScale));
-        form.append('seed', String(imageSettings.seed));
+        form.append('seed', String(resolvedSeed()));
       });
 
       if (!response.ok) {
@@ -574,7 +576,15 @@ const ImageGenerationPanel: React.FC<ImageGenerationPanelProps> = ({
           <div className="image-setting">
             <label>Seed</label>
             <input type="number" min="-1" value={imageSettings.seed}
-              onChange={(e) => setImageSettings(prev => ({ ...prev, seed: Math.max(parseInt(e.target.value) || -1, -1) }))}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === '') {
+                  setImageSettings(prev => ({ ...prev, seed: '' }));
+                  return;
+                }
+                const seed = parseInt(value, 10);
+                setImageSettings(prev => ({ ...prev, seed: Number.isNaN(seed) ? -1 : Math.max(seed, -1) }));
+              }}
               disabled={isBusy} placeholder="-1 = random" />
           </div>
         )}

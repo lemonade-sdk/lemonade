@@ -479,9 +479,6 @@ json SDServer::image_generations(const json& request) {
     }
 
     json extra_args = build_extra_args(request);
-    if (extra_args.contains("seed")) {
-        sd_request["seed"] = extra_args["seed"];
-    }
 
     std::string prompt = sd_request.value("prompt", "");
     prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
@@ -490,7 +487,7 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models avoid timeout
+    // Image generation can take 20+ minutes for large models; avoid timeout.
     return forward_request("/v1/images/generations", sd_request, 0);
 }
 
