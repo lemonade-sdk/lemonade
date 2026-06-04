@@ -226,7 +226,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("Metal llamacpp only supported on macOS");
 #endif
     } else if (resolved_backend == "openvino") {
-        params.repo = "ggml-org/llama.cpp";
+        params.repo = "lemonade-sdk/llama.cpp";
 #ifdef __linux__
         std::string openvino_ver = get_openvino_runtime_version();
         params.filename = "llama-" + version + "-bin-ubuntu-openvino-" + openvino_ver + "-x64.tar.gz";
