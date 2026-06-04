@@ -269,26 +269,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                         (req.path.rfind("/v1/", 0) == 0);
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
-    // Internal endpoints are restricted to loopback when bound to localhost only.
-    // When the server listens on all interfaces (e.g. Docker with --host 0.0.0.0),
-    // allow internal routes from remote clients so the web UI can call them.
+    // Internal endpoints are restricted to loopback regardless of API key
     if (is_internal_route) {
-        const std::string host = config_->host();
-        const bool binds_all_interfaces = (host == "0.0.0.0" || host == "::");
-        if (!binds_all_interfaces) {
-            // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
-            // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
-            // lemond uses to accept both IPv4 and IPv6 on the same port).
-            bool is_loopback = (req.remote_addr == "127.0.0.1" ||
-                                req.remote_addr == "::1" ||
-                                req.remote_addr == "::ffff:127.0.0.1");
-            if (!is_loopback) {
-                LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
-                            << req.remote_addr << " " << req.path << std::endl;
-                res.status = 403;
-                res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
+        // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
+        // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
+        // lemond uses to accept both IPv4 and IPv6 on the same port).
+        bool is_loopback = (req.remote_addr == "127.0.0.1" ||
+                            req.remote_addr == "::1" ||
+                            req.remote_addr == "::ffff:127.0.0.1");
+        if (!is_loopback) {
+            LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
+                        << req.remote_addr << " " << req.path << std::endl;
+            res.status = 403;
+            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
         }
     }
 
