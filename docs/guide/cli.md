@@ -145,7 +145,7 @@ lemonade export Qwen3-0.6B-GGUF --output model-info.json
 
 ## Options for list
 
-The `list` command displays available models. By default, it shows all models. Use the `--downloaded` flag to filter for downloaded models only:
+The `list` command displays all models. By default, the output is partitioned into **Local** (downloaded) and **Available for Download** sections. You can restrict the output to only local models by passing the `--downloaded` flag:
 
 ```bash
 lemonade list [options]
