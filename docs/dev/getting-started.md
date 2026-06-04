@@ -230,7 +230,7 @@ Creates `lemonade-server-minimal.msi` which:
 
 ```bash
 cd build
-cpack
+cpack -G DEB
 ```
 
 **Package Output:**
