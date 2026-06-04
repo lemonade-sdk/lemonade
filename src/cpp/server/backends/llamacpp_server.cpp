@@ -525,6 +525,19 @@ void LlamaCppServer::load(const std::string& model_name,
                     << std::endl;
             }
         }
+
+#ifdef __linux__
+        // On NVIDIA Optimus/PRIME laptops in On-Demand mode the dGPU is only
+        // activated for applications that opt in via __NV_PRIME_RENDER_OFFLOAD.
+        // Without this, CUDA reports "no CUDA-capable device is detected" even
+        // though the kernel module is loaded and /proc/driver/nvidia/gpus exists.
+        // Setting the variable is harmless on non-Optimus (single-GPU) systems.
+        const char* existing_prime = std::getenv("__NV_PRIME_RENDER_OFFLOAD");
+        if (!existing_prime || existing_prime[0] == '\0') {
+            env_vars.push_back({"__NV_PRIME_RENDER_OFFLOAD", "1"});
+            LOG(INFO, "LlamaCpp") << "Setting __NV_PRIME_RENDER_OFFLOAD=1 for PRIME Offload compatibility" << std::endl;
+        }
+#endif
     }
 
 #ifdef __APPLE__

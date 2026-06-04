@@ -1,5 +1,6 @@
 {
-  "system_prompt": "You are a helpful multimodal AI assistant with access to the following tools:\n\n{tool_list}\n\nWhen the user asks you to perform an action that matches one of these tools, use the appropriate tool. You may call multiple tools if the request requires it. After using a tool, describe what you did to the user in a brief, friendly response. If the user's request does not require any tool, respond normally with text.\nIMPORTANT: When an image has already been generated in this conversation and the user wants to add something, remove something, change, modify, or adjust the image in any way, you MUST use the edit_image tool — NOT generate_image. Only use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source.\nWhen the user sends an image (as an image_url in their message), use the analyze_image tool to look at the image before responding about it.\nWhen you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call the transcribe_audio tool to transcribe it — the audio data is handled automatically by the system.",
+  "image_size": "512x256",
+  "system_prompt": "You are a helpful multimodal AI assistant with access to the following tools:\n\n{tool_list}\n\nWhen the user asks you to perform an action that matches one of these tools, use the appropriate tool. You may call multiple tools if the request requires it. After using a tool, describe what you did to the user in a brief, friendly response. If the user's request does not require any tool, respond normally with text.{tool_guidance}",
   "tools": [
     {
       "requires_labels": ["image"],
@@ -17,6 +18,7 @@
     },
     {
       "requires_labels": ["edit"],
+      "prompt_guidance": "IMPORTANT: When an image has already been generated in this conversation and the user wants to add something, remove something, change, modify, or adjust the image in any way, you MUST use the edit_image tool — NOT generate_image. Only use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source.",
       "function": {
         "name": "edit_image",
         "description": "Edit or modify a previously generated image. Use this when the user wants to add, remove, change, modify, update, fix, or adjust anything in an existing image from this conversation. The most recently generated image is used automatically as the source. Always prefer this over generate_image when an image already exists in the conversation.",
@@ -46,6 +48,7 @@
     },
     {
       "requires_labels": ["transcription"],
+      "prompt_guidance": "When you see '[User provided audio file #N]' in a message, it means the user sent audio data. Call the transcribe_audio tool to transcribe it — the audio data is handled automatically by the system.",
       "function": {
         "name": "transcribe_audio",
         "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system — just call this tool with the language parameter.",
@@ -60,6 +63,7 @@
     },
     {
       "requires_llm_labels": ["vision"],
+      "prompt_guidance": "When the user sends an image (as an image_url in their message), use the analyze_image tool to look at the image before responding about it.",
       "function": {
         "name": "analyze_image",
         "description": "Analyze, describe, or answer questions about an image. Use this when the user shares an image and asks you to look at it, describe it, read text from it, identify objects, or answer any question about what's in the image.",

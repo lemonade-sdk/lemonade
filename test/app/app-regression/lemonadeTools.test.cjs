@@ -44,13 +44,18 @@ const tests = [
     name: 'buildLemonadeTools keeps component matching separate from planner matching',
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
+      // The include() helper maps each included tool's name to its resolved model.
       assertMatches(
         source,
-        /requiresLabels[\s\S]*?components\.find[\s\S]*?models\[def\.function\.name\] = match/,
+        /const include = \(def[\s\S]*?models\[def\.function\.name\] = model/,
+        'The include helper should map each tool name to its resolved model.',
+      );
+      assertMatches(
+        source,
+        /requiresLabels[\s\S]*?components\.find[\s\S]*?include\(def, match\)/,
         'Tools with requires_labels should map to a concrete matching component.',
       );
-      const hasPlannerPath = /requiresLlmLabels[\s\S]*?models\[def\.function\.name\] = llmModel/.test(source)
-        || /requiresLlmLabels[\s\S]*?models\[def\.function\.name\] = match/.test(source);
+      const hasPlannerPath = /requiresLlmLabels[\s\S]*?include\(def, llmModel\)/.test(source);
       assert.ok(hasPlannerPath, 'Tools with requires_llm_labels should route through the selected planner path.');
     },
   },
@@ -59,7 +64,20 @@ const tests = [
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
       const config = readSource(IMAGE_CONFIG);
-      assertMatches(config, /export const COLLECTION_IMAGE_SIZE = '512x256'/, 'Current collection image size should be explicit.');
+      // The collection image size is a single source of truth in
+      // toolDefinitions.json, shared with the C++ server-side orchestrator.
+      assert.equal(
+        readToolDefinitions().image_size,
+        '512x256',
+        'Collection image size should be declared in toolDefinitions.json.',
+      );
+      // collectionImageConfig.ts derives the value from the JSON rather than
+      // hardcoding it, so the desktop app and server cannot drift.
+      assertMatches(
+        config,
+        /export const COLLECTION_IMAGE_SIZE = toolDefinitions\.image_size/,
+        'COLLECTION_IMAGE_SIZE should be derived from toolDefinitions.image_size.',
+      );
       assertMatches(
         source,
         /prop\.description\.includes\('\{image_size\}'\)[\s\S]*?replaceAll\('\{image_size\}', COLLECTION_IMAGE_SIZE\)/,
