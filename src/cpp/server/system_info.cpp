@@ -87,6 +87,12 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
 // ROCm architecture mapping - maps specific gfx architectures to their family (download target).
 // Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
+    // RDNA1 family. Linux KFD reports the exact GPU ISA (gfx1010/gfx1011/gfx1012),
+    // while Lemonade recipes and ROCm backend downloads use the shared family name gfx101X.
+    {"gfx1010", "gfx101X"}, // Navi 10 (e.g., RX 5700 / 5700 XT)
+    {"gfx1011", "gfx101X"}, // Navi 12 (e.g., Radeon Pro 5600M)
+    {"gfx1012", "gfx101X"}, // Navi 14 (e.g., RX 5500 / 5500 XT)
+
     // RDNA2 family (gfx103X)
     {"gfx1030", "gfx103X"},
     {"gfx1031", "gfx103X"},
