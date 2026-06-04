@@ -967,8 +967,10 @@ class EndpointTests(ServerTestBase):
         self.assertIn(delete_response.status_code, [200, 422])
 
         recipe = "sd-cpp"
-        ## sd-cpp currently unavailable on MacOS
-        if platform.system() == "Darwin":
+        ## sd-cpp currently unavailable on MacOS or Linux ARM64
+        if platform.system() == "Darwin" or (
+            platform.system() == "Linux" and platform.machine() == "aarch64"
+        ):
             recipe = "llamacpp"
         recipe_backend = f"{recipe}_backend"
 
