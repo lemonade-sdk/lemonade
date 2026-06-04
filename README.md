@@ -36,7 +36,7 @@ Lemonade comes in two flavors:
 
 ## Getting Started
 
-1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS (beta)](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev-getting-started.md)
+1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev/getting-started.md)
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
 4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
@@ -57,8 +57,8 @@ Lemonade comes in two flavors:
 | [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-supported-1793D1?logo=arch-linux&logoColor=white)](https://lemonade-server.ai/install_options.html#arch) | [![Build on Arch](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Arch)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
 | [![Debian Trixie+](https://img.shields.io/badge/Debian-Trixie%2B-A81D33?logo=debian&logoColor=white)](https://lemonade-server.ai/install_options.html#debian) | [![Build on Debian](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Debian)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
 | [![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](https://lemonade-server.ai/install_options.html#docker) | [![Build Container Image](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/build-and-push-container.yml?branch=main&label=Build%20Container%20Image)](https://github.com/lemonade-sdk/lemonade/actions/workflows/build-and-push-container.yml) |
-| [![Fedora 43](https://img.shields.io/badge/Fedora-43-294172?logo=fedora&logoColor=white)](https://lemonade-server.ai/install_options.html#fedora) | [![Build .rpm](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.rpm)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
-| [![macOS beta](https://img.shields.io/badge/macOS-beta-999999?logo=apple&logoColor=white)](https://lemonade-server.ai/install_options.html#macos) | [![Build .pkg](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.pkg)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
+| [![Fedora 43+](https://img.shields.io/badge/Fedora-43%2B-294172?logo=fedora&logoColor=white)](https://lemonade-server.ai/install_options.html#fedora) | [![Build .rpm](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.rpm)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
+| [![macOS](https://img.shields.io/badge/macOS-supported-999999?logo=apple&logoColor=white)](https://lemonade-server.ai/install_options.html#macos) | [![Build .pkg](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.pkg)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
 | [![Snap](https://img.shields.io/badge/Snap-supported-82BEA0?logo=snapcraft&logoColor=white)](https://snapcraft.io/lemonade-server) | [![Build Snap](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade-server-snap/snap-build.yaml?branch=main&label=Build%20Snap)](https://github.com/lemonade-sdk/lemonade-server-snap/actions/workflows/snap-build.yaml) |
 | [![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?logo=ubuntu&logoColor=white)](https://lemonade-server.ai/install_options.html#ubuntu) | [![Build Launchpad PPA](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/launchpad-ppa.yml?branch=main&label=Build%20Launchpad%20PPA)](https://github.com/lemonade-sdk/lemonade/actions/workflows/launchpad-ppa.yml) |
 | [![Windows 11](https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white)](https://lemonade-server.ai/install_options.html#windows) | [![Build .msi](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.msi)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
@@ -133,8 +133,8 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="8"><strong>Text generation</strong></td>
-      <td rowspan="5"><code>llamacpp</code></td>
+      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="6"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
       <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU</td>
       <td>Windows, Linux</td>
@@ -145,6 +145,11 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
@@ -152,7 +157,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     <tr>
       <td><code>metal</code></td>
       <td>Apple Silicon GPU</td>
-      <td>macOS (beta)</td>
+      <td>macOS</td>
     </tr>
     <tr>
       <td><code>system</code></td>
@@ -255,6 +260,49 @@ lemonade backends
 </table>
 </details>
 
+<details>
+<summary><small><i>** See supported NVIDIA CUDA platforms</i></small></summary>
+
+<br>
+
+<table>
+  <thead>
+    <tr>
+      <th>Compute Capability</th>
+      <th>Architecture</th>
+      <th>GPU Models</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>sm_75</b></td>
+      <td>Turing</td>
+      <td>RTX 20-series, GTX 16-series, T4</td>
+    </tr>
+    <tr>
+      <td><b>sm_80</b> / <b>sm_86</b></td>
+      <td>Ampere</td>
+      <td>RTX 30-series, A100, A40</td>
+    </tr>
+    <tr>
+      <td><b>sm_89</b></td>
+      <td>Ada Lovelace</td>
+      <td>RTX 40-series, L40, L4</td>
+    </tr>
+    <tr>
+      <td><b>sm_90</b></td>
+      <td>Hopper</td>
+      <td>H100, H200</td>
+    </tr>
+    <tr>
+      <td><b>sm_100</b> / <b>sm_120</b></td>
+      <td>Blackwell</td>
+      <td>RTX 50-series, B100, B200</td>
+    </tr>
+  </tbody>
+</table>
+</details>
+
 ## Project Roadmap
 
 | Under Development          | Under Consideration         | Recently Completed      |
@@ -309,11 +357,11 @@ completion = client.chat.completions.create(
 print(completion.choices[0].message.content)
 ```
 
-For more detailed integration instructions, see the [Integration Guide](./docs/server/server_integration.md).
+Click to learn more about the [available APIs](./docs/api/README.md) and how to [embed Lemonade](./docs/embeddable/README.md) in your own application.
 
 ## FAQ
 
-To read our frequently asked questions, see our [FAQ Guide](./docs/faq.md)
+To read our frequently asked questions, see our [FAQ Guide](./docs/guide/faq.md)
 
 ## Contributing
 

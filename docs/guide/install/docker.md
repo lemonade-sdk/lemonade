@@ -63,6 +63,29 @@ docker run -d \
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
 
+### Docker Run with AMD GPU Passthrough using ROCm on WSL
+
+Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
+
+Then:
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -v lemonade-cache:/root/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-recipe:/root/.cache/lemonade \
+  -v /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro \
+  -v /opt/rocm/lib:/opt/rocm/lib:ro \
+  -e LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib:/usr/lib/wsl/lib:/usr/lib \
+  -e LEMONADE_LLAMACPP=rocm \
+  --device=/dev/dxg \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+> This will run the server using the ROCm backend as the default for llama.cpp.
+
 ### Other Docker Methods
 
 #### Docker Compose Setup
@@ -231,11 +254,11 @@ WORKDIR /opt/lemonade
 
 # Copy built executables and resources from builder
 COPY --from=builder /app/build/lemond ./lemond
-COPY --from=builder /app/build/lemonade-server ./lemonade-server
+COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
 
 # Make executables executable
-RUN chmod +x ./lemond ./lemonade-server
+RUN chmod +x ./lemond ./lemonade
 
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
@@ -292,7 +315,7 @@ docker-compose build
 
 This will:
 
-- Compile Lemonade C++ (lemonade-server and lemond)
+- Compile Lemonade C++ (lemond server and lemonade CLI)
 - Prepare a runtime image with all dependencies
 
 ### 3. Run the Container

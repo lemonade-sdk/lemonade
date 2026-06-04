@@ -6,7 +6,7 @@ manages its own server lifecycle independently of ServerTestBase.
 
 Usage:
     python test/test_llamacpp_system_backend.py
-    python test/test_llamacpp_system_backend.py --server-binary /path/to/lemonade-server
+    python test/test_llamacpp_system_backend.py --cli-binary /path/to/lemonade
 """
 
 import json
@@ -22,11 +22,12 @@ import unittest
 
 import requests
 from utils.server_base import (
-    wait_for_server,
+    _auth_headers,
+    get_cli_binary,
     parse_args,
-    get_server_binary,
-    set_server_config,
     PORT,
+    set_server_config,
+    wait_for_server,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -67,13 +68,15 @@ class ReusableHTTPServer(ThreadingHTTPServer):
 
 
 capture_path = os.environ.get("MOCK_LLAMA_REQUEST_PATH", "")
+error_status = int(os.environ.get("MOCK_LLAMA_ERROR_STATUS", "0") or "0")
+error_response = os.environ.get("MOCK_LLAMA_ERROR_RESPONSE", "")
 port = int(get_arg("--port", "13305"))
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _send_json(self, payload):
+    def _send_json(self, payload, status=200):
         body = json.dumps(payload).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -95,6 +98,10 @@ class Handler(BaseHTTPRequestHandler):
         if capture_path:
             with open(capture_path, "w", encoding="utf-8") as handle:
                 handle.write(body)
+
+        if error_response:
+            self._send_json(json.loads(error_response), status=error_status or 400)
+            return
 
         request_json = json.loads(body)
         if request_json.get("stream"):
@@ -169,16 +176,25 @@ def _wait_for_server_stop(port=PORT, timeout=30):
     return False
 
 
+def _get_lemond_binary():
+    """Find the lemond binary in the same directory as the lemonade CLI."""
+    cli_binary = get_cli_binary()
+    if cli_binary:
+        build_dir = os.path.dirname(cli_binary)
+        name = "lemond.exe" if os.name == "nt" else "lemond"
+        candidate = os.path.join(build_dir, name)
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which("lemond") or "lemond"
+
+
 def _stop_server():
-    """Stop the server via CLI stop command."""
-    server_binary = get_server_binary()
+    """Stop the server via /internal/shutdown."""
     try:
-        subprocess.run(
-            [server_binary, "stop"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
+        requests.post(
+            f"http://localhost:{PORT}/internal/shutdown",
+            headers=_auth_headers(),
+            timeout=5,
         )
         _wait_for_server_stop()
     except Exception as e:
@@ -186,16 +202,10 @@ def _stop_server():
 
 
 def _start_server(wrapped_server=None, backend=None, config_updates=None):
-    """Start the server and wait for it to be ready."""
-    server_binary = get_server_binary()
-    cmd = [server_binary, "serve", "--log-level", "debug"]
-
-    if os.name == "nt" or os.getenv("LEMONADE_CI_MODE"):
-        cmd.append("--no-tray")
-
-    # Add wrapped server / backend args if specified
-    if wrapped_server == "llamacpp" and backend:
-        cmd.extend(["--llamacpp", backend])
+    """Start lemond and wait for it to be ready."""
+    lemond_binary = _get_lemond_binary()
+    cache_dir = LlamaCppSystemBackendTests.cache_dir
+    cmd = [lemond_binary, cache_dir, "--port", str(PORT)]
 
     if sys.platform == "win32":
         subprocess.Popen(
@@ -214,8 +224,15 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
         )
 
     wait_for_server(timeout=60)
+
+    runtime_config = {}
+    if wrapped_server == "llamacpp" and backend:
+        runtime_config["llamacpp"] = {"backend": backend}
     if config_updates:
-        set_server_config(config_updates, port=PORT)
+        runtime_config.update(config_updates)
+    if runtime_config:
+        set_server_config(runtime_config, port=PORT)
+
     print("Server started successfully")
 
 
@@ -243,6 +260,12 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
             else DUMMY_LLAMA_SERVER_LINUX_MAC
         )
 
+        # Dedicated cache_dir so the test doesn't disturb the user's real cache.
+        # log_level=debug surfaces backend behavior in the logs.
+        cls.cache_dir = tempfile.mkdtemp(prefix="lemonade_llamacpp_test_")
+        with open(os.path.join(cls.cache_dir, "config.json"), "w") as cf:
+            json.dump({"log_level": "debug"}, cf)
+
         # Store original PATH to restore later
         cls.original_path = os.environ.get("PATH", "")
 
@@ -250,8 +273,9 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     def tearDownClass(cls):
         # Stop any server we started
         _stop_server()
-        # Clean up temporary directory and restore PATH
+        # Clean up temporary directories and restore PATH
         shutil.rmtree(cls.temp_bin_dir)
+        shutil.rmtree(cls.cache_dir, ignore_errors=True)
         os.environ["PATH"] = cls.original_path
         super().tearDownClass()
 
@@ -269,6 +293,8 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         print(f"\n=== Starting test: {self._testMethodName} ===")
         _stop_server()
         os.environ.pop("MOCK_LLAMA_REQUEST_PATH", None)
+        os.environ.pop("MOCK_LLAMA_ERROR_STATUS", None)
+        os.environ.pop("MOCK_LLAMA_ERROR_RESPONSE", None)
         os.environ["PATH"] = self.original_path  # Ensure PATH is clean before each test
         self._write_llama_server(
             DUMMY_LLAMA_SERVER_WINDOWS
@@ -427,6 +453,83 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         self.assertIn("system", backends)
         self.assertEqual(backends["system"]["state"], "installed")
 
+    def _require_system_backend_blocked_by_hip_plugin(self):
+        """Skip unless the running server reports the 'system' llamacpp backend
+        as blocked by a missing HIP plugin.
+
+        LEMONADE_GGML_HIP_PATH only affects is_ggml_hip_plugin_available(),
+        which system_info.cpp consults solely for the 'system' backend, only
+        when an AMD GPU is present (/sys/class/kfd) and llama-server is in PATH.
+        Its only observable effect is the system backend's "HIP plugin
+        libggml-hip.so not installed" message. Callers must add llama-server to
+        PATH and start the server before calling this.
+        """
+        system = self._get_llamacpp_backends().get("system", {})
+        if "HIP plugin" not in system.get("message", ""):
+            self.skipTest(
+                "Requires an AMD GPU without an FHS-installed HIP plugin; "
+                f"system backend reported: {system}"
+            )
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_005a_hip_path_override_satisfies_hip_plugin_check(self):
+        """A valid LEMONADE_GGML_HIP_PATH satisfies the HIP-plugin check that
+        otherwise blocks the 'system' backend on AMD GPU hosts."""
+        if not os.path.exists("/sys/class/kfd"):
+            self.skipTest("Requires an AMD GPU (/sys/class/kfd present)")
+        self._add_dummy_llama_server_to_path()
+
+        # Baseline: without the override the system backend is blocked by a
+        # missing HIP plugin, otherwise the override has nothing to satisfy.
+        _start_server()
+        self._require_system_backend_blocked_by_hip_plugin()
+        _stop_server()
+
+        valid_so = os.path.join(self.temp_bin_dir, "libggml-hip.so")
+        with open(valid_so, "w", encoding="utf-8") as handle:
+            handle.write("stub")
+
+        # _start_server() launches lemond with os.environ.copy(), so set the
+        # override in this process's environment and clean it up afterwards.
+        self.addCleanup(os.environ.pop, "LEMONADE_GGML_HIP_PATH", None)
+        os.environ["LEMONADE_GGML_HIP_PATH"] = valid_so
+        _start_server()
+        system = self._get_llamacpp_backends().get("system", {})
+        self.assertNotIn("HIP plugin", system.get("message", ""), system)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_005b_hip_path_override_invalid_is_ignored(self):
+        """An invalid LEMONADE_GGML_HIP_PATH (nonexistent file or directory) is
+        ignored: the 'system' backend stays blocked by the missing HIP plugin."""
+        if not os.path.exists("/sys/class/kfd"):
+            self.skipTest("Requires an AMD GPU (/sys/class/kfd present)")
+        self._add_dummy_llama_server_to_path()
+
+        _start_server()
+        self._require_system_backend_blocked_by_hip_plugin()
+        _stop_server()
+
+        self.addCleanup(os.environ.pop, "LEMONADE_GGML_HIP_PATH", None)
+
+        # Nonexistent file: the override is ignored.
+        os.environ["LEMONADE_GGML_HIP_PATH"] = os.path.join(
+            self.temp_bin_dir, "missing", "libggml-hip.so"
+        )
+        _start_server()
+        system = self._get_llamacpp_backends().get("system", {})
+        self.assertIn("HIP plugin", system.get("message", ""), system)
+        _stop_server()
+
+        # A directory is not a regular file and must also be ignored.
+        os.environ["LEMONADE_GGML_HIP_PATH"] = self.temp_bin_dir
+        _start_server()
+        system = self._get_llamacpp_backends().get("system", {})
+        self.assertIn("HIP plugin", system.get("message", ""), system)
+
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
@@ -526,6 +629,54 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         self.assertEqual(forwarded_request["messages"][-1]["content"], "Say hello.")
         self.assertNotIn("thinking", forwarded_request)
         self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_008_backend_context_error_preserves_http_status(self):
+        """Verify backend context-window errors stay HTTP 400 and OpenAI-shaped."""
+        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
+        self._add_dummy_llama_server_to_path()
+
+        error_message = (
+            "request (67311 tokens) exceeds the available context size "
+            "(65536 tokens), try increasing it"
+        )
+        os.environ["MOCK_LLAMA_ERROR_STATUS"] = "400"
+        os.environ["MOCK_LLAMA_ERROR_RESPONSE"] = json.dumps(
+            {"error": {"message": error_message, "type": "invalid_request_error"}}
+        )
+        self.addCleanup(os.environ.pop, "MOCK_LLAMA_ERROR_STATUS", None)
+        self.addCleanup(os.environ.pop, "MOCK_LLAMA_ERROR_RESPONSE", None)
+
+        _stop_server()
+        _start_server(wrapped_server="llamacpp", backend="system")
+        self._ensure_model_pulled()
+
+        load_response = requests.post(
+            f"http://localhost:{PORT}/api/v1/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "stream": False,
+                "max_tokens": 8,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        error = response.json()["error"]
+        self.assertEqual(error["type"], "invalid_request_error")
+        self.assertEqual(error["code"], "context_length_exceeded")
+        self.assertEqual(error["status_code"], 400)
+        self.assertIn("exceeds the available context size", error["message"])
 
 
 def _run_tests():

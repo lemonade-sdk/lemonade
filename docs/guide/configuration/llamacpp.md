@@ -25,10 +25,19 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Use Case**: AMD GPU-optimized inference
 - **Performance**: Optimized for AMD hardware, may outperform Vulkan on supported GPUs
 - **Channel Options**:
-  - **Preview** (default): Custom builds with latest optimizations from lemonade-sdk
-  - **Stable**: Upstream llama.cpp releases with AMD ROCm support
+  - **Stable** (default): Custom builds with latest optimizations from lemonade-sdk
   - **Nightly**: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)
 - **Installation**: Varies by channel (see below)
+
+### CUDA
+- **Platform**: Windows, Linux
+- **Hardware**: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)
+- **Use Case**: NVIDIA GPU-optimized inference
+- **Performance**: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs
+- **Source**: Per-architecture builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
+- **Binaries**: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)
+- **Runtime**: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)
+- **Notes**: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system `tar`.
 
 ### Metal
 - **Platform**: macOS only
@@ -44,15 +53,22 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Performance**: Depends on build configuration
 - **Installation**: Requires manual installation of `llama-server` in system PATH
 - **Notes**: Not enabled by default; set `LEMONADE_LLAMACPP_PREFER_SYSTEM=true` in config
+- **HIP plugin on non-standard paths**: When an AMD GPU is present, the system backend needs the GGML HIP plugin (`libggml-hip.so`). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set `LEMONADE_GGML_HIP_PATH` to the full path of the plugin so the backend is reported as available:
+
+  ```bash
+  export LEMONADE_GGML_HIP_PATH=/opt/rocm/lib/libggml-hip.so
+  ```
+
+  The filename must look like `libggml-hip*.so*` (versioned sonames such as `libggml-hip.so.0` are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.
 
 ## ROCm Channel Configuration
 
 The ROCm backend supports three channels to balance stability, performance, and access to latest features:
 
-### Preview Channel (Default)
+### Stable Channel (Default)
 ```json
 {
-  "rocm_channel": "preview"
+  "rocm_channel": "stable"
 }
 ```
 - **Source**: Custom builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
@@ -61,23 +77,6 @@ The ROCm backend supports three channels to balance stability, performance, and 
 - **Platform**: Windows and Linux
 - **Runtime**: Requires runtime for both Windows and Linux to be installed separately.
 - **Best For**: Users who want the latest performance optimizations
-
-### Stable Channel
-```json
-{
-  "rocm_channel": "stable"
-}
-```
-- **Source**: Upstream [llama.cpp](https://github.com/ggerganov/llama.cpp) releases
-- **Binaries**:
-  - **Windows**: Self-contained HIP binaries (no separate runtime needed)
-  - **Linux**: Binaries built against ROCm 7.2 runtime
-- **Updates**: Follows upstream llama.cpp release cycle
-- **Platform**: Windows and Linux
-- **Runtime**:
-  - Windows: Self-contained, no runtime installation required
-  - Linux: Downloads AMD ROCm 7.2.1 runtime if not present at `/opt/rocm`
-- **Best For**: Users who prefer stable, tested releases aligned with upstream
 
 ### Nightly Channel
 ```json
@@ -107,8 +106,8 @@ Or use the Lemonade CLI:
 # Switch to stable channel
 lemonade config set rocm_channel=stable
 
-# Switch to preview channel (default)
-lemonade config set rocm_channel=preview
+# Switch to stable channel (default)
+lemonade config set rocm_channel=stable
 
 # Switch to nightly channel (experimental)
 lemonade config set rocm_channel=nightly
@@ -125,8 +124,7 @@ You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"bui
 
 | Channel | Repository | Tag format |
 |---|---|---|
-| `preview` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
-| `stable` | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | Upstream tags, e.g. `b4888` |
+| `stable` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
 | `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
 
 > **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.
@@ -144,8 +142,9 @@ lemonade config set llamacpp.rocm_bin=b1260
 
 ### Decision Tree
 
-1. **Do you have an NVIDIA or Intel GPU?**
-   - Use **Vulkan**
+1. **Do you have an NVIDIA GPU (Turing or newer)?**
+   - Try **CUDA** first for best performance
+   - Fall back to **Vulkan** if you encounter issues
 
 2. **Do you have an AMD GPU?**
    - **For Radeon RX 6000/7000 or Ryzen AI iGPU**:
@@ -154,18 +153,16 @@ lemonade config set llamacpp.rocm_bin=b1260
    - **For older AMD GPUs (RX 5000 and earlier)**:
      - Use **Vulkan** (ROCm not supported)
 
-3. **Do you have Apple Silicon?**
+3. **Do you have an Intel GPU or older NVIDIA GPU?**
+   - Use **Vulkan**
+
+4. **Do you have Apple Silicon?**
    - Use **Metal**
 
-4. **No GPU or unsupported GPU?**
+5. **No GPU or unsupported GPU?**
    - Use **CPU**
 
 ### ROCm Channel Selection
-
-- **Use Preview** if you:
-  - Want the best performance on AMD hardware
-  - Are comfortable with frequent updates
-  - Are testing new models or features
 
 - **Use Stable** if you:
   - Prefer stability over latest features
@@ -181,13 +178,15 @@ lemonade config set llamacpp.rocm_bin=b1260
 ## Platform Specifics
 
 ### Linux
-- All backends supported (CPU, Vulkan, ROCm, System)
+- All backends supported (CPU, Vulkan, ROCm, CUDA, System)
 - ROCm requires compatible AMD GPU (see above)
+- CUDA requires compatible NVIDIA GPU (see above)
 - System backend requires manual llama-server installation
 
 ### Windows
-- Supported: CPU, Vulkan, ROCm
+- Supported: CPU, Vulkan, ROCm, CUDA
 - ROCm requires compatible AMD GPU
+- CUDA requires compatible NVIDIA GPU and Windows 11 22H2+ (for bundled bsdtar that extracts .7z assets)
 - No system backend support
 
 ### macOS

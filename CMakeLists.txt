@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.4.0)
+project(lemon_cpp VERSION 10.6.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -28,7 +28,6 @@ endif()
 include(GNUInstallDirs)
      # Install man pages
      install(FILES
-          ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade-server.1
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemond.1
           ${CMAKE_SOURCE_DIR}/docs/man/man1/lemonade.1
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
@@ -87,11 +86,15 @@ find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
-    pkg_check_modules(HTTPLIB QUIET cpp-httplib>=${MIN_HTTPLIB_VERSION})
+    # Debian ships the package as `cpp-httplib`, Nixpkgs as `httplib` — search
+    # both. No IMPORTED_TARGET: we build our own interface target below so we
+    # can skip the .pc Cflags (see there for why).
+    pkg_search_module(HTTPLIB QUIET
+        cpp-httplib>=${MIN_HTTPLIB_VERSION}
+        httplib>=${MIN_HTTPLIB_VERSION})
     pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
 endif()
 find_path(CLI11_INCLUDE_DIRS "CLI/CLI.hpp")
-find_path(HTTPLIB_INCLUDE_DIRS "httplib.h")
 # Verify CLI11 version if found
 if(CLI11_INCLUDE_DIRS)
     if(EXISTS "${CLI11_INCLUDE_DIRS}/CLI/Version.hpp")
@@ -317,6 +320,22 @@ if(NOT USE_SYSTEM_HTTPLIB)
             ${zstd_SOURCE_DIR}/lib
             ${zstd_SOURCE_DIR}/lib/common
         )
+    endif()
+else()
+    # System cpp-httplib: a local interface target carrying the include dirs
+    # and link lib (empty for a header-only install like Nixpkgs, the compiled
+    # .so on Debian). We deliberately skip HTTPLIB_CFLAGS_OTHER: the .pc Cflags
+    # carry cpp-httplib's feature macros (-DCPPHTTPLIB_OPENSSL_SUPPORT, etc.),
+    # which would flip on header features needing link deps (libcrypto) we
+    # don't provide. Created at top level, so it is visible to the cli/tray
+    # subdirs added later.
+    add_library(lemonade-httplib INTERFACE)
+    target_include_directories(lemonade-httplib INTERFACE ${HTTPLIB_INCLUDE_DIRS})
+    if(HTTPLIB_LINK_LIBRARIES)
+        target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LINK_LIBRARIES})
+    else()
+        target_link_libraries(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARIES})
+        target_link_directories(lemonade-httplib INTERFACE ${HTTPLIB_LIBRARY_DIRS})
     endif()
 endif()
 
@@ -557,6 +576,7 @@ include_directories(
 # ============================================================
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
     src/cpp/server/config_file.cpp
@@ -642,7 +662,7 @@ endif()
 target_link_libraries(lemonade-server-core PUBLIC nlohmann_json::nlohmann_json)
 
 if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(lemonade-server-core PUBLIC cpp-httplib)
+    target_link_libraries(lemonade-server-core PUBLIC lemonade-httplib)
 else()
     target_link_libraries(lemonade-server-core PUBLIC httplib::httplib)
 endif()
@@ -666,10 +686,6 @@ if(USE_SYSTEM_ZSTD)
     target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
     target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
-endif()
-
-if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-    target_include_directories(lemonade-server-core PUBLIC ${HTTPLIB_INCLUDE_DIRS})
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -722,6 +738,8 @@ elseif(UNIX)
 
     # Link libcap for capability management on Linux
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(lemonade-server-core PRIVATE ${CMAKE_DL_LIBS})
+
         if(PkgConfig_FOUND)
             pkg_check_modules(LIBCAP QUIET libcap)
             if(LIBCAP_FOUND)
@@ -748,12 +766,19 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - server_models.json (model registry)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
+#   - bench_scenarios.json (benchmark scenarios)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
     CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/*"
 )
+
+# The Omni tool definitions are authored in the frontend tree and are the single
+# source of truth (the desktop app imports them directly). Stage a copy into the
+# resources tree so the C++ server reads the same file via get_resource_path.
+set(TOOL_DEFINITIONS_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
 
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
@@ -762,8 +787,11 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources
         ${CMAKE_BINARY_DIR}/resources
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${TOOL_DEFINITIONS_SRC}
+        ${CMAKE_BINARY_DIR}/resources/toolDefinitions.json
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
-    DEPENDS ${RESOURCE_FILES}
+    DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC}
     COMMENT "Copying resources to build directory"
 )
 
@@ -1126,9 +1154,6 @@ add_subdirectory(src/cpp/tray)
 # Add CLI application subdirectory
 add_subdirectory(src/cpp/cli)
 
-# Add legacy shim (backwards-compatible lemonade-server)
-add_subdirectory(src/cpp/legacy-cli)
-
 # Wire WiX installer targets to the binaries and frontend artifacts they package.
 # Doing this after the subdirectories are added ensures MSBuild gets real project refs.
 if(WIN32 AND WIX_EXECUTABLE)
@@ -1139,9 +1164,6 @@ if(WIN32 AND WIX_EXECUTABLE)
     endif()
     if(TARGET lemonade)
         list(APPEND WIX_PACKAGED_TARGETS lemonade)
-    endif()
-    if(TARGET lemonade-server)
-        list(APPEND WIX_PACKAGED_TARGETS lemonade-server)
     endif()
     if(TARGET ${EXECUTABLE_NAME})
         list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
@@ -1181,7 +1203,6 @@ if(APPLE)
             COMMENT "Signing ${EXECUTABLE_NAME} with Hardened Runtime"
             VERBATIM
         )
-        # Note: 'lemonade-server' is signed at install time below (line ~1110)
     endif()
 
     # Prepare Tauri App
@@ -1230,24 +1251,6 @@ if(APPLE)
                 )
                 if(NOT SIGN_RESULT EQUAL 0)
                     message(FATAL_ERROR \"Failed to sign lemonade-tray\")
-                endif()
-            " COMPONENT Runtime)
-        endif()
-    endif()
-
-    # Legacy shim -> /usr/local/bin
-    if(TARGET lemonade-server)
-        install(TARGETS lemonade-server RUNTIME DESTINATION "bin" COMPONENT Runtime)
-
-        # Sign the legacy shim after installation (Release builds only)
-        if(CMAKE_BUILD_TYPE STREQUAL "Release")
-            install(CODE "
-                execute_process(
-                    COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-server\"
-                    RESULT_VARIABLE SIGN_RESULT
-                )
-                if(NOT SIGN_RESULT EQUAL 0)
-                    message(FATAL_ERROR \"Failed to sign lemonade-server\")
                 endif()
             " COMPONENT Runtime)
         endif()
@@ -1354,7 +1357,6 @@ if(UNIX AND NOT APPLE)
     set(CPACK_PACKAGE_DESCRIPTION "A lightweight, high-performance local LLM server with support for multiple backends including llama.cpp, FastFlowLM, and RyzenAI.")
 
     # Only install our executables (not curl/development files)
-    # Note: lemonade-server installation is handled in tray/CMakeLists.txt
     install(TARGETS ${EXECUTABLE_NAME}
         RUNTIME DESTINATION bin
     )
@@ -1399,6 +1401,23 @@ if(UNIX AND NOT APPLE)
             )
         ")
     endif()
+
+    # Install sysusers.d snippet so the 'lemonade' system user is created
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
+        RENAME lemonade.conf
+    )
+
+    # Configure + install the user-mode systemd unit
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/data/lemond-user.service.in
+        ${CMAKE_BINARY_DIR}/lemond-user.service
+        @ONLY
+    )
+    install(FILES ${CMAKE_BINARY_DIR}/lemond-user.service
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/user
+        RENAME lemond.service
+    )
 
     # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
@@ -1557,6 +1576,17 @@ endif()
 
 if(WIN32)
     set(EMBEDDABLE_PLATFORM "windows-x64")
+elseif(APPLE)
+    if(DEFINED CMAKE_OSX_ARCHITECTURES AND CMAKE_OSX_ARCHITECTURES)
+        set(_embeddable_arch "${CMAKE_OSX_ARCHITECTURES}")
+    else()
+        set(_embeddable_arch "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    endif()
+    if(_embeddable_arch STREQUAL "arm64")
+        set(EMBEDDABLE_PLATFORM "macos-arm64")
+    else()
+        set(EMBEDDABLE_PLATFORM "macos-x64")
+    endif()
 else()
     set(EMBEDDABLE_PLATFORM "ubuntu-x64")
 endif()
@@ -1597,6 +1627,12 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/bench_scenarios.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive

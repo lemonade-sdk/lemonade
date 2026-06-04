@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -43,6 +44,76 @@ namespace lemon::backends {
         if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
         return nullptr;
+    }
+
+    static std::string hash_string_from_json(const json& node) {
+        if (node.is_string()) {
+            return node.get<std::string>();
+        }
+        if (!node.is_object()) {
+            return "";
+        }
+        if (node.contains("digest") && node["digest"].is_string()) {
+            return node["digest"].get<std::string>();
+        }
+        if (node.contains("sha256") && node["sha256"].is_string()) {
+            return "sha256:" + node["sha256"].get<std::string>();
+        }
+        if (node.contains("algorithm") && node["algorithm"].is_string() &&
+            node.contains("value") && node["value"].is_string()) {
+            return node["algorithm"].get<std::string>() + ":" + node["value"].get<std::string>();
+        }
+        return "";
+    }
+
+    static std::string lookup_hash_path(const json& root, const std::vector<std::string>& path) {
+        const json* current = &root;
+        for (const auto& part : path) {
+            if (!current->is_object() || !current->contains(part)) {
+                return "";
+            }
+            current = &((*current)[part]);
+        }
+        return hash_string_from_json(*current);
+    }
+
+    static std::string lookup_expected_asset_hash(const std::string& recipe,
+                                                  const std::string& backend,
+                                                  const std::string& version,
+                                                  const std::string& repo,
+                                                  const std::string& filename) {
+        try {
+            const std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+            const json config = utils::JsonUtils::load_from_file(config_path);
+
+            const std::vector<std::vector<std::string>> candidate_paths = {
+                {"checksums", "github", repo, version, filename},
+                {"checksums", repo, version, filename},
+                {"checksums", recipe, backend, version, filename},
+                {"checksums", recipe, version, filename},
+                {"checksums", recipe, filename},
+                {"artifact_hashes", "github", repo, version, filename},
+                {"artifact_hashes", repo, version, filename},
+                {"artifact_hashes", recipe, backend, version, filename},
+                {"artifact_hashes", recipe, version, filename},
+                {"artifact_hashes", filename}
+            };
+
+            for (const auto& path : candidate_paths) {
+                // Skip repo-keyed shapes when no repo is available (e.g. TheRock).
+                if (std::find(path.begin(), path.end(), std::string()) != path.end()) {
+                    continue;
+                }
+                std::string hash = lookup_hash_path(config, path);
+                if (!hash.empty()) {
+                    return hash;
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG(DEBUG, "BackendUtils") << "Could not load backend artifact checksums: "
+                                       << e.what() << std::endl;
+        }
+        return "";
     }
 
 #ifdef _WIN32
@@ -103,14 +174,17 @@ namespace lemon::backends {
         std::string command;
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
+        // Use the auto-detect form `-xf` (instead of `-xzf`) so we transparently
+        // handle .tar.gz, .tar.xz, .tar.bz2, etc. — the lemonade-sdk/llama.cpp
+        // Linux release ships .tar.xz.
 #ifdef _WIN32
         if (!is_native_tar_available()) {
             LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
             return false;
         }
-        command = get_native_tar_path() + " -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
+        command = get_native_tar_path() + " -xf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #else
-        command = "tar -xzf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
+        command = "tar -xf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
 #endif
         int result = system(command.c_str());
         if (result != 0) {
@@ -120,15 +194,76 @@ namespace lemon::backends {
         return true;
     }
 
+    static bool ends_with(const std::string& s, const std::string& suffix) {
+        return s.size() >= suffix.size() &&
+            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
     static bool is_tarball(const std::string& filename) {
-        return (filename.size() > 7) && (filename.substr(filename.size() - 7) == ".tar.gz");
+        // Any tar variant we know how to feed to `tar -xf`.
+        return ends_with(filename, ".tar.gz") ||
+               ends_with(filename, ".tgz") ||
+               ends_with(filename, ".tar.xz") ||
+               ends_with(filename, ".txz") ||
+               ends_with(filename, ".tar.bz2") ||
+               ends_with(filename, ".tbz2");
+    }
+
+    static bool is_seven_zip(const std::string& filename) {
+        return ends_with(filename, ".7z");
+    }
+
+    bool BackendUtils::extract_seven_zip(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
+        // CUDA Windows release assets are .7z and use the existing native tar.exe path.
+        // Linux CUDA assets are .tar.xz, so Linux should not require bsdtar/7z/p7zip.
+        std::string command;
+        fs::create_directories(dest_dir);
+        LOG(DEBUG, backend_name) << "Extracting 7z to " << dest_dir << std::endl;
+#ifdef _WIN32
+        // Windows System32\tar.exe is bsdtar (libarchive) on Windows 11 22H2+,
+        // which can read .7z. Probe with `--list` first to confirm .7z support;
+        // older tar.exe (from Windows 10) will exit non-zero for .7z archives.
+        if (!is_native_tar_available()) {
+            LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 11 22H2+ required for .7z support." << std::endl;
+            return false;
+        }
+        {
+            std::string probe_cmd = get_native_tar_path() + " --list -f \"" + archive_path + "\" >nul 2>&1";
+            std::string unused;
+            if (lemon::utils::ProcessManager::run_command(probe_cmd, unused, 10) != 0) {
+                LOG(ERROR, backend_name) << "Error: tar.exe cannot read this .7z archive. Windows 11 22H2+ (bsdtar/libarchive) required." << std::endl;
+                return false;
+            }
+        }
+        // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
+        // lemonade-sdk/llama.cpp have no top-level directory — files sit at the
+        // archive root. Stripping would discard every entry and produce an empty dir.
+        command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
+#else
+        LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
+        return false;
+#endif
+        int result = system(command.c_str());
+        if (result != 0) {
+            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
+            return false;
+        }
+        return true;
+    }
+
+    static fs::path get_backend_download_cache_dir() {
+        fs::path cache_dir = fs::path(utils::get_downloaded_bin_dir()) / ".downloads";
+        fs::create_directories(cache_dir);
+        return cache_dir;
     }
 
     // Helper to extract archive files based on extension
     bool BackendUtils::extract_archive(const std::string& archive_path, const std::string& dest_dir, const std::string& backend_name) {
-        // Check if it's a tar.gz file
         if (is_tarball(archive_path)) {
             return extract_tarball(archive_path, dest_dir, backend_name);
+        }
+        if (is_seven_zip(archive_path)) {
+            return extract_seven_zip(archive_path, dest_dir, backend_name);
         }
         // Default to ZIP extraction
         return extract_zip(archive_path, dest_dir, backend_name);
@@ -147,7 +282,7 @@ namespace lemon::backends {
                                               std::string& out_bin_key) {
         std::string config_backend = backend;
         if ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-            (backend == "rocm-preview" || backend == "rocm-stable" || backend == "rocm-nightly")) {
+            (backend == "rocm-stable" || backend == "rocm-nightly")) {
             config_backend = "rocm";
         }
         out_section = RuntimeConfig::recipe_to_config_section(recipe);
@@ -184,10 +319,21 @@ namespace lemon::backends {
 
     std::string BackendUtils::find_executable_in_install_dir(const std::string& install_dir, const std::string& binary_name) {
         if (fs::exists(install_dir)) {
+            // On Windows, executables have a .exe extension that may not be in binary_name
+#ifdef _WIN32
+            const std::string binary_name_exe = binary_name + ".exe";
+#endif
             // This could be optimized with a cache but saving a few milliseconds every few minutes/hours is not going to do much
             for (const fs::directory_entry& dir_entry : fs::recursive_directory_iterator(install_dir)) {
-                if (dir_entry.is_regular_file() && dir_entry.path().filename() == binary_name) {
-                    return dir_entry.path().string();
+                if (dir_entry.is_regular_file()) {
+                    const auto& fname = dir_entry.path().filename();
+                    if (fname == binary_name
+#ifdef _WIN32
+                        || fname == binary_name_exe
+#endif
+                    ) {
+                        return dir_entry.path().string();
+                    }
                 }
             }
         }
@@ -208,7 +354,7 @@ namespace lemon::backends {
         // Resolve "rocm" to actual channel for backends that support ROCm channels
         std::string resolved_backend = backend;
         if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
-            std::string channel = "preview";  // default to preview
+            std::string channel = "stable";  // default to stable
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(spec.recipe);
             }
@@ -240,7 +386,22 @@ namespace lemon::backends {
         if (backend == "system") {
             return "";
         }
-        std::string install_dir = get_install_directory(spec.recipe, backend);
+
+        // Normalize the public rocm backend name to the configured channel before
+        // reading version.txt. get_backend_binary_path() already does this when
+        // locating the executable; version detection must use the same install
+        // directory or ROCm backends remain stuck in update_required after a
+        // successful install.
+        std::string resolved_backend = backend;
+        if ((spec.recipe == "llamacpp" || spec.recipe == "sd-cpp") && backend == "rocm") {
+            std::string channel = "stable";
+            if (auto* cfg = RuntimeConfig::global()) {
+                channel = cfg->rocm_channel_for_recipe(spec.recipe);
+            }
+            resolved_backend = "rocm-" + channel;
+        }
+
+        std::string install_dir = get_install_directory(spec.recipe, resolved_backend);
         return get_version_file(install_dir);
     }
 
@@ -248,7 +409,7 @@ namespace lemon::backends {
         std::string resolved_backend = backend;
         if ((recipe == "llamacpp" || recipe == "sd-cpp") && backend == "rocm") {
             // Map "rocm" to the appropriate channel based on config
-            std::string channel = "preview";  // default to preview for now
+            std::string channel = "stable";  // default to stable for now
             if (auto* cfg = RuntimeConfig::global()) {
                 channel = cfg->rocm_channel_for_recipe(recipe);
             }
@@ -274,7 +435,12 @@ namespace lemon::backends {
         return version;
     }
 
-    void BackendUtils::install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb) {
+    void BackendUtils::install_from_github(const BackendSpec& spec,
+                                           const std::string& expected_version,
+                                           const std::string& repo,
+                                           const std::string& filename,
+                                           const std::string& backend,
+                                           DownloadProgressCallback progress_cb) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -290,7 +456,6 @@ namespace lemon::backends {
 
             if (!needs_install && fs::exists(version_file)) {
                 std::string installed_version;
-
                 std::ifstream vf(version_file);
                 std::getline(vf, installed_version);
                 vf.close();
@@ -301,6 +466,15 @@ namespace lemon::backends {
                     needs_install = true;
                     fs::remove_all(install_dir);
                 }
+            } else if (!needs_install && !expected_version.empty()) {
+                // If the executable exists but version.txt is missing, SystemInfo
+                // reports update_required because it cannot prove the installed
+                // binary matches the current Lemonade baseline. Treat this like a
+                // version mismatch rather than a 0B no-op completion.
+                LOG(INFO, spec.log_name()) << "Installed executable is missing version.txt; reinstalling "
+                        << spec.binary << " version " << expected_version << std::endl;
+                needs_install = true;
+                fs::remove_all(install_dir);
             }
         }
 
@@ -311,12 +485,21 @@ namespace lemon::backends {
             // Create install directory
             fs::create_directories(install_dir);
 
-            // Download ZIP to cache directory
+            std::string url = "https://github.com/" + repo + "/releases/download/" +
+                            expected_version + "/" + filename;
+
+            // Download archive to cache directory.
+            // Preserve the actual filename (sanitised for use in a path) so that
+            // extract_archive() dispatches to the correct extractor based on extension,
+            // and architecture-specific assets (e.g. sm_86 vs sm_89) don't collide.
             fs::path cache_dir = fs::temp_directory_path();
             fs::create_directories(cache_dir);
-            std::string zip_name = backend == "" ? spec.recipe : spec.recipe + "_" + backend;
-            std::string zip_ext = is_tarball(filename) ? ".tar.gz" : ".zip";
-            std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + zip_ext)).string();
+            std::string zip_name = backend.empty() ? spec.recipe : spec.recipe + "_" + backend;
+            std::string safe_filename = filename;
+            for (char& ch : safe_filename) {
+                if (ch == '/' || ch == '\\' || ch == ':') ch = '_';
+            }
+            std::string zip_path = (cache_dir / (zip_name + "_" + expected_version + "_" + safe_filename)).string();
 
             LOG(DEBUG, spec.log_name()) << "Downloading to: " << zip_path << std::endl;
 
@@ -376,9 +559,7 @@ namespace lemon::backends {
                 }
                 // 404 = no manifest = single-file release; fall through.
             }
-            const bool has_single = !is_split;
-
-            if (has_single) {
+            if (!is_split) {
                 std::string url = base_download_url + filename;
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
@@ -399,22 +580,26 @@ namespace lemon::backends {
                     http_progress_cb = utils::create_throttled_progress_callback();
                 }
 
+                utils::DownloadOptions archive_download_opts;
+                archive_download_opts.expected_hash = lookup_expected_asset_hash(
+                    spec.recipe, backend, expected_version, repo, filename);
+
                 auto download_result = utils::HttpClient::download_file(
-                    url, zip_path, http_progress_cb);
+                    url, zip_path, http_progress_cb, {}, archive_download_opts);
 
                 if (!download_result.success) {
                     throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
                                              " - " + download_result.error_message);
                 }
             } else {
-                // Split-archive path. Assets known up front, so progress can
-                // report cumulative bytes against a (mostly) accurate total.
+                // Split-archive path. Part names are known up front, but the
+                // total byte size is not. Report per-part bytes and let the
+                // caller/frontend aggregate by file_index / total_files.
                 LOG(INFO, spec.log_name()) << "Downloading " << part_assets.size()
                                            << " split parts from " << repo << "@"
                                            << expected_version << std::endl;
 
                 std::ofstream combined(zip_path, std::ios::binary);
-                size_t cumulative_downloaded = 0;
                 int part_index = 0;
                 const int total_parts = static_cast<int>(part_assets.size());
                 for (const auto& part_filename : part_assets) {
@@ -426,25 +611,23 @@ namespace lemon::backends {
                                                 << part_index << "/" << total_parts
                                                 << ": " << part_filename << std::endl;
 
-                    // Per-part progress wrapper. Reports cumulative bytes
-                    // across all parts so the GUI bar climbs continuously
-                    // instead of resetting between parts.
+                    // Per-part progress wrapper. Keep byte fields scoped to
+                    // the current part; do not synthesize total_download_size
+                    // unless the true total across all parts is known.
                     utils::ProgressCallback part_http_cb;
                     if (progress_cb) {
-                        size_t cumulative_snapshot = cumulative_downloaded;
                         int idx_snapshot = part_index;
                         std::string name_snapshot = part_filename;
-                        part_http_cb = [&progress_cb, name_snapshot, idx_snapshot, total_parts, cumulative_snapshot]
+                        part_http_cb = [&progress_cb, name_snapshot, idx_snapshot, total_parts]
                                       (size_t downloaded, size_t total) -> bool {
                             DownloadProgress p;
                             p.file = name_snapshot;
                             p.file_index = idx_snapshot;
                             p.total_files = total_parts;
-                            p.bytes_downloaded = cumulative_snapshot + downloaded;
-                            p.bytes_total = cumulative_snapshot + total;
-                            p.total_download_size = p.bytes_total;
-                            p.percent = p.bytes_total > 0
-                                ? static_cast<int>((p.bytes_downloaded * 100) / p.bytes_total)
+                            p.bytes_downloaded = downloaded;
+                            p.bytes_total = total;
+                            p.percent = total > 0
+                                ? static_cast<int>((downloaded * 100) / total)
                                 : 0;
                             p.complete = false;
                             return progress_cb(p);
@@ -453,8 +636,12 @@ namespace lemon::backends {
                         part_http_cb = utils::create_throttled_progress_callback();
                     }
 
+                    utils::DownloadOptions part_download_opts;
+                    part_download_opts.expected_hash = lookup_expected_asset_hash(
+                        spec.recipe, backend, expected_version, repo, part_filename);
+
                     auto part_result = utils::HttpClient::download_file(
-                        part_url, part_path, part_http_cb);
+                        part_url, part_path, part_http_cb, {}, part_download_opts);
 
                     if (!part_result.success) {
                         combined.close();
@@ -468,11 +655,6 @@ namespace lemon::backends {
                     std::ifstream part_in(part_path, std::ios::binary);
                     combined << part_in.rdbuf();
                     part_in.close();
-                    std::error_code part_size_ec;
-                    std::uintmax_t part_size = fs::file_size(part_path, part_size_ec);
-                    if (!part_size_ec) {
-                        cumulative_downloaded += part_size;
-                    }
                     fs::remove(part_path);
                 }
                 combined.close();
@@ -532,18 +714,20 @@ namespace lemon::backends {
             fs::remove(zip_path);
 
             // Send completion event now that installation is fully done.
-            // download_result is from the single-file attempt and reports
-            // misleading ~9 bytes from the 404 response body when the archive
-            // was actually fetched via the multi-part fallback. Use the
-            // verified on-disk archive size (captured into file_size above,
-            // before zip_path was deleted) so the GUI shows the real total.
+            // For split archives the combined on-disk size is only known after
+            // all parts have been downloaded, so intermediate progress events
+            // intentionally do not claim a total_download_size.
             if (progress_cb) {
+                const int archive_total_files = is_split ? static_cast<int>(part_assets.size()) : 1;
                 DownloadProgress p;
                 p.file = filename;
-                p.file_index = 1;
-                p.total_files = 1;
-                p.bytes_downloaded = static_cast<size_t>(file_size);
-                p.bytes_total = static_cast<size_t>(file_size);
+                p.file_index = archive_total_files;
+                p.total_files = archive_total_files;
+                if (!is_split) {
+                    p.bytes_downloaded = static_cast<size_t>(file_size);
+                    p.bytes_total = static_cast<size_t>(file_size);
+                    p.total_download_size = static_cast<size_t>(file_size);
+                }
                 p.percent = 100;
                 p.complete = true;
                 progress_cb(p);
@@ -687,7 +871,7 @@ namespace lemon::backends {
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
         std::string url = "https://repo.amd.com/rocm/tarball/" + filename;
 
-        fs::path cache_dir = fs::temp_directory_path();
+        fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();
 
         LOG(DEBUG, "BackendUtils") << "Downloading TheRock from: " << url << std::endl;
@@ -699,8 +883,8 @@ namespace lemon::backends {
             http_progress_cb = [&progress_cb, &filename](size_t downloaded, size_t total) -> bool {
                 DownloadProgress p;
                 p.file = filename;
-                p.file_index = 2;  // TheRock is the second file (after llama.cpp binary)
-                p.total_files = 2;
+                p.file_index = 1;
+                p.total_files = 1;
                 p.bytes_downloaded = downloaded;
                 p.bytes_total = total;
                 p.percent = total > 0 ? static_cast<int>((downloaded * 100) / total) : 0;
@@ -711,10 +895,19 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
+        // TheRock asset verification stays metadata-driven. Once upstream publishes
+        // per-asset checksums, backend_versions.json can provide them without
+        // changing download code. Until then this remains an optional lookup.
+        utils::DownloadOptions therock_download_opts;
+        therock_download_opts.expected_hash = lookup_expected_asset_hash(
+            "therock", arch, version, "", filename);
+
         auto download_result = utils::HttpClient::download_file(
             url,
             tarball_path,
-            http_progress_cb
+            http_progress_cb,
+            {},
+            therock_download_opts
         );
 
         if (!download_result.success) {
@@ -769,8 +962,8 @@ namespace lemon::backends {
         if (progress_cb) {
             DownloadProgress p;
             p.file = filename;
-            p.file_index = 2;  // TheRock is the second file
-            p.total_files = 2;
+            p.file_index = 1;
+            p.total_files = 1;
             p.bytes_downloaded = download_result.bytes_downloaded;
             p.bytes_total = download_result.total_bytes;
             p.percent = 100;

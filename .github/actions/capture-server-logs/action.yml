@@ -59,8 +59,8 @@ runs:
           LEMON_RUNTIME_DIR="${XDG_RUNTIME_DIR:+${XDG_RUNTIME_DIR}/lemonade}"
           for candidate in \
             "${LEMON_RUNTIME_DIR}/lemonade-server.log" \
-            /tmp/lemonade-server.log \
-            /tmp/lemond.log; do
+            "$RUNNER_TEMP/lemonade-server.log" \
+            "$RUNNER_TEMP/lemond.log"; do
             if [ -f "$candidate" ]; then
               echo "=== Last 200 lines of $candidate ==="
               tail -200 "$candidate"
@@ -81,8 +81,7 @@ runs:
           fi
         fi
 
-        # --- Any platform: glob for /tmp/lemonade*.log ---
-        for f in /tmp/lemonade*.log; do
+        for f in "$RUNNER_TEMP"/lemonade*.log; do
           if [ -f "$f" ]; then
             echo "--- $f ---"
             tail -50 "$f"

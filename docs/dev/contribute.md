@@ -73,7 +73,7 @@ While each maintainer is welcome to work on any part of the Lemonade codebase, e
 | Linux | @superm1, @kenvandine, @bitgamma (discord: mikkoph), @sofiageo |
 | Ubuntu, Debian, and Snap | @kenvandine, @superm1 |
 | Arch | @sofiageo, @bitgamma (discord: mikkoph) |
-| Fedora | Maintainer needed |
+| Fedora | @valiabhay |
 | macOS | @Geramy, @ramkrishna2910 |
 | Windows | @kpoineal (discord: primaL-), @jeremyfowers |
 | Docker | @siavashhub (discord: icmpreply) |

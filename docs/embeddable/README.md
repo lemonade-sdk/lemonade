@@ -25,6 +25,7 @@ Embeddable Lemonade is an zip/tarball artifact shipped in Lemonade releases.
 
 - Windows: `lemonade-embeddable-10.1.0-windows-x64.zip`
 - Ubuntu: `lemonade-embeddable-10.1.0-ubuntu-x64.tar.gz`
+- macOS: `lemonade-embeddable-10.1.0-macos-arm64.tar.gz`
 
 > Note: see the [Building from Source](./building.md) for instructions for building your own embeddable Lemonade from source, including for other Linux distros.
 

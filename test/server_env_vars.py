@@ -109,6 +109,7 @@ class TestConfigEnvVars(unittest.TestCase):
     """Start lemond once with all config-based env vars set, verify snapshot."""
 
     proc = None
+    extra_models_dir = os.path.join(tempfile.gettempdir(), "lemon_extra_models_test")
 
     @classmethod
     def setUpClass(cls):
@@ -116,7 +117,7 @@ class TestConfigEnvVars(unittest.TestCase):
             "LEMONADE_PORT": str(PORT),
             "LEMONADE_HOST": "localhost",
             "LEMONADE_LOG_LEVEL": "debug",
-            "LEMONADE_EXTRA_MODELS_DIR": "/tmp/lemon_extra_models_test",
+            "LEMONADE_EXTRA_MODELS_DIR": cls.extra_models_dir,
             "LEMONADE_GLOBAL_TIMEOUT": "999",
             "LEMONADE_MAX_LOADED_MODELS": "3",
             # Recipe-option env vars
@@ -159,9 +160,7 @@ class TestConfigEnvVars(unittest.TestCase):
         self.assertEqual(self.snapshot["log_level"], "debug")
 
     def test_extra_models_dir(self):
-        self.assertEqual(
-            self.snapshot["extra_models_dir"], "/tmp/lemon_extra_models_test"
-        )
+        self.assertEqual(self.snapshot["extra_models_dir"], self.extra_models_dir)
 
     def test_global_timeout(self):
         self.assertEqual(self.snapshot["global_timeout"], 999)
@@ -453,7 +452,7 @@ class TestDefaults(unittest.TestCase):
         self.assertEqual(self.snapshot["log_level"], "info")
 
     def test_default_global_timeout(self):
-        self.assertEqual(self.snapshot["global_timeout"], 300)
+        self.assertEqual(self.snapshot["global_timeout"], 600)
 
     def test_default_max_loaded_models(self):
         self.assertEqual(self.snapshot["max_loaded_models"], 1)

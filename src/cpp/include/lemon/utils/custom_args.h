@@ -8,7 +8,7 @@
 namespace lemon {
 namespace utils {
 
-inline std::vector<std::string> parse_custom_args(const std::string& custom_args_str) {
+inline std::vector<std::string> parse_custom_args(const std::string& custom_args_str, bool keep_quotes = false) {
     std::vector<std::string> result;
     if (custom_args_str.empty()) {
         return result;
@@ -24,6 +24,9 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
             quote_char = c;
         } else if (in_quotes && c == quote_char) {
             in_quotes = false;
+            if (keep_quotes) {
+                current_arg = quote_char + current_arg + quote_char;
+            }
             quote_char = '\0';
         } else if (!in_quotes && c == ' ') {
             if (!current_arg.empty()) {

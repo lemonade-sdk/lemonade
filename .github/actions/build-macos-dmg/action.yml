@@ -42,7 +42,7 @@ runs:
       run: |
         set -e
 
-        echo "Building lemond and lemonade-server for macOS..."
+        echo "Building lemond and lemonade for macOS..."
 
         # Reconfigure if Tauri app is included (setup.sh already did basic config)
         EXTRA_CMAKE_ARGS=""
@@ -70,8 +70,8 @@ runs:
             exit 1
         fi
 
-        if [ ! -f "build/lemonade-server" ]; then
-            echo "ERROR: lemonade-server not found!"
+        if [ ! -f "build/lemonade" ]; then
+            echo "ERROR: lemonade not found!"
             echo "Build directory contents:"
             ls -lh build/
             exit 1
@@ -79,12 +79,12 @@ runs:
 
         echo "Verifying binary executability..."
         ./build/lemond --version
-        ./build/lemonade-server --version
+        ./build/lemonade --version
 
         # Check if binaries are signed (non-fatal)
         echo "Checking code signatures..."
         codesign --verify --verbose=2 build/lemond 2>&1 || echo "WARNING: lemond not signed (expected for non-release builds)"
-        codesign --verify --verbose=2 build/lemonade-server 2>&1 || echo "WARNING: lemonade-server not signed (expected for non-release builds)"
+        codesign --verify --verbose=2 build/lemonade 2>&1 || echo "WARNING: lemonade not signed (expected for non-release builds)"
 
         echo "C++ build successful!"
 

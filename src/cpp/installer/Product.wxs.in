@@ -152,10 +152,6 @@
         <File Id="LemonadeServer.exe" Source="$(var.BuildDir)\Release\LemonadeServer.exe" KeyPath="yes" />
       </Component>
 
-      <Component Id="LemonadeServer" Guid="d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a">
-        <File Id="lemonade_server.exe" Source="$(var.BuildDir)\Release\lemonade-server.exe" KeyPath="yes" />
-      </Component>
-
       <!-- lemond.exe is not installed on Windows; LemonadeServer.exe embeds the server -->
 
       <Component Id="LemonadeCli" Guid="12ffa6b7-831b-4d56-889c-3e7f43c8d134">
@@ -202,6 +198,14 @@
 
       <Component Id="DefaultsJson" Directory="ResourcesDir" Guid="0b2d4f6a-7c8e-49f1-a2b3-c4d5e6f70819">
         <File Id="defaults.json" Source="$(var.BuildDir)\Release\resources\defaults.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="BenchScenariosJson" Directory="ResourcesDir" Guid="1c3e5a7b-9d0f-4e2a-8b1c-3d5e7f9a0b2c">
+        <File Id="bench_scenarios.json" Source="$(var.BuildDir)\Release\resources\bench_scenarios.json" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ToolDefinitionsJson" Directory="ResourcesDir" Guid="34fce303-8631-48e5-b6d4-fb22d0ba7b59">
+        <File Id="toolDefinitions.json" Source="$(var.BuildDir)\Release\resources\toolDefinitions.json" KeyPath="yes" />
       </Component>
 
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
@@ -341,7 +345,7 @@
          in LemonadeServer.exe also guarantees children die when the parent exits. -->
     <CustomAction Id="StopServerCmd"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -349,7 +353,7 @@
     <!-- Alias for machine-wide — same action -->
     <CustomAction Id="StopServerCmdMachine"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />
@@ -391,7 +395,7 @@
     <!-- Stop server during uninstall — taskkill /t kills process tree. -->
     <CustomAction Id="StopServerOnUninstall"
                   Directory="SystemFolder"
-                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; taskkill /f /im lemonade-server.exe 2>nul &amp; exit /b 0"'
+                  ExeCommand='cmd.exe /c "taskkill /f /t /im LemonadeServer.exe 2>nul &amp; taskkill /f /im lemond.exe 2>nul &amp; exit /b 0"'
                   Execute="immediate"
                   Impersonate="yes"
                   Return="ignore" />

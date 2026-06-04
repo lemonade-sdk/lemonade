@@ -5,9 +5,11 @@
 #include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include <iostream>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -32,10 +34,29 @@ namespace backends {
 
 WhisperServer::WhisperServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("whisper-server", log_level, model_manager, backend_manager) {
+    fs::path runtime_base = path_from_utf8(get_runtime_dir());
 
-    // Create temp directory for audio files
-    temp_dir_ = fs::temp_directory_path() / "lemonade_audio";
-    fs::create_directories(temp_dir_);
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    std::error_code ec;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "whisper-audio-" << nonce << "-" << std::hex << dis(rd);
+        fs::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (fs::create_directory(candidate, ec)) {
+            temp_dir_ = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir_.empty()) {
+        throw std::runtime_error("Failed to create temporary directory for WhisperServer");
+    }
 }
 
 WhisperServer::~WhisperServer() {
@@ -128,9 +149,24 @@ void WhisperServer::download_npu_compiled_cache(const std::string& model_path,
     LOG(INFO, "WhisperServer") << "Downloading NPU compiled cache: " << cache_filename << std::endl;
     LOG(INFO, "WhisperServer") << "From repository: " << cache_repo << std::endl;
 
+    if (cache_filename.find('/') != std::string::npos ||
+        cache_filename.find('\\') != std::string::npos ||
+        cache_filename.find("..") != std::string::npos) {
+        throw std::runtime_error("Illegal npu_cache filename: contains path traversal characters");
+    }
+
+    if (cache_repo.find("..") != std::string::npos ||
+        cache_repo.find('\\') != std::string::npos) {
+        throw std::runtime_error("Illegal npu_cache repository: contains suspicious characters");
+    }
+
     // Determine where to place the .rai file (must be in the same directory as .bin file)
     fs::path model_dir = fs::path(model_path).parent_path();
-    fs::path cache_path = model_dir / cache_filename;
+    fs::path cache_path = fs::weakly_canonical(model_dir / fs::path(cache_filename).filename());
+
+    if (cache_path.parent_path() != fs::weakly_canonical(model_dir)) {
+        throw std::runtime_error("npu_cache path escapes model directory");
+    }
 
     // Check if cache already exists
     if (fs::exists(cache_path) && !do_not_upgrade) {
