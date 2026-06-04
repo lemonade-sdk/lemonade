@@ -22,6 +22,7 @@ Usage:
 
 import os
 import platform
+import unittest
 import shutil
 import tempfile
 import uuid
@@ -106,6 +107,7 @@ class EndpointTests(ServerTestBase):
             "models",
             "responses",
             "pull",
+            "pull/variants",
             "delete",
             "load",
             "unload",
@@ -2054,10 +2056,18 @@ class EndpointTests(ServerTestBase):
 
     # =========================================================================
     # PULL/VARIANTS TESTS
+    # The two error-only tests (030, 031) run in every CI environment because
+    # they never touch the network — the server rejects the request before any
+    # HuggingFace call is made.
+    #
+    # The live-network tests (032, 033) are gated behind the env var
+    # LEMONADE_INTEGRATION_TESTS=1 so they are opt-in and do not cause
+    # failures due to HF rate limits, network policy, or HF outages in
+    # standard CI runs.
     # =========================================================================
 
     def test_030_pull_variants_missing_checkpoint_returns_400(self):
-        """GET /pull/variants without checkpoint param returns 400."""
+        """GET /pull/variants without checkpoint param returns 400 with exact error message."""
         response = requests.get(
             f"{self.base_url}/pull/variants",
             timeout=TIMEOUT_DEFAULT,
@@ -2069,11 +2079,15 @@ class EndpointTests(ServerTestBase):
         )
         data = response.json()
         self.assertIn("error", data)
-        self.assertIn("checkpoint", data["error"].lower())
+        self.assertIn(
+            "Missing required query parameter 'checkpoint'",
+            data["error"],
+            f"Unexpected error message: {data['error']}",
+        )
         print("[OK] Missing checkpoint param returns 400 with descriptive error")
 
     def test_031_pull_variants_malformed_checkpoint_returns_400(self):
-        """GET /pull/variants with checkpoint missing '/' returns 400."""
+        """GET /pull/variants with checkpoint missing '/' returns 400 with exact error message."""
         response = requests.get(
             f"{self.base_url}/pull/variants",
             params={"checkpoint": "noslashrepo"},
@@ -2086,13 +2100,26 @@ class EndpointTests(ServerTestBase):
         )
         data = response.json()
         self.assertIn("error", data)
-        print("[OK] Malformed checkpoint (no slash) returns 400 with descriptive error")
+        self.assertIn(
+            "owner/name",
+            data["error"],
+            f"Expected 'owner/name' format hint in error message, got: {data['error']}",
+        )
+        print("[OK] Malformed checkpoint (no slash) returns 400 with owner/name format hint")
 
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
     def test_032_pull_variants_nonexistent_checkpoint_returns_404(self):
-        """GET /pull/variants for a repo that does not exist on HuggingFace returns 404."""
+        """GET /pull/variants for a repo that does not exist on HuggingFace returns 404.
+
+        Requires LEMONADE_INTEGRATION_TESTS=1 — makes a live HuggingFace API call.
+        """
+        checkpoint = "lemonade-nonexistent-owner/lemonade-nonexistent-repo-xyz"
         response = requests.get(
             f"{self.base_url}/pull/variants",
-            params={"checkpoint": "lemonade-nonexistent-owner/lemonade-nonexistent-repo-xyz"},
+            params={"checkpoint": checkpoint},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -2102,13 +2129,32 @@ class EndpointTests(ServerTestBase):
         )
         data = response.json()
         self.assertIn("error", data)
-        print("[OK] Nonexistent HuggingFace checkpoint returns 404")
+        self.assertIn(
+            checkpoint,
+            data["error"],
+            f"Expected checkpoint name in 404 error message, got: {data['error']}",
+        )
+        self.assertIn(
+            "not found on Hugging Face",
+            data["error"],
+            f"Unexpected 404 error message: {data['error']}",
+        )
+        print("[OK] Nonexistent HuggingFace checkpoint returns 404 with descriptive error")
 
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
     def test_033_pull_variants_valid_checkpoint_returns_variant_list(self):
-        """GET /pull/variants for a known public GGUF repo returns a valid variant list."""
+        """GET /pull/variants for a known public GGUF repo returns a valid variant list.
+
+        Requires LEMONADE_INTEGRATION_TESTS=1 — makes a live HuggingFace API call.
+        Uses TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF as a stable, small public fixture.
+        """
+        checkpoint = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
         response = requests.get(
             f"{self.base_url}/pull/variants",
-            params={"checkpoint": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"},
+            params={"checkpoint": checkpoint},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(
@@ -2118,11 +2164,22 @@ class EndpointTests(ServerTestBase):
         )
         data = response.json()
 
-        # Required top-level fields per API docs
+        # Top-level fields per documented API contract
         self.assertIn("checkpoint", data)
         self.assertIn("recipe", data)
         self.assertIn("suggested_name", data)
         self.assertIn("variants", data)
+
+        # checkpoint must echo the input value exactly
+        self.assertEqual(
+            data["checkpoint"],
+            checkpoint,
+            f"Expected checkpoint to echo input '{checkpoint}', got '{data['checkpoint']}'",
+        )
+
+        # recipe must be a non-empty string
+        self.assertIsInstance(data["recipe"], str)
+        self.assertGreater(len(data["recipe"]), 0, "Expected non-empty recipe string")
 
         # variants must be a non-empty list
         variants = data["variants"]
@@ -2131,14 +2188,21 @@ class EndpointTests(ServerTestBase):
             len(variants), 0, "Expected at least one variant for TinyLlama GGUF repo"
         )
 
-        # each variant must have the required fields per API docs
+        # every variant must carry all documented fields including size_bytes
         for v in variants:
             self.assertIn("name", v)
             self.assertIn("primary_file", v)
             self.assertIn("files", v)
             self.assertIn("sharded", v)
+            self.assertIn(
+                "size_bytes", v, f"Variant '{v.get('name')}' is missing 'size_bytes' field"
+            )
             self.assertIsInstance(v["files"], list)
+            self.assertGreater(
+                len(v["files"]), 0, f"Variant '{v.get('name')}' has empty files list"
+            )
             self.assertIsInstance(v["sharded"], bool)
+            self.assertIsInstance(v["size_bytes"], int)
 
         print(
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
