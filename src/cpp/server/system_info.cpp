@@ -466,7 +466,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA1/2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -497,7 +497,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
+            "gfx101X", "gfx1150",
             "gfx1151", "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
@@ -1907,6 +1907,14 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("6600") != std::string::npos ||
         device_lower.find("6500") != std::string::npos) {
         return "gfx103X";
+    }
+
+    // RDNA1 GPUs (gfx101X architecture)
+    // AMD Radeon RX 5700 XT, AMD Radeon RX 5700, AMD Radeon RX 5600 XT, AMD Radeon RX 5500 XT
+    if (device_lower.find("5700") != std::string::npos ||
+        device_lower.find("5600") != std::string::npos ||
+        device_lower.find("5500") != std::string::npos) {
+        return "gfx101X";
     }
 
     return "";
