@@ -3,6 +3,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
@@ -16,6 +17,8 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+
+static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -39,6 +42,41 @@ static json with_legacy_token_limit(const json& request) {
         modified_request["max_tokens"] = modified_request["max_completion_tokens"];
     }
     return modified_request;
+}
+
+static bool parse_positive_int(const std::string& value, int64_t& result) {
+    try {
+        size_t end = 0;
+        long long parsed = std::stoll(value, &end, 10);
+        if (end != value.size() || parsed <= 0) {
+            return false;
+        }
+        result = static_cast<int64_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static int64_t resolve_max_model_len(int ctx_size, const std::string& vllm_args) {
+    int64_t max_model_len = ctx_size;
+    auto tokens = lemon::utils::parse_custom_args(vllm_args);
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& token = tokens[i];
+        int64_t parsed = 0;
+        const std::string flag = "--max-model-len";
+
+        if (token == flag && i + 1 < tokens.size() && parse_positive_int(tokens[i + 1], parsed)) {
+            max_model_len = parsed;
+            ++i;
+        } else if (token.rfind(flag + "=", 0) == 0 &&
+                   parse_positive_int(token.substr(flag.size() + 1), parsed)) {
+            max_model_len = parsed;
+        }
+    }
+
+    return max_model_len;
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
@@ -126,6 +164,7 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_backend = options.get_option("vllm_backend");
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
+    max_model_len_ = resolve_max_model_len(ctx_size, vllm_args);
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
@@ -221,6 +260,7 @@ void VLLMServer::load(const std::string& model_name,
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
+        max_model_len_ = 0;
         std::string err = "vllm-server failed to start within timeout";
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
@@ -244,11 +284,12 @@ void VLLMServer::unload() {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         port_ = 0;
+        max_model_len_ = 0;
     }
 }
 
 json VLLMServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", with_legacy_token_limit(request));
+    return forward_request("/v1/chat/completions", with_legacy_token_limit(fit_openai_max_tokens_to_context(request)));
 }
 
 json VLLMServer::completion(const json& request) {
@@ -270,7 +311,8 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
 
     if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
         try {
-            json request = with_legacy_token_limit(json::parse(request_body));
+            json request = with_legacy_token_limit(
+                fit_openai_max_tokens_to_context(json::parse(request_body)));
             json& stream_options = request["stream_options"];
             if (!stream_options.is_object()) {
                 stream_options = json::object();
@@ -316,6 +358,97 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
                                telemetry.tokens_per_second);
         }
     }
+}
+
+json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
+    if (max_model_len_ <= 0) {
+        return request;
+    }
+
+    bool has_max_completion_tokens = request.contains("max_completion_tokens") &&
+        (request["max_completion_tokens"].is_number_integer() ||
+         request["max_completion_tokens"].is_number_unsigned());
+    bool has_max_tokens = request.contains("max_tokens") &&
+        (request["max_tokens"].is_number_integer() ||
+         request["max_tokens"].is_number_unsigned());
+    if (!has_max_completion_tokens && !has_max_tokens) {
+        return request;
+    }
+
+    int64_t requested_max_tokens = has_max_completion_tokens
+        ? request["max_completion_tokens"].get<int64_t>()
+        : request["max_tokens"].get<int64_t>();
+    if (requested_max_tokens <= 0 ||
+        requested_max_tokens <= VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD) {
+        return request;
+    }
+
+    int64_t input_tokens = count_openai_prompt_tokens(request);
+    if (input_tokens <= 0) {
+        return request;
+    }
+
+    int64_t available_output_tokens = max_model_len_ - input_tokens;
+    if (available_output_tokens <= 0 || requested_max_tokens <= available_output_tokens) {
+        return request;
+    }
+
+    json modified_request = request;
+    if (has_max_completion_tokens) {
+        modified_request["max_completion_tokens"] = available_output_tokens;
+    }
+    if (has_max_tokens) {
+        modified_request["max_tokens"] = available_output_tokens;
+    }
+    LOG(INFO, "vLLM") << "Reduced OpenAI max tokens from " << requested_max_tokens
+                      << " to " << available_output_tokens
+                      << " so input_tokens (" << input_tokens
+                      << ") fits max_model_len (" << max_model_len_ << ")" << std::endl;
+    return modified_request;
+}
+
+int64_t VLLMServer::count_openai_prompt_tokens(const json& request) {
+    json tokenize_request;
+    tokenize_request["model"] = model_name_;
+    if (request.contains("messages")) {
+        tokenize_request["messages"] = request["messages"];
+    } else if (request.contains("prompt")) {
+        tokenize_request["prompt"] = request["prompt"];
+    } else {
+        return 0;
+    }
+    if (request.contains("tools")) {
+        tokenize_request["tools"] = request["tools"];
+    }
+    if (request.contains("tool_choice")) {
+        tokenize_request["tool_choice"] = request["tool_choice"];
+    }
+
+    auto response = forward_request("/tokenize", tokenize_request);
+    if (response.contains("error")) {
+        LOG(DEBUG, "vLLM") << "Skipping max token fit; /tokenize returned error: "
+                           << response.dump() << std::endl;
+        return 0;
+    }
+
+    if (response.contains("count") &&
+        (response["count"].is_number_integer() || response["count"].is_number_unsigned())) {
+        return response["count"].get<int64_t>();
+    }
+    if (response.contains("token_count") &&
+        (response["token_count"].is_number_integer() || response["token_count"].is_number_unsigned())) {
+        return response["token_count"].get<int64_t>();
+    }
+    if (response.contains("tokens") && response["tokens"].is_array()) {
+        return static_cast<int64_t>(response["tokens"].size());
+    }
+    if (response.contains("token_ids") && response["token_ids"].is_array()) {
+        return static_cast<int64_t>(response["token_ids"].size());
+    }
+
+    LOG(DEBUG, "vLLM") << "Skipping max token fit; unrecognized /tokenize response: "
+                       << response.dump() << std::endl;
+    return 0;
 }
 
 } // namespace backends

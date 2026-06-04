@@ -2,6 +2,7 @@
 
 #include "../wrapped_server.h"
 #include "backend_utils.h"
+#include <cstdint>
 #include <string>
 
 namespace lemon {
@@ -42,6 +43,12 @@ public:
                                    bool sse = true,
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
+
+private:
+    json fit_openai_max_tokens_to_context(const json& request);
+    int64_t count_openai_prompt_tokens(const json& request);
+
+    int64_t max_model_len_ = 0;
 };
 
 } // namespace backends
