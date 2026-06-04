@@ -443,11 +443,6 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
-    const bool rocm_runtime_update_required =
-        (recipe == "llamacpp" || recipe == "sd-cpp") &&
-        resolved_backend == "rocm-stable" &&
-        backend_update_required(recipe, backend);
-
     // System backend uses a pre-installed binary from PATH - nothing to install
     if (resolved_backend == "system") {
         return;
@@ -470,11 +465,17 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     // `will_install_therock` intentionally answers whether TheRock is applicable
     // for this OS/arch/config; it does not check Lemonade's local TheRock cache.
     // Do that here before inflating the install to a multi-file UX flow.
+    const std::string os = get_current_os();
+    const bool is_rocm_stable_backend =
+        (recipe == "llamacpp" || recipe == "sd-cpp") &&
+        resolved_backend == "rocm-stable";
+    const bool therock_applicable =
+        is_rocm_stable_backend && will_install_therock(os, backend_versions_);
+    const bool rocm_runtime_update_required =
+        therock_applicable && backend_update_required(recipe, backend);
     const bool needs_therock_download =
-        rocm_runtime_update_required ||
-        ((recipe == "llamacpp" || recipe == "sd-cpp") &&
-         resolved_backend == "rocm-stable" &&
-         will_install_therock(get_current_os(), backend_versions_) &&
+        therock_applicable &&
+        (rocm_runtime_update_required ||
          !is_therock_installed_for_current_arch(backend_versions_));
 
     struct RuntimeInstallStep {
@@ -484,14 +485,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     std::vector<RuntimeInstallStep> runtime_steps;
     if (needs_therock_download) {
-        const std::string os = get_current_os();
         runtime_steps.push_back({
             "TheRock runtime",
             [this, os, rocm_runtime_update_required](DownloadProgressCallback runtime_progress_cb) {
                 if (rocm_runtime_update_required) {
                     const std::string rocm_arch = SystemInfo::get_rocm_arch();
                     if (rocm_arch.empty()) {
-                        throw std::runtime_error("Cannot install TheRock runtime: ROCm architecture could not be detected");
+                        throw std::runtime_error("Cannot repair TheRock runtime: ROCm architecture could not be detected");
                     }
 
                     const std::string version = backend_versions_["therock"]["version"].get<std::string>();
@@ -501,12 +501,9 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                     std::error_code ec;
                     fs::remove_all(install_dir, ec);
                     if (ec) {
-                        throw std::runtime_error("Failed to remove incomplete TheRock runtime '" +
+                        throw std::runtime_error("Failed to remove existing TheRock runtime '" +
                                                  install_dir + "': " + ec.message());
                     }
-
-                    backends::BackendUtils::install_therock(rocm_arch, version, runtime_progress_cb);
-                    return;
                 }
 
                 install_therock_if_needed(os, backend_versions_, runtime_progress_cb);

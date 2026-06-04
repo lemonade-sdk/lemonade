@@ -665,10 +665,7 @@ static bool device_matches_constraint(const std::string& device_family,
     return allowed_families.count(device_family) > 0;
 }
 
-static bool stable_rocm_runtime_missing(const std::string& recipe, const std::string& backend);
-
 // Generic installation check
-
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
     bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
 
@@ -684,11 +681,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
     if (spec) {
         try {
             BackendUtils::get_backend_binary_path(*spec, backend);
-
-            if (stable_rocm_runtime_missing(recipe, backend)) {
-                error_message = "ROCm stable runtime is missing or incomplete.";
-                return false;
-            }
 
             // For system llamacpp backend, also verify the HIP plugin is available
             // This is required for ROCm GPU acceleration with dynamically loaded backends
@@ -755,143 +747,6 @@ static std::string get_install_command(const std::string& recipe, const std::str
     }
     return "lemonade backends install " + recipe + ":" + backend;
 }
-static bool is_stable_rocm_backend(const std::string& recipe, const std::string& backend) {
-    if (recipe != "llamacpp" && recipe != "sd-cpp") return false;
-    if (backend == "rocm-stable") return true;
-    if (backend != "rocm") return false;
-
-    std::string channel = "stable";
-    if (auto* cfg = RuntimeConfig::global()) {
-        channel = cfg->rocm_channel_for_recipe(recipe);
-    }
-    std::transform(channel.begin(), channel.end(), channel.begin(), ::tolower);
-    return channel == "stable";
-}
-
-static bool is_versioned_so(const std::string& filename, const std::string& soname) {
-    const std::string prefix = soname + ".";
-    if (filename.rfind(prefix, 0) != 0) return false;
-
-    const std::string suffix = filename.substr(prefix.size());
-    bool saw_digit = false;
-    for (char c : suffix) {
-        if (std::isdigit(static_cast<unsigned char>(c))) {
-            saw_digit = true;
-        } else if (c != '.') {
-            return false;
-        }
-    }
-    return saw_digit;
-}
-
-static bool has_lib_marker(const std::vector<fs::path>& dirs, const std::string& soname) {
-    for (const auto& dir : dirs) {
-        std::error_code ec;
-        if (fs::exists(dir / soname, ec)) return true;
-        if (!fs::exists(dir, ec) || !fs::is_directory(dir, ec)) continue;
-
-        for (const auto& entry : fs::directory_iterator(
-                 dir, fs::directory_options::skip_permission_denied, ec)) {
-            if (ec) break;
-            if (is_versioned_so(entry.path().filename().string(), soname)) return true;
-        }
-    }
-    return false;
-}
-
-static bool has_child_marker(const std::vector<fs::path>& dirs, const std::string& name) {
-    for (const auto& dir : dirs) {
-        std::error_code ec;
-        if (fs::exists(dir / name, ec)) return true;
-    }
-    return false;
-}
-
-static bool has_rocm_runtime_markers(const fs::path& root) {
-#ifdef _WIN32
-    std::vector<fs::path> bins = {root / "bin"};
-    return has_child_marker(bins, "amdhip64.dll")
-        && has_child_marker(bins, "rocblas.dll")
-        && has_child_marker(bins, "hipblaslt.dll");
-#elif defined(__linux__)
-    std::vector<fs::path> libs = {root / "lib", root / "lib64"};
-    return has_lib_marker(libs, "libamdhip64.so")
-        && (has_lib_marker(libs, "librocblas.so") || has_child_marker(libs, "rocblas"))
-        && (has_lib_marker(libs, "libhipblaslt.so") || has_child_marker(libs, "hipblaslt"));
-#else
-    (void)root;
-    return false;
-#endif
-}
-
-static bool version_matches_runtime(const std::string& actual, const std::string& expected) {
-    if (actual.empty() || expected.empty()) return false;
-    if (actual == expected) return true;
-    return actual.rfind(expected + ".", 0) == 0;
-}
-
-static std::string first_rocm_version_file(const fs::path& root) {
-    for (const auto& file : {
-        root / ".info" / "version",
-        root / "share" / "rocm" / "version",
-        root / "version",
-    }) {
-        std::string version = read_version_file(file);
-        if (!version.empty()) return version;
-    }
-    return "";
-}
-
-static bool complete_the_rock_runtime_exists(const std::string& therock_version) {
-    fs::path therock_base = fs::path(utils::get_downloaded_bin_dir()) / "therock";
-    std::error_code ec;
-    if (!fs::exists(therock_base, ec) || !fs::is_directory(therock_base, ec)) {
-        return false;
-    }
-
-    for (const auto& entry : fs::directory_iterator(
-             therock_base, fs::directory_options::skip_permission_denied, ec)) {
-        if (ec) break;
-        if (!entry.is_directory()) continue;
-
-        const fs::path dir = entry.path();
-        const std::string name = dir.filename().string();
-        const std::string suffix = "-" + therock_version;
-        if (name.size() < suffix.size()
-            || name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
-            continue;
-        }
-
-        if (read_version_file(dir / "version.txt") == therock_version
-            && has_rocm_runtime_markers(dir)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static bool stable_rocm_runtime_missing(const std::string& recipe, const std::string& backend) {
-    if (!is_stable_rocm_backend(recipe, backend)) return false;
-
-    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-    json config = utils::JsonUtils::load_from_file(config_path);
-    if (!config.contains("therock") || !config["therock"].contains("version")) return false;
-
-    std::string therock_version = config["therock"]["version"].get<std::string>();
-
-#ifndef _WIN32
-    fs::path system_rocm = "/opt/rocm";
-    if (BackendUtils::is_rocm_installed_system_wide()
-        && version_matches_runtime(first_rocm_version_file(system_rocm), therock_version)
-        && has_rocm_runtime_markers(system_rocm)) {
-        return false;
-    }
-#endif
-
-    return !complete_the_rock_runtime_exists(therock_version);
-}
-
 
 // Extract every contiguous run of digits from `s` into a vector of ints.
 // Used by version_compare to handle the variety of upstream tag conventions
@@ -1576,16 +1431,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
             } else {
                 auto* cfg = RuntimeConfig::global();
                 bool no_fetch = cfg && cfg->no_fetch_executables();
-                bool stable_rocm_runtime_incomplete =
-                    install_error.find("ROCm stable runtime is missing or incomplete") != std::string::npos;
-                backend["state"] = no_fetch
-                    ? "unsupported"
-                    : (stable_rocm_runtime_incomplete ? "update_required" : "installable");
+                backend["state"] = no_fetch ? "unsupported" : "installable";
                 std::string default_message = no_fetch
                     ? "Automatic backend install is disabled."
-                    : (stable_rocm_runtime_incomplete
-                        ? "ROCm stable runtime is missing or incomplete."
-                        : "Backend is supported but not installed.");
+                    : "Backend is supported but not installed.";
                 backend["message"] = install_error.empty() ? default_message : install_error;
 
                 bool is_rocm_backend = (def.recipe == "sd-cpp" && def.backend == "rocm") ||
