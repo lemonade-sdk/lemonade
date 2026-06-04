@@ -291,7 +291,7 @@ To make Lemonade Server accessible from other machines on your network, set the 
 lemonade config set host=0.0.0.0
 ```
 
-> **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` to manage access.
+> **Warning:** Using `host: "0.0.0.0"` allows connections from any machine on the network — including to the internal control endpoints (`/internal/*`, e.g. shutdown and config). Only do this on trusted networks, and always set `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` to manage access. The server logs a warning at startup when bound to a non-loopback host without a key.
 
 ## Next Steps
 
