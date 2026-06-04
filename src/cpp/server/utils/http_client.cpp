@@ -9,6 +9,12 @@
 #include <thread>
 #include <chrono>
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <memory>
+#include <vector>
+#include <mbedtls/md.h>
 
 namespace fs = std::filesystem;
 
@@ -16,6 +22,218 @@ namespace lemon {
 namespace utils {
 
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
+
+namespace {
+
+static std::string trim_copy(const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n\"'");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const auto last = value.find_last_not_of(" \t\r\n\"'");
+    return value.substr(first, last - first + 1);
+}
+
+static std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static bool is_hex_digest(const std::string& value, size_t expected_len) {
+    if (value.size() != expected_len) {
+        return false;
+    }
+    return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return std::isxdigit(c) != 0;
+    });
+}
+
+struct ExpectedHash {
+    std::string algorithm;
+    std::string value;
+
+    bool present() const { return !algorithm.empty() && !value.empty(); }
+};
+
+struct HashCheckResult {
+    bool ok = false;
+    std::string actual;
+    std::string error;
+};
+
+static ExpectedHash parse_expected_hash(const DownloadOptions& options) {
+    std::string algorithm = lower_copy(trim_copy(options.expected_hash_algorithm));
+    std::string value = lower_copy(trim_copy(options.expected_hash));
+
+    const auto colon = value.find(':');
+    if (colon != std::string::npos) {
+        const std::string prefix = lower_copy(trim_copy(value.substr(0, colon)));
+        if (!prefix.empty() && algorithm.empty()) {
+            algorithm = prefix;
+        }
+        value = trim_copy(value.substr(colon + 1));
+    }
+
+    if (algorithm == "sha-256") algorithm = "sha256";
+    if (algorithm == "sha-1") algorithm = "sha1";
+    if (algorithm == "gitsha1" || algorithm == "git-sha") algorithm = "git-sha1";
+
+    if (!algorithm.empty() &&
+        algorithm != "sha256" &&
+        algorithm != "sha1" &&
+        algorithm != "git-sha1") {
+        return {};
+    }
+
+    if (algorithm.empty()) {
+        if (is_hex_digest(value, 64)) {
+            algorithm = "sha256";
+        } else if (is_hex_digest(value, 40)) {
+            algorithm = "sha1";
+        }
+    }
+
+    if ((algorithm == "sha256" && !is_hex_digest(value, 64)) ||
+        ((algorithm == "sha1" || algorithm == "git-sha1") && !is_hex_digest(value, 40))) {
+        return {};
+    }
+
+    return {algorithm, value};
+}
+
+
+static std::string bytes_to_hex(const unsigned char* bytes, size_t len) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; ++i) {
+        oss << std::setw(2) << static_cast<unsigned int>(bytes[i]);
+    }
+    return oss.str();
+}
+
+static HashCheckResult digest_file_with_library(const fs::path& path,
+                                                const ExpectedHash& expected,
+                                                const std::string& git_blob_prefix) {
+    HashCheckResult result;
+
+    const mbedtls_md_type_t md_type =
+        (expected.algorithm == "sha256") ? MBEDTLS_MD_SHA256 :
+        (expected.algorithm == "sha1" || expected.algorithm == "git-sha1") ? MBEDTLS_MD_SHA1 :
+        MBEDTLS_MD_NONE;
+
+    if (md_type == MBEDTLS_MD_NONE) {
+        result.error = "unsupported hash algorithm: " + expected.algorithm;
+        return result;
+    }
+
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(md_type);
+    if (!md_info) {
+        result.error = "mbedTLS digest algorithm is unavailable: " + expected.algorithm;
+        return result;
+    }
+
+    mbedtls_md_context_t ctx;
+    mbedtls_md_init(&ctx);
+
+    auto cleanup = [&ctx]() {
+        mbedtls_md_free(&ctx);
+    };
+
+    if (mbedtls_md_setup(&ctx, md_info, 0) != 0 ||
+        mbedtls_md_starts(&ctx) != 0) {
+        cleanup();
+        result.error = "failed to initialize mbedTLS digest context";
+        return result;
+    }
+
+    if (!git_blob_prefix.empty() &&
+        mbedtls_md_update(&ctx,
+                          reinterpret_cast<const unsigned char*>(git_blob_prefix.data()),
+                          git_blob_prefix.size()) != 0) {
+        cleanup();
+        result.error = "failed to hash Git blob prefix with mbedTLS";
+        return result;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        cleanup();
+        result.error = "failed to open file for hash verification";
+        return result;
+    }
+
+    constexpr size_t buffer_size = 1024 * 1024;
+    std::vector<unsigned char> buffer(buffer_size);
+    while (file.good()) {
+        file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize count = file.gcount();
+        if (count > 0 &&
+            mbedtls_md_update(&ctx, buffer.data(), static_cast<size_t>(count)) != 0) {
+            cleanup();
+            result.error = "failed while hashing file with mbedTLS";
+            return result;
+        }
+    }
+    if (file.bad()) {
+        cleanup();
+        result.error = "failed while reading file for hash verification";
+        return result;
+    }
+
+    unsigned char digest[MBEDTLS_MD_MAX_SIZE] = {};
+    if (mbedtls_md_finish(&ctx, digest) != 0) {
+        cleanup();
+        result.error = "failed to finalize mbedTLS digest";
+        return result;
+    }
+
+    const size_t digest_len = static_cast<size_t>(mbedtls_md_get_size(md_info));
+    cleanup();
+
+    result.actual = bytes_to_hex(digest, digest_len);
+    result.ok = (lower_copy(result.actual) == expected.value);
+    return result;
+}
+
+static HashCheckResult calculate_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    HashCheckResult result;
+    if (!expected.present()) {
+        result.ok = true;
+        return result;
+    }
+
+    std::string git_blob_prefix;
+    if (expected.algorithm == "git-sha1") {
+        std::error_code ec;
+        const auto size = fs::file_size(path, ec);
+        if (ec) {
+            result.error = "failed to get file size for git-sha1 verification: " + ec.message();
+            return result;
+        }
+        git_blob_prefix = "blob " + std::to_string(size) + std::string(1, '\0');
+    }
+
+    result = digest_file_with_library(path, expected, git_blob_prefix);
+    if (!result.ok && result.error.empty()) {
+        result.error = "hash mismatch: expected " + expected.algorithm + ":" + expected.value +
+                       ", got " + expected.algorithm + ":" + result.actual;
+    }
+    return result;
+}
+
+static HashCheckResult verify_file_hash(const fs::path& path, const ExpectedHash& expected) {
+    auto result = calculate_file_hash(path, expected);
+    if (!expected.present() || result.ok) {
+        return result;
+    }
+    LOG(ERROR, "Download") << "Content verification failed for " << path.string()
+                            << ": " << result.error << std::endl;
+    return result;
+}
+
+} // namespace
 
 // Callback for writing response data to string
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -549,19 +767,75 @@ DownloadResult HttpClient::download_file(const std::string& url,
                                          const DownloadOptions& options) {
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
+    const ExpectedHash expected_hash = parse_expected_hash(options);
+
+    if (!options.expected_hash.empty() && !expected_hash.present()) {
+        final_result.success = false;
+        final_result.error_message = "Invalid or unsupported expected hash: " + options.expected_hash;
+        return final_result;
+    }
 
     // Use .partial extension for in-progress downloads
     std::string partial_path = output_path + ".partial";
     fs::path output_path_fs = path_from_utf8(output_path);
     fs::path partial_path_fs = path_from_utf8(partial_path);
 
-    // Check if final file already exists and is complete
+    // If a verified final file exists next to a stale .partial file, trust the
+    // verified final file and remove the stale partial.
+    if (expected_hash.present() && fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
+        auto hash_result = verify_file_hash(output_path_fs, expected_hash);
+        if (hash_result.ok) {
+            std::error_code remove_partial_ec;
+            fs::remove(partial_path_fs, remove_partial_ec);
+            final_result.success = true;
+            final_result.bytes_downloaded = 0;
+            LOG(INFO, "Download") << "File already exists and hash verified; removed stale partial: "
+                                  << output_path << std::endl;
+            return final_result;
+        }
+
+        std::error_code remove_output_ec;
+        fs::remove(output_path_fs, remove_output_ec);
+        if (remove_output_ec) {
+            final_result.success = false;
+            final_result.error_message = "Existing file failed verification and could not be removed: "
+                                       + remove_output_ec.message();
+            return final_result;
+        }
+    }
+
+    // Check if final file already exists and is complete. When the caller
+    // provided a content hash, the final path is only trusted if the hash
+    // matches; otherwise remove it and force a fresh download.
     if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
-        // Final file exists with no partial - consider it complete
-        final_result.success = true;
-        final_result.bytes_downloaded = 0;
-        LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
-        return final_result;
+        if (expected_hash.present()) {
+            auto hash_result = verify_file_hash(output_path_fs, expected_hash);
+            if (hash_result.ok) {
+                final_result.success = true;
+                final_result.bytes_downloaded = 0;
+                LOG(INFO, "Download") << "File already exists and hash verified: "
+                                      << output_path << std::endl;
+                return final_result;
+            }
+
+            LOG(WARNING, "Download") << "Existing file failed verification; removing for fresh download: "
+                                     << output_path << std::endl;
+            std::error_code remove_ec;
+            fs::remove(output_path_fs, remove_ec);
+            if (remove_ec) {
+                final_result.success = false;
+                final_result.error_message = "Existing file failed verification and could not be removed: "
+                                           + remove_ec.message();
+                return final_result;
+            }
+        } else {
+            // Final file exists with no partial - consider it complete when no
+            // stronger source-of-truth hash is available.
+            final_result.success = true;
+            final_result.bytes_downloaded = 0;
+            LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
+            return final_result;
+        }
     }
 
     // Check for existing partial file to resume
@@ -626,6 +900,28 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
 
         if (final_result.success) {
+            if (expected_hash.present()) {
+                auto hash_result = verify_file_hash(partial_path_fs, expected_hash);
+                if (!hash_result.ok) {
+                    final_result.success = false;
+                    final_result.can_resume = false;
+                    final_result.error_message = "Download content verification failed for " + output_path +
+                                                 ": " + hash_result.error;
+                    std::error_code remove_ec;
+                    fs::remove(partial_path_fs, remove_ec);
+                    resume_offset = 0;
+
+                    if (attempt < options.max_retries) {
+                        LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message
+                                                  << "; retrying from scratch" << std::endl;
+                        continue;
+                    }
+
+                    break;
+                }
+                LOG(INFO, "Download") << "Hash verified for " << output_path << std::endl;
+            }
+
             // Download complete - rename .partial to final path
             std::error_code ec;
             fs::rename(partial_path_fs, output_path_fs, ec);

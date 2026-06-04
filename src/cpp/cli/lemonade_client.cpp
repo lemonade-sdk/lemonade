@@ -531,7 +531,7 @@ static bool parse_sse_progress(const std::string& event_data, StreamingRequestSt
     }
 }
 
-int LemonadeClient::pull_model(const json& model_data, const std::string& display_name) {
+int LemonadeClient::pull_model(const json& model_data, const std::string& display_name, bool upgrade) {
     try {
         // Validate that model field exists in model_data
         if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
@@ -545,6 +545,14 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
 
         json request_body = model_data;
         request_body["stream"] = true;
+
+        // Cache-first by default: an already-downloaded model is reused instead
+        // of triggering a Hugging Face update check (and a possible full
+        // re-download). Only the explicit `lemonade pull` update flow opts into
+        // an upgrade. An explicit field already in model_data wins.
+        if (!request_body.contains("do_not_upgrade")) {
+            request_body["do_not_upgrade"] = !upgrade;
+        }
 
         std::string body = request_body.dump();
 
