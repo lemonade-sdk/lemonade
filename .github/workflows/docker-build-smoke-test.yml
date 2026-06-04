@@ -36,7 +36,7 @@ jobs:
         run: |
           docker run -d \
             --name lemonade-test \
-            -p 13305:13305 \
+            --network=host \
             lemonade:test
 
       - name: Wait for server to be ready

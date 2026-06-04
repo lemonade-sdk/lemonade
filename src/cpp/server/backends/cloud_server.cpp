@@ -1,4 +1,5 @@
 #include "lemon/backends/cloud_server.h"
+#include "lemon/backends/docker_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
@@ -411,6 +412,23 @@ CloudServer::PerRequestCreds CloudServer::extract_creds(json& request) const {
         }
     }
 
+    // 3. Docker-managed SGLang: when lemond hosts the container, external
+    //    clients (CLI tools, curl, etc.) may not send X-Lemonade-Cloud-*
+    //    headers. Use the live container endpoint and local API key.
+    if (provider_ == docker_cloud_provider_name()) {
+        const auto docker_status = get_docker_runtime_status();
+        if (docker_status.running) {
+            if (creds.api_key.empty()) {
+                creds.api_key = docker_cloud_api_key();
+            }
+            if (creds.base_url.empty()) {
+                creds.base_url = docker_status.base_url.empty()
+                                     ? sglang_base_url()
+                                     : docker_status.base_url;
+            }
+        }
+    }
+
     // Strip a trailing slash so path concatenation ("base + /chat/...")
     // doesn't yield "//chat/...". Some providers (notably nginx-fronted
     // ones) 404 on the doubled slash.
@@ -448,7 +466,14 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
             {{"provider", provider_}}
         );
     }
-    std::string url = creds.base_url + path;
+    std::string base_url = creds.base_url;
+    if (provider_ == docker_cloud_provider_name()) {
+        base_url = normalize_sglang_base_url(base_url);
+    }
+    while (!base_url.empty() && base_url.back() == '/') {
+        base_url.pop_back();
+    }
+    std::string url = base_url + path;
     std::map<std::string, std::string> headers = {
         {"Authorization", "Bearer " + creds.api_key}
     };
@@ -568,7 +593,14 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         return;
     }
 
-    std::string url = creds.base_url + suffix;
+    std::string base_url = creds.base_url;
+    if (provider_ == docker_cloud_provider_name()) {
+        base_url = normalize_sglang_base_url(base_url);
+    }
+    while (!base_url.empty() && base_url.back() == '/') {
+        base_url.pop_back();
+    }
+    std::string url = base_url + suffix;
 
     std::map<std::string, std::string> headers = {
         {"Authorization", "Bearer " + creds.api_key}
@@ -678,9 +710,10 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    // Mirror the trailing-slash normalization done in load() so a config
-    // entry like "https://.../v1/" doesn't produce "/v1//models".
     std::string normalized_base = base_url;
+    if (provider == docker_cloud_provider_name()) {
+        normalized_base = normalize_sglang_base_url(base_url);
+    }
     while (!normalized_base.empty() && normalized_base.back() == '/') {
         normalized_base.pop_back();
     }

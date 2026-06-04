@@ -2406,6 +2406,50 @@ footer {
     padding-bottom: 2px;
 }
 
+.docker-section-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.docker-container-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.docker-container-status-dot.stopped {
+    background-color: var(--error-color);
+    box-shadow: 0 0 4px rgba(248, 113, 113, 0.55);
+}
+
+.docker-container-status-dot.starting {
+    background-color: #ffb74d;
+    box-shadow: 0 0 4px rgba(255, 183, 77, 0.5);
+}
+
+.docker-container-status-dot.ready {
+    background-color: var(--success-color);
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.65);
+}
+
+.docker-log-preview {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: var(--text-secondary);
+    background: var(--bg-secondary, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .backend-row-item .model-item-content {
     align-items: flex-start;
 }

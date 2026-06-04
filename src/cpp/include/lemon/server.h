@@ -97,6 +97,10 @@ private:
     // Proxies a one-shot call to the provider's /v1/models and returns the
     // discovered chat-capable models. Credentials are never persisted.
     void handle_cloud_discover(const httplib::Request& req, httplib::Response& res);
+    void handle_docker_config(const httplib::Request& req, httplib::Response& res);
+    void handle_docker_status(const httplib::Request& req, httplib::Response& res);
+    void handle_docker_start(const httplib::Request& req, httplib::Response& res);
+    void handle_docker_stop(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);

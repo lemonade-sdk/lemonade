@@ -390,7 +390,7 @@
             html = gsConsoleHtml([
               'docker run -d \\',
               '  --name lemonade-server \\',
-              '  -p 13305:13305 \\',
+              '  --network=host \\',
               '  -v lemonade-cache:/root/.cache/huggingface \\',
               '  -v lemonade-llama:/opt/lemonade/llama \\',
               '  ghcr.io/lemonade-sdk/lemonade-server:latest'

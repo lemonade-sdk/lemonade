@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { getServerBaseUrl, onServerUrlChange, serverConfig, serverFetch } from './utils/serverConfig';
+import { getServerBaseUrl, onServerUrlChange, serverConfig, serverFetch, fetchServerWebsocketPort } from './utils/serverConfig';
 import { connectLogStream, LogEntry, LogStreamHandle } from './utils/logWebSocketClient';
 import {
   AppSettings,
@@ -60,17 +60,25 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
   };
 
   const loadWebsocketPort = async () => {
-    if (!window.api?.getSettings) {
-      setWebsocketPort(DEFAULT_WEBSOCKET_PORT);
-      return;
+    let settings: AppSettings | undefined;
+    if (window.api?.getSettings) {
+      try {
+        const stored = await window.api.getSettings();
+        settings = mergeWithDefaultSettings(stored as AppSettings | undefined);
+      } catch (error) {
+        console.error('Failed to load websocket port setting:', error);
+      }
     }
-    try {
-      const stored = await window.api.getSettings();
-      setWebsocketPort(resolveWebsocketPort(mergeWithDefaultSettings(stored as AppSettings | undefined)));
-    } catch (error) {
-      console.error('Failed to load websocket port setting:', error);
-      setWebsocketPort(DEFAULT_WEBSOCKET_PORT);
+
+    if (!settings || settings.websocketPort.useDefault) {
+      const serverPort = await fetchServerWebsocketPort();
+      if (serverPort != null) {
+        setWebsocketPort(serverPort);
+        return;
+      }
     }
+
+    setWebsocketPort(resolveWebsocketPort(settings));
   };
 
   // Initialize server configuration and load the current log level
@@ -105,8 +113,8 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
 
   useEffect(() => {
     if (!window.api?.onSettingsUpdated) return;
-    const unsubscribe = window.api.onSettingsUpdated((settings) => {
-      setWebsocketPort(resolveWebsocketPort(mergeWithDefaultSettings(settings as AppSettings | undefined)));
+    const unsubscribe = window.api.onSettingsUpdated(() => {
+      loadWebsocketPort();
     });
     return () => unsubscribe?.();
   }, []);

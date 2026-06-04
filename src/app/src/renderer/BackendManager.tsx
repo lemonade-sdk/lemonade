@@ -5,6 +5,7 @@ import { Recipe, BackendInfo } from './utils/systemData';
 import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import ConnectedBackendRow from './components/ConnectedBackendRow';
 import CloudProvidersSection from './CloudProvidersSection';
+import DockerSection from './DockerSection';
 
 const RECIPE_ORDER = new Map([
   'llamacpp',
@@ -167,11 +168,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
   }
 
   const cloudSection = (
-    <CloudProvidersSection
-      searchQuery={searchQuery}
-      showError={showError}
-      showSuccess={showSuccess}
-    />
+    <>
+      <DockerSection
+        searchQuery={searchQuery}
+        showError={showError}
+        showSuccess={showSuccess}
+      />
+      <CloudProvidersSection
+        searchQuery={searchQuery}
+        showError={showError}
+        showSuccess={showSuccess}
+      />
+    </>
   );
 
   if (visibleGroups.length === 0) {

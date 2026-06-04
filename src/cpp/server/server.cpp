@@ -3,6 +3,7 @@
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud_server.h"
+#include "lemon/backends/docker_utils.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
@@ -551,6 +552,18 @@ void Server::setup_routes(httplib::Server &web_server) {
     // direct calls to providers like OpenAI.
     web_server.Post("/internal/cloud/discover", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cloud_discover(req, res);
+    });
+    web_server.Get("/internal/docker/config", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docker_config(req, res);
+    });
+    web_server.Get("/internal/docker/status", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docker_status(req, res);
+    });
+    web_server.Post("/internal/docker/start", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docker_start(req, res);
+    });
+    web_server.Post("/internal/docker/stop", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docker_stop(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -1199,6 +1212,24 @@ void Server::stop() {
         }
         LOG(INFO, "Server") << "Cleanup complete" << std::endl;
     }
+
+#if defined(__linux__)
+    try {
+        const auto docker_status = backends::get_docker_runtime_status();
+        if (docker_status.running) {
+            LOG(INFO, "Server") << "Stopping SGLang docker container..." << std::endl;
+            const auto stop_status = backends::stop_sglang_container();
+            if (!stop_status.error.empty()) {
+                LOG(WARNING, "Server") << "Failed to stop SGLang container: "
+                                         << stop_status.error << std::endl;
+            }
+        }
+        model_manager_->register_discovered_cloud_models(
+            backends::docker_cloud_provider_name(), {});
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Error stopping SGLang container: " << e.what() << std::endl;
+    }
+#endif
 
     if (model_cache_warmup_thread_.joinable()) {
         model_cache_warmup_thread_.join();
@@ -3415,6 +3446,153 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_docker_config(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
+    try {
+        nlohmann::json models = nlohmann::json::array();
+        for (const auto& [model, args] : backends::sglang_model_serve_args()) {
+            models.push_back({{"id", model}, {"serve_args", args}});
+        }
+        nlohmann::json response = {
+            {"images", backends::docker_images()},
+            {"models", models},
+            {"default_model", backends::default_sglang_model()},
+            {"provider", backends::docker_cloud_provider_name()},
+            {"cloud_api_key", backends::docker_cloud_api_key()},
+            {"default_port", backends::sglang_default_port()},
+            {"docker_available", backends::is_docker_available()},
+            {"hf_token_configured", backends::lemonade_hf_token_configured()},
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_docker_status(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
+    try {
+        const auto status = backends::get_docker_runtime_status();
+        const int port = status.port > 0 ? status.port : backends::sglang_default_port();
+        std::string base_url = status.running
+                                   ? backends::sglang_base_url(port)
+                                   : status.base_url;
+        const bool api_ready = status.running && !base_url.empty() &&
+                               backends::is_sglang_api_ready(base_url);
+        const auto logs = status.running
+                              ? backends::get_docker_container_log_snapshot()
+                              : backends::DockerLogSnapshot{};
+        nlohmann::json response = {
+            {"running", status.running},
+            {"api_ready", api_ready},
+            {"log_ready", logs.ready_to_serve},
+            {"last_log_line", logs.last_line},
+            {"recent_log_lines", logs.recent_lines},
+            {"container_id", status.container_id},
+            {"container_name", status.container_name},
+            {"image", status.image},
+            {"model", status.model},
+            {"base_url", base_url},
+            {"port", status.port > 0 ? status.port : backends::sglang_default_port()},
+            {"provider", backends::docker_cloud_provider_name()},
+        };
+        if (!status.error.empty()) {
+            response["error"] = status.error;
+        }
+        if (status.running && !status.model.empty()) {
+            const auto gpu = backends::get_sglang_gpu_info(status.model);
+            if (gpu.count > 0) {
+                response["gpu_count"] = gpu.count;
+            }
+            if (!gpu.type.empty()) {
+                response["gpu_type"] = gpu.type;
+            }
+        }
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_docker_start(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        const auto image = body.value("image", "");
+        const auto model = body.value("model", "");
+        if (image.empty() || model.empty()) {
+            res.status = 400;
+            res.set_content(R"({"error":"image and model are required"})", "application/json");
+            return;
+        }
+
+        const auto result = backends::start_sglang_container(
+            image, model, model_manager_->get_hf_cache_dir());
+        if (!result.error.empty()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", result.error}}.dump(), "application/json");
+            return;
+        }
+
+        const auto provider = result.provider;
+        nlohmann::json models = nlohmann::json::array();
+        const auto logs = backends::get_docker_container_log_snapshot();
+        const bool log_ready = logs.ready_to_serve;
+
+        if (log_ready) {
+            auto discovered = backends::CloudServer::discover_models(
+                provider, backends::docker_cloud_api_key(), result.base_url);
+            model_manager_->register_discovered_cloud_models(provider, discovered);
+            for (const auto& info : discovered) {
+                models.push_back({{"id", info.model_name}, {"checkpoint", info.checkpoint()}});
+            }
+        }
+
+        nlohmann::json response = {
+            {"container_id", result.container_id},
+            {"base_url", result.base_url},
+            {"provider", provider},
+            {"model", result.model},
+            {"port", result.port},
+            {"ready", result.ready},
+            {"log_ready", log_ready},
+            {"models", models},
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", std::string("Invalid JSON: ") + e.what()}}.dump(),
+                        "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_docker_start: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
+    }
+}
+
+void Server::handle_docker_stop(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
+    try {
+        const auto provider = backends::docker_cloud_provider_name();
+        const auto status = backends::stop_sglang_container();
+        if (!status.error.empty()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", status.error}}.dump(), "application/json");
+            return;
+        }
+
+        model_manager_->register_discovered_cloud_models(provider, {});
+
+        nlohmann::json response = {{"stopped", true}, {"provider", provider}};
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_docker_stop: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(nlohmann::json{{"error", e.what()}}.dump(), "application/json");
     }
 }
 

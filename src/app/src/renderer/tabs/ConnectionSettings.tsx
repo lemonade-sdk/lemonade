@@ -42,7 +42,7 @@ const ConnectionSettings: React.FC<ConnectionSettingsProps> = ({
           <label className="settings-label">
             <span className="settings-label-text">Log WebSocket Port</span>
             <span className="settings-description">
-              Port used to stream server logs in the Logs panel.
+              Override the log WebSocket port. Leave at default (9000) to auto-detect from /health.
             </span>
           </label>
           <button

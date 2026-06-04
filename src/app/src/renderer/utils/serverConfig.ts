@@ -495,3 +495,18 @@ export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);
 export const onServerUrlChange = (listener: UrlChangeListener) => serverConfig.onUrlChange(listener);
 export const serverFetch = (endpoint: string, options?: RequestInit) => serverConfig.fetch(endpoint, options);
+
+/** Read websocket_port from /api/v1/health (same source as realtime transcription). */
+export async function fetchServerWebsocketPort(): Promise<number | null> {
+  try {
+    await serverConfig.waitForInit();
+    const response = await serverFetch('/health');
+    if (!response.ok) return null;
+    const health = await response.json();
+    const port = health?.websocket_port;
+    return typeof port === 'number' ? port : null;
+  } catch (error) {
+    console.warn('Failed to fetch websocket_port from /health:', error);
+    return null;
+  }
+}

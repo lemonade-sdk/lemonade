@@ -4,15 +4,25 @@
 
 > You may need additional configuration depending on your environment.
 
+> **Docker offload:** The image includes the Docker CLI (`docker`, `docker compose`, `docker buildx`).
+> To inspect or connect to other containers from Lemonade, mount the host Docker socket:
+> `-v /var/run/docker.sock:/var/run/docker.sock`
+
+> **Host networking:** Run Lemonade with `--network=host` so the server and any
+> SGLang offload containers (which also use host networking) share the same
+> network namespace. The API is then available at `http://localhost:13305`
+> without port mapping.
+
 ### Docker Run with Default Configuration
 
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 13305:13305 \
+  --network=host \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
@@ -21,7 +31,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 4000:5000 \
+  --network=host \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
@@ -30,14 +40,14 @@ docker run -d \
   ./lemond --host 0.0.0.0 --port 5000
 ```
 
-> This will run the server on port 5000 inside the container, mapped to port 4000 on your host.
+> With host networking, the server listens directly on port 5000 on the host.
 
 ### Docker Run with CPU backend
 
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 13305:13305 \
+  --network=host \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
@@ -51,7 +61,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 13305:13305 \
+  --network=host \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
@@ -72,7 +82,7 @@ Then:
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 13305:13305 \
+  --network=host \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
@@ -98,8 +108,7 @@ services:
   lemonade:
     image: ghcr.io/lemonade-sdk/lemonade-server:latest
     container_name: lemonade-server
-    ports:
-      - "13305:13305"
+    network_mode: host
     volumes:
       # Persist downloaded models
       - lemonade-cache:/root/.cache/huggingface
@@ -107,6 +116,8 @@ services:
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
+      # Docker offload backend
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
@@ -249,6 +260,12 @@ RUN apt-get update && apt-get install -y \
     libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Docker CLI utilities for container inspection/offload (mount /var/run/docker.sock at runtime)
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+RUN mkdir -p /usr/local/libexec/docker/cli-plugins
+COPY --from=docker:27-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=docker:27-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
+
 # Create application directory
 WORKDIR /opt/lemonade
 
@@ -287,8 +304,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: lemonade-server
-    ports:
-      - "13305:13305"
+    network_mode: host
     volumes:
       # Persist downloaded models
       - lemonade-cache:/root/.cache/huggingface
@@ -296,6 +312,8 @@ services:
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
+      # Docker offload backend
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
@@ -406,15 +424,16 @@ Server not starting: Check logs with:
 docker logs lemonade-server
 ```
 
-If you want to view the logs on the web UI, you need to expose the websocket port as well:
+If you want to view the logs on the web UI, the WebSocket port is also on the host
+(with `--network=host`, no extra port mapping is needed):
 
 ```bash
 docker run -d \
   --name lemonade-server \
-  -p 13305:13305 \
-  -p 9000:9000 \
+  --network=host \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
