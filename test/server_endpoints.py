@@ -2052,5 +2052,99 @@ class EndpointTests(ServerTestBase):
         print("[OK] system-info contains release_url for backends")
 
 
+    # =========================================================================
+    # PULL/VARIANTS TESTS
+    # =========================================================================
+
+    def test_030_pull_variants_missing_checkpoint_returns_400(self):
+        """GET /pull/variants without checkpoint param returns 400."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for missing checkpoint, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn("checkpoint", data["error"].lower())
+        print("[OK] Missing checkpoint param returns 400 with descriptive error")
+
+    def test_031_pull_variants_malformed_checkpoint_returns_400(self):
+        """GET /pull/variants with checkpoint missing '/' returns 400."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": "noslashrepo"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for malformed checkpoint, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertIn("error", data)
+        print("[OK] Malformed checkpoint (no slash) returns 400 with descriptive error")
+
+    def test_032_pull_variants_nonexistent_checkpoint_returns_404(self):
+        """GET /pull/variants for a repo that does not exist on HuggingFace returns 404."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": "lemonade-nonexistent-owner/lemonade-nonexistent-repo-xyz"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            404,
+            f"Expected 404 for nonexistent HF repo, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertIn("error", data)
+        print("[OK] Nonexistent HuggingFace checkpoint returns 404")
+
+    def test_033_pull_variants_valid_checkpoint_returns_variant_list(self):
+        """GET /pull/variants for a known public GGUF repo returns a valid variant list."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 for valid checkpoint, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+
+        # Required top-level fields per API docs
+        self.assertIn("checkpoint", data)
+        self.assertIn("recipe", data)
+        self.assertIn("suggested_name", data)
+        self.assertIn("variants", data)
+
+        # variants must be a non-empty list
+        variants = data["variants"]
+        self.assertIsInstance(variants, list)
+        self.assertGreater(
+            len(variants), 0, "Expected at least one variant for TinyLlama GGUF repo"
+        )
+
+        # each variant must have the required fields per API docs
+        for v in variants:
+            self.assertIn("name", v)
+            self.assertIn("primary_file", v)
+            self.assertIn("files", v)
+            self.assertIn("sharded", v)
+            self.assertIsInstance(v["files"], list)
+            self.assertIsInstance(v["sharded"], bool)
+
+        print(
+            f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
+            f"{[v['name'] for v in variants]}"
+        )
+
+
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")
