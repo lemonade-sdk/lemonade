@@ -3463,6 +3463,7 @@ void Server::handle_docker_config(const httplib::Request& req, httplib::Response
             {"provider", backends::docker_cloud_provider_name()},
             {"cloud_api_key", backends::docker_cloud_api_key()},
             {"default_port", backends::sglang_default_port()},
+            {"max_context_window", backends::sglang_max_context_window()},
             {"docker_available", backends::is_docker_available()},
             {"hf_token_configured", backends::lemonade_hf_token_configured()},
         };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -22,7 +23,8 @@ inline const std::map<std::string, std::string>& sglang_model_serve_args() {
          " --reasoning-parser qwen3   --tool-call-parser qwen3_coder   "
          "--speculative-algorithm EAGLE   --speculative-num-steps 3   "
          "--speculative-eagle-topk 1   --speculative-num-draft-tokens 4   "
-         "--mem-fraction-static 0.8  --host 0.0.0.0 --attention-backend aiter --tp 8"},
+         "--mem-fraction-static 0.8  --host 0.0.0.0 --attention-backend aiter --tp 8   "
+         "--context-length 262144"},
     };
     return models;
 }
@@ -38,6 +40,8 @@ inline const std::string& docker_cloud_api_key() {
 }
 
 inline int sglang_default_port() { return 30000; }
+
+inline int64_t sglang_max_context_window() { return 262144; }
 
 inline std::string sglang_base_url(int port = 0) {
     const int resolved_port = port > 0 ? port : sglang_default_port();

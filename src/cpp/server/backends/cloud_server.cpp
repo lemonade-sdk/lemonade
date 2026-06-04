@@ -806,7 +806,9 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         // Static metadata the providers publish (all three give context_length;
         // OpenRouter/Together also give pricing). Surfaced in /models, /health
         // and the discover response — display only, never affects routing.
-        if (m.contains("context_length") && m["context_length"].is_number_integer()) {
+        if (provider == docker_cloud_provider_name()) {
+            info.max_context_window = sglang_max_context_window();
+        } else if (m.contains("context_length") && m["context_length"].is_number_integer()) {
             info.max_context_window = m["context_length"].get<int64_t>();
         }
         const auto cost = parse_cloud_cost(m);

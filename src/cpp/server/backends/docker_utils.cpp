@@ -325,6 +325,8 @@ DockerStartResult start_sglang_container(const std::string& image,
     args.push_back("SGLANG_USE_AITER=1");
     args.push_back("-e");
     args.push_back("SGLANG_ENABLE_SPEC_V2=1");
+    args.push_back("-e");
+    args.push_back("SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1");
 
     if (!hf_cache_dir.empty()) {
         args.push_back("-v");
