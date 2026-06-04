@@ -130,10 +130,10 @@ The same file works, verbatim, in three places:
 - `lemonade import <CollectionName>.json` on the CLI (or **File > New Omni Model > From JSON** in the
   desktop app).
 - `POST /v1/pull` with the file contents as the request body.
-- Uploaded to a Hugging Face model repo as `<CollectionName>.json`. `lemonade pull <org>/<repo>`
-  fetches the file (discovered by content: the repo's `*.json` whose `recipe` is
-  `"collection.omni"`) and registers and downloads everything in it. The built-in `LMX-Omni-*`
-  collections are distributed this way.
+- Uploaded to a Hugging Face model repo **named after the collection**, so that the repo contains
+  `<RepoName>.json`. `lemonade pull <org>/<repo>` looks for the manifest named after the repo,
+  then registers and downloads everything in it. The built-in `LMX-Omni-*` collections are
+  distributed this way.
 
 On import, component names that are already registered keep their local definition (differences from
 the embedded definition are logged as warnings); unknown components are registered as `user.*` models

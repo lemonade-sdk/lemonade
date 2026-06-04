@@ -209,6 +209,45 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         return 1;
     }
 
+    // Omni collection repos: the manifest returned by the server is itself an
+    // import-ready /v1/pull body — register and download it as a single unit.
+    if (variants_response.value("repo_kind", "") == "collection") {
+        if (!variant.empty()) {
+            std::cerr << "warning: variant '" << variant
+                      << "' ignored for Omni collection repositories" << std::endl;
+        }
+
+        json pull_body = variants_response.value("manifest", json::object());
+        std::string model_name = pull_body.value("model_name", std::string());
+        if (model_name.empty()) {
+            model_name = variants_response.value("suggested_name", checkpoint);
+        }
+        model_name = normalize_user_model_name(model_name);
+        pull_body["model_name"] = model_name;
+
+        // Tie the registration to the repo so a later `lemonade pull <name>`
+        // refreshes the collection definition from Hugging Face.
+        pull_body.erase("checkpoint");
+        if (!pull_body.contains("checkpoints") || !pull_body["checkpoints"].is_object()) {
+            pull_body["checkpoints"] = json::object();
+        }
+        pull_body["checkpoints"]["main"] = checkpoint;
+
+        std::string display_name = model_name.substr(std::string("user.").size());
+        size_t component_count =
+            pull_body.contains("components") && pull_body["components"].is_array()
+                ? pull_body["components"].size() : 0;
+        std::cout << "Pulling Omni collection " << checkpoint << " as " << display_name
+                  << " (" << component_count
+                  << (component_count == 1 ? " component" : " components");
+        if (pull_body.contains("size") && pull_body["size"].is_number()) {
+            std::cout << ", ~" << pull_body["size"].get<double>() << " GB";
+        }
+        std::cout << ")" << std::endl;
+
+        return client.pull_model(pull_body, display_name, /*upgrade=*/true);
+    }
+
     if (!variants_response.contains("variants") || !variants_response["variants"].is_array() ||
         variants_response["variants"].empty()) {
         std::cerr << "No GGUF variants found for '" << checkpoint << "'." << std::endl;
