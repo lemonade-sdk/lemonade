@@ -33,6 +33,14 @@ static std::string parse_quant_method(const std::string& config_json) {
     return "";
 }
 
+static json with_legacy_token_limit(const json& request) {
+    json modified_request = request;
+    if (modified_request.contains("max_completion_tokens") && !modified_request.contains("max_tokens")) {
+        modified_request["max_tokens"] = modified_request["max_completion_tokens"];
+    }
+    return modified_request;
+}
+
 // Returns quantization_config.quant_method for the model, or empty string.
 // First checks the HuggingFace hub cache; if config.json isn't there yet,
 // fetches it over HTTP from huggingface.co directly. This ensures detection
@@ -240,11 +248,11 @@ void VLLMServer::unload() {
 }
 
 json VLLMServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", request);
+    return forward_request("/v1/chat/completions", with_legacy_token_limit(request));
 }
 
 json VLLMServer::completion(const json& request) {
-    return forward_request("/v1/completions", request);
+    return forward_request("/v1/completions", with_legacy_token_limit(request));
 }
 
 json VLLMServer::responses(const json& request) {
@@ -262,7 +270,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
 
     if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
         try {
-            json request = json::parse(request_body);
+            json request = with_legacy_token_limit(json::parse(request_body));
             json& stream_options = request["stream_options"];
             if (!stream_options.is_object()) {
                 stream_options = json::object();

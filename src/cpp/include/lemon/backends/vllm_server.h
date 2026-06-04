@@ -42,7 +42,6 @@ public:
                                    bool sse = true,
                                    long timeout_seconds = 0,
                                    TelemetryCallback telemetry_callback = nullptr) override;
-
 };
 
 } // namespace backends
