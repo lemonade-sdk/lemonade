@@ -1067,7 +1067,7 @@ int main(int argc, char* argv[]) {
     config_set_cmd->fallthrough(false);
 
     // Model commands
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
