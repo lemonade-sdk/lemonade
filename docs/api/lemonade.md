@@ -111,13 +111,14 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register an Omni-Model**
 
-An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+An omni collection is a collection type that bundles several models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
 | `recipe` | Yes | Must be `"collection.omni"`. |
-| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+| `components` | Yes | Ordered, non-empty array of model names. |
+| `models` | No | Ordered array of full model definitions, one per `components` entry (the same fields as single-model registration, keyed by `model_name`). When present, component names that are not yet registered are registered from these definitions; names that already exist keep their local definition. When absent, every `components` entry must already exist in the registry (built-in or a previously registered `user.*` model). |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
 
@@ -131,6 +132,58 @@ curl -X POST http://localhost:13305/v1/pull \
     "recipe": "collection.omni",
     "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
   }'
+```
+
+**Collection Files: Export, Import, and Hugging Face**
+
+`lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
+[`/v1/models/{model_id}`](./openai.md#get-v1modelsmodel_id) object normalized into an import-ready
+`/v1/pull` body. The file carries `model_name`, `recipe`, `components`, and a `models` array embedding
+each component's definition. Exported files never contain the user-specific runtime fields
+`suggested`, `created`, or `downloaded` — the server regenerates those on import (`suggested` is set
+to `true` for registered models; `downloaded` is computed from local files).
+
+The same file works, verbatim, in three places:
+
+- `POST /v1/pull` with the file contents as the request body.
+- `lemonade import <CollectionName>.json` on the CLI.
+- Uploaded to a Hugging Face model repo as `<CollectionName>.json`. `lemonade pull <org>/<repo>`
+  fetches the file (discovered by content: the repo's `*.json` whose `recipe` is
+  `"collection.omni"`) and registers and downloads everything in it. The built-in `LMX-Omni-*`
+  collections are distributed this way.
+
+Example collection file:
+
+```json
+{
+    "model_name": "user.MyKit",
+    "recipe": "collection.omni",
+    "checkpoints": { "main": "" },
+    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny"],
+    "models": [
+        {
+            "model_name": "Qwen3-0.6B-GGUF",
+            "recipe": "llamacpp",
+            "checkpoints": { "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0" },
+            "labels": ["reasoning"],
+            "recipe_options": {},
+            "size": 0.38
+        },
+        {
+            "model_name": "Whisper-Tiny",
+            "recipe": "whispercpp",
+            "checkpoints": {
+                "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
+                "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+            },
+            "labels": ["transcription", "realtime-transcription"],
+            "recipe_options": {},
+            "size": 0.075
+        }
+    ],
+    "labels": [],
+    "recipe_options": {}
+}
 ```
 
 ### Streaming Response (stream=true)

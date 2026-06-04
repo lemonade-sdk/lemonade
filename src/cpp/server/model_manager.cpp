@@ -2743,24 +2743,43 @@ static std::string collection_component_drift(const ModelInfo& local, const json
     return out;
 }
 
+// Locate a collection manifest in a cached HF snapshot: any *.json file whose
+// content is an object with recipe == "collection.omni". Export flows name the
+// file <CollectionName>.json, but discovery is content-based so the filename is
+// not load-bearing. Returns an empty json when no manifest is cached.
+static json read_cached_collection_manifest(const fs::path& cache_dir) {
+    fs::path snap = active_hf_snapshot_path(cache_dir);
+    if (snap.empty()) return json();
+
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(snap, safe_dir_options, ec)) {
+        std::error_code file_ec;
+        if (!entry.is_regular_file(file_ec)) continue;
+        if (entry.path().extension() != ".json") continue;
+        json candidate;
+        try {
+            candidate = JsonUtils::load_from_file(path_to_utf8(entry.path()));
+        } catch (const std::exception&) {
+            continue;
+        }
+        if (candidate.is_object() &&
+            is_collection_recipe(JsonUtils::get_or_default<std::string>(candidate, "recipe", ""))) {
+            return candidate;
+        }
+    }
+    return json();
+}
+
+// Bare component name: collection files reference components by public name;
+// definitions may carry a `user.` prefix from the export transform.
+static std::string bare_component_name(const std::string& name) {
+    return is_user_model_name(name) ? strip_user_model_prefix(name) : name;
+}
+
 json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade) {
     fs::path cache_dir = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(repo_id);
 
-    auto read_cached = [&]() -> json {
-        fs::path snap = active_hf_snapshot_path(cache_dir);
-        if (snap.empty()) return json();
-        fs::path manifest_path = snap / "collection.json";
-        if (!safe_exists(manifest_path)) return json();
-        try {
-            return JsonUtils::load_from_file(path_to_utf8(manifest_path));
-        } catch (const std::exception& e) {
-            LOG(WARNING, "ModelManager") << "Could not parse cached collection.json for "
-                << repo_id << ": " << e.what() << std::endl;
-            return json();
-        }
-    };
-
-    json manifest = read_cached();
+    json manifest = read_cached_collection_manifest(cache_dir);
     bool have_cache = manifest.is_object() && manifest.contains("components");
 
     bool offline = false;
@@ -2775,14 +2794,14 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do
                 "' is not cached locally.");
         }
     } else if (!(do_not_upgrade && have_cache)) {
-        // Download collection.json (and the repo's other small files) into the HF
-        // cache. A bare repo id with no variant downloads all repository files.
+        // Download the collection repo (the manifest plus its other small files)
+        // into the HF cache. A bare repo id with no variant downloads all files.
         ModelInfo manifest_info;
         manifest_info.model_name = repo_id;
         manifest_info.checkpoints["main"] = repo_id;
         try {
             download_from_huggingface(manifest_info, nullptr);
-            manifest = read_cached();
+            manifest = read_cached_collection_manifest(cache_dir);
         } catch (const std::exception& e) {
             if (!have_cache) throw;
             LOG(WARNING, "ModelManager") << "Could not refresh collection manifest for "
@@ -2791,46 +2810,76 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do
     }
 
     if (!manifest.is_object() || !manifest.contains("components") ||
-        !manifest["components"].is_array() || manifest["components"].empty()) {
+        !manifest["components"].is_array() || manifest["components"].empty() ||
+        !manifest.contains("models") || !manifest["models"].is_array()) {
         throw std::runtime_error(
             "Collection manifest for '" + repo_id +
-            "' is missing or has no 'components' array.");
+            "' must contain a non-empty 'components' array and a 'models' array.");
     }
     return manifest;
+}
+
+std::vector<std::string> ModelManager::register_components(const json& component_names,
+                                                           const json& component_defs) {
+    auto def_name = [](const json& def) -> std::string {
+        if (!def.is_object()) return "";
+        for (const char* key : {"model_name", "id"}) {
+            if (def.contains(key) && def[key].is_string()) {
+                return bare_component_name(def[key].get<std::string>());
+            }
+        }
+        return "";
+    };
+
+    std::vector<std::string> components;
+    for (const auto& entry : component_names) {
+        if (!entry.is_string()) continue;
+        std::string name = bare_component_name(entry.get<std::string>());
+
+        // Find the inline definition matching this component, if any.
+        json def;
+        if (component_defs.is_array()) {
+            for (const auto& candidate : component_defs) {
+                if (def_name(candidate) == name) {
+                    def = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (model_exists(name)) {
+            // Local-wins: the shipped/registered definition is authoritative. Warn
+            // (do not overwrite) when the inline definition has drifted.
+            if (def.is_object()) {
+                ModelInfo local = get_model_info(name);
+                std::string drift = collection_component_drift(local, def);
+                if (!drift.empty()) {
+                    LOG(WARNING, "ModelManager") << "Collection component '" << name
+                        << "' differs from the local model definition; using the local "
+                        << "definition. Drift: " << drift << std::endl;
+                }
+            }
+            components.push_back(resolve_model_name(name));
+        } else if (def.is_object()) {
+            // Unknown component: register it from the inline definition so the
+            // collection file is self-contained. Persists to user_models.json.
+            std::string canonical = "user." + name;
+            LOG(INFO, "ModelManager") << "Registering collection component as user model: "
+                << canonical << std::endl;
+            register_user_model(canonical, def);
+            components.push_back(canonical);
+        } else {
+            LOG(WARNING, "ModelManager") << "Skipping unknown collection component with no "
+                << "inline definition: " << name << std::endl;
+        }
+    }
+    return components;
 }
 
 std::vector<std::string> ModelManager::resolve_collection_components_from_manifest(
         const std::string& repo_id, bool do_not_upgrade) {
     json manifest = fetch_collection_manifest(repo_id, do_not_upgrade);
-    std::vector<std::string> components;
-    for (const auto& comp : manifest["components"]) {
-        if (!comp.is_object() || !comp.contains("name") || !comp["name"].is_string()) {
-            LOG(WARNING, "ModelManager") << "Skipping malformed component in collection manifest: "
-                << repo_id << std::endl;
-            continue;
-        }
-        std::string name = comp["name"].get<std::string>();
-        if (model_exists(name)) {
-            // Local-wins: the shipped/registered definition is authoritative. Warn
-            // (do not overwrite) when the manifest's inline definition has drifted.
-            ModelInfo local = get_model_info(name);
-            std::string drift = collection_component_drift(local, comp);
-            if (!drift.empty()) {
-                LOG(WARNING, "ModelManager") << "Collection '" << repo_id << "' component '"
-                    << name << "' differs from the local model definition; using the local "
-                    << "definition. Drift: " << drift << std::endl;
-            }
-            components.push_back(resolve_model_name(name));
-        } else {
-            // Unknown component: register it as a user model so the collection is
-            // self-contained. register_user_model persists it to user_models.json.
-            LOG(INFO, "ModelManager") << "Registering collection component as user model: user."
-                << name << std::endl;
-            register_user_model("user." + name, comp);
-            components.push_back("user." + name);
-        }
-    }
-    return components;
+    return register_components(manifest["components"], manifest["models"]);
 }
 
 void ModelManager::populate_collection_components_from_cache(ModelInfo& info) {
@@ -2838,25 +2887,15 @@ void ModelManager::populate_collection_components_from_cache(ModelInfo& info) {
     if (repo_id.empty()) return;
 
     fs::path cache_dir = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(repo_id);
-    fs::path snap = active_hf_snapshot_path(cache_dir);
-    if (snap.empty()) return;
-    fs::path manifest_path = snap / "collection.json";
-    if (!safe_exists(manifest_path)) return;
-
-    json manifest;
-    try {
-        manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
-    } catch (const std::exception&) {
-        return;
-    }
+    json manifest = read_cached_collection_manifest(cache_dir);
     if (!manifest.is_object() || !manifest.contains("components") ||
         !manifest["components"].is_array()) {
         return;
     }
 
-    for (const auto& comp : manifest["components"]) {
-        if (!comp.is_object() || !comp.contains("name") || !comp["name"].is_string()) continue;
-        std::string name = comp["name"].get<std::string>();
+    for (const auto& entry : manifest["components"]) {
+        if (!entry.is_string()) continue;
+        std::string name = bare_component_name(entry.get<std::string>());
         // Compute the canonical cache name without registering or taking a lock
         // (build_cache already holds models_cache_mutex_). A built-in is keyed bare;
         // a component registered at pull time lives under user.<name>.
@@ -3032,12 +3071,29 @@ void ModelManager::download_model(const std::string& model_name,
         auto info = get_model_info(model_name);
         std::vector<std::string> components = info.components;
 
-        // HF-backed collections keep their full definition — the component list and
-        // each component's checkpoint/recipe/labels — on Hugging Face as
-        // collection.json. A non-empty checkpoint marks such a collection; fetch the
-        // manifest to learn its components. On an explicit pull (do_not_upgrade=false)
-        // always refresh so newly added components are picked up.
-        if (!repo_id.empty() && (components.empty() || !do_not_upgrade)) {
+        if (model_data.contains("models") && model_data["models"].is_array() &&
+            model_data.contains("components") && model_data["components"].is_array()) {
+            // Collection file import: the body carries each component's definition
+            // inline in `models` (the exported-collection format). Register unknown
+            // components from those definitions and canonicalize the list.
+            components = register_components(model_data["components"], model_data["models"]);
+
+            // The early registration above persisted the raw component names from
+            // the file; re-register with the canonical list so cache lookups
+            // (check_component_downloaded, update_model_in_cache) match after a
+            // rebuild. register_user_model drops the bulky `models` array.
+            if (is_user_model_name(model_name) && !components.empty()) {
+                json reg = model_data;
+                reg["components"] = components;
+                register_user_model(model_name, reg);
+            }
+        } else if (!repo_id.empty() && (components.empty() || !do_not_upgrade)) {
+            // HF-backed collections keep their full definition — the component list
+            // and each component's model object — on Hugging Face as an exported
+            // collection JSON. A non-empty checkpoint marks such a collection; fetch
+            // the manifest to learn its components. On an explicit pull
+            // (do_not_upgrade=false) always refresh so newly added components are
+            // picked up.
             components = resolve_collection_components_from_manifest(repo_id, do_not_upgrade);
         }
 
@@ -4582,6 +4638,10 @@ std::optional<std::string> ModelManager::validate_collection_request(
         model_data["components"].empty()) {
         return std::string("recipe='collection.omni' requires a non-empty 'components' array");
     }
+    // A collection file import carries the component definitions inline in a
+    // `models` array, so the components need not be registered yet — they get
+    // registered from those definitions during download_model.
+    bool has_inline_defs = model_data.contains("models") && model_data["models"].is_array();
     for (const auto& component : model_data["components"]) {
         if (!component.is_string()) {
             return std::string("components entries must be strings");
@@ -4590,7 +4650,7 @@ std::optional<std::string> ModelManager::validate_collection_request(
         if (component_name == model_name) {
             return "Collection cannot reference itself: " + component_name;
         }
-        if (!model_exists(component_name)) {
+        if (!has_inline_defs && !model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
         }

@@ -201,14 +201,23 @@ private:
     std::string get_recipe_options_file();
 
     // Collection manifests (recipe="collection.omni" with an HF-repo checkpoint):
-    // the full collection definition lives on Hugging Face as `collection.json`.
-    // fetch_collection_manifest downloads/refreshes it into the HF cache (honoring
-    // do_not_upgrade and offline mode) and returns the parsed manifest object.
+    // the full collection definition lives on Hugging Face as an exported
+    // collection JSON (conventionally <CollectionName>.json; discovered by
+    // content, not filename). fetch_collection_manifest downloads/refreshes it
+    // into the HF cache (honoring do_not_upgrade and offline mode) and returns
+    // the parsed manifest object.
     nlohmann::json fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade);
 
-    // Resolve an HF-backed collection's components at pull time: fetch the manifest,
-    // register any component not already in the registry as a `user.` model, and
-    // return the components as canonical cache names (built-in bare names or `user.X`).
+    // Resolve a collection's component list against the registry: known names
+    // keep the local definition (local-wins, drift logged); unknown names are
+    // registered as `user.` models from their inline definition in
+    // `component_defs` (the `models` array of a collection file/manifest).
+    // Returns the components as canonical cache names, preserving order.
+    std::vector<std::string> register_components(const nlohmann::json& component_names,
+                                                 const nlohmann::json& component_defs);
+
+    // Resolve an HF-backed collection's components at pull time: fetch the
+    // manifest, then register_components() against its components/models arrays.
     std::vector<std::string> resolve_collection_components_from_manifest(
         const std::string& repo_id, bool do_not_upgrade);
 

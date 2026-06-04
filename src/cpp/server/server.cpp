@@ -1495,6 +1495,22 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["image_defaults"] = img_def;
     }
 
+    // Collections (Omni) additionally embed each component's full model object,
+    // in component order, under "models". Components are leaf models, so the
+    // recursion terminates after one level.
+    if (is_collection_recipe(info.recipe)) {
+        nlohmann::json component_models = nlohmann::json::array();
+        for (const auto& component : info.components) {
+            if (!model_manager_->model_exists(component)) {
+                continue;
+            }
+            auto comp_info = model_manager_->get_model_info(component);
+            component_models.push_back(model_info_to_json(
+                model_manager_->get_public_model_name(component), comp_info));
+        }
+        model_json["models"] = component_models;
+    }
+
     return model_json;
 }
 
@@ -3062,12 +3078,18 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 bad_request(*err);
                 return;
             }
-            // Canonicalize components so downstream cache lookups
-            // (check_component_downloaded, update_model_in_cache) succeed
-            // even when the client passed a public alias (bare name) rather
-            // than the canonical `user.X` / `builtin.X` form.
-            for (auto& c : request_json["components"]) {
-                c = model_manager_->resolve_model_name(c.get<std::string>());
+            // A body carrying a `models` array is a collection file import: its
+            // components may not be registered yet (download_model registers them
+            // from the embedded definitions and canonicalizes the list itself).
+            // Only pre-canonicalize when the components must already exist.
+            if (!request_json.contains("models")) {
+                // Canonicalize components so downstream cache lookups
+                // (check_component_downloaded, update_model_in_cache) succeed
+                // even when the client passed a public alias (bare name) rather
+                // than the canonical `user.X` / `builtin.X` form.
+                for (auto& c : request_json["components"]) {
+                    c = model_manager_->resolve_model_name(c.get<std::string>());
+                }
             }
         }
 
