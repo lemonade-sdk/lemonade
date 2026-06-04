@@ -1068,6 +1068,8 @@ class EndpointTests(ServerTestBase):
         """
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
+        if platform.system() == "Linux" and platform.machine() == "aarch64":
+            self.skipTest("sd-cpp not supported on Linux ARM64")
 
         model_name = f"user.Pull-Merge-Regression-{uuid.uuid4().hex[:8]}"
         image_defaults = {
