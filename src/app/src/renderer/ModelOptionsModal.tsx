@@ -93,6 +93,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModelNameCopied, setIsModelNameCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -109,6 +110,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       modelNameCopyTimeoutIdRef.current = null;
     }
     setLoadError(null);
+    setExportError(null);
     setModelInfo(undefined);
     setModelName(model ?? "");
     setModelUrl("");
@@ -316,10 +318,12 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     // The shared helper fetches the live /models/{id} object and saves the
     // normalized, import-ready file (same shape the CLI export produces).
     event.preventDefault();
+    setExportError(null);
     try {
       await downloadModelExportFile(modelInfo?.id as string);
     } catch (error) {
       console.error('Failed to export model:', error);
+      setExportError(error instanceof Error ? error.message : 'Failed to export model.');
     }
   }
 
@@ -691,6 +695,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           </div>
         )}
 
+        {exportError && (
+          <div className="settings-export-error">{exportError}</div>
+        )}
         <div className="settings-footer">
           <button
             className="settings-reset-button"

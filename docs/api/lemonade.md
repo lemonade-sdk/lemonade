@@ -134,57 +134,14 @@ curl -X POST http://localhost:13305/v1/pull \
   }'
 ```
 
-**Collection Files: Export, Import, and Hugging Face**
+### Import an Exported Model File
 
-`lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
-[`/v1/models/{model_id}`](./openai.md#get-v1modelsmodel_id) object normalized into an import-ready
-`/v1/pull` body. The file carries `model_name`, `recipe`, `components`, and a `models` array embedding
-each component's definition. Exported files never contain the user-specific runtime fields
-`suggested`, `created`, or `downloaded` — the server regenerates those on import (`suggested` is set
-to `true` for registered models; `downloaded` is computed from local files).
-
-The same file works, verbatim, in three places:
-
-- `POST /v1/pull` with the file contents as the request body.
-- `lemonade import <CollectionName>.json` on the CLI.
-- Uploaded to a Hugging Face model repo as `<CollectionName>.json`. `lemonade pull <org>/<repo>`
-  fetches the file (discovered by content: the repo's `*.json` whose `recipe` is
-  `"collection.omni"`) and registers and downloads everything in it. The built-in `LMX-Omni-*`
-  collections are distributed this way.
-
-Example collection file:
-
-```json
-{
-    "model_name": "user.MyKit",
-    "recipe": "collection.omni",
-    "checkpoints": { "main": "" },
-    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny"],
-    "models": [
-        {
-            "model_name": "Qwen3-0.6B-GGUF",
-            "recipe": "llamacpp",
-            "checkpoints": { "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0" },
-            "labels": ["reasoning"],
-            "recipe_options": {},
-            "size": 0.38
-        },
-        {
-            "model_name": "Whisper-Tiny",
-            "recipe": "whispercpp",
-            "checkpoints": {
-                "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
-                "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
-            },
-            "labels": ["transcription", "realtime-transcription"],
-            "recipe_options": {},
-            "size": 0.075
-        }
-    ],
-    "labels": [],
-    "recipe_options": {}
-}
-```
+Files written by `lemonade export` (and the desktop app's Export button) are import-ready
+`/v1/pull` request bodies — POST the file contents verbatim to register and install the model.
+This works for regular models and collections alike; exported collection files additionally
+carry `components` plus a `models` array embedding each component's definition (see the
+`models` parameter above). For the file format and the export/import/Hugging Face workflows,
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ### Streaming Response (stream=true)
 

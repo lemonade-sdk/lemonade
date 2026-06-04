@@ -197,6 +197,11 @@ private:
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
+    // Remove a user model entry from user_models.json (no file deletion).
+    // Used to roll back a collection registered earlier in the same call when
+    // its component resolution fails.
+    void unregister_user_model(const std::string& model_name);
+
     std::string get_user_models_file();
     std::string get_recipe_options_file();
 
@@ -224,7 +229,8 @@ private:
     // Populate a collection's components from a manifest already cached on disk
     // (offline, no registration). Used by build_cache so a pulled collection keeps
     // its components across restarts. No-op if the manifest is not cached.
-    void populate_collection_components_from_cache(ModelInfo& info);
+    // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
+    void populate_collection_components_from_cache_locked(ModelInfo& info);
 
     // Cache management
     void build_cache();

@@ -1107,7 +1107,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 
 ### Response format
 
-Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](./lemonade.md#post-v1pull).
+Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ```json
 {
