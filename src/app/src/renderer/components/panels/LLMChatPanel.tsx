@@ -123,8 +123,6 @@ function getImageToolRequestKey(toolCall: any): string {
   return JSON.stringify({
     prompt: normalize(args.prompt),
     size: normalize(args.size),
-    width: normalize(args.width),
-    height: normalize(args.height),
     steps: normalize(args.steps),
     cfg_scale: normalize(args.cfg_scale),
     seed: normalize(args.seed),

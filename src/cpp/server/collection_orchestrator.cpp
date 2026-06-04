@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <ctime>
 #include <map>
 #include <optional>
@@ -59,7 +60,7 @@ const json& tool_definitions() {
 
 // Fixed image size for collection-mode image tools, read from toolDefinitions.json
 // (the single source of truth shared with the desktop app's collectionImageConfig.ts;
-// both sides target SDServer::resolve_size). 2:1, 64-aligned. Falls back to a sane
+// both sides target SDServer::resolve_size). 2:1 and already 8-aligned. Falls back to a sane
 // default if the field is missing.
 const std::string& image_size() {
     static const std::string size = [] {
@@ -73,7 +74,7 @@ const std::string& image_size() {
 }
 
 constexpr int MAX_IMAGE_DIMENSION = 2048;
-constexpr int IMAGE_DIMENSION_STEP = 64;
+constexpr int IMAGE_DIMENSION_STEP = 8;
 
 std::string trim_copy(std::string s) {
     auto not_space = [](unsigned char c) { return !std::isspace(c); };
@@ -129,14 +130,19 @@ std::optional<double> coerce_number(const json& value) {
     return std::nullopt;
 }
 
-bool is_valid_image_dimension(int value) {
-    return value >= IMAGE_DIMENSION_STEP && value <= MAX_IMAGE_DIMENSION &&
-           value % IMAGE_DIMENSION_STEP == 0;
+std::optional<int> normalize_image_dimension(int value) {
+    if (value <= 0) return std::nullopt;
+    int rounded = static_cast<int>(std::lround(
+        static_cast<double>(value) / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP);
+    rounded = std::max(IMAGE_DIMENSION_STEP, std::min(MAX_IMAGE_DIMENSION, rounded));
+    return rounded;
 }
 
 std::string format_image_size(int width, int height) {
-    if (is_valid_image_dimension(width) && is_valid_image_dimension(height)) {
-        return std::to_string(width) + "x" + std::to_string(height);
+    const auto rounded_width = normalize_image_dimension(width);
+    const auto rounded_height = normalize_image_dimension(height);
+    if (rounded_width && rounded_height) {
+        return std::to_string(*rounded_width) + "x" + std::to_string(*rounded_height);
     }
     return "";
 }
@@ -158,17 +164,18 @@ std::string resolve_image_size(const json& args) {
         const std::string explicit_size = parse_size_from_text(args["size"].get<std::string>());
         if (!explicit_size.empty()) return explicit_size;
     }
-    if (args.contains("width") && args.contains("height")) {
-        const auto width = coerce_int(args["width"]);
-        const auto height = coerce_int(args["height"]);
-        if (width && height) {
-            const std::string wh = format_image_size(*width, *height);
-            if (!wh.empty()) return wh;
-        }
-    }
-    // Keep prompt text as content only. Phrases like "100x100 monitor" or
-    // "square icon" should not change the output canvas.
+    // Be conservative: only the explicit size tool argument can change the
+    // output canvas. Prompt text is always image content, so dimensions that
+    // describe an object or visual detail inside the scene cannot hijack the
+    // canvas size.
     return image_size();
+}
+
+std::string resolve_explicit_image_size(const json& args) {
+    if (args.contains("size") && args["size"].is_string()) {
+        return parse_size_from_text(args["size"].get<std::string>());
+    }
+    return "";
 }
 
 void copy_optional_image_args(const json& args, json& req) {
@@ -196,8 +203,8 @@ void copy_optional_image_args(const json& args, json& req) {
 
 std::string image_request_key(const json& args) {
     json key = json::object();
-    for (const std::string& field : {"prompt", "size", "width", "height", "steps",
-                                     "cfg_scale", "seed", "sample_method", "flow_shift"}) {
+    for (const std::string& field : {"prompt", "size", "steps", "cfg_scale",
+                                     "seed", "sample_method", "flow_shift"}) {
         key[field] = normalize_arg_string(args, field);
     }
     return key.dump();
@@ -459,7 +466,6 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
 
     if (tool_name == "generate_image" || tool_name == "edit_image") {
         const std::string prompt = args.value("prompt", "");
-        const std::string requested_size = resolve_image_size(args);
 
         if (tool_name == "edit_image") {
             // Source: most recent generated image, else the seeded history image.
@@ -480,8 +486,9 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
             }
 
             json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
-                        {"n", 1}, {"size", requested_size}, {"image_data", img_b64},
-                        {"image_filename", "image.png"}};
+                        {"n", 1}, {"image_data", img_b64}, {"image_filename", "image.png"}};
+            const std::string edit_size = resolve_explicit_image_size(args);
+            if (!edit_size.empty()) req["size"] = edit_size;
             copy_optional_image_args(args, req);
             LOG(INFO, "Collection") << "image_edits: editing source image (" << img_b64.size()
                                     << " b64 chars)" << std::endl;
@@ -505,6 +512,7 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
             return true;
         }
 
+        const std::string requested_size = resolve_image_size(args);
         json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
                     {"n", 1}, {"size", requested_size}};
         copy_optional_image_args(args, req);

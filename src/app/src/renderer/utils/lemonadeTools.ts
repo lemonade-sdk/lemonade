@@ -9,7 +9,7 @@ import toolDefinitions from './toolDefinitions.json';
 // a size. Keep it shared with collection image hints so defaults stay in sync.
 const DEFAULT_IMAGE_SIZE = COLLECTION_IMAGE_SIZE;
 const MAX_IMAGE_DIMENSION = 2048;
-const IMAGE_DIMENSION_STEP = 64;
+const IMAGE_DIMENSION_STEP = 8;
 
 // Types
 export interface LemonadeToolDef {
@@ -175,7 +175,6 @@ async function executeImageTool(
   context: ToolExecutionContext,
   signal?: AbortSignal,
 ): Promise<ToolExecutionResult> {
-  const imageSize = resolveImageSize(args);
   const isEdit = effectiveName === 'edit_image';
 
   if (isEdit) {
@@ -185,7 +184,8 @@ async function executeImageTool(
     formData.append('prompt', args.prompt || '');
     formData.append('response_format', 'b64_json');
     formData.append('n', '1');
-    formData.append('size', imageSize);
+    const imageSize = resolveExplicitImageSize(args);
+    if (imageSize) formData.append('size', imageSize);
     appendOptionalImageFormArgs(args, formData);
 
     // Attach the most recent image as the source file
@@ -212,6 +212,8 @@ async function executeImageTool(
     }
     throw new Error(data.error?.message || 'Image edit failed');
   }
+
+  const imageSize = resolveImageSize(args);
 
   // /images/generations accepts JSON
   const body: Record<string, any> = {
@@ -241,16 +243,14 @@ function resolveImageSize(args: Record<string, any>): string {
   const explicitSize = parseSizeFromText(typeof args.size === 'string' ? args.size : '');
   if (explicitSize) return explicitSize;
 
-  const width = coerceInteger(args.width);
-  const height = coerceInteger(args.height);
-  const widthHeightSize = width !== null && height !== null ? formatImageSize(width, height) : '';
-  if (widthHeightSize) return widthHeightSize;
-
-  // Be conservative: do not infer canvas size from prompt text. Natural-language
-  // phrases such as "portrait", "square icon", or "100x100 monitor" often
-  // describe image content rather than the requested output canvas. If the
-  // planner does not pass explicit size/width/height args, keep the OOB default.
+  // Be conservative: only the explicit size tool argument can change the output
+  // canvas. Prompt text is always image content, so dimensions that describe an
+  // object or visual detail inside the scene cannot hijack the canvas size.
   return DEFAULT_IMAGE_SIZE;
+}
+
+function resolveExplicitImageSize(args: Record<string, any>): string {
+  return parseSizeFromText(typeof args.size === 'string' ? args.size : '');
 }
 
 function parseSizeFromText(text: string): string {
@@ -260,27 +260,22 @@ function parseSizeFromText(text: string): string {
     return formatImageSize(Number(match[1]), Number(match[2]));
   }
 
-  const widthMatch = text.match(/\bwidth\s*[:=]?\s*(\d{2,4})\b/i);
-  const heightMatch = text.match(/\bheight\s*[:=]?\s*(\d{2,4})\b/i);
-  if (widthMatch && heightMatch) {
-    return formatImageSize(Number(widthMatch[1]), Number(heightMatch[1]));
-  }
-
   return '';
 }
 
 function formatImageSize(width: number, height: number): string {
-  if (isValidImageDimension(width) && isValidImageDimension(height)) {
-    return `${width}x${height}`;
+  const roundedWidth = normalizeImageDimension(width);
+  const roundedHeight = normalizeImageDimension(height);
+  if (roundedWidth !== null && roundedHeight !== null) {
+    return `${roundedWidth}x${roundedHeight}`;
   }
   return '';
 }
 
-function isValidImageDimension(value: number): boolean {
-  return Number.isInteger(value)
-    && value >= IMAGE_DIMENSION_STEP
-    && value <= MAX_IMAGE_DIMENSION
-    && value % IMAGE_DIMENSION_STEP === 0;
+function normalizeImageDimension(value: number): number | null {
+  if (!Number.isInteger(value) || value <= 0) return null;
+  const rounded = Math.round(value / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP;
+  return Math.min(MAX_IMAGE_DIMENSION, Math.max(IMAGE_DIMENSION_STEP, rounded));
 }
 
 function coerceInteger(value: any): number | null {
