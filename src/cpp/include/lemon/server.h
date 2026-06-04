@@ -226,6 +226,7 @@ private:
     bool running_;
     std::atomic<bool> shutdown_requested_{false};
     std::atomic<bool> rebind_requested_{false};
+    std::atomic<bool> metrics_access_logged_{false};
 
     std::string api_key_;
     std::string admin_api_key_;

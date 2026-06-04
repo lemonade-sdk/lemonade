@@ -960,10 +960,21 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 void Server::setup_http_logger(httplib::Server &web_server) {
     // Add request logging for ALL requests (except health checks and stats endpoints)
     web_server.set_logger([this](const httplib::Request& req, const httplib::Response& res) {
+        if (req.path == "/metrics") {
+            if (res.status == 200) {
+                bool expected = false;
+                if (metrics_access_logged_.compare_exchange_strong(expected, true)) {
+                    LOG(INFO, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+                }
+            } else {
+                LOG(WARNING, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+            }
+            return;
+        }
+
         // Skip logging health checks and stats endpoints to reduce log noise
         if (req.path == "/api/v0/health" || req.path == "/api/v1/health" ||
             req.path == "/v0/health" || req.path == "/v1/health" || req.path == "/live" ||
-            req.path == "/metrics" ||
             is_quiet_polling_path(req.path)) {
             return;
         }
