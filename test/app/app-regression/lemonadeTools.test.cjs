@@ -42,28 +42,32 @@ const tests = [
     },
   },
   {
-    name: 'image tools keep default size optional for token-efficient tool calls',
+    name: 'image tools keep default size optional and expose only one canvas-size argument',
     run() {
       const definitions = readToolDefinitions();
       const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
       assert.deepEqual(byName.generate_image.function.parameters.required, ['prompt']);
       assert.deepEqual(byName.edit_image.function.parameters.required, ['prompt']);
+
       const generateProps = byName.generate_image.function.parameters.properties;
       const editProps = byName.edit_image.function.parameters.properties;
-      assertIncludes(
-        generateProps.size.description,
-        'Omit by default to use {image_size}',
-        'The planner should not have to emit a default size argument for every image request.',
-      );
-      assert.ok(!('aspect_ratio' in generateProps), 'Aspect ratio should not be an extra planner schema field.');
-      assert.ok(!('orientation' in generateProps), 'Orientation should not be an extra planner schema field.');
-      assert.ok(!('aspect_ratio' in editProps), 'Edit schema should stay as compact as generate schema.');
-      assert.ok(!('orientation' in editProps), 'Edit schema should not duplicate orientation aliases.');
+
       for (const props of [generateProps, editProps]) {
-        assert.equal(props.width.maximum, 2048, 'Width schema should match the executor dimension cap.');
-        assert.equal(props.height.maximum, 2048, 'Height schema should match the executor dimension cap.');
-        assertIncludes(props.size.description, 'output canvas size', 'Size should be framed as output canvas, not content detail.');
-        assertIncludes(props.size.description, 'multiples of 64', 'Schema description should match the executor alignment guard.');
+        assertIncludes(
+          props.size.description,
+          'Omit by default',
+          'The planner should not have to emit a default size argument for every image request.',
+        );
+        assertIncludes(props.size.description, 'output', 'Size should be framed as output canvas, not content detail.');
+        assertIncludes(
+          props.size.description,
+          'nearest multiple of 8',
+          'Schema description should match the executor rounding behavior.',
+        );
+        assert.ok(!('width' in props), 'Canvas width should not duplicate the size string argument.');
+        assert.ok(!('height' in props), 'Canvas height should not duplicate the size string argument.');
+        assert.ok(!('aspect_ratio' in props), 'Aspect ratio should not be an extra planner schema field.');
+        assert.ok(!('orientation' in props), 'Orientation should not be an extra planner schema field.');
       }
     },
   },
@@ -72,12 +76,12 @@ const tests = [
     run() {
       const source = normalizeWhitespace(readSource(LEMONADE_TOOLS));
       assert.ok(
-        !source.includes("parseSizeFromText(typeof args.prompt"),
+        !source.includes('parseSizeFromText(typeof args.prompt'),
         'Prompt text like "100x100 pixel-art grid" should not override the image canvas size.',
       );
       assertIncludes(
         source,
-        'do not infer canvas size from prompt text',
+        'Prompt text is always image content',
         'The resolver should document why prompt text is not parsed as output dimensions.',
       );
       assert.ok(
@@ -86,8 +90,13 @@ const tests = [
       );
       assertIncludes(
         source,
-        'value % IMAGE_DIMENSION_STEP === 0',
-        'Explicit dimensions should be 64-aligned so 100x100 falls back to the default.',
+        'const IMAGE_DIMENSION_STEP = 8',
+        'Explicit dimensions should round to model-supported 8-pixel alignment.',
+      );
+      assertIncludes(
+        source,
+        'Math.round(value / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP',
+        'Explicit dimensions should round to the nearest 8-pixel multiple rather than falling back unexpectedly.',
       );
     },
   },
@@ -171,10 +180,9 @@ const tests = [
         'use edit_image rather than generate_image',
         'Prompt guidance should tell the planner when to choose edit_image.',
       );
-      assertIncludes(
-        byName.generate_image.prompt_guidance,
-        'Common safe canvas sizes',
-        'Prompt guidance should give the planner resolution/aspect choices without executor-side regex rerouting.',
+      assert.ok(
+        !('prompt_guidance' in byName.generate_image),
+        'Generate-image canvas guidance belongs in the size parameter description, not duplicated in prompt_guidance.',
       );
     },
   },
@@ -211,6 +219,22 @@ const tests = [
         source,
         'substituteImageSize(def.prompt_guidance)',
         'Tool prompt guidance should replace {image_size} at materialization time.',
+      );
+    },
+  },
+  {
+    name: 'transcription instructions are not duplicated in prompt guidance',
+    run() {
+      const definitions = readToolDefinitions();
+      const byName = Object.fromEntries(definitions.tools.map((tool) => [tool.function.name, tool]));
+      assert.ok(
+        !('prompt_guidance' in byName.transcribe_audio),
+        'Transcription guidance should live in the tool description rather than duplicate prompt_guidance.',
+      );
+      assertIncludes(
+        byName.transcribe_audio.function.description,
+        'The audio data is automatically provided by the system, just call this tool with the language parameter.',
+        'The simplified transcription description should keep the operational instruction.',
       );
     },
   },
