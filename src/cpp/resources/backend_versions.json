@@ -16,11 +16,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-616-cde20d5",
-    "rocm-stable": "master-616-cde20d5",
-    "vulkan": "master-616-cde20d5",
+    "cpu": "master-672-1f9ee88",
+    "rocm-stable": "master-672-1f9ee88",
+    "vulkan": "master-672-1f9ee88",
     "cuda": "master-672-b638fe9",
-    "metal": "master-655-29ab511"
+    "metal": "master-672-1f9ee88"
   },
   "therock": {
     "version": "7.13.0",
