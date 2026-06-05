@@ -854,8 +854,12 @@ jobs:
       - name: Set environment variables
         shell: PowerShell
         run: |
+          # Persistent HF cache outside the workspace so models survive across
+          # jobs — the checkout clean wipes untracked workspace files (#2103)
+          $hfHome = Join-Path $Env:USERPROFILE ".cache\lemonade-ci\huggingface"
+          New-Item -ItemType Directory -Force -Path $hfHome | Out-Null
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
           $cwd = (Get-Item .\).FullName
-          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
       - name: Install and Verify Lemonade Server
@@ -966,7 +970,12 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
       - name: Set HF_HOME environment variable
-        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+        run: |
+          # Persistent HF cache outside the workspace so models survive across
+          # jobs — the checkout clean wipes untracked workspace files (#2103)
+          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
