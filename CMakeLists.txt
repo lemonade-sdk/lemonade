@@ -574,6 +574,13 @@ include_directories(
 # ============================================================
 # Server core sources (everything except entry points)
 # ============================================================
+option(LEMONADE_FLM "Build in-process FLM backend sources" ON)
+set(LEMONADE_FLM ON CACHE BOOL "Build in-process FLM backend sources" FORCE)
+
+if(APPLE AND LEMONADE_FLM)
+    message(FATAL_ERROR "LEMONADE_FLM is only supported on Windows and Linux")
+endif()
+
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
@@ -598,43 +605,6 @@ set(SOURCES_CORE
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
-    # FLM inference engine sources (in-process NPU backend)
-    src/cpp/server/backends/flm/flm_engine.cpp
-    src/cpp/server/backends/flm/common/audio/audio_reader.cpp
-    src/cpp/server/backends/flm/common/audio_process_utils/audioproc.cpp
-    src/cpp/server/backends/flm/common/audio_process_utils/audioprocAVX512.cpp
-    src/cpp/server/backends/flm/common/image/image_reader.cpp
-    src/cpp/server/backends/flm/common/image_process_utils/imageproc.cpp
-    src/cpp/server/backends/flm/common/image_process_utils/imageprocAVX512.cpp
-    src/cpp/server/backends/flm/common/modules/sampler.cpp
-    src/cpp/server/backends/flm/common/tokenizer/tokenizer.cpp
-    src/cpp/server/backends/flm/common/utils.cpp
-    src/cpp/server/backends/flm/common/whisper/modeling_whisper.cpp
-    src/cpp/server/backends/flm/common/whisper/modeling_whisper_audio.cpp
-    # FLM AutoModel implementations (model-specific NPU kernels)
-    src/cpp/server/backends/flm/common/AutoModel/automodel.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_llama3.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl_image.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_text.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_image.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_audio.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_image.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl_image.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl_image.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_lfm2.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_phi4.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_gpt_oss.cpp
-    src/cpp/server/backends/flm/common/AutoModel/modeling_nanbeige.cpp
-    # FLM embedding model (optional, for embedding endpoints)
-    src/cpp/server/backends/flm/common/AutoEmbeddingModel/auto_embedding_model.cpp
-    src/cpp/server/backends/flm/common/AutoEmbeddingModel/modeling_gemma_embedding.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
@@ -650,6 +620,48 @@ set(SOURCES_CORE
     src/cpp/server/websocket_server.cpp
 )
 
+if(LEMONADE_FLM)
+    list(APPEND SOURCES_CORE
+        # FLM inference engine sources (in-process NPU backend)
+        src/cpp/server/backends/flm/flm_engine.cpp
+        src/cpp/server/backends/flm/common/audio/audio_reader.cpp
+        src/cpp/server/backends/flm/common/audio_process_utils/audioproc.cpp
+        src/cpp/server/backends/flm/common/audio_process_utils/audioprocAVX512.cpp
+        src/cpp/server/backends/flm/common/image/image_reader.cpp
+        src/cpp/server/backends/flm/common/image_process_utils/imageproc.cpp
+        src/cpp/server/backends/flm/common/image_process_utils/imageprocAVX512.cpp
+        src/cpp/server/backends/flm/common/modules/sampler.cpp
+        src/cpp/server/backends/flm/common/tokenizer/tokenizer.cpp
+        src/cpp/server/backends/flm/common/utils.cpp
+        src/cpp/server/backends/flm/common/whisper/modeling_whisper.cpp
+        src/cpp/server/backends/flm/common/whisper/modeling_whisper_audio.cpp
+        # FLM AutoModel implementations (model-specific NPU kernels)
+        src/cpp/server/backends/flm/common/AutoModel/automodel.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_llama3.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl_image.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_text.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_image.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_audio.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_image.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl_image.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl_image.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_lfm2.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_phi4.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_gpt_oss.cpp
+        src/cpp/server/backends/flm/common/AutoModel/modeling_nanbeige.cpp
+        # FLM embedding model (optional, for embedding endpoints)
+        src/cpp/server/backends/flm/common/AutoEmbeddingModel/auto_embedding_model.cpp
+        src/cpp/server/backends/flm/common/AutoEmbeddingModel/modeling_gemma_embedding.cpp
+    )
+endif()
+
 # Add platform-specific source files to core
 if(APPLE)
     list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
@@ -664,8 +676,13 @@ add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 # ============================================================
 # FLM (FastFlowLM) inference engine — in-process NPU backend
 # ============================================================
+if(LEMONADE_FLM)
+target_compile_definitions(lemonade-server-core PRIVATE LEMONADE_FLM=1)
+
 # Include paths for FLM source files (mirrors FLM's original layout)
-target_include_directories(lemonade-server-core PRIVATE
+# Use AFTER so the main project's nlohmann/json (v3.11.3) takes precedence
+# over the copy bundled in FLM's include tree (v3.12.0).
+target_include_directories(lemonade-server-core AFTER PRIVATE
   src/cpp/server/backends/flm/include
   src/cpp/server/backends/flm/common
   src/cpp/server/backends/flm/src
@@ -790,9 +807,12 @@ endif()
 # Link FLM shared libraries (pre-built .so files)
 set(FLM_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/lib")
 file(GLOB FLM_LIBS "${FLM_LIB_DIR}/*.so")
+set(AIEBU_LIB "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/lib/libaiebu.a")
+if(EXISTS "${AIEBU_LIB}")
+  list(APPEND FLM_LIBS "${AIEBU_LIB}")
+endif()
 target_link_libraries(lemonade-server-core PRIVATE
   ${FLM_LIBS}
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/lib/libaiebu.a
   # XRT libraries (needed by FLM shared libs)
   xrt_coreutil
   xrt_core
@@ -804,9 +824,10 @@ target_link_libraries(lemonade-server-core PRIVATE
   swresample
   avutil
   # FFTW (needed by FLM whisper)
-  /usr/lib/x86_64-linux-gnu/libfftw3f.so.3
+  fftw3f
 )
 message(STATUS "FLM shared libraries: ${FLM_LIBS}")
+endif()
 
 # ============================================================
 # lemond executable

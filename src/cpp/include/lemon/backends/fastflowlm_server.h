@@ -2,7 +2,17 @@
 
 #include "../wrapped_server.h"
 #include "backend_utils.h"
+#ifdef LEMONADE_FLM
 #include "flm_engine.h"
+#else
+#include <functional>
+namespace lemonade::backends {
+struct FlmInferenceResult {};
+struct FlmModelConfig {};
+class FlmEngine {};
+using FlmStreamCallback = std::function<void(const std::string& chunk, bool is_final)>;
+}
+#endif
 #include <string>
 
 namespace lemon {
@@ -23,11 +33,7 @@ public:
         // recipe
             "flm",
         // executable
-    #ifdef _WIN32
-            "flm.exe"
-    #else
-            "flm"
-    #endif
+            ""
         , get_install_params
     );
 
@@ -68,9 +74,6 @@ public:
                                    long timeout_seconds = 0) override;
 
 private:
-    // Get the path to the flm executable for model pulling
-    std::string get_flm_path();
-
     // Build an OpenAI-style chat completion response from FlmEngine result
     json build_chat_response(const std::string& model,
                              const FlmInferenceResult& result,
