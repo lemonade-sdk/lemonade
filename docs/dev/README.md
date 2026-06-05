@@ -14,13 +14,17 @@ You can also reference the [app](./app.md) and [web-ui](./web-ui.md) guides to l
 
 Understand Lemonade's mission and design tenets before contributing by reading the [philosophy](./philosophy.md).
 
+### Roadmap
+
+Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md), and most substantial contributions should be within the scope of one of these groups.
+
 ### Contributing
 
 The Lemonade project welcomes contributions! Learn about the project's mission, maintainers, and contribution process [here](./contribute.md).
 
-### Building on OmniRouter
+### Lemonade Omni Models
 
-Lemonade has a unique capability to group LLM, image, and speech models together to present a unified omni-modal "model" to end-users. Learn more [here](./omni-router.md).
+Lemonade has a unique capability to group LLM, image, and speech models together to present a unified omni-modal "model" to end-users. These one-click bundles are called Lemonade Omni Models, and they're routed via an internal mechanism called OmniRouter. Learn more [here](./lemonade-omni.md).
 
 ### CI System
 

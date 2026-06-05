@@ -5216,6 +5216,15 @@ body.install-options {
   display: block;
 }
 
+.gs-fedora-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0.75rem 0 0.35rem;
+}
+
 /* Install download button */
 .gs-download-link {
   display: inline-flex;

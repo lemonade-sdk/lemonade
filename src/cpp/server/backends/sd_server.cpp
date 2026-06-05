@@ -14,6 +14,8 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <random>
+#include <sstream>
 #include <set>
 #include <random>
 #include <lemon/utils/aixlog.hpp>
@@ -80,7 +82,7 @@ int generate_random_seed() {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "lemonade-sdk/stable-diffusion.cpp";
+    params.repo = "leejet/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform version for URL (master-NNN-HASH -> master-HASH)
@@ -96,7 +98,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
-        params.filename = "sd-" + short_version + "-bin-Darwin-arm64-metal.zip";
+        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.7-arm64.zip";
 #endif
     } else if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
@@ -114,7 +116,15 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif
-    } else {
+        } else if (resolved_backend == "vulkan") {
+    #ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
+    #elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip";
+    #else
+        throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
+    #endif
+        } else {
         // CPU build (default)
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
@@ -214,6 +224,13 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
+    if (resolved_backend == "vulkan") {
+        LOG(INFO, "SDServer")
+            << "Applying Vulkan SD workaround: --vae-tiling --diffusion-fa"
+            << std::endl;
+        args.push_back("--vae-tiling");
+        args.push_back("--diffusion-fa");
+    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -579,17 +596,47 @@ std::string SDServer::upscale_via_cli(
 
     std::string raw = JsonUtils::base64_decode(b64_image);
 
-    auto unique_id = std::to_string(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::path temp_dir = fs::temp_directory_path() / "lemonade_upscale";
-    fs::create_directories(temp_dir);
-    fs::path input_path = temp_dir / ("input_" + unique_id + ".png");
-    fs::path output_path = temp_dir / ("output_" + unique_id + ".png");
+    fs::path runtime_base = path_from_utf8(get_runtime_dir());
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    fs::path temp_dir;
+    std::error_code ec;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "sd-upscale-" << nonce << "-" << std::hex << dis(rd);
+        fs::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (fs::create_directory(candidate, ec)) {
+            temp_dir = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir.empty()) {
+        LOG(ERROR, "SDServer") << "Failed to create temporary directory for upscale" << std::endl;
+        return "";
+    }
+
+    fs::path input_path = temp_dir / "input.png";
+    fs::path output_path = temp_dir / "output.png";
 
     struct TempFileGuard {
         fs::path path;
-        ~TempFileGuard() { std::error_code ec; fs::remove(path, ec); }
+        bool recursive = false;
+        ~TempFileGuard() {
+            std::error_code ec;
+            if (recursive) {
+                fs::remove_all(path, ec);
+            } else {
+                fs::remove(path, ec);
+            }
+        }
     };
+    TempFileGuard dir_guard{temp_dir, true};
     TempFileGuard input_guard{input_path};
     TempFileGuard output_guard{output_path};
 

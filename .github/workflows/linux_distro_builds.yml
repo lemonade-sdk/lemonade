@@ -4,7 +4,20 @@ on:
   push:
     branches: ["main"]
   pull_request:
-  merge_group:
+    paths:
+      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "src/cpp/**"
+      - "setup.sh"
+      - "test/server_cli2.py"
+      - "test/server_endpoints.py"
+      - "test/requirements.txt"
+      - "test/utils/**"
+      - ".github/workflows/linux_distro_builds.yml"
+      - ".github/actions/capture-server-logs/**"
+      - "!**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -133,7 +146,11 @@ jobs:
           LEMONADE_CI_MODE: "True"
         run: |
           echo "Starting lemond in background..."
-          ./build/lemond --port 13305 > /tmp/lemonade-server.log 2>&1 &
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond --port 13305 > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
 
           echo "Waiting for server to be ready..."
           for i in $(seq 1 30); do
@@ -144,7 +161,7 @@ jobs:
             sleep 2
           done
           echo "ERROR: Server did not start"
-          cat /tmp/lemonade-server.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/lemonade-server.log" 2>/dev/null || true
           exit 1
 
       - name: Run CLI tests
@@ -155,10 +172,10 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade"
+          CLI_BINARY="$(pwd)/build/lemonade"
 
           echo "Running CLI tests..."
-          python test/server_cli.py --server-binary "$SERVER_BINARY"
+          python test/server_cli2.py --cli-binary "$CLI_BINARY"
 
           echo "CLI tests PASSED!"
 
@@ -170,10 +187,10 @@ jobs:
           set -e
 
           . .venv/bin/activate
-          SERVER_BINARY="$(pwd)/build/lemonade"
+          CLI_BINARY="$(pwd)/build/lemonade"
 
           echo "Running endpoint tests..."
-          python test/server_endpoints.py --server-binary "$SERVER_BINARY"
+          python test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
           echo "Endpoint tests PASSED!"
 

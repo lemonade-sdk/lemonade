@@ -2,7 +2,9 @@
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
+#include "lemon_cli/bench.h"
 #include <lemon_cli/agent_config_file.h>
+#include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
@@ -44,6 +46,7 @@ static const std::vector<std::string> VALID_LABELS = {
     "coding",
     "embeddings",
     "hot",
+    "mtp",
     "reasoning",
     "reranking",
     "tool-calling",
@@ -142,6 +145,7 @@ struct CliConfig {
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
     std::vector<std::string> labels;
+    std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
     std::string backend_spec;  // Format: "recipe:backend"
@@ -159,6 +163,9 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+
+    // Bench command options
+    lemon_cli::BenchCliOptions bench;
 };
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
@@ -274,19 +281,34 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
+    if (!config.components.empty()) {
+        model_data["components"] = config.components;
+    }
+
     if (!config.labels.empty()) {
         model_data["labels"] = config.labels;
     }
 
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static bool has_manual_pull_options(const CliConfig& config) {
-    return !config.checkpoints.empty() || !config.recipe.empty() || !config.labels.empty();
+    return !config.checkpoints.empty() || !config.recipe.empty() ||
+           !config.labels.empty() || !config.components.empty();
 }
 
 static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     if (has_manual_pull_options(config)) {
+        if (lemon::is_collection_recipe(config.recipe)) {
+            if (config.components.empty()) {
+                std::cerr << "Error: omni pull requires --components MODEL [MODEL ...]."
+                          << std::endl;
+                std::cerr << "       See 'lemonade pull --help'." << std::endl;
+                return 1;
+            }
+            return handle_manual_pull_command(client, config);
+        }
         if (config.checkpoints.empty()) {
             std::cerr << "Error: manual pull requires at least one --checkpoint TYPE CHECKPOINT."
                       << std::endl;
@@ -313,7 +335,8 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
 
     nlohmann::json model_data;
     model_data["model_name"] = config.model;
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -1044,7 +1067,7 @@ int main(int argc, char* argv[]) {
     config_set_cmd->fallthrough(false);
 
     // Model commands
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
@@ -1076,7 +1099,7 @@ int main(int argc, char* argv[]) {
         ->type_name("TYPE CHECKPOINT")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->add_option("--recipe", config.recipe,
-        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp)")
+        "Recipe for the custom user.* model (e.g., llamacpp, flm, sd-cpp, whispercpp, collection.omni)")
         ->group("Manual Configuration Options")
         ->type_name("RECIPE")
         ->default_val(config.recipe);
@@ -1085,9 +1108,15 @@ int main(int argc, char* argv[]) {
         ->type_name("LABEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll)
         ->check(CLI::IsMember(VALID_LABELS));
+    pull_cmd->add_option("--components", config.components,
+        "Components for a user.* omni collection (use with --recipe collection.omni). "
+        "Components must already be registered (built-in or previously pulled user.* models).")
+        ->group("Manual Configuration Options")
+        ->type_name("MODEL")
+        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
-        "  https://lemonade-server.ai/docs/server/custom-models/");
+        "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
@@ -1164,6 +1193,9 @@ int main(int argc, char* argv[]) {
     // Cleanup cache options
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
+    // Bench command
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.model, config.output_file, config.bench);
+
     // Parse arguments
     try {
         app.parse(argc, argv);
@@ -1208,7 +1240,7 @@ int main(int argc, char* argv[]) {
         if (config.json_output) {
             // Verify the server is actually reachable before reporting its port.
             // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers (e.g. lemonade-server stop) to target the wrong process.
+            // which could cause callers to target the wrong process.
             bool reachable = try_live_check(config.host, config.port, config.api_key, 500);
             if (!reachable) {
                 std::cerr << "Server is not running" << std::endl;
@@ -1259,6 +1291,9 @@ int main(int argc, char* argv[]) {
         return handle_config_view(client);
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
+    } else if (bench_cmd->count() > 0) {
+        auto bench_config = lemon_cli::build_bench_config(config.model, config.output_file, config.bench);
+        return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
         std::cerr << app.help() << std::endl;

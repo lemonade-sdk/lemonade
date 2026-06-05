@@ -149,12 +149,9 @@ function(apply_tray_deps target_name)
     target_link_libraries(${target_name} PRIVATE nlohmann_json::nlohmann_json)
 
     if(USE_SYSTEM_HTTPLIB)
-        target_link_libraries(${target_name} PRIVATE cpp-httplib)
+        target_link_libraries(${target_name} PRIVATE lemonade-httplib)
     else()
         target_link_libraries(${target_name} PRIVATE httplib::httplib)
-    endif()
-    if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-        target_include_directories(${target_name} PRIVATE ${HTTPLIB_INCLUDE_DIRS})
     endif()
 
     if(USE_SYSTEM_CLI11)

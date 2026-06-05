@@ -64,10 +64,9 @@ class ServerConfig {
         if (baseUrl) {
           console.log('Using explicit server base URL:', baseUrl);
           this.explicitBaseUrl = baseUrl;
+          this.initialized = true;
+          return;
         }
-
-        this.initialized = true;
-        return;
       }
 
       // No explicit URL - use localhost with port discovery
@@ -121,7 +120,7 @@ class ServerConfig {
    * Check if using an explicit remote server URL
    */
   isRemoteServer(): boolean {
-    return this.explicitBaseUrl !== null;
+    return !!this.explicitBaseUrl;
   }
 
   /**
@@ -192,10 +191,12 @@ class ServerConfig {
     }
   }
 
-  private setUpdatedURL(baseURL: string) {
-    if (this.explicitBaseUrl != baseURL) {
-      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${baseURL}`);
-      this.explicitBaseUrl = baseURL;
+  private setUpdatedURL(baseURL: string | null) {
+    const nextBaseUrl = baseURL?.trim() || null;
+
+    if (this.explicitBaseUrl !== nextBaseUrl) {
+      console.log(`Base URL updated: ${this.explicitBaseUrl} -> ${nextBaseUrl}`);
+      this.explicitBaseUrl = nextBaseUrl;
       this.notifyPortListeners();
       this.notifyUrlListeners();
     }
@@ -211,7 +212,7 @@ class ServerConfig {
   }
 
   /**
-   * Discover the server port by calling lemonade-server --status
+   * Discover the server port via a UDP beacon from the local lemond instance.
    * Returns a promise that resolves with the discovered port, or null if discovery is disabled
    */
   async discoverPort(): Promise<number | null> {
