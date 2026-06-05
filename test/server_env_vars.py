@@ -13,6 +13,7 @@ Usage:
 import argparse
 import os
 import platform
+import socket
 import subprocess
 import sys
 import tempfile
@@ -48,8 +49,13 @@ def shutdown_existing_server():
             break
 
 
-def start_server(env_overrides=None):
+def start_server(env_overrides=None, host="localhost"):
     """Start lemond with given env overrides in an isolated temp cache dir.
+
+    Args:
+        env_overrides: Extra LEMONADE_* env vars to set on the server process.
+        host: Value for LEMONADE_HOST. Use "0.0.0.0" or a routable IP to bind
+            the server to a non-loopback interface.
 
     Returns (subprocess.Popen, cache_dir).
     """
@@ -62,7 +68,7 @@ def start_server(env_overrides=None):
     cache_dir = tempfile.mkdtemp(prefix="lemon_test_")
     env["LEMONADE_CACHE_DIR"] = cache_dir
     env["LEMONADE_PORT"] = str(PORT)
-    env["LEMONADE_HOST"] = "localhost"
+    env["LEMONADE_HOST"] = host
     env["LEMONADE_NO_BROADCAST"] = "1"
     if env_overrides:
         env.update(env_overrides)
@@ -391,6 +397,122 @@ class TestBothApiKeysEnvVar(unittest.TestCase):
         r = requests.get(
             CONFIG,
             headers={"Authorization": "Bearer wrong-key"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Test: /internal/* from non-loopback with LEMONADE_ADMIN_API_KEY
+# ---------------------------------------------------------------------------
+
+
+def get_non_loopback_ip():
+    """Return the first non-loopback IPv4 address of this machine, or None.
+
+    Uses the standard UDP-"connect" trick: opening a UDP socket and
+    "connecting" to a public address does not send any packets but selects
+    the local interface that would be used for outbound traffic, exposing
+    its source IP via getsockname(). Falls back to gethostbyname() for
+    environments where the first method is blocked.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            if ip and not ip.startswith("127."):
+                return ip
+    except Exception:
+        pass
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return None
+
+
+class TestInternalAdminKeyNonLoopback(unittest.TestCase):
+    """Regression test for issue #2109.
+
+    The loopback check in Server::authenticate_request() previously ran
+    before the bearer token was extracted, so /internal/* returned 403 for
+    any non-loopback client regardless of a valid LEMONADE_ADMIN_API_KEY.
+
+    These tests bind the server to all interfaces (0.0.0.0) and reach it
+    via a non-loopback IP, exercising the code path that previously broke.
+    """
+
+    proc = None
+    ADMIN_API_KEY = "admin-secret-key-xyz"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ip = get_non_loopback_ip()
+        if cls.ip is None:
+            raise unittest.SkipTest(
+                "No non-loopback IPv4 address available; cannot exercise the "
+                "non-loopback /internal/* auth path in this environment."
+            )
+        cls.proc, cls.cache_dir = start_server(
+            env_overrides={"LEMONADE_ADMIN_API_KEY": cls.ADMIN_API_KEY},
+            host="0.0.0.0",
+        )
+        wait_for_server(port=PORT)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            stop_server(cls.proc)
+
+    def _non_loopback_url(self, path):
+        return f"http://{self.ip}:{PORT}{path}"
+
+    def test_non_loopback_with_valid_admin_key_succeeds(self):
+        """A non-loopback client with a valid admin key gets 200 on /internal/*."""
+        r = requests.get(
+            self._non_loopback_url("/internal/config"),
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_non_loopback_without_key_rejected(self):
+        """A non-loopback client without a key is rejected with 403.
+
+        403 (not 401) because the request is denied for one of two reasons
+        (non-loopback source OR missing credentials); the response body
+        states both options.
+        """
+        r = requests.get(
+            self._non_loopback_url("/internal/config"),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_non_loopback_with_invalid_key_rejected(self):
+        """A non-loopback client with an invalid key is rejected with 403."""
+        r = requests.get(
+            self._non_loopback_url("/internal/config"),
+            headers={"Authorization": "Bearer wrong-admin-key"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_loopback_with_valid_admin_key_still_succeeds(self):
+        """Loopback behavior is unchanged: valid admin key from localhost gets 200."""
+        r = requests.get(
+            CONFIG,
+            headers={"Authorization": f"Bearer {self.ADMIN_API_KEY}"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_loopback_without_key_still_rejected(self):
+        """Loopback behavior is unchanged: no key from localhost still gets 401."""
+        r = requests.get(
+            CONFIG,
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(r.status_code, 401)
