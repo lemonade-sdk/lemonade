@@ -19,6 +19,7 @@
     "cpu": "master-616-cde20d5",
     "rocm-stable": "master-616-cde20d5",
     "vulkan": "master-616-cde20d5",
+    "cuda": "master-672-b638fe9",
     "metal": "master-655-29ab511"
   },
   "therock": {

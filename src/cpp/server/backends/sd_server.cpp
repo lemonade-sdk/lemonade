@@ -31,6 +31,10 @@ bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
 }
 
+bool is_cuda_backend(const std::string& backend) {
+    return backend == "cuda";
+}
+
 std::string resolve_sdcpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         std::string channel = "stable";
@@ -119,7 +123,22 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     #else
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
-        } else {
+    } else if (is_cuda_backend(resolved_backend)) {
+        params.repo = "lemonade-sdk/stable-diffusion.cpp";
+        std::string target_arch = SystemInfo::get_cuda_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("sd-cpp", "cuda")
+            );
+        }
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-windows-cuda-" + target_arch + "-x64.zip";
+#elif defined(__linux__)
+        params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#else
+        throw std::runtime_error("CUDA sd.cpp is currently supported on Windows and Linux only");
+#endif
+    } else {
         // CPU build (default)
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
@@ -152,14 +171,18 @@ void SDServer::load(const std::string& model_name,
     image_defaults_ = model_info.image_defaults;
 
     std::string backend = options.get_option("sd-cpp_backend");
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("sd-cpp");
+        backend = supported.backends.empty() ? "cpu" : supported.backends[0];
+    }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.get_option("sdcpp_args");
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan/metal are GPU backends.
-    if (backend == "rocm" || backend == "vulkan" || backend == "metal") {
+    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan/metal/cuda are GPU backends.
+    if (backend == "rocm" || backend == "vulkan" || backend == "metal" || backend == "cuda") {
         device_type_ = DEVICE_GPU;
     } else {
         device_type_ = DEVICE_CPU;
@@ -299,8 +322,24 @@ void SDServer::load(const std::string& model_name,
         env_vars.push_back({"PATH", new_path});
 
         LOG(INFO, "SDServer") << "ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
+    } else if (is_cuda_backend(resolved_backend)) {
+        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
+        // sd-server.exe. Prepend the executable directory to PATH so the loader
+        // resolves them before any system-wide CUDA install.
+        std::string new_path = exe_dir.string();
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
     }
 #endif
+
+    if (is_cuda_backend(resolved_backend)) {
+        BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
+    }
 
     // Launch the server process
     process_handle_ = utils::ProcessManager::start_process(
