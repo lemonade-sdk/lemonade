@@ -74,28 +74,6 @@ Chat Completions API. You provide a list of messages and receive a completion. T
           }'
     ```
 
-### Image understanding input format (OpenAI-compatible)
-
-To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
-
-```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-        "model": "Qwen2.5-VL-7B-Instruct",
-        "messages": [
-          {
-            "role": "user",
-            "content": [
-              {"type": "text", "text": "What is in this image?"},
-              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
-            ]
-          }
-        ],
-        "stream": false
-      }'
-```
-
 ### Response format
 
 === "Non-streaming responses"
@@ -134,6 +112,95 @@ curl -X POST http://localhost:13305/v1/chat/completions \
       }]
     }
     ```
+
+### Image understanding input format (OpenAI-compatible)
+
+To send images to `chat/completions`, pass a `messages[*].content` array that mixes `text` and `image_url` items. The image can be provided as a base64 data URL (for example, from `FileReader.readAsDataURL(...)` in web apps).
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "Qwen2.5-VL-7B-Instruct",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {"type": "text", "text": "What is in this image?"},
+              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}
+            ]
+          }
+        ],
+        "stream": false
+      }'
+```
+
+#### Example response
+
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": 1742927481,
+  "model": "Qwen2.5-VL-7B-Instruct",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "The image shows a red apple resting on a wooden table."
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
+
+### Server-side tools
+
+> **Note:** Omni collection orchestration is a Lemonade-specific extension to the Chat Completions API; it is not part of the OpenAI specification. Requests that target ordinary (non-collection) models are unaffected and are fully OpenAI-compatible.
+
+When `model` names an Omni **collection** model (`recipe: "collection.omni"`, e.g., `LMX-Omni-52B-Halo`), this endpoint runs an internal tool-calling loop instead of a plain completion. The server injects the reference system prompt and tools, routes to the collection's chat component, executes the omni tools (image generation/editing, text-to-speech) against the matching components, and returns one OpenAI-compatible response. Generated media is embedded in the assistant `content`:
+
+- **images** → markdown `![generated image](data:image/png;base64,…)`
+- **speech** → `<audio>data:audio/mpeg;base64,…</audio>`
+
+Both non-streaming and `stream: true` are supported. In streaming mode the media arrives as a content delta on a `chat.completion.chunk` frame the moment its tool finishes.
+
+**Merge semantics.** A client-provided system prompt is prepended by the built-in omni system prompt. Client-provided `tools` are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a `finish_reason: "tool_calls"` response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See [Lemonade Omni Models](../dev/lemonade-omni.md) for details.
+
+#### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "LMX-Omni-52B-Halo",
+        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],
+        "stream": false
+      }'
+```
+
+#### Example response
+
+The image tool runs during the loop and its output is embedded as a markdown image in the assistant `content`:
+
+```json
+{
+  "id": "0",
+  "object": "chat.completion",
+  "created": 1742927481,
+  "model": "LMX-Omni-52B-Halo",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)"
+    },
+    "finish_reason": "stop"
+  }]
+}
+```
 
 
 ## `POST /v1/completions`

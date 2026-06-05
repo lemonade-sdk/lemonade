@@ -2123,14 +2123,15 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded, non-collection models. Collections
-    // are Lemonade-specific (a virtual entry that loads multiple
-    // real models) and aren't meaningful to OpenAI-compatible clients —
-    // the desktop app fetches them explicitly via ?show_all=true.
+    // Filter and return downloaded models. Collections (Omni) are included once
+    // all their components are downloaded: the server orchestrates /chat/completions
+    // for them (see CollectionOrchestrator), so they are genuine OpenAI-compatible
+    // chat models and should appear in /v1/models and Ollama /api/tags. A collection's
+    // `downloaded` flag already reflects component status (see build_cache).
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded && !is_collection_recipe(info.recipe)) {
+        if (info.downloaded) {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;
@@ -3494,7 +3495,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // Get HF token if available
     std::map<std::string, std::string> headers;
     const char* hf_token = std::getenv("HF_TOKEN");
-    if (hf_token) {
+    if (hf_token && hf_token[0]) {
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
 
@@ -3740,7 +3741,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             manifest["files"].push_back(file_entry);
         }
     }
-    
+
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
