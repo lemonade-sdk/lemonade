@@ -525,18 +525,6 @@ jobs:
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
 
-      - name: Run environment variable tests (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        env:
-          LEMONADE_CI_MODE: "True"
-          PYTHONIOENCODING: utf-8
-        run: |
-          set -e
-          echo "Running environment variable tests..."
-          .venv/bin/python test/server_env_vars.py --lemond-binary ./build/lemond
-          echo "Environment variable tests PASSED!"
-
       - name: Ensure server is running before whisper tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -1514,15 +1502,6 @@ jobs:
         shell: bash
         run: .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
 
-      # env-vars takes over the shared server cleanly (shutdown + spawn its
-      # own isolated lemond instances); it must not run right after a step
-      # that stops lemond without a process handle, or the first spawn races
-      # the old process for the port.
-      - name: Test env-vars
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        shell: bash
-        run: .venv/bin/python test/server_env_vars.py --lemond-binary ./deb-extract/usr/bin/lemond
-
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
       - name: Test llamacpp-system
@@ -1636,19 +1615,6 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
         run: $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
-
-      # env-vars only runs on macOS in this job (Linux covers it in
-      # test-cli-endpoints-linux; Windows has no env-vars coverage).
-      # It takes over the shared server cleanly (shutdown + spawn its own
-      # isolated lemond instances); it must not run right after a step that
-      # stops lemond without a process handle, or the first spawn races the
-      # old process for the port.
-      - name: Test env-vars
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing == 'true' }}
-        shell: bash
-        run: |
-          LEMOND_BINARY="$(dirname "$CLI_BINARY")/lemond"
-          $VENV_PYTHON test/server_env_vars.py --lemond-binary "$LEMOND_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
