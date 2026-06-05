@@ -8,6 +8,12 @@
 namespace lemon {
 namespace backends {
 
+// FLM types live in lemonade::backends
+using lemonade::backends::FlmEngine;
+using lemonade::backends::FlmInferenceResult;
+using lemonade::backends::FlmModelConfig;
+using lemonade::backends::FlmStreamCallback;
+
 class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer,
                          public IRerankingServer, public ITranscriptionServer {
 public:

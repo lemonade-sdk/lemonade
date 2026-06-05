@@ -673,13 +673,54 @@ target_include_directories(lemonade-server-core PRIVATE
   src/cpp/server/backends/flm/server
   src/cpp/server/backends/flm/pull
   src/cpp/server/backends/flm
-  src/cpp/server/backends/flm/../third_party/tokenizers-cpp/runtime/include
 )
 
 # FLM compiler definitions
 target_compile_definitions(lemonade-server-core PRIVATE
   FASTFLOWLM_LINUX_LIMITED_MODELS
+  CMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
+  CMAKE_XCLBIN_PREFIX="${CMAKE_INSTALL_PREFIX}/share/lemonade/xclbins"
 )
+
+# FLM uses AVX-512 intrinsics in typedef.hpp — enable for all FLM sources
+set(FLM_SOURCES
+  src/cpp/server/backends/flm/flm_engine.cpp
+  src/cpp/server/backends/flm/common/tokenizer/tokenizers_cpp_stub.cpp
+  src/cpp/server/backends/flm/common/audio/audio_reader.cpp
+  src/cpp/server/backends/flm/common/audio_process_utils/audioproc.cpp
+  src/cpp/server/backends/flm/common/audio_process_utils/audioprocAVX512.cpp
+  src/cpp/server/backends/flm/common/image/image_reader.cpp
+  src/cpp/server/backends/flm/common/image_process_utils/imageproc.cpp
+  src/cpp/server/backends/flm/common/image_process_utils/imageprocAVX512.cpp
+  src/cpp/server/backends/flm/common/modules/sampler.cpp
+  src/cpp/server/backends/flm/common/tokenizer/tokenizer.cpp
+  src/cpp/server/backends/flm/common/utils.cpp
+  src/cpp/server/backends/flm/common/whisper/modeling_whisper.cpp
+  src/cpp/server/backends/flm/common/whisper/modeling_whisper_audio.cpp
+  src/cpp/server/backends/flm/common/AutoModel/automodel.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_llama3.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl_image.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_text.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_image.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_audio.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_image.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl_image.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl_image.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_lfm2.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_phi4.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_gpt_oss.cpp
+  src/cpp/server/backends/flm/common/AutoModel/modeling_nanbeige.cpp
+  src/cpp/server/backends/flm/common/AutoEmbeddingModel/auto_embedding_model.cpp
+  src/cpp/server/backends/flm/common/AutoEmbeddingModel/modeling_gemma_embedding.cpp
+)
+set_source_files_properties(${FLM_SOURCES} PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx")
 
 # Find XRT (Xilinx Runtime) for NPU support
 find_path(XRT_INCLUDE_DIR xrt.h
@@ -745,6 +786,27 @@ endif()
 if(AIE_RUNTIME_LIBRARY)
   target_link_libraries(lemonade-server-core PRIVATE ${AIE_RUNTIME_LIBRARY})
 endif()
+
+# Link FLM shared libraries (pre-built .so files)
+set(FLM_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/lib")
+file(GLOB FLM_LIBS "${FLM_LIB_DIR}/*.so")
+target_link_libraries(lemonade-server-core PRIVATE
+  ${FLM_LIBS}
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/lib/libaiebu.a
+  # XRT libraries (needed by FLM shared libs)
+  xrt_coreutil
+  xrt_core
+  xrt++
+  # FFmpeg libraries (needed by FLM whisper/audio)
+  avcodec
+  avformat
+  swscale
+  swresample
+  avutil
+  # FFTW (needed by FLM whisper)
+  /usr/lib/x86_64-linux-gnu/libfftw3f.so.3
+)
+message(STATUS "FLM shared libraries: ${FLM_LIBS}")
 
 # ============================================================
 # lemond executable

@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <climits>
 #include <stdio.h>
 #include "buffer.hpp"
 #include "utils/debug_utils.hpp"

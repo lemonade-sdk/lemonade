@@ -68,6 +68,7 @@ public:
 
 private:
     std::unique_ptr<tokenizers::Tokenizer> tokenizer;
+    std::string tokenizer_model_data_;  // Stub: stores raw tokenizer JSON
     std::unordered_map<uint32_t, uint8_t> inv_map;
 
     /// \brief Convert the cp1252 to utf8

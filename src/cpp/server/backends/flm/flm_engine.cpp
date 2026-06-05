@@ -195,7 +195,7 @@ public:
 
 std::unique_ptr<NpuDevice> NpuDevice::create() {
     try {
-        auto dev = std::make_unique<NpuDevice>();
+        auto dev = std::unique_ptr<NpuDevice>(new NpuDevice());
         dev->impl_ = std::make_unique<Impl>();
         return dev;
     } catch (const std::exception& e) {
@@ -218,7 +218,7 @@ class FlmEngine::Impl {
 public:
     std::unique_ptr<NpuDevice> npu_device;
     std::unique_ptr<AutoModel> auto_model;
-    model_list model_list;
+    model_list model_registry;
     std::string current_model_tag;
     int ctx_length = -1;
     int prefill_chunk_len = 512;
@@ -263,9 +263,9 @@ bool FlmEngine::load_model(const FlmModelConfig& config) {
     }
 
     // Check if model is supported
-    if (!impl_->model_list.is_model_supported(config.model_path)) {
+    if (!impl_->model_registry.is_model_supported(config.model_path)) {
         // Try using the model_path as a tag
-        if (!impl_->model_list.is_model_supported(config.model_path)) {
+        if (!impl_->model_registry.is_model_supported(config.model_path)) {
             // Try to find it by scanning the model_list.json
             // For now, try loading with the path as-is
             std::cerr << "FLM: Model tag not in model list, trying direct path: " << config.model_path << std::endl;
@@ -278,12 +278,12 @@ bool FlmEngine::load_model(const FlmModelConfig& config) {
     }
 
     // Get model info
-    auto [resolved_tag, model_info] = impl_->model_list.get_model_info(config.model_path);
+    auto [resolved_tag, model_info] = impl_->model_registry.get_model_info(config.model_path);
     impl_->current_model_tag = resolved_tag;
     impl_->model_used_for_last_message = resolved_tag;
 
     // Get model path from model list
-    std::string model_path = impl_->model_list.get_model_path(resolved_tag);
+    std::string model_path = impl_->model_registry.get_model_path(resolved_tag);
     if (model_path.empty()) {
         model_path = config.model_path;
     }
@@ -293,7 +293,7 @@ bool FlmEngine::load_model(const FlmModelConfig& config) {
     xrt::device* dev_ptr = static_cast<xrt::device*>(raw_dev);
 
     try {
-        auto auto_model = get_auto_model(resolved_tag, impl_->model_list, dev_ptr);
+        auto auto_model = get_auto_model(resolved_tag, impl_->model_registry, dev_ptr);
         impl_->auto_model = std::move(auto_model.second);
         impl_->current_model_tag = auto_model.first;
     } catch (const std::exception& e) {
@@ -315,12 +315,11 @@ bool FlmEngine::load_model(const FlmModelConfig& config) {
     sampler_cfg.temperature = config.temperature;
     sampler_cfg.top_k = config.top_k;
     sampler_cfg.top_p = config.top_p;
-    sampler_cfg.repetition_penalty = config.repetition_penalty;
+    sampler_cfg.rep_penalty = config.repetition_penalty;
     impl_->auto_model->set_sampler(sampler_cfg);
     impl_->auto_model->set_max_length(config.max_tokens);
     impl_->auto_model->set_topk(config.top_k);
     impl_->auto_model->set_topp(config.top_p);
-    impl_->auto_model->set_minp(config.minp);
     impl_->auto_model->set_temperature(config.temperature);
     impl_->auto_model->set_presence_penalty(config.presence_penalty);
     impl_->auto_model->set_repetition_penalty(config.repetition_penalty);
@@ -380,12 +379,10 @@ FlmInferenceResult FlmEngine::chat_completion(
 
     // Generate
     std::stringstream ss;
-    wstream_buf obuf(ss);
-    std::ostream ostream(&obuf);
 
     int length_limit = extra.value("max_tokens", impl_->max_tokens);
     try {
-        impl_->auto_model->generate(meta_info, length_limit, ostream, impl_->cancel_callback);
+        impl_->auto_model->generate(meta_info, length_limit, ss, impl_->cancel_callback);
     } catch (...) {
         impl_->auto_model->clear_context();
         throw;
@@ -450,18 +447,20 @@ FlmInferenceResult FlmEngine::chat_completion_streaming(
         throw;
     }
 
-    // Generate with streaming
+    // chat_completion_streaming
+    // Generate with streaming (API uses std::ostream&, accumulate then callback)
     int length_limit = extra.value("max_tokens", impl_->max_tokens);
+    std::stringstream ss;
     try {
-        impl_->auto_model->generate(meta_info, length_limit,
-            [&callback](const std::string& data, bool is_final) {
-                callback(data, is_final);
-            },
-            impl_->cancel_callback);
+        impl_->auto_model->generate(meta_info, length_limit, ss, impl_->cancel_callback);
     } catch (...) {
         impl_->auto_model->clear_context();
         throw;
     }
+
+    std::string output = ss.str();
+    // Invoke callback with accumulated output
+    callback(output, true);
 
     // Build final result from meta_info
     FlmInferenceResult result;
@@ -509,12 +508,10 @@ FlmInferenceResult FlmEngine::text_completion(
 
     // Generate
     std::stringstream ss;
-    wstream_buf obuf(ss);
-    std::ostream ostream(&obuf);
 
     int length_limit = extra.value("max_tokens", impl_->max_tokens);
     try {
-        impl_->auto_model->generate(meta_info, length_limit, ostream, impl_->cancel_callback);
+        impl_->auto_model->generate(meta_info, length_limit, ss, impl_->cancel_callback);
     } catch (...) {
         impl_->auto_model->clear_context();
         throw;
@@ -566,18 +563,20 @@ FlmInferenceResult FlmEngine::text_completion_streaming(
         throw;
     }
 
-    // Generate with streaming
+   // text_completion_streaming
+    // Generate with streaming (API uses std::ostream&, accumulate then callback)
     int length_limit = extra.value("max_tokens", impl_->max_tokens);
+    std::stringstream ss;
     try {
-        impl_->auto_model->generate(meta_info, length_limit,
-            [&callback](const std::string& data, bool is_final) {
-                callback(data, is_final);
-            },
-            impl_->cancel_callback);
+        impl_->auto_model->generate(meta_info, length_limit, ss, impl_->cancel_callback);
     } catch (...) {
         impl_->auto_model->clear_context();
         throw;
     }
+
+    std::string output = ss.str();
+    // Invoke callback with accumulated output
+    callback(output, true);
 
     FlmInferenceResult result;
     result.content = "";
@@ -610,7 +609,7 @@ bool FlmEngine::is_model_loaded() const {
 
 std::vector<std::string> FlmEngine::supported_models() const {
     std::vector<std::string> tags;
-    for (const auto& tag : impl_->model_list.all_tags) {
+    for (const auto& tag : impl_->model_registry.all_tags) {
         tags.push_back(tag);
     }
     return tags;

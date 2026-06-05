@@ -510,14 +510,12 @@ void FastFlowLMServer::stream_chat_completion(const json& request, httplib::Data
 
                 std::string sse_final_line = "data: " + sse_final.dump() + "\n\n";
                 sink.write(sse_final_line.c_str(), sse_final_line.size());
-                sink.close();
+                sink.done();
             }
         };
 
-        FlmInferenceResult result = engine_->chat_completion_streaming(messages, tools, extra);
+        engine_->chat_completion_streaming(messages, callback, tools, extra);
         // Note: full_content is collected via the callback above
-        // The result provides timing/metadata
-        (void)result;
 
     } catch (const std::exception& e) {
         json error = {
@@ -529,7 +527,7 @@ void FastFlowLMServer::stream_chat_completion(const json& request, httplib::Data
         };
         std::string error_line = "data: " + error.dump() + "\n\n";
         sink.write(error_line.c_str(), error_line.size());
-        sink.close();
+        sink.done();
     }
 }
 
@@ -576,7 +574,7 @@ void FastFlowLMServer::stream_completion(const json& request, httplib::DataSink&
                 };
                 std::string sse_final_line = "data: " + sse_final.dump() + "\n\n";
                 sink.write(sse_final_line.c_str(), sse_final_line.size());
-                sink.close();
+                sink.done();
             }
         };
 
@@ -592,7 +590,7 @@ void FastFlowLMServer::stream_completion(const json& request, httplib::DataSink&
         };
         std::string error_line = "data: " + error.dump() + "\n\n";
         sink.write(error_line.c_str(), error_line.size());
-        sink.close();
+        sink.done();
     }
 }
 
