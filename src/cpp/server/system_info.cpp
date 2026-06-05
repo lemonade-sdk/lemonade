@@ -87,13 +87,10 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
 // ROCm architecture mapping - maps specific gfx architectures to their family (download target).
 // Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
 const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA1 family. Linux KFD reports the exact GPU ISA (gfx1010/gfx1011/gfx1012),
-    // while Lemonade recipes and ROCm backend downloads use the shared family name gfx101X.
-    {"gfx1010", "gfx101X"}, // Navi 10 (e.g., RX 5700 / 5700 XT)
-    {"gfx1011", "gfx101X"}, // Navi 12 (e.g., Radeon Pro 5600M)
-    {"gfx1012", "gfx101X"}, // Navi 14 (e.g., RX 5500 / 5500 XT)
+    {"gfx1010", "gfx101X"},
+    {"gfx1011", "gfx101X"},
+    {"gfx1012", "gfx101X"},
 
-    // RDNA2 family (gfx103X)
     {"gfx1030", "gfx103X"},
     {"gfx1031", "gfx103X"},
     {"gfx1032", "gfx103X"},
@@ -102,19 +99,16 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1035", "gfx103X"},
     {"gfx1036", "gfx103X"},
 
-    // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},
     {"gfx1101", "gfx110X"},
     {"gfx1102", "gfx110X"},
     {"gfx1103", "gfx110X"},
 
-    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
-    {"gfx1150", "gfx1150"},  // Maps to exact binary name
-    {"gfx1151", "gfx1151"},  // Maps to exact binary name
-    {"gfx1152", "gfx1152"},  // Maps to exact binary name
-    {"gfx1153", "gfx1153"},  // Maps to exact binary name
+    {"gfx1150", "gfx1150"},
+    {"gfx1151", "gfx1151"},
+    {"gfx1152", "gfx1152"},
+    {"gfx1153", "gfx1153"},
 
-    // RDNA4 family (gfx120X)
     {"gfx1200", "gfx120X"},
     {"gfx1201", "gfx120X"},
 };
@@ -472,7 +466,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA1/2/3/4 dGPUs
+        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx103X", "gfx110X", "gfx120X"}},
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -1917,8 +1911,6 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx103X";
     }
 
-    // RDNA1 GPUs (gfx101X architecture)
-    // AMD Radeon RX 5700 XT, AMD Radeon RX 5700, AMD Radeon RX 5600 XT, AMD Radeon RX 5500 XT
     if (device_lower.find("5700") != std::string::npos ||
         device_lower.find("5600") != std::string::npos ||
         device_lower.find("5500") != std::string::npos) {

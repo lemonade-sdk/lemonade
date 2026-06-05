@@ -456,8 +456,7 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
 #else
-    // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
-    // This is a patch to enable loading larger models
+    // For ROCm on Windows, set OCL_SET_SVM_SIZE where needed to load larger models.
     if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         std::string new_path;
 

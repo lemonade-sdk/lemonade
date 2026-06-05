@@ -43,11 +43,9 @@ ROCM_SUPPORTED_ARCHS = {
 }
 
 ROCM_ARCH_MAPPING = {
-    # RDNA1 family (gfx101X)
     "gfx1010": "gfx101X",
     "gfx1011": "gfx101X",
     "gfx1012": "gfx101X",
-    # RDNA2 family (gfx103X)
     "gfx1030": "gfx103X",
     "gfx1031": "gfx103X",
     "gfx1032": "gfx103X",
@@ -55,17 +53,14 @@ ROCM_ARCH_MAPPING = {
     "gfx1033": "gfx103X",
     "gfx1035": "gfx103X",
     "gfx1036": "gfx103X",
-    # RDNA3 family (gfx110X)
     "gfx1100": "gfx110X",
     "gfx1101": "gfx110X",
     "gfx1102": "gfx110X",
     "gfx1103": "gfx110X",
-    # RDNA3.5 iGPUs - explicit binary names (no family mapping)
     "gfx1150": "gfx1150",
     "gfx1151": "gfx1151",
     "gfx1152": "gfx1152",
     "gfx1153": "gfx1153",
-    # RDNA4 family (gfx120X)
     "gfx1200": "gfx120X",
     "gfx1201": "gfx120X",
 }
@@ -103,7 +98,6 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
     if "radeon" not in device_lower and "amd" not in device_lower:
         return ""
 
-    # STX Halo iGPUs (gfx1151 architecture)
     if (
         "8050s" in device_lower
         or "8060s" in device_lower
@@ -111,15 +105,12 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
     ):
         return "gfx1151"
 
-    # STX Point iGPUs (gfx1150 architecture)
     if "880m" in device_lower or "890m" in device_lower:
         return "gfx1150"
 
-    # RDNA4 GPUs (gfx120X architecture)
     if "r9700" in device_lower or "9060" in device_lower or "9070" in device_lower:
         return "gfx120X"
 
-    # RDNA3 GPUs (gfx110X architecture)
     if (
         "7700" in device_lower
         or "7800" in device_lower
@@ -128,7 +119,6 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
     ):
         return "gfx110X"
 
-    # RDNA2 GPUs (gfx103X architecture)
     if (
         "6800" in device_lower
         or "6700" in device_lower
@@ -137,7 +127,6 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
     ):
         return "gfx103X"
 
-    # RDNA1 GPUs (gfx101X architecture)
     if "5700" in device_lower or "5600" in device_lower or "5500" in device_lower:
         return "gfx101X"
 
@@ -161,16 +150,16 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
 
     def test_linux_kfd_numeric_strings(self):
         cases = [
-            ("100100", "gfx101X"),  # gfx1010 -> gfx101X (RDNA1 RX 5700 series)
-            ("100101", "gfx101X"),  # gfx1011 -> gfx101X
-            ("100102", "gfx101X"),  # gfx1012 -> gfx101X
-            ("100300", "gfx103X"),  # gfx1030 -> gfx103X (RDNA2 RX 6000 series)
-            ("110000", "gfx110X"),  # gfx1100 -> gfx110X (RDNA3 RX 7000 series)
-            ("110500", "gfx1150"),  # gfx1150 -> gfx1150 (RDNA3.5 880M/890M)
-            ("110501", "gfx1151"),  # gfx1151 -> gfx1151 (RDNA3.5 8050S/8060S)
-            ("110502", "gfx1152"),  # gfx1152 -> gfx1152
-            ("110503", "gfx1153"),  # gfx1153 -> gfx1153 (RDNA3.5 820M)
-            ("120000", "gfx120X"),  # gfx1200 -> gfx120X (RDNA4 RX 9000 series)
+            ("100100", "gfx101X"),
+            ("100101", "gfx101X"),
+            ("100102", "gfx101X"),
+            ("100300", "gfx103X"),
+            ("110000", "gfx110X"),
+            ("110500", "gfx1150"),
+            ("110501", "gfx1151"),
+            ("110502", "gfx1152"),
+            ("110503", "gfx1153"),
+            ("120000", "gfx120X"),
         ]
         for name, expected in cases:
             with self.subTest(name=name):
