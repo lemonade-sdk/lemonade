@@ -34,7 +34,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Hardware**: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)
 - **Use Case**: NVIDIA GPU-optimized inference
 - **Performance**: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs
-- **Source**: Per-architecture builds from [Phqen1x/llama.cpp-builds](https://github.com/Phqen1x/llama.cpp-builds)
+- **Source**: Per-architecture builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
 - **Binaries**: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)
 - **Runtime**: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)
 - **Notes**: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system `tar`.
@@ -53,6 +53,13 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Performance**: Depends on build configuration
 - **Installation**: Requires manual installation of `llama-server` in system PATH
 - **Notes**: Not enabled by default; set `LEMONADE_LLAMACPP_PREFER_SYSTEM=true` in config
+- **HIP plugin on non-standard paths**: When an AMD GPU is present, the system backend needs the GGML HIP plugin (`libggml-hip.so`). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set `LEMONADE_GGML_HIP_PATH` to the full path of the plugin so the backend is reported as available:
+
+  ```bash
+  export LEMONADE_GGML_HIP_PATH=/opt/rocm/lib/libggml-hip.so
+  ```
+
+  The filename must look like `libggml-hip*.so*` (versioned sonames such as `libggml-hip.so.0` are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.
 
 ## ROCm Channel Configuration
 

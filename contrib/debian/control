@@ -15,6 +15,7 @@ Build-Depends:
  libcpp-httplib-dev (>> 0.26),
  libcurl4-openssl-dev,
  libjs-katex,
+ libmbedtls-dev,
  libssl-dev,
  libsystemd-dev,
  libwebsockets-dev,

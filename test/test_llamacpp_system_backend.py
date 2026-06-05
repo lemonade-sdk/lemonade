@@ -453,6 +453,83 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         self.assertIn("system", backends)
         self.assertEqual(backends["system"]["state"], "installed")
 
+    def _require_system_backend_blocked_by_hip_plugin(self):
+        """Skip unless the running server reports the 'system' llamacpp backend
+        as blocked by a missing HIP plugin.
+
+        LEMONADE_GGML_HIP_PATH only affects is_ggml_hip_plugin_available(),
+        which system_info.cpp consults solely for the 'system' backend, only
+        when an AMD GPU is present (/sys/class/kfd) and llama-server is in PATH.
+        Its only observable effect is the system backend's "HIP plugin
+        libggml-hip.so not installed" message. Callers must add llama-server to
+        PATH and start the server before calling this.
+        """
+        system = self._get_llamacpp_backends().get("system", {})
+        if "HIP plugin" not in system.get("message", ""):
+            self.skipTest(
+                "Requires an AMD GPU without an FHS-installed HIP plugin; "
+                f"system backend reported: {system}"
+            )
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_005a_hip_path_override_satisfies_hip_plugin_check(self):
+        """A valid LEMONADE_GGML_HIP_PATH satisfies the HIP-plugin check that
+        otherwise blocks the 'system' backend on AMD GPU hosts."""
+        if not os.path.exists("/sys/class/kfd"):
+            self.skipTest("Requires an AMD GPU (/sys/class/kfd present)")
+        self._add_dummy_llama_server_to_path()
+
+        # Baseline: without the override the system backend is blocked by a
+        # missing HIP plugin, otherwise the override has nothing to satisfy.
+        _start_server()
+        self._require_system_backend_blocked_by_hip_plugin()
+        _stop_server()
+
+        valid_so = os.path.join(self.temp_bin_dir, "libggml-hip.so")
+        with open(valid_so, "w", encoding="utf-8") as handle:
+            handle.write("stub")
+
+        # _start_server() launches lemond with os.environ.copy(), so set the
+        # override in this process's environment and clean it up afterwards.
+        self.addCleanup(os.environ.pop, "LEMONADE_GGML_HIP_PATH", None)
+        os.environ["LEMONADE_GGML_HIP_PATH"] = valid_so
+        _start_server()
+        system = self._get_llamacpp_backends().get("system", {})
+        self.assertNotIn("HIP plugin", system.get("message", ""), system)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_005b_hip_path_override_invalid_is_ignored(self):
+        """An invalid LEMONADE_GGML_HIP_PATH (nonexistent file or directory) is
+        ignored: the 'system' backend stays blocked by the missing HIP plugin."""
+        if not os.path.exists("/sys/class/kfd"):
+            self.skipTest("Requires an AMD GPU (/sys/class/kfd present)")
+        self._add_dummy_llama_server_to_path()
+
+        _start_server()
+        self._require_system_backend_blocked_by_hip_plugin()
+        _stop_server()
+
+        self.addCleanup(os.environ.pop, "LEMONADE_GGML_HIP_PATH", None)
+
+        # Nonexistent file: the override is ignored.
+        os.environ["LEMONADE_GGML_HIP_PATH"] = os.path.join(
+            self.temp_bin_dir, "missing", "libggml-hip.so"
+        )
+        _start_server()
+        system = self._get_llamacpp_backends().get("system", {})
+        self.assertIn("HIP plugin", system.get("message", ""), system)
+        _stop_server()
+
+        # A directory is not a regular file and must also be ignored.
+        os.environ["LEMONADE_GGML_HIP_PATH"] = self.temp_bin_dir
+        _start_server()
+        system = self._get_llamacpp_backends().get("system", {})
+        self.assertIn("HIP plugin", system.get("message", ""), system)
+
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )

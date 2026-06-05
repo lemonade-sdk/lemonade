@@ -2,6 +2,83 @@
 # Note: This is included from parent CMakeLists.txt via add_subdirectory(cli)
 # Parent project already sets C++ standard and fetches dependencies
 
+
+# ============================================================
+# Download digest verification dependency
+# ============================================================
+# http_client.cpp is compiled into both lemonade-server-core and the lemonade
+# CLI.  Digest verification must therefore be wired to both targets from here.
+# Prefer a distro-provided mbedcrypto package, but fall back to FetchContent so
+# local Lemonade builds do not require developers to install a new package.
+if(NOT TARGET lemonade-digest-crypto)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(MBEDCRYPTO QUIET mbedcrypto)
+    endif()
+
+    add_library(lemonade-digest-crypto INTERFACE)
+
+    if(MBEDCRYPTO_FOUND)
+        message(STATUS "Using system mbedcrypto for download digest verification")
+        if(MBEDCRYPTO_INCLUDE_DIRS)
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_INCLUDE_DIRS})
+        endif()
+        if(MBEDCRYPTO_LIBRARY_DIRS)
+            target_link_directories(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY_DIRS})
+        endif()
+        target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARIES})
+        if(MBEDCRYPTO_CFLAGS_OTHER)
+            target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_CFLAGS_OTHER})
+        endif()
+    else()
+        # Some distro packages do not ship a pkg-config file for mbedcrypto.
+        # Keep the system-library path working for Debian/PPA builds, where
+        # FetchContent is intentionally fully disconnected.
+        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/md.h)
+        find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
+
+        if(MBEDTLS_INCLUDE_DIR AND MBEDCRYPTO_LIBRARY)
+            message(STATUS "Using system mbedcrypto for download digest verification")
+            target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIR})
+            target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDCRYPTO_LIBRARY})
+        else()
+            if(FETCHCONTENT_FULLY_DISCONNECTED AND NOT FETCHCONTENT_SOURCE_DIR_MBEDTLS)
+                message(FATAL_ERROR
+                    "System mbedcrypto was not found and FetchContent is fully disconnected. "
+                    "Install the distro development package (for Debian/Ubuntu: libmbedtls-dev) "
+                    "or provide FETCHCONTENT_SOURCE_DIR_MBEDTLS.")
+            endif()
+
+            message(STATUS "System mbedcrypto not found; fetching mbedTLS for download digest verification")
+            include(FetchContent)
+            FetchContent_Declare(mbedtls
+                GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+                GIT_TAG 107ea89daaefb9867ea9121002fbbdf926780e98
+                EXCLUDE_FROM_ALL
+            )
+            set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+            set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+            set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+            set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
+            set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+            FetchContent_MakeAvailable(mbedtls)
+
+            target_include_directories(lemonade-digest-crypto INTERFACE ${mbedtls_SOURCE_DIR}/include)
+            if(TARGET MbedTLS::mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE MbedTLS::mbedcrypto)
+            elseif(TARGET mbedcrypto)
+                target_link_libraries(lemonade-digest-crypto INTERFACE mbedcrypto)
+            else()
+                message(FATAL_ERROR "mbedTLS FetchContent did not create an mbedcrypto target")
+            endif()
+        endif()
+    endif()
+endif()
+
+if(TARGET lemonade-server-core)
+    target_link_libraries(lemonade-server-core PUBLIC lemonade-digest-crypto)
+endif()
+
 # Common sources
 set(COMMON_SOURCES
     main.cpp
@@ -29,11 +106,12 @@ add_executable(lemonade
 
 target_link_libraries(lemonade PRIVATE
     nlohmann_json::nlohmann_json
+    lemonade-digest-crypto
 )
 
 # Link httplib based on what's available (set by parent CMakeLists.txt)
 if(USE_SYSTEM_HTTPLIB)
-    target_link_libraries(lemonade PRIVATE cpp-httplib)
+    target_link_libraries(lemonade PRIVATE lemonade-httplib)
 else()
     target_link_libraries(lemonade PRIVATE httplib::httplib)
 endif()
@@ -67,10 +145,6 @@ target_include_directories(lemonade PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_BINARY_DIR}/include
 )
-
-if(USE_SYSTEM_HTTPLIB AND HTTPLIB_INCLUDE_DIRS)
-    target_include_directories(lemonade PRIVATE ${HTTPLIB_INCLUDE_DIRS})
-endif()
 
 # Set output directory to build root
 set_target_properties(lemonade PROPERTIES

@@ -802,6 +802,11 @@ jobs:
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
             runner: [Windows, vulkan, rocm]
+          - name: omni
+            script: server_omni.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan"
+            runner: [Windows, vulkan]
           - name: ryzenai
             script: server_llm.py
             extra_args: "--wrapped-server ryzenai"
@@ -825,8 +830,8 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm"
-            runner: [Windows, rocm]
+            backends: "cpu rocm vulkan"
+            runner: [Windows, rocm, vulkan]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
@@ -920,11 +925,16 @@ jobs:
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
             runner: [Linux, vulkan, rocm]
+          - name: omni
+            script: server_omni.py
+            extra_args: "--wrapped-server llamacpp"
+            backends: "vulkan"
+            runner: [Linux, vulkan]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm"
-            runner: [Linux, rocm]
+            backends: "cpu rocm vulkan"
+            runner: [Linux, vulkan, rocm]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
@@ -1113,6 +1123,7 @@ jobs:
           test -f "$DIR/resources/server_models.json"
           test -f "$DIR/resources/backend_versions.json"
           test -f "$DIR/resources/defaults.json"
+          test -f "$DIR/resources/toolDefinitions.json"
           echo "All expected files present"
 
           # Verify NO forbidden files
@@ -1208,7 +1219,8 @@ jobs:
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
-              "$archiveDir\resources\defaults.json"
+              "$archiveDir\resources\defaults.json",
+              "$archiveDir\resources\toolDefinitions.json"
           )
           $failures = @()
           foreach ($f in $expected) {
