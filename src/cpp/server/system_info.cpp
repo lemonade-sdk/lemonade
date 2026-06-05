@@ -111,6 +111,8 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     // RDNA3.5 iGPUs - explicit binary names (no family mapping)
     {"gfx1150", "gfx1150"},  // Maps to exact binary name
     {"gfx1151", "gfx1151"},  // Maps to exact binary name
+    {"gfx1152", "gfx1152"},  // Maps to exact binary name
+    {"gfx1153", "gfx1153"},  // Maps to exact binary name
 
     // RDNA4 family (gfx120X)
     {"gfx1200", "gfx120X"},
@@ -470,7 +472,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA1/2/3/4 dGPUs
+        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA1/2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -502,7 +504,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
             "gfx101X", "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1151", "gfx1152", "gfx1153", "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -540,7 +542,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx110X", "gfx120X"}},
     }},
 
     // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
@@ -563,6 +565,8 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx1152", "Radeon (gfx1152)"},
+    {"gfx1153", "Radeon 820M (gfx1153)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},

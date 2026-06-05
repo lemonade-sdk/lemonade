@@ -23,9 +23,11 @@ ROCM_SUPPORTED_ARCHS = {
     "gfx1100",
     "gfx1101",
     "gfx1102",
+    "gfx1103",
     "gfx1150",
     "gfx1151",
     "gfx1152",
+    "gfx1153",
     "gfx1200",
     "gfx1201",
     "gfx1010",
@@ -61,6 +63,8 @@ ROCM_ARCH_MAPPING = {
     # RDNA3.5 iGPUs - explicit binary names (no family mapping)
     "gfx1150": "gfx1150",
     "gfx1151": "gfx1151",
+    "gfx1152": "gfx1152",
+    "gfx1153": "gfx1153",
     # RDNA4 family (gfx120X)
     "gfx1200": "gfx120X",
     "gfx1201": "gfx120X",
@@ -148,6 +152,8 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
             ("gfx1010", "gfx101X"),
             ("gfx1012", "gfx101X"),
             ("gfx1151", "gfx1151"),
+            ("gfx1152", "gfx1152"),
+            ("gfx1153", "gfx1153"),
         ]
         for name, expected in cases:
             with self.subTest(name=name):
@@ -162,6 +168,8 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
             ("110000", "gfx110X"),  # gfx1100 -> gfx110X (RDNA3 RX 7000 series)
             ("110500", "gfx1150"),  # gfx1150 -> gfx1150 (RDNA3.5 880M/890M)
             ("110501", "gfx1151"),  # gfx1151 -> gfx1151 (RDNA3.5 8050S/8060S)
+            ("110502", "gfx1152"),  # gfx1152 -> gfx1152
+            ("110503", "gfx1153"),  # gfx1153 -> gfx1153 (RDNA3.5 820M)
             ("120000", "gfx120X"),  # gfx1200 -> gfx120X (RDNA4 RX 9000 series)
         ]
         for name, expected in cases:
