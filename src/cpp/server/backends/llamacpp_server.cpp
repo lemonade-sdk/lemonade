@@ -117,6 +117,10 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
+static bool is_llamacpp_openvino_backend(const std::string& backend) {
+    return backend == "openvino";
+}
+
 static std::string trim_version_prefix(const std::string& version) {
     if (!version.empty() && version[0] == 'v') {
         return version.substr(1);
@@ -141,6 +145,15 @@ static std::string get_therock_version() {
         throw std::runtime_error("backend_versions.json is missing 'therock.version'");
     }
     return trim_to_major_minor(config["therock"]["version"].get<std::string>());
+}
+
+static std::string get_openvino_runtime_version() {
+    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+    if (!config.contains("openvino") || !config["openvino"].is_object() ||
+        !config["openvino"].contains("runtime_version") || !config["openvino"]["runtime_version"].is_string()) {
+        throw std::runtime_error("backend_versions.json is missing 'openvino.runtime_version'");
+    }
+    return config["openvino"]["runtime_version"].get<std::string>();
 }
 
 InstallParams LlamaCppServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -211,6 +224,14 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
         params.filename = "llama-" + version + "-bin-macos-arm64.tar.gz";
 #else
         throw std::runtime_error("Metal llamacpp only supported on macOS");
+#endif
+    } else if (resolved_backend == "openvino") {
+        params.repo = "lemonade-sdk/llama.cpp";
+#ifdef __linux__
+        std::string openvino_ver = get_openvino_runtime_version();
+        params.filename = "llama-" + version + "-bin-ubuntu-openvino-" + openvino_ver + "-x64.tar.gz";
+#else
+        throw std::runtime_error("OpenVINO llamacpp is currently supported on Linux only");
 #endif
     } else if (resolved_backend == "cpu") {
         params.repo = "ggml-org/llama.cpp";
@@ -342,9 +363,9 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
-    // Enable context shift for vulkan/rocm/cuda (not supported on Metal)
+    // Enable context shift for vulkan/rocm/cuda/openvino (not supported on Metal)
     if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend) ||
-        is_llamacpp_cuda_backend(llamacpp_backend)) {
+        is_llamacpp_cuda_backend(llamacpp_backend) || is_llamacpp_openvino_backend(llamacpp_backend)) {
         push_overridable_arg(args, llamacpp_args, "--context-shift");
         push_overridable_arg(args, llamacpp_args, "--keep", "16");
     } else {
@@ -431,10 +452,9 @@ void LlamaCppServer::load(const std::string& model_name,
 
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
-    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime
-        // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the
-        // executable's directory to LD_LIBRARY_PATH like we do for ROCm.
+    } else if (is_llamacpp_cuda_backend(llamacpp_backend) || is_llamacpp_openvino_backend(llamacpp_backend)) {
+        // CUDA and OpenVINO tarballs both bundle their runtime libraries (.so files)
+        // alongside llama-server, so add the executable's directory to LD_LIBRARY_PATH.
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
 
