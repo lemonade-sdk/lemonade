@@ -1,0 +1,21 @@
+void custom_op_scalar(
+    bf16* out,
+    const bf16* up,
+    const bf16* gate,
+    float alpha,
+    size_t n
+) {
+    for (size_t i = 0; i < n; ++i) {
+        float up_f = static_cast<float>(up[i]);
+        float gate_f = static_cast<float>(gate[i]);
+
+        float sigmoid_arg = gate_f * alpha;
+        float sigmoid_val = 1.0f / (1.0f + std::exp(-sigmoid_arg));
+
+        float result_f = (up_f + 1.0f) * (gate_f * sigmoid_val);
+
+        out[i] = static_cast<bf16>(result_f);
+    }
+}
+
+Explain this code and add comments for me.

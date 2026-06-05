@@ -1,0 +1,64 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "common-default",
+      "hidden": true,
+      "cacheVariables": {
+        "FLM_VERSION": "0.9.43",
+        "NPU_VERSION": "32.0.203.304"
+      }
+    },
+    {
+      "name": "linux-default",
+      "displayName": "Linux Default",
+      "description": "Default configuration for Linux",
+      "inherits": "common-default",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "/opt/fastflowlm",
+        "CMAKE_XCLBIN_PREFIX": "/opt/fastflowlm/share/flm"
+      }
+    },
+    {
+      "name": "linux-snap",
+      "displayName": "Linux Snap Build",
+      "description": "Configuration for building inside a snapcraft part",
+      "inherits": "common-default",
+      "generator": "Ninja",
+      "binaryDir": "$env{CRAFT_PART_BUILD}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-default",
+      "displayName": "Windows Default",
+      "description": "Default configuration for Windows using Visual Studio",
+      "inherits": "common-default",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-default",
+      "displayName": "Linux Default Build",
+      "description": "Build Linux preset in Release",
+      "configurePreset": "linux-default"
+    },
+    {
+      "name": "windows-default",
+      "displayName": "Windows Default Build",
+      "description": "Build Windows preset in Release with parallel jobs",
+      "configurePreset": "windows-default",
+      "configuration": "Release",
+      "jobs": 4
+    }
+  ]
+}

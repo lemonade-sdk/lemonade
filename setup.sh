@@ -169,7 +169,7 @@ if command_exists pkg-config; then
     print_success "pkg-config is installed"
 
     # Check for required libraries using pkg-config
-    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap" "libwebsockets")
+    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap" "libwebsockets" "libavcodec" "libavformat" "libswscale" "libswresample" "libavutil")
     missing_libs=()
 
     for lib in "${libs_to_check[@]}"; do
@@ -194,6 +194,11 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-dev") ;;
                         libcap) missing_packages+=("libcap-dev") ;;
                         libwebsockets) missing_packages+=("libwebsockets-dev") ;;
+                        libavcodec) missing_packages+=("libavcodec-dev") ;;
+                        libavformat) missing_packages+=("libavformat-dev") ;;
+                        libswscale) missing_packages+=("libswscale-dev") ;;
+                        libswresample) missing_packages+=("libswresample-dev") ;;
+                        libavutil) missing_packages+=("libavutil-dev") ;;
                     esac
                 done
             elif command_exists pacman; then
@@ -207,6 +212,7 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm") ;;
                         libcap) missing_packages+=("libcap") ;;
                         libwebsockets) ;; # Not available in Arch repos, will use FetchContent
+                        libavcodec|libavformat|libswscale|libswresample|libavutil) missing_packages+=("ffmpeg") ;;
                     esac
                 done
             elif is_rpm_ostree; then
@@ -220,6 +226,11 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                        libavcodec) missing_packages+=("libavcodec-devel") ;;
+                        libavformat) missing_packages+=("libavformat-devel") ;;
+                        libswscale) missing_packages+=("libswscale-devel") ;;
+                        libswresample) missing_packages+=("libswresample-devel") ;;
+                        libavutil) missing_packages+=("libavutil-devel") ;;
                     esac
                 done
             elif command_exists dnf; then
@@ -233,6 +244,11 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                        libavcodec) missing_packages+=("libavcodec-devel") ;;
+                        libavformat) missing_packages+=("libavformat-devel") ;;
+                        libswscale) missing_packages+=("libswscale-devel") ;;
+                        libswresample) missing_packages+=("libswresample-devel") ;;
+                        libavutil) missing_packages+=("libavutil-devel") ;;
                     esac
                 done
             elif command_exists zypper; then
@@ -246,6 +262,11 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                        libavcodec) missing_packages+=("libavcodec-devel") ;;
+                        libavformat) missing_packages+=("libavformat-devel") ;;
+                        libswscale) missing_packages+=("libswscale-devel") ;;
+                        libswresample) missing_packages+=("libswresample-devel") ;;
+                        libavutil) missing_packages+=("libavutil-devel") ;;
                     esac
                 done
             fi
@@ -265,22 +286,42 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
+            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev" "libavcodec-dev" "libavformat-dev" "libswscale-dev" "libswresample-dev" "libavutil-dev")
         elif command_exists pacman; then
-            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
+            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap" "ffmpeg")
         elif is_rpm_ostree; then
-            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel" "libavcodec-devel" "libavformat-devel" "libswscale-devel" "libswresample-devel" "libavutil-devel")
         elif command_exists dnf; then
-            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel" "libavcodec-devel" "libavformat-devel" "libswscale-devel" "libswresample-devel" "libavutil-devel")
         elif command_exists zypper; then
-            missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+            missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel" "libavcodec-devel" "libavformat-devel" "libswscale-devel" "libswresample-devel" "libavutil-devel")
         fi
     elif [ "$OS" = "macos" ]; then
-        missing_packages+=("pkg-config" "curl" "openssl" "zlib")
+        missing_packages+=("pkg-config" "curl" "openssl" "zlib" "ffmpeg")
     fi
 fi
 
-# Check optional Linux tray dependencies (AppIndicator3 + libnotify [+ GTK3 if not using glib variant])
+# Check for libxrt (Xilinx Runtime) — not available via pkg-config,
+# installed separately from Xilinx/XRT packages. Needed for FLM NPU backend.
+if [ "$OS" = "linux" ]; then
+    print_info "Checking for XRT (Xilinx Runtime)..."
+    if pkg-config --exists xrt 2>/dev/null || [ -d "${XILINX_XRT:-/opt/xilinx/xrt}/include/xrt" ]; then
+        print_success "XRT is installed"
+    else
+        print_warning "XRT (libxrt-dev) not found (needed for FLM NPU backend)"
+        if command_exists apt; then
+            missing_packages+=("xrt")
+        elif command_exists pacman; then
+            missing_packages+=("xrt")
+        elif is_rpm_ostree || command_exists dnf; then
+            missing_packages+=("xrt")
+        elif command_exists zypper; then
+            missing_packages+=("xrt")
+        fi
+    fi
+fi
+
+# Check optional Linux tray dependencies
 # These are optional - lemonade-tray is only built when they are present.
 # lemond always builds without them (headless, daemon-friendly).
 if [ "$OS" = "linux" ] && command_exists pkg-config; then

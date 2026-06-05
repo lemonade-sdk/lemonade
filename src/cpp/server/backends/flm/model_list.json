@@ -1,0 +1,1045 @@
+{
+    "model_path": "models",
+    "models": {
+        "nanbeige4.1": {
+            "3b": {
+                "name": "Nanbeige4.1-3B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Nanbeige4.1-3B-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Nanbeige4.1-3B-NPU2/tree/main",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 1000000000,
+                "flm_min_version": "0.9.38",
+                "default_context_length": 8192,
+                "max_prefill_len": 4096,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "details": {
+                    "family": "nanbeige",
+                    "think": false,
+                    "parameter_size": "3B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 3.1
+            }
+        },
+        "qwen3vl-it": {
+            "4b": {
+                "name": "Qwen3-VL-4B-Instruct-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-VL-4B-Instruct-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-VL-4B-Instruct-NPU2/tree/v0.9.22-faster-q4-1",
+                "size": 4000000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx"
+                ],
+                "vlm": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "qwen3vl",
+                    "think": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "vision",
+                    "tool-calling"
+                ],
+                "footprint": 3.9
+            }
+        },
+        "gemma4-it": {
+            "e2b": {
+                "name": "Gemma4-E2B-IT-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Gemma4-E2B-IT-NPU2/resolve/test_new_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Gemma4-E2B-IT-NPU2/tree/test_new_template",
+                "size": 2000000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx",
+                    "audio_weight.q4nx",
+                    "chat_template.jinja"
+                ],
+                "vlm": true,
+                "asr": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "gemma4e",
+                    "think": true,
+                    "parameter_size": "5B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "audio",
+                    "vision",
+                    "reasoning",
+                    "tool-calling",
+                    "chat-transcription"
+                ],
+                "footprint": 6.0
+            },
+            "e4b": {
+                "name": "Gemma4-E4B-IT-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Gemma4-E4B-IT-NPU2/resolve/test_new_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Gemma4-E4B-IT-NPU2/tree/test_new_template",
+                "size": 4000000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx",
+                    "audio_weight.q4nx",
+                    "chat_template.jinja"
+                ],
+                "vlm": true,
+                "asr": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "gemma4e",
+                    "think": true,
+                    "parameter_size": "8B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "audio",
+                    "vision",
+                    "reasoning",
+                    "tool-calling",
+                    "chat-transcription"
+                ],
+                "footprint": 9.1
+            }
+        },
+        "qwen3.5": {
+            "0.8b": {
+                "name": "Qwen3.5-0.8B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3.5-0.8B-NPU2/resolve/test_chat_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3.5-0.8B-NPU2/tree/test_chat_template",
+                "size": 800000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx",
+                    "chat_template.jinja"
+                ],
+                "vlm": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "qwen3.5",
+                    "think": true,
+                    "parameter_size": "0.8B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "vision",
+                    "reasoning"
+                ],
+                "footprint": 1.4
+            },
+            "2b": {
+                "name": "Qwen3.5-2B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3.5-2B-NPU2/resolve/test_chat_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3.5-2B-NPU2/tree/test_chat_template",
+                "size": 2000000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx",
+                    "chat_template.jinja"
+                ],
+                "vlm": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "qwen3.5",
+                    "think": true,
+                    "parameter_size": "2B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "vision",
+                    "reasoning",
+                    "tool-calling"
+                ],
+                "footprint": 3.2
+            },
+            "4b": {
+                "name": "Qwen3.5-4B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3.5-4B-NPU2/resolve/test_chat_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3.5-4B-NPU2/tree/test_chat_template",
+                "size": 4000000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx",
+                    "chat_template.jinja"
+                ],
+                "vlm": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "qwen3.5",
+                    "think": true,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "vision",
+                    "reasoning",
+                    "tool-calling"
+                ],
+                "footprint": 5.2
+            },
+            "9b":{
+                "name": "Qwen3.5-9B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3.5-9B-NPU2/resolve/test_chat_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3.5-9B-NPU2/tree/test_chat_template",
+                "size": 9000000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx",
+                    "chat_template.jinja"
+                ],
+                "vlm": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "qwen3.5",
+                    "think": true,
+                    "parameter_size": "9B",
+                    "quantization_level": "Q4_1"
+                },
+                "label": [
+                    "vision",
+                    "reasoning",
+                    "tool-calling"
+                ],
+                "footprint": 8.94
+            }
+        },
+        "lfm2": {
+            "1.2b": {
+                "name": "LFM2-1.2B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/LFM2-1.2B-NPU2/resolve/v0.9.24-significant-update",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/LFM2-1.2B-NPU2/tree/v0.9.24-significant-update",
+                "size": 1200000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "lfm2",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "1.2B",
+                    "quantization_level": "Q4_0"
+                },
+                "flm_min_version": "0.9.24",
+                "vlm": false,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "footprint": 0.96
+            },
+            "2.6b": {
+                "name": "LFM2-2.6B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/LFM2-2.6B-NPU2/resolve/v0.9.24-significant-update",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/LFM2-2.6B-NPU2/tree/v0.9.24-significant-update",
+                "size": 2600000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "lfm2",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "2.6B",
+                    "quantization_level": "Q4_0"
+                },
+                "flm_min_version": "0.9.24",
+                "vlm": false,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "footprint": 1.8
+            }
+        },
+        "lfm2-trans": {
+            "2.6b": {
+                "name": "LFM2-2.6B-Transcript-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/LFM2-2.6B-Transcript-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/LFM2-2.6B-Transcript-NPU2/tree/main",
+                "size": 2600000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "lfm2",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "2.6B",
+                    "quantization_level": "Q4_0"
+                },
+                "flm_min_version": "0.9.24",
+                "vlm": false,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "footprint": 1.8
+            }
+        },
+        "lfm2.5-it": {
+            "1.2b": {
+                "name": "LFM2.5-1.2B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/LFM2.5-1.2B-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/LFM2.5-1.2B-NPU2/tree/main",
+                "size": 1200000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "lfm2",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "1.2B",
+                    "quantization_level": "Q4_0"
+                },
+                "flm_min_version": "0.9.25",
+                "vlm": false,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "footprint": 0.96
+            }
+        },
+        "lfm2.5-tk": {
+            "1.2b": {
+                "name": "LFM2.5-1.2B-Thinking-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/LFM2.5-1.2B-Thinking-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/LFM2.5-1.2B-Thinking-NPU2/tree/main",
+                "size": 1200000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "format": "NPU2",
+                    "family": "lfm2.5-tk",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "1.2B",
+                    "quantization_level": "Q4_0"
+                },
+                "flm_min_version": "0.9.27",
+                "vlm": false,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "chat_template.jinja"
+                ],
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 0.96
+            }
+        },
+        "phi4-mini-it": {
+            "4b": {
+                "name": "Phi4-mini-Instruct-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Phi4-mini-Instruct-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Phi4-mini-Instruct-NPU2/tree/main",
+                "size": 4000000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "phi4",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "flm_min_version": "0.9.25",
+                "vlm": false,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "footprint": 3.4
+            }
+        },
+        "embed-gemma": {
+            "300m": {
+                "name": "Embedding-Gemma-300M-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Embedding-Gemma-300M-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Embedding-Gemma-300M-NPU2/tree/main",
+                "size": 300000000,
+                "flm_min_version": "0.9.15",
+                "files": [
+                    "config.json",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "model.q4nx"
+                ],
+                "default_context_length": 2048,
+                "details": {
+                    "format": "NPU2",
+                    "family": "embed-gemma",
+                    "think": false,
+                    "parameter_size": "300M",
+                    "quantization_level": "none"
+                },
+                "label":[
+                    "embeddings"
+                ],
+                "footprint": 0.62
+            }
+        },
+        "whisper-v3": {
+            "turbo": {
+                "name": "Whisper-V3-Turbo-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Whisper-V3-Turbo-NPU2",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Whisper-V3-Turbo-NPU2/tree/main",
+                "size": 1000000000,
+                "flm_min_version": "0.9.14",
+                "files": [
+                    "config.json",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "model.q4nx"
+                ],
+                "asr": true,
+                "default_context_length": 448,
+                "details": {
+                    "format": "NPU2",
+                    "family": "whisper-v3",
+                    "think": false,
+                    "parameter_size": "1B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "audio",
+                    "realtime-transcription",
+                    "transcription"
+                ],
+                "footprint": 0.62
+            }
+        },
+        "gemma3": {
+            "1b": {
+                "name": "Gemma3-1B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Gemma3-1B-NPU2/resolve/v0.9.20-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Gemma3-1B-NPU2/tree/v0.9.20-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 1000000000,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "flm_min_version": "0.9.20",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "details": {
+                    "family": "gemma3-text",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "1B",
+                    "quantization_level": "Q4_1"
+                },
+                "footprint": 1.2
+            },
+            "4b": {
+                "name": "Gemma3-4B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Gemma3-4B-NPU2/resolve/v0.9.23-optimize-vision",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Gemma3-4B-NPU2/tree/v0.9.23-optimize-vision",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "default_context_length": 65536,
+                "max_prefill_len": 4096,
+                "flm_min_version": "0.9.23",
+                "vlm": true,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx"
+                ],
+                "details": {
+                    "family": "gemma3",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "vision"
+                ],
+                "footprint": 4.5
+            }
+        },
+        "translategemma": {
+            "4b": {
+                "name": "Translategemma-4B-Instruct-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Translategemma-4B-Instruct-NPU2/resolve/main",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Translategemma-4B-Instruct-NPU2/tree/main",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "default_context_length": 65536,
+                "max_prefill_len": 4096,
+                "vlm": true,
+                "flm_min_version": "0.9.34",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx"
+                ],
+                "details": {
+                    "family": "gemma3",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "vision"
+                ],
+                "footprint": 4.5
+            }
+        },
+        "medgemma": {
+            "4b": {
+                "name": "Medgemma-4B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/medgemma-4b-it-NPU2/resolve/main",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/medgemma-4b-it-NPU2/tree/main",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "default_context_length": 65536,
+                "max_prefill_len": 4096,
+                "vlm": true,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx"
+                ],
+                "details": {
+                    "family": "gemma3",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "vision"
+                ],
+                "footprint": 4.5
+            }
+        },
+        "medgemma1.5": {
+            "4b": {
+                "name": "Medgemma-1.5-4B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/medgemma-1.5-4b-it-NPU2/resolve/test_new_template",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/medgemma-1.5-4b-it-NPU2/tree/test_new_template",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "default_context_length": 65536,
+                "max_prefill_len": 4096,
+                "vlm": true,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weight.q4nx"
+                ],
+                "details": {
+                    "family": "gemma3",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "vision"
+                ],
+                "footprint": 4.5
+            }
+        },
+        "llama3.2": {
+            "1b": {
+                "name": "Llama-3.2-1B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Llama-3.2-1B-NPU2/resolve/v0.9.21-merge-lm-head",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Llama-3.2-1B-NPU2/tree/v0.9.21-merge-lm-head",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 1000000000,
+                "flm_min_version": "0.9.21",
+                "default_context_length": 131072,
+                "max_prefill_len": 4096,
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "details": {
+                    "family": "llama3",
+                    "think": false,
+                    "parameter_size": "1B",
+                    "quantization_level": "Q4_1"
+                },
+                "footprint": 1.3
+            },
+            "3b": {
+                "name": "Llama-3.2-3B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Llama-3.2-3B-NPU2/resolve/v0.9.21-merging-lm-head",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Llama-3.2-3B-NPU2/tree/v0.9.21-merging-lm-head",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 3000000000,
+                "flm_min_version": "0.9.21",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 65536,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "llama3",
+                    "think": false,
+                    "parameter_size": "3B",
+                    "quantization_level": "Q4_1"
+                },
+                "footprint": 2.7
+            }
+        },
+        "llama3.1": {
+            "8b": {
+                "name": "Llama-3.1-8B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Llama-3.1-8B-NPU2/resolve/v0.9.21-merge-lm-head",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Llama-3.1-8B-NPU2/tree/v0.9.21-merge-lm-head",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 8000000000,
+                "flm_min_version": "0.9.21",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 16384,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "llama3",
+                    "think": false,
+                    "parameter_size": "8B",
+                    "quantization_level": "Q4_1"
+                },
+                "footprint": 5.4
+            }
+        },
+        "deepseek-r1": {
+            "8b": {
+                "name": "Deepseek-R1-Distill-Llama-8B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Deepseek-R1-Distill-Llama-8B-NPU2/resolve/main",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Deepseek-R1-Distill-Llama-8B-NPU2/tree/main",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 8000000000,
+                "flm_min_version": "0.9.43",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 16384,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "deepseek-r1",
+                    "think": true,
+                    "parameter_size": "8B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 5.4
+            }
+        },
+        "deepseek-r1-0528": {
+            "8b": {
+                "name": "DeepSeek-R1-0528-Qwen3-8B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/DeepSeek-R1-0528-Qwen3-8B-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/DeepSeek-R1-0528-Qwen3-8B-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 8000000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 16384,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "deepseek-r1-0528",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "8B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 5.6
+            }
+        },
+        "qwen3": {
+            "0.6b": {
+                "name": "Qwen3-0.6B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-0.6B-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-0.6B-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 600000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen3",
+                    "think": false,
+                    "think_toggleable": true,
+                    "parameter_size": "0.6B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 0.66
+            },
+            "1.7b": {
+                "name": "Qwen3-1.7B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-1.7B-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-1.7B-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 1700000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen3",
+                    "think": true,
+                    "think_toggleable": true,
+                    "parameter_size": "1.7B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 1.6
+            },
+            "4b": {
+                "name": "Qwen3-4B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-4B-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-4B-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen3",
+                    "think": true,
+                    "think_toggleable": true,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning",
+                    "tool-calling"
+                ],
+                "footprint": 3.1
+            },
+            "8b": {
+                "name": "Qwen3-8B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-8B-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-8B-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 8000000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 16384,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen3",
+                    "think": true,
+                    "think_toggleable": true,
+                    "parameter_size": "8B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning",
+                    "tool-calling"
+                ],
+                "footprint": 5.6
+            }
+        },
+        "qwen3-tk": {
+            "4b": {
+                "name": "Qwen3-4B-Thinking-2507-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-4B-Thinking-2507-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-4B-Thinking-2507-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen3-tk",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning",
+                    "tool-calling"
+                ],
+                "footprint": 3.1
+            }
+        },
+        "qwen3-it": {
+            "4b": {
+                "name": "Qwen3-4B-Instruct-2507-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen3-4B-Instruct-2507-NPU2/resolve/v0.9.22-faster-q4-1",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen3-4B-Instruct-2507-NPU2/tree/v0.9.22-faster-q4-1",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 4000000000,
+                "flm_min_version": "0.9.22",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen3-it",
+                    "think": false,
+                    "think_toggleable": false,
+                    "parameter_size": "4B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "tool-calling"
+                ],
+                "footprint": 3.1
+            }
+        },
+        "gpt-oss": {
+            "20b": {
+                "name": "GPT-OSS-20B-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/GPT-OSS-20B-NPU2/resolve/v0.9.20-merge-lm-head",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/GPT-OSS-20B-NPU2/tree/v0.9.20-merge-lm-head",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 20000000000,
+                "flm_min_version": "0.9.20",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 8192,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "gpt-oss",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "20B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 14.0
+            }
+        },
+        "gpt-oss-sg": {
+            "20b": {
+                "name": "GPT-OSS-Safeguard-20b-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/GPT-OSS-Safeguard-20b-NPU2/resolve/v0.9.20-merge-lm-head",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/GPT-OSS-Safeguard-20b-NPU2/tree/v0.9.20-merge-lm-head",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 20000000000,
+                "flm_min_version": "0.9.20",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 8192,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "gpt-oss",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "20B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "reasoning"
+                ],
+                "footprint": 14.0
+            }
+        },
+        "qwen2.5-it": {
+            "3b": {
+                "name": "Qwen2.5-3B-Instruct-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen2.5-3B-Instruct-NPU2/resolve/main",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen2.5-3B-Instruct-NPU2/tree/main",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 3000000000,
+                "flm_min_version": "0.9.32",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ],
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen2",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "3B",
+                    "quantization_level": "Q4_0"
+                },
+                "footprint": 2.5
+            }
+        },
+        "qwen2.5vl-it": {
+            "3b": {
+                "name": "Qwen2.5-VL-3B-Instruct-NPU2",
+                "url": "https://huggingface.co/FastFlowLM/Qwen2.5-VL-3B-Instruct-NPU2/resolve/main",
+                "file_url": "https://huggingface.co/api/models/FastFlowLM/Qwen2.5-VL-3B-Instruct-NPU2/tree/main",
+                "modified_at": "2025-05-30T00:00:00Z",
+                "size": 3000000000,
+                "flm_min_version": "0.9.32",
+                "files": [
+                    "config.json",
+                    "model.q4nx",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "vision_weights.q4nx"
+                ],
+                "vlm": true,
+                "default_context_length": 32768,
+                "max_prefill_len": 4096,
+                "details": {
+                    "family": "qwen2vl",
+                    "think": true,
+                    "think_toggleable": false,
+                    "parameter_size": "3B",
+                    "quantization_level": "Q4_1"
+                },
+                "label":[
+                    "vision"
+                ],
+                "footprint": 3.8
+            }
+        }
+    }
+}

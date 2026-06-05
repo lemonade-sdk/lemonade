@@ -1,0 +1,51 @@
+TERMS OF USE
+
+By clicking "I Agree" or by installing or using this software, you agree to all terms below. If you do not agree, do not install or use this software.
+
+LICENSE
+
+This software contains two types of components:
+
+Open-source components (such as the command-line interface and orchestration scripts) are licensed under the MIT License. You may use, modify, and distribute these freely, including for commercial purposes.,
+
+Proprietary binary components (such as NPU-accelerated kernels) are NOT open source. These binaries are protected by one or more pending patents and are distributed under separate terms.,
+
+You may use the Binaries for commercial purposes without a separate commercial license until your company’s annual gross revenue exceeds USD 10 million.
+Once your company’s annual revenue exceeds this threshold, you must obtain a commercial license from the Licensor to continue use.
+To request a commercial license, contact: info@fastflowlm.com
+
+If you wish to run your own model with FastFlowLM, we offer optimization services. Please contact us at info@fastflowlm.com for details.
+
+PATENT PENDING
+
+The proprietary components of this software are subject to one or more pending U.S. and international patent applications. Unauthorized use may result in liability.
+
+RESTRICTIONS
+
+You may NOT:
+a. Use the Binaries for any commercial purpose unless you meet the conditions in Section 4 and, if required, have obtained a commercial license.
+b. Modify, reverse-engineer, disassemble, or decompile the Binaries.
+c. Redistribute, publish, upload, or otherwise make the Binaries available to any third party, whether for commercial or non-commercial purposes, without prior written permission from the Licensor.
+d. Remove or obscure any copyright, trademark, or patent notices contained in or on the Binaries.
+
+NO WARRANTY
+
+This software is provided "AS IS" without any warranties, express or implied. We do not guarantee performance, reliability, or suitability for any purpose.
+
+You assume all risks associated with using this software. We are not liable for any damages, losses, or data issues arising from its use.
+
+TERMINATION
+
+This license will terminate automatically if you violate any of these terms. Upon termination, you must delete all copies of the software and cease use immediately.
+
+EXPORT COMPLIANCE
+
+You agree to comply with all applicable U.S. and international export control laws and regulations. You may not use or export this software in violation of any such laws.
+
+GOVERNING LAW
+
+This agreement is governed by the laws of the State of Delaware, United States. Any legal disputes must be resolved in a court located in Delaware.
+
+---
+
+By clicking "I Agree," you confirm that you have read, understood, and accepted all of the above terms.

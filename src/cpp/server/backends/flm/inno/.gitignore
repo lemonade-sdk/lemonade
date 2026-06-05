@@ -1,0 +1,4 @@
+*.exe
+Output
+*.dll
+*.json

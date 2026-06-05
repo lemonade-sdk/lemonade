@@ -1,0 +1,402 @@
+/// \file main.cpp
+/// \brief Main entry point for the FLM application
+/// \author FastFlowLM Team
+/// \date 2025-08-05
+/// \version 0.9.12
+/// \note This is a source file for the main entry point
+#pragma once
+#include "runner.hpp"
+#include "server.hpp"
+#include "model_list.hpp"
+#include "model_downloader.hpp"
+#include "update.hpp"
+#include "utils/utils.hpp"
+#include "minja/chat-template.hpp"
+#include <iostream>
+#include <string>
+#include <thread>
+#include <atomic>
+#include <windows.h>
+#include <filesystem>
+#include <shlobj.h>
+#include <cstdlib>
+#include <shellapi.h>
+#include "utils/vm_args.hpp"
+#include <boost/program_options.hpp>
+
+#include "AutoModel/automodel.hpp"
+
+// Global variables
+///@brief should_exit is used to control the server thread
+std::atomic<bool> should_exit(false);
+
+///@brief get_unicode_command_line_args gets Unicode command line arguments
+///@param argc_out reference to store argument count
+///@return vector of UTF-8 encoded argument strings
+std::vector<std::string> get_unicode_command_line_args(int& argc_out) {
+    std::vector<std::string> args;
+
+    // Get the Unicode command line
+    LPWSTR* szArglist;
+    int nArgs;
+
+    szArglist = CommandLineToArgvW(GetCommandLineW(), &nArgs);
+    if (szArglist == nullptr) {
+        argc_out = 0;
+        return args;
+    }
+
+    argc_out = nArgs;
+
+    // Convert each argument from wide string to UTF-8
+    for (int i = 0; i < nArgs; i++) {
+        std::wstring warg(szArglist[i]);
+
+        // Convert to UTF-8
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, warg.c_str(), (int)warg.size(), nullptr, 0, nullptr, nullptr);
+        if (size_needed > 0) {
+            std::string utf8_arg(size_needed, 0);
+            WideCharToMultiByte(CP_UTF8, 0, warg.c_str(), (int)warg.size(), &utf8_arg[0], size_needed, nullptr, nullptr);
+            args.push_back(utf8_arg);
+        } else {
+            args.push_back(""); // fallback for conversion error
+        }
+    }
+
+    // Free memory allocated by CommandLineToArgvW
+    LocalFree(szArglist);
+
+    return args;
+}
+
+///@brief get_executable_directory gets the directory where the executable is located
+///@return the executable directory path
+std::string get_executable_directory() {
+    char buffer[MAX_PATH];
+    GetModuleFileNameA(NULL, buffer, MAX_PATH);
+    std::string exe_path(buffer);
+    size_t last_slash = exe_path.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        return exe_path.substr(0, last_slash);
+    }
+    return ".";
+}
+
+///@brief get_user_directory gets the user's Documents directory
+///@return the user's Documents directory path
+std::string get_user_directory() {
+    char buffer[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, buffer))) {
+        return std::string(buffer);
+    }
+    // Fallback to executable directory if Documents folder cannot be found
+    return get_executable_directory();
+}
+
+///@brief ensure_models_directory creates the models directory if it doesn't exist
+///@param exe_dir the executable directory
+void ensure_models_directory(const std::string& exe_dir) {
+    // Use Documents directory for models instead of executable directory
+    std::string documents_dir = get_user_directory();
+    std::string models_dir = documents_dir + "/flm/models";
+    if (!std::filesystem::exists(models_dir)) {
+        std::filesystem::create_directories(models_dir);
+    }
+}
+
+///@brief handle_user_input is used to handle the user input
+void handle_user_input() {
+    std::string input;
+    while (!should_exit) {
+        header_print("FLM", "Enter 'exit' to stop the server: ");
+        std::getline(std::cin, input);
+        if (input == "exit") {
+            should_exit = true;
+            break;
+        }
+    }
+}
+
+///@brief create_lm_server is used to create the ollama server
+///@param models the model list
+///@param default_tag the default tag
+///@param port the port to listen on, default is 11434, same with the ollama server
+///@return the server
+std::unique_ptr<WebServer> create_lm_server(model_list& models, ModelDownloader& downloader, const std::string& default_tag, int port, int ctx_length, bool preemption);
+
+
+///@brief get_server_port gets the server port from environment variable FLM_SERVE_PORT
+///@return the server port, default is 11434 if environment variable is not set
+int get_server_port(int user_port) {
+    if (user_port > 0 && user_port <= 65535) {
+        return user_port;
+    }
+    else {
+        char* port_env = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&port_env, &len, "FLM_SERVE_PORT") == 0 && port_env != nullptr) {
+            try {
+                int port = std::stoi(port_env);
+                free(port_env);
+                if (port > 0 && port <= 65535) {
+                    return port;
+                }
+            }
+            catch (const std::exception&) {
+                free(port_env);
+                // Invalid port number, use default
+            }
+        }
+    }
+
+    return 11434; // Default port
+}
+
+///@brief get_models_directory gets the models directory from environment variable or defaults to Documents
+///@return the models directory path
+std::string get_models_directory() {
+    char* model_path_env = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&model_path_env, &len, "FLM_MODEL_PATH") == 0 && model_path_env != nullptr) {
+        std::string custom_path(model_path_env);
+        free(model_path_env);
+        if (!custom_path.empty()) {
+            return custom_path;
+        }
+    }
+    // Fallback to Documents directory if environment variable is not set
+    std::string documents_dir = get_user_directory();
+    return documents_dir + "/flm/models";
+}
+
+///@brief main function
+///@param argc the number of arguments
+///@param argv the arguments
+///@return the exit code
+int main(int argc, char* argv[]) {
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
+    // Parse command line arguments using Boost Program Options
+    arg_utils::ParsedArgs parsed_args;
+    if (!arg_utils::parse_options(argc, argv, parsed_args)) {
+        return 1; // Help was already printed by Boost Program Options
+    }
+
+    // Handle version requests
+
+    if (parsed_args.version_requested) {
+        std::cout << "FLM v" << __FLM_VERSION__ << std::endl;
+        return 0;
+    }
+
+    if (parsed_args.port_requested) {
+        std::cout << "Default server port: " << get_server_port(-1) << std::endl;
+        return 0;
+    }
+
+
+    // Extract parsed values
+    std::string command = parsed_args.command;
+    std::string tag = parsed_args.model_tag;
+    bool force_redownload = parsed_args.force_redownload;
+    std::string power_mode = parsed_args.power_mode;
+    bool got_power_mode = (power_mode != "performance"); // Check if user explicitly set power mode
+    int ctx_length = parsed_args.ctx_length;
+    bool preemption = parsed_args.preemption;
+    size_t max_socket_connections = parsed_args.max_socket_connections;
+    size_t max_npu_queue = parsed_args.max_npu_queue;
+    int user_port = parsed_args.port;
+    bool sub_process_mode = parsed_args.sub_process_mode;
+    std::string list_filter = parsed_args.list_filter;
+
+    // Set process priority to high for better performance
+    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
+    // Handle special case for serve command - use default tag if none provided
+    if (command == "serve" && tag.empty()) {
+        tag = "llama3.2:1b"; // Use default tag
+    }
+
+    if (command == "run" || command == "serve" || command == "pull" || command == "remove") {
+      if (!modelTags.count(tag)) {
+            header_print("ERROR", "Model not found: " << tag << "; Please check with `flm list` and try again.");
+            return 1;
+        }
+    }
+
+    if (command == "serve" || command == "run"){
+        // Configure AMD XRT for the specified power mode
+        if (power_mode == "default" || power_mode == "powersaver" || power_mode == "balanced" ||
+            power_mode == "performance" || power_mode == "turbo") {
+            std::string xrt_cmd = "cd \"C:\\Windows\\System32\\AMD\" && .\\xrt-smi.exe configure --pmode " + power_mode + " > NUL 2>&1";
+            header_print("FLM", "Configuring NPU Power Mode to " + power_mode + (got_power_mode ? "" : " (flm default)"));
+            system(xrt_cmd.c_str());
+        }
+        else{
+            std::cout << "Invalid power mode: " << power_mode << std::endl;
+            std::cout << "Valid power modes: default, powersaver, balanced, performance, turbo" << std::endl;
+            return 1;
+        }
+    }
+
+    if (preemption){
+        header_print("FLM", "Allowing high priority tasks to preempt FLM!");
+    }
+
+    // Get the command, model tag, and force flag
+    std::string exe_dir = get_executable_directory();
+    std::string config_path = exe_dir + "/model_list.json";
+
+    try {
+        // Get the models directory from environment variable or default
+        std::string models_dir = get_models_directory();
+
+        // Load the model list with the models directory as the base
+        model_list supported_models(config_path, models_dir);
+        ModelDownloader downloader(supported_models);
+
+        // Ensure models directory exists
+        if (!std::filesystem::exists(models_dir)) {
+            std::filesystem::create_directories(models_dir);
+        }
+
+        if (command == "run") {
+            check_and_notify_new_version();
+            Runner runner(supported_models, downloader, tag, ctx_length, preemption);
+            runner.run();
+
+        } else if (command == "serve") {
+            check_and_notify_new_version();
+            // Create the server
+            int port = get_server_port(user_port);
+            auto server = create_lm_server(supported_models, downloader, tag, port, ctx_length);
+            server->set_max_connections(max_socket_connections);           // Allow up to 10 concurrent connections
+            server->set_io_threads(10);          // Allow up to 5 io threads
+            server->set_npu_queue_length(max_npu_queue);           // Allow up to 10 concurrent queue
+            server->set_request_timeout(std::chrono::seconds(600)); // 10 minute timeout for long requests
+            // Start the server
+            header_print("FLM", "Starting server on port " << port << "...");
+            server->start();
+
+            // Start a thread to handle user input, this thread will be used to handle the user input
+            std::thread input_thread(handle_user_input);
+
+            // Wait for exit command, this thread will be used to wait for the user to exit the server
+            while (!should_exit) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            // Cleanup, this will be used to stop the server
+            header_print("FLM", "Stopping server...");
+            server->stop();
+            input_thread.join();
+        }
+        else if (command == "pull") {
+            // Check if the model is already downloaded, if true, the model will not be downloaded
+            // Check if model is already downloaded
+            if (!force_redownload && downloader.is_model_downloaded(tag)) {
+                header_print("FLM", "Model is already downloaded.");
+                // Show missing files if any, this will be used to show the missing files
+                auto missing_files = downloader.get_missing_files(tag);
+                if (!missing_files.empty()) {
+                    header_print("FLM", "Missing files:");
+                    for (const auto& file : missing_files) {
+                        std::cout << "  - " << file << std::endl;
+                    }
+                } else {
+                    header_print("FLM", "All required files are present.");
+                }
+            } else {
+                // Download the model, this will be used to download the model
+                bool success = downloader.pull_model(tag, force_redownload);
+                if (!success) {
+                    header_print("ERROR", "Failed to pull model: " + tag);
+                    return 1;
+                }
+            }
+        }
+        else if (command == "remove") {
+            // Remove the model, this will be used to remove the model
+            downloader.remove_model(tag);
+        }
+        else if (command == "list") {
+            // List the models, this will be used to list the models
+            if (list_filter == "installed" || list_filter == "not-installed" || list_filter == "all") {
+                std::cout << "Models:" << std::endl;
+                nlohmann::json models = supported_models.get_all_models();
+                for (const auto& model : models["models"]) {
+                    bool is_present = downloader.is_model_downloaded(model["name"].get<std::string>());
+                    if ((list_filter == "installed") == is_present || list_filter == "all") {
+                        std::cout << "  - " << model["name"].get<std::string>();
+                        if (!sub_process_mode) {
+                            std::cout << (is_present ? " ✅" : " ⏬");
+                        }
+                        std::cout << std::endl;
+                    }
+                }
+            }
+            else
+                header_print("Error", "Invalid filter: please use 'all', 'installed', or 'not-installed'");
+
+
+        }
+        else {
+            // Invalid command, this will be used to show the invalid command
+            std::cerr << "Invalid command: " << command << std::endl;
+            std::cerr << "Use --help for usage information" << std::endl;
+            return 1;
+        }
+        // Return 0 if the command is valid
+        return 0;
+    } catch (const std::exception& e) {
+        // If an error occurs, this will be used to show the error
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+//int main(int argc, char* argv[])
+//{
+//    //check_and_notify_new_version();
+//    std::string exe_dir = get_executable_directory();
+//    std::string config_path = exe_dir + "/model_list.json";
+//    std::string models_dir = get_models_directory();
+//
+//    chat_meta_info_t a;
+//
+//    std::string tag = "gpt-oss";
+//    model_list supported_models(config_path, models_dir);
+//    ModelDownloader downloader(supported_models);
+//    //Runner runner(supported_models, downloader, tag, -1, 0);
+//    std::pair<std::string, std::unique_ptr<AutoModel>> auto_model = get_auto_model(tag);
+//    std::unique_ptr<AutoModel> auto_chat_engine = std::move(auto_model.second);
+//    tag = auto_model.first;
+//    auto_chat_engine->load_model(supported_models.get_model_path(tag), supported_models.get_model_info(tag), -1, 0);
+//
+//
+//    lm_uniform_input_t input;
+//    input.prompt = "hi how are you?";
+//    nlohmann::ordered_json messages;
+//    messages.push_back({ {"role", "user"}, {"content", input.prompt} });
+//    std::string templated_text = auto_chat_engine->apply_chat_template(messages);
+//    auto_chat_engine->insert(a, input);
+//    //std::cout << templated_text << std::endl;
+//}
+
+//int main(int argc, char* argv[])
+//{
+//    std::string tag = "qwen3:0.6b"; // User Input
+//    std::string exe_dir = get_executable_directory();
+//    std::string config_path = exe_dir + "/model_list.json";
+//    std::string models_dir = get_models_directory();
+//    //std::cout << exe_dir << std::endl; // C:\Users\nock9\Projects\FastFlowLM\out
+//    //std::cout << models_dir << std::endl; // C:\Users\nock9\Documents\flm
+//
+//    model_list supported_models(config_path, models_dir);
+//    ModelDownloader downloader(supported_models);
+//    Runner runner(supported_models, downloader, tag);
+//    runner.run();
+//
+//    return 0;
+//}

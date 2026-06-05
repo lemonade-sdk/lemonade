@@ -2,12 +2,14 @@
 
 #include "../wrapped_server.h"
 #include "backend_utils.h"
+#include "flm_engine.h"
 #include <string>
 
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ITranscriptionServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer,
+                         public IRerankingServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -52,9 +54,6 @@ public:
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
 
-    // FLM uses /api/tags for readiness check instead of /health
-    bool wait_for_ready();
-
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -63,10 +62,32 @@ public:
                                    long timeout_seconds = 0) override;
 
 private:
-    // Get the path to the flm executable from the install directory
+    // Get the path to the flm executable for model pulling
     std::string get_flm_path();
 
+    // Build an OpenAI-style chat completion response from FlmEngine result
+    json build_chat_response(const std::string& model,
+                             const FlmInferenceResult& result,
+                             int prompt_tokens,
+                             int completion_tokens);
+
+    // Build an OpenAI-style completion response
+    json build_completion_response(const std::string& model,
+                                   const std::string& text,
+                                   int prompt_tokens,
+                                   int completion_tokens);
+
+    // Streaming chat completion using FlmEngine directly
+    void stream_chat_completion(const json& request,
+                                httplib::DataSink& sink);
+
+    // Streaming text completion using FlmEngine directly
+    void stream_completion(const json& request,
+                           httplib::DataSink& sink);
+
     bool is_loaded_ = false;
+    std::unique_ptr<FlmEngine> engine_;
+    std::string current_model_tag_;
 };
 
 } // namespace backends

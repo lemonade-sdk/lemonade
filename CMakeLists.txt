@@ -598,6 +598,43 @@ set(SOURCES_CORE
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
+    # FLM inference engine sources (in-process NPU backend)
+    src/cpp/server/backends/flm/flm_engine.cpp
+    src/cpp/server/backends/flm/common/audio/audio_reader.cpp
+    src/cpp/server/backends/flm/common/audio_process_utils/audioproc.cpp
+    src/cpp/server/backends/flm/common/audio_process_utils/audioprocAVX512.cpp
+    src/cpp/server/backends/flm/common/image/image_reader.cpp
+    src/cpp/server/backends/flm/common/image_process_utils/imageproc.cpp
+    src/cpp/server/backends/flm/common/image_process_utils/imageprocAVX512.cpp
+    src/cpp/server/backends/flm/common/modules/sampler.cpp
+    src/cpp/server/backends/flm/common/tokenizer/tokenizer.cpp
+    src/cpp/server/backends/flm/common/utils.cpp
+    src/cpp/server/backends/flm/common/whisper/modeling_whisper.cpp
+    src/cpp/server/backends/flm/common/whisper/modeling_whisper_audio.cpp
+    # FLM AutoModel implementations (model-specific NPU kernels)
+    src/cpp/server/backends/flm/common/AutoModel/automodel.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_llama3.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3_5vl_image.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_text.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma3_image.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_audio.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gemma4e_image.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen2vl_image.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_qwen3vl_image.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_lfm2.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_phi4.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_gpt_oss.cpp
+    src/cpp/server/backends/flm/common/AutoModel/modeling_nanbeige.cpp
+    # FLM embedding model (optional, for embedding endpoints)
+    src/cpp/server/backends/flm/common/AutoEmbeddingModel/auto_embedding_model.cpp
+    src/cpp/server/backends/flm/common/AutoEmbeddingModel/modeling_gemma_embedding.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
@@ -623,6 +660,91 @@ endif()
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
 # ============================================================
 add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
+
+# ============================================================
+# FLM (FastFlowLM) inference engine — in-process NPU backend
+# ============================================================
+# Include paths for FLM source files (mirrors FLM's original layout)
+target_include_directories(lemonade-server-core PRIVATE
+  src/cpp/server/backends/flm/include
+  src/cpp/server/backends/flm/common
+  src/cpp/server/backends/flm/src
+  src/cpp/server/backends/flm/runner
+  src/cpp/server/backends/flm/server
+  src/cpp/server/backends/flm/pull
+  src/cpp/server/backends/flm
+  src/cpp/server/backends/flm/../third_party/tokenizers-cpp/runtime/include
+)
+
+# FLM compiler definitions
+target_compile_definitions(lemonade-server-core PRIVATE
+  FASTFLOWLM_LINUX_LIMITED_MODELS
+)
+
+# Find XRT (Xilinx Runtime) for NPU support
+find_path(XRT_INCLUDE_DIR xrt.h
+  PATHS
+      /opt/xilinx/include
+      /usr/include
+      /usr/local/include
+      ENV XILINX_XRT
+  PATH_SUFFIXES xrt
+)
+find_library(XRT_LIBRARY NAMES xrt xilinxopencl
+  PATHS
+      /opt/xilinx/lib
+      /usr/lib
+      /usr/local/lib
+      ENV XILINX_XRT
+  PATH_SUFFIXES xrt
+)
+
+# Find AIE compiler libraries
+find_library(AIE_COMPILER_LIBRARY NAMES aie_compiler aiecompiler
+  PATHS
+      /opt/xilinx/lib
+      /usr/lib
+      /usr/local/lib
+)
+
+# Find AIE compiler headers
+find_path(AIE_COMPILER_INCLUDE_DIR aie_api.h
+  PATHS
+      /opt/xilinx/include
+      /usr/include
+      /usr/local/include
+)
+
+# Find AIE compiler runtime
+find_library(AIE_RUNTIME_LIBRARY NAMES aie_runtime aieruntime
+  PATHS
+      /opt/xilinx/lib
+      /usr/lib
+      /usr/local/lib
+)
+
+# Link FLM-specific libraries if found
+if(XRT_INCLUDE_DIR AND XRT_LIBRARY)
+  target_include_directories(lemonade-server-core PRIVATE ${XRT_INCLUDE_DIR})
+  target_link_libraries(lemonade-server-core PRIVATE ${XRT_LIBRARY})
+  message(STATUS "XRT found — FLM NPU backend enabled")
+else()
+  message(STATUS "XRT not found — FLM NPU backend will require system XRT at runtime")
+  # Still add the include directory for headers even if library isn't found
+  if(XRT_INCLUDE_DIR)
+      target_include_directories(lemonade-server-core PRIVATE ${XRT_INCLUDE_DIR})
+  endif()
+endif()
+
+if(AIE_COMPILER_INCLUDE_DIR)
+  target_include_directories(lemonade-server-core PRIVATE ${AIE_COMPILER_INCLUDE_DIR})
+endif()
+if(AIE_COMPILER_LIBRARY)
+  target_link_libraries(lemonade-server-core PRIVATE ${AIE_COMPILER_LIBRARY})
+endif()
+if(AIE_RUNTIME_LIBRARY)
+  target_link_libraries(lemonade-server-core PRIVATE ${AIE_RUNTIME_LIBRARY})
+endif()
 
 # ============================================================
 # lemond executable
