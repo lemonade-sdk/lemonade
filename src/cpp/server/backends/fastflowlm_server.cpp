@@ -1,7 +1,5 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/error_types.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/json_utils.h"
 #include <iostream>
 #include <filesystem>
 #include <sstream>
@@ -248,12 +246,14 @@ json FastFlowLMServer::completion(const json& request) {
 }
 
 json FastFlowLMServer::responses(const json& request) {
+    (void)request;
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "flm")
     );
 }
 
 json FastFlowLMServer::embeddings(const json& request) {
+    (void)request;
     if (model_type_ == ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Embeddings",
@@ -270,6 +270,7 @@ json FastFlowLMServer::embeddings(const json& request) {
 }
 
 json FastFlowLMServer::reranking(const json& request) {
+    (void)request;
     if (model_type_ != ModelType::LLM) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Reranking",
@@ -349,8 +350,6 @@ void FastFlowLMServer::stream_chat_completion(const json& request, httplib::Data
         // Collect streaming output
         std::string full_content;
         int prompt_tokens = 0, completion_tokens = 0;
-        float ttft = 0.0f;
-
         auto callback = [&](const std::string& chunk, bool is_final) {
             if (!chunk.empty()) {
                 full_content += chunk;

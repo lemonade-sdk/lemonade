@@ -172,7 +172,7 @@ public:
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();
 
-    // Get list of all available FLM models from 'flm list --json'
+    // Get list of available FLM models from local registry/cache metadata.
     std::vector<ModelInfo> get_flm_available_models();
 
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)

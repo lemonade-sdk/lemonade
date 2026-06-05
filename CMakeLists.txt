@@ -678,18 +678,11 @@ add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 # ============================================================
 if(LEMONADE_FLM)
 target_compile_definitions(lemonade-server-core PRIVATE LEMONADE_FLM=1)
+target_compile_definitions(lemonade-server-core PRIVATE NLOHMANN_JSON_NAMESPACE_NO_VERSION=1)
 
-# Include paths for FLM source files (mirrors FLM's original layout)
-# Use AFTER so the main project's nlohmann/json (v3.11.3) takes precedence
-# over the copy bundled in FLM's include tree (v3.12.0).
-target_include_directories(lemonade-server-core AFTER PRIVATE
-  src/cpp/server/backends/flm/include
-  src/cpp/server/backends/flm/common
-  src/cpp/server/backends/flm/src
-  src/cpp/server/backends/flm/runner
-  src/cpp/server/backends/flm/server
-  src/cpp/server/backends/flm/pull
-  src/cpp/server/backends/flm
+# Keep FLM root visible for flm_engine.h includes from non-FLM translation units.
+target_include_directories(lemonade-server-core PRIVATE
+    src/cpp/server/backends/flm
 )
 
 # FLM compiler definitions
@@ -738,6 +731,9 @@ set(FLM_SOURCES
   src/cpp/server/backends/flm/common/AutoEmbeddingModel/modeling_gemma_embedding.cpp
 )
 set_source_files_properties(${FLM_SOURCES} PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx")
+set_source_files_properties(${FLM_SOURCES} PROPERTIES INCLUDE_DIRECTORIES
+    "${CMAKE_CURRENT_BINARY_DIR}/_deps/json-src/include;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/include;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/common;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/src;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/runner;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/server;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/pull;${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm"
+)
 
 # Find XRT (Xilinx Runtime) for NPU support
 find_path(XRT_INCLUDE_DIR xrt.h
@@ -833,6 +829,7 @@ endif()
 # lemond executable
 # ============================================================
 add_executable(${EXECUTABLE_NAME} src/cpp/server/main.cpp)
+target_compile_definitions(${EXECUTABLE_NAME} PRIVATE NLOHMANN_JSON_NAMESPACE_NO_VERSION=1)
 if(WIN32)
     target_sources(${EXECUTABLE_NAME} PRIVATE src/cpp/server/version.rc)
 endif()
@@ -1010,6 +1007,16 @@ add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
         $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/resources
     COMMENT "Copying resources to output directory"
 )
+
+# Copy FLM model_list.json next to the executable for in-process model discovery
+if(LEMONADE_FLM)
+    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/flm/model_list.json
+            $<TARGET_FILE_DIR:${EXECUTABLE_NAME}>/model_list.json
+        COMMENT "Copying FLM model_list.json to output directory"
+    )
+endif()
 
 # Ensure resources are copied before building the executable
 add_dependencies(${EXECUTABLE_NAME} copy_resources)

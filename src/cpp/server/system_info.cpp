@@ -667,6 +667,11 @@ static bool device_matches_constraint(const std::string& device_family,
 
 // Generic installation check
 static bool is_recipe_installed(const std::string& recipe, const std::string& backend, std::string& error_message) {
+#ifdef LEMONADE_FLM
+    if (recipe == "flm") {
+        return true;
+    }
+#endif
     bool is_llamacpp_rocm_backend = recipe == "llamacpp" && backend == "rocm";
 
     // Special handling for ROCm backends on gfx1151 (Strix Halo) if kernel CWSR fix is missing
@@ -699,12 +704,6 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
 
             return true;
         } catch (...) {
-#ifndef _WIN32
-            // On Linux, FLM is installed as a system package (in PATH, not install dir)
-            if (recipe == "flm" && !utils::find_flm_executable().empty()) {
-                return true;
-            }
-#endif
             return false;
         }
     }
@@ -715,25 +714,18 @@ static std::string get_recipe_version(const std::string& recipe, const std::stri
     if (recipe == "llamacpp" && backend == "system") {
         return SystemInfo::get_system_llamacpp_version();
     }
+#ifdef LEMONADE_FLM
+    if (recipe == "flm") {
+        return SystemInfo::get_flm_version();
+    }
+#endif
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         std::string version_file = BackendUtils::get_installed_version_file(*spec, backend);
         if (version_file.empty()) {
-#ifndef _WIN32
-            // On Linux, FLM is a system package with no version.txt - query directly
-            if (recipe == "flm") {
-                return SystemInfo::get_flm_version();
-            }
-#endif
             return "unknown";
         }
         std::string version = read_version_file(version_file);
-#ifndef _WIN32
-        // On Linux, version.txt may not exist on disk for system-installed FLM
-        if (recipe == "flm" && (version.empty() || version == "unknown")) {
-            return SystemInfo::get_flm_version();
-        }
-#endif
         return version;
     }
     return "";
@@ -1494,6 +1486,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
             // On non-Windows, FLM is a system-managed package; a version newer
             // than the minimum required is acceptable.
             if (def.recipe == "flm") {
+#ifdef LEMONADE_FLM
+                // In-process FLM is always current — no version file to compare.
+                needs_update = false;
+#else
                 auto installed_ver = utils::Version::parse(installed_version);
                 auto expected_ver = utils::Version::parse(expected_version);
                 // If either version cannot be parsed, fall back to exact equality check
@@ -1501,6 +1497,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                     ? (installed_ver >= expected_ver)
                     : (installed_version == expected_version);
                 needs_update = has_expected && (!version_known || !version_at_least_expected);
+#endif
             } else
 #endif
             if (latest_pin) {
@@ -2298,71 +2295,7 @@ bool SystemInfo::get_has_igpu() {
 }
 
 std::string SystemInfo::get_flm_version() {
-    // Cache real version strings to avoid spawning the subprocess twice per
-    // build_recipes_info() pass. "unknown" is NOT cached so that post-install
-    // verification in fastflowlm_server.cpp gets a fresh result after FLM is installed.
-    static std::string cached_version;
-    if (!cached_version.empty()) {
-        return cached_version;
-    }
-
-    // Find the flm executable using shared utility
-    std::string flm_path = utils::find_flm_executable();
-    if (flm_path.empty() || !utils::is_safe_executable_path(flm_path)) {
-        return "unknown";
-    }
-
-    std::string output;
-    #ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" version --json 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    #else
-    std::string command = "\"" + flm_path + "\" version --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        return "unknown";
-    }
-
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-    #endif
-
-    // Parse JSON output: { "version": "0.9.34" }
-    try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("version") && j["version"].is_string()) {
-            std::string version = j["version"].get<std::string>();
-            // If the version doesn't start with 'v', prepend it
-            // for backend_versions.json compatibility (e.g. "v0.9.34").
-            if (!version.empty() && version[0] != 'v') {
-                version = "v" + version;
-            }
-            cached_version = version;
-            return cached_version;
-        }
-    } catch (...) {
-        // Fallback to legacy parsing if JSON parsing fails
-    }
-
-    // Legacy parsing from output like "FLM v0.9.4"
-    if (output.find("FLM v") != std::string::npos) {
-        size_t pos = output.find("FLM v");
-        // Keep the 'v' prefix so it matches backend_versions.json (e.g. "v0.9.34").
-        std::string version = output.substr(pos + 4);
-        // Trim whitespace and newlines
-        size_t end = version.find_first_of(" \t\n\r");
-        if (end != std::string::npos) {
-            version = version.substr(0, end);
-        }
-        cached_version = version;
-        return cached_version;
-    }
-
-    return "unknown";
+    return "in-process";
 }
 
 // ============================================================================

@@ -36,22 +36,6 @@ bool is_safe_executable_path(const std::string& path);
 bool looks_like_path(const std::string& v);
 
 /**
- * Find the FLM executable (flm.exe on Windows, flm on Unix).
- * Uses SearchPathA on Windows (same API as CreateProcessA) to search PATH,
- * then falls back to the default installation directory.
- * @return Full path to flm executable, or empty string if not found.
- */
-std::string find_flm_executable();
-
-/**
- * Run 'flm validate' command and check if it succeeds.
- * @param flm_path Optional path to flm executable. If empty, will search for it.
- * @param error_message Output parameter for error message if validation fails.
- * @return true if validation succeeds, false otherwise.
- */
-bool run_flm_validate(const std::string& flm_path, std::string& error_message);
-
-/**
  * Get an environment variable as UTF-8 text.
  */
 std::string get_environment_variable_utf8(const std::string& name);

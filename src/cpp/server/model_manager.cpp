@@ -282,34 +282,6 @@ static std::vector<fs::path> get_flm_models_dir_candidates() {
     return roots;
 }
 
-static fs::path find_flm_config_path_from_repo_dir(const std::string& repo_dir) {
-    if (repo_dir.empty()) return fs::path();
-
-    for (const auto& root : get_flm_models_dir_candidates()) {
-        fs::path candidate = root / repo_dir / "config.json";
-        if (safe_exists(candidate)) return candidate;
-    }
-    return fs::path();
-}
-
-static std::string repo_dir_from_url(const std::string& url) {
-    std::string clean = url;
-    while (!clean.empty() && clean.back() == '/') clean.pop_back();
-    size_t query_pos = clean.find_first_of("?#");
-    if (query_pos != std::string::npos) clean = clean.substr(0, query_pos);
-
-    for (const std::string marker : {"/tree/", "/resolve/"}) {
-        size_t marker_pos = clean.find(marker);
-        if (marker_pos != std::string::npos) {
-            clean = clean.substr(0, marker_pos);
-            break;
-        }
-    }
-
-    size_t slash = clean.find_last_of('/');
-    return slash == std::string::npos ? clean : clean.substr(slash + 1);
-}
-
 static int64_t read_flm_max_context_window(const ModelInfo& info) {
     if (info.type != ModelType::LLM) return 0;
 
@@ -1860,7 +1832,7 @@ void ModelManager::build_cache() {
         all_models[name] = info;
     }
 
-    // Step 1.6: Discover FLM models from 'flm list --json'
+    // Step 1.6: Discover FLM models from local registry/cache metadata.
     // Only discover FLM models if FLM is fully installed
     // Precedence: server_models.json > user_models.json > extra_models > flm_list
     auto flm_status = SystemInfoCache::get_flm_status();
@@ -2464,178 +2436,111 @@ void ModelManager::register_user_model(const std::string& model_name,
     }
 }
 
-// Find the FLM executable: install dir on Windows, system PATH on Linux.
-// Returns empty string if not found.
-static std::string find_flm_binary() {
-    try {
-        return backends::BackendUtils::get_backend_binary_path(
-            backends::FastFlowLMServer::SPEC, "npu");
-    } catch (...) {
-#ifndef _WIN32
-        return utils::find_flm_executable();
-#else
-        return "";
-#endif
-    }
-}
-
-// Helper function to get FLM installed models by calling 'flm list --filter installed --quiet'
+// In-process FLM backend does not shell out to external binaries for model discovery.
 std::vector<std::string> ModelManager::get_flm_installed_models() {
-    std::vector<std::string> installed_models;
-
-    std::string flm_path = find_flm_binary();
-    if (flm_path.empty()) return installed_models;
-
-    // Run 'flm list --filter installed --quiet --json' to get only installed models
-    std::string output;
-#ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>NUL";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-#else
-    std::string command = "\"" + flm_path + "\" list --filter installed --quiet --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        return installed_models;
-    }
-
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-#endif
-
-    // Parse output: { "models": [ { "name": "modelname:tag", ... }, ... ] }
-    try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("models") && j["models"].is_array()) {
-            for (const auto& model : j["models"]) {
-                if (model.contains("name") && model["name"].is_string()) {
-                    installed_models.push_back(model["name"].get<std::string>());
-                }
-            }
-            return installed_models;
-        }
-    } catch (...) {
-        // Fallback to legacy parsing if JSON parsing fails
-    }
-
-    // Legacy parsing - cleaner format without emojis
-    // Expected format:
-    //   Models:
-    //     - modelname:tag
-    //     - another:model
-    std::istringstream stream(output);
-    std::string line;
-    while (std::getline(stream, line)) {
-        // Trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
-
-        // Skip the "Models:" header line or empty lines
-        if (line == "Models:" || line.empty()) {
-            continue;
-        }
-
-        // Parse model checkpoint (format: "  - modelname:tag")
-        if (line.find("- ") == 0) {
-            std::string checkpoint = line.substr(2);
-            // Trim any remaining whitespace
-            checkpoint.erase(0, checkpoint.find_first_not_of(" \t"));
-            checkpoint.erase(checkpoint.find_last_not_of(" \t") + 1);
-            if (!checkpoint.empty()) {
-                installed_models.push_back(checkpoint);
-            }
-        }
-    }
-
-    return installed_models;
+    return {};
 }
 
 std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     std::vector<ModelInfo> flm_models;
 
-    std::string flm_path = find_flm_binary();
-    if (flm_path.empty()) return flm_models;
+#ifdef LEMONADE_FLM
+    // Locate model_list.json using multiple search paths
+    fs::path model_list_path;
+    std::vector<fs::path> candidates;
 
-    LOG(INFO, "ModelManager") << "FLM binary found at: " << flm_path << std::endl;
-
-    // Run 'flm list --json' to get all available models
-    std::string output;
-#ifdef _WIN32
-    std::string command = "\"" + flm_path + "\" list --json";
-    int rc = lemon::utils::ProcessManager::run_command(command, output);
-    LOG(INFO, "ModelManager") << "flm list --json exit code: " << rc
-              << ", output length: " << output.size() << std::endl;
-    if (rc != 0 || output.empty()) {
-        LOG(WARNING, "ModelManager") << "flm list --json failed or returned empty. "
-                  << "Output: " << output.substr(0, 200) << std::endl;
+    // 1. FLM_CONFIG_PATH env var (if it's a file, use it; if it's a dir, look for model_list.json in it)
+    const char* env_path_str = std::getenv("FLM_CONFIG_PATH");
+    if (env_path_str && *env_path_str) {
+        fs::path env_path(env_path_str);
+        if (fs::is_regular_file(env_path)) {
+            candidates.push_back(env_path);
+        } else if (fs::is_directory(env_path)) {
+            candidates.push_back(env_path / "model_list.json");
+        }
     }
-#else
-    std::string command = "\"" + flm_path + "\" list --json 2>/dev/null";
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
+
+    // 2. Same directory as the executable (copied by CMake POST_BUILD)
+    std::string exe_dir = get_executable_dir();
+    if (!exe_dir.empty()) {
+        candidates.push_back(fs::path(exe_dir) / "model_list.json");
+        // Also check resources subdirectory
+        candidates.push_back(fs::path(exe_dir) / "resources" / "model_list.json");
+    }
+
+    // Find the first existing file
+    for (const auto& candidate : candidates) {
+        if (fs::exists(candidate)) {
+            model_list_path = candidate;
+            break;
+        }
+    }
+
+    if (model_list_path.empty()) {
+        // model_list.json not found, but return empty gracefully
+        // (FLM is installed, just no model registry available)
         return flm_models;
     }
 
-    char buffer[256];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        output += buffer;
-    }
-
-    pclose(pipe);
-#endif
-
-    // Parse output: { "models": [ { "name": "modelname:tag", "footprint": 1.23, ... }, ... ] }
+    // Parse the model_list.json
     try {
-        json j = JsonUtils::parse(output);
-        if (j.contains("models") && j["models"].is_array()) {
-            for (const auto& m : j["models"]) {
-                if (m.contains("name") && m["name"].is_string()) {
-                    std::string checkpoint = m["name"].get<std::string>();
+        std::ifstream file(model_list_path);
+        if (!file.is_open()) {
+            return flm_models;
+        }
 
-                    // Format display name: replace : with -, append -FLM
-                    // e.g., "llama3.2:1b" -> "llama3.2-1b-FLM"
-                    std::string display_name = checkpoint;
-                    // Replace : with -
-                    std::replace(display_name.begin(), display_name.end(), ':', '-');
+        json model_list_json = json::parse(file);
+        file.close();
 
-                    std::string model_name = display_name + "-FLM";
+        if (!model_list_json.contains("models") || !model_list_json["models"].is_object()) {
+            return flm_models;
+        }
 
-                    ModelInfo info;
-                    info.model_name = model_name;
-                    info.checkpoints["main"] = checkpoint;
-                    info.recipe = "flm";
-                    info.suggested = true; // All official FLM models are suggested
+        // Iterate through model families and their size variants
+        for (const auto& [family, sizes_obj] : model_list_json["models"].items()) {
+            if (!sizes_obj.is_object()) continue;
 
-                    if (JsonUtils::get_or_default<bool>(m, "installed", false) && m.contains("url") && m["url"].is_string()) {
-                        fs::path config_path = find_flm_config_path_from_repo_dir(repo_dir_from_url(m["url"].get<std::string>()));
-                        if (!config_path.empty()) {
-                            info.resolved_paths["config"] = path_to_utf8(config_path);
-                        }
-                    }
+            for (const auto& [size, model_info] : sizes_obj.items()) {
+                if (!model_info.is_object()) continue;
 
-                    // Size in GB (footprint field contains disk size in GB)
-                    if (m.contains("footprint") && m["footprint"].is_number()) {
-                        info.size = m["footprint"].get<double>();
-                    }
+                ModelInfo info;
 
-                    // Labels from FLM metadata
-                    if (m.contains("label") && m["label"].is_array()) {
-                        for (const auto& l : m["label"]) {
-                            if (l.is_string()) {
-                                info.labels.push_back(l.get<std::string>());
-                            }
-                        }
-                    }
+                // Build checkpoint as "family:size" (e.g., "qwen3:4b")
+                info.checkpoints["main"] = family + ":" + size;
 
-                    // Populate type and device fields (multi-model support)
-                    info.type = get_model_type_from_labels(info.labels);
-                    info.device = get_device_type_from_recipe(info.recipe);
-
-                    flm_models.push_back(info);
+                // Use the "name" field from model_list.json as the model_name
+                if (model_info.contains("name") && model_info["name"].is_string()) {
+                    info.model_name = model_info["name"].get<std::string>();
+                } else {
+                    // Fallback: construct from family and size
+                    std::string name = family;
+                    std::replace(name.begin(), name.end(), '-', ' ');
+                    name[0] = std::toupper(name[0]);  // Capitalize first letter
+                    info.model_name = name + " " + size;
                 }
+
+                info.recipe = "flm";
+                info.suggested = true;  // All FLM models are considered suggested
+
+                // Size in GB (footprint field)
+                if (model_info.contains("footprint") && model_info["footprint"].is_number()) {
+                    info.size = model_info["footprint"].get<double>();
+                }
+
+                // Labels (e.g., "vision", "reasoning", "tool-calling")
+                if (model_info.contains("label") && model_info["label"].is_array()) {
+                    for (const auto& label : model_info["label"]) {
+                        if (label.is_string()) {
+                            info.labels.push_back(label.get<std::string>());
+                        }
+                    }
+                }
+
+                // Populate type and device fields
+                info.type = get_model_type_from_labels(info.labels);
+                info.device = get_device_type_from_recipe(info.recipe);
+
+                flm_models.push_back(info);
             }
         }
     } catch (const std::exception& e) {
@@ -2643,6 +2548,7 @@ std::vector<ModelInfo> ModelManager::get_flm_available_models() {
     } catch (...) {
         LOG(WARNING, "ModelManager") << "FLM model discovery failed with unknown error" << std::endl;
     }
+#endif
 
     return flm_models;
 }
@@ -3741,7 +3647,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             manifest["files"].push_back(file_entry);
         }
     }
-    
+
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
@@ -3802,220 +3708,163 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 void ModelManager::download_from_flm(const std::string& checkpoint,
                                      bool do_not_upgrade,
                                      DownloadProgressCallback progress_callback) {
-    LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
-
-    // Ensure FLM is ready (single source of truth)
-    auto status = SystemInfoCache::get_flm_status();
-    if (!status.is_ready()) {
-        throw std::runtime_error(status.error_string());
+#ifdef LEMONADE_FLM
+    // checkpoint format: "family:size" (e.g., "lfm2:1.2b")
+    std::vector<std::string> parts;
+    std::stringstream ss(checkpoint);
+    std::string part;
+    while (std::getline(ss, part, ':')) {
+        parts.push_back(part);
+    }
+    if (parts.size() != 2) {
+        throw std::runtime_error("Invalid FLM checkpoint format: " + checkpoint + " (expected 'family:size')");
     }
 
-    std::string flm_path = find_flm_binary();
-    if (flm_path.empty()) {
-        throw std::runtime_error("FLM executable not found");
+    std::string family = parts[0];
+    std::string size = parts[1];
+
+    // Load model_list.json to get HuggingFace URL and file list
+    fs::path model_list_path;
+    std::vector<fs::path> candidates;
+
+    const char* env_path_str = std::getenv("FLM_CONFIG_PATH");
+    if (env_path_str && *env_path_str) {
+        fs::path env_path(env_path_str);
+        if (fs::is_regular_file(env_path)) {
+            candidates.push_back(env_path);
+        } else if (fs::is_directory(env_path)) {
+            candidates.push_back(env_path / "model_list.json");
+        }
     }
 
-    // Prepare arguments
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
+    std::string exe_dir = get_executable_dir();
+    if (!exe_dir.empty()) {
+        candidates.push_back(fs::path(exe_dir) / "model_list.json");
+        candidates.push_back(fs::path(exe_dir) / "resources" / "model_list.json");
     }
 
-    LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
-    for (const auto& arg : args) {
-        LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
+    for (const auto& candidate : candidates) {
+        if (fs::exists(candidate)) {
+            model_list_path = candidate;
+            break;
+        }
     }
-    LOG(INFO, "ProcessManager") << std::endl;
 
-    // State for parsing FLM output
-    int total_files = 0;
-    int current_file_index = 0;
-    std::string current_filename;
-    bool cancelled = false;
+    if (model_list_path.empty()) {
+        throw std::runtime_error("model_list.json not found. Cannot download FLM model: " + checkpoint);
+    }
 
-    // Run flm pull command and parse output
-    int exit_code = utils::ProcessManager::run_process_with_output(
-        flm_path, args,
-        [&](const std::string& line) -> bool {
-            // Always print the line to console
-            LOG(INFO, "FLM") << line << std::endl;
+    // Parse model_list.json and find the model URL
+    try {
+        std::ifstream file(model_list_path);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open model_list.json");
+        }
 
-            // Parse FLM output to extract progress information
-            // Pattern: "[FLM]  Downloading X/Y: filename"
-            if (line.find("[FLM]  Downloading ") != std::string::npos &&
-                line.find("/") != std::string::npos &&
-                line.find(":") != std::string::npos) {
+        json model_list_json = json::parse(file);
+        file.close();
 
-                // Extract "X/Y: filename" from "[FLM]  Downloading X/Y: filename"
-                size_t start = line.find("Downloading ") + 12;
-                size_t slash = line.find("/", start);
-                size_t colon = line.find(":", slash);
+        if (!model_list_json.contains("models") || !model_list_json["models"].contains(family)) {
+            throw std::runtime_error("Model family not found in model_list.json: " + family);
+        }
 
-                if (slash != std::string::npos && colon != std::string::npos) {
-                    try {
-                        current_file_index = std::stoi(line.substr(start, slash - start));
-                        total_files = std::stoi(line.substr(slash + 1, colon - slash - 1));
-                        current_filename = line.substr(colon + 2);  // Skip ": "
+        const auto& family_obj = model_list_json["models"][family];
+        if (!family_obj.contains(size)) {
+            throw std::runtime_error("Model size not found in family: " + family + ":" + size);
+        }
 
-                        // Send progress update
-                        if (progress_callback) {
-                            DownloadProgress progress;
-                            progress.file = current_filename;
-                            progress.file_index = current_file_index;
-                            progress.total_files = total_files;
-                            progress.bytes_downloaded = 0;
-                            progress.bytes_total = 0;
-                            progress.percent = (total_files > 0) ?
-                                ((current_file_index - 1) * 100 / total_files) : 0;
+        const auto& model_info_json = family_obj[size];
 
-                            if (!progress_callback(progress)) {
-                                cancelled = true;
-                                return false;  // Kill the process
-                            }
-                        }
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-            // Pattern: "[FLM]  Downloading: XX.X% (XXX.XMB / XXX.XMB)"
-            else if (line.find("[FLM]  Downloading: ") != std::string::npos &&
-                     line.find("%") != std::string::npos) {
+        // Get the HuggingFace URL
+        if (!model_info_json.contains("url") || !model_info_json["url"].is_string()) {
+            throw std::runtime_error("URL not found for model: " + checkpoint);
+        }
+        std::string hf_url = model_info_json["url"].get<std::string>();
 
-                // Extract percentage and bytes
-                size_t start = line.find("Downloading: ") + 13;
-                size_t pct_end = line.find("%", start);
+        // Get file list
+        if (!model_info_json.contains("files") || !model_info_json["files"].is_array()) {
+            throw std::runtime_error("File list not found for model: " + checkpoint);
+        }
+        const auto& files_array = model_info_json["files"];
 
-                if (pct_end != std::string::npos) {
-                    try {
-                        std::string pct_str = line.substr(start, pct_end - start);
-                        double file_percent = std::stod(pct_str);
+        // Find or create FLM model directory
+        std::vector<fs::path> flm_dir_candidates = get_flm_models_dir_candidates();
+        if (flm_dir_candidates.empty()) {
+            throw std::runtime_error("No FLM model directory found. Set FLM_MODEL_PATH environment variable.");
+        }
 
-                        // Try to extract bytes (XXX.XMB / XXX.XMB)
-                        size_t open_paren = line.find("(", pct_end);
-                        size_t slash = line.find("/", open_paren);
-                        size_t close_paren = line.find(")", slash);
+        // Use the first candidate (most specific/preferred)
+        fs::path flm_model_base = flm_dir_candidates[0];
+        fs::path model_dir = flm_model_base / family / size;
 
-                        size_t bytes_downloaded = 0;
-                        size_t bytes_total = 0;
+        LOG(INFO, "ModelManager") << "Downloading FLM model to: " << path_to_utf8(model_dir) << std::endl;
 
-                        if (open_paren != std::string::npos && slash != std::string::npos) {
-                            std::string downloaded_str = line.substr(open_paren + 1, slash - open_paren - 1);
-                            std::string total_str = line.substr(slash + 1, close_paren - slash - 1);
+        // Create directory if it doesn't exist
+        if (!fs::exists(model_dir)) {
+            fs::create_directories(model_dir);
+        }
 
-                            // Parse "XXX.XMB" format
-                            auto parse_size = [](const std::string& s) -> size_t {
-                                double val = 0;
-                                size_t mb_pos = s.find("MB");
-                                size_t gb_pos = s.find("GB");
-                                size_t kb_pos = s.find("KB");
+        // Download all files
+        for (const auto& file_name : files_array) {
+            if (!file_name.is_string()) continue;
 
-                                if (mb_pos != std::string::npos) {
-                                    val = std::stod(s.substr(0, mb_pos));
-                                    return static_cast<size_t>(val * 1024 * 1024);
-                                } else if (gb_pos != std::string::npos) {
-                                    val = std::stod(s.substr(0, gb_pos));
-                                    return static_cast<size_t>(val * 1024 * 1024 * 1024);
-                                } else if (kb_pos != std::string::npos) {
-                                    val = std::stod(s.substr(0, kb_pos));
-                                    return static_cast<size_t>(val * 1024);
-                                }
-                                return 0;
-                            };
+            std::string fname = file_name.get<std::string>();
+            std::string file_url = hf_url + "/resolve/main/" + fname;
+            fs::path dest_path = model_dir / fname;
 
-                            bytes_downloaded = parse_size(downloaded_str);
-                            bytes_total = parse_size(total_str);
-                        }
-
-                        // Send progress update with byte-level info
-                        if (progress_callback) {
-                            DownloadProgress progress;
-                            progress.file = current_filename;
-                            progress.file_index = current_file_index;
-                            progress.total_files = total_files;
-                            progress.bytes_downloaded = bytes_downloaded;
-                            progress.bytes_total = bytes_total;
-                            // Use intra-file percent when we have byte-level progress
-                            progress.percent = static_cast<int>(file_percent);
-
-                            if (!progress_callback(progress)) {
-                                cancelled = true;
-                                return false;  // Kill the process
-                            }
-                        }
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-            // Pattern: "[FLM]  Overall progress: XX.X% (X/Y files)"
-            else if (line.find("[FLM]  Overall progress: ") != std::string::npos) {
-                size_t start = line.find("progress: ") + 10;
-                size_t pct_end = line.find("%", start);
-
-                if (pct_end != std::string::npos) {
-                    try {
-                        int overall_percent = static_cast<int>(std::stod(line.substr(start, pct_end - start)));
-
-                        if (progress_callback) {
-                            DownloadProgress progress;
-                            progress.file = current_filename;
-                            progress.file_index = current_file_index;
-                            progress.total_files = total_files;
-                            progress.bytes_downloaded = 0;  // Not available for overall progress
-                            progress.bytes_total = 0;
-                            progress.percent = overall_percent;
-
-                            if (!progress_callback(progress)) {
-                                cancelled = true;
-                                return false;  // Kill the process
-                            }
-                        }
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
-            }
-            // Pattern: "[FLM]  Missing files (N):"
-            else if (line.find("[FLM]  Missing files (") != std::string::npos) {
-                size_t start = line.find("(") + 1;
-                size_t end = line.find(")", start);
-                if (end != std::string::npos) {
-                    try {
-                        total_files = std::stoi(line.substr(start, end - start));
-                    } catch (...) {
-                        // Ignore parse errors
-                    }
-                }
+            // Skip if already downloaded
+            if (fs::exists(dest_path)) {
+                LOG(DEBUG, "ModelManager") << "File already exists, skipping: " << fname << std::endl;
+                continue;
             }
 
-            return true;  // Continue
-        },
-        "",  // Working directory
-        3600  // 1 hour timeout for large model downloads
-    );
+            LOG(INFO, "ModelManager") << "Downloading: " << fname << std::endl;
 
-    if (cancelled) {
-        LOG(INFO, "ModelManager") << "FLM download cancelled by client" << std::endl;
-        throw std::runtime_error("Download cancelled");
+            // Download the file using HttpClient
+            try {
+                HttpClient client;
+                HttpResponse response = client.get(file_url);
+
+                if (response.status_code != 200) {
+                    throw std::runtime_error("HTTP " + std::to_string(response.status_code) + " downloading " + fname);
+                }
+
+                // Ensure parent directory exists
+                fs::create_directories(dest_path.parent_path());
+
+                // Write file
+                std::ofstream out(dest_path, std::ios::binary);
+                if (!out.is_open()) {
+                    throw std::runtime_error("Failed to open file for writing: " + path_to_utf8(dest_path));
+                }
+                out.write(response.body.c_str(), response.body.size());
+                out.close();
+
+                // Report progress
+                if (progress_callback) {
+                    DownloadProgress progress;
+                    progress.file = fname;
+                    progress.bytes_downloaded = response.body.size();
+                    progress.bytes_total = response.body.size();
+                    progress.percent = 100;
+                    progress_callback(progress);
+                }
+            } catch (const std::exception& e) {
+                LOG(WARNING, "ModelManager") << "Failed to download " << fname << ": " << e.what() << std::endl;
+                throw;
+            }
+        }
+
+        LOG(INFO, "ModelManager") << "✓ FLM model " << checkpoint << " downloaded successfully!" << std::endl;
+    } catch (const std::exception& e) {
+        throw std::runtime_error("FLM model download failed: " + std::string(e.what()));
     }
-
-    if (exit_code != 0) {
-        LOG(ERROR, "ModelManager") << "FLM pull failed with exit code: " << exit_code << std::endl;
-        throw std::runtime_error("FLM pull failed with exit code: " + std::to_string(exit_code));
-    }
-
-    // Send completion event
-    if (progress_callback) {
-        DownloadProgress progress;
-        progress.complete = true;
-        progress.file_index = total_files;
-        progress.total_files = total_files;
-        progress.percent = 100;
-        (void)progress_callback(progress);  // Ignore return - download already complete
-    }
-
-    LOG(INFO, "ModelManager") << "FLM model pull completed successfully" << std::endl;
+#else
+    (void)checkpoint;
+    (void)do_not_upgrade;
+    (void)progress_callback;
+    throw std::runtime_error("FLM backend not compiled. Set LEMONADE_FLM=ON during build.");
+#endif
 }
 
 void ModelManager::delete_model(const std::string& model_name) {
@@ -4034,53 +3883,14 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Handle FLM models separately
     if (info.recipe == "flm") {
-        LOG(INFO, "ModelManager") << "Deleting FLM model: " << info.checkpoint() << std::endl;
+        LOG(INFO, "ModelManager") << "Deleting in-process FLM model: " << info.checkpoint() << std::endl;
 
-        // Validate checkpoint is not empty
-        if (info.checkpoint().empty()) {
-            throw std::runtime_error("FLM model has empty checkpoint field, cannot delete");
-        }
-
-        // Find flm executable — on Windows flm.exe lives under the lemonade
-        // cache dir, not on PATH, so we must resolve the full path.
-        std::string flm_path = find_flm_binary();
-        if (flm_path.empty()) {
-            throw std::runtime_error("FLM executable not found");
-        }
-
-        // Prepare arguments for 'flm remove' command
-        std::vector<std::string> args = {"remove", info.checkpoint()};
-
-        LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
-        for (const auto& arg : args) {
-            LOG(INFO, "ProcessManager") << " \"" << arg << "\"";
-        }
-        LOG(INFO, "ProcessManager") << std::endl;
-
-        // Run flm remove command
-        auto handle = utils::ProcessManager::start_process(flm_path, args, "", false);
-
-        // Wait for process to complete
-        int timeout_seconds = 60; // 1 minute timeout for removal
-        for (int i = 0; i < timeout_seconds * 10; ++i) {
-            if (!utils::ProcessManager::is_running(handle)) {
-                int exit_code = utils::ProcessManager::get_exit_code(handle);
-                if (exit_code != 0) {
-                    LOG(ERROR, "ModelManager") << "FLM remove failed with exit code: " << exit_code << std::endl;
-                    throw std::runtime_error("Failed to delete FLM model " + canonical_model_name + ": FLM remove failed with exit code " + std::to_string(exit_code));
-                }
-                break;
+        if (!info.checkpoint().empty()) {
+            fs::path checkpoint_path = path_from_utf8(info.checkpoint());
+            if (fs::exists(checkpoint_path)) {
+                fs::remove_all(checkpoint_path);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-
-        // Check if process is still running (timeout)
-        if (utils::ProcessManager::is_running(handle)) {
-            LOG(ERROR, "ModelManager") << "FLM remove timed out" << std::endl;
-            throw std::runtime_error("Failed to delete FLM model " + canonical_model_name + ": FLM remove timed out");
-        }
-
-        LOG(INFO, "ModelManager") << "Successfully deleted FLM model: " << canonical_model_name << std::endl;
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
