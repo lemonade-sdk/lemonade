@@ -346,6 +346,8 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       has_signing: ${{ steps.check_signing.outputs.has_signing }}
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -839,6 +841,7 @@ jobs:
             runner: [self-hosted, Windows]
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -952,6 +955,7 @@ jobs:
             runner: [self-hosted, Linux]
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -1299,6 +1303,7 @@ jobs:
     timeout-minutes: 30
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
@@ -1442,6 +1447,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -1530,6 +1536,7 @@ jobs:
         os: [windows-latest, macos-latest]
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GGML_METAL_NO_RESIDENCY: "1"
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -1654,6 +1661,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       LEMONADE_API_KEY: "test-api-key-12345"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -1746,6 +1754,7 @@ jobs:
       - build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       LEMONADE_API_KEY: "test-api-key-12345"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

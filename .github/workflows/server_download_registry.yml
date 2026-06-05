@@ -18,6 +18,7 @@ env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
   HF_HOME: ${{ github.workspace }}/hf-cache
+  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
   LEMONADE_CACHE_DIR: ${{ github.workspace }}/ci-cache
   LEMONADE_RUN_REAL_DOWNLOAD_TESTS: "1"
   LEMONADE_DOWNLOAD_TEST_MODEL: Tiny-Test-Model-GGUF
