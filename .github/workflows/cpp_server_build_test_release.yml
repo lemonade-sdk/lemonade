@@ -1445,6 +1445,7 @@ jobs:
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      HF_HOME: ${{ github.workspace }}/hf-cache
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -1468,15 +1469,15 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r test/requirements.txt
 
-      - name: Set environment
+      - name: Prepare HF cache
         id: setup
         shell: bash
         run: |
-          # HF_HOME must be set before install-lemonade-deb starts lemond.
-          # Values written to GITHUB_ENV are available to later steps/actions.
-          HF_HOME="$PWD/hf-cache"
+          set -e
+          # HF_HOME is job-level env so install-lemonade-deb and the lemond
+          # process it starts inherit the same cache path.
           mkdir -p "$HF_HOME"
-          echo "HF_HOME=$HF_HOME" >> "$GITHUB_ENV"
+          echo "HF_HOME=$HF_HOME"
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
