@@ -1227,7 +1227,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Default to preferring system llamacpp on Linux AMD systems.
-    // This can be overridden with LEMONADE_LLAMACPP_PREFER_SYSTEM=true/false.
+    // Can be set via config.json: {"llamacpp": {"prefer_system": true}}
     bool prefer_llamacpp_system = false;
     if (auto* cfg = RuntimeConfig::global()) {
         prefer_llamacpp_system = cfg->backend_bool("llamacpp", "prefer_system");
