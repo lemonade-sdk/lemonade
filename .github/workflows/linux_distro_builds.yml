@@ -4,7 +4,20 @@ on:
   push:
     branches: ["main"]
   pull_request:
-  merge_group:
+    paths:
+      - "CMakeLists.txt"
+      - "**/CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "src/cpp/**"
+      - "setup.sh"
+      - "test/server_cli2.py"
+      - "test/server_endpoints.py"
+      - "test/requirements.txt"
+      - "test/utils/**"
+      - ".github/workflows/linux_distro_builds.yml"
+      - ".github/actions/capture-server-logs/**"
+      - "!**/*.md"
   workflow_dispatch:
 
 permissions:
