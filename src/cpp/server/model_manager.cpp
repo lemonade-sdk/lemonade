@@ -85,6 +85,8 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
+static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
+static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
 static bool has_label(const ModelInfo& info, const std::string& label) {
     return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
@@ -1010,6 +1012,18 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
     }
 }
 
+ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
+    ModelInfo info;
+    info.model_name = name;
+    info.recipe = EXTRA_MODEL_RECIPE;
+    info.suggested = true;
+    info.downloaded = true;
+    info.source = EXTRA_MODEL_SOURCE;
+    info.labels.push_back("custom");
+    info.device = get_device_type_from_recipe(EXTRA_MODEL_RECIPE);
+    return info;
+}
+
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<std::string, ModelInfo> discovered;
 
@@ -1026,24 +1040,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::string search_dir = extra_models_dir_;
 
     LOG(INFO, "ModelManager") << "Scanning for GGUF models in: " << search_dir << std::endl;
-
-    // Configuration for discovered models (single source of truth)
-    static constexpr const char* EXTRA_MODEL_PREFIX = "extra.";
-    static constexpr const char* EXTRA_MODEL_RECIPE = "llamacpp";
-    static constexpr const char* EXTRA_MODEL_SOURCE = "extra_models_dir";
-
-    // Helper to initialize common ModelInfo fields for discovered models
-    auto init_extra_model_info = [this](const std::string& name) -> ModelInfo {
-        ModelInfo info;
-        info.model_name = name;
-        info.recipe = EXTRA_MODEL_RECIPE;
-        info.suggested = true;
-        info.downloaded = true;
-        info.source = EXTRA_MODEL_SOURCE;
-        info.labels.push_back("custom");
-        info.device = get_device_type_from_recipe(EXTRA_MODEL_RECIPE);
-        return info;
-    };
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<std::string, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
@@ -1101,61 +1097,121 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     // Process directories (multimodal and multi-shard models)
     for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
-
-        fs::path dir = fs::path(dir_path);
-        std::string dir_name = dir.filename().string();
-
-        // Find the main model file and mmproj file
-        fs::path main_model_path;
-        fs::path mmproj_file;
-        double total_size = 0.0;
-
-        for (const auto& gguf_path : gguf_files) {
-            // Calculate total size
-            try {
-                uintmax_t file_size = fs::file_size(gguf_path);
-                total_size += static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
-            } catch (...) {}
-
-            // Check if this is an mmproj file (can be anywhere in filename)
-            if (contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
-                mmproj_file = gguf_path;
-                continue;
-            }
-
-            // This is a model file - for sharded models, we want the first shard
-            // For non-sharded, this is the only model file
-            if (main_model_path.empty() || gguf_path < main_model_path) {
-                main_model_path = gguf_path;
-            }
-        }
-
-        if (main_model_path.empty()) {
-            // No main model file found (only mmproj?), skip
-            continue;
-        }
-
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + dir_name;
-        ModelInfo info = init_extra_model_info(model_name);
-        info.checkpoints["main"] = dir_path;
-        info.resolved_paths["main"] = main_model_path.string();
-        info.size = total_size;
-
-        // If mmproj found, set it and add vision label
-        if (!mmproj_file.empty()) {
-            info.checkpoints["mmproj"] = mmproj_file.filename().string();
-            info.resolved_paths["mmproj"] = mmproj_file.string();
-            info.labels.push_back("vision");
-        }
-
-        info.type = get_model_type_from_labels(info.labels);
-
-        discovered[model_name] = info;
+        discover_extra_models_in_directory(fs::path(dir_path), gguf_files, discovered);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
 
     return discovered;
+}
+
+void ModelManager::discover_extra_models_in_directory(
+    const fs::path& dir_path,
+    const std::vector<fs::path>& gguf_files,
+    std::map<std::string, ModelInfo>& discovered) const {
+
+    std::string dir_name = dir_path.filename().string();
+    fs::path main_model_path; // File the old folder-based discovery would have selected.
+    fs::path mmproj_file;
+    double total_size = 0.0;
+
+    std::vector<std::string> model_filenames;
+    std::vector<std::pair<std::string, uint64_t>> model_file_sizes;
+    std::map<std::string, fs::path> model_file_by_name;
+
+    for (const auto& gguf_path : gguf_files) {
+        uint64_t file_size = 0;
+        try {
+            file_size = static_cast<uint64_t>(fs::file_size(gguf_path));
+            total_size += static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
+        } catch (...) {}
+
+        if (contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
+            mmproj_file = gguf_path;
+            continue;
+        }
+
+        std::string filename = gguf_path.filename().string();
+        model_filenames.push_back(filename);
+        model_file_sizes.emplace_back(filename, file_size);
+        model_file_by_name[filename] = gguf_path;
+
+        // Match the old folder behavior: choose the first model file alphabetically.
+        if (main_model_path.empty() || gguf_path < main_model_path) {
+            main_model_path = gguf_path;
+        }
+    }
+
+    if (main_model_path.empty()) return;
+
+    auto vset = lemon::enumerate_gguf_variants(model_filenames, model_file_sizes);
+
+    // Split only when variant detection cleanly identifies separate single-file
+    // quants. Shards or unmatched files fall back to folder grouping so no GGUF
+    // parts disappear from discovery.
+    bool should_split = vset.variants.size() > 1;
+    for (const auto& v : vset.variants) {
+        if (v.sharded || v.name == v.primary_file) {
+            should_split = false;
+            break;
+        }
+    }
+
+    if (should_split) {
+        std::set<std::string> represented_files;
+        for (const auto& v : vset.variants) {
+            represented_files.insert(v.files.begin(), v.files.end());
+        }
+        if (represented_files.size() != model_filenames.size()) {
+            should_split = false;
+        }
+    }
+
+    if (should_split) {
+        for (const auto& v : vset.variants) {
+            auto it = model_file_by_name.find(v.primary_file);
+            if (it == model_file_by_name.end()) continue;
+
+            const fs::path& path = it->second;
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + path.stem().string();
+
+            ModelInfo info = init_extra_model_info(variant_id);
+            info.checkpoints["main"] = path.string();
+            info.resolved_paths["main"] = path.string();
+            info.size = static_cast<double>(v.size_bytes) / (1024.0 * 1024.0 * 1024.0);
+
+            if (!mmproj_file.empty()) {
+                info.checkpoints["mmproj"] = mmproj_file.filename().string();
+                info.resolved_paths["mmproj"] = mmproj_file.string();
+                info.labels.push_back("vision");
+            }
+            info.type = get_model_type_from_labels(info.labels);
+            discovered[variant_id] = info;
+
+            // Keep the old extra.<folder> ID working for scripts and saved aliases.
+            if (path == main_model_path) {
+                std::string legacy_id = std::string(EXTRA_MODEL_PREFIX) + dir_name;
+                ModelInfo legacy_info = info;
+                legacy_info.model_name = legacy_id;
+                discovered[legacy_id] = legacy_info;
+            }
+        }
+    } else {
+        // Fallback: group entire folder as one model
+        std::string model_id = std::string(EXTRA_MODEL_PREFIX) + dir_name;
+        ModelInfo info = init_extra_model_info(model_id);
+        info.checkpoints["main"] = dir_path.string();
+        info.resolved_paths["main"] = main_model_path.string();
+        info.size = total_size;
+
+        if (!mmproj_file.empty()) {
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
+            info.labels.push_back("vision");
+        }
+        info.type = get_model_type_from_labels(info.labels);
+        discovered[model_id] = info;
+    }
 }
 
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
@@ -3741,7 +3797,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             manifest["files"].push_back(file_entry);
         }
     }
-    
+
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;

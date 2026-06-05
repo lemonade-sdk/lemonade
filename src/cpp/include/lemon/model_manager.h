@@ -226,6 +226,14 @@ private:
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
 
+    ModelInfo init_extra_model_info(const std::string& name) const;
+
+    // Scans a subfolder for GGUF variants while preserving the legacy folder ID.
+    void discover_extra_models_in_directory(
+        const std::filesystem::path& dir_path,
+        const std::vector<std::filesystem::path>& gguf_files,
+        std::map<std::string, ModelInfo>& discovered) const;
+
     json server_models_;
     json user_models_;
     json recipe_options_;
