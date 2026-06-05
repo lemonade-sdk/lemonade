@@ -75,6 +75,7 @@ nav:
   - Development:
     - Overview: dev/README.md
     - Philosophy: dev/philosophy.md
+    - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - C++: dev/getting-started.md
     - Desktop App: dev/app.md

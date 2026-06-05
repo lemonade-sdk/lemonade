@@ -337,17 +337,117 @@ sys.exit(0)
     # List Tests
     # =============================================================================
 
+    def _section_between(self, output, start_header, end_header=None):
+        lines = output.splitlines()
+        self.assertIn(start_header, lines)
+
+        start = lines.index(start_header) + 1
+        end = (
+            lines.index(end_header)
+            if end_header and end_header in lines
+            else len(lines)
+        )
+
+        return "\n".join(lines[start:end])
+
+    def _parse_model_table(self, section_text):
+        parsed_models = []
+        for line in section_text.splitlines():
+            line = line.strip()
+            if (
+                not line
+                or line.startswith("Model Name")
+                or line.startswith("---")
+                or "No local models" in line
+                or "No models available" in line
+            ):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                name = parts[0]
+                downloaded = parts[1] == "Yes"
+                details = parts[2] if len(parts) > 2 else ""
+                parsed_models.append(
+                    {"name": name, "downloaded": downloaded, "details": details}
+                )
+        return parsed_models
+
     def test_020_list(self):
         """Test list command."""
         result = self.assertCommandSucceeds(["list"])
         output = result.stdout + result.stderr
         print(f"List output: {output}")
+        output_lines = output.splitlines()
+        self.assertIn("Local", output_lines)
+        self.assertIn("Available for Download", output_lines)
+        self.assertLess(
+            output_lines.index("Local"),
+            output_lines.index("Available for Download"),
+        )
+
+        local_section = self._section_between(output, "Local", "Available for Download")
+        available_section = self._section_between(output, "Available for Download")
+
+        local_models = self._parse_model_table(local_section)
+        available_models = self._parse_model_table(available_section)
+
+        if not local_models:
+            self.assertIn("No local models downloaded.", local_section)
+        else:
+            for m in local_models:
+                self.assertTrue(
+                    m["downloaded"],
+                    f"Model {m['name']} in Local section should be downloaded (Yes)",
+                )
+
+        for m in available_models:
+            self.assertFalse(
+                m["downloaded"],
+                f"Model {m['name']} in Available for Download section should not be downloaded (No)",
+            )
 
     def test_021_list_downloaded_flag(self):
         """Test list --downloaded flag."""
+        # Get all models from the full list to know what's available vs downloaded
+        all_result = self.assertCommandSucceeds(["list"])
+        all_output = all_result.stdout + all_result.stderr
+        available_section = self._section_between(all_output, "Available for Download")
+        available_models = self._parse_model_table(available_section)
+
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
         print(f"List --downloaded output: {output}")
+        output_lines = output.splitlines()
+        self.assertNotIn("Local", output_lines)
+        self.assertNotIn("Available for Download", output_lines)
+
+        # A fresh cache has no local models yet, so --downloaded may return
+        # the empty local-state message instead of a table.
+        if "No local models downloaded." in output:
+            downloaded_models = []
+        else:
+            self.assertIn("Model Name", output)
+            self.assertIn("Downloaded", output)
+            self.assertIn("Details", output)
+            downloaded_models = self._parse_model_table(output)
+
+        for m in downloaded_models:
+            self.assertTrue(
+                m["downloaded"],
+                f"Model {m['name']} in --downloaded list should be downloaded (Yes)",
+            )
+
+        non_downloaded_names = [
+            m["name"] for m in available_models if not m["downloaded"]
+        ]
+        if non_downloaded_names:
+            downloaded_names = [m["name"] for m in downloaded_models]
+            for name in non_downloaded_names:
+                self.assertNotIn(
+                    name,
+                    downloaded_names,
+                    f"Non-downloaded model {name} should not be in --downloaded list",
+                )
 
     # =============================================================================
     # Export Tests
