@@ -18,6 +18,10 @@
 # Add-only for human / LLM labels — never removes a human-applied label.
 # The bot may transition between its own priority labels (drops warm
 # when promoting to hot) so the two never coexist.
+#
+# Priority is sticky: once warm or hot is applied, it is NEVER demoted
+# or removed if engagement later drops back below the threshold. The
+# label reflects peak engagement; demotion, if ever needed, is manual.
 name: Auto-label issues and PRs
 
 on:

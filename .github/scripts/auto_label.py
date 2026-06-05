@@ -16,6 +16,7 @@ Requirements:
 """
 
 import argparse
+import functools
 import json
 import os
 import subprocess
@@ -227,47 +228,60 @@ def resolve_repo(repo):
     ).strip()
 
 
-def has_write_access(login, repo, cache):
-    if login in cache:
-        return cache[login]
+@functools.lru_cache(maxsize=None)
+def has_write_access(login, repo):
+    """True if `login` has admin/write access on `repo`. Cached process-wide
+    so a single scheduled/backfill run that touches many items only looks
+    up each user once instead of once per item."""
     try:
         data = gh_api(f"repos/{repo}/collaborators/{login}/permission")
     except subprocess.CalledProcessError:
-        cache[login] = False
         return False
-    cache[login] = data.get("permission") in WRITE_PERMISSIONS
-    return cache[login]
+    return data.get("permission") in WRITE_PERMISSIONS
 
 
-def _add_community_user(users, login, author_association, repo, cache):
+def _add_community_user(users, login, author_association, repo):
     if not login:
         return
     if author_association in WRITE_ASSOCIATIONS:
         return
-    if has_write_access(login, repo, cache):
+    if has_write_access(login, repo):
         return
     users.add(login)
 
 
 def community_priority_labels(item_num, existing, repo):
-    """Return (to_add, to_remove, community_user_count). Priority labels
-    are mutually exclusive: when an item crosses the hot threshold,
-    existing warm is queued for removal so it doesn't accumulate alongside
-    hot. Counts the author, commenters, and supporting-reaction users,
-    excluding anyone with write access."""
+    """Return (to_add, to_remove, community_user_count).
+
+    Priority is sticky-by-design: warm and hot are applied when an item
+    crosses the threshold, but the label is NEVER demoted or removed if
+    engagement later drops below the threshold (e.g. comments deleted,
+    reactions retracted, or a participant gaining write access after the
+    fact). The rationale is that priority should reflect peak engagement
+    — a topic that drew this many distinct community users matters for
+    the backlog even if those participants have since moved on, and
+    repeatedly toggling labels would create noise without adding signal.
+    Demotion, if ever needed, is a manual action.
+
+    Promotion warm → hot is supported: when an item crosses the hot
+    threshold and already carries warm, warm is queued for removal so
+    the two never coexist.
+
+    Counts distinct non-write-access users across the author, commenters,
+    and supporting reactions. Permission lookups are cached process-wide
+    via has_write_access's lru_cache, so a scheduled run over hundreds
+    of items hits each user's permission endpoint at most once."""
     issue = gh_api(f"repos/{repo}/issues/{item_num}")
     comments = gh_api_pages(f"repos/{repo}/issues/{item_num}/comments?per_page=100")
     reactions = gh_api_pages(f"repos/{repo}/issues/{item_num}/reactions?per_page=100")
 
     users = set()
-    cache = {}
 
     _add_community_user(
         users,
         (issue.get("user") or {}).get("login"),
         issue.get("author_association"),
         repo,
-        cache,
     )
 
     for comment in comments:
@@ -276,14 +290,13 @@ def community_priority_labels(item_num, existing, repo):
             (comment.get("user") or {}).get("login"),
             comment.get("author_association"),
             repo,
-            cache,
         )
 
     for reaction in reactions:
         if reaction.get("content") not in SUPPORTING_REACTIONS:
             continue
         login = (reaction.get("user") or {}).get("login")
-        if login and not has_write_access(login, repo, cache):
+        if login and not has_write_access(login, repo):
             users.add(login)
 
     count = len(users)
