@@ -19,6 +19,7 @@ permissions:
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
+  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
   LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
@@ -154,6 +155,12 @@ jobs:
           - backend: rocm
             channel: nightly
             runner: [self-hosted, Windows, 128gb, rocm]
+          # CUDA validation is prepared but intentionally disabled until an
+          # NVIDIA self-hosted runner is available. To enable it, uncomment this
+          # matrix entry.
+          #
+          # - backend: cuda
+          #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
       - uses: actions/checkout@v5
         with:

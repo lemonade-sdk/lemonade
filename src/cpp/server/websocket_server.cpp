@@ -138,12 +138,10 @@ bool WebSocketServer::start() {
     info.protocols = protocols;
     info.user = this;
 
-    if (!host_.empty() && host_ != "0.0.0.0") {
-        if (host_ == "localhost") {
-            info.iface = "127.0.0.1";
-        } else {
-            info.iface = host_.c_str();
-        }
+    if (host_.empty() || host_ == "localhost") {
+        info.iface = "127.0.0.1";
+    } else if (host_ != "0.0.0.0") {
+        info.iface = host_.c_str();
     }
 
     lws_set_log_level(LLL_ERR | LLL_WARN, nullptr);

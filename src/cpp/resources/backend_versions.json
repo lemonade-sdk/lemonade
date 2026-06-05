@@ -4,6 +4,7 @@
     "vulkan": "b9253",
     "rocm-stable": "b9247",
     "rocm-nightly": "b1274",
+    "cuda": "b9436",
     "metal": "b9253",
     "cpu": "b9253"
   },
@@ -17,7 +18,8 @@
   "sd-cpp": {
     "cpu": "master-616-cde20d5",
     "rocm-stable": "master-616-cde20d5",
-    "metal": "master-616-cde20d5"
+    "vulkan": "master-616-cde20d5",
+    "metal": "master-655-29ab511"
   },
   "therock": {
     "version": "7.13.0",
@@ -72,7 +74,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v0.9.42"
+    "npu": "v0.9.43"
   },
   "kokoro": {
     "cpu": "b17",

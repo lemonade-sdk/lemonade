@@ -956,7 +956,7 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] /stats endpoint returned: {list(data.keys())}")
 
-    def test_021_pull_multi(self):
+    def test_021s_pull_multi(self):
         # First delete model if it exists to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
@@ -1091,7 +1091,7 @@ class EndpointTests(ServerTestBase):
                     "checkpoints": {
                         # Use a different main quant than USER_MODEL_NAME so this test's
                         # cleanup does not delete the same shared main file and poison
-                        # later reruns of test_021_pull_multi.
+                        # later reruns of test_021s_pull_multi.
                         "main": SHARED_REPO_MODEL_B_CHECKPOINT,
                         "text_encoder": USER_MODEL_TE_CHECKPOINT,
                         "vae": USER_MODEL_VAE_CHECKPOINT,
@@ -1833,6 +1833,33 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] root GGUF emits stem: {bare}")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021r_openai_chat_extra_models_precedence(self):
+        """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
+        # Use a built-in model name to prove precedence and alias resolution simultaneously
+        bare = ENDPOINT_TEST_MODEL
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
+        self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
+            payload = {"model": bare, "messages": [{"role": "user", "content": "hi"}]}
+            resp = requests.post(
+                f"http://localhost:{PORT}/v1/chat/completions",
+                json=payload,
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            self.assertEqual(resp.status_code, 500)
+            self.assertIn(
+                "Failed to load model", resp.json().get("error", {}).get("message", "")
+            )
+
+            print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)

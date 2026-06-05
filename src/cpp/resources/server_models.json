@@ -688,6 +688,16 @@
         ],
         "size": 19.5
     },
+    "Gemma-4-12B-it-GGUF": {
+        "checkpoint": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "tool-calling",
+            "llamacpp"
+        ],
+        "size": 7.12
+    },
     "Gemma-4-E4B-it-GGUF": {
         "checkpoint": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
         "mmproj": "mmproj-F16.gguf",
@@ -756,6 +766,12 @@
         "recipe": "llamacpp",
         "suggested": true,
         "size": 0.731
+    },
+    "LFM2.5-8B-A1B": {
+        "checkpoint": "LiquidAI/LFM2.5-8B-A1B-GGUF:LFM2.5-8B-A1B-Q4_K_M.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "size": 5.16
     },
     "PromptBridge-0.6b-Alpha-GGUF": {
         "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
