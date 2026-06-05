@@ -1468,16 +1468,20 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r test/requirements.txt
 
-      - name: Install Lemonade (.deb)
-        uses: ./.github/actions/install-lemonade-deb
-        with:
-          version: ${{ env.LEMONADE_VERSION }}
-
       - name: Set environment
         id: setup
         shell: bash
         run: |
-          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+          # HF_HOME must be set before install-lemonade-deb starts lemond.
+          # Values written to GITHUB_ENV are available to later steps/actions.
+          HF_HOME="$PWD/hf-cache"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> "$GITHUB_ENV"
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
 
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed
