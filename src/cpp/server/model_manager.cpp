@@ -82,6 +82,26 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
 }
 
+static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
+    std::string stem = fs::path(variant.primary_file).stem().string();
+    if (!variant.sharded) {
+        return stem;
+    }
+
+    const std::vector<std::string> shard_markers = {
+        "-00001-of-",
+        ".00001-of-",
+        "_00001-of-",
+    };
+    for (const auto& marker : shard_markers) {
+        size_t pos = stem.find(marker);
+        if (pos != std::string::npos) {
+            return stem.substr(0, pos);
+        }
+    }
+    return stem;
+}
+
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
@@ -1112,7 +1132,7 @@ void ModelManager::discover_extra_models_in_directory(
 
     std::string dir_name = dir_path.filename().string();
     fs::path main_model_path; // File the old folder-based discovery would have selected.
-    fs::path mmproj_file;
+    std::vector<fs::path> mmproj_files;
     double total_size = 0.0;
 
     std::vector<std::string> model_filenames;
@@ -1127,7 +1147,7 @@ void ModelManager::discover_extra_models_in_directory(
         } catch (...) {}
 
         if (contains_ignore_case(gguf_path.filename().string(), "mmproj")) {
-            mmproj_file = gguf_path;
+            mmproj_files.push_back(gguf_path);
             continue;
         }
 
@@ -1144,14 +1164,18 @@ void ModelManager::discover_extra_models_in_directory(
 
     if (main_model_path.empty()) return;
 
+    std::sort(mmproj_files.begin(), mmproj_files.end());
+    fs::path mmproj_file = mmproj_files.empty() ? fs::path() : mmproj_files.front();
+
     auto vset = lemon::enumerate_gguf_variants(model_filenames, model_file_sizes);
 
-    // Split only when variant detection cleanly identifies separate single-file
-    // quants. Shards or unmatched files fall back to folder grouping so no GGUF
-    // parts disappear from discovery.
+    // Split the folder only when every model file belongs to a named variant.
+    // One sharded model stays as the folder model; multiple sharded variants
+    // become separate model choices.
     bool should_split = vset.variants.size() > 1;
     for (const auto& v : vset.variants) {
-        if (v.sharded || v.name == v.primary_file) {
+        if (v.name == v.primary_file ||
+            model_file_by_name.find(v.primary_file) == model_file_by_name.end()) {
             should_split = false;
             break;
         }
@@ -1173,7 +1197,7 @@ void ModelManager::discover_extra_models_in_directory(
             if (it == model_file_by_name.end()) continue;
 
             const fs::path& path = it->second;
-            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + path.stem().string();
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + visible_extra_variant_name(v);
 
             ModelInfo info = init_extra_model_info(variant_id);
             info.checkpoints["main"] = path.string();
@@ -1186,18 +1210,17 @@ void ModelManager::discover_extra_models_in_directory(
                 info.labels.push_back("vision");
             }
             info.type = get_model_type_from_labels(info.labels);
-            discovered[variant_id] = info;
 
-            // Keep the old extra.<folder> ID working for scripts and saved aliases.
+            // Keep the old folder name working in requests without listing it.
             if (path == main_model_path) {
-                std::string legacy_id = std::string(EXTRA_MODEL_PREFIX) + dir_name;
-                ModelInfo legacy_info = info;
-                legacy_info.model_name = legacy_id;
-                discovered[legacy_id] = legacy_info;
+                info.input_aliases.push_back(dir_name);
+                info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
+
+            discovered[variant_id] = info;
         }
     } else {
-        // Fallback: group entire folder as one model
+        // Keep the folder as one model when splitting would be ambiguous.
         std::string model_id = std::string(EXTRA_MODEL_PREFIX) + dir_name;
         ModelInfo info = init_extra_model_info(model_id);
         info.checkpoints["main"] = dir_path.string();
@@ -4604,6 +4627,7 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 //   public_model_aliases_ — input alias → cache key (canonical name in cache):
 //     - <bare> → cache key of the precedence-winner for that bare name
 //     - builtin.<X> → bare cache key X (built-ins are keyed bare in the cache)
+//     - ModelInfo::input_aliases entries → cache key, without changing API output
 //     - user.<X>, extra.<X> resolve directly via cache lookup fallback in the
 //       callers, so no identity entries are required here
 //
@@ -4662,6 +4686,40 @@ void ModelManager::rebuild_public_model_aliases_locked() {
         if (parse_canonical_id(cache_key)) continue;
         std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
         public_model_aliases_.try_emplace(canonical, cache_key);
+    }
+
+    // A split extra_models_dir folder should show only its variant models in
+    // /models. Keep the old folder name working for existing scripts, but only
+    // as an input alias. Do not let that alias replace a user model or another
+    // real extra model with the same name.
+    auto source_for_cache_key = [](const std::string& cache_key) {
+        if (auto canon = parse_canonical_id(cache_key)) {
+            return canon->source;
+        }
+        return ModelSource::Builtin;
+    };
+
+    for (const auto& [cache_key, info] : models_cache_) {
+        for (const auto& alias : info.input_aliases) {
+            if (parse_canonical_id(alias)) {
+                if (models_cache_.find(alias) == models_cache_.end()) {
+                    public_model_aliases_[alias] = cache_key;
+                }
+            } else {
+                auto existing = public_model_aliases_.find(alias);
+                if (existing == public_model_aliases_.end()) {
+                    public_model_aliases_[alias] = cache_key;
+                    continue;
+                }
+
+                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
+                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
+                    canonical_public_names_[existing->second] = builtin_canonical;
+                    public_model_aliases_[builtin_canonical] = existing->second;
+                    public_model_aliases_[alias] = cache_key;
+                }
+            }
+        }
     }
 }
 
