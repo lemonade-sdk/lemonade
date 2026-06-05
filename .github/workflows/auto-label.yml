@@ -1,16 +1,23 @@
 # Auto-label issues and PRs.
 #
-# This workflow runs Claude Haiku over issue/PR title + body to apply
-# engine::*, area::*, and component/type labels, then deterministically
-# applies priority::warm / priority::hot based on community engagement
-# counts (excluding maintainers).
+# Two passes per item:
+#   1. LLM classification (Claude Haiku) over title + body for engine::*,
+#      area::*, runtime::*, component, and type labels. Runs once per
+#      newly opened issue/PR.
+#   2. Deterministic priority::warm / priority::hot from community
+#      engagement counts (commenters + supporting reactions, excluding
+#      maintainers). Refreshed on every new comment (engagement event)
+#      and via a daily cron (to pick up reaction-only changes, which
+#      don't fire webhook events).
 #
 # *** Labels applied by this workflow are ADVISORY ONLY. ***
 # Do not use them as inputs to CI gates, release gates, security
 # decisions, or any policy check — the model sees untrusted user-supplied
 # title/body content and the classification is best-effort.
 #
-# Add-only — never removes a human-applied label.
+# Add-only for human / LLM labels — never removes a human-applied label.
+# The bot may transition between its own priority labels (drops warm
+# when promoting to hot) so the two never coexist.
 name: Auto-label issues and PRs
 
 on:
@@ -18,6 +25,12 @@ on:
     types: [opened]
   pull_request_target:
     types: [opened]
+  issue_comment:
+    types: [created]
+  schedule:
+    # Daily at 06:00 UTC — catches priority transitions driven by
+    # reactions, which don't fire webhook events.
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       target:
@@ -29,6 +42,14 @@ on:
         required: false
         type: boolean
         default: true
+      mode:
+        description: "all = LLM classification + priority refresh. priority-only = skip the LLM (no Anthropic call)."
+        required: false
+        type: choice
+        options:
+          - all
+          - priority-only
+        default: all
 
 permissions:
   contents: read
@@ -42,8 +63,10 @@ permissions:
 jobs:
   label:
     runs-on: ubuntu-latest
+    # Skip workflow-bot comments to avoid self-triggering loops.
+    if: github.event_name != 'issue_comment' || github.event.comment.user.type != 'Bot'
     concurrency:
-      group: auto-label-${{ github.event.issue.number || github.event.pull_request.number || inputs.target || 'backfill' }}
+      group: auto-label-${{ github.event.issue.number || github.event.pull_request.number || inputs.target || github.event_name }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -56,21 +79,43 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Resolve items and dry-run flag
+      - name: Resolve items, dry-run, and mode
         id: resolve
         env:
           TARGET_INPUT: ${{ inputs.target }}
           DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          MODE_INPUT: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           case "${{ github.event_name }}" in
             issues)
               echo "items=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
               echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "mode=all" >> "$GITHUB_OUTPUT"
               ;;
             pull_request_target)
               echo "items=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
               echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "mode=all" >> "$GITHUB_OUTPUT"
+              ;;
+            issue_comment)
+              # Engagement event — refresh priority labels only. The LLM
+              # already classified this item when it was opened; running
+              # it again on every comment would burn tokens with no new
+              # signal.
+              echo "items=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "mode=priority-only" >> "$GITHUB_OUTPUT"
+              ;;
+            schedule)
+              # Daily sweep: re-evaluate priority across every open item
+              # to pick up reaction-only changes since the last run.
+              ITEMS=$(gh api --paginate \
+                "/repos/${{ github.repository }}/issues?state=open&per_page=100" \
+                --jq '.[].number' | xargs)
+              echo "items=$ITEMS" >> "$GITHUB_OUTPUT"
+              echo "dry_run=false" >> "$GITHUB_OUTPUT"
+              echo "mode=priority-only" >> "$GITHUB_OUTPUT"
               ;;
             workflow_dispatch)
               if [ -n "$TARGET_INPUT" ]; then
@@ -90,10 +135,12 @@ jobs:
                 echo "items=$ITEMS" >> "$GITHUB_OUTPUT"
               fi
               echo "dry_run=$DRY_RUN_INPUT" >> "$GITHUB_OUTPUT"
+              echo "mode=$MODE_INPUT" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
-      - name: Run auto-labeler
+      - name: Run auto-labeler (LLM + priority)
+        if: steps.resolve.outputs.mode == 'all'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -107,4 +154,19 @@ jobs:
             python .github/scripts/auto_label.py $ITEMS --dry-run
           else
             python .github/scripts/auto_label.py $ITEMS
+          fi
+
+      - name: Run auto-labeler (priority only)
+        if: steps.resolve.outputs.mode == 'priority-only'
+        run: |
+          set -euo pipefail
+          ITEMS="${{ steps.resolve.outputs.items }}"
+          if [ -z "$ITEMS" ]; then
+            echo "No items to refresh."
+            exit 0
+          fi
+          if [ "${{ steps.resolve.outputs.dry_run }}" = "true" ]; then
+            python .github/scripts/auto_label.py $ITEMS --priority-only --dry-run
+          else
+            python .github/scripts/auto_label.py $ITEMS --priority-only
           fi

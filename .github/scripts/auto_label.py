@@ -104,6 +104,16 @@ def gh_add_labels(num, labels, repo):
     run(cmd)
 
 
+def gh_remove_labels(num, labels, repo):
+    """Remove labels. Used only for transitioning between bot-managed
+    priority labels (warm -> hot); never call this on human-applied or
+    LLM-applied labels."""
+    cmd = ["gh", "issue", "edit", str(num), "--remove-label", ",".join(labels)]
+    if repo:
+        cmd += ["--repo", repo]
+    run(cmd)
+
+
 def classify(item, item_num):
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -240,11 +250,11 @@ def _add_community_user(users, login, author_association, repo, cache):
 
 
 def community_priority_labels(item_num, existing, repo):
-    """Return (labels, community_user_count) where labels is one of
-    ['priority::🔥hot'], ['priority::😎warm'], or []. Counts the author,
-    commenters, and positive-reaction users, excluding anyone with write
-    access. Idempotent: returns no label if the item already has the
-    target priority label."""
+    """Return (to_add, to_remove, community_user_count). Priority labels
+    are mutually exclusive: when an item crosses the hot threshold,
+    existing warm is queued for removal so it doesn't accumulate alongside
+    hot. Counts the author, commenters, and supporting-reaction users,
+    excluding anyone with write access."""
     issue = gh_api(f"repos/{repo}/issues/{item_num}")
     comments = gh_api_pages(f"repos/{repo}/issues/{item_num}/comments?per_page=100")
     reactions = gh_api_pages(f"repos/{repo}/issues/{item_num}/reactions?per_page=100")
@@ -279,15 +289,15 @@ def community_priority_labels(item_num, existing, repo):
     count = len(users)
     existing_set = set(existing)
 
-    if count >= COMMUNITY_HOT_THRESHOLD and PRIORITY_HOT_LABEL not in existing_set:
-        return [PRIORITY_HOT_LABEL], count
-    if (
-        count >= COMMUNITY_WARM_THRESHOLD
-        and PRIORITY_WARM_LABEL not in existing_set
-        and PRIORITY_HOT_LABEL not in existing_set
-    ):
-        return [PRIORITY_WARM_LABEL], count
-    return [], count
+    if count >= COMMUNITY_HOT_THRESHOLD:
+        to_add = [] if PRIORITY_HOT_LABEL in existing_set else [PRIORITY_HOT_LABEL]
+        # Promoting to hot: drop any existing warm so the two never coexist.
+        to_remove = [PRIORITY_WARM_LABEL] if PRIORITY_WARM_LABEL in existing_set else []
+        return to_add, to_remove, count
+    if count >= COMMUNITY_WARM_THRESHOLD and PRIORITY_HOT_LABEL not in existing_set:
+        to_add = [] if PRIORITY_WARM_LABEL in existing_set else [PRIORITY_WARM_LABEL]
+        return to_add, [], count
+    return [], [], count
 
 
 def parse_decision(decision, existing):
@@ -322,6 +332,12 @@ def main():
     p.add_argument("items", nargs="+", type=int, help="Issue or PR numbers")
     p.add_argument("--dry-run", action="store_true", help="Print decisions; do not apply")
     p.add_argument("--repo", help="OWNER/REPO; defaults to current repo")
+    p.add_argument(
+        "--priority-only",
+        action="store_true",
+        help="Skip LLM classification; only refresh priority::warm/hot. "
+        "Used by issue_comment and scheduled triggers.",
+    )
     args = p.parse_args()
     repo = resolve_repo(args.repo)
 
@@ -329,29 +345,41 @@ def main():
         item = gh_view(num, args.repo)
         existing = [lbl["name"] for lbl in item.get("labels", [])]
 
-        decision = classify(item, num)
-        llm_labels = parse_decision(decision, existing)
+        if args.priority_only:
+            decision = "(skipped)"
+            llm_labels = []
+        else:
+            decision = classify(item, num)
+            llm_labels = parse_decision(decision, existing)
 
-        priority_labels, community_users = community_priority_labels(
+        priority_add, priority_remove, community_users = community_priority_labels(
             num, existing + llm_labels, repo
         )
-        to_add = llm_labels + priority_labels
+        to_add = llm_labels + priority_add
 
         print(f"\n=== #{num}: {item['title']} ===")
         print(f"  url:        {item.get('url', '')}")
         print(f"  existing:   {', '.join(existing) if existing else '(none)'}")
-        print(f"  model:      {decision}")
-        print(f"  llm add:    {', '.join(llm_labels) if llm_labels else '(none)'}")
+        if not args.priority_only:
+            print(f"  model:      {decision}")
+            print(f"  llm add:    {', '.join(llm_labels) if llm_labels else '(none)'}")
         print(
             f"  priority:   "
-            f"{', '.join(priority_labels) if priority_labels else '(none)'} "
+            f"add={', '.join(priority_add) if priority_add else '(none)'} "
+            f"remove={', '.join(priority_remove) if priority_remove else '(none)'} "
             f"({community_users} community users)"
         )
         print(f"  would add:  {', '.join(to_add) if to_add else '(none)'}")
+        if priority_remove:
+            print(f"  would rm:   {', '.join(priority_remove)}")
 
-        if not args.dry_run and to_add:
-            gh_add_labels(num, to_add, args.repo)
-            print(f"  applied:    {', '.join(to_add)}")
+        if not args.dry_run:
+            if to_add:
+                gh_add_labels(num, to_add, args.repo)
+                print(f"  applied:    {', '.join(to_add)}")
+            if priority_remove:
+                gh_remove_labels(num, priority_remove, args.repo)
+                print(f"  removed:    {', '.join(priority_remove)}")
 
 
 if __name__ == "__main__":
