@@ -305,16 +305,7 @@ lemonade backends
 
 ## Project Roadmap
 
-| Under Development          | Under Consideration         | Recently Completed      |
-|---------------------------|-----------------------------|------------------------|
-| Native multi-modal tool calling |                              | vLLM backend            |
-| More whisper.cpp backends |                              | Port app to Tauri      |
-| More SD.cpp backends      |                              | Embeddable binary release |
-| MLX support               |                              | Image generation       |
-|                           |                              | Speech-to-text         |
-|                           |                              | Text-to-speech         |
-|                           |                              | Apps marketplace       |
-
+Lemonade's roadmap is defined by a set of working groups. Visit the landing page [here](./docs/dev/working-groups/README.md) to learn each group's goal and roadmap.
 
 ## Integrate Embeddable Lemonade in You Application
 
