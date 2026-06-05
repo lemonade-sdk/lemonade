@@ -98,11 +98,9 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1031", "gfx103X"},
     {"gfx1032", "gfx103X"},
     {"gfx1034", "gfx103X"},
-    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
-    // map to "" so get_rocm_arch skips them
-    {"gfx1033", ""},
-    {"gfx1035", ""},
-    {"gfx1036", ""},
+    {"gfx1033", "gfx103X"},
+    {"gfx1035", "gfx103X"},
+    {"gfx1036", "gfx103X"},
 
     // RDNA3 family (gfx110X)
     {"gfx1100", "gfx110X"},

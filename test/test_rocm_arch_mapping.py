@@ -50,9 +50,9 @@ ROCM_ARCH_MAPPING = {
     "gfx1031": "gfx103X",
     "gfx1032": "gfx103X",
     "gfx1034": "gfx103X",
-    "gfx1033": "",
-    "gfx1035": "",
-    "gfx1036": "",
+    "gfx1033": "gfx103X",
+    "gfx1035": "gfx103X",
+    "gfx1036": "gfx103X",
     # RDNA3 family (gfx110X)
     "gfx1100": "gfx110X",
     "gfx1101": "gfx110X",
