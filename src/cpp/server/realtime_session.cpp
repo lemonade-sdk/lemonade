@@ -117,6 +117,9 @@ std::string RealtimeSessionManager::create_session(
         apply_turn_detection_config(session, config["turn_detection"]);
     }
 
+    // Attempt to connect to a streaming backend if one is available
+    connect_streaming_backend(session);
+
     {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
         sessions_[session_id] = std::move(session);
@@ -153,6 +156,9 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
         apply_turn_detection_config(session, config["turn_detection"]);
     }
 
+    // Reconnect streaming backend if model changed
+    connect_streaming_backend(session);
+
     // Send session updated message (OpenAI-compatible)
     if (session->send_message) {
         json updated_msg = {
@@ -170,6 +176,12 @@ void RealtimeSessionManager::update_session(const std::string& session_id, const
 void RealtimeSessionManager::append_audio(const std::string& session_id, const std::string& base64_audio) {
     auto session = get_session(session_id);
     if (!session || !session->session_active) {
+        return;
+    }
+
+    // If connected to a streaming backend, forward audio directly
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_audio(session, base64_audio);
         return;
     }
 
@@ -314,6 +326,12 @@ void RealtimeSessionManager::commit_audio(const std::string& session_id) {
         return;
     }
 
+    // If streaming backend is active, forward commit and skip buffering
+    if (session->use_streaming_backend.load()) {
+        forward_streaming_commit(session);
+        return;
+    }
+
     if (session->turn_detection_enabled.load() && !session->vad_speech_window_open.load()) {
         if (!session->audio_buffer.empty()) {
             LOG(DEBUG, "RealtimeSession")
@@ -354,6 +372,11 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
     auto session = get_session(session_id);
     if (!session) {
         return;
+    }
+
+    // Disconnect streaming backend on clear
+    if (session->use_streaming_backend.load()) {
+        disconnect_streaming_backend(session);
     }
 
     session->audio_buffer.clear();
@@ -467,13 +490,98 @@ void RealtimeSessionManager::transcribe_wav(
     }
 }
 
-void RealtimeSessionManager::close_session(const std::string& session_id) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
+void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeSession> session) {
+    if (!session || !router_) {
+        return;
+    }
 
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-        it->second->session_active = false;
-        sessions_.erase(it);
+    std::string address = router_->get_streaming_transcription_address();
+    if (address.empty()) {
+        // Backend does not support streaming transcription
+        disconnect_streaming_backend(session);
+        return;
+    }
+
+    // If already connected to the same address, nothing to do
+    if (session->use_streaming_backend.load() && session->streaming_client &&
+        session->streaming_client->is_connected()) {
+        return;
+    }
+
+    // Disconnect any existing streaming connection
+    disconnect_streaming_backend(session);
+
+    auto client = std::make_unique<utils::TcpJsonlClient>();
+    bool ok = client->connect(address, [session](const json& msg) {
+        if (!session->session_active.load() || !session->send_message) {
+            return;
+        }
+        // Forward backend events to the WebSocket client
+        // Map moonshine event types to OpenAI Realtime types
+        std::string event_type = msg.value("type", "");
+        if (event_type == "conversation.item.input_audio_transcription.delta" ||
+            event_type == "conversation.item.input_audio_transcription.completed" ||
+            event_type == "input_audio_buffer.committed" ||
+            event_type == "session.updated") {
+            session->send_message(msg);
+        }
+    });
+
+    if (ok) {
+        session->streaming_client = std::move(client);
+        session->use_streaming_backend.store(true);
+        LOG(INFO, "RealtimeSession") << "Connected to streaming backend at " << address << std::endl;
+    } else {
+        LOG(WARNING, "RealtimeSession") << "Failed to connect to streaming backend at " << address << std::endl;
+    }
+}
+
+void RealtimeSessionManager::disconnect_streaming_backend(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    session->use_streaming_backend.store(false);
+    if (session->streaming_client) {
+        session->streaming_client->close();
+        session->streaming_client.reset();
+    }
+}
+
+void RealtimeSessionManager::forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
+                                                     const std::string& base64_audio) {
+    if (!session || !session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.append"},
+        {"audio", base64_audio}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::forward_streaming_commit(std::shared_ptr<RealtimeSession> session) {
+    if (!session || !session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.commit"}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::close_session(const std::string& session_id) {
+    std::shared_ptr<RealtimeSession> session;
+    {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
+        auto it = sessions_.find(session_id);
+        if (it != sessions_.end()) {
+            session = it->second;
+            session->session_active = false;
+            sessions_.erase(it);
+        }
+    }
+    if (session) {
+        disconnect_streaming_backend(session);
     }
 }
 

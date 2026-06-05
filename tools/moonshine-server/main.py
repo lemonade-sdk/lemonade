@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+"""moonshine-server — HTTP + WebSocket + TCP subprocess for Lemonade Moonshine backend.
+
+Exposes:
+  - whisper.cpp-compatible /inference endpoint for file-based transcription
+  - /health endpoint for readiness checks
+  - WebSocket /v1/audio/realtime for streaming transcription (OpenAI-compatible)
+  - TCP line-delimited JSON for internal Lemonade streaming (backend-agnostic)
+
+Usage:
+    python main.py --model-path /path/to/model --model-arch 5 --port 8080 --ws-port 8081 --tcp-port 8082
+"""
+
+import argparse
+import asyncio
+import base64
+import json
+import os
+import random
+import string
+import struct
+import sys
+import tempfile
+import threading
+import wave
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
+
+# Force CPU-only execution
+os.environ.setdefault("HIP_VISIBLE_DEVICES", "")
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+os.environ.setdefault("ROCR_VISIBLE_DEVICES", "")
+
+# moonshine_voice manages its own thread pool. If using a vendored/patched
+# build with SetIntraOpNumThreads(1), thread count stays at ~2.
+# The upstream pip package may use more threads; set ORT env vars if needed:
+#   OMP_NUM_THREADS=1
+#   ONNXRUNTIME_INTRA_OP_NUM_THREADS=1
+
+import cgi
+import io
+
+try:
+    import websockets
+except ImportError:
+    websockets = None
+
+# Import moonshine_voice at module level.
+# This package must be installed separately: pip install moonshine_voice
+try:
+    from moonshine_voice import TranscriptEventListener
+except ImportError as e:
+    raise ImportError(
+        "moonshine_voice is not installed. "
+        "Install it with: pip install moonshine_voice"
+    ) from e
+
+
+def load_model(model_path: str, model_arch: int):
+    """Lazy import and load moonshine model."""
+    from moonshine_voice import Transcriber, ModelArch
+    arch = ModelArch(model_arch)
+    return Transcriber(model_path=model_path, model_arch=arch)
+
+
+def pcm16_to_f32(pcm16_bytes: bytes) -> list:
+    """Convert little-endian PCM16 bytes to float32 samples (range [-1, 1])."""
+    count = len(pcm16_bytes) // 2
+    if count == 0:
+        return []
+    ints = struct.unpack(f"<{count}h", pcm16_bytes)
+    return [s / 32768.0 for s in ints]
+
+
+def _generate_id(prefix: str = "sess_", length: int = 24) -> str:
+    """Generate a random session ID."""
+    chars = string.ascii_lowercase + string.digits
+    return prefix + "".join(random.choice(chars) for _ in range(length))
+
+
+class _EventSender:
+    """Abstract base for sending events to a client."""
+    def send(self, msg: dict):
+        raise NotImplementedError
+
+    def close(self):
+        pass
+
+
+class WebSocketEventSender(_EventSender):
+    def __init__(self, loop: asyncio.AbstractEventLoop, websocket):
+        self.loop = loop
+        self.websocket = websocket
+        self._closed = False
+
+    def send(self, msg: dict):
+        if self._closed:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.websocket.send(json.dumps(msg)),
+                self.loop
+            )
+        except Exception:
+            self._closed = True
+
+    def close(self):
+        self._closed = True
+
+
+class TcpEventSender(_EventSender):
+    def __init__(self, writer: asyncio.StreamWriter):
+        self.writer = writer
+        self._closed = False
+        self._loop = asyncio.get_running_loop()
+
+    def send(self, msg: dict):
+        if self._closed:
+            return
+        try:
+            line = json.dumps(msg) + "\n"
+            self.writer.write(line.encode("utf-8"))
+            # Safe cross-thread drain scheduling
+            asyncio.run_coroutine_threadsafe(self.writer.drain(), self._loop)
+        except Exception:
+            self._closed = True
+
+    def close(self):
+        self._closed = True
+
+
+class StreamingListener(TranscriptEventListener):
+    """Bridge between moonshine_voice C++ callbacks and an event sender.
+
+    The moonshine_voice library calls these methods from its internal C++ thread,
+    so we use asyncio.run_coroutine_threadsafe() or asyncio.create_task() to
+    safely schedule sends.
+    """
+
+    def __init__(self, sender: _EventSender):
+        super().__init__()
+        self.sender = sender
+        self._current_text = ""
+
+    def on_line_started(self, event):
+        self._current_text = ""
+
+    def on_line_text_changed(self, event):
+        text = event.line.text or ""
+        self._current_text = text
+        self.sender.send({
+            "type": "conversation.item.input_audio_transcription.delta",
+            "delta": text,
+        })
+
+    def on_line_completed(self, event):
+        text = event.line.text or ""
+        self.sender.send({
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": text,
+        })
+        self._current_text = ""
+
+
+async def _handle_streaming_session(reader, sender: _EventSender, transcriber_factory):
+    """Core streaming session logic shared between WebSocket and TCP."""
+    transcriber = transcriber_factory()
+    stream = transcriber.create_stream(update_interval=0.5)
+    listener = StreamingListener(sender)
+
+    # Attach listener — moonshine_voice API supports add_listener on either
+    # transcriber or stream depending on version. Try stream first, fall back.
+    if hasattr(stream, "add_listener"):
+        stream.add_listener(listener)
+    elif hasattr(transcriber, "add_listener"):
+        transcriber.add_listener(listener)
+
+    stream.start()
+
+    try:
+        while True:
+            if hasattr(reader, "recv"):
+                # WebSocket path
+                try:
+                    message = await reader.recv()
+                except websockets.exceptions.ConnectionClosed:
+                    break
+            else:
+                # TCP path
+                line = await reader.readline()
+                if not line:
+                    break
+                message = line.decode("utf-8").strip()
+                if not message:
+                    continue
+
+            try:
+                msg = json.loads(message)
+            except json.JSONDecodeError:
+                continue
+
+            msg_type = msg.get("type")
+
+            if msg_type == "input_audio_buffer.append":
+                audio_b64 = msg.get("audio", "")
+                try:
+                    pcm16_bytes = base64.b64decode(audio_b64)
+                except Exception:
+                    continue
+                samples = pcm16_to_f32(pcm16_bytes)
+                if samples:
+                    stream.add_audio(samples, sample_rate=16000)
+
+            elif msg_type == "input_audio_buffer.commit":
+                sender.send({"type": "input_audio_buffer.committed"})
+
+            elif msg_type == "session.update":
+                sender.send({"type": "session.updated", "session": {}})
+
+    finally:
+        sender.close()
+        try:
+            stream.stop()
+        except Exception:
+            pass
+        try:
+            stream.close()
+        except Exception:
+            pass
+        try:
+            transcriber.close()
+        except Exception:
+            pass
+
+
+async def websocket_handler(websocket, transcriber_factory):
+    """Handle a single WebSocket connection for realtime streaming."""
+    session_id = _generate_id("sess_moonshine_")
+    loop = asyncio.get_running_loop()
+
+    sender = WebSocketEventSender(loop, websocket)
+    sender.send({
+        "type": "session.created",
+        "session": {"id": session_id}
+    })
+
+    await _handle_streaming_session(websocket, sender, transcriber_factory)
+
+
+async def tcp_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, transcriber_factory):
+    """Handle a single TCP connection for line-delimited JSON streaming."""
+    sender = TcpEventSender(writer)
+    await _handle_streaming_session(reader, sender, transcriber_factory)
+    try:
+        writer.close()
+        await writer.wait_closed()
+    except Exception:
+        pass
+
+
+def get_handler(transcriber):
+    class MoonshineHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            # Suppress default logging; Lemonade manages its own logs
+            pass
+
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            if parsed.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            if parsed.path != "/inference":
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            try:
+                content_type = self.headers.get("Content-Type", "")
+                if not content_type.startswith("multipart/form-data"):
+                    self._error(400, "Expected multipart/form-data")
+                    return
+
+                # Parse multipart form data
+                environ = {
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": content_type,
+                    "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+                }
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    environ=environ,
+                    keep_blank_values=True,
+                )
+
+                # Extract audio file
+                if "file" not in form:
+                    self._error(400, "Missing 'file' field")
+                    return
+
+                file_item = form["file"]
+                audio_bytes = file_item.file.read()
+
+                # Save to temp file (moonshine_voice.load_wav_file needs a path)
+                ext = os.path.splitext(file_item.filename or "audio.wav")[1]
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                    tmp.write(audio_bytes)
+                    tmp_path = tmp.name
+
+                try:
+                    from moonshine_voice import load_wav_file
+                    audio_data, sample_rate = load_wav_file(tmp_path)
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+
+                # Transcribe
+                result = transcriber.transcribe_without_streaming(audio_data, sample_rate)
+
+                # Build OpenAI-compatible response
+                text = " ".join(line.text for line in result.lines)
+
+                response_format = form.getvalue("response_format", "json")
+                if response_format == "text":
+                    body = text.encode("utf-8")
+                    content_type_out = "text/plain; charset=utf-8"
+                elif response_format == "srt":
+                    body = _to_srt(result).encode("utf-8")
+                    content_type_out = "text/plain; charset=utf-8"
+                elif response_format == "vtt":
+                    body = _to_vtt(result).encode("utf-8")
+                    content_type_out = "text/plain; charset=utf-8"
+                else:
+                    body = json.dumps({"text": text}).encode("utf-8")
+                    content_type_out = "application/json"
+
+                self.send_response(200)
+                self.send_header("Content-Type", content_type_out)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            except Exception as e:
+                self._error(500, str(e))
+
+        def _error(self, code: int, message: str):
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            body = json.dumps({"error": message}).encode("utf-8")
+            self.wfile.write(body)
+
+    return MoonshineHandler
+
+
+def _to_srt(result) -> str:
+    lines = []
+    for i, line in enumerate(result.lines, 1):
+        start = _fmt_timestamp(line.start_time)
+        end = _fmt_timestamp(line.start_time + line.duration)
+        lines.append(f"{i}\n{start} --> {end}\n{line.text}\n")
+    return "\n".join(lines)
+
+
+def _to_vtt(result) -> str:
+    lines = ["WEBVTT\n"]
+    for line in result.lines:
+        start = _fmt_timestamp(line.start_time, vtt=True)
+        end = _fmt_timestamp(line.start_time + line.duration, vtt=True)
+        lines.append(f"{start} --> {end}\n{line.text}\n")
+    return "\n".join(lines)
+
+
+def _fmt_timestamp(seconds: float, vtt: bool = False) -> str:
+    """Format seconds as SRT/VTT timestamp."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    if vtt:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def run_websocket_server(host: str, port: int, transcriber_factory):
+    """Run the WebSocket server in a dedicated asyncio event loop (thread target)."""
+    async def _serve():
+        async def _handler(websocket):
+            await websocket_handler(websocket, transcriber_factory)
+
+        # Suppress websockets library logging noise
+        import logging
+        logging.getLogger("websockets").setLevel(logging.WARNING)
+
+        async with websockets.serve(_handler, host, port):
+            print(f"[moonshine-server] WebSocket listening on ws://{host}:{port}", file=sys.stderr, flush=True)
+            await asyncio.Future()  # Run forever
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(_serve())
+
+
+def run_tcp_server(host: str, port: int, transcriber_factory):
+    """Run the TCP line-delimited JSON server in a dedicated asyncio event loop (thread target)."""
+    async def _serve():
+        server = await asyncio.start_server(
+            lambda r, w: tcp_handler(r, w, transcriber_factory),
+            host, port
+        )
+        print(f"[moonshine-server] TCP listening on {host}:{port}", file=sys.stderr, flush=True)
+        async with server:
+            await server.serve_forever()
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(_serve())
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Moonshine HTTP + WebSocket + TCP server for Lemonade")
+    parser.add_argument("--model-path", default=None, help="Path to model directory (auto-resolved if omitted)")
+    parser.add_argument("--model-arch", type=int, required=True, help="Model architecture enum value")
+    parser.add_argument("--port", type=int, default=8080, help="HTTP server port")
+    parser.add_argument("--ws-port", type=int, default=None, help="WebSocket server port (default: HTTP port + 1)")
+    parser.add_argument("--tcp-port", type=int, default=None, help="TCP line-delimited JSON port (default: HTTP port + 2)")
+    args = parser.parse_args()
+
+    ws_port = args.ws_port if args.ws_port is not None else args.port + 1
+    tcp_port = args.tcp_port if args.tcp_port is not None else args.port + 2
+
+    model_path = args.model_path
+    if model_path is None:
+        # Auto-resolve model path via moonshine_voice.download
+        from moonshine_voice.download import get_model_for_language
+        from moonshine_voice.moonshine_api import ModelArch
+        model_path, _ = get_model_for_language("en", ModelArch(args.model_arch))
+
+    print(f"[moonshine-server] Loading model from {model_path} (arch={args.model_arch})...", file=sys.stderr)
+    transcriber = load_model(model_path, args.model_arch)
+    print(f"[moonshine-server] Model loaded. HTTP={args.port} WS={ws_port} TCP={tcp_port}", file=sys.stderr)
+
+    # Factory so each connection gets its own transcriber
+    def transcriber_factory():
+        return load_model(model_path, args.model_arch)
+
+    handler = get_handler(transcriber)
+    http_server = HTTPServer(("127.0.0.1", args.port), handler)
+
+    # Start WebSocket server in a daemon thread
+    ws_thread = threading.Thread(
+        target=run_websocket_server,
+        args=("127.0.0.1", ws_port, transcriber_factory),
+        daemon=True,
+    )
+    ws_thread.start()
+
+    # Start TCP server in a daemon thread
+    tcp_thread = threading.Thread(
+        target=run_tcp_server,
+        args=("127.0.0.1", tcp_port, transcriber_factory),
+        daemon=True,
+    )
+    tcp_thread.start()
+
+    try:
+        http_server.serve_forever()
+    except KeyboardInterrupt:
+        print("[moonshine-server] Shutting down...", file=sys.stderr)
+    finally:
+        transcriber.close()
+        http_server.server_close()
+
+
+if __name__ == "__main__":
+    main()

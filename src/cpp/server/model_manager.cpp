@@ -26,6 +26,10 @@
 #include <limits>
 #include <lemon/utils/aixlog.hpp>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
@@ -80,6 +84,40 @@ static bool starts_with_ignore_case(const std::string& str, const std::string& p
 
 static bool contains_ignore_case(const std::string& str, const std::string& substr) {
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
+}
+
+// Returns the platform-appropriate moonshine_voice cache directory.
+// Respects MOONSHINE_VOICE_CACHE environment variable.
+static std::string get_moonshine_cache_dir() {
+    const char* env_cache = std::getenv("MOONSHINE_VOICE_CACHE");
+    if (env_cache && strlen(env_cache) > 0) {
+        return std::string(env_cache);
+    }
+
+#ifdef _WIN32
+    const char* local_appdata = std::getenv("LOCALAPPDATA");
+    if (local_appdata) {
+        return std::string(local_appdata) + "\\moonshine_voice";
+    }
+    return "";
+#elif defined(__APPLE__)
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/Library/Caches/moonshine_voice";
+    }
+    return "";
+#else
+    // Linux and other Unix-like systems
+    const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
+    if (xdg_cache && strlen(xdg_cache) > 0) {
+        return std::string(xdg_cache) + "/moonshine_voice";
+    }
+    const char* home = std::getenv("HOME");
+    if (home) {
+        return std::string(home) + "/.cache/moonshine_voice";
+    }
+    return "";
+#endif
 }
 
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
@@ -1183,6 +1221,23 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return hf_cache + "/" + normalized;
     }
 
+    // Moonshine models are distributed via download.moonshine.ai and cached
+    // by the moonshine_voice Python package.
+    if (info.recipe == "moonshine") {
+        std::string variant = checkpoint_to_variant(checkpoint);
+        if (!variant.empty()) {
+            std::string cache_dir = get_moonshine_cache_dir();
+            if (!cache_dir.empty()) {
+                fs::path model_path = path_from_utf8(cache_dir) / "download.moonshine.ai" / "model" / variant;
+                if (safe_exists(model_path) && safe_is_directory(model_path)) {
+                    return path_to_utf8(model_path);
+                }
+            }
+        }
+        // Model not yet downloaded; return empty to signal not available
+        return "";
+    }
+
     // For now, NPU cache is handled directly in whisper.cpp
     if (type == "npu_cache") {
         return "";
@@ -1779,7 +1834,9 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
+        info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1819,6 +1876,7 @@ void ModelManager::build_cache() {
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -2664,9 +2722,11 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    // Use recipe-specific download paths
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
+    } else if (info.recipe == "moonshine") {
+        download_from_moonshine(info);
     } else {
         download_from_huggingface(info, progress_callback);
     }
@@ -3467,6 +3527,47 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 // The caller (download_model) is responsible for checking do_not_upgrade and
 // calling is_model_downloaded() before invoking this function.
 //
+// Download a Moonshine model via the vendored moonshine_voice Python package.
+void ModelManager::download_from_moonshine(const ModelInfo& info) {
+    if (info.moonshine_arch < 0) {
+        throw std::runtime_error("Moonshine model has no architecture specified: " + info.model_name);
+    }
+
+    // Find the download helper script
+    std::vector<std::string> script_candidates = {
+        "tools/moonshine-server/download_model.py",
+        "../tools/moonshine-server/download_model.py",
+        "../../tools/moonshine-server/download_model.py",
+    };
+
+    std::string script_path;
+    for (const auto& candidate : script_candidates) {
+        if (fs::exists(candidate)) {
+            script_path = fs::absolute(candidate).string();
+            break;
+        }
+    }
+
+    if (script_path.empty()) {
+        throw std::runtime_error("download_model.py not found. Set LEMONADE_MOONSHINE_SERVER env var.");
+    }
+
+    std::string cmd = "python3 " + script_path +
+                      " --language en --arch " + std::to_string(info.moonshine_arch);
+
+    LOG(INFO, "ModelManager") << "Downloading Moonshine model: " << info.model_name
+                              << " (arch=" << info.moonshine_arch << ")" << std::endl;
+
+    std::string output;
+    int exit_code = ProcessManager::run_command(cmd, output, 300); // 5 min timeout
+
+    if (exit_code != 0) {
+        throw std::runtime_error("Moonshine download failed: " + output);
+    }
+
+    LOG(INFO, "ModelManager") << "Moonshine model downloaded to: " << output << std::endl;
+}
+
 // Download capabilities by backend:
 //   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
 //   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
@@ -3562,6 +3663,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
+        bool is_moonshine = info.recipe == "moonshine";
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3571,6 +3673,23 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             } else {
                 throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
+        } else if (is_moonshine) {
+            // Moonshine variant is a directory path (e.g., "medium-streaming-en/quantized")
+            // Download all files under that directory
+            std::string folder_prefix = main_variant;
+            if (!folder_prefix.empty() && folder_prefix.back() != '/') {
+                folder_prefix += "/";
+            }
+            for (const auto& file : repo_files) {
+                if (starts_with_ignore_case(file, folder_prefix)) {
+                    files_to_download[main_repo_id].push_back(file);
+                }
+            }
+            if (files_to_download[main_repo_id].empty()) {
+                throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
+            }
+            LOG(INFO, "ModelManager") << "Moonshine: downloading " << files_to_download[main_repo_id].size()
+                                      << " files from " << main_variant << std::endl;
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
@@ -4517,6 +4636,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         if ((*model_json)["size"].is_number()) {
             info.size = (*model_json)["size"].get<double>();
         }
+    }
+
+    // Parse moonshine_arch
+    if (model_json->contains("moonshine_arch") && (*model_json)["moonshine_arch"].is_number_integer()) {
+        info.moonshine_arch = (*model_json)["moonshine_arch"].get<int>();
     }
 
     return info;

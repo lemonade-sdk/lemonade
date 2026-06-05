@@ -90,6 +90,9 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
+    // Moonshine-specific model architecture (e.g., 5 = MEDIUM_STREAMING)
+    int moonshine_arch = -1;
+
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
@@ -217,6 +220,9 @@ private:
     // Download from Hugging Face
     void download_from_huggingface(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
+
+    // Download Moonshine model via moonshine_voice Python package
+    void download_from_moonshine(const ModelInfo& info);
 
     // Download from FLM
     void download_from_flm(const std::string& checkpoint,

@@ -537,6 +537,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"vllm", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
+
+    // Moonshine - CPU-only streaming STT (Windows/Linux x86_64)
+    {"moonshine", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
 };
 
 // ============================================================================
@@ -677,6 +682,11 @@ static bool is_recipe_installed(const std::string& recipe, const std::string& ba
             return false;
         }
     }
+    // Moonshine is bundled with Lemonade source; no external binary needed
+    if (recipe == "moonshine") {
+        return true;
+    }
+
     auto* spec = try_get_spec_for_recipe(recipe);
     if (spec) {
         try {
