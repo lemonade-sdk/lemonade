@@ -19,6 +19,7 @@ permissions:
 env:
   LEMONADE_CI_MODE: "True"
   PYTHONIOENCODING: utf-8
+  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
   LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
 
 jobs:
