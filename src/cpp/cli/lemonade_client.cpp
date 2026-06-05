@@ -383,31 +383,66 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
             });
 
         if (models.empty()) {
-            std::cout << "No models available" << std::endl;
+            std::cout << (show_all ? "No models available" : "No local models downloaded.") << std::endl;
             return 0;
         }
 
-        std::cout << std::left << std::setw(40) << "Model Name"
-                  << std::setw(12) << "Downloaded"
-                  << "Details" << std::endl;
-        std::cout << std::string(100, '-') << std::endl;
+        // Helper lambda to print a formatted table of models.
+        auto print_model_table = [](const std::vector<ModelInfo>& models) {
+            std::cout << std::left << std::setw(40) << "Model Name"
+                      << std::setw(12) << "Downloaded"
+                      << "Details" << std::endl;
+            std::cout << std::string(100, '-') << std::endl;
 
-        // Model Name is the API id emitted verbatim by `/v1/models`. For each
-        // bare name, the precedence-winning source (registered > imported >
-        // builtin) shows as the bare name; any shadowed sources show as their
-        // canonical id (user.NAME / extra.NAME / builtin.NAME). Either form is
-        // valid input to `lemonade load`, `lemonade delete`, etc., so the
-        // column is always copy-paste-safe.
-        for (const auto& model : models) {
-            std::string downloaded = model.downloaded ? "Yes" : "No";
-            std::string details = model.recipe.empty() ? "-" : model.recipe;
+            // Model Name is the API id emitted verbatim by `/v1/models`. For each
+            // bare name, the precedence-winning source (registered > imported >
+            // builtin) shows as the bare name; any shadowed sources show as their
+            // canonical id (user.NAME / extra.NAME / builtin.NAME). Either form is
+            // valid input to `lemonade load`, `lemonade delete`, etc., so the
+            // column is always copy-paste-safe.
+            for (const auto& model : models) {
+                std::string downloaded = model.downloaded ? "Yes" : "No";
+                std::string details = model.recipe.empty() ? "-" : model.recipe;
 
-            std::cout << std::left << std::setw(40) << model.id
-                      << std::setw(12) << downloaded
-                      << details << std::endl;
+                std::cout << std::left << std::setw(40) << model.id
+                          << std::setw(12) << downloaded
+                          << details << std::endl;
+            }
+
+            std::cout << std::string(100, '-') << std::endl;
+        };
+
+        if (!show_all) {
+            print_model_table(models);
+            return 0;
         }
 
-        std::cout << std::string(100, '-') << std::endl;
+        std::vector<ModelInfo> local_models;
+        std::vector<ModelInfo> available_models;
+        for (const auto& model : models) {
+            if (model.downloaded) {
+                local_models.push_back(model);
+            } else {
+                available_models.push_back(model);
+            }
+        }
+
+        std::cout << "Local" << std::endl;
+        if (local_models.empty()) {
+            std::cout << "No local models downloaded." << std::endl;
+        } else {
+            print_model_table(local_models);
+        }
+
+        std::cout << std::endl;
+
+        std::cout << "Available for Download" << std::endl;
+        if (available_models.empty()) {
+            std::cout << "No models available for download." << std::endl;
+        } else {
+            print_model_table(available_models);
+        }
+
         return 0;
 
     } catch (const HttpError& e) {
@@ -531,7 +566,7 @@ static bool parse_sse_progress(const std::string& event_data, StreamingRequestSt
     }
 }
 
-int LemonadeClient::pull_model(const json& model_data, const std::string& display_name) {
+int LemonadeClient::pull_model(const json& model_data, const std::string& display_name, bool upgrade) {
     try {
         // Validate that model field exists in model_data
         if (!model_data.contains("model_name") || !model_data["model_name"].is_string()) {
@@ -545,6 +580,14 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
 
         json request_body = model_data;
         request_body["stream"] = true;
+
+        // Cache-first by default: an already-downloaded model is reused instead
+        // of triggering a Hugging Face update check (and a possible full
+        // re-download). Only the explicit `lemonade pull` update flow opts into
+        // an upgrade. An explicit field already in model_data wins.
+        if (!request_body.contains("do_not_upgrade")) {
+            request_body["do_not_upgrade"] = !upgrade;
+        }
 
         std::string body = request_body.dump();
 

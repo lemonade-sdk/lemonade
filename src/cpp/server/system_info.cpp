@@ -1766,11 +1766,23 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     }
     if (!is_nvidia) return "";
 
+    // Data-center Blackwell (B100/B200) is compute capability 10.0 (sm_100),
+    // not 12.0 (sm_120) like the consumer/workstation Blackwell parts below.
+    // Resolve it explicitly first so the generic "blackwell" keyword in the
+    // sm_120 row doesn't misclassify a name like "NVIDIA B200 (Blackwell)".
+    if (n.find("b100") != std::string::npos || n.find("b200") != std::string::npos) {
+        return "sm_100";
+    }
+
     // Compact table: {sm_XX, {substrings that identify the architecture}}.
-    // Listed highest-to-lowest; first match wins.
+    // More-specific entries must come before broader ones; first match wins.
+    // sm_100 is listed first as a belt-and-suspenders fallback (the early guard
+    // above already returns before this table is reached for B100/B200).
     static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
-        {"sm_120", {"rtx 50", "rtx50", "5090", "5080", "5070", "5060"}},
         {"sm_100", {"b100", "b200"}},
+        {"sm_120", {"blackwell", "rtx 50", "rtx50", "5090", "5080", "5070", "5060",
+                    "rtx pro 6000", "rtx pro 5000", "rtx pro 4500", "rtx pro 4000",
+                    "rtx pro 3500", "rtx pro 3000", "rtx pro 2000", "rtx pro 1000"}},
         {"sm_90",  {"h100", "h200"}},
         {"sm_89",  {"rtx 40", "rtx40", "4090", "4080", "4070", "4060", "l40", " l4"}},
         {"sm_80",  {"a100"}},
@@ -2209,6 +2221,12 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
     // CUDA runtime ordinals and nvidia-smi/NVML indices can differ on mixed systems.
     // Passing a numeric nvidia-smi index can therefore accidentally expose the wrong GPU
     // (e.g. selecting sm_120 but making an sm_89 RTX 4090 visible as CUDA0).
+    //
+    // Only restrict CUDA_VISIBLE_DEVICES when there are mixed architectures that need
+    // hiding. If every available NVIDIA GPU matches the target arch, returning empty
+    // string lets the CUDA runtime enumerate them all without UUID filtering — which
+    // avoids driver-level UUID mismatches seen on some single-arch systems (e.g. RTX 50
+    // Blackwell where UUID-based filtering can cause "no CUDA-capable device detected").
     std::vector<std::string> devices_to_expose;
     if (arch.empty()) {
         return "";
@@ -2225,6 +2243,7 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
             return "";
         }
 
+        bool has_other_arch = false;
         int ordinal = 0;
         for (const auto& gpu : devices["nvidia_gpu"]) {
             if (!gpu.value("available", false)) {
@@ -2241,8 +2260,15 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
                     // than UUIDs because numeric CUDA ordinals can differ from nvidia-smi indices.
                     devices_to_expose.push_back(std::to_string(ordinal));
                 }
+            } else {
+                has_other_arch = true;
             }
             ordinal++;
+        }
+
+        // No mixed architectures — no need to restrict CUDA_VISIBLE_DEVICES.
+        if (!has_other_arch) {
+            return "";
         }
     } catch (...) {
         devices_to_expose.clear();
@@ -3031,6 +3057,49 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
             gpus.push_back(gpu);
         }
         return gpus;
+    }
+
+    // Secondary: /proc/driver/nvidia/gpus/*/information — readable whenever the
+    // nvidia kernel module is loaded, even when the GPU is in Optimus power-save
+    // mode and nvidia-smi fails. Provides the full model name and GPU UUID, which
+    // is enough for identify_cuda_arch_from_name() to determine the sm_XX family.
+    // (No compute_capability here; family is resolved from the name.)
+    {
+        fs::path gpus_dir = "/proc/driver/nvidia/gpus";
+        std::error_code ec;
+        if (fs::exists(gpus_dir, ec) && fs::is_directory(gpus_dir, ec)) {
+            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
+            std::string driver_version = get_nvidia_driver_version();
+            // VRAM is intentionally left unset here: get_nvidia_vram() reads a
+            // single memory.total value, which would be wrong if applied to
+            // every GPU on a multi-GPU system. /proc has no per-GPU memory.
+            for (const auto& entry : fs::directory_iterator(gpus_dir, ec)) {
+                fs::path info_path = entry.path() / "information";
+                std::ifstream info_file(info_path);
+                if (!info_file.is_open()) continue;
+
+                std::string model;
+                std::string uuid;
+                std::string line;
+                while (std::getline(info_file, line)) {
+                    if (line.rfind("Model:", 0) == 0) {
+                        model = trim_copy(line.substr(6));
+                    } else if (line.rfind("GPU UUID:", 0) == 0) {
+                        uuid = trim_copy(line.substr(9));
+                    }
+                }
+
+                if (!model.empty()) {
+                    GPUInfo gpu;
+                    gpu.name           = model;
+                    gpu.uuid           = uuid;
+                    gpu.available      = true;
+                    gpu.driver_version = driver_version;
+                    gpus.push_back(gpu);
+                }
+            }
+            if (!gpus.empty()) return gpus;
+        }
     }
 
     // Fallback: lspci (for systems where nvidia-smi is unavailable)
