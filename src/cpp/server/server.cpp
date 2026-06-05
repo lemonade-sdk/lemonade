@@ -269,7 +269,9 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                         (req.path.rfind("/v1/", 0) == 0);
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
-    // Internal endpoints are restricted to loopback regardless of API key
+    std::string auth_token = httplib::get_bearer_token_auth(req);
+
+    // Internal endpoints: allow from loopback OR with valid admin API key
     if (is_internal_route) {
         // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
         // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
@@ -277,25 +279,16 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         bool is_loopback = (req.remote_addr == "127.0.0.1" ||
                             req.remote_addr == "::1" ||
                             req.remote_addr == "::ffff:127.0.0.1");
-        if (!is_loopback) {
+        bool has_valid_admin_key = (!admin_api_key_.empty() && auth_token == admin_api_key_);
+
+        if (!is_loopback && !has_valid_admin_key) {
             LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
                         << req.remote_addr << " " << req.path << std::endl;
             res.status = 403;
-            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
+            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost or with admin API key\"}", "application/json");
             return httplib::Server::HandlerResponse::Handled;
         }
-    }
 
-    // Authentication hierarchy:
-    // - Admin key: access to both internal and regular API endpoints
-    // - Regular API key: access only to regular API endpoints (not internal)
-    // - If admin key is not set, it defaults to regular API key value
-    // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
-    // - If no keys are set, all endpoints are accessible without auth
-
-    std::string auth_token = httplib::get_bearer_token_auth(req);
-
-    if (is_internal_route) {
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -305,6 +298,12 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
             }
         }
     } else if (is_api_route && req.method != "OPTIONS") {
+        // Authentication hierarchy:
+        // - Admin key: access to both internal and regular API endpoints
+        // - Regular API key: access only to regular API endpoints (not internal)
+        // - If admin key is not set, it defaults to regular API key value
+        // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
+        // - If no keys are set, all endpoints are accessible without auth
         if (!api_key_.empty()) {
             if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
                 res.status = 401;
