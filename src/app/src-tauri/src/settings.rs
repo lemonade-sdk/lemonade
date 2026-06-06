@@ -71,6 +71,12 @@ fn default_tts() -> TtsSettings {
     }
 }
 
+fn default_model_manager() -> ModelManagerSettings {
+    ModelManagerSettings {
+        show_downloaded_only: false,
+    }
+}
+
 // ---------- Types ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +122,12 @@ pub struct TtsSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ModelManagerSettings {
+    pub show_downloaded_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub temperature: TypedSetting,
     pub top_k: TypedSetting,
@@ -132,6 +144,7 @@ pub struct AppSettings {
     pub api_key: TypedSetting,
     pub layout: LayoutSettings,
     pub tts: TtsSettings,
+    pub model_manager: ModelManagerSettings,
 }
 
 impl Default for AppSettings {
@@ -171,6 +184,7 @@ impl Default for AppSettings {
             },
             layout: default_layout(),
             tts: default_tts(),
+            model_manager: default_model_manager(),
         }
     }
 }
@@ -303,6 +317,15 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
         }
     }
 
+    if let Some(raw_model_manager) = incoming.get("modelManager").and_then(Value::as_object) {
+        if let Some(show_downloaded_only) = raw_model_manager
+            .get("showDownloadedOnly")
+            .and_then(Value::as_bool)
+        {
+            s.model_manager.show_downloaded_only = show_downloaded_only;
+        }
+    }
+
     s
 }
 
@@ -412,6 +435,9 @@ mod tests {
                 "modelManagerWidth": 300,
                 "chatWidth": 400,
                 "logsHeight": 250,
+            },
+            "modelManager": {
+                "showDownloadedOnly": true
             }
         });
 
@@ -447,6 +473,11 @@ mod tests {
             .pointer("/baseURL/value")
             .and_then(|v| v.as_str());
         assert_eq!(base_url, Some("http://example:1234"));
+
+        let show_downloaded_only = serialized
+            .pointer("/modelManager/showDownloadedOnly")
+            .and_then(|v| v.as_bool());
+        assert_eq!(show_downloaded_only, Some(true));
     }
 
     #[test]
@@ -456,5 +487,24 @@ mod tests {
         });
         let sanitized = sanitize_app_settings(&incoming);
         assert_eq!(sanitized.layout.left_panel_view, "models", "fell back to default");
+    }
+
+    #[test]
+    fn model_manager_show_downloaded_only_accepts_boolean_only() {
+        let enabled = sanitize_app_settings(&json!({
+            "modelManager": { "showDownloadedOnly": true }
+        }));
+        assert!(
+            enabled.model_manager.show_downloaded_only,
+            "accepted true showDownloadedOnly"
+        );
+
+        let invalid = sanitize_app_settings(&json!({
+            "modelManager": { "showDownloadedOnly": "true" }
+        }));
+        assert!(
+            !invalid.model_manager.show_downloaded_only,
+            "invalid showDownloadedOnly fell back to default"
+        );
     }
 }
