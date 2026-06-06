@@ -26,6 +26,7 @@ from utils.server_base import (
     get_cli_binary,
     parse_args,
     PORT,
+    pull_model_with_retry,
     set_server_config,
     wait_for_server,
 )
@@ -325,15 +326,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         if cls._model_pulled:
             return
 
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        if response.status_code != 200:
-            raise AssertionError(
-                f"Expected 200 from /api/v1/pull, got {response.status_code}"
-            )
+        pull_model_with_retry(ENDPOINT_TEST_MODEL)
         cls._model_pulled = True
 
     @unittest.skipUnless(
