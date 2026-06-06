@@ -73,16 +73,20 @@ class StreamingErrorTests(ServerTestBase):
             if attempt > 1:
                 time.sleep(2 * attempt)
 
-            # Start each attempt from a clean loaded-model state. Ignore unload
-            # failures here; the following /load response is the real setup signal.
-            try:
-                requests.post(
-                    f"http://localhost:{PORT}/api/v1/unload",
-                    json={},
-                    timeout=TIMEOUT_DEFAULT,
-                )
-            except requests.RequestException as exc:
-                print(f"Warning: unload before load attempt {attempt} failed: {exc}")
+                # On retries, recover from a potentially bad setup state before
+                # loading again. The first attempt intentionally avoids /unload
+                # so an already-loaded model can remain a cheap /load no-op.
+                try:
+                    requests.post(
+                        f"http://localhost:{PORT}/api/v1/unload",
+                        json={},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except requests.RequestException as exc:
+                    print(
+                        f"Warning: unload before load retry attempt {attempt} "
+                        f"failed: {exc}"
+                    )
 
             load_resp = requests.post(
                 f"http://localhost:{PORT}/api/v1/load",
@@ -91,7 +95,7 @@ class StreamingErrorTests(ServerTestBase):
             )
 
             if load_resp.status_code in [200, 409]:
-                return load_resp
+                return
 
             last_status = load_resp.status_code
             last_body = load_resp.text[:1000]
@@ -100,7 +104,7 @@ class StreamingErrorTests(ServerTestBase):
                 print(
                     f"Transient /load setup failure for {ENDPOINT_TEST_MODEL}: "
                     f"status={load_resp.status_code}, attempt={attempt}/{attempts}. "
-                    "Retrying after clean unload..."
+                    "Retrying after unload recovery..."
                 )
                 continue
 
