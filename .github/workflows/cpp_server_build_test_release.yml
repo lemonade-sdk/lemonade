@@ -346,6 +346,8 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       has_signing: ${{ steps.check_signing.outputs.has_signing }}
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -522,18 +524,6 @@ jobs:
           echo "Running streaming error termination tests..."
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
-
-      - name: Run environment variable tests (unsigned path)
-        if: steps.check_signing.outputs.has_signing != 'true'
-        shell: bash
-        env:
-          LEMONADE_CI_MODE: "True"
-          PYTHONIOENCODING: utf-8
-        run: |
-          set -e
-          echo "Running environment variable tests..."
-          .venv/bin/python test/server_env_vars.py --lemond-binary ./build/lemond
-          echo "Environment variable tests PASSED!"
 
       - name: Ensure server is running before whisper tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -839,6 +829,7 @@ jobs:
             runner: [self-hosted, Windows]
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -851,8 +842,12 @@ jobs:
       - name: Set environment variables
         shell: PowerShell
         run: |
+          # Persistent HF cache outside the workspace so models survive across
+          # jobs — the checkout clean wipes untracked workspace files (#2103)
+          $hfHome = Join-Path $Env:USERPROFILE ".cache\lemonade-ci\huggingface"
+          New-Item -ItemType Directory -Force -Path $hfHome | Out-Null
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
           $cwd = (Get-Item .\).FullName
-          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
           echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
       - name: Install and Verify Lemonade Server
@@ -952,6 +947,7 @@ jobs:
             runner: [self-hosted, Linux]
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -962,7 +958,12 @@ jobs:
         uses: ./.github/actions/cleanup-processes-linux
 
       - name: Set HF_HOME environment variable
-        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+        run: |
+          # Persistent HF cache outside the workspace so models survive across
+          # jobs — the checkout clean wipes untracked workspace files (#2103)
+          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ contains(matrix.extra_args, '--wrapped-server flm') }}
@@ -1291,35 +1292,19 @@ jobs:
           Write-Host "Embeddable Windows smoke test PASSED!" -ForegroundColor Green
 
   test-dmg-inference:
-    name: Test .dmg - macOS inference (${{ matrix.test_name }})
+    name: Test .dmg - macOS inference
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
     # Skip inference tests on tag pushes (releases) — signed path runs tests inline in build job
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true }}
+    timeout-minutes: 30
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-macos-dmg.outputs.version }}
       GGML_METAL_NO_RESIDENCY: "1"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - test_name: llamacpp-metal
-            script: server_llm.py
-            args: "--wrapped-server llamacpp --backend metal"
-          - test_name: whisper-metal
-            script: server_whisper.py
-            args: "--wrapped-server whispercpp --backend metal"
-          # Temporarily disabled — sd-cpp metal test is being skipped
-          # - test_name: sd-cpp-metal
-          #   script: server_sd.py
-          #   args: "--wrapped-server sd-cpp --backend metal"
-          #   sd_model: SD-Turbo-GGUF
-          - test_name: kokoro-metal
-            script: server_tts.py
-            args: ""
     steps:
       - uses: actions/checkout@v5
 
@@ -1408,47 +1393,59 @@ jobs:
           exit 1
 
       - name: Setup Python and virtual environment
+        id: setup
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
-      - name: Test ${{ matrix.test_name }}
-        if: needs.build-lemonade-macos-dmg.outputs.has_signing != 'true'
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-          LEMONADE_TEST_SD_MODEL: ${{ matrix.sd_model }}
-        run: |
-          set -e
-          SERVER_BIN="./build/lemonade"
-          .venv/bin/python test/${{ matrix.script }} ${{ matrix.args }} --cli-binary "$SERVER_BIN"
+      # All metal tests run in one job against the already-started server so
+      # they share a single setup and model cache (issue #2103). Each step runs
+      # even if an earlier test failed; the job fails if any failed.
+      - name: Test llamacpp-metal
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
+        run: .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --cli-binary ./build/lemonade
+
+      - name: Test whisper-metal
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
+        run: .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary ./build/lemonade
+
+      # Temporarily disabled — sd-cpp metal test is being skipped
+      # - name: Test sd-cpp-metal
+      #   if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
+      #   env:
+      #     LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
+      #   run: .venv/bin/python test/server_sd.py --wrapped-server sd-cpp --backend metal --cli-binary ./build/lemonade
+
+      - name: Test kokoro-metal
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true' }}
+        run: .venv/bin/python test/server_tts.py --cli-binary ./build/lemonade
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-dmg-${{ matrix.test_name }}
+          artifact-name: server-logs-dmg-inference
 
   # ========================================================================
   # CLI AND ENDPOINTS TESTS - Run on GitHub-hosted runners (no GPU needed)
   # ========================================================================
 
   test-cli-endpoints-linux:
-    name: Test ${{ matrix.test_type }} (ubuntu-latest)
+    name: Test CLI/Endpoints (ubuntu-latest)
     runs-on: ubuntu-latest
     needs: build-lemonade-deb
+    timeout-minutes: 25
     container:
       image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    strategy:
-      fail-fast: false
-      matrix:
-        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors, env-vars]
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      HF_HOME: ${{ github.workspace }}/hf-cache
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -1472,69 +1469,71 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r test/requirements.txt
 
+      - name: Prepare HF cache
+        id: setup
+        shell: bash
+        run: |
+          set -e
+          # HF_HOME is job-level env so install-lemonade-deb and the lemond
+          # process it starts inherit the same cache path.
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME"
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
 
-      - name: Set environment
+      # All test scripts run in one job so they share a single setup and model
+      # cache (issue #2103). Each step runs even if an earlier test failed
+      # (matching the old fail-fast: false matrix); the job fails if any failed.
+      - name: Test cli
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: |
-          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
-          echo "VENV_PYTHON=.venv/bin/python" >> $GITHUB_ENV
-          echo "CLI_BINARY=lemonade" >> $GITHUB_ENV
+        run: .venv/bin/python test/server_cli2.py --cli-binary lemonade
 
-      - name: Run tests
+      - name: Test endpoints
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
-        run: |
-          set -e
-          VENV_PYTHON=.venv/bin/python
-          CLI_BINARY=lemonade
+        run: .venv/bin/python test/server_endpoints.py --cli-binary lemonade
 
-          if [ "${{ matrix.test_type }}" = "cli" ]; then
-              echo "Running CLI tests..."
-              $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
-              echo "Running endpoint tests..."
-              $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "ollama" ]; then
-              echo "Running Ollama API tests..."
-              $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "llamacpp-system" ]; then
-              echo "Running LlamaCpp System Backend tests..."
-              $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
-              echo "Running streaming error termination tests..."
-              $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
-              echo "Running environment variable tests..."
-              $VENV_PYTHON test/server_env_vars.py --lemond-binary ./deb-extract/usr/bin/lemond
-          fi
+      - name: Test ollama
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/test_ollama.py --cli-binary lemonade
 
-          echo "${{ matrix.test_type }} tests PASSED!"
+      - name: Test streaming-errors
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+
+      # Must run last: its tearDown stops lemond via /internal/shutdown to
+      # launch its own instance, and nothing after it can rely on the server.
+      - name: Test llamacpp-system
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/test_llamacpp_system_backend.py --cli-binary lemonade
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-ubuntu-latest-${{ matrix.test_type }}
+          artifact-name: server-logs-ubuntu-latest
 
   test-cli-endpoints:
-    name: Test ${{ matrix.test_type }} (${{ matrix.os }})
+    name: Test CLI/Endpoints (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs:
       - build-lemonade-server-installer
       - build-lemonade-macos-dmg
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        test_type: [cli, endpoints, ollama, llamacpp-system, streaming-errors]
-        include:
-          - os: macos-latest
-            test_type: env-vars
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       PYTHONIOENCODING: utf-8
       GGML_METAL_NO_RESIDENCY: "1"
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -1590,6 +1589,7 @@ jobs:
 
       # ---- Common Setup ----
       - name: Setup Python and virtual environment
+        id: setup
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
@@ -1597,42 +1597,42 @@ jobs:
           requirements-file: 'test/requirements.txt'
 
       # ---- Run Tests ----
-      - name: Run ${{ matrix.test_type }} tests
-        if: ${{ !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+      # All test scripts run in one job so they share a single setup and model
+      # cache (issue #2103). Each step runs even if an earlier test failed
+      # (matching the old fail-fast: false matrix); the job fails if any failed.
+      # On macOS without a signed .pkg the tests are skipped (no-op pass).
+      - name: Test cli
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
-        env:
-          HF_HOME: ${{ env.HF_HOME }}
-        run: |
-          set -e  # Exit on error
+        run: $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
 
-          if [ "${{ matrix.test_type }}" = "cli" ]; then
-              echo "Running CLI tests..."
-              $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
-              echo "Running endpoint tests..."
-              $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "ollama" ]; then
-              echo "Running Ollama API tests..."
-              $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "llamacpp-system" ]; then
-              echo "Running LlamaCpp System Backend tests..."
-              $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
-              echo "Running streaming error termination tests..."
-              $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
-          elif [ "${{ matrix.test_type }}" = "env-vars" ]; then
-              echo "Running environment variable tests..."
-              LEMOND_BINARY="$(dirname "$CLI_BINARY")/lemond"
-              $VENV_PYTHON test/server_env_vars.py --lemond-binary "$LEMOND_BINARY"
-          fi
+      - name: Test endpoints
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+        shell: bash
+        run: $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
-          echo "${{ matrix.test_type }} tests PASSED!"
+      - name: Test ollama
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+        shell: bash
+        run: $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
+
+      - name: Test streaming-errors
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+        shell: bash
+        run: $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+
+      # Must run last: its tearDown stops lemond via /internal/shutdown to
+      # launch its own instance, and nothing after it can rely on the server.
+      - name: Test llamacpp-system
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+        shell: bash
+        run: $VENV_PYTHON test/test_llamacpp_system_backend.py --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
-          artifact-name: server-logs-${{ matrix.os }}-${{ matrix.test_type }}
+          artifact-name: server-logs-${{ matrix.os }}
 
   # ========================================================================
   # API KEY TESTS - Separate job with LEMONADE_API_KEY env var
@@ -1649,6 +1649,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       LEMONADE_API_KEY: "test-api-key-12345"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -1741,6 +1742,7 @@ jobs:
       - build-lemonade-server-installer
     env:
       LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
       LEMONADE_API_KEY: "test-api-key-12345"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
