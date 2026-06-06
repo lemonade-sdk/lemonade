@@ -184,24 +184,39 @@ def unload_all_models(port=PORT):
     return response
 
 
+def _is_transient_pull_status(status_code):
+    return status_code in {408, 409, 429, 500, 502, 503, 504}
+
+
 def pull_model_with_retry(model_name, attempts=3, port=PORT):
     """Pull a model with bounded retry for transient setup failures.
 
-    Test setup should tolerate one-off transient 5xx failures, but persistent
+    Test setup should tolerate one-off transient pull failures, but persistent
     failures and permanent client errors should still fail with useful details.
     """
     last_status = None
     last_body = ""
+    last_error = None
 
     for attempt in range(1, attempts + 1):
         if attempt > 1:
-            time.sleep(2 * attempt)
+            time.sleep(min(30, 2 ** (attempt - 1)))
 
-        response = requests.post(
-            f"http://localhost:{port}/api/v1/pull",
-            json={"model_name": model_name},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        try:
+            response = requests.post(
+                f"http://localhost:{port}/api/v1/pull",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < attempts:
+                print(
+                    f"Transient /pull setup request failure for {model_name}: "
+                    f"{exc} (attempt {attempt}/{attempts}). Retrying..."
+                )
+                continue
+            break
 
         if response.status_code == 200:
             return response
@@ -209,7 +224,7 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
         last_status = response.status_code
         last_body = response.text[:1000]
 
-        if response.status_code >= 500 and attempt < attempts:
+        if _is_transient_pull_status(response.status_code) and attempt < attempts:
             print(
                 f"Transient /pull setup failure for {model_name}: "
                 f"status={response.status_code}, attempt={attempt}/{attempts}. "
@@ -218,6 +233,12 @@ def pull_model_with_retry(model_name, attempts=3, port=PORT):
             continue
 
         break
+
+    if last_error is not None and last_status is None:
+        raise AssertionError(
+            f"Expected 200 from /api/v1/pull for {model_name} after "
+            f"{attempts} attempt(s), last request failed with: {last_error}"
+        )
 
     raise AssertionError(
         f"Expected 200 from /api/v1/pull for {model_name} after "
