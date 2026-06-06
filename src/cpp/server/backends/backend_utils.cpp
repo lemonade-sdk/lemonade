@@ -1,5 +1,6 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/whisper_server.h"
 #include "lemon/backends/sd_server.h"
@@ -1003,6 +1004,40 @@ namespace lemon::backends {
         }
 
         return "";
+#endif
+    }
+    void BackendUtils::apply_cuda_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            bool skip_visible_devices) {
+        if (!skip_visible_devices) {
+            const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
+            const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
+
+            if (has_visible_override) {
+                LOG(INFO, log_tag) << "Respecting existing CUDA_VISIBLE_DEVICES="
+                                   << existing_visible_devices << std::endl;
+            } else {
+                std::string cuda_arch = SystemInfo::get_cuda_arch();
+                std::string visible_devices = SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch);
+                if (!cuda_arch.empty() && !visible_devices.empty()) {
+                    env_vars.push_back({"CUDA_VISIBLE_DEVICES", visible_devices});
+                    LOG(INFO, log_tag)
+                        << "Restricting CUDA_VISIBLE_DEVICES to " << visible_devices
+                        << " for " << cuda_arch
+                        << " CUDA asset; matching same-arch GPUs remain available for multi-GPU offload"
+                        << std::endl;
+                }
+            }
+        }
+
+#ifdef __linux__
+        const char* existing_prime = std::getenv("__NV_PRIME_RENDER_OFFLOAD");
+        if (!existing_prime || existing_prime[0] == '\0') {
+            env_vars.push_back({"__NV_PRIME_RENDER_OFFLOAD", "1"});
+            LOG(INFO, log_tag) << "Setting __NV_PRIME_RENDER_OFFLOAD=1 for PRIME Offload compatibility"
+                               << std::endl;
+        }
 #endif
     }
 } // namespace lemon::backends
