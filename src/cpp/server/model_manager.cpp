@@ -3809,7 +3809,18 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
             if (!file_name.is_string()) continue;
 
             std::string fname = file_name.get<std::string>();
-            std::string file_url = hf_url + "/resolve/main/" + fname;
+
+            // Construct HuggingFace file URL
+            // Handle both simple URLs and URLs with explicit branch set
+            std::string file_url;
+            if (hf_url.find("/resolve/") != std::string::npos) {
+                // URL already includes branch, just append filename
+                file_url = hf_url + "/" + fname;
+            } else {
+                // URL uses default branch (main), append /resolve/main/
+                file_url = hf_url + "/resolve/main/" + fname;
+            }
+
             fs::path dest_path = model_dir / fname;
 
             // Skip if already downloaded
@@ -3820,35 +3831,42 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
 
             LOG(INFO, "ModelManager") << "Downloading: " << fname << std::endl;
 
-            // Download the file using HttpClient
+            // Ensure parent directory exists
+            fs::create_directories(dest_path.parent_path());
+
+            // Download the file directly to disk using HttpClient
+            // This handles large files efficiently without loading them into memory
             try {
-                HttpClient client;
-                HttpResponse response = client.get(file_url);
+                DownloadOptions download_opts;
+                download_opts.max_retries = 3;
+                download_opts.connect_timeout = 60;
 
-                if (response.status_code != 200) {
-                    throw std::runtime_error("HTTP " + std::to_string(response.status_code) + " downloading " + fname);
+                // Convert progress callback to match ProgressCallback signature
+                DownloadResult result = utils::HttpClient::download_file(
+                    file_url,
+                    path_to_utf8(dest_path),
+                    [&](size_t downloaded, size_t total) {
+                        if (progress_callback) {
+                            DownloadProgress progress;
+                            progress.file = fname;
+                            progress.bytes_downloaded = downloaded;
+                            progress.bytes_total = total;
+                            if (total > 0) {
+                                progress.percent = static_cast<int>((downloaded * 100) / total);
+                            }
+                            progress_callback(progress);
+                        }
+                        return true; // Continue downloading
+                    },
+                    {},
+                    download_opts
+                );
+
+                if (!result.success) {
+                    throw std::runtime_error("Download failed: " + result.error_message +
+                                           " (HTTP " + std::to_string(result.http_code) + ")");
                 }
 
-                // Ensure parent directory exists
-                fs::create_directories(dest_path.parent_path());
-
-                // Write file
-                std::ofstream out(dest_path, std::ios::binary);
-                if (!out.is_open()) {
-                    throw std::runtime_error("Failed to open file for writing: " + path_to_utf8(dest_path));
-                }
-                out.write(response.body.c_str(), response.body.size());
-                out.close();
-
-                // Report progress
-                if (progress_callback) {
-                    DownloadProgress progress;
-                    progress.file = fname;
-                    progress.bytes_downloaded = response.body.size();
-                    progress.bytes_total = response.body.size();
-                    progress.percent = 100;
-                    progress_callback(progress);
-                }
             } catch (const std::exception& e) {
                 LOG(WARNING, "ModelManager") << "Failed to download " << fname << ": " << e.what() << std::endl;
                 throw;
