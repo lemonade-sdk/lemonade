@@ -27,6 +27,7 @@ import tempfile
 import uuid
 import requests
 from openai import NotFoundError
+from prometheus_client.parser import text_string_to_metric_families
 
 from utils.server_base import (
     ServerTestBase,
@@ -96,6 +97,19 @@ class EndpointTests(ServerTestBase):
         self.assertIn("pid", model_info)
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
+
+    def _parse_prometheus_text(self, body):
+        """Validate Prometheus text format and return sample labels by metric name."""
+        samples = {}
+        for family in text_string_to_metric_families(body):
+            self.assertTrue(family.name, "Metric family name should not be empty")
+            self.assertTrue(family.documentation is not None)
+            self.assertTrue(family.type, f"{family.name} should have a metric type")
+            for sample in family.samples:
+                float(sample.value)
+                samples.setdefault(sample.name, []).append(sample.labels)
+
+        return samples
 
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
@@ -170,6 +184,50 @@ class EndpointTests(ServerTestBase):
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
+
+    def test_002a_metrics_endpoint(self):
+        """Test root-level /metrics returns Prometheus text and loaded model samples."""
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response.headers.get("Content-Type", ""))
+        body = response.text
+        self.assertIn("# HELP lemonade_server_up", body)
+        self.assertIn("# TYPE lemonade_server_up gauge", body)
+        self.assertRegex(body, r"(?m)^lemonade_server_up 1(?:\.0+)?$")
+
+        samples = self._parse_prometheus_text(body)
+        self.assertIn("lemonade_server_up", samples)
+        self.assertIn("lemonade_loaded_models", samples)
+        self.assertIn("lemonade_max_loaded_models", samples)
+
+        head_response = requests.head(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(head_response.status_code, 200)
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        loaded_response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(loaded_response.status_code, 200)
+        loaded_samples = self._parse_prometheus_text(loaded_response.text)
+        self.assertIn("lemonade_model_info", loaded_samples)
+        self.assertTrue(
+            any(
+                labels.get("model_name") == ENDPOINT_TEST_MODEL
+                for labels in loaded_samples["lemonade_model_info"]
+            ),
+            "Loaded model should be exposed in lemonade_model_info",
+        )
+        print("[OK] /metrics returned Prometheus text with loaded model samples")
 
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
