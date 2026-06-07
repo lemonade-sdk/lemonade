@@ -22,11 +22,13 @@ Usage:
 
 import os
 import platform
+import unittest
 import shutil
 import tempfile
 import uuid
 import requests
 from openai import NotFoundError
+from prometheus_client.parser import text_string_to_metric_families
 
 from utils.server_base import (
     ServerTestBase,
@@ -97,6 +99,19 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
 
+    def _parse_prometheus_text(self, body):
+        """Validate Prometheus text format and return sample labels by metric name."""
+        samples = {}
+        for family in text_string_to_metric_families(body):
+            self.assertTrue(family.name, "Metric family name should not be empty")
+            self.assertTrue(family.documentation is not None)
+            self.assertTrue(family.type, f"{family.name} should have a metric type")
+            for sample in family.samples:
+                float(sample.value)
+                samples.setdefault(sample.name, []).append(sample.labels)
+
+        return samples
+
     def test_000_endpoints_registered(self):
         """Verify all expected endpoints are registered on both v0 and v1."""
         valid_endpoints = [
@@ -106,6 +121,7 @@ class EndpointTests(ServerTestBase):
             "models",
             "responses",
             "pull",
+            "pull/variants",
             "delete",
             "load",
             "unload",
@@ -170,6 +186,50 @@ class EndpointTests(ServerTestBase):
         print(
             f"[OK] /health endpoint response: status={data['status']}, models_loaded={len(data['all_models_loaded'])}"
         )
+
+    def test_002a_metrics_endpoint(self):
+        """Test root-level /metrics returns Prometheus text and loaded model samples."""
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response.headers.get("Content-Type", ""))
+        body = response.text
+        self.assertIn("# HELP lemonade_server_up", body)
+        self.assertIn("# TYPE lemonade_server_up gauge", body)
+        self.assertRegex(body, r"(?m)^lemonade_server_up 1(?:\.0+)?$")
+
+        samples = self._parse_prometheus_text(body)
+        self.assertIn("lemonade_server_up", samples)
+        self.assertIn("lemonade_loaded_models", samples)
+        self.assertIn("lemonade_max_loaded_models", samples)
+
+        head_response = requests.head(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(head_response.status_code, 200)
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        loaded_response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(loaded_response.status_code, 200)
+        loaded_samples = self._parse_prometheus_text(loaded_response.text)
+        self.assertIn("lemonade_model_info", loaded_samples)
+        self.assertTrue(
+            any(
+                labels.get("model_name") == ENDPOINT_TEST_MODEL
+                for labels in loaded_samples["lemonade_model_info"]
+            ),
+            "Loaded model should be exposed in lemonade_model_info",
+        )
+        print("[OK] /metrics returned Prometheus text with loaded model samples")
 
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
@@ -2050,6 +2110,162 @@ class EndpointTests(ServerTestBase):
             found_url, "Expected at least one backend with release_url in system-info"
         )
         print("[OK] system-info contains release_url for backends")
+
+
+    # =========================================================================
+    # PULL/VARIANTS TESTS
+    # The two error-only tests (030, 031) run in every CI environment because
+    # they never touch the network — the server rejects the request before any
+    # HuggingFace call is made.
+    #
+    # The live-network tests (032, 033) are gated behind the env var
+    # LEMONADE_INTEGRATION_TESTS=1 so they are opt-in and do not cause
+    # failures due to HF rate limits, network policy, or HF outages in
+    # standard CI runs.
+    # =========================================================================
+
+    def test_030_pull_variants_missing_checkpoint_returns_400(self):
+        """GET /pull/variants without checkpoint param returns 400 with exact error message."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for missing checkpoint, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn(
+            "Missing required query parameter 'checkpoint'",
+            data["error"],
+            f"Unexpected error message: {data['error']}",
+        )
+        print("[OK] Missing checkpoint param returns 400 with descriptive error")
+
+    def test_031_pull_variants_malformed_checkpoint_returns_400(self):
+        """GET /pull/variants with checkpoint missing '/' returns 400 with exact error message."""
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": "noslashrepo"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for malformed checkpoint, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn(
+            "owner/name",
+            data["error"],
+            f"Expected 'owner/name' format hint in error message, got: {data['error']}",
+        )
+        print("[OK] Malformed checkpoint (no slash) returns 400 with owner/name format hint")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_032_pull_variants_nonexistent_checkpoint_returns_404(self):
+        """GET /pull/variants for a repo that does not exist on HuggingFace returns 404.
+
+        Requires LEMONADE_INTEGRATION_TESTS=1 — makes a live HuggingFace API call.
+        """
+        checkpoint = "lemonade-nonexistent-owner/lemonade-nonexistent-repo-xyz"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            404,
+            f"Expected 404 for nonexistent HF repo, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn(
+            checkpoint,
+            data["error"],
+            f"Expected checkpoint name in 404 error message, got: {data['error']}",
+        )
+        self.assertIn(
+            "not found on Hugging Face",
+            data["error"],
+            f"Unexpected 404 error message: {data['error']}",
+        )
+        print("[OK] Nonexistent HuggingFace checkpoint returns 404 with descriptive error")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_valid_checkpoint_returns_variant_list(self):
+        """GET /pull/variants for a known public GGUF repo returns a valid variant list.
+
+        Requires LEMONADE_INTEGRATION_TESTS=1 — makes a live HuggingFace API call.
+        Uses TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF as a stable, small public fixture.
+        """
+        checkpoint = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"Expected 200 for valid checkpoint, got {response.status_code}: {response.text}",
+        )
+        data = response.json()
+
+        # Top-level fields per documented API contract
+        self.assertIn("checkpoint", data)
+        self.assertIn("recipe", data)
+        self.assertIn("suggested_name", data)
+        self.assertIn("variants", data)
+
+        # checkpoint must echo the input value exactly
+        self.assertEqual(
+            data["checkpoint"],
+            checkpoint,
+            f"Expected checkpoint to echo input '{checkpoint}', got '{data['checkpoint']}'",
+        )
+
+        # recipe must be a non-empty string
+        self.assertIsInstance(data["recipe"], str)
+        self.assertGreater(len(data["recipe"]), 0, "Expected non-empty recipe string")
+
+        # variants must be a non-empty list
+        variants = data["variants"]
+        self.assertIsInstance(variants, list)
+        self.assertGreater(
+            len(variants), 0, "Expected at least one variant for TinyLlama GGUF repo"
+        )
+
+        # every variant must carry all documented fields including size_bytes
+        for v in variants:
+            self.assertIn("name", v)
+            self.assertIn("primary_file", v)
+            self.assertIn("files", v)
+            self.assertIn("sharded", v)
+            self.assertIn(
+                "size_bytes", v, f"Variant '{v.get('name')}' is missing 'size_bytes' field"
+            )
+            self.assertIsInstance(v["files"], list)
+            self.assertGreater(
+                len(v["files"]), 0, f"Variant '{v.get('name')}' has empty files list"
+            )
+            self.assertIsInstance(v["sharded"], bool)
+            self.assertIsInstance(v["size_bytes"], int)
+
+        print(
+            f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
+            f"{[v['name'] for v in variants]}"
+        )
 
 
 if __name__ == "__main__":

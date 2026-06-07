@@ -327,6 +327,7 @@ void LlamaCppServer::load(const std::string& model_name,
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
+    push_arg(args, reserved_flags, "--metrics");
 
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
@@ -491,53 +492,23 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 #endif
 
-    // CUDA release assets are architecture-specific. On mixed NVIDIA systems
-    // the latest sm_120-only binary will be installed. So an older sm-Verion is mot
-    // supported. Hide incompatible NV GPUs by default, keep all GPUs that match the selected
-    // release architecture so homogeneous multi-GPU systems still use multiple cards.
     if (is_llamacpp_cuda_backend(llamacpp_backend)) {
-        const char* existing_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
         const char* existing_llama_device = std::getenv("LLAMA_ARG_DEVICE");
-        const bool has_visible_override = existing_visible_devices && existing_visible_devices[0] != '\0';
         const bool has_llama_device_override = existing_llama_device && existing_llama_device[0] != '\0';
 
+        bool skip_visible_devices = false;
         if (!llamacpp_device.empty()) {
             LOG(INFO, "LlamaCpp")
                 << "Using explicit llama.cpp CUDA device selection: " << llamacpp_device
                 << std::endl;
-        } else if (has_visible_override) {
-            LOG(INFO, "LlamaCpp")
-                << "Respecting existing CUDA_VISIBLE_DEVICES=" << existing_visible_devices
-                << std::endl;
+            skip_visible_devices = true;
         } else if (has_llama_device_override) {
             LOG(INFO, "LlamaCpp")
                 << "Respecting existing LLAMA_ARG_DEVICE=" << existing_llama_device
                 << std::endl;
-        } else {
-            std::string cuda_arch = SystemInfo::get_cuda_arch();
-            std::string visible_devices = SystemInfo::get_cuda_visible_devices_for_arch(cuda_arch);
-            if (!cuda_arch.empty() && !visible_devices.empty()) {
-                env_vars.push_back({"CUDA_VISIBLE_DEVICES", visible_devices});
-                LOG(INFO, "LlamaCpp")
-                    << "Restricting CUDA_VISIBLE_DEVICES to " << visible_devices
-                    << " for " << cuda_arch
-                    << " CUDA asset; matching same-arch GPUs remain available for multi-GPU offload"
-                    << std::endl;
-            }
+            skip_visible_devices = true;
         }
-
-#ifdef __linux__
-        // On NVIDIA Optimus/PRIME laptops in On-Demand mode the dGPU is only
-        // activated for applications that opt in via __NV_PRIME_RENDER_OFFLOAD.
-        // Without this, CUDA reports "no CUDA-capable device is detected" even
-        // though the kernel module is loaded and /proc/driver/nvidia/gpus exists.
-        // Setting the variable is harmless on non-Optimus (single-GPU) systems.
-        const char* existing_prime = std::getenv("__NV_PRIME_RENDER_OFFLOAD");
-        if (!existing_prime || existing_prime[0] == '\0') {
-            env_vars.push_back({"__NV_PRIME_RENDER_OFFLOAD", "1"});
-            LOG(INFO, "LlamaCpp") << "Setting __NV_PRIME_RENDER_OFFLOAD=1 for PRIME Offload compatibility" << std::endl;
-        }
-#endif
+        BackendUtils::apply_cuda_env_vars(env_vars, "LlamaCpp", skip_visible_devices);
     }
 
 #ifdef __APPLE__
