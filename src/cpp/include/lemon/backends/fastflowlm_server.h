@@ -60,7 +60,8 @@ public:
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
                                    bool sse = true,
-                                   long timeout_seconds = 0) override;
+                                   long timeout_seconds = 0,
+                                   TelemetryCallback telemetry_callback = nullptr) override;
 
 private:
     // Get the path to the flm executable from the install directory

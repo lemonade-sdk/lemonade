@@ -506,6 +506,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         }},
     }},
 
+    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Windows/Linux)
+    {"sd-cpp", "cuda", {"windows", "linux"}, {
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+    }},
+
     // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
     {"sd-cpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
@@ -1222,7 +1227,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
     }
 
     // Default to preferring system llamacpp on Linux AMD systems.
-    // This can be overridden with LEMONADE_LLAMACPP_PREFER_SYSTEM=true/false.
+    // Can be set via config.json: {"llamacpp": {"prefer_system": true}}
     bool prefer_llamacpp_system = false;
     if (auto* cfg = RuntimeConfig::global()) {
         prefer_llamacpp_system = cfg->backend_bool("llamacpp", "prefer_system");
