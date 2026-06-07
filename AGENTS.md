@@ -192,16 +192,6 @@ These MUST be maintained in all changes:
 11. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. Per-client state (settings, layout, zoom, base URL, API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint.
 12. **Web-app dependencies constrained by Debian native packaging** — `src/web-app/package.json` is kept separate from `src/app/package.json` because the native Debian package (`lemonade-server` .deb) must build using only npm modules available in Debian's `/usr/share/nodejs` (see `USE_SYSTEM_NODEJS_MODULES` in `src/web-app/webpack.config.js`). The old Electron app depended on packages Debian does not ship. Do NOT consolidate the two `package.json` files — the split is required for reproducible distro packaging.
 13. **Desktop app is on-demand; `lemond` runs independently** — On Windows, `LemonadeServer.exe` (which embeds `lemond` + tray icon) is the always-on process, auto-started via the Windows startup folder. The Tauri desktop app (`lemonade-app.exe`) is opened on demand when the user wants the UI and must not be added to startup. The desktop app must not embed or manage `lemond`'s lifecycle — it discovers the already-running server (UDP beacon for local, explicit base URL for remote) and speaks to it over HTTP.
-14. **AMD GPU platform parity** — When adding or expanding AMD/ROCm GPU support, keep Windows and Linux detection in sync. Windows commonly detects GPUs from product names like `5700` or `6800`, while Linux may report raw KFD ISA codes like `gfx1010` or `gfx1030`. Update `ROCM_ARCH_MAPPING` in `system_info.cpp` as needed so Linux detections resolve to the backend target expected by recipes and ROCm downloads, or to `""` when that ISA is intentionally unsupported.
-
-## Pending Local Work
-
-Temporary local tracking note. Remove after issue selection/work is complete.
-
-- Active focus: `#1992` — `extra_models_dir` collapses multiple GGUF quant variants in one folder into one visible model. Best local fit for this Windows + RX 5700 XT workstation.
-- Pending: `#1999` — downloaded models disappear after upgrade; likely overlaps with `#1762` and Linux cache-path documentation issues.
-- Pending: `#1469` — Windows server sometimes fails to start; likely needs repro/triage first because it references older `lemonade-router.exe` startup flow.
-
 
 ## Contributing
 
