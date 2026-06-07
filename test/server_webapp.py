@@ -59,8 +59,8 @@ class WebAppAssetTests(ServerTestBase):
         )
         print("[OK] renderer.bundle.js returned 200 with correct content-type")
 
-    def test_002_normal_css_asset_returns_200(self):
-        """A normal web-app CSS asset should return 200."""
+    def test_002_normal_svg_asset_returns_200(self):
+        """A normal web-app SVG asset should return 200."""
         if not self._is_webapp_available():
             self.skipTest("Web app not available on this server")
 
