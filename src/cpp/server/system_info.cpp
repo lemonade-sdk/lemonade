@@ -890,7 +890,7 @@ json SystemInfo::get_device_dict() {
     // Get AMD GPU info (both integrated and discrete) - with fault tolerance
     try {
         devices["amd_gpu"] = json::array();
-
+        
         auto amd_igpu = get_amd_igpu_device();
         if (amd_igpu.available) {
             json gpu_json = {
@@ -2094,12 +2094,34 @@ std::string SystemInfo::get_rocm_arch() {
 
         // Check AMD GPUs
         if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
+
+            // First I get The environment var LEMONADE_ROCM_ARCH if it exists.
+            const char* rocm_arch_env_raw = std::getenv("LEMONADE_ROCM_ARCH");
+            std::string rocm_env_arch = (rocm_arch_env_raw  != nullptr) ? rocm_arch_env_raw  : "";
+
+            // We must check the format of LEMONADE_ROCM_ARCH it can be 120000 or gfx1200 as backend_versions.json 
+            // Be careful! "gfx908" is valid.
+            std::regex rocm_arch_regex(R"(gfx\d{3,4})", std::regex::icase);
+
             for (const auto& gpu : devices["amd_gpu"]) {
                 if (gpu.value("available", false)) {
                     std::string name = gpu.value("name", "");
                     if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
+                        std::string arch = "";
+                        // If the LEMONADE_ROCM_ARCH env is informed, We check if the current gpu has the same name as Env.
+                        if (!rocm_env_arch.empty()) {
+                            if (std::regex_search(rocm_env_arch, rocm_arch_regex)) {
+                                arch = rocm_env_arch;
+                            } else {
+                                arch = identify_rocm_arch_from_name(rocm_env_arch);
+                            }
+                            
+                        } else {
+                            // If the env var is NOT set up, We use the usual behaviour. It will choose the first active GPU found.
+                            arch = identify_rocm_arch_from_name(name);
+                        }
                         if (!arch.empty()) {
+                            LOG(DEBUG, "Server") << "The chosen ROCm architecture is: "<< arch << std::endl;
                             return arch;
                         }
                     }
