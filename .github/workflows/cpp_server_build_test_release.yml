@@ -1445,6 +1445,7 @@ jobs:
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      HF_HOME: ${{ github.workspace }}/hf-cache
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
@@ -1468,16 +1469,20 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r test/requirements.txt
 
+      - name: Prepare HF cache
+        id: setup
+        shell: bash
+        run: |
+          set -e
+          # HF_HOME is job-level env so install-lemonade-deb and the lemond
+          # process it starts inherit the same cache path.
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME"
+
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
         with:
           version: ${{ env.LEMONADE_VERSION }}
-
-      - name: Set environment
-        id: setup
-        shell: bash
-        run: |
-          echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed
