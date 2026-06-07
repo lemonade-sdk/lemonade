@@ -12,26 +12,23 @@ inline bool is_collection_recipe(const std::string& recipe) {
     return recipe == COLLECTION_OMNI_MODEL_RECIPE;
 }
 
-// Model type classification for LRU cache management
 enum class ModelType {
-    LLM,        // Chat/completion models
-    EMBEDDING,  // Embedding models
-    RERANKING,  // Reranking models
-    TRANSCRIPTION, // Transcription models (speech-to-text)
-    IMAGE,      // Image generation models (text-to-image)
-    TTS         // Text to speech models
+    LLM,
+    EMBEDDING,
+    RERANKING,
+    TRANSCRIPTION,
+    IMAGE,
+    TTS
 };
 
-// Device type flags for tracking hardware usage
-// Uses bitmask pattern for models that use multiple devices
+// Bitmask pattern for models that use multiple devices
 enum DeviceType : uint32_t {
     DEVICE_NONE = 0,
-    DEVICE_CPU  = 1 << 0,  // 0x01
-    DEVICE_GPU  = 1 << 1,  // 0x02
-    DEVICE_NPU  = 1 << 2   // 0x04
+    DEVICE_CPU  = 1 << 0,
+    DEVICE_GPU  = 1 << 1,
+    DEVICE_NPU  = 1 << 2
 };
 
-// Bitwise operators for DeviceType flags
 inline DeviceType operator|(DeviceType a, DeviceType b) {
     return static_cast<DeviceType>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
@@ -45,7 +42,6 @@ inline DeviceType& operator|=(DeviceType& a, DeviceType b) {
     return a;
 }
 
-// Helper functions
 inline std::string model_type_to_string(ModelType type) {
     switch (type) {
         case ModelType::LLM: return "llm";
@@ -121,21 +117,22 @@ inline ModelType get_model_type_from_labels(const std::vector<std::string>& labe
 }
 
 // Determine device type from recipe
+// Default device from recipe — individual backends override based on their config
 inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
     if (recipe == "llamacpp") {
-        return DEVICE_GPU;  // Default; LlamaCppServer::load() overrides to DEVICE_CPU for the cpu backend
+        return DEVICE_GPU;
     } else if (recipe == "ryzenai-llm") {
         return DEVICE_NPU;
     } else if (recipe == "flm") {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
-        return DEVICE_CPU;  // Default; WhisperServer::load() overrides to DEVICE_NPU/DEVICE_GPU for npu/vulkan backends
+        return DEVICE_CPU;
     } else if (recipe == "sd-cpp") {
-        return DEVICE_CPU;  // Default; SDServer::load() overrides to DEVICE_GPU for rocm/vulkan backends
+        return DEVICE_CPU;
     } else if (recipe == "kokoro") {
-        return DEVICE_CPU;  // Kokoros runs on CPU
+        return DEVICE_CPU;
     } else if (is_collection_recipe(recipe)) {
-        return DEVICE_NONE;  // Collection recipes orchestrate multiple components
+        return DEVICE_NONE;
     }
     return DEVICE_NONE;
 }

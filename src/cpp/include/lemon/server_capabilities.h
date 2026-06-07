@@ -7,13 +7,11 @@ namespace lemon {
 
 using json = nlohmann::json;
 
-// Base capability interface
 class ICapability {
 public:
     virtual ~ICapability() = default;
 };
 
-// Core completion capabilities that all servers must support
 class ICompletionServer : public virtual ICapability {
 public:
     virtual ~ICompletionServer() = default;
@@ -21,74 +19,51 @@ public:
     virtual json completion(const json& request) = 0;
 };
 
-// Optional embeddings capability
 class IEmbeddingsServer : public virtual ICapability {
 public:
     virtual ~IEmbeddingsServer() = default;
     virtual json embeddings(const json& request) = 0;
 };
 
-// Optional reranking capability
 class IRerankingServer : public virtual ICapability {
 public:
     virtual ~IRerankingServer() = default;
     virtual json reranking(const json& request) = 0;
 };
 
-// Optional transcription capability (speech-to-text)
 class ITranscriptionServer : public virtual ICapability {
 public:
     virtual ~ITranscriptionServer() = default;
-
-    // Speech-to-text transcription (OpenAI /v1/audio/transcriptions compatible)
     virtual json audio_transcriptions(const json& request) = 0;
 };
 
-// Optional audio capability (text-to-speech)
 class ITextToSpeechServer : public virtual ICapability {
 public:
     virtual ~ITextToSpeechServer() = default;
-
-    // Speech-to-text transcription (OpenAI /v1/audio/speech compatible)
     virtual void audio_speech(const json& request, httplib::DataSink& sink) = 0;
 };
 
-// Optional image generation capability
 class IImageServer : public virtual ICapability {
 public:
     virtual ~IImageServer() = default;
-
-    // Image generation (OpenAI /v1/images/generations compatible)
     virtual json image_generations(const json& request) = 0;
-
-    // Image editing (OpenAI /v1/images/edits compatible)
     virtual json image_edits(const json& request) = 0;
-
-    // Image variations (OpenAI /v1/images/variations compatible)
     virtual json image_variations(const json& request) = 0;
 };
 
-// Optional slots capability (llama.cpp server slots information)
 class ISlotsServer : public virtual ICapability {
 public:
     virtual ~ISlotsServer() = default;
-
-    // Get server slot information
     virtual json get_slots() = 0;
-
-    // Perform action on specific slot (with slot ID)
     virtual json slots_action(int slot_id, const std::string& action, const json& request_body) = 0;
 };
 
-// Optional tokenize capability (llama.cpp tokenization of input)
 class ITokenizerServer : public virtual ICapability {
 public:
     virtual ~ITokenizerServer() = default;
-
     virtual json tokenize(const json& request_body) = 0;
 };
 
-// Helper to check if a server supports a capability
 template<typename T>
 bool supports_capability(ICapability* server) {
     return dynamic_cast<T*>(server) != nullptr;
