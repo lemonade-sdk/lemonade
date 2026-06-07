@@ -243,8 +243,8 @@
               </div>
               <ol>
                 <li>Enable backports by creating <code>/etc/apt/sources.list.d/debian-backports.sources</code>:
-                  <div class="flm-code-block"><code>sudo tee /etc/apt/sources.list.d/debian-backports.sources &lt;&lt;EOF<br>Types: deb deb-src<br>URIs: http://deb.debian.org/debian<br>Suites: trixie-backports<br>Components: main<br>Enabled: yes<br>Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg<br>EOF<br>sudo apt update</code></div>
-                  <span class="flm-inline-note">See <a href="https://backports.debian.org/Instructions/" target="_blank" rel="noopener">backports.debian.org</a> for details.</span>
+                  <div class="flm-code-block"><code>sudo tee /etc/apt/sources.list.d/debian-backports.sources &lt;&lt;EOF<br>Types: deb<br>URIs: http://deb.debian.org/debian<br>Suites: trixie-backports<br>Components: main<br>Enabled: yes<br>Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg<br>EOF<br>sudo apt update</code></div>
+                  <span class="flm-inline-note">Backports is needed so apt can automatically satisfy FLM's newer runtime/driver dependencies when installing the .deb. See <a href="https://backports.debian.org/Instructions/" target="_blank" rel="noopener">backports.debian.org</a> for details.</span>
                 </li>
                 <li>Download FLM from <a href="https://github.com/FastFlowLM/FastFlowLM/releases" target="_blank" rel="noopener">GitHub releases</a>.</li>
                 <li>Install FLM:
