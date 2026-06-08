@@ -46,7 +46,7 @@ static json with_legacy_token_limit(const json& request) {
     return modified_request;
 }
 
-json VLLMServer::prepare_chat_request(const json& request) {
+json VLLMServer::prepare_openai_request(const json& request) {
     return with_legacy_token_limit(fit_openai_max_tokens_to_context(request));
 }
 
@@ -267,11 +267,11 @@ void VLLMServer::unload() {
 }
 
 json VLLMServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", prepare_chat_request(request));
+    return forward_request("/v1/chat/completions", prepare_openai_request(request));
 }
 
 json VLLMServer::completion(const json& request) {
-    return forward_request("/v1/completions", with_legacy_token_limit(request));
+    return forward_request("/v1/completions", prepare_openai_request(request));
 }
 
 json VLLMServer::responses(const json& request) {
@@ -289,7 +289,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
 
     if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
         try {
-            json request = prepare_chat_request(json::parse(request_body));
+            json request = prepare_openai_request(json::parse(request_body));
             json& stream_options = request["stream_options"];
             if (!stream_options.is_object()) {
                 stream_options = json::object();

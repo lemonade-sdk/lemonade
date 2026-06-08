@@ -45,7 +45,7 @@ public:
                                    TelemetryCallback telemetry_callback = nullptr) override;
 
 private:
-    json prepare_chat_request(const json& request);
+    json prepare_openai_request(const json& request);
     json fit_openai_max_tokens_to_context(const json& request);
     int64_t count_openai_prompt_tokens(const json& request);
 
