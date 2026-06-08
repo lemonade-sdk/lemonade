@@ -269,13 +269,6 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                         (req.path.rfind("/v1/", 0) == 0);
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
 
-    // Internal endpoints accept connections from any address so that remote
-    // first-party clients (desktop app, tray, CLI on another machine) can
-    // manage a shared lemond — the many-clients-one-server topology. Access
-    // control is the admin key check below; when no key is set and the
-    // server is bound to a non-loopback host, run() logs a warning advising
-    // the operator to set LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY).
-
     // Authentication hierarchy:
     // - Admin key: access to both internal and regular API endpoints
     // - Regular API key: access only to regular API endpoints (not internal)
