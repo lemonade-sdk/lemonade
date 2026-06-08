@@ -139,6 +139,28 @@ int main() {
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--max-num-seqs 8"),
         "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq --max-num-seqs 8");
 
+    json repeatable_config = json::parse(R"({
+        "schema_version": 1,
+        "families": {
+            "lora_family": {
+                "match": [{"checkpoint_regex": "^LoRA/"}],
+                "args": "--lora-modules base=/models/base --max-num-seqs 4"
+            }
+        },
+        "models": {
+            "LoRA-vLLM": {
+                "family": "lora_family",
+                "args": "--lora-modules model=/models/model"
+            }
+        }
+    })");
+    failures += !expect_args(
+        "repeatable flags are preserved across layers",
+        resolve_vllm_args("LoRA-vLLM", "LoRA/Model", repeatable_config,
+                          "--lora-modules user=/models/user --max-num-seqs 8"),
+        "--lora-modules base=/models/base --lora-modules model=/models/model "
+        "--lora-modules user=/models/user --max-num-seqs 8");
+
     failures += !expect_args(
         "user can disable config auto tool choice",
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--disable-auto-tool-choice"),

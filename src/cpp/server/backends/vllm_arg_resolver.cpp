@@ -42,6 +42,13 @@ bool is_memory_budget_arg(const ParsedArg& arg) {
     return conflict_key(arg.flag) == MEMORY_BUDGET_CONFLICT_KEY;
 }
 
+bool is_repeatable_arg(const ParsedArg& arg) {
+    static const std::set<std::string> flags = {
+        "--lora-modules",
+    };
+    return flags.count(arg.flag) > 0;
+}
+
 std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::string& source) {
     std::vector<ParsedArg> parsed;
     std::vector<std::string> tokens = lemon::utils::parse_custom_args(arg_string);
@@ -84,12 +91,14 @@ std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::stri
 
 void merge_layer(std::vector<ParsedArg>& target, const std::vector<ParsedArg>& incoming) {
     for (const auto& arg : incoming) {
-        std::string key = conflict_key(arg.flag);
-        target.erase(std::remove_if(target.begin(), target.end(),
-                                    [&](const ParsedArg& existing) {
-                                        return conflict_key(existing.flag) == key;
-                                    }),
-                     target.end());
+        if (!is_repeatable_arg(arg)) {
+            std::string key = conflict_key(arg.flag);
+            target.erase(std::remove_if(target.begin(), target.end(),
+                                        [&](const ParsedArg& existing) {
+                                            return conflict_key(existing.flag) == key;
+                                        }),
+                         target.end());
+        }
         target.push_back(arg);
     }
 }
