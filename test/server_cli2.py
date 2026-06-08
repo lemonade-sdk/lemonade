@@ -2042,6 +2042,42 @@ sys.exit(0)
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
     """Lightweight checks that compare CLI help semantics with docs text."""
 
+    def test_899_run_load_recipe_options_are_grouped(self):
+        """Run/load help should keep every recipe flag under the intended group."""
+        expected_groups = [
+            "General Options:",
+            "Llama.cpp Backend Options:",
+            "Stable Diffusion Options:",
+            "Whisper.cpp Options:",
+            "vLLM Options:",
+            "FastFlowLM Options:",
+        ]
+        expected_flags = [
+            "--ctx-size",
+            "--merge-args",
+            "--llamacpp",
+            "--llamacpp-device",
+            "--llamacpp-args",
+            "--sdcpp",
+            "--sdcpp-args",
+            "--whispercpp",
+            "--whispercpp-args",
+            "--vllm",
+            "--vllm-args",
+            "--flm-args",
+        ]
+
+        for command in ("run", "load"):
+            with self.subTest(command=command):
+                result = run_cli_command([command, "--help"], timeout=TIMEOUT_DEFAULT)
+                self.assertEqual(result.returncode, 0)
+
+                help_output = result.stdout + result.stderr
+                for group in expected_groups:
+                    self.assertIn(group, help_output)
+                for flag in expected_flags:
+                    self.assertIn(flag, help_output)
+
     def test_900_launch_docs_match_help_text(self):
         """The launch model-selection wording in docs should match actual CLI behavior/help."""
         result = run_cli_command(["launch", "--help"], timeout=TIMEOUT_DEFAULT)
