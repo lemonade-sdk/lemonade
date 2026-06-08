@@ -1476,6 +1476,50 @@ class EndpointTests(ServerTestBase):
                 except Exception:
                     pass
 
+    def test_021t_inline_collection_missing_def_rejected(self):
+        """Inline collection imports fail closed: a component with no matching
+        definition in `models` (and not already registered) must be rejected,
+        not silently dropped into a smaller, different collection."""
+        suffix = uuid.uuid4().hex[:8]
+        collection_name = f"user.InlineColl-{suffix}"
+        defined = f"InlineComp-{suffix}"
+        missing = f"MissingComp-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                # `components` lists two, but `models` defines only one and the
+                # other is not a registered model -> the import must be rejected.
+                "components": [defined, missing],
+                "models": [
+                    {
+                        "model_name": defined,
+                        "recipe": "llamacpp",
+                        "checkpoints": {"main": USER_MODEL_MAIN_CHECKPOINT},
+                    }
+                ],
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("matching definition", response.json().get("error", "").lower())
+
+        # Fail-closed: the rejected collection must not have been persisted.
+        models_response = requests.get(
+            f"{self.base_url}/models?show_all=true",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(models_response.status_code, 200)
+        ids = {m["id"] for m in models_response.json()["data"]}
+        self.assertNotIn(
+            collection_name[5:],
+            ids,
+            "Rejected inline collection must not be persisted",
+        )
+        print("[OK] Inline collection with missing component def rejected with 400")
+
     def test_021o_load_collection_routes_through_component_branch(self):
         """POST /load on a collection must not route the collection itself
         through the generic HF download path (collections have no checkpoint).

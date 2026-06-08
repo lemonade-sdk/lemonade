@@ -4701,10 +4701,33 @@ std::optional<std::string> ModelManager::validate_collection_request(
         model_data["components"].empty()) {
         return std::string("recipe='collection.omni' requires a non-empty 'components' array");
     }
-    // A collection file import carries the component definitions inline in a
-    // `models` array, so the components need not be registered yet — they get
-    // registered from those definitions during download_model.
-    bool has_inline_defs = model_data.contains("models") && model_data["models"].is_array();
+    // An inline collection import carries its component definitions in a `models`
+    // array. Every component must be *resolvable*: either it is already
+    // registered locally (local-wins) or it has a matching definition in
+    // `models`. Validate this per-component and fail closed. `models` being
+    // present is not a blanket license — a component it omits would otherwise
+    // pass here and then be silently skipped during registration, persisting a
+    // collection smaller than the imported file describes. Mirror the
+    // name-matching that register_components() uses (bare names; `model_name`
+    // or `id` keys) so this gate rejects exactly what registration would drop.
+    const bool has_models_array =
+        model_data.contains("models") && model_data["models"].is_array();
+    auto inline_def_name = [](const json& def) -> std::string {
+        if (!def.is_object()) return "";
+        for (const char* key : {"model_name", "id"}) {
+            if (def.contains(key) && def[key].is_string()) {
+                return bare_component_name(def[key].get<std::string>());
+            }
+        }
+        return "";
+    };
+    auto has_inline_def = [&](const std::string& bare) -> bool {
+        if (!has_models_array) return false;
+        for (const auto& candidate : model_data["models"]) {
+            if (inline_def_name(candidate) == bare) return true;
+        }
+        return false;
+    };
     for (const auto& component : model_data["components"]) {
         if (!component.is_string()) {
             return std::string("components entries must be strings");
@@ -4713,7 +4736,16 @@ std::optional<std::string> ModelManager::validate_collection_request(
         if (component_name == model_name) {
             return "Collection cannot reference itself: " + component_name;
         }
-        if (!has_inline_defs && !model_exists(component_name)) {
+        std::string bare = bare_component_name(component_name);
+        if (has_models_array) {
+            if (!model_exists(bare) && !has_inline_def(bare)) {
+                return "Inline collection component '" + component_name +
+                       "' has no matching definition in 'models' and is not a "
+                       "registered model. Every component must be defined inline "
+                       "(matching 'model_name') or reference an already-registered "
+                       "model.";
+            }
+        } else if (!model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
         }
