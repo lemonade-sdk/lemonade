@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "families": {
+    "qwen3": {
+      "match": [
+        {
+          "checkpoint_regex": "^Qwen/Qwen3\\."
+        }
+      ],
+      "args": "--enable-auto-tool-choice --tool-call-parser qwen3_coder"
+    }
+  },
+  "models": {
+    "Qwen3.5-0.8B-vLLM": {
+      "family": "qwen3"
+    },
+    "Qwen3.5-2B-vLLM": {
+      "family": "qwen3"
+    },
+    "Qwen3.5-4B-vLLM": {
+      "family": "qwen3"
+    },
+    "Qwen3.5-9B-vLLM": {
+      "family": "qwen3"
+    }
+  }
+}

@@ -610,6 +610,7 @@ set(SOURCES_CORE
     src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
+    src/cpp/server/backends/vllm_arg_resolver.cpp
     src/cpp/server/backends/vllm_server.cpp
     src/cpp/server/backends/backend_utils.cpp
     src/cpp/server/backend_manager.cpp
@@ -1646,6 +1647,9 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/backend_versions.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/vllm_model_config.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/defaults.json"

@@ -1,10 +1,13 @@
 #include "lemon/backends/vllm_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/vllm_arg_resolver.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <chrono>
@@ -180,6 +183,11 @@ void VLLMServer::load(const std::string& model_name,
 
     LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
 
+    json vllm_model_config =
+        JsonUtils::load_from_file(utils::get_resource_path("resources/vllm_model_config.json"));
+    VLLMArgResolution resolved_vllm_args =
+        resolve_vllm_args(model_name, model_id, vllm_model_config, vllm_args);
+
     // Choose port
     port_ = choose_port();
 
@@ -225,20 +233,14 @@ void VLLMServer::load(const std::string& model_name,
 
     // Avoid vLLM's default gpu_memory_utilization=0.92 on shared-memory systems.
     // Keep this overridable through vllm_args for users that want another limit.
-    if (vllm_args.find("--gpu-memory-utilization") == std::string::npos &&
-        vllm_args.find("--kv-cache-memory-bytes") == std::string::npos) {
+    if (!resolved_vllm_args.has_memory_budget_arg) {
         args.push_back("--kv-cache-memory-bytes");
         args.push_back("4G");
     }
 
-    // Append custom vllm_args if provided
-    if (!vllm_args.empty()) {
-        LOG(DEBUG, "vLLM") << "Adding custom arguments: " << vllm_args << std::endl;
-        std::istringstream iss(vllm_args);
-        std::string arg;
-        while (iss >> arg) {
-            args.push_back(arg);
-        }
+    if (!resolved_vllm_args.args.empty()) {
+        LOG(DEBUG, "vLLM") << "Adding model/user arguments from vLLM resolver" << std::endl;
+        args.insert(args.end(), resolved_vllm_args.args.begin(), resolved_vllm_args.args.end());
     }
 
     LOG(INFO, "vLLM") << "Starting vllm-server on port " << port_ << "..." << std::endl;
