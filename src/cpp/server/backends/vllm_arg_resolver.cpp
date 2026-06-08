@@ -15,6 +15,8 @@ struct ParsedArg {
     std::vector<std::string> values;
 };
 
+constexpr const char* MEMORY_BUDGET_CONFLICT_KEY = "memory_budget";
+
 const std::set<std::string>& protected_flags() {
     static const std::set<std::string> flags = {
         "--enable-prefix-caching",
@@ -32,12 +34,12 @@ std::string conflict_key(const std::string& flag) {
     if (flag == "--tool-call-parser") return "tool_parser";
     if (flag == "--enable-auto-tool-choice" || flag == "--disable-auto-tool-choice") return "tool_choice";
     if (flag == "--quantization") return "quantization";
-    if (flag == "--kv-cache-memory-bytes" || flag == "--gpu-memory-utilization") return "memory_budget";
+    if (flag == "--kv-cache-memory-bytes" || flag == "--gpu-memory-utilization") return MEMORY_BUDGET_CONFLICT_KEY;
     return "flag:" + flag;
 }
 
 bool is_memory_budget_arg(const ParsedArg& arg) {
-    return conflict_key(arg.flag) == "memory_budget";
+    return conflict_key(arg.flag) == MEMORY_BUDGET_CONFLICT_KEY;
 }
 
 std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::string& source) {

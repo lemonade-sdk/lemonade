@@ -4,7 +4,6 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
-#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -47,39 +46,8 @@ static json with_legacy_token_limit(const json& request) {
     return modified_request;
 }
 
-static bool parse_positive_int(const std::string& value, int64_t& result) {
-    try {
-        size_t end = 0;
-        long long parsed = std::stoll(value, &end, 10);
-        if (end != value.size() || parsed <= 0) {
-            return false;
-        }
-        result = static_cast<int64_t>(parsed);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-static int64_t resolve_max_model_len(int ctx_size, const std::string& vllm_args) {
-    int64_t max_model_len = ctx_size;
-    auto tokens = lemon::utils::parse_custom_args(vllm_args);
-
-    for (size_t i = 0; i < tokens.size(); ++i) {
-        const std::string& token = tokens[i];
-        int64_t parsed = 0;
-        const std::string flag = "--max-model-len";
-
-        if (token == flag && i + 1 < tokens.size() && parse_positive_int(tokens[i + 1], parsed)) {
-            max_model_len = parsed;
-            ++i;
-        } else if (token.rfind(flag + "=", 0) == 0 &&
-                   parse_positive_int(token.substr(flag.size() + 1), parsed)) {
-            max_model_len = parsed;
-        }
-    }
-
-    return max_model_len;
+json VLLMServer::prepare_chat_request(const json& request) {
+    return with_legacy_token_limit(fit_openai_max_tokens_to_context(request));
 }
 
 // Returns quantization_config.quant_method for the model, or empty string.
@@ -167,7 +135,7 @@ void VLLMServer::load(const std::string& model_name,
     std::string vllm_backend = options.get_option("vllm_backend");
     std::string vllm_args = options.get_option("vllm_args");
     int ctx_size = options.get_option("ctx_size");
-    max_model_len_ = resolve_max_model_len(ctx_size, vllm_args);
+    max_model_len_ = ctx_size;
 
     RuntimeConfig::validate_backend_choice("vllm", vllm_backend);
 
@@ -291,7 +259,7 @@ void VLLMServer::unload() {
 }
 
 json VLLMServer::chat_completion(const json& request) {
-    return forward_request("/v1/chat/completions", with_legacy_token_limit(fit_openai_max_tokens_to_context(request)));
+    return forward_request("/v1/chat/completions", prepare_chat_request(request));
 }
 
 json VLLMServer::completion(const json& request) {
@@ -313,8 +281,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
 
     if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
         try {
-            json request = with_legacy_token_limit(
-                fit_openai_max_tokens_to_context(json::parse(request_body)));
+            json request = prepare_chat_request(json::parse(request_body));
             json& stream_options = request["stream_options"];
             if (!stream_options.is_object()) {
                 stream_options = json::object();
