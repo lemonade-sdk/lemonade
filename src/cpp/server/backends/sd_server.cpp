@@ -77,6 +77,10 @@ std::string get_therock_version() {
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
 }
+
+int generate_random_seed() {
+    return static_cast<int>(std::random_device{}() & 0x7fffffffU);
+}
 }
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -477,9 +481,12 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         extra_args["sample_params"] = sample_params;
     }
 
-    // seed stays top-level in from_json_str; preserve if the caller supplied one.
+    // seed stays top-level in from_json_str. Negative seeds mean "random" for
+    // Lemonade, so generate a concrete seed instead of letting sd-server fall
+    // back to its deterministic default.
     if (request.contains("seed") && request["seed"].is_number_integer()) {
-        extra_args["seed"] = request["seed"].get<int>();
+        int seed = request["seed"].get<int>();
+        extra_args["seed"] = seed >= 0 ? seed : generate_random_seed();
     }
 
     return extra_args;
@@ -548,8 +555,8 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models -- use global timeout
-    return forward_request("/v1/images/generations", sd_request, utils::HttpClient::get_default_timeout());
+    // Image generation can take 20+ minutes for large models; avoid timeout.
+    return forward_request("/v1/images/generations", sd_request, 0);
 }
 
 json SDServer::image_edits(const json& request) {
@@ -589,7 +596,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 json SDServer::image_variations(const json& request) {
@@ -622,7 +629,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 std::string SDServer::upscale_via_cli(
