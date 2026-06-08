@@ -52,7 +52,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Use Case**: Advanced users with custom llama.cpp builds
 - **Performance**: Depends on build configuration
 - **Installation**: Requires manual installation of `llama-server` in system PATH
-- **Notes**: Not enabled by default; set `LEMONADE_LLAMACPP_PREFER_SYSTEM=true` in config
+- **Enable**: Set `"llamacpp": { "backend": "system" }` in `config.json` to enable the system backend, or use `lemonade config set llamacpp.backend=system`
 - **HIP plugin on non-standard paths**: When an AMD GPU is present, the system backend needs the GGML HIP plugin (`libggml-hip.so`). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set `LEMONADE_GGML_HIP_PATH` to the full path of the plugin so the backend is reported as available:
 
   ```bash

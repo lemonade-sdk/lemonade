@@ -25,7 +25,6 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:v9.1.3 \
   ./lemond --host 0.0.0.0 --port 5000
 ```
@@ -34,6 +33,18 @@ docker run -d \
 
 ### Docker Run with CPU backend
 
+To use the CPU backend, create or modify the `config.json` file in the `lemonade-recipe` volume:
+
+```json
+{
+  "llamacpp": {
+    "backend": "cpu"
+  }
+}
+```
+
+Then run:
+
 ```bash
 docker run -d \
   --name lemonade-server \
@@ -41,12 +52,22 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP=cpu \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
-
 ### Docker Run with AMD GPU Passthrough using ROCm
+
+To use the ROCm backend, create or modify the `config.json` file in the `lemonade-recipe` volume:
+
+```json
+{
+  "llamacpp": {
+    "backend": "rocm"
+  }
+}
+```
+
+Then run:
 
 ```bash
 docker run -d \
@@ -55,17 +76,26 @@ docker run -d \
   -v lemonade-cache:/root/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
   -v lemonade-recipe:/root/.cache/lemonade \
-  -e LEMONADE_LLAMACPP=rocm \
   --device=/dev/kfd \
   --device=/dev/dri \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
-
+>
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
+
+Create or modify the `config.json` file in the `lemonade-recipe` volume:
+
+```json
+{
+  "llamacpp": {
+    "backend": "rocm"
+  }
+}
+```
 
 Then:
 
@@ -79,7 +109,6 @@ docker run -d \
   -v /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro \
   -v /opt/rocm/lib:/opt/rocm/lib:ro \
   -e LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib:/usr/lib/wsl/lib:/usr/lib \
-  -e LEMONADE_LLAMACPP=rocm \
   --device=/dev/dxg \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
@@ -107,8 +136,6 @@ services:
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
-    environment:
-      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
@@ -116,6 +143,15 @@ volumes:
   lemonade-llama:
   lemonade-recipe:
 ```
+
+> To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a `config.json` file in the `lemonade-recipe` volume with:
+> ```json
+> {
+>   "llamacpp": {
+>     "backend": "cpu"
+>   }
+> }
+> ```
 
 > You can add more services as needed, or add host devices for the ROCM backend.
 
@@ -296,8 +332,6 @@ services:
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
-    environment:
-      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
@@ -306,6 +340,15 @@ volumes:
   lemonade-recipe:
 
 ```
+
+> To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a `config.json` file in the `lemonade-recipe` volume with:
+> ```json
+> {
+>   "llamacpp": {
+>     "backend": "cpu"
+>   }
+> }
+> ```
 
 Now run below command within the same directory:
 

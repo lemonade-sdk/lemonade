@@ -760,10 +760,49 @@ window.api = {
         // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
         // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
         auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
-            std::string full_path = web_app_dir + "/" + file_path;
+            std::error_code ec;
+            namespace fs = std::filesystem;
+
+            auto base = fs::weakly_canonical(fs::path(web_app_dir), ec);
+            if (ec) {
+                res.status = 500;
+                res.set_content("Internal server error", "text/plain");
+                return;
+            }
+
+            auto candidate = fs::weakly_canonical(base / file_path, ec);
+            if (ec) {
+                // Path doesn't exist or cannot be canonicalized
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Verify the resolved path is confined under the base directory.
+            // Use std::filesystem::relative (not string prefix) so it works
+            // correctly on Windows where path separators differ.
+            auto relative = fs::relative(candidate, base, ec);
+            if (ec || relative.empty() || relative.is_absolute()) {
+                // empty = candidate == base (directory, not a file)
+                // is_absolute = somehow escaped (shouldn't happen after canonicalization)
+                res.status = 403;
+                res.set_content("Forbidden", "text/plain");
+                return;
+            }
+            // Belt-and-suspenders: reject if any path component is ".."
+            // (weakly_canonical should have resolved it, but this catches
+            // edge cases on exotic filesystems). Check components, not
+            // substrings, so legitimate filenames like "my..file.js" are allowed.
+            for (const auto& part : relative) {
+                if (part == "..") {
+                    res.status = 403;
+                    res.set_content("Forbidden", "text/plain");
+                    return;
+                }
+            }
 
             // Serve the file
-            std::ifstream file(full_path, std::ios::binary);
+            std::ifstream file(candidate, std::ios::binary);
             if (!file.is_open()) {
                 res.status = 404;
                 res.set_content("File not found", "text/plain");
