@@ -151,8 +151,16 @@ void VLLMServer::load(const std::string& model_name,
 
     LOG(DEBUG, "vLLM") << "Using model: " << model_id << std::endl;
 
-    json vllm_model_config =
-        JsonUtils::load_from_file(utils::get_resource_path("resources/vllm_model_config.json"));
+    std::string vllm_model_config_path =
+        utils::get_resource_path("resources/vllm_model_config.json");
+    json vllm_model_config = json::object();
+    if (fs::exists(utils::path_from_utf8(vllm_model_config_path))) {
+        vllm_model_config = JsonUtils::load_from_file(vllm_model_config_path);
+    } else {
+        LOG(WARNING, "vLLM") << "vLLM model config not found at "
+                             << vllm_model_config_path
+                             << "; continuing with user vllm_args only" << std::endl;
+    }
     VLLMArgResolution resolved_vllm_args =
         resolve_vllm_args(model_name, model_id, vllm_model_config, vllm_args);
 
