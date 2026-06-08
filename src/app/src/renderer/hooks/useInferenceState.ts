@@ -57,6 +57,21 @@ export function useInferenceState() {
     setActiveModality(null);
   }, [setPhaseSync]);
 
+  /**
+   * Skip the local `ensureModelReady` path and jump straight to `inferring`.
+   * Used by the chat panel when the user has selected a peer Lemonade server
+   * via the "Run on" picker — the peer is responsible for loading its own
+   * model (chatPanel calls /load on it directly), so the local pre-flight
+   * (which would run installer / pull / load against THIS machine) must be
+   * bypassed. Returns false if we're already busy, mirroring runPreFlight.
+   */
+  const markInferring = useCallback((modality: Modality): boolean => {
+    if (phaseRef.current !== 'idle') return false;
+    setActiveModality(modality);
+    setPhaseSync('inferring');
+    return true;
+  }, [setPhaseSync]);
+
   return {
     phase,
     activeModality,
@@ -66,6 +81,7 @@ export function useInferenceState() {
     isInferring,
     isBusy,
     runPreFlight,
+    markInferring,
     reset,
   };
 }

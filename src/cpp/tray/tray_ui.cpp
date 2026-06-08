@@ -236,6 +236,47 @@ std::vector<LoadedModelInfo> TrayUI::get_all_loaded_models() {
     return fetch_server_state().second;
 }
 
+std::vector<PendingAuthInfo> TrayUI::fetch_pending_authorizations() {
+    std::vector<PendingAuthInfo> out;
+    try {
+        std::string body = http_get("/internal/auth/pending");
+        if (body.empty()) return out;
+        auto arr = nlohmann::json::parse(body);
+        if (!arr.is_array()) return out;
+        for (const auto& e : arr) {
+            PendingAuthInfo info;
+            info.ip = e.value("ip", "");
+            info.hostname = e.value("hostname", "");
+            info.first_seen = e.value("first_seen", static_cast<int64_t>(0));
+            info.last_seen = e.value("last_seen", static_cast<int64_t>(0));
+            if (!info.ip.empty()) out.push_back(std::move(info));
+        }
+    } catch (...) {
+        // Older lemond builds may not have this endpoint yet — silent fallback
+        // is fine; the submenu will simply stay empty.
+    }
+    return out;
+}
+
+std::vector<AuthDecisionInfo> TrayUI::fetch_auth_decisions() {
+    std::vector<AuthDecisionInfo> out;
+    try {
+        std::string body = http_get("/internal/auth/decisions");
+        if (body.empty()) return out;
+        auto arr = nlohmann::json::parse(body);
+        if (!arr.is_array()) return out;
+        for (const auto& e : arr) {
+            AuthDecisionInfo info;
+            info.ip = e.value("ip", "");
+            info.hostname = e.value("hostname", "");
+            info.decision = e.value("decision", "");
+            info.decided_at = e.value("decided_at", static_cast<int64_t>(0));
+            if (!info.ip.empty()) out.push_back(std::move(info));
+        }
+    } catch (...) {}
+    return out;
+}
+
 void TrayUI::fetch_runtime_config() {
     try {
         std::string body = http_get("/internal/config");
@@ -287,15 +328,30 @@ void TrayUI::build_menu() {
     // Fetch once, use for both the menu and the cache
     auto [reachable, loaded_models] = fetch_server_state();
     auto available_models = get_downloaded_models();
+    auto pending_auth = reachable ? fetch_pending_authorizations() : std::vector<PendingAuthInfo>{};
+    auto auth_decisions = reachable ? fetch_auth_decisions() : std::vector<AuthDecisionInfo>{};
     if (reachable) fetch_runtime_config();
 
-    Menu menu = create_menu(loaded_models, available_models);
+    // Snapshot previous pending under the lock so we can fire toast
+    // notifications for newly-arrived requesters without holding the lock
+    // across the platform notification call (which can block).
+    std::vector<PendingAuthInfo> previous_pending;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        previous_pending = last_menu_pending_auth_;
+    }
+
+    Menu menu = create_menu(loaded_models, available_models, pending_auth, auth_decisions);
     tray_->set_menu(menu);
+
+    notify_new_pending(pending_auth, previous_pending);
 
     std::lock_guard<std::mutex> lock(state_mutex_);
     last_menu_server_reachable_ = reachable;
     last_menu_loaded_models_ = std::move(loaded_models);
     last_menu_available_models_ = std::move(available_models);
+    last_menu_pending_auth_ = std::move(pending_auth);
+    last_menu_auth_decisions_ = std::move(auth_decisions);
 }
 
 void TrayUI::refresh_menu() {
@@ -309,16 +365,41 @@ bool TrayUI::menu_needs_refresh() {
     // Fetch outside the lock to avoid blocking other threads during HTTP calls
     auto [reachable, loaded] = fetch_server_state();
     auto current_available = get_downloaded_models();
+    auto current_pending = reachable ? fetch_pending_authorizations() : std::vector<PendingAuthInfo>{};
+    auto current_decisions = reachable ? fetch_auth_decisions() : std::vector<AuthDecisionInfo>{};
 
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (reachable != last_menu_server_reachable_) return true;
     if (loaded != last_menu_loaded_models_) return true;
     if (current_available != last_menu_available_models_) return true;
+    if (current_pending != last_menu_pending_auth_) return true;
+    if (current_decisions != last_menu_auth_decisions_) return true;
     return false;
 }
 
+void TrayUI::notify_new_pending(const std::vector<PendingAuthInfo>& current,
+                                const std::vector<PendingAuthInfo>& previous) {
+    // Fire one toast per IP that wasn't in the previous snapshot. Re-issuing
+    // the same /load from an already-pending peer does NOT re-notify — the
+    // first toast is sufficient and repeating would be spammy. The user can
+    // also see all open requests in the tray submenu at any time.
+    for (const auto& p : current) {
+        bool was_seen = false;
+        for (const auto& prev : previous) {
+            if (prev.ip == p.ip) { was_seen = true; break; }
+        }
+        if (was_seen) continue;
+        std::string label = p.hostname.empty() ? p.ip : (p.hostname + " (" + p.ip + ")");
+        show_notification("Authorize Lemonade access?",
+                          label + " is asking to run an LLM on this device. "
+                          "Open the tray menu to allow or deny.");
+    }
+}
+
 Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
-                         const std::vector<ModelInfo>& available_models) {
+                         const std::vector<ModelInfo>& available_models,
+                         const std::vector<PendingAuthInfo>& pending_auth,
+                         const std::vector<AuthDecisionInfo>& auth_decisions) {
     Menu menu;
 
     // Open app — uses lemonade:// protocol, falls back to web app
@@ -432,6 +513,51 @@ Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
     }
     menu.add_item(MenuItem::Submenu("Max Loaded Models", max_models_submenu));
 
+    // ---- Cross-machine authorization ----
+    // Surface the gate for non-loopback inference requests right next to the
+    // model controls so the host owner can act on it without hunting through
+    // submenus. The "Pending Approvals" item is always shown when there are
+    // any pending requests, with the count for at-a-glance awareness.
+    if (!pending_auth.empty()) {
+        menu.add_separator();
+        auto pending_submenu = std::make_shared<Menu>();
+        for (const auto& p : pending_auth) {
+            std::string label = p.hostname.empty() ? p.ip : (p.hostname + " (" + p.ip + ")");
+            auto entry_submenu = std::make_shared<Menu>();
+            entry_submenu->add_item(MenuItem::Action(
+                "Allow",
+                [this, ip = p.ip, hostname = p.hostname]() {
+                    on_auth_decide(ip, hostname, "allow");
+                }));
+            entry_submenu->add_item(MenuItem::Action(
+                "Deny",
+                [this, ip = p.ip, hostname = p.hostname]() {
+                    on_auth_decide(ip, hostname, "deny");
+                }));
+            pending_submenu->add_item(MenuItem::Submenu(label, entry_submenu));
+        }
+        menu.add_item(MenuItem::Submenu(
+            "Pending Approvals (" + std::to_string(pending_auth.size()) + ")",
+            pending_submenu));
+    }
+
+    if (!auth_decisions.empty()) {
+        if (pending_auth.empty()) menu.add_separator();
+        auto authz_submenu = std::make_shared<Menu>();
+        for (const auto& d : auth_decisions) {
+            std::string label = d.hostname.empty() ? d.ip : (d.hostname + " (" + d.ip + ")");
+            label += d.decision == "allow" ? " — allowed" : " — denied";
+            auto entry_submenu = std::make_shared<Menu>();
+            entry_submenu->add_item(MenuItem::Action(
+                "Revoke",
+                [this, ip = d.ip, hostname = d.hostname]() {
+                    on_auth_decide(ip, hostname, "revoke");
+                }));
+            authz_submenu->add_item(MenuItem::Submenu(label, entry_submenu));
+        }
+        menu.add_item(MenuItem::Submenu("Authorized Devices", authz_submenu));
+    }
+
     menu.add_separator();
     menu.add_item(MenuItem::Action("Documentation", [this]() { on_open_documentation(); }));
     menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
@@ -539,6 +665,32 @@ void TrayUI::on_change_max_loaded_models(int new_max) {
         std::string label = (new_max == -1) ? "Unlimited" : std::to_string(new_max);
         show_notification("Max Loaded Models Changed",
                           "Lemonade Server max loaded models is now " + label);
+    }
+}
+
+void TrayUI::on_auth_decide(const std::string& ip,
+                            const std::string& hostname,
+                            const std::string& decision) {
+    nlohmann::json body;
+    body["ip"] = ip;
+    body["hostname"] = hostname;
+    body["decision"] = decision;
+    std::string result = http_post("/internal/auth/decide", body.dump());
+    std::string label = hostname.empty() ? ip : hostname;
+    if (!result.empty()) {
+        if (decision == "allow") {
+            show_notification("Access granted", label + " can now run LLMs on this device.");
+        } else if (decision == "deny") {
+            show_notification("Access denied", label + " has been blocked.");
+        } else {
+            show_notification("Access revoked", label + " will be asked again next time.");
+        }
+        // Force-refresh so the menu reflects the new state immediately rather
+        // than waiting for the 5s tick.
+        build_menu();
+    } else {
+        show_notification("Authorization update failed",
+                          "Could not update access for " + label + ". See logs for details.");
     }
 }
 

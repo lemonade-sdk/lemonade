@@ -284,6 +284,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     isInferring: inference.isInferring,
     activeModality: inference.activeModality,
     runPreFlight: inference.runPreFlight,
+    markInferring: inference.markInferring,
     reset: inference.reset,
     showError,
     appSettings,

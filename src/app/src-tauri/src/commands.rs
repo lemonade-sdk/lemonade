@@ -155,6 +155,11 @@ pub(crate) fn get_server_port() -> u16 {
 }
 
 #[tauri::command]
+pub(crate) fn list_remote_devices() -> Vec<beacon::RemoteDevice> {
+    beacon::snapshot_devices()
+}
+
+#[tauri::command]
 pub(crate) fn discover_server_port(_app: AppHandle) -> Option<u16> {
     if settings::get_base_url_from_config().is_some() {
         log::info!("Port discovery skipped - explicit server URL configured");
@@ -174,6 +179,47 @@ pub(crate) fn discover_server_port(_app: AppHandle) -> Option<u16> {
 #[tauri::command]
 pub(crate) fn get_platform() -> String {
     std::env::consts::OS.to_string()
+}
+
+/// OS hostname of the machine running this Tauri app. Used by the renderer
+/// when sending chat requests to a peer Lemonade server, so the host owner's
+/// authorization prompt can show a friendly label like "alice-mac" instead of
+/// just an IP address. Returns an empty string if the OS gives us nothing
+/// useful — peers fall back to displaying the source IP.
+#[tauri::command]
+pub(crate) fn get_local_hostname() -> String {
+    // Tauri targets are stable on `hostname` crate, but pulling in another
+    // dependency just for this is overkill. The standard library exposes
+    // gethostname through a small platform shim.
+    #[cfg(unix)]
+    fn read() -> Option<String> {
+        let mut buf = [0u8; 256];
+        let res = unsafe {
+            libc_gethostname(buf.as_mut_ptr() as *mut _, buf.len())
+        };
+        if res != 0 { return None; }
+        let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        std::str::from_utf8(&buf[..len]).ok().map(|s| s.to_string())
+    }
+    #[cfg(windows)]
+    fn read() -> Option<String> {
+        std::env::var("COMPUTERNAME").ok()
+    }
+    #[cfg(not(any(unix, windows)))]
+    fn read() -> Option<String> { None }
+
+    read()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_default()
+}
+
+// Minimal libc binding so we don't need to add the `libc` crate just for
+// gethostname. The signature matches POSIX exactly.
+#[cfg(unix)]
+extern "C" {
+    #[link_name = "gethostname"]
+    fn libc_gethostname(name: *mut std::ffi::c_char, len: usize) -> i32;
 }
 
 // Returns a file:// URL for the bundled marketplace.html if it exists.
