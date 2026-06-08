@@ -210,8 +210,7 @@ def _is_transient_cli_pull_failure(result):
     output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
     transient_statuses = {408, 409, 429, 500, 502, 503, 504}
     observed_statuses = {
-        int(match)
-        for match in re.findall(r"(?:status\s*[:=]|http\s*)(\d{3})", output)
+        int(match) for match in re.findall(r"(?:status\s*[:=]|http\s*)(\d{3})", output)
     }
 
     if observed_statuses.intersection(transient_statuses):
