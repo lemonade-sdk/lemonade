@@ -296,6 +296,10 @@ COPY --from=builder /app/build/resources ./resources
 # Make executables executable
 RUN chmod +x ./lemond ./lemonade
 
+# Expose the lemond/lemonade binaries on PATH so `docker exec` users can run
+# them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.
+ENV PATH="/opt/lemonade:${PATH}"
+
 # Create necessary directories
 RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/llama/vulkan \
