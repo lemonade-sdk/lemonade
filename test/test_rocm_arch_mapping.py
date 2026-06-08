@@ -41,29 +41,6 @@ ROCM_SUPPORTED_ARCHS = {
     "gfx1036",
 }
 
-ROCM_ARCH_MAPPING = {
-    "gfx1010": "gfx101X",
-    "gfx1011": "gfx101X",
-    "gfx1012": "gfx101X",
-    "gfx1030": "gfx103X",
-    "gfx1031": "gfx103X",
-    "gfx1032": "gfx103X",
-    "gfx1034": "gfx103X",
-    "gfx1033": "gfx103X",
-    "gfx1035": "gfx103X",
-    "gfx1036": "gfx103X",
-    "gfx1100": "gfx110X",
-    "gfx1101": "gfx110X",
-    "gfx1102": "gfx110X",
-    "gfx1103": "gfx110X",
-    "gfx1150": "gfx1150",
-    "gfx1151": "gfx1151",
-    "gfx1152": "gfx1152",
-    "gfx1153": "",
-    "gfx1200": "gfx120X",
-    "gfx1201": "gfx120X",
-}
-
 
 def identify_rocm_arch_from_name(device_name: str) -> str:
     """Python replica of system_info.cpp::identify_rocm_arch_from_name()"""
@@ -72,10 +49,7 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
     # Search for explicit gfxXXXX pattern
     gfx_match = re.search(r"(gfx\d{4})", device_lower)
     if gfx_match:
-        arch = gfx_match.group(1)
-        if arch in ROCM_ARCH_MAPPING:
-            return ROCM_ARCH_MAPPING[arch]
-        return arch
+        return gfx_match.group(1)
 
     # Linux KFD topology node version mapping (numeric strings)
     if device_lower.isdigit():
@@ -88,10 +62,7 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
                 minor = "0"
                 revision = "0"
 
-            arch = f"gfx{major}{minor}{revision}"
-            if arch in ROCM_ARCH_MAPPING:
-                return ROCM_ARCH_MAPPING[arch]
-            return arch
+            return f"gfx{major}{minor}{revision}"
 
     # Friendly name mapping
     if "radeon" not in device_lower and "amd" not in device_lower:
@@ -135,13 +106,12 @@ def identify_rocm_arch_from_name(device_name: str) -> str:
 class TestIdentifyRocmArchFromName(unittest.TestCase):
     def test_explicit_gfx_names(self):
         cases = [
-            ("AMD Radeon RX 7900 XTX (gfx1100)", "gfx110X"),
-            ("gfx1030", "gfx103X"),
-            ("gfx1010", "gfx101X"),
-            ("gfx1012", "gfx101X"),
+            ("AMD Radeon RX 7900 XTX (gfx1100)", "gfx1100"),
+            ("gfx1030", "gfx1030"),
+            ("gfx1010", "gfx1010"),
+            ("gfx1012", "gfx1012"),
             ("gfx1151", "gfx1151"),
             ("gfx1152", "gfx1152"),
-            ("gfx1153", ""),
         ]
         for name, expected in cases:
             with self.subTest(name=name):
@@ -149,16 +119,15 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
 
     def test_linux_kfd_numeric_strings(self):
         cases = [
-            ("100100", "gfx101X"),
-            ("100101", "gfx101X"),
-            ("100102", "gfx101X"),
-            ("100300", "gfx103X"),
-            ("110000", "gfx110X"),
+            ("100100", "gfx1010"),
+            ("100101", "gfx1011"),
+            ("100102", "gfx1012"),
+            ("100300", "gfx1030"),
+            ("110000", "gfx1100"),
             ("110500", "gfx1150"),
             ("110501", "gfx1151"),
             ("110502", "gfx1152"),
-            ("110503", ""),
-            ("120000", "gfx120X"),
+            ("120000", "gfx1200"),
         ]
         for name, expected in cases:
             with self.subTest(name=name):

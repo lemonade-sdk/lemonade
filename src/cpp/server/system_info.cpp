@@ -84,34 +84,6 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
     "sm_120",  // Blackwell    (RTX 50)
 };
 
-// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
-// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
-const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    {"gfx1010", "gfx101X"},
-    {"gfx1011", "gfx101X"},
-    {"gfx1012", "gfx101X"},
-
-    {"gfx1030", "gfx103X"},
-    {"gfx1031", "gfx103X"},
-    {"gfx1032", "gfx103X"},
-    {"gfx1034", "gfx103X"},
-    {"gfx1033", "gfx103X"},
-    {"gfx1035", "gfx103X"},
-    {"gfx1036", "gfx103X"},
-
-    {"gfx1100", "gfx110X"},
-    {"gfx1101", "gfx110X"},
-    {"gfx1102", "gfx110X"},
-    {"gfx1103", "gfx110X"},
-
-    {"gfx1150", "gfx1150"},
-    {"gfx1151", "gfx1151"},
-    {"gfx1152", "gfx1152"},
-
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
-};
-
 #ifdef __linux__
 namespace {
 
@@ -1816,21 +1788,13 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
 }
 
 // Helper to identify ROCm architecture from GPU name.
-// Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
-// If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
     std::smatch gfx_match;
     if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
-        std::string arch = gfx_match[1].str();
-        auto it = ROCM_ARCH_MAPPING.find(arch);
-        if (it != ROCM_ARCH_MAPPING.end()) {
-            return it->second;
-        }
-
-        return arch;
+        return gfx_match[1].str();
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
@@ -1844,16 +1808,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
             int revision_int = std::stoi(device_lower.substr(4, 2));
             std::string revision = std::to_string(revision_int);
 
-            std::string arch = "gfx" + major + minor + revision;
-
-            // Apply architecture family mapping if available
-            // Otherwise return the detected arch for unsupported GPUs
-            auto it = ROCM_ARCH_MAPPING.find(arch);
-            if (it != ROCM_ARCH_MAPPING.end()) {
-                return it->second;
-            }
-
-            return arch;  // Return the detected arch even if unsupported
+            return "gfx" + major + minor + revision;
         }
     }
 
