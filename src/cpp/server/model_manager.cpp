@@ -2307,7 +2307,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                 for (const auto& gpu : nvidia_gpus) {
                     if (gpu.value("available", false)) {
                         std::string name = gpu.value("name", "unknown");
-                        std::string family = gpu.value("gpu_isa", "");
+                        std::string family = gpu.value("family", "");
                         std::string cc = gpu.value("compute_capability", "");
                         std::string suffix;
                         if (!cc.empty()) suffix = " (compute " + cc + ", " + (family.empty() ? "unsupported arch" : family) + ")";

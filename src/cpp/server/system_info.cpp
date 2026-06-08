@@ -868,11 +868,11 @@ json SystemInfo::get_device_dict() {
             {"available", cpu.available}
         };
         #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
-        devices["cpu"]["cpu_isa"] = "x86_64";
+        devices["cpu"]["family"] = "x86_64";
         #elif defined(__aarch64__) || defined(_M_ARM64)
-        devices["cpu"]["cpu_isa"] = "arm64";
+        devices["cpu"]["family"] = "arm64";
         #else
-        devices["cpu"]["cpu_isa"] = "unknown";
+        devices["cpu"]["family"] = "unknown";
         #endif
         if (!cpu.error.empty()) {
             devices["cpu"]["error"] = cpu.error;
@@ -890,7 +890,7 @@ json SystemInfo::get_device_dict() {
             {"cores", 0},
             {"threads", 0},
             {"available", true},  // Assume available - trust the user
-            {"cpu_isa", cpu_family},
+            {"family", cpu_family},
             {"error", std::string("Detection exception: ") + e.what()}
         };
     }
@@ -911,7 +911,7 @@ json SystemInfo::get_device_dict() {
             if (amd_igpu.virtual_gb > 0) {
                 gpu_json["virtual_mem_gb"] = amd_igpu.virtual_gb;
             }
-            gpu_json["gpu_isa"] = identify_rocm_arch_from_name(amd_igpu.name);
+            gpu_json["family"] = identify_rocm_arch_from_name(amd_igpu.name);
             if (!amd_igpu.error.empty()) {
                 gpu_json["error"] = amd_igpu.error;
             }
@@ -934,7 +934,7 @@ json SystemInfo::get_device_dict() {
                 if (!gpu.driver_version.empty()) {
                     gpu_json["driver_version"] = gpu.driver_version;
                 }
-                gpu_json["gpu_isa"] = identify_rocm_arch_from_name(gpu.name);
+                gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
                 if (!gpu.error.empty()) {
                     gpu_json["error"] = gpu.error;
                 }
@@ -975,7 +975,7 @@ json SystemInfo::get_device_dict() {
                     // Fallback only when compute_cap is unavailable.
                     family = identify_cuda_arch_from_name(gpu.name);
                 }
-                gpu_json["gpu_isa"] = family;
+                gpu_json["family"] = family;
             }
             if (gpu.vram_gb > 0) {
                 gpu_json["vram_gb"] = gpu.vram_gb;
@@ -1002,7 +1002,7 @@ json SystemInfo::get_device_dict() {
             {"name", cpu_name.empty() ? npu.name : cpu_name},
             {"available", npu.available}
         };
-        devices["amd_npu"]["npu_isa"] = identify_npu_arch();
+        devices["amd_npu"]["family"] = identify_npu_arch();
         if (npu.tops_max > 0) {
             devices["amd_npu"]["tops_max_int"] = npu.tops_max;
         }
@@ -1050,7 +1050,7 @@ json SystemInfo::get_device_dict() {
                 if (!gpu.driver_version.empty()) {
                     devices["metal"]["driver_version"] = gpu.driver_version;
                 }
-                devices["metal"]["gpu_isa"] = "metal";
+                devices["metal"]["family"] = "metal";
                 if (!gpu.error.empty()) {
                     devices["metal"]["error"] = gpu.error;
                 }
@@ -1103,12 +1103,12 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     std::vector<DetectedDevice> detected_devices;
 
-    // Build detected_devices from devices JSON, reading cached ISA fields
+    // Build detected_devices from devices JSON, reading cached "family" fields
     // CPU is always present
     if (devices.contains("cpu")) {
         const auto& cpu = devices["cpu"];
         std::string name = cpu.value("name", "CPU");
-        std::string family = cpu.value("cpu_isa", "");
+        std::string family = cpu.value("family", "");
         detected_devices.push_back({"cpu", name, family, true});
     } else {
         detected_devices.push_back({"cpu", "CPU", "", true});
@@ -1119,7 +1119,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         for (const auto& gpu : devices["amd_gpu"]) {
             if (gpu.value("available", false)) {
                 std::string name = gpu.value("name", "");
-                std::string family = gpu.value("gpu_isa", "");
+                std::string family = gpu.value("family", "");
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "amd_gpu",
@@ -1137,7 +1137,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         for (const auto& gpu : devices["nvidia_gpu"]) {
             if (gpu.value("available", false)) {
                 std::string name = gpu.value("name", "");
-                std::string family = gpu.value("gpu_isa", "");
+                std::string family = gpu.value("family", "");
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "nvidia_gpu",
@@ -1155,7 +1155,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         const auto& npu = devices["amd_npu"];
         if (npu.value("available", false)) {
             std::string name = npu.value("name", "");
-            std::string family = npu.value("npu_isa", "");
+            std::string family = npu.value("family", "");
             detected_devices.push_back({
                 "amd_npu",
                 name,
@@ -1172,7 +1172,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             const auto& metal = devices["metal"];
             if (metal.value("available", false)) {
                 std::string name = metal.value("name", "");
-                std::string family = metal.value("gpu_isa", "");
+                std::string family = metal.value("family", "");
                 detected_devices.push_back({
                     "metal",
                     name,
@@ -1185,7 +1185,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
             for (const auto& metal : devices["metal"]) {
                 if (metal.value("available", false)) {
                     std::string name = metal.value("name", "");
-                    std::string family = metal.value("gpu_isa", "");
+                    std::string family = metal.value("family", "");
                     if (!name.empty()) {
                         detected_devices.push_back({
                             "metal",
@@ -2133,7 +2133,7 @@ static int cuda_sm_value(const std::string& arch) {
 }
 
 static std::string cuda_arch_from_gpu_json(const json& gpu) {
-    std::string family = gpu.value("gpu_isa", "");
+    std::string family = gpu.value("family", "");
     if (!family.empty() && CUDA_SUPPORTED_ARCHS.count(family)) {
         return family;
     }
