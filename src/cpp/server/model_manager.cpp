@@ -3095,7 +3095,16 @@ void ModelManager::download_model(const std::string& model_name,
         collection_registered_this_call = true;
     }
 
-    // Collections don't have their own backend — download each component instead
+    // Collections don't have their own backend — download each component instead.
+    //
+    // Persistence follows one rule, uniform across models and collections: a
+    // registry entry stores what was *authored locally*; anything *fetched from
+    // Hugging Face* lives in HF_HUB and is rebuilt on lookup. A regular model
+    // persists its recipe/checkpoint but not its weights; an inline collection
+    // persists its components (authored); an HF-backed collection persists only
+    // its `checkpoint` pointer, with the component list rebuilt from the cached
+    // manifest (fetched). The one exception: a fetched manifest registers its
+    // components as user models so they're routable.
     if (is_collection_recipe(actual_recipe)) {
         // Cycle guard: re-entering the same collection on the current call
         // chain means the user registered a circular reference (e.g. user.A
