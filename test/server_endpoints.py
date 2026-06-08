@@ -34,6 +34,7 @@ from utils.server_base import (
     ServerTestBase,
     run_server_tests,
     OpenAI,
+    pull_model_with_retry,
 )
 from utils.test_models import (
     PORT,
@@ -69,16 +70,9 @@ class EndpointTests(ServerTestBase):
             return
 
         print(f"\n[SETUP] Ensuring {ENDPOINT_TEST_MODEL} is pulled...")
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        if response.status_code == 200:
-            print(f"[SETUP] {ENDPOINT_TEST_MODEL} is ready")
-            cls._model_pulled = True
-        else:
-            print(f"[SETUP] Warning: pull returned {response.status_code}")
+        pull_model_with_retry(ENDPOINT_TEST_MODEL)
+        print(f"[SETUP] {ENDPOINT_TEST_MODEL} is ready")
+        cls._model_pulled = True
 
     def setUp(self):
         """Set up each test."""
