@@ -497,6 +497,20 @@ jobs:
           .venv/bin/python test/server_endpoints.py --cli-binary ./build/lemonade
           echo "Endpoint tests PASSED!"
 
+      - name: Run web-app path traversal tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
+        run: |
+          set -e
+          echo "Running web-app path traversal tests..."
+          .venv/bin/python test/server_webapp.py --cli-binary ./build/lemonade
+          echo "Web-app tests PASSED!"
+
       - name: Run Ollama API tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -1497,6 +1511,11 @@ jobs:
         shell: bash
         run: .venv/bin/python test/server_endpoints.py --cli-binary lemonade
 
+      - name: Test web-app path traversal
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/server_webapp.py --cli-binary lemonade
+
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
@@ -1610,6 +1629,11 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
         shell: bash
         run: $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+
+      - name: Test web-app path traversal
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
+        shell: bash
+        run: $VENV_PYTHON test/server_webapp.py --cli-binary "$CLI_BINARY"
 
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' && !(runner.os == 'macOS' && needs.build-lemonade-macos-dmg.outputs.has_signing != 'true') }}
