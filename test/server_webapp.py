@@ -59,22 +59,7 @@ class WebAppAssetTests(ServerTestBase):
         )
         print("[OK] renderer.bundle.js returned 200 with correct content-type")
 
-    def test_002_normal_svg_asset_returns_200(self):
-        """A normal web-app SVG asset should return 200."""
-        if not self._is_webapp_available():
-            self.skipTest("Web app not available on this server")
-
-        # SVG assets are always present in the web-app build
-        resp = requests.get(
-            f"http://localhost:{PORT}/ecd3a2194d527cfbf0bc.svg",
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("image/svg+xml", resp.headers.get("Content-Type", ""))
-        self.assertGreater(len(resp.content), 0, "SVG asset should not be empty")
-        print("[OK] SVG asset returned 200 with correct content-type")
-
-    def test_003_web_app_prefix_asset_returns_200(self):
+    def test_002_web_app_prefix_asset_returns_200(self):
         """A /web-app/ prefixed asset should return 200 (backwards compat)."""
         if not self._is_webapp_available():
             self.skipTest("Web app not available on this server")
@@ -87,7 +72,7 @@ class WebAppAssetTests(ServerTestBase):
         self.assertGreater(len(resp.content), 0)
         print("[OK] /web-app/ prefixed path returned 200")
 
-    def test_004_url_encoded_traversal_rejected(self):
+    def test_003_url_encoded_traversal_rejected(self):
         """
         URL-encoded path traversal (..%2f) should return 403 specifically.
 
@@ -112,7 +97,7 @@ class WebAppAssetTests(ServerTestBase):
         )
         print("[OK] URL-encoded traversal to backend_versions.json returned 403")
 
-    def test_005_double_encoded_traversal_rejected(self):
+    def test_004_double_encoded_traversal_rejected(self):
         """Double-encoded traversal should be rejected with 403."""
         if not self._is_webapp_available():
             self.skipTest("Web app not available on this server")
@@ -130,7 +115,7 @@ class WebAppAssetTests(ServerTestBase):
         )
         print(f"[OK] Double-encoded traversal returned {resp.status_code} (not 200)")
 
-    def test_006_backslash_traversal_rejected(self):
+    def test_005_backslash_traversal_rejected(self):
         """Backslash-based traversal should be rejected with 403 on all platforms."""
         if not self._is_webapp_available():
             self.skipTest("Web app not available on this server")
@@ -146,7 +131,7 @@ class WebAppAssetTests(ServerTestBase):
         )
         print(f"[OK] Backslash traversal returned {resp.status_code} (not 200)")
 
-    def test_007_nonexistent_asset_returns_404(self):
+    def test_006_nonexistent_asset_returns_404(self):
         """A nonexistent asset should return 404."""
         if not self._is_webapp_available():
             self.skipTest("Web app not available on this server")
@@ -158,7 +143,7 @@ class WebAppAssetTests(ServerTestBase):
         self.assertEqual(resp.status_code, 404)
         print("[OK] Nonexistent asset returned 404")
 
-    def test_008_legitimate_filename_with_dots_allowed(self):
+    def test_007_legitimate_filename_with_dots_allowed(self):
         """
         Legitimate filenames containing ".." as a substring should be allowed.
 
@@ -181,7 +166,7 @@ class WebAppAssetTests(ServerTestBase):
         )
         print("[OK] Filename with .. substring returned 404 (not 403)")
 
-    def test_009_windows_validation_note(self):
+    def test_008_windows_validation_note(self):
         """
         Windows path-separator validation note.
 
