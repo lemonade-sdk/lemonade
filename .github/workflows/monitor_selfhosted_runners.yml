@@ -2,17 +2,17 @@ name: Monitor Self-Hosted Runners
 
 on:
   schedule:
-    - cron: "0 4 * * *"   # daily at 04:00 UTC (3 hours after heartbeat)
+    - cron: "0 4 * * 1"   # weekly on Monday at 04:00 UTC (3 hours after heartbeat)
   workflow_dispatch:
     inputs:
       stale_hours:
-        description: "Alert if newest heartbeat for a runner is older than this many hours (default tolerates one missed daily heartbeat)"
+        description: "Alert if newest heartbeat for a runner is older than this many hours (default tolerates one missed weekly heartbeat)"
         required: false
-        default: "48"
+        default: "192"
       lookback_runs:
-        description: "How many recent heartbeat runs to scan for artifacts"
+        description: "How many recent scheduled heartbeat runs to scan for artifacts"
         required: false
-        default: "7"
+        default: "4"
 
 permissions:
   actions: read    # Required to read workflow runs / artifacts / runners
@@ -20,13 +20,18 @@ permissions:
 
 env:
   HEARTBEAT_WORKFLOW: runner_heartbeat.yml
-  STALE_HOURS: ${{ github.event.inputs.stale_hours || '48' }}
-  LOOKBACK_RUNS: ${{ github.event.inputs.lookback_runs || '7' }}
+  STALE_HOURS: ${{ github.event.inputs.stale_hours || '192' }}
+  LOOKBACK_RUNS: ${{ github.event.inputs.lookback_runs || '4' }}
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      # Defined at job scope so the step-level `if:` below can read it via
+      # `env.TEAMS_WEBHOOK_URL`. Step-level `env:` is not visible to that
+      # same step's `if:` expression.
+      TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
 
     steps:
       - name: Checkout
@@ -35,6 +40,30 @@ jobs:
           sparse-checkout: |
             .github/runners.json
           sparse-checkout-cone-mode: false
+
+      - name: Validate numeric inputs
+        # STALE_HOURS and LOOKBACK_RUNS flow from workflow_dispatch inputs
+        # into env as strings. Downstream steps use them in shell arithmetic
+        # ($(( STALE_HOURS * 3600 ))) and in an API URL (per_page=...), both
+        # of which require positive integers. Fail fast with a clear message
+        # if a user supplies something non-numeric.
+        run: |
+          set -euo pipefail
+          fail=0
+          if ! [[ "$STALE_HOURS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ERROR: stale_hours must be a positive integer, got: '$STALE_HOURS'" >&2
+            fail=1
+          fi
+          if ! [[ "$LOOKBACK_RUNS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ERROR: lookback_runs must be a positive integer, got: '$LOOKBACK_RUNS'" >&2
+            fail=1
+          fi
+          # GitHub's per_page max is 100; clamp via validation so the URL is sane.
+          if [ "$fail" = "0" ] && [ "$LOOKBACK_RUNS" -gt 100 ]; then
+            echo "ERROR: lookback_runs must be <= 100 (GitHub API per_page max), got: '$LOOKBACK_RUNS'" >&2
+            fail=1
+          fi
+          exit "$fail"
 
       - name: Load expected runners (source of truth)
         id: expected
@@ -48,11 +77,14 @@ jobs:
         id: heartbeats
         run: |
           set -euo pipefail
-          # Look at the last N completed runs of the heartbeat workflow so a
-          # single missed daily run doesn't fail the check. Per-runner we
-          # take the newest artifact across all of these runs.
+          # Look at the last N *scheduled* completed runs of the heartbeat
+          # workflow. Filtering on `event=schedule` is important: manual
+          # `workflow_dispatch` re-runs (or test invocations) would otherwise
+          # push older scheduled runs out of the window and cause false
+          # "missing artifact" alerts. Per-runner we take the newest
+          # artifact across all of these runs.
           gh api \
-            "repos/${{ github.repository }}/actions/workflows/${HEARTBEAT_WORKFLOW}/runs?status=completed&per_page=${LOOKBACK_RUNS}" \
+            "repos/${{ github.repository }}/actions/workflows/${HEARTBEAT_WORKFLOW}/runs?status=completed&event=schedule&per_page=${LOOKBACK_RUNS}" \
             --jq '.workflow_runs[] | {id, run_started_at}' \
             > heartbeat_runs.ndjson
 
@@ -228,7 +260,6 @@ jobs:
       - name: Send Teams alert via Power Automate
         if: failure() && env.TEAMS_WEBHOOK_URL != ''
         env:
-          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           REPORT: ${{ steps.evaluate.outputs.report }}
         run: |
           set -euo pipefail

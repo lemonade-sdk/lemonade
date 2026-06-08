@@ -2,7 +2,7 @@ name: Runner Heartbeat
 
 on:
   schedule:
-    - cron: "0 1 * * *"   # daily at 01:00 UTC
+    - cron: "0 1 * * 1"   # weekly on Monday at 01:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -62,4 +62,7 @@ jobs:
         with:
           name: heartbeat-${{ runner.name }}
           path: heartbeat-${{ runner.name }}.txt
-          retention-days: 7
+          # 30d retention gives the monitor (weekly, lookback=4) a comfortable
+          # window to find a recent artifact even if a heartbeat run is missed
+          # or delayed.
+          retention-days: 30
