@@ -54,6 +54,7 @@ Area — apply AT MOST ONE total. Same hard rule as engines. Skip if not clearly
 - area::installer — Windows MSI, macOS DMG, Debian / RPM packaging
 - area::api       — HTTP REST API surface, route handlers, Ollama/Anthropic/OpenAI compat
 - area::tray      — system tray app (LemonadeServer.exe, lemonade-tray)
+- area::ci        — CI / GitHub Actions workflows, self-hosted runner infrastructure, test infrastructure (e.g. fixtures, harness, CI cleanup)
 
 Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not specific to a particular GPU/compute runtime. Runtime labels complement engine labels — e.g., a Vulkan-only llama.cpp bug gets both `engine::llamacpp` and `runtime::vulkan`:
 - runtime::vulkan — Vulkan path (typically llama.cpp on AMD/Intel/Nvidia GPUs)
@@ -77,6 +78,12 @@ Rules:
   endpoint, or mention multiple components — that's not enough to apply
   `area::cli`, `area::api`, `audio`, etc. Apply those only when the bug
   or feature is in that surface itself.
+- `documentation` is for human-readable docs only — READMEs, user
+  guides, installation instructions, doc-comments. Items about test
+  coverage, missing tests, test infrastructure, or test harness
+  changes are `enhancement` (or `bug` if the test itself is broken),
+  NEVER `documentation`. Same goes for items about adding examples
+  to the test suite vs adding examples to a user guide.
 - Be conservative. If unclear, omit the label. It is much better to
   under-label than to mislabel.
 - Skip labels the item already has.
@@ -167,6 +174,7 @@ KNOWN_LABELS = {
     "area::installer",
     "area::api",
     "area::tray",
+    "area::ci",
     "runtime::vulkan",
     "runtime::rocm",
     "runtime::cuda",
