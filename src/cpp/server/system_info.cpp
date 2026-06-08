@@ -107,7 +107,6 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1150", "gfx1150"},
     {"gfx1151", "gfx1151"},
     {"gfx1152", "gfx1152"},
-    {"gfx1153", ""},
 
     {"gfx1200", "gfx120X"},
     {"gfx1201", "gfx120X"},

@@ -456,7 +456,8 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
 #else
-    // For ROCm on Windows, set OCL_SET_SVM_SIZE where needed to load larger models.
+    // For ROCm on Windows with gfx1151, set OCL_SET_SVM_SIZE
+    // This is a patch to enable loading larger models
     if (is_llamacpp_rocm_backend(llamacpp_backend)) {
         std::string new_path;
 
@@ -481,7 +482,7 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string arch = lemon::SystemInfo::get_rocm_arch();
         if (arch == "gfx1151") {
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
-            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for " << arch << " (enables loading larger models)" << std::endl;
+            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
         }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
