@@ -142,24 +142,39 @@ int main() {
     json repeatable_config = json::parse(R"({
         "schema_version": 1,
         "families": {
-            "lora_family": {
-                "match": [{"checkpoint_regex": "^LoRA/"}],
-                "args": "--lora-modules base=/models/base --max-num-seqs 4"
+            "repeat_family": {
+                "match": [{"checkpoint_regex": "^Repeat/"}],
+                "args": "--repeatable-arg base --repeatable-arg extra --max-num-seqs 4"
             }
         },
         "models": {
-            "LoRA-vLLM": {
-                "family": "lora_family",
-                "args": "--lora-modules model=/models/model"
+            "Repeat-vLLM": {
+                "family": "repeat_family",
+                "args": "--repeatable-arg model"
             }
         }
     })");
     failures += !expect_args(
-        "repeatable flags are preserved across layers",
-        resolve_vllm_args("LoRA-vLLM", "LoRA/Model", repeatable_config,
-                          "--lora-modules user=/models/user --max-num-seqs 8"),
-        "--lora-modules base=/models/base --lora-modules model=/models/model "
-        "--lora-modules user=/models/user --max-num-seqs 8");
+        "repeated generic flags are preserved across layers",
+        resolve_vllm_args("Repeat-vLLM", "Repeat/Model", repeatable_config,
+                          "--repeatable-arg user --max-num-seqs 8"),
+        "--repeatable-arg base --repeatable-arg extra --repeatable-arg model "
+        "--repeatable-arg user --max-num-seqs 8");
+
+    json incoming_repeatable_config = json::parse(R"({
+        "schema_version": 1,
+        "families": {
+            "single_family": {
+                "match": [{"checkpoint_regex": "^Single/"}],
+                "args": "--some-generic family"
+            }
+        }
+    })");
+    failures += !expect_args(
+        "incoming repeated generic flags preserve prior layer value",
+        resolve_vllm_args("Single-vLLM", "Single/Model", incoming_repeatable_config,
+                          "--some-generic user-a --some-generic user-b"),
+        "--some-generic family --some-generic user-a --some-generic user-b");
 
     failures += !expect_args(
         "user can disable config auto tool choice",

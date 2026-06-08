@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -43,11 +44,26 @@ bool is_memory_budget_arg(const ParsedArg& arg) {
     return conflict_key(arg.flag) == MEMORY_BUDGET_CONFLICT_KEY;
 }
 
-bool is_repeatable_arg(const ParsedArg& arg) {
-    static const std::set<std::string> flags = {
-        "--lora-modules",
-    };
-    return flags.count(arg.flag) > 0;
+bool is_generic_conflict_key(const std::string& key) {
+    return key.rfind("flag:", 0) == 0;
+}
+
+std::set<std::string> repeated_generic_conflict_keys(const std::vector<ParsedArg>& args) {
+    std::map<std::string, size_t> counts;
+    for (const auto& arg : args) {
+        std::string key = conflict_key(arg.flag);
+        if (is_generic_conflict_key(key)) {
+            ++counts[key];
+        }
+    }
+
+    std::set<std::string> repeated;
+    for (const auto& item : counts) {
+        if (item.second > 1) {
+            repeated.insert(item.first);
+        }
+    }
+    return repeated;
 }
 
 bool is_negative_number_token(const std::string& token) {
@@ -113,9 +129,13 @@ std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::stri
 }
 
 void merge_layer(std::vector<ParsedArg>& target, const std::vector<ParsedArg>& incoming) {
+    std::set<std::string> repeatable_keys = repeated_generic_conflict_keys(target);
+    std::set<std::string> incoming_repeatable_keys = repeated_generic_conflict_keys(incoming);
+    repeatable_keys.insert(incoming_repeatable_keys.begin(), incoming_repeatable_keys.end());
+
     for (const auto& arg : incoming) {
-        if (!is_repeatable_arg(arg)) {
-            std::string key = conflict_key(arg.flag);
+        std::string key = conflict_key(arg.flag);
+        if (!repeatable_keys.count(key)) {
             target.erase(std::remove_if(target.begin(), target.end(),
                                         [&](const ParsedArg& existing) {
                                             return conflict_key(existing.flag) == key;
