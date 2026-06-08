@@ -183,6 +183,7 @@ VLLMArgResolution resolve_vllm_args(const std::string& model_name,
         model_entry = &config["models"][model_name];
     }
 
+    bool enable_checkpoint_regex_match = config.value("enable_checkpoint_regex_match", true);
     bool disable_family_match = model_entry &&
                                 model_entry->value("disable_family_match", false);
 
@@ -193,7 +194,7 @@ VLLMArgResolution resolve_vllm_args(const std::string& model_name,
                                      "' family must be a string");
         }
         family = find_family(config, (*model_entry)["family"].get<std::string>());
-    } else if (!disable_family_match) {
+    } else if (enable_checkpoint_regex_match && !disable_family_match) {
         family = match_family_by_checkpoint(config, checkpoint);
     }
 

@@ -1,10 +1,11 @@
 {
   "schema_version": 1,
+  "enable_checkpoint_regex_match": true,
   "families": {
     "qwen3": {
       "match": [
         {
-          "checkpoint_regex": "^Qwen/Qwen3\\."
+          "checkpoint_regex": "Qwen3\\."
         }
       ],
       "args": "--enable-auto-tool-choice --tool-call-parser qwen3_coder"

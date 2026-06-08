@@ -18,9 +18,10 @@ using nlohmann::json;
 static json test_config() {
     return json::parse(R"({
         "schema_version": 1,
+        "enable_checkpoint_regex_match": true,
         "families": {
             "qwen3": {
-                "match": [{"checkpoint_regex": "^Qwen/Qwen3\\."}],
+                "match": [{"checkpoint_regex": "Qwen3\\."}],
                 "args": "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq --max-num-seqs 4"
             },
             "memory_family": {
@@ -94,9 +95,26 @@ int main() {
         "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq --max-num-seqs 4");
 
     failures += !expect_args(
+        "checkpoint regex applies across organizations",
+        resolve_vllm_args("Unlisted-vLLM", "unsloth/Qwen3.5-4B-AWQ", test_config(), ""),
+        "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq --max-num-seqs 4");
+
+    failures += !expect_args(
         "checkpoint regex does not overmatch Qwen30",
         resolve_vllm_args("Unlisted-vLLM", "Qwen/Qwen30-4B", test_config(), ""),
         "");
+
+    json manual_only_config = test_config();
+    manual_only_config["enable_checkpoint_regex_match"] = false;
+    failures += !expect_args(
+        "global regex disable ignores unlisted checkpoint match",
+        resolve_vllm_args("Unlisted-vLLM", "Qwen/Qwen3.5-4B", manual_only_config, ""),
+        "");
+
+    failures += !expect_args(
+        "global regex disable still allows exact model family",
+        resolve_vllm_args("Qwen3.5-4B-vLLM", "Other/Checkpoint", manual_only_config, ""),
+        "--enable-auto-tool-choice --tool-call-parser qwen3_coder --quantization awq --max-num-seqs 4");
 
     failures += !expect_args(
         "disable_family_match prevents regex family args",
