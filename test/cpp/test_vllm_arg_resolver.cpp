@@ -1,8 +1,6 @@
-// Standalone test for lemon::backends::resolve_vllm_args().
-// Compile with:
-// g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
-//   test/cpp/test_vllm_arg_resolver.cpp src/cpp/server/backends/vllm_arg_resolver.cpp \
-//   -o /tmp/test_vllm_arg_resolver
+// Test for lemon::backends::resolve_vllm_args().
+// Build with: cmake --build --preset default --target test_vllm_arg_resolver
+// Run with: ctest --test-dir build -R vllm_arg_resolver --output-on-failure
 
 #include "lemon/backends/vllm_arg_resolver.h"
 

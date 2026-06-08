@@ -7,6 +7,8 @@ endif()
 
 project(lemon_cpp VERSION 10.7.0)
 
+include(CTest)
+
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -708,6 +710,15 @@ if(USE_SYSTEM_ZSTD)
     target_include_directories(lemonade-server-core PUBLIC ${ZSTD_INCLUDE_DIRS})
     target_link_directories(lemonade-server-core PUBLIC ${ZSTD_LIBRARY_DIRS})
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
+endif()
+
+if(BUILD_TESTING)
+    add_executable(test_vllm_arg_resolver
+        test/cpp/test_vllm_arg_resolver.cpp
+        src/cpp/server/backends/vllm_arg_resolver.cpp
+    )
+    target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME vllm_arg_resolver COMMAND test_vllm_arg_resolver)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
