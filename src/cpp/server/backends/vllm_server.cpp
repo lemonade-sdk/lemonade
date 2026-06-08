@@ -9,6 +9,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -21,6 +22,7 @@ namespace lemon {
 namespace backends {
 
 static constexpr int64_t VLLM_MAX_TOKENS_PREFLIGHT_THRESHOLD = 8192;
+static constexpr int64_t VLLM_TOKEN_FIT_RESERVE = 64;
 
 // Parse quantization_config.quant_method from a config.json body.
 static std::string parse_quant_method(const std::string& config_json) {
@@ -365,8 +367,13 @@ json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
         return request;
     }
 
-    int64_t available_output_tokens = max_model_len_ - input_tokens;
-    if (available_output_tokens <= 0 || requested_max_tokens <= available_output_tokens) {
+    if (input_tokens >= max_model_len_) {
+        return request;
+    }
+
+    int64_t available_output_tokens =
+        std::max<int64_t>(1, max_model_len_ - input_tokens - VLLM_TOKEN_FIT_RESERVE);
+    if (requested_max_tokens <= available_output_tokens) {
         return request;
     }
 
@@ -380,7 +387,8 @@ json VLLMServer::fit_openai_max_tokens_to_context(const json& request) {
     LOG(INFO, "vLLM") << "Reduced OpenAI max tokens from " << requested_max_tokens
                       << " to " << available_output_tokens
                       << " so input_tokens (" << input_tokens
-                      << ") fits max_model_len (" << max_model_len_ << ")" << std::endl;
+                      << ") fits max_model_len (" << max_model_len_
+                      << ") with reserve (" << VLLM_TOKEN_FIT_RESERVE << ")" << std::endl;
     return modified_request;
 }
 
