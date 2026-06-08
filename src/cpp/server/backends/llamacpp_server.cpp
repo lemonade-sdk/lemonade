@@ -217,7 +217,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-ubuntu-arm64.tar.gz";
+#else
         params.filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
+#endif
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
@@ -226,7 +230,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-ubuntu-vulkan-arm64.tar.gz";
+#else
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
+#endif
 #else
         throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
 #endif

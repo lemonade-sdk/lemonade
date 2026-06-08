@@ -662,6 +662,43 @@ jobs:
           path: build/lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
           retention-days: 7
 
+  build-lemonade-linux-arm64:
+    name: Build Lemonade (Linux ARM64)
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get version from CMakeLists.txt
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Install build dependencies
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+
+      - name: Build
+        run: |
+          set -e
+          cmake --preset default -DBUILD_WEB_APP=OFF
+          cmake --build --preset default --target lemond lemonade
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-linux-arm64-build
+          path: |
+            build/lemond
+            build/lemonade
+            build/resources/
+          retention-days: 7
+
   build-lemonade-embeddable-windows:
     name: Build Embeddable Lemonade (Windows)
     runs-on: windows-latest
@@ -1538,6 +1575,92 @@ jobs:
         uses: ./.github/actions/capture-server-logs
         with:
           artifact-name: server-logs-ubuntu-latest
+
+  test-cli-endpoints-linux-arm64:
+    name: Test ${{ matrix.test_type }} (ubuntu-24.04-arm)
+    runs-on: ubuntu-24.04-arm
+    needs: build-lemonade-linux-arm64
+    strategy:
+      fail-fast: false
+      matrix:
+        # llamacpp-system and env-vars omitted: no system llama-server or .deb on
+        # GitHub-hosted ARM64 runners; Vulkan tests omitted: no GPU available.
+        test_type: [cli, endpoints, ollama, streaming-errors]
+    env:
+      LEMONADE_CI_MODE: "True"
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-linux-arm64-build
+          path: build
+
+      - name: Make binaries executable
+        run: chmod +x build/lemond build/lemonade
+
+      - name: Set HF_HOME
+        run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
+
+      - name: Start lemond server
+        run: |
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          ./build/lemond > "$RUNNER_TEMP/lemond.log" 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "Server is running and healthy (PID $LEMOND_PID)"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          echo "ERROR: Server did not start within 60 seconds"
+          cat "$RUNNER_TEMP/lemond.log" 2>/dev/null || true
+          exit 1
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          VENV_PYTHON=.venv/bin/python
+          CLI_BINARY=./build/lemonade
+
+          if [ "${{ matrix.test_type }}" = "cli" ]; then
+            echo "Running CLI tests..."
+            $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+          elif [ "${{ matrix.test_type }}" = "endpoints" ]; then
+            echo "Running endpoint tests..."
+            $VENV_PYTHON test/server_endpoints.py --cli-binary "$CLI_BINARY"
+          elif [ "${{ matrix.test_type }}" = "ollama" ]; then
+            echo "Running Ollama API tests..."
+            $VENV_PYTHON test/test_ollama.py --cli-binary "$CLI_BINARY"
+          elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
+            echo "Running streaming error termination tests..."
+            $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+          fi
+          echo "${{ matrix.test_type }} tests PASSED!"
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-arm64-${{ matrix.test_type }}
 
   test-cli-endpoints:
     name: Test CLI/Endpoints (${{ matrix.os }})

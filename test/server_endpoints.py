@@ -1021,8 +1021,10 @@ class EndpointTests(ServerTestBase):
         self.assertIn(delete_response.status_code, [200, 422])
 
         recipe = "sd-cpp"
-        ## sd-cpp currently unavailable on MacOS
-        if platform.system() == "Darwin":
+        ## sd-cpp currently unavailable on MacOS or Linux ARM64
+        if platform.system() == "Darwin" or (
+            platform.system() == "Linux" and platform.machine() == "aarch64"
+        ):
             recipe = "llamacpp"
         recipe_backend = f"{recipe}_backend"
 
@@ -1122,6 +1124,8 @@ class EndpointTests(ServerTestBase):
         """
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
+        if platform.system() == "Linux" and platform.machine() == "aarch64":
+            self.skipTest("sd-cpp not supported on Linux ARM64")
 
         model_name = f"user.Pull-Merge-Regression-{uuid.uuid4().hex[:8]}"
         image_defaults = {

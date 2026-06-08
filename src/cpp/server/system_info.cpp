@@ -456,7 +456,7 @@ struct RecipeBackendDef {
 static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // llamacpp with multiple backends (order = preference)
     {"llamacpp", "system", {"linux"}, {
-        {"cpu", {"x86_64"}}, // Placeholder, actual check is PATH-based
+        {"cpu", {"x86_64", "arm64"}}, // Placeholder, actual check is PATH-based
     }},
     {"llamacpp", "metal", {"macos"},
     {
@@ -466,14 +466,14 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
     }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
+        {"cpu", {"x86_64", "arm64"}},
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
-        {"cpu", {"x86_64"}},
+        {"cpu", {"x86_64", "arm64"}},
     }},
 
     // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan; macOS: Metal
@@ -878,11 +878,19 @@ json SystemInfo::get_device_dict() {
             devices["cpu"]["error"] = cpu.error;
         }
     } catch (const std::exception& e) {
+        #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
+        std::string cpu_family = "x86_64";
+        #elif defined(__aarch64__) || defined(_M_ARM64)
+        std::string cpu_family = "arm64";
+        #else
+        std::string cpu_family = "unknown";
+        #endif
         devices["cpu"] = {
             {"name", "Unknown"},
             {"cores", 0},
             {"threads", 0},
             {"available", true},  // Assume available - trust the user
+            {"family", cpu_family},
             {"error", std::string("Detection exception: ") + e.what()}
         };
     }
