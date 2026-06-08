@@ -20,13 +20,13 @@ function modelName(m: ModelInfo): string {
 function recipeIcon(recipe: string): string {
   switch (recipe) {
     case 'llamacpp': return '🦙';
-    case 'vllm': return '🚀';
+    case 'vllm': return '🏭';
     case 'flm': return '⚡';
     case 'ryzenai-llm': return '🔶';
     case 'sd-cpp': return '🎨';
     case 'whispercpp': return '🎤';
     case 'kokoro': return '🔊';
-    case 'collection.omni': return '✦';
+    case 'collection.omni': return '🧩';
     case 'collection': return '📦';
     default: return '🤖';
   }
@@ -180,9 +180,9 @@ const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, ti
 
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: '🦙 llama.cpp',
-  vllm: '🚀 vLLM',
+  vllm: '🏭 vLLM',
   'ryzenai-llm': '🔷 RyzenAI',
-  'collection.omni': '✦ Omni Collection',
+  'collection.omni': '🧩 Omni Collection',
 };
 
 type CustomRecipeOption = { value: string; label: string; hint: string };
@@ -234,7 +234,7 @@ type CustomModelDraftState = {
 };
 
 const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
-  { key: 'all', label: 'All', icon: '✦' },
+  { key: 'all', label: 'All', icon: '🌐' },
   { key: 'llm', label: 'LLM', icon: '💬' },
   { key: 'omni', label: 'Omni', icon: '✦' },
   { key: 'image', label: 'Image', icon: '🎨' },
