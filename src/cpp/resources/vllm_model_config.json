@@ -2,7 +2,7 @@
   "schema_version": 1,
   "enable_checkpoint_regex_match": true,
   "families": {
-    "qwen3": {
+    "qwen3.": {
       "match": [
         {
           "checkpoint_regex": "Qwen3\\."
@@ -13,16 +13,16 @@
   },
   "models": {
     "Qwen3.5-0.8B-vLLM": {
-      "family": "qwen3"
+      "family": "qwen3."
     },
     "Qwen3.5-2B-vLLM": {
-      "family": "qwen3"
+      "family": "qwen3."
     },
     "Qwen3.5-4B-vLLM": {
-      "family": "qwen3"
+      "family": "qwen3."
     },
     "Qwen3.5-9B-vLLM": {
-      "family": "qwen3"
+      "family": "qwen3."
     }
   }
 }
