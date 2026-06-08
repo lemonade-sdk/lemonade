@@ -23,6 +23,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
+| `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
 
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -52,7 +53,7 @@ Example request:
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+    "model_name": "Qwen3-0.6B-GGUF"
   }'
 ```
 
@@ -61,7 +62,7 @@ Response format:
 ```json
 {
   "status":"success",
-  "message":"Installed model: Qwen2.5-0.5B-Instruct-CPU"
+  "message":"Installed model: Qwen3-0.6B-GGUF"
 }
 ```
 
@@ -168,7 +169,7 @@ Example request:
 curl -X POST http://localhost:13305/v1/pull \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+    "model_name": "Qwen3-0.6B-GGUF",
     "stream": true,
     "subscribe": false
   }'
@@ -178,9 +179,9 @@ Example response:
 
 ```json
 {
-  "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+  "id": "model:Qwen3-0.6B-GGUF",
   "type": "model",
-  "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+  "model_name": "Qwen3-0.6B-GGUF",
   "status": "downloading",
   "running": true,
   "file": "",
@@ -216,9 +217,9 @@ curl http://localhost:13305/v1/downloads
 ```json
 [
   {
-    "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+    "id": "model:Qwen3-0.6B-GGUF",
     "type": "model",
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+    "model_name": "Qwen3-0.6B-GGUF",
     "status": "downloading",
     "running": true,
     "file": "model.gguf",
@@ -264,7 +265,7 @@ Control a server-owned model download job.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `id` | Yes | Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example `model:Qwen2.5-0.5B-Instruct-CPU`. |
+| `id` | Yes | Download id returned by `POST /v1/pull` or `GET /v1/downloads`, for example `model:Qwen3-0.6B-GGUF`. |
 | `action` | Yes | One of `pause`, `cancel`, or `remove`. |
 
 ### Actions
@@ -281,7 +282,7 @@ Control a server-owned model download job.
 curl -X POST http://localhost:13305/v1/downloads/control \
   -H "Content-Type: application/json" \
   -d '{
-    "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+    "id": "model:Qwen3-0.6B-GGUF",
     "action": "pause"
   }'
 ```
@@ -292,9 +293,9 @@ For `pause` and `cancel`, the endpoint returns the latest job snapshot:
 
 ```json
 {
-  "id": "model:Qwen2.5-0.5B-Instruct-CPU",
+  "id": "model:Qwen3-0.6B-GGUF",
   "type": "model",
-  "model_name": "Qwen2.5-0.5B-Instruct-CPU",
+  "model_name": "Qwen3-0.6B-GGUF",
   "status": "paused",
   "running": false,
   "file": "model.gguf",
@@ -400,7 +401,7 @@ Example request:
 curl -X POST http://localhost:13305/v1/delete \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+    "model_name": "Qwen3-0.6B-GGUF"
   }'
 ```
 
@@ -409,7 +410,7 @@ Response format:
 ```json
 {
   "status":"success",
-  "message":"Deleted model: Qwen2.5-0.5B-Instruct-CPU"
+  "message":"Deleted model: Qwen3-0.6B-GGUF"
 }
 ```
 
@@ -479,7 +480,7 @@ Basic load:
 curl -X POST http://localhost:13305/v1/load \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "Qwen2.5-0.5B-Instruct-CPU"
+    "model_name": "Qwen3-0.6B-GGUF"
   }'
 ```
 
@@ -541,7 +542,7 @@ curl -X POST http://localhost:13305/v1/load \
 ```json
 {
   "status":"success",
-  "message":"Loaded model: Qwen2.5-0.5B-Instruct-CPU"
+  "message":"Loaded model: Qwen3-0.6B-GGUF"
 }
 ```
 
@@ -707,7 +708,6 @@ curl http://localhost:13305/v1/stats
   "tokens_per_second": 33.33,
   "input_tokens": 128,
   "output_tokens": 5,
-  "decode_token_times": [0.01, 0.02, 0.03, 0.04, 0.05],
   "prompt_tokens": 9
 }
 ```
@@ -718,8 +718,81 @@ curl http://localhost:13305/v1/stats
 - `tokens_per_second` - Generation speed in tokens per second
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
-- `decode_token_times` - Array of time taken for each generated token
 - `prompt_tokens` - Total prompt tokens including cached tokens
+
+## `GET /metrics`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Prometheus scrape endpoint for Lemonade Server. The endpoint returns Prometheus text exposition format and is intended to be scraped by Prometheus, not by Grafana directly.
+
+Unlike most Lemonade API endpoints, `/metrics` is root-level only. It is not mounted under `/api/v0/`, `/api/v1/`, `/v0/`, or `/v1/`.
+
+`HEAD /metrics` is also supported and returns `200 OK` with an empty body.
+
+### Authentication
+
+If `LEMONADE_API_KEY` is set, `/metrics` requires bearer authentication. Either the regular API key or `LEMONADE_ADMIN_API_KEY` is accepted.
+
+If only `LEMONADE_ADMIN_API_KEY` is set and `LEMONADE_API_KEY` is unset, `/metrics` is accessible without authentication, matching regular API endpoint behavior.
+
+### Polling and Refresh Rate
+
+The `/metrics` endpoint has no internal refresh timer. It renders the latest server state at the moment it is scraped.
+
+Polling frequency is configured in Prometheus via `scrape_interval`, for example:
+
+```yaml
+global:
+  scrape_interval: 10s
+```
+
+Grafana queries Prometheus. Grafana's dashboard refresh controls how often panels query Prometheus, but it does not control how often Prometheus scrapes Lemonade.
+
+### Example request
+
+```bash
+curl http://localhost:13305/metrics
+```
+
+With API-key auth:
+
+```bash
+curl http://localhost:13305/metrics \
+  -H "Authorization: Bearer $LEMONADE_API_KEY"
+```
+
+### Response format
+
+The response uses Prometheus text exposition format:
+
+```text
+# HELP lemonade_server_up Whether the Lemonade server is running.
+# TYPE lemonade_server_up gauge
+lemonade_server_up 1
+# HELP lemonade_server_info Lemonade server build information.
+# TYPE lemonade_server_info gauge
+lemonade_server_info{version="10.4.0"} 1
+```
+
+Content type:
+
+```text
+text/plain; version=0.0.4; charset=utf-8
+```
+
+### Lemonade Metric Families
+
+The authoritative metric-family list is generated by the `/metrics` implementation in [`src/cpp/server/server.cpp`](../../src/cpp/server/server.cpp). Search for `handle_metrics` and `metrics.describe(...)` to see the current names, types, labels, and descriptions.
+
+Unsupported, unavailable, null, NaN, and infinity values are omitted rather than emitted as samples.
+
+### llama.cpp Backend Metrics
+
+When a loaded model uses the `llamacpp` recipe, Lemonade makes a best-effort scrape of the loaded backend process's private `/metrics` endpoint. Backend scrape failures do not fail the Lemonade `/metrics` response.
+
+Scraped llama.cpp metrics are normalized under the `lemonade_llamacpp_*` prefix and labeled with the same Lemonade model metadata used by `lemonade_model_info`.
+
+Lemonade starts llama.cpp backends with metrics enabled so these backend metrics are available whenever the backend supports them.
 
 ## `GET /v1/system-info`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

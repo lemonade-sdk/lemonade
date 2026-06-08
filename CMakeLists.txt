@@ -576,6 +576,7 @@ include_directories(
 # ============================================================
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
     src/cpp/server/config_file.cpp
@@ -588,6 +589,7 @@ set(SOURCES_CORE
     src/cpp/server/runtime_config.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
+    src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -772,6 +774,12 @@ file(GLOB_RECURSE RESOURCE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/*"
 )
 
+# The Omni tool definitions are authored in the frontend tree and are the single
+# source of truth (the desktop app imports them directly). Stage a copy into the
+# resources tree so the C++ server reads the same file via get_resource_path.
+set(TOOL_DEFINITIONS_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
+
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
 add_custom_command(
@@ -779,8 +787,11 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources
         ${CMAKE_BINARY_DIR}/resources
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${TOOL_DEFINITIONS_SRC}
+        ${CMAKE_BINARY_DIR}/resources/toolDefinitions.json
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
-    DEPENDS ${RESOURCE_FILES}
+    DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC}
     COMMENT "Copying resources to build directory"
 )
 
@@ -1619,6 +1630,9 @@ add_custom_target(embeddable
         "${EMBEDDABLE_STAGING_DIR}/resources/"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE_DIR:lemond>/resources/bench_scenarios.json"
+        "${EMBEDDABLE_STAGING_DIR}/resources/"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE_DIR:lemond>/resources/toolDefinitions.json"
         "${EMBEDDABLE_STAGING_DIR}/resources/"
 
     # Create archive

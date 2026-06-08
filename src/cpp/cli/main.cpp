@@ -289,7 +289,8 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
         model_data["labels"] = config.labels;
     }
 
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static bool has_manual_pull_options(const CliConfig& config) {
@@ -334,7 +335,8 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
 
     nlohmann::json model_data;
     model_data["model_name"] = config.model;
-    return client.pull_model(model_data);
+    // Explicit `lemonade pull`: opt into an upgrade (Hugging Face update check).
+    return client.pull_model(model_data, "", /*upgrade=*/true);
 }
 
 static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -1065,7 +1067,7 @@ int main(int argc, char* argv[]) {
     config_set_cmd->fallthrough(false);
 
     // Model commands
-    CLI::App* list_cmd = app.add_subcommand("list", "List available models")->group("Model management");
+    CLI::App* list_cmd = app.add_subcommand("list", "List available models. Use --downloaded to show only local models.")->group("Model management");
     CLI::App* pull_cmd = app.add_subcommand("pull",
         "Pull/download a model by registered name or Hugging Face checkpoint")->group("Model management");
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
@@ -1192,7 +1194,7 @@ int main(int argc, char* argv[]) {
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
     // Bench command
-    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.model, config.output_file, config.bench);
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
 
     // Parse arguments
     try {
@@ -1290,7 +1292,7 @@ int main(int argc, char* argv[]) {
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
     } else if (bench_cmd->count() > 0) {
-        auto bench_config = lemon_cli::build_bench_config(config.model, config.output_file, config.bench);
+        auto bench_config = lemon_cli::build_bench_config(config.output_file, config.bench);
         return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;
