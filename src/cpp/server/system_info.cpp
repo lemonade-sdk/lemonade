@@ -107,7 +107,7 @@ const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
     {"gfx1150", "gfx1150"},
     {"gfx1151", "gfx1151"},
     {"gfx1152", "gfx1152"},
-    {"gfx1153", "gfx1153"},
+    {"gfx1153", ""},
 
     {"gfx1200", "gfx120X"},
     {"gfx1201", "gfx120X"},
@@ -466,7 +466,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx103X", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -498,7 +498,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
             "gfx101X", "gfx1150",
-            "gfx1151", "gfx1152", "gfx1153", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -536,7 +536,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx1153", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx110X", "gfx120X"}},
     }},
 
     // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
@@ -560,7 +560,6 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx1152", "Radeon (gfx1152)"},
-    {"gfx1153", "Radeon 820M (gfx1153)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
@@ -1864,35 +1863,23 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "";
     }
 
-    // STX Halo iGPUs (gfx1151 architecture)
-    // Radeon 8050S Graphics / Radeon 8060S Graphics
     if (device_lower.find("8050s") != std::string::npos ||
         device_lower.find("8060s") != std::string::npos ||
         device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
 
-    // STX Point iGPUs (gfx1150 architecture)
-    // Radeon 880M / 890M Graphics
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
 
-    // RDNA4 GPUs (gfx120X architecture)
-    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
-    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
     if (device_lower.find("r9700") != std::string::npos ||
         device_lower.find("9060") != std::string::npos ||
         device_lower.find("9070") != std::string::npos) {
         return "gfx120X";
     }
 
-    // RDNA3 GPUs (gfx110X architecture)
-    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
-    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
-    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
-    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
     if (device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
@@ -1900,10 +1887,6 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx110X";
     }
 
-    // RDNA2 GPUs (gfx103X architecture)
-    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
-    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
-    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
     if (device_lower.find("6800") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
         device_lower.find("6600") != std::string::npos ||

@@ -27,7 +27,6 @@ ROCM_SUPPORTED_ARCHS = {
     "gfx1150",
     "gfx1151",
     "gfx1152",
-    "gfx1153",
     "gfx1200",
     "gfx1201",
     "gfx1010",
@@ -60,7 +59,7 @@ ROCM_ARCH_MAPPING = {
     "gfx1150": "gfx1150",
     "gfx1151": "gfx1151",
     "gfx1152": "gfx1152",
-    "gfx1153": "gfx1153",
+    "gfx1153": "",
     "gfx1200": "gfx120X",
     "gfx1201": "gfx120X",
 }
@@ -142,7 +141,7 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
             ("gfx1012", "gfx101X"),
             ("gfx1151", "gfx1151"),
             ("gfx1152", "gfx1152"),
-            ("gfx1153", "gfx1153"),
+            ("gfx1153", ""),
         ]
         for name, expected in cases:
             with self.subTest(name=name):
@@ -158,7 +157,7 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
             ("110500", "gfx1150"),
             ("110501", "gfx1151"),
             ("110502", "gfx1152"),
-            ("110503", "gfx1153"),
+            ("110503", ""),
             ("120000", "gfx120X"),
         ]
         for name, expected in cases:
