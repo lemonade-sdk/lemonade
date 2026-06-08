@@ -207,7 +207,7 @@ void VLLMServer::load(const std::string& model_name,
 
     // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars);
+    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 
     // vLLM can take longer to start (loading model, compiling kernels)
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {

@@ -232,7 +232,7 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    process_handle_ = utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true);
+    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true));
     LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
 
     // Wait for flm-server to be ready

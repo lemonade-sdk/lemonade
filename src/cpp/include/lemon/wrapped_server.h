@@ -218,7 +218,6 @@ protected:
         std::string health_endpoint = "/health";
         bool enabled = true;
         bool monitor_streaming_requests = true;
-        bool monitor_non_streaming_requests = false;
     };
 
     enum class BackendRequestKind {
@@ -239,6 +238,7 @@ protected:
 
     static bool has_process_handle(const ProcessHandle& handle);
     ProcessHandle get_process_handle_snapshot() const;
+    void set_process_handle(ProcessHandle handle);
     ProcessHandle consume_process_handle_for_cleanup();
 
     // Choose an available port
@@ -247,9 +247,9 @@ protected:
     // Wait for server to be ready (can be overridden for custom health checks)
     virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
-    // Configure/start the generic backend watchdog. Backends with long
-    // non-streaming jobs can leave streaming monitoring enabled but disable
-    // non-streaming resets to avoid killing healthy single-worker jobs.
+    // Configure/start the generic backend watchdog. Non-streaming requests are
+    // always monitored so a hung backend becomes a reload+retry delay instead
+    // of a stuck user request. Streaming can still avoid replaying partial data.
     void configure_backend_watchdog(const BackendWatchdogPolicy& policy);
     void start_backend_watchdog(const std::string& health_endpoint);
     void start_backend_watchdog(const BackendWatchdogPolicy& policy);

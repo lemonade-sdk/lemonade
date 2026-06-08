@@ -56,6 +56,7 @@ void StreamingProxy::forward_sse_stream(
 
             return true;
         },
+        {}, // Empty headers map
         timeout_seconds
     );
 

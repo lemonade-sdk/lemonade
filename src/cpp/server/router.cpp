@@ -685,6 +685,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
     for (int attempt = 0; attempt < 2; ++attempt) {
         WrappedServer* server = nullptr;
         RecipeOptions restart_options;
+        std::string restart_model_name;
         bool should_reload_before_request = false;
 
         {
@@ -696,6 +697,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
             if (!server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
+                restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
             } else {
                 server->set_busy(true);
@@ -704,7 +706,10 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         } // Lock released here
 
         if (should_reload_before_request) {
-            if (attempt == 0 && reload_model_after_watchdog_reset(requested_model, restart_options)) {
+            if (restart_model_name.empty()) {
+                restart_model_name = requested_model;
+            }
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                 continue;
             }
             return ErrorResponse::create(
@@ -720,11 +725,15 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 server->was_watchdog_triggered() || is_watchdog_reset_response(response);
             if (attempt == 0 && watchdog_reset) {
                 restart_options = server->get_recipe_options();
+                restart_model_name = server->get_model_name();
             }
             server->set_busy(false);
 
             if (attempt == 0 && watchdog_reset) {
-                if (reload_model_after_watchdog_reset(requested_model, restart_options)) {
+                if (restart_model_name.empty()) {
+                    restart_model_name = requested_model;
+                }
+                if (reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                     continue;
                 }
             }
@@ -769,6 +778,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 
     for (int attempt = 0; attempt < 2; ++attempt) {
         RecipeOptions restart_options;
+        std::string restart_model_name;
         bool should_reload_before_request = false;
 
         {
@@ -784,6 +794,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 
             if (!server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
+                restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
             } else {
                 server->set_busy(true);
@@ -792,7 +803,10 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
         }
 
         if (should_reload_before_request) {
-            if (attempt == 0 && reload_model_after_watchdog_reset(requested_model, restart_options)) {
+            if (restart_model_name.empty()) {
+                restart_model_name = requested_model;
+            }
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                 continue;
             }
 
@@ -811,20 +825,28 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             streaming_func(server);
             const bool watchdog_reset = server->was_watchdog_triggered();
             restart_options = server->get_recipe_options();
+            restart_model_name = server->get_model_name();
             server->set_busy(false);
 
             // Do not replay a streaming response after bytes may have reached the
             // client. Reload immediately so the next request does not see a
             // stale tombstone, then return the stream outcome as-is.
             if (watchdog_reset) {
-                reload_model_after_watchdog_reset(requested_model, restart_options);
+                if (restart_model_name.empty()) {
+                    restart_model_name = requested_model;
+                }
+                reload_model_after_watchdog_reset(restart_model_name, restart_options);
             }
             return;
         } catch (const BackendStreamRetryableReset& e) {
             restart_options = server->get_recipe_options();
+            restart_model_name = server->get_model_name();
             server->set_busy(false);
 
-            if (attempt == 0 && reload_model_after_watchdog_reset(requested_model, restart_options)) {
+            if (restart_model_name.empty()) {
+                restart_model_name = requested_model;
+            }
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                 continue;
             }
 

@@ -67,18 +67,6 @@ std::string normalize_endpoint(std::string endpoint) {
     return endpoint;
 }
 
-bool default_monitor_non_streaming_for_backend(const std::string& server_name) {
-    (void)server_name;
-
-    // Keep non-streaming watchdog resets opt-in. Some backends process long
-    // single-worker jobs where the health endpoint may legitimately be blocked
-    // until the request completes; killing those by default causes false
-    // positives. Streaming is still monitored via delivered chunks, and
-    // non-streaming monitoring can be enabled once a backend is verified to
-    // keep health probes responsive during generation.
-    return get_env_bool("LEMONADE_BACKEND_WATCHDOG_NON_STREAMING", false);
-}
-
 bool is_backend_connection_failure(const std::string& message) {
     const std::string lowered = lower_copy(message);
     return lowered.find("server returned nothing") != std::string::npos ||
@@ -181,6 +169,11 @@ bool WrappedServer::has_process_handle(const ProcessHandle& handle) {
 ProcessHandle WrappedServer::get_process_handle_snapshot() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
     return process_handle_;
+}
+
+void WrappedServer::set_process_handle(ProcessHandle handle) {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    process_handle_ = handle;
 }
 
 int WrappedServer::get_backend_port() const {
@@ -299,7 +292,6 @@ void WrappedServer::configure_backend_watchdog(const BackendWatchdogPolicy& poli
 void WrappedServer::start_backend_watchdog(const std::string& health_endpoint) {
     BackendWatchdogPolicy policy;
     policy.health_endpoint = health_endpoint;
-    policy.monitor_non_streaming_requests = default_monitor_non_streaming_for_backend(server_name_);
     start_backend_watchdog(policy);
 }
 
@@ -342,8 +334,7 @@ void WrappedServer::start_backend_watchdog(const BackendWatchdogPolicy& policy) 
     LOG(INFO, "BackendWatchdog") << "Started watchdog for " << server_name_
                                   << " using " << get_base_url() << effective_policy.health_endpoint
                                   << " (streaming=" << (effective_policy.monitor_streaming_requests ? "on" : "off")
-                                  << ", non_streaming=" << (effective_policy.monitor_non_streaming_requests ? "on" : "off")
-                                  << ")" << std::endl;
+                                  << ", non_streaming=on)" << std::endl;
 }
 
 void WrappedServer::stop_backend_watchdog() {
@@ -463,7 +454,7 @@ void WrappedServer::backend_watchdog_loop() {
         const bool has_non_streaming = active_non_streaming_requests_.load(std::memory_order_acquire) > 0;
         const bool should_monitor =
             (has_streaming && policy.monitor_streaming_requests) ||
-            (has_non_streaming && policy.monitor_non_streaming_requests);
+            has_non_streaming;
 
         if (!policy.enabled || policy.health_endpoint.empty() || !should_monitor) {
             consecutive_failures = 0;

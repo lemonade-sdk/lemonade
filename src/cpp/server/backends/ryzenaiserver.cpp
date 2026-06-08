@@ -97,20 +97,21 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << std::endl;
 
     // Start the process (filter health check spam)
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         ryzenai_server_path,
         args,
         "",
         is_debug(),
         true
     );
+    set_process_handle(started_handle);
 
-    if (!utils::ProcessManager::is_running(process_handle_)) {
+    if (!utils::ProcessManager::is_running(started_handle)) {
         throw std::runtime_error("Failed to start ryzenai-server process");
     }
 
     LOG(DEBUG, "ProcessManager") << "Process started successfully, PID: "
-                << process_handle_.pid << std::endl;
+                << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {

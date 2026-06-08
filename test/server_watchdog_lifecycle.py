@@ -21,6 +21,7 @@ Optional overrides:
 import json
 import os
 import signal
+import threading
 import time
 import unittest
 
@@ -160,6 +161,39 @@ class WatchdogLifecycleTests(ServerTestBase):
         # this, reap the child, remove stale model state, and allow reload.
         os.kill(pid, signal.SIGKILL)
 
+    def _non_streaming_chat_completion(self, model_name):
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            json={
+                "model": model_name,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Write five short numbered facts about reliable software. "
+                            "Keep each fact under one sentence."
+                        ),
+                    }
+                ],
+                "max_tokens": 128,
+                "stream": False,
+            },
+            headers=_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertNotIn(
+            "error",
+            payload,
+            "Non-streaming request should be replayed after backend restart, not returned as an error.",
+        )
+        self.assertTrue(
+            payload.get("choices"),
+            f"Non-streaming recovery returned no choices: {payload}",
+        )
+        return payload
+
     def _stream_chat_completion(self, model_name):
         response = requests.post(
             f"{self.base_url}/chat/completions",
@@ -260,6 +294,127 @@ class WatchdogLifecycleTests(ServerTestBase):
         self._wait_for_pid_reaped(old_pid)
         new_pid = self._assert_fresh_backend_pid(model_name, old_pid)
         print(f"[OK] Streaming request reloaded {model_name}: pid {old_pid} -> {new_pid}")
+
+    @skip_if_unsupported("chat_completions")
+    def test_active_non_streaming_request_reloads_and_replays_after_backend_crash(self):
+        """An in-flight non-streaming request must survive backend restart.
+
+        This is the user-visible recovery path for a hung/crashed backend: the
+        current request may be delayed while the child process is reset, but the
+        router must reload the same model and replay the request instead of
+        returning a watchdog/reset error to the client.
+        """
+        model_name = self._test_model()
+
+        loaded_before = self._load_model(model_name)
+        old_pid = int(loaded_before["pid"])
+        print(f"[SETUP] Loaded {model_name} with backend pid {old_pid}")
+
+        result = {}
+
+        def run_request():
+            try:
+                result["payload"] = self._non_streaming_chat_completion(model_name)
+            except Exception as exc:  # noqa: BLE001 - preserve assertion details across thread boundary
+                result["error"] = exc
+
+        worker = threading.Thread(target=run_request, daemon=True)
+        worker.start()
+
+        # Kill shortly after the request is issued. If the backend dies before it
+        # receives the request, this still exercises the demand-driven reload path;
+        # if it dies mid-request, it exercises the retry-after-reset path.
+        time.sleep(float(os.environ.get("LEMONADE_TEST_WATCHDOG_ACTIVE_KILL_DELAY_SECONDS", "0.05")))
+        self._kill_backend_process(old_pid)
+        print(f"[TEST] Sent SIGKILL to active backend pid {old_pid}")
+
+        worker.join(TIMEOUT_MODEL_OPERATION + WATCHDOG_WAIT_SECONDS)
+        self.assertFalse(worker.is_alive(), "Recovered non-streaming request did not finish")
+        if "error" in result:
+            raise result["error"]
+
+        self._wait_for_pid_reaped(old_pid)
+        new_pid = self._assert_fresh_backend_pid(model_name, old_pid)
+
+        # Prove the reloaded model is not merely visible in /health but actually
+        # usable for another completion after the recovered in-flight request.
+        self._non_streaming_chat_completion(model_name)
+        print(f"[OK] Active non-streaming request reloaded {model_name}: pid {old_pid} -> {new_pid}")
+
+    @skip_if_unsupported("chat_completions")
+    def test_next_non_streaming_request_reaps_reloads_and_returns_completion(self):
+        """A non-streaming request sent while the backend is down must wait for reload.
+
+        This is the strongest user-facing invariant for non-streaming recovery:
+        if the child backend is already gone when the request arrives, the
+        caller must still receive a completion after Lemonade reloads the last
+        active model.
+        """
+        model_name = self._test_model()
+
+        loaded_before = self._load_model(model_name)
+        old_pid = int(loaded_before["pid"])
+        print(f"[SETUP] Loaded {model_name} with backend pid {old_pid}")
+
+        self._kill_backend_process(old_pid)
+        print(f"[TEST] Sent SIGKILL to backend pid {old_pid} before non-streaming request")
+
+        self._non_streaming_chat_completion(model_name)
+        self._wait_for_pid_reaped(old_pid)
+        new_pid = self._assert_fresh_backend_pid(model_name, old_pid)
+
+        # A second call verifies the replacement backend remains reachable after
+        # the transparent replay completed.
+        self._non_streaming_chat_completion(model_name)
+        print(f"[OK] Non-streaming downtime request reloaded {model_name}: pid {old_pid} -> {new_pid}")
+
+    @skip_if_unsupported("chat_completions")
+    def test_concurrent_non_streaming_request_during_reload_also_completes(self):
+        """A request arriving during another request's reload window must complete.
+
+        The first request should trigger lazy reload after the backend crash. A
+        second request issued immediately afterwards must wait behind that reload
+        and use the freshly loaded model instead of seeing a stale tombstone or a
+        model-not-loaded error.
+        """
+        model_name = self._test_model()
+
+        loaded_before = self._load_model(model_name)
+        old_pid = int(loaded_before["pid"])
+        print(f"[SETUP] Loaded {model_name} with backend pid {old_pid}")
+
+        self._kill_backend_process(old_pid)
+        print(f"[TEST] Sent SIGKILL to backend pid {old_pid} before concurrent requests")
+
+        results = [{}, {}]
+
+        def run_request(index):
+            try:
+                results[index]["payload"] = self._non_streaming_chat_completion(model_name)
+            except Exception as exc:  # noqa: BLE001 - preserve assertion details across thread boundary
+                results[index]["error"] = exc
+
+        workers = [
+            threading.Thread(target=run_request, args=(0,), daemon=True),
+            threading.Thread(target=run_request, args=(1,), daemon=True),
+        ]
+
+        workers[0].start()
+        time.sleep(float(os.environ.get("LEMONADE_TEST_WATCHDOG_CONCURRENT_REQUEST_GAP_SECONDS", "0.05")))
+        workers[1].start()
+
+        for worker in workers:
+            worker.join(TIMEOUT_MODEL_OPERATION + WATCHDOG_WAIT_SECONDS)
+            self.assertFalse(worker.is_alive(), "Concurrent recovered non-streaming request did not finish")
+
+        for result in results:
+            if "error" in result:
+                raise result["error"]
+            self.assertTrue(result.get("payload", {}).get("choices"), result)
+
+        self._wait_for_pid_reaped(old_pid)
+        new_pid = self._assert_fresh_backend_pid(model_name, old_pid)
+        print(f"[OK] Concurrent non-streaming reload preserved both requests: pid {old_pid} -> {new_pid}")
 
 
 if __name__ == "__main__":
