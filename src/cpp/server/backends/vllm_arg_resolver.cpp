@@ -2,6 +2,7 @@
 #include "lemon/utils/custom_args.h"
 
 #include <algorithm>
+#include <cctype>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -49,6 +50,28 @@ bool is_repeatable_arg(const ParsedArg& arg) {
     return flags.count(arg.flag) > 0;
 }
 
+bool is_negative_number_token(const std::string& token) {
+    if (token.size() < 2 || token[0] != '-') {
+        return false;
+    }
+    size_t digit_pos = token[1] == '.' ? 2 : 1;
+    return digit_pos < token.size() &&
+           std::isdigit(static_cast<unsigned char>(token[digit_pos]));
+}
+
+bool is_flag_token(const std::string& token) {
+    if (token.size() < 2 || token[0] != '-') {
+        return false;
+    }
+    if (is_negative_number_token(token)) {
+        return false;
+    }
+    if (token[1] == '-') {
+        return token.size() > 2;
+    }
+    return true;
+}
+
 std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::string& source) {
     std::vector<ParsedArg> parsed;
     std::vector<std::string> tokens = lemon::utils::parse_custom_args(arg_string);
@@ -58,7 +81,7 @@ std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::stri
         if (token.empty()) {
             continue;
         }
-        if (token[0] != '-') {
+        if (!is_flag_token(token)) {
             throw std::runtime_error("Invalid vLLM argument '" + token + "' in " + source +
                                      ": expected a flag beginning with '-'");
         }
@@ -70,7 +93,7 @@ std::vector<ParsedArg> parse_args(const std::string& arg_string, const std::stri
             arg.values.push_back(token.substr(eq_pos + 1));
         } else {
             arg.flag = token;
-            while (i + 1 < tokens.size() && (tokens[i + 1].empty() || tokens[i + 1][0] != '-')) {
+            while (i + 1 < tokens.size() && (tokens[i + 1].empty() || !is_flag_token(tokens[i + 1]))) {
                 if (!tokens[i + 1].empty()) {
                     arg.values.push_back(tokens[i + 1]);
                 }

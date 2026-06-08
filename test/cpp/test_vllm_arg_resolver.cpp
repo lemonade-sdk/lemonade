@@ -200,6 +200,26 @@ int main() {
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--tool-call-parser=hermes"),
         "--enable-auto-tool-choice --quantization awq --max-num-seqs 4 --tool-call-parser hermes");
 
+    failures += !expect_args(
+        "negative value is captured with space syntax",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--some-threshold -1"),
+        "--some-threshold -1");
+
+    failures += !expect_args(
+        "negative value is captured with equals syntax",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--some-threshold=-1"),
+        "--some-threshold -1");
+
+    failures += !expect_args(
+        "negative decimal value is captured",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "--some-threshold -.5"),
+        "--some-threshold -.5");
+
+    failures += !expect_args(
+        "short vLLM flags still parse as flags",
+        resolve_vllm_args("Unlisted-vLLM", "Other/Model", test_config(), "-tp 2 --max-num-seqs 4"),
+        "-tp 2 --max-num-seqs 4");
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }
