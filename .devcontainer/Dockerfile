@@ -2,12 +2,12 @@ FROM mcr.microsoft.com/devcontainers/cpp:1-debian-12
 
 ARG REINSTALL_CMAKE_VERSION_FROM_SOURCE="3.22.2"
 
-COPY .devcontainer/reinstall-cmake.sh /tmp/
+COPY .devcontainer/reinstall-cmake.sh /usr/local/src/
 
 RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
-        chmod +x /tmp/reinstall-cmake.sh && /tmp/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
+        chmod +x /usr/local/src/reinstall-cmake.sh && /usr/local/src/reinstall-cmake.sh ${REINSTALL_CMAKE_VERSION_FROM_SOURCE}; \
     fi \
-    && rm -f /tmp/reinstall-cmake.sh
+    && rm -f /usr/local/src/reinstall-cmake.sh
 
 # Install Dependencies
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \

@@ -75,11 +75,12 @@ nav:
   - Development:
     - Overview: dev/README.md
     - Philosophy: dev/philosophy.md
+    - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - C++: dev/getting-started.md
     - Desktop App: dev/app.md
     - Web UI: dev/web-ui.md
-    - OmniRouter (tools for agents): dev/omni-router.md
+    - Lemonade Omni Models: dev/lemonade-omni.md
     - Infrastructure: dev/self-hosted-runners.md
   - API Spec:
       - Overview: api/README.md

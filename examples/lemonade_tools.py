@@ -1,18 +1,20 @@
 """
-OmniRouter tool calling: agentic loop example.
+Lemonade Omni Models: tool calling agentic loop example.
 
 Demonstrates how to use Lemonade's multimodal endpoints as tools in an
-LLM agentic loop. The LLM decides which tool to call; this script
-executes the tool against Lemonade's API and feeds the result back.
+LLM agentic loop (the OmniRouter pattern — each modality exposed as an
+OpenAI-compatible tool). The LLM decides which tool to call; this
+script executes the tool against Lemonade's API and feeds the result
+back.
 
 Prerequisites:
     pip install openai
 
 Running the Lemonade server with the models referenced below already
-downloaded is easiest — install the Lite Collection from the desktop
-app (Lemonade > Models > Lite Collection > Download) and you'll have
-everything in one click. Otherwise, pull the models below individually
-via `lemonade pull <name>`.
+downloaded is easiest — install LMX-Omni-5.5B-Lite from the desktop app
+(Model Manager > Lemonade > LMX-Omni-5.5B-Lite > Download) and
+you'll have everything in one click. Otherwise, pull the models below
+individually via `lemonade pull <name>`.
 
 Usage:
     python examples/lemonade_tools.py "Generate an image of a sunset"
@@ -32,10 +34,10 @@ if hasattr(sys.stdout, "reconfigure"):
 LEMONADE_URL = "http://localhost:13305/v1"
 
 # Edit these to match models you have installed. Defaults are small so
-# they fit on most hardware (and match the Lite Collection).
-LLM_MODEL = "Qwen3-4B-Instruct-2507-GGUF"   # any model with the "tool-calling" label
-IMAGE_MODEL = "SD-Turbo"                    # any model with the "image" label
-TTS_MODEL = "kokoro-v1"                     # any model with the "tts" label
+# they fit on most hardware (and match LMX-Omni-5.5B-Lite).
+LLM_MODEL = "Qwen3.5-4B-MTP-GGUF"  # any model with the "tool-calling" label
+IMAGE_MODEL = "SD-Turbo"  # any model with the "image" label
+TTS_MODEL = "kokoro-v1"  # any model with the "tts" label
 
 # Tool definitions — same format src/app/src/renderer/utils/toolDefinitions.json uses
 TOOLS = [
@@ -118,24 +120,37 @@ def preflight_models():
     model name isn't present. Without this, the first tool call just
     returns a 404 and it's not obvious what went wrong."""
     try:
-        with urllib.request.urlopen(f"{LEMONADE_URL}/models?show_all=true", timeout=5) as r:
+        with urllib.request.urlopen(
+            f"{LEMONADE_URL}/models?show_all=true", timeout=5
+        ) as r:
             models = {m["id"]: m for m in json.load(r).get("data", [])}
     except Exception as e:
         print(f"Can't reach Lemonade at {LEMONADE_URL}: {e}", file=sys.stderr)
         print("Is the server running? (desktop app, or `lemond`)", file=sys.stderr)
         sys.exit(1)
 
-    missing = [name for name in (LLM_MODEL, IMAGE_MODEL, TTS_MODEL) if name not in models]
+    missing = [
+        name for name in (LLM_MODEL, IMAGE_MODEL, TTS_MODEL) if name not in models
+    ]
     if missing:
         print(f"Required models not installed: {', '.join(missing)}", file=sys.stderr)
-        print("Fix: open the desktop app and download the Lite Collection,", file=sys.stderr)
-        print("or edit LLM_MODEL / IMAGE_MODEL / TTS_MODEL at the top of", file=sys.stderr)
+        print(
+            "Fix: open the desktop app and download LMX-Omni-5.5B-Lite,",
+            file=sys.stderr,
+        )
+        print(
+            "or edit LLM_MODEL / IMAGE_MODEL / TTS_MODEL at the top of", file=sys.stderr
+        )
         print("this script to match models you already have.", file=sys.stderr)
         sys.exit(1)
 
 
 def main():
-    prompt = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Generate an image of a cat in space"
+    prompt = (
+        " ".join(sys.argv[1:])
+        if len(sys.argv) > 1
+        else "Generate an image of a cat in space"
+    )
     print(f"User: {prompt}\n")
 
     preflight_models()

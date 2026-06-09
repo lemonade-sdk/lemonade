@@ -1,6 +1,8 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/process_manager.h>
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -117,8 +119,6 @@ std::string get_executable_dir() {
         fs::path exe_path(buffer);
         return exe_path.parent_path().string();
     }
-    // Fallback: return current directory
-    return ".";
 #elif defined(__APPLE__)
     char buffer[PATH_MAX];
     uint32_t size = sizeof(buffer);
@@ -126,12 +126,8 @@ std::string get_executable_dir() {
         fs::path exe_path(buffer);
         return exe_path.parent_path().string();
     }
-    // Fallback: return current directory
-    return ".";
-#else
-    // Generic Unix fallback
-    return ".";
 #endif
+    throw std::runtime_error("Unable to resolve executable directory");
 }
 
 std::string get_resource_path(const std::string& relative_path) {
@@ -275,6 +271,27 @@ std::string find_executable_in_path(const std::string& executable_name) {
 
 bool is_ggml_hip_plugin_available() {
 #ifdef __linux__
+    // Allow distros/packagers that install outside the FHS paths below
+    // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
+    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env) {
+        // Require the basename to look like the HIP plugin (libggml-hip*.so*,
+        // case-insensitive, versioned sonames allowed). This is a sanity check,
+        // not a security boundary: the path is not forwarded to ggml's loader,
+        // so we cannot verify it is actually loadable. It only guards against an
+        // accidental override pointing at an unrelated existing file.
+        std::string name = fs::path(env).filename().string();
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        const bool name_matches = name.rfind("libggml-hip", 0) == 0 &&
+                                  name.find(".so") != std::string::npos;
+        // LEMONADE_GGML_HIP_PATH is user-controlled, so use the non-throwing
+        // filesystem overload: an odd or malformed path resolves to "not a
+        // regular file" (ec set) instead of raising a filesystem_error.
+        std::error_code hip_path_ec;
+        if (name_matches && fs::is_regular_file(env, hip_path_ec)) {
+            return true;
+        }
+    }
     // On Linux x86_64, check common system library paths for the HIP plugin
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
@@ -315,6 +332,7 @@ std::string get_cache_dir() {
     if (!userprofile.empty()) {
         return userprofile + "\\.cache\\lemonade";
     }
+    throw std::runtime_error("USERPROFILE is not set; cannot resolve Lemonade cache directory");
 #elif defined(__APPLE__)
     if (geteuid() != 0) {
         std::string home = get_environment_variable_utf8("HOME");
@@ -350,9 +368,8 @@ std::string get_cache_dir() {
     if (!home.empty()) {
         return home + "/.cache/lemonade";
     }
+    throw std::runtime_error("HOME is not set; cannot resolve Lemonade cache directory");
 #endif
-
-    return ".cache/lemonade";
 }
 
 std::string default_hf_cache_dir() {
@@ -361,13 +378,13 @@ std::string default_hf_cache_dir() {
     if (!userprofile.empty()) {
         return userprofile + "\\.cache\\huggingface\\hub";
     }
-    return "C:\\.cache\\huggingface\\hub";
+    throw std::runtime_error("USERPROFILE is not set; cannot resolve HuggingFace cache directory");
 #else
     std::string home = get_environment_variable_utf8("HOME");
     if (!home.empty()) {
         return home + "/.cache/huggingface/hub";
     }
-    return "/tmp/.cache/huggingface/hub";
+    throw std::runtime_error("HOME is not set; cannot resolve HuggingFace cache directory");
 #endif
 }
 
@@ -407,11 +424,19 @@ std::string get_runtime_dir() {
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
     return std::string(temp_path);
+#elif defined(__APPLE__)
+    std::error_code ec;
+    fs::path base = fs::temp_directory_path(ec);
+    if (!ec && !base.empty()) {
+        fs::path lemon_dir = base / "lemonade";
+        ec.clear();
+        fs::create_directory(lemon_dir, ec);
+        if (!ec || fs::is_directory(lemon_dir)) {
+            return lemon_dir.string();
+        }
+    }
+    throw std::runtime_error("Unable to resolve writable runtime directory on macOS");
 #else
-    // Use $XDG_RUNTIME_DIR/lemonade only when the base directory is set,
-    // actually exists on disk, and is writable by the current process.
-    // This guards against CI environments, containers, or minimal systems
-    // where the variable might be set but the directory is absent/unwritable.
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
     if (xdg && xdg[0] != '\0') {
         std::error_code ec;
@@ -420,16 +445,13 @@ std::string get_runtime_dir() {
             fs::path lemon_dir = base / "lemonade";
             ec.clear();
             fs::create_directory(lemon_dir, ec);
-            // Treat "already exists as a directory" as success: some platforms
-            // set ec to EEXIST even though the standard says they shouldn't.
             std::error_code ec2;
             if (!ec || fs::is_directory(lemon_dir, ec2)) {
                 return lemon_dir.string();
             }
         }
     }
-    // Fallback: /tmp for CI runners and systems without XDG session support
-    return "/tmp";
+    throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR");
 #endif
 }
 

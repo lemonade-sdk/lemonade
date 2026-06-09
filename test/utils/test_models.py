@@ -82,7 +82,11 @@ def get_hf_cache_dir():
     if platform.system() == "Windows":
         userprofile = os.environ.get("USERPROFILE", "C:\\")
         return os.path.join(userprofile, ".cache", "huggingface", "hub")
-    home = os.environ.get("HOME", "/tmp")
+    home = os.environ.get("HOME")
+    if not home:
+        raise RuntimeError(
+            "HOME is not set; cannot resolve HuggingFace cache directory"
+        )
     return os.path.join(home, ".cache", "huggingface", "hub")
 
 
@@ -91,7 +95,11 @@ def get_default_hf_cache_dir():
     if platform.system() == "Windows":
         userprofile = os.environ.get("USERPROFILE", "C:\\")
         return os.path.join(userprofile, ".cache", "huggingface", "hub")
-    home = os.environ.get("HOME", "/tmp")
+    home = os.environ.get("HOME")
+    if not home:
+        raise RuntimeError(
+            "HOME is not set; cannot resolve HuggingFace cache directory"
+        )
     return os.path.join(home, ".cache", "huggingface", "hub")
 
 

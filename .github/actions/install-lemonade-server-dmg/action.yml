@@ -84,7 +84,7 @@ runs:
       shell: bash
       run: |
         BIN_PATH="${{ steps.install.outputs.bin-path }}"
-        LOG_FILE="/tmp/lemond.log"
+        LOG_FILE="$RUNNER_TEMP/lemond.log"
 
         # The .pkg postflight script starts the server via launchd.
         # Give it a few seconds to come up before checking.
@@ -100,6 +100,10 @@ runs:
         # Launchd may not work reliably in CI (no GUI session, restricted
         # sandbox). Fall back to starting the server manually.
         echo "Server not reachable after 30s — starting manually..."
+        mkdir -p "$RUNNER_TEMP/xdg-runtime"
+        chmod 700 "$RUNNER_TEMP/xdg-runtime"
+        echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+        export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
         "$BIN_PATH/lemond" > "$LOG_FILE" 2>&1 &
 
         for i in $(seq 1 15); do
