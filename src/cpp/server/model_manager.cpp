@@ -2232,7 +2232,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (enable_dgpu_gtt)
     {
-      LOG(INFO, "ModelManager") << "LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+      LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
                 << "     Models are being filtered assuming GTT memory." << std::endl
                 << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
