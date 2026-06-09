@@ -1922,19 +1922,44 @@ jobs:
       - uses: actions/checkout@v5
 
       # ---- Windows Setup ----
-      - name: Setup (Windows)
+      - name: Setup short Windows CI paths
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $cwd = (Get-Item .).FullName
-          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+          $ErrorActionPreference = "Stop"
+
+          $ciRoot = "C:\lemonade-ci"
+          $matrixName = "${{ matrix.os }}" -replace '[^A-Za-z0-9_.-]', '-'
+          $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-$matrixName"
+
+          $hfHome = Join-Path $ciRoot "hf"
+          $cacheDir = Join-Path (Join-Path $ciRoot "cache") $matrixName
+          $installPath = Join-Path (Join-Path $ciRoot "install") $runKey
+          $tmpDir = Join-Path (Join-Path $ciRoot "tmp") $runKey
+
+          foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          # Keep runtime/cache/install/temp paths outside $GITHUB_WORKSPACE.
+          # This mirrors the .exe inference job and avoids workspace cleanup/long-path failures.
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CI_ROOT=$ciRoot" >> $Env:GITHUB_ENV
+          echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+          echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+          Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+          Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+          Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+          Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
 
       - name: Install Lemonade Server (Windows)
         if: runner.os == 'Windows'
         uses: ./.github/actions/install-lemonade-server-msi
         with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          install-path: C:\lemonade-ci\install\${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.os }}
 
       - name: Set paths (Windows)
         if: runner.os == 'Windows'
@@ -2134,17 +2159,40 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup (Windows)
+      - name: Setup short Windows CI paths
         shell: powershell
         run: |
-          $cwd = (Get-Item .).FullName
-          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+          $ErrorActionPreference = "Stop"
+
+          $ciRoot = "C:\lemonade-ci"
+          $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-apikey-windows-latest"
+
+          $hfHome = Join-Path $ciRoot "hf"
+          $cacheDir = Join-Path (Join-Path $ciRoot "cache") "apikey-windows-latest"
+          $installPath = Join-Path (Join-Path $ciRoot "install") $runKey
+          $tmpDir = Join-Path (Join-Path $ciRoot "tmp") $runKey
+
+          foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          # Keep runtime/cache/install/temp paths outside $GITHUB_WORKSPACE.
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CI_ROOT=$ciRoot" >> $Env:GITHUB_ENV
+          echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+          echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+          Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+          Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+          Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+          Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
 
       - name: Install Lemonade Server (Windows)
         uses: ./.github/actions/install-lemonade-server-msi
         with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+          install-path: C:\lemonade-ci\install\${{ github.run_id }}-${{ github.run_attempt }}-apikey-windows-latest
 
       - name: Set paths (Windows)
         shell: powershell
