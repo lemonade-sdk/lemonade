@@ -37,11 +37,6 @@
 #endif
 
 #ifdef __linux__
-#include <unistd.h>
-#include <dlfcn.h>
-#endif
-
-#ifdef __linux__
 #include <dlfcn.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -2430,10 +2425,14 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         std::string cmd = std::string(smi) + smi_query;
         FILE* pipe = popen(cmd.c_str(), "r");
         if (!pipe) continue;
+        std::string candidate;
         char buffer[512];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) output += buffer;
-        pclose(pipe);
-        if (!output.empty()) break;
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) candidate += buffer;
+        int rc = pclose(pipe);
+        if (rc == 0 && !candidate.empty()) {
+            output = candidate;
+            break;
+        }
     }
     if (output.empty()) return result;
 #endif
@@ -2571,14 +2570,14 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
             char name_buf[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
             if (nvmlGetName(dev, name_buf, sizeof(name_buf)) != NVML_SUCCESS) continue;
 
-            int major = 0, minor = 0;
-            if (nvmlGetCC(dev, &major, &minor) != NVML_SUCCESS) continue;
-
             NvidiaSmiGpuInfo info;
             info.index          = static_cast<int>(i);
             info.name           = name_buf;
-            info.compute_cap    = std::to_string(major) + "." + std::to_string(minor);
             info.driver_version = driver_version;
+
+            int major = 0, minor = 0;
+            if (nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
+                info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
 
             if (nvmlGetMem) {
                 NvmlMemory mem{};
@@ -3176,16 +3175,40 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
         return gpus;
     }
 
-    // Secondary: /proc/driver/nvidia/gpus/*/information — readable whenever the
+    // Secondary: NVML via dlopen — libnvidia-ml.so.1 communicates with the NVIDIA
+    // kernel module through /dev/nvidiactl (allowed by the snap opengl interface)
+    // rather than /proc/driver/nvidia/, so it works under snap strict confinement.
+    // Returns full name, compute capability, and per-GPU VRAM — same quality as nvidia-smi.
+    {
+        auto nvml_gpus = query_nvidia_nvml();
+        if (!nvml_gpus.empty()) {
+            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; NVML library fallback succeeded" << std::endl;
+            for (const auto& nvml : nvml_gpus) {
+                GPUInfo gpu;
+                gpu.index              = nvml.index;
+                gpu.name               = nvml.name;
+                gpu.available          = true;
+                gpu.compute_capability = nvml.compute_cap;
+                gpu.driver_version     = nvml.driver_version.empty()
+                    ? get_nvidia_driver_version() : nvml.driver_version;
+                if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
+                gpu.vram_gb            = nvml.vram_gb;
+                gpus.push_back(gpu);
+            }
+            return gpus;
+        }
+    }
+
+    // Tertiary: /proc/driver/nvidia/gpus/*/information — readable whenever the
     // nvidia kernel module is loaded, even when the GPU is in Optimus power-save
-    // mode and nvidia-smi fails. Provides the full model name and GPU UUID, which
-    // is enough for identify_cuda_arch_from_name() to determine the sm_XX family.
-    // (No compute_capability here; family is resolved from the name.)
+    // mode and NVML/nvidia-smi fail. Provides the full model name and GPU UUID,
+    // which is enough for identify_cuda_arch_from_name() to determine the sm_XX
+    // family. (No compute_capability here; family is resolved from the name.)
     {
         fs::path gpus_dir = "/proc/driver/nvidia/gpus";
         std::error_code ec;
         if (fs::exists(gpus_dir, ec) && fs::is_directory(gpus_dir, ec)) {
-            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
+            LOG(WARNING, "SystemInfo") << "nvidia-smi/NVML detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
             std::string driver_version = get_nvidia_driver_version();
             // VRAM is intentionally left unset here: get_nvidia_vram() reads a
             // single memory.total value, which would be wrong if applied to
@@ -3216,30 +3239,6 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                 }
             }
             if (!gpus.empty()) return gpus;
-        }
-    }
-
-    // Fallback: NVML via dlopen — libnvidia-ml.so.1 communicates with the NVIDIA
-    // kernel module through /dev/nvidiactl (allowed by the snap opengl interface)
-    // rather than /proc/driver/nvidia/, so it works under snap strict confinement.
-    // Returns full name and compute capability, same quality as nvidia-smi.
-    {
-        auto nvml_gpus = query_nvidia_nvml();
-        if (!nvml_gpus.empty()) {
-            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; NVML library fallback succeeded" << std::endl;
-            for (const auto& nvml : nvml_gpus) {
-                GPUInfo gpu;
-                gpu.index             = nvml.index;
-                gpu.name              = nvml.name;
-                gpu.available         = true;
-                gpu.compute_capability = nvml.compute_cap;
-                gpu.driver_version    = nvml.driver_version.empty()
-                    ? get_nvidia_driver_version() : nvml.driver_version;
-                if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
-                gpu.vram_gb           = nvml.vram_gb;
-                gpus.push_back(gpu);
-            }
-            return gpus;
         }
     }
 
@@ -3276,8 +3275,8 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                 gpu.name           = device_id.empty()
                     ? "NVIDIA GPU"
                     : "NVIDIA GPU [" + device_id + "]";
-                double vram = get_nvidia_vram();
-                if (vram > 0.0) gpu.vram_gb = vram;
+                // VRAM intentionally left unset: get_nvidia_vram() shells out to
+                // nvidia-smi, which we already know is unavailable at this point.
                 gpus.push_back(gpu);
             }
             if (!gpus.empty()) return gpus;
