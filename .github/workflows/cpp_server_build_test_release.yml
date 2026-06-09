@@ -881,25 +881,142 @@ jobs:
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-      LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          Write-Host "Enabling Git long path support before checkout..." -ForegroundColor Cyan
+          git config --global core.longpaths true
+
+          try {
+            New-ItemProperty `
+              -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+              -Name "LongPathsEnabled" `
+              -Value 1 `
+              -PropertyType DWord `
+              -Force `
+              -ErrorAction Stop | Out-Null
+            Write-Host "Windows long paths enabled in registry." -ForegroundColor Green
+          } catch {
+            Write-Host "Could not set Windows long-path registry flag; continuing with Git core.longpaths=true: $_" -ForegroundColor Yellow
+          }
+
+          function Remove-LongPathTree {
+            param([string]$Path)
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+
+            $fullPath = [System.IO.Path]::GetFullPath($Path)
+            if ($fullPath.StartsWith("\\")) {
+              $longPath = "\\?\UNC\" + $fullPath.Substring(2)
+            } else {
+              $longPath = "\\?\" + $fullPath
+            }
+
+            Write-Host "Removing stale path: $fullPath" -ForegroundColor Yellow
+            cmd /c rmdir /s /q "$longPath" 2>$null
+            if (Test-Path -LiteralPath $Path) {
+              Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          # These legacy locations were inside the repository workspace and could
+          # make actions/checkout fail to clean/reset the repository on Windows,
+          # especially after TheRock created very deep bin/ci-cache/bin/therock trees.
+          if ($env:GITHUB_WORKSPACE) {
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "ci-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "hf-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "lemonade_server_install")
+          }
+
       - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Set Windows CI cache and install paths
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Remove-LongPathTree {
+            param([string]$Path)
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+
+            $fullPath = [System.IO.Path]::GetFullPath($Path)
+            if ($fullPath.StartsWith("\\")) {
+              $longPath = "\\?\UNC\" + $fullPath.Substring(2)
+            } else {
+              $longPath = "\\?\" + $fullPath
+            }
+
+            Write-Host "Removing stale path: $fullPath" -ForegroundColor Yellow
+            cmd /c rmdir /s /q "$longPath" 2>$null
+            if (Test-Path -LiteralPath $Path) {
+              Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          $matrixName = "${{ matrix.name }}" -replace '[^A-Za-z0-9_.-]', '-'
+          $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-$matrixName"
+
+          # Keep all heavyweight runtime state outside $GITHUB_WORKSPACE. This
+          # prevents actions/checkout from trying to clean TheRock/backend caches
+          # and keeps paths short enough for Windows self-hosted runners.
+          $ciRoot = "C:\lemonade-ci"
+          $cacheRoot = Join-Path $ciRoot "cache"
+          $installRoot = Join-Path $ciRoot "install"
+          $tmpRoot = Join-Path $ciRoot "tmp"
+
+          $hfHome = Join-Path $ciRoot "hf"
+          $cacheDir = Join-Path $cacheRoot $matrixName
+          $therockCache = Join-Path $cacheDir "bin\therock"
+          $installPath = Join-Path $installRoot $runKey
+          $tmpDir = Join-Path $tmpRoot $runKey
+
+          foreach ($path in @($ciRoot, $hfHome, $cacheDir, $therockCache, $installPath, $tmpDir)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          # Remove the legacy in-workspace locations again after checkout in case
+          # they were restored by a previous failed checkout attempt.
+          if ($env:GITHUB_WORKSPACE) {
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "ci-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "hf-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "lemonade_server_install")
+          }
+
+          # Prune old transient installs/tmp dirs from previous runs. Do not wipe
+          # cacheRoot here; preserving backend/model caches is intentional.
+          foreach ($root in @($installRoot, $tmpRoot)) {
+            if (Test-Path -LiteralPath $root) {
+              Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-2) } |
+                ForEach-Object { Remove-LongPathTree $_.FullName }
+            }
+          }
+
+          # Persistent HF cache outside the workspace so models survive across
+          # jobs; Lemonade backend/TheRock cache also stays outside the workspace.
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+          echo "THEROCK_CACHE_DIR=$therockCache" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CI_ROOT=$ciRoot" >> $Env:GITHUB_ENV
+          echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+          echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+          Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+          Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+          Write-Host "THEROCK_CACHE_DIR=$therockCache" -ForegroundColor Gray
+          Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+          Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
 
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
-
-      - name: Set environment variables
-        shell: PowerShell
-        run: |
-          # Persistent HF cache outside the workspace so models survive across
-          # jobs — the checkout clean wipes untracked workspace files (#2103)
-          $hfHome = Join-Path $Env:USERPROFILE ".cache\lemonade-ci\huggingface"
-          New-Item -ItemType Directory -Force -Path $hfHome | Out-Null
-          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
-          $cwd = (Get-Item .\).FullName
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
       - name: Install and Verify Lemonade Server
         uses: ./.github/actions/install-lemonade-server-msi
@@ -952,9 +1069,86 @@ jobs:
         with:
           artifact-name: server-logs-exe-${{ matrix.name }}
 
-      - name: Cleanup
+      - name: Cleanup processes
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Cleanup transient Windows CI directories
+        if: always()
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          function Remove-LongPathTree {
+            param([string]$Path)
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+
+            $fullPath = [System.IO.Path]::GetFullPath($Path)
+            if ($fullPath.StartsWith("\\")) {
+              $longPath = "\\?\UNC\" + $fullPath.Substring(2)
+            } else {
+              $longPath = "\\?\" + $fullPath
+            }
+
+            Write-Host "Removing path: $fullPath" -ForegroundColor Yellow
+            cmd /c rmdir /s /q "$longPath" 2>$null
+            if (Test-Path -LiteralPath $Path) {
+              Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          function Test-PathUnderRoot {
+            param(
+              [string]$Path,
+              [string]$ExpectedRoot
+            )
+
+            if (-not $Path -or -not $ExpectedRoot) { return $false }
+
+            $fullPath = [System.IO.Path]::GetFullPath($Path)
+            $fullRoot = [System.IO.Path]::GetFullPath($ExpectedRoot)
+
+            if (-not $fullPath.EndsWith("\")) { $fullPath = "$fullPath\" }
+            if (-not $fullRoot.EndsWith("\")) { $fullRoot = "$fullRoot\" }
+
+            return $fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)
+          }
+
+          function Remove-CiPath {
+            param(
+              [string]$Path,
+              [string]$ExpectedRoot
+            )
+
+            if (-not $Path) { return }
+
+            if (-not (Test-PathUnderRoot -Path $Path -ExpectedRoot $ExpectedRoot)) {
+              Write-Host "Skipping cleanup outside expected CI root: $Path" -ForegroundColor Yellow
+              return
+            }
+
+            Remove-LongPathTree $Path
+          }
+
+          Remove-CiPath $env:LEMONADE_INSTALL_PATH "C:\lemonade-ci\install"
+          Remove-CiPath $env:TEMP "C:\lemonade-ci\tmp"
+
+          # Remove legacy in-workspace directories that caused checkout cleanup
+          # failures on self-hosted Windows runners.
+          if ($env:GITHUB_WORKSPACE) {
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "ci-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "hf-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "lemonade_server_install")
+          }
+
+          # Keep persistent cache dirs, but remove old transient run dirs.
+          foreach ($root in @("C:\lemonade-ci\install", "C:\lemonade-ci\tmp")) {
+            if (Test-Path -LiteralPath $root) {
+              Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-2) } |
+                ForEach-Object { Remove-LongPathTree $_.FullName }
+            }
+          }
 
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
