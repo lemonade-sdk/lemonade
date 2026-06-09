@@ -2546,7 +2546,7 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     auto nvmlGetDriver = (fn_GetDriver)load("nvmlSystemGetDriverVersion");
 
     if (!nvmlInit || !nvmlShutdown || !nvmlGetCount || !nvmlGetHandle ||
-        !nvmlGetName || !nvmlGetCC) {
+        !nvmlGetName) {
         dlclose(handle);
         return result;
     }
@@ -2576,7 +2576,7 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
             info.driver_version = driver_version;
 
             int major = 0, minor = 0;
-            if (nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
+            if (nvmlGetCC && nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
                 info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
 
             if (nvmlGetMem) {
