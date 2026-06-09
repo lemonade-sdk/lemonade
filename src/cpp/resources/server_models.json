@@ -1314,9 +1314,7 @@
         "size": 1.62
     },
     "Moonshine-Tiny-Streaming": {
-        "checkpoints": {
-            "main": "moonshine-ai/moonshine:tiny-streaming-en/quantized"
-        },
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
         "recipe": "moonshine",
         "moonshine_arch": 2,
         "suggested": true,
@@ -1327,9 +1325,7 @@
         "size": 0.034
     },
     "Moonshine-Small-Streaming": {
-        "checkpoints": {
-            "main": "moonshine-ai/moonshine:small-streaming-en/quantized"
-        },
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
         "recipe": "moonshine",
         "moonshine_arch": 4,
         "suggested": true,
@@ -1340,9 +1336,7 @@
         "size": 0.123
     },
     "Moonshine-Medium-Streaming": {
-        "checkpoints": {
-            "main": "moonshine-ai/moonshine:medium-streaming-en/quantized"
-        },
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
         "recipe": "moonshine",
         "moonshine_arch": 5,
         "suggested": true,

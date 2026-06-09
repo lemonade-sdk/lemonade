@@ -46,19 +46,80 @@ except ImportError:
     websockets = None
 
 # Import moonshine_voice at module level.
-# This package must be installed separately: pip install moonshine_voice
+# In the released lemonade-server package this module is bundled inside the
+# moonshine-server tarball; during development it can be installed via
+#   pip install moonshine_voice
 try:
     from moonshine_voice import TranscriptEventListener
 except ImportError as e:
     raise ImportError(
-        "moonshine_voice is not installed. "
-        "Install it with: pip install moonshine_voice"
+        "moonshine_voice is not available. "
+        "If you are running from source, install it with: pip install moonshine_voice"
     ) from e
+
+
+def convert_tokenizer_json_to_bin(tokenizer_json_path: str, tokenizer_bin_path: str) -> None:
+    """Convert a HuggingFace tokenizer.json to moonshine's tokenizer.bin format."""
+    import json
+    with open(tokenizer_json_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    model = data.get('model', {})
+    vocab = model.get('vocab', {})
+    if not vocab:
+        raise ValueError(f"No vocabulary found in {tokenizer_json_path}")
+
+    vocab_size = len(vocab)
+    tokens = [b''] * vocab_size
+    for token_str, token_id in vocab.items():
+        if token_id < vocab_size:
+            tokens[token_id] = token_str.encode('utf-8')
+
+    added_tokens = data.get('added_tokens', [])
+    for added in added_tokens:
+        token_id = added.get('id')
+        content = added.get('content', '')
+        if token_id is not None and token_id < len(tokens):
+            tokens[token_id] = content.encode('utf-8')
+        elif token_id is not None and token_id >= len(tokens):
+            tokens.extend([b''] * (token_id - len(tokens) + 1))
+            tokens[token_id] = content.encode('utf-8')
+
+    with open(tokenizer_bin_path, 'wb') as f:
+        for token_bytes in tokens:
+            length = len(token_bytes)
+            if length == 0:
+                f.write(b'\x00')
+            elif length < 128:
+                f.write(bytes([length]))
+                f.write(token_bytes)
+            else:
+                first_byte = (length % 128) + 128
+                second_byte = length // 128
+                f.write(bytes([first_byte, second_byte]))
+                f.write(token_bytes)
+
+
+def ensure_tokenizer_bin(model_path: str) -> None:
+    """Ensure tokenizer.bin exists in model_path, converting from tokenizer.json if needed."""
+    import os
+    bin_path = os.path.join(model_path, 'tokenizer.bin')
+    if os.path.exists(bin_path):
+        return
+    json_path = os.path.join(model_path, 'tokenizer.json')
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(
+            f"Neither tokenizer.bin nor tokenizer.json found in {model_path}"
+        )
+    print(f"[moonshine-server] Converting tokenizer.json -> tokenizer.bin ...", file=sys.stderr)
+    convert_tokenizer_json_to_bin(json_path, bin_path)
+    print(f"[moonshine-server] Wrote {bin_path}", file=sys.stderr)
 
 
 def load_model(model_path: str, model_arch: int):
     """Lazy import and load moonshine model."""
     from moonshine_voice import Transcriber, ModelArch
+    ensure_tokenizer_bin(model_path)
     arch = ModelArch(model_arch)
     return Transcriber(model_path=model_path, model_arch=arch)
 
@@ -428,8 +489,8 @@ def run_tcp_server(host: str, port: int, transcriber_factory):
 
 def main():
     parser = argparse.ArgumentParser(description="Moonshine HTTP + WebSocket + TCP server for Lemonade")
-    parser.add_argument("--model-path", default=None, help="Path to model directory (auto-resolved if omitted)")
-    parser.add_argument("--model-arch", type=int, required=True, help="Model architecture enum value")
+    parser.add_argument("--model-path", required=True, help="Path to model directory")
+    parser.add_argument("--model-arch", type=int, default=5, help="Model architecture enum value (default: 5)")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port")
     parser.add_argument("--ws-port", type=int, default=None, help="WebSocket server port (default: HTTP port + 1)")
     parser.add_argument("--tcp-port", type=int, default=None, help="TCP line-delimited JSON port (default: HTTP port + 2)")
@@ -439,11 +500,6 @@ def main():
     tcp_port = args.tcp_port if args.tcp_port is not None else args.port + 2
 
     model_path = args.model_path
-    if model_path is None:
-        # Auto-resolve model path via moonshine_voice.download
-        from moonshine_voice.download import get_model_for_language
-        from moonshine_voice.moonshine_api import ModelArch
-        model_path, _ = get_model_for_language("en", ModelArch(args.model_arch))
 
     print(f"[moonshine-server] Loading model from {model_path} (arch={args.model_arch})...", file=sys.stderr)
     transcriber = load_model(model_path, args.model_arch)

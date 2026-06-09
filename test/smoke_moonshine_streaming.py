@@ -171,11 +171,22 @@ def main():
     print(f"Using test WAV: {test_wav} ({len(pcm16)} bytes)")
 
     # moonshine_voice must be installed: pip install moonshine_voice
-    print("Starting moonshine-server...")
+    # Resolve a model path so --model-path can be provided.
+    try:
+        from moonshine_voice.download import get_model_for_language
+        from moonshine_voice.moonshine_api import ModelArch
+        model_path, _ = get_model_for_language("en", ModelArch.MEDIUM_STREAMING)
+    except Exception as e:
+        print(f"ERROR: Could not resolve Moonshine model path: {e}")
+        print("       Ensure moonshine_voice is installed: pip install moonshine_voice")
+        sys.exit(1)
+
+    print(f"Starting moonshine-server with model: {model_path} ...")
     proc = subprocess.Popen(
         [
             sys.executable,
             "tools/moonshine-server/main.py",
+            "--model-path", model_path,
             "--model-arch", "5",
             "--port", str(http_port),
             "--ws-port", str(ws_port),

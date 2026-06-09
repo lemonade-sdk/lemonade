@@ -15,11 +15,8 @@ public:
 
     inline static const BackendSpec SPEC = BackendSpec(
         "moonshine",
-        "moonshine-server"
-#ifndef _WIN32
-        ".py"
-#endif
-        , get_install_params
+        "moonshine-server",
+        get_install_params
     );
 
     explicit MoonshineServer(const std::string& log_level,
@@ -60,7 +57,6 @@ private:
                                       const json& params);
 
     std::string model_path_;
-    int model_arch_ = 5;  // Default: MEDIUM_STREAMING
     int tcp_port_ = 0;     // Port for line-delimited JSON streaming
 };
 

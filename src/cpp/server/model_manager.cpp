@@ -86,40 +86,6 @@ static bool contains_ignore_case(const std::string& str, const std::string& subs
     return to_lower(str).find(to_lower(substr)) != std::string::npos;
 }
 
-// Returns the platform-appropriate moonshine_voice cache directory.
-// Respects MOONSHINE_VOICE_CACHE environment variable.
-static std::string get_moonshine_cache_dir() {
-    const char* env_cache = std::getenv("MOONSHINE_VOICE_CACHE");
-    if (env_cache && strlen(env_cache) > 0) {
-        return std::string(env_cache);
-    }
-
-#ifdef _WIN32
-    const char* local_appdata = std::getenv("LOCALAPPDATA");
-    if (local_appdata) {
-        return std::string(local_appdata) + "\\moonshine_voice";
-    }
-    return "";
-#elif defined(__APPLE__)
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/Library/Caches/moonshine_voice";
-    }
-    return "";
-#else
-    // Linux and other Unix-like systems
-    const char* xdg_cache = std::getenv("XDG_CACHE_HOME");
-    if (xdg_cache && strlen(xdg_cache) > 0) {
-        return std::string(xdg_cache) + "/moonshine_voice";
-    }
-    const char* home = std::getenv("HOME");
-    if (home) {
-        return std::string(home) + "/.cache/moonshine_voice";
-    }
-    return "";
-#endif
-}
-
 static constexpr const char USER_MODEL_PREFIX[] = "user.";
 static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
@@ -1221,23 +1187,6 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return hf_cache + "/" + normalized;
     }
 
-    // Moonshine models are distributed via download.moonshine.ai and cached
-    // by the moonshine_voice Python package.
-    if (info.recipe == "moonshine") {
-        std::string variant = checkpoint_to_variant(checkpoint);
-        if (!variant.empty()) {
-            std::string cache_dir = get_moonshine_cache_dir();
-            if (!cache_dir.empty()) {
-                fs::path model_path = path_from_utf8(cache_dir) / "download.moonshine.ai" / "model" / variant;
-                if (safe_exists(model_path) && safe_is_directory(model_path)) {
-                    return path_to_utf8(model_path);
-                }
-            }
-        }
-        // Model not yet downloaded; return empty to signal not available
-        return "";
-    }
-
     // For now, NPU cache is handled directly in whisper.cpp
     if (type == "npu_cache") {
         return "";
@@ -2228,7 +2177,6 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 }
 
 
-
 double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
     // Get the maximum POSSIBLE accessible memory of the device in question,
     // taking into account the respective memory allocation behavior.
@@ -2725,8 +2673,6 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
     // Use recipe-specific download paths
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
-    } else if (info.recipe == "moonshine") {
-        download_from_moonshine(info);
     } else {
         download_from_huggingface(info, progress_callback);
     }
@@ -3527,47 +3473,6 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 // The caller (download_model) is responsible for checking do_not_upgrade and
 // calling is_model_downloaded() before invoking this function.
 //
-// Download a Moonshine model via the vendored moonshine_voice Python package.
-void ModelManager::download_from_moonshine(const ModelInfo& info) {
-    if (info.moonshine_arch < 0) {
-        throw std::runtime_error("Moonshine model has no architecture specified: " + info.model_name);
-    }
-
-    // Find the download helper script
-    std::vector<std::string> script_candidates = {
-        "tools/moonshine-server/download_model.py",
-        "../tools/moonshine-server/download_model.py",
-        "../../tools/moonshine-server/download_model.py",
-    };
-
-    std::string script_path;
-    for (const auto& candidate : script_candidates) {
-        if (fs::exists(candidate)) {
-            script_path = fs::absolute(candidate).string();
-            break;
-        }
-    }
-
-    if (script_path.empty()) {
-        throw std::runtime_error("download_model.py not found. Set LEMONADE_MOONSHINE_SERVER env var.");
-    }
-
-    std::string cmd = "python3 " + script_path +
-                      " --language en --arch " + std::to_string(info.moonshine_arch);
-
-    LOG(INFO, "ModelManager") << "Downloading Moonshine model: " << info.model_name
-                              << " (arch=" << info.moonshine_arch << ")" << std::endl;
-
-    std::string output;
-    int exit_code = ProcessManager::run_command(cmd, output, 300); // 5 min timeout
-
-    if (exit_code != 0) {
-        throw std::runtime_error("Moonshine download failed: " + output);
-    }
-
-    LOG(INFO, "ModelManager") << "Moonshine model downloaded to: " << output << std::endl;
-}
-
 // Download capabilities by backend:
 //   - Lemonade Router (ModelManager): ✅ Downloads non-FLM models from HuggingFace
 //   - FLM backend: ✅ Downloads FLM models via 'flm pull' command

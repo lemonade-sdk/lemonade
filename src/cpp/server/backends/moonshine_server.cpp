@@ -30,85 +30,20 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-// Moonshine-server script is bundled with Lemonade source.
-// The moonshine_voice Python package is a runtime dependency (install via pip).
 InstallParams MoonshineServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    // Empty repo/filename signals that auto-install is not required via GitHub releases.
-    // moonshine_voice must be installed separately: pip install moonshine_voice
+    params.repo = "lemonade-sdk/moonshine-server";
+
+#ifdef _WIN32
+    params.filename = "moonshine-server-" + version + "-windows-x64.zip";
+#elif defined(__APPLE__)
+    params.filename = "moonshine-server-" + version + "-macos-universal.tar.gz";
+#else
+    params.filename = "moonshine-server-" + version + "-linux-x64.tar.gz";
+#endif
+
     return params;
 }
-
-namespace {
-
-// Check if moonshine_voice is importable in the Python environment.
-bool is_moonshine_voice_available() {
-    std::string output;
-    int exit_code = ProcessManager::run_command(
-        "python3 -c \"import moonshine_voice; print('ok')\"",
-        output, 10);
-    return exit_code == 0 && output.find("ok") != std::string::npos;
-}
-
-// Search for the moonshine-server Python script in common locations.
-std::string find_moonshine_server_script() {
-    // 1. Environment override
-    const char* env_path = std::getenv("LEMONADE_MOONSHINE_SERVER");
-    if (env_path && fs::exists(env_path)) {
-        return std::string(env_path);
-    }
-
-    // 2. Relative to current working directory (development layout)
-    std::vector<std::string> candidates = {
-        "tools/moonshine-server/main.py",
-        "../tools/moonshine-server/main.py",
-        "../../tools/moonshine-server/main.py",
-        "../../../tools/moonshine-server/main.py",
-    };
-
-    for (const auto& candidate : candidates) {
-        if (fs::exists(candidate)) {
-            return fs::absolute(candidate).string();
-        }
-    }
-
-    // 3. Check in the downloaded backends directory
-    std::string install_dir = BackendUtils::get_install_directory("moonshine", "");
-    std::string installed = BackendUtils::find_executable_in_install_dir(install_dir, "moonshine-server.py");
-    if (!installed.empty()) {
-        return installed;
-    }
-
-    return "";
-}
-
-// Resolve or auto-download a Moonshine model path using the installed moonshine_voice package.
-// Returns empty string if resolution fails.
-std::string resolve_moonshine_model_path(int model_arch) {
-    // Build a Python one-liner that resolves the model path via moonshine_voice.download
-    std::ostringstream py_cmd;
-    py_cmd << "from moonshine_voice.download import find_model_info, download_model_from_info; "
-           << "from moonshine_voice.moonshine_api import ModelArch; "
-           << "info = find_model_info('en', ModelArch(" << model_arch << ")); "
-           << "path, _ = download_model_from_info(info); "
-           << "print(path, end='')";
-
-    std::string output;
-    std::string cmd = "python3 -c \"" + py_cmd.str() + "\"";
-    int exit_code = ProcessManager::run_command(cmd, output, 60);
-    if (exit_code != 0) {
-        LOG(WARNING, "MoonshineServer") << "Failed to resolve Moonshine model path: " << output << std::endl;
-        return "";
-    }
-    // Trim whitespace
-    size_t end = output.find_last_not_of(" \t\n\r");
-    if (end != std::string::npos) {
-        output = output.substr(0, end + 1);
-    }
-    return output;
-}
-
-} // anonymous namespace
 
 MoonshineServer::MoonshineServer(const std::string& log_level, ModelManager* model_manager,
                                  BackendManager* backend_manager)
@@ -129,41 +64,35 @@ void MoonshineServer::load(const std::string& model_name,
 
     device_type_ = DEVICE_CPU;
 
-    // Find the Python script first (needed for model path fallback)
-    std::string script_path = find_moonshine_server_script();
-    if (script_path.empty()) {
-        throw std::runtime_error(
-            "moonshine-server.py not found. Set LEMONADE_MOONSHINE_SERVER env var "
-            "or ensure tools/moonshine-server/main.py exists relative to the working directory.");
-    }
+    // Install moonshine-server if needed
+    backend_manager_->install_backend(SPEC.recipe, "cpu");
 
-    // Resolve model architecture from recipe options or default to MEDIUM_STREAMING (5)
-    json arch_json = options.get_option("moonshine_arch");
-    std::string arch_str = arch_json.is_string() ? arch_json.get<std::string>() : "";
-    if (!arch_str.empty()) {
-        try {
-            model_arch_ = std::stoi(arch_str);
-        } catch (const std::exception&) {
-            LOG(WARNING, "MoonshineServer") << "Invalid moonshine_arch value: " << arch_str
-                      << ", using default 5 (MEDIUM_STREAMING)" << std::endl;
-            model_arch_ = 5;
-        }
-    } else {
-        model_arch_ = 5; // MEDIUM_STREAMING
-    }
-
+    // Resolve model path from ModelManager (standard HF cache)
     std::string model_path = model_info.resolved_path();
     if (model_path.empty() || !fs::exists(model_path)) {
-        LOG(INFO, "MoonshineServer") << "Model path not resolved from ModelManager, attempting auto-resolve..." << std::endl;
-        model_path = resolve_moonshine_model_path(model_arch_);
-        if (model_path.empty()) {
-            throw std::runtime_error("Model directory not found for checkpoint: " + model_info.checkpoint());
-        }
+        throw std::runtime_error("Model directory not found for checkpoint: " + model_info.checkpoint());
     }
 
     LOG(INFO, "MoonshineServer") << "Using model: " << model_path << std::endl;
 
-    LOG(INFO, "MoonshineServer") << "Using script: " << script_path << std::endl;
+    // Resolve model architecture. Prefer the explicit registry field; fall back
+    // to inferring from the checkpoint variant (onnx/tiny, onnx/small, etc.).
+    int model_arch = model_info.moonshine_arch;
+    if (model_arch < 0) {
+        std::string variant = model_info.checkpoint();
+        std::transform(variant.begin(), variant.end(), variant.begin(), ::tolower);
+        if (variant.find("tiny") != std::string::npos) {
+            model_arch = 2;
+        } else if (variant.find("small") != std::string::npos) {
+            model_arch = 4;
+        } else {
+            model_arch = 5; // MEDIUM_STREAMING
+        }
+    }
+
+    // Get executable path
+    std::string executable = BackendUtils::get_backend_binary_path(SPEC, "cpu");
+    LOG(INFO, "MoonshineServer") << "Using executable: " << executable << std::endl;
 
     // Choose ports for HTTP and TCP streaming
     port_ = choose_port();
@@ -179,34 +108,26 @@ void MoonshineServer::load(const std::string& model_name,
     LOG(INFO, "MoonshineServer") << "Starting server on port " << port_
                                  << " (TCP streaming on " << tcp_port_ << ")" << std::endl;
 
-    // Verify moonshine_voice is installed before starting the subprocess
-    if (!is_moonshine_voice_available()) {
-        throw std::runtime_error(
-            "moonshine_voice Python package is not installed. "
-            "Install it with: pip install moonshine_voice");
-    }
-
-    std::vector<std::pair<std::string, std::string>> env_vars;
-
+    // Note: Don't include exe_path here - ProcessManager::start_process already handles it
     std::vector<std::string> args = {
-        script_path,
         "--model-path", model_path,
-        "--model-arch", std::to_string(model_arch_),
+        "--model-arch", std::to_string(model_arch),
         "--port", std::to_string(port_),
         "--tcp-port", std::to_string(tcp_port_)
     };
 
-    std::string python_exe = "python3";
-#ifdef _WIN32
-    python_exe = "python.exe";
-#endif
+    // Set environment variables
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    // Prevent system/user Python packages from leaking into the bundled environment
+    env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     // Launch the subprocess
+    bool inherit_output = (log_level_ == "info") || is_debug();
     process_handle_ = utils::ProcessManager::start_process(
-        python_exe,
+        executable,
         args,
         "",     // working_dir
-        is_debug(),  // inherit_output
+        inherit_output,
         false,  // filter_health_logs
         env_vars
     );
