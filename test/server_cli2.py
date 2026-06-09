@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import platform
+import re
 import requests
 import shutil
 import subprocess
@@ -199,6 +200,62 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         )
 
     return result
+
+
+def _is_transient_cli_pull_failure(result):
+    """Return True when a failed CLI pull looks like a transient server/HF issue."""
+    if result.returncode == 0:
+        return False
+
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+    transient_statuses = {408, 409, 429, 500, 502, 503, 504}
+    observed_statuses = {
+        int(match)
+        for match in re.findall(r"(?:status\s*[:=]|http\s*)(\d{3})", output)
+    }
+
+    if observed_statuses.intersection(transient_statuses):
+        return True
+
+    return (
+        "too many requests" in output
+        or "rate limit" in output
+        or "temporarily unavailable" in output
+        or "connection reset" in output
+        or "connection aborted" in output
+        or "connection refused" in output
+        or "timed out" in output
+        or "timeout" in output
+    )
+
+
+def run_cli_pull_command_with_retry(args, timeout=TIMEOUT_MODEL_OPERATION, attempts=3):
+    """Run a CLI pull command with bounded retry for transient setup failures.
+
+    The command still has to succeed with exit code 0. This only retries failures
+    that look transient, such as HF rate limits or temporary server/network errors.
+    """
+    last_result = None
+
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(min(30, 2 ** (attempt - 1)))
+
+        result = run_cli_command(args, timeout=timeout)
+        if result.returncode == 0:
+            return result
+
+        last_result = result
+        if _is_transient_cli_pull_failure(result) and attempt < attempts:
+            print(
+                f"Transient CLI pull failure, attempt {attempt}/{attempts}. "
+                "Retrying..."
+            )
+            continue
+
+        break
+
+    return last_result
 
 
 class PersistentServerCLIClientTests(unittest.TestCase):
@@ -575,7 +632,7 @@ sys.exit(0)
 
     def test_050_pull_with_checkpoint(self):
         """Test pull command with --checkpoint option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -591,7 +648,7 @@ sys.exit(0)
 
     def test_051_pull_with_labels(self):
         """Test pull command with --label option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -634,7 +691,7 @@ sys.exit(0)
 
     def test_053_pull_with_multiple_checkpoints(self):
         """Test pull command with multiple checkpoints (e.g., main + mmproj)."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -653,9 +710,14 @@ sys.exit(0)
 
     def test_054_pull_registered_name(self):
         """Test pull command with a registered model name (no flags)."""
-        result = self.assertCommandSucceeds(
+        result = run_cli_pull_command_with_retry(
             ["pull", ENDPOINT_TEST_MODEL],
             timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: {result.stderr}",
         )
         output = result.stdout.lower() + result.stderr.lower()
         self.assertFalse(
@@ -669,7 +731,7 @@ sys.exit(0)
         # Unique user.<name> entries surface under the bare public name.
         public_name = collection_name[5:]
         try:
-            result = self.assertCommandSucceeds(
+            result = run_cli_pull_command_with_retry(
                 [
                     "pull",
                     collection_name,
@@ -679,6 +741,11 @@ sys.exit(0)
                     ENDPOINT_TEST_MODEL,
                 ],
                 timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Command failed with exit code {result.returncode}: {result.stderr}",
             )
             output = result.stdout.lower() + result.stderr.lower()
             self.assertFalse(

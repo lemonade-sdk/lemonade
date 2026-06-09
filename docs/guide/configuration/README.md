@@ -268,9 +268,13 @@ lemond [cache_dir] [--port PORT] [--host HOST]
 
 The `LEMONADE_API_KEY` environment variable sets an API key for authentication on regular API endpoints (`/api/*`, `/v0/*`, `/v1/*`). On Linux with systemd, set it in the service environment (e.g., via a systemd override or drop-in file). On Windows, set it as a system environment variable.
 
+When `LEMONADE_API_KEY` is set, the inference and model-management endpoints reject any request that does not present a matching Bearer token. This is the only credential that gates those endpoints, so it controls whether unauthenticated clients can reach the server at all. When it is unset, those endpoints are reachable without authentication.
+
 ### Admin API Key
 
 The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to both regular API endpoints and internal endpoints (`/internal/*`). When set, it takes precedence over `LEMONADE_API_KEY` for client authentication.
+
+`LEMONADE_ADMIN_API_KEY` enables privilege separation between two classes of authenticated clients. Holders of `LEMONADE_API_KEY` can reach the regular API endpoints, while only holders of `LEMONADE_ADMIN_API_KEY` can reach the internal control endpoints (`/internal/*`, e.g. shutdown and configuration). A client presenting only `LEMONADE_API_KEY` cannot reach `/internal/*` if `LEMONADE_ADMIN_API_KEY` is set to a distinct value. If `LEMONADE_ADMIN_API_KEY` is not set, it defaults to the value of `LEMONADE_API_KEY`, so the regular key then also authenticates against `/internal/*` and no privilege separation exists.
 
 **Authentication Hierarchy:**
 
@@ -291,7 +295,7 @@ To make Lemonade Server accessible from other machines on your network, set the 
 lemonade config set host=0.0.0.0
 ```
 
-> **Note:** Using `host: "0.0.0.0"` allows connections from any machine on the network. Only do this on trusted networks. Set `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` to manage access.
+> **Warning:** Using `host: "0.0.0.0"` allows connections from any machine on the network — including to the internal control endpoints (`/internal/*`, e.g. shutdown and config). Only do this on trusted networks, and set an API key to manage access. `LEMONADE_API_KEY` secures all endpoints; `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. The server logs a warning at startup when bound to a non-loopback host without the regular key.
 
 ## Next Steps
 

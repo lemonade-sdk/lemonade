@@ -19,7 +19,7 @@ You can see the full set of project maintainers, and the subject areas they main
 | Working Group (link) | Lead (GH handle) | Discord contact | Goal                                                                 |
 |----------------------|------------------|-----------------|----------------------------------------------------------------------|
 | [Omni Models](./omni-models.md) | @jeremyfowers    | @jfowers_amd    | Improve Omni Models to become a staple of local AI apps and use.     |
-| Auto Tune            | @bitgamma        | @mikkoph        | Enable Lemonade instances to self-optimize models and backends.      |
+| [Auto-Tune](./auto-tune.md) | @bitgamma        | @mikkoph        | Enable Lemonade instances to self-optimize models and backends.      |
 | [Cross-Vendor Support](./cross-vendor.md) | @kenvandine      | @kenvandine     | Lemonade is supported on all mass-market hardware and OS platforms.  |
 | Cloud Hybrid         | @ramkrishna2910  | @ramkrishna2910 | Lemonade can intelligently route between local and cloud models.     |
 | Remote Use           | @Geramy          | @geramyl        | Lemonade can serve inference to any device in any location.          |

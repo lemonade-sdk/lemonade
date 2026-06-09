@@ -172,10 +172,8 @@ bool WindowsTray::add_tray_icon() {
         nid_.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     }
 
-    // Store the icon for use in notifications
     notification_icon_ = nid_.hIcon;
 
-    // Set tooltip
     std::wstring tooltip_wide = utf8_to_wstring(tooltip_);
     wcsncpy_s(nid_.szTip, tooltip_wide.c_str(), _TRUNCATE);
 
@@ -184,7 +182,6 @@ bool WindowsTray::add_tray_icon() {
         return false;
     }
 
-    // Set version for modern balloon notifications
     nid_.uVersion = NOTIFYICON_VERSION_4;
     Shell_NotifyIconW(NIM_SETVERSION, &nid_);
 
@@ -223,7 +220,6 @@ void WindowsTray::set_menu(const Menu& menu) {
         hmenu_ = nullptr;
     }
 
-    // Create new menu
     LOG(DEBUG, "WindowsTray") << "Creating new popup menu" << std::endl;
     hmenu_ = create_popup_menu(current_menu_);
 
@@ -254,7 +250,6 @@ void WindowsTray::add_menu_items(HMENU hmenu, const std::vector<MenuItem>& items
         if (item.is_separator) {
             AppendMenuW(hmenu, MF_SEPARATOR, 0, nullptr);
         } else if (item.submenu) {
-            // Create submenu
             HMENU hsubmenu = CreatePopupMenu();
             add_menu_items(hsubmenu, item.submenu->items);
 
