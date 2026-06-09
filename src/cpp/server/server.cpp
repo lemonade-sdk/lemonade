@@ -10,13 +10,17 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
+#include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#include <cctype>
+#include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <thread>
 #include <chrono>
@@ -24,6 +28,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -257,6 +262,7 @@ void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
         req.path != "/v0/health" && req.path != "/v1/health" &&
         req.path != "/live" &&
+        req.path != "/metrics" &&
         !is_quiet_polling_path(req.path)) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
@@ -268,6 +274,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                         (req.path.rfind("/v0/", 0) == 0) ||
                         (req.path.rfind("/v1/", 0) == 0);
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
+    bool is_metrics_route = (req.path == "/metrics");
 
     // Authentication hierarchy. Two credentials gate two classes of endpoints:
     // api_key_ gates the regular API endpoints (/api, /v0, /v1); admin_api_key_
@@ -292,7 +299,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
-    } else if (is_api_route && req.method != "OPTIONS") {
+    } else if ((is_api_route || is_metrics_route) && req.method != "OPTIONS") {
         if (!api_key_.empty()) {
             if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
                 res.status = 401;
@@ -315,6 +322,11 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     web_server.Get("/live", [this](const httplib::Request& req, httplib::Response& res) {
         handle_live(req, res);
+    });
+
+    // Prometheus scrape endpoint for Lemonade, model, backend, and system metrics.
+    web_server.Get("/metrics", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_metrics(req, res);
     });
 
     // Setup CORS for all routes
@@ -736,10 +748,49 @@ window.api = {
         // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
         // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
         auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
-            std::string full_path = web_app_dir + "/" + file_path;
+            std::error_code ec;
+            namespace fs = std::filesystem;
+
+            auto base = fs::weakly_canonical(fs::path(web_app_dir), ec);
+            if (ec) {
+                res.status = 500;
+                res.set_content("Internal server error", "text/plain");
+                return;
+            }
+
+            auto candidate = fs::weakly_canonical(base / file_path, ec);
+            if (ec) {
+                // Path doesn't exist or cannot be canonicalized
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Verify the resolved path is confined under the base directory.
+            // Use std::filesystem::relative (not string prefix) so it works
+            // correctly on Windows where path separators differ.
+            auto relative = fs::relative(candidate, base, ec);
+            if (ec || relative.empty() || relative.is_absolute()) {
+                // empty = candidate == base (directory, not a file)
+                // is_absolute = somehow escaped (shouldn't happen after canonicalization)
+                res.status = 403;
+                res.set_content("Forbidden", "text/plain");
+                return;
+            }
+            // Belt-and-suspenders: reject if any path component is ".."
+            // (weakly_canonical should have resolved it, but this catches
+            // edge cases on exotic filesystems). Check components, not
+            // substrings, so legitimate filenames like "my..file.js" are allowed.
+            for (const auto& part : relative) {
+                if (part == "..") {
+                    res.status = 403;
+                    res.set_content("Forbidden", "text/plain");
+                    return;
+                }
+            }
 
             // Serve the file
-            std::ifstream file(full_path, std::ios::binary);
+            std::ifstream file(candidate, std::ios::binary);
             if (!file.is_open()) {
                 res.status = 404;
                 res.set_content("File not found", "text/plain");
@@ -936,6 +987,18 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 void Server::setup_http_logger(httplib::Server &web_server) {
     // Add request logging for ALL requests (except health checks and stats endpoints)
     web_server.set_logger([this](const httplib::Request& req, const httplib::Response& res) {
+        if (req.path == "/metrics") {
+            if (res.status == 200) {
+                bool expected = false;
+                if (metrics_access_logged_.compare_exchange_strong(expected, true)) {
+                    LOG(INFO, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+                }
+            } else {
+                LOG(WARNING, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+            }
+            return;
+        }
+
         // Skip logging health checks and stats endpoints to reduce log noise
         if (req.path == "/api/v0/health" || req.path == "/api/v1/health" ||
             req.path == "/v0/health" || req.path == "/v1/health" || req.path == "/live" ||
@@ -1773,7 +1836,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
                 auto usage = response["usage"];
@@ -1806,7 +1870,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             }
 
             // Capture prompt_tokens from usage if available
@@ -1814,7 +1879,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto usage = response["usage"];
                 if (usage.contains("prompt_tokens")) {
                     int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(prompt_tokens);
+                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
             }
         }
@@ -1956,7 +2021,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
                 int input_tokens = 0;
@@ -1988,7 +2054,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             }
 
             // Capture prompt_tokens from usage if available
@@ -1996,7 +2063,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto usage = response["usage"];
                 if (usage.contains("prompt_tokens")) {
                     int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(prompt_tokens);
+                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
             }
         }
@@ -3601,6 +3668,28 @@ void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_metrics(const httplib::Request& req, httplib::Response& res) {
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    try {
+        SystemMetrics system_metrics;
+        system_metrics.cpu_percent = get_cpu_usage();
+        system_metrics.gpu_percent = get_gpu_usage();
+        system_metrics.vram_gb = get_vram_usage();
+        system_metrics.npu_percent = get_npu_utilization();
+
+        res.set_content(build_prometheus_metrics(*router_, system_metrics),
+                        "text/plain; version=0.0.4; charset=utf-8");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_metrics: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content("# Lemonade metrics error\n", "text/plain; version=0.0.4; charset=utf-8");
     }
 }
 

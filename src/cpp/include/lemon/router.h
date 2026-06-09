@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <map>
 #include <mutex>
 #include <condition_variable>
 #include <vector>
@@ -19,6 +20,23 @@
 namespace lemon {
 
 using json = nlohmann::json;
+
+struct ModelTelemetryIdentity {
+    std::string model_name;
+    std::string checkpoint;
+    std::string type;
+    std::string device;
+    std::string recipe;
+
+    std::string key() const {
+        return model_name + "\n" + checkpoint + "\n" + type + "\n" + device + "\n" + recipe;
+    }
+};
+
+struct ModelTelemetryRecord {
+    ModelTelemetryIdentity identity;
+    Telemetry telemetry;
+};
 
 class Router {
 public:
@@ -94,12 +112,16 @@ public:
     // Get telemetry data
     json get_stats() const;
 
+    // Get loaded backend metadata and per-model telemetry for metrics rendering.
+    json get_metrics_snapshot() const;
+
     // Update telemetry data (for non-streaming requests)
-    void update_telemetry(int input_tokens, int output_tokens,
+    void update_telemetry(const std::string& model_name,
+                         int input_tokens, int output_tokens,
                          double time_to_first_token, double tokens_per_second);
 
     // Update prompt_tokens field from usage
-    void update_prompt_tokens(int prompt_tokens);
+    void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
 private:
     // Multi-model support: Manage multiple WrappedServers
@@ -109,6 +131,9 @@ private:
     RuntimeConfig* config_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
+    mutable std::mutex telemetry_mutex_;
+    Telemetry aggregate_telemetry_;
+    std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;
 
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
@@ -129,6 +154,13 @@ private:
     void evict_all_servers();
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
     std::string resolve_model_name(const std::string& model_name) const;
+    ModelTelemetryIdentity get_telemetry_identity(WrappedServer* server) const;
+    void record_telemetry_for_model(const ModelTelemetryIdentity& identity,
+                                    int input_tokens,
+                                    int output_tokens,
+                                    double time_to_first_token,
+                                    double tokens_per_second);
+    void record_prompt_tokens_for_model(const ModelTelemetryIdentity& identity, int prompt_tokens);
 
     // Generic inference wrapper that handles locking and busy state
     template<typename Func>

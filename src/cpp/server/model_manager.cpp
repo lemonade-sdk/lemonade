@@ -2232,7 +2232,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (enable_dgpu_gtt)
     {
-      LOG(INFO, "ModelManager") << "LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+      LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
                 << "     Models are being filtered assuming GTT memory." << std::endl
                 << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
@@ -3495,7 +3495,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // Get HF token if available
     std::map<std::string, std::string> headers;
     const char* hf_token = std::getenv("HF_TOKEN");
-    if (hf_token) {
+    if (hf_token && hf_token[0]) {
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
 
@@ -3741,7 +3741,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             manifest["files"].push_back(file_entry);
         }
     }
-    
+
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;

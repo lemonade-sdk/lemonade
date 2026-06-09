@@ -841,47 +841,217 @@ json Router::image_variations(const json& request) {
 }
 
 json Router::get_stats() const {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
+    std::lock_guard<std::mutex> lock(telemetry_mutex_);
+    return aggregate_telemetry_.to_json();
+}
+
+json Router::get_metrics_snapshot() const {
+    json result;
+    result["loaded_models"] = json::array();
+    result["model_metrics"] = json::array();
+    result["totals"] = {
+        {"requests", 0},
+        {"input_tokens", 0},
+        {"output_tokens", 0},
+        {"prompt_tokens", 0}
+    };
+
+    std::map<std::string, ModelTelemetryIdentity> loaded_identities;
+
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        for (const auto& server : loaded_servers_) {
+            ModelTelemetryIdentity identity = get_telemetry_identity(server.get());
+            loaded_identities[identity.key()] = identity;
+
+            json model_info;
+            model_info["model_name"] = model_manager_->get_public_model_name(identity.model_name);
+            model_info["checkpoint"] = identity.checkpoint;
+            model_info["type"] = identity.type;
+            model_info["device"] = identity.device;
+            model_info["backend_url"] = server->get_address();
+            model_info["pid"] = server->get_process_id();
+            model_info["recipe"] = identity.recipe;
+            result["loaded_models"].push_back(model_info);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(telemetry_mutex_);
+        for (const auto& item : telemetry_by_model_) {
+            const auto& record = item.second;
+            json model_info;
+            model_info["model_name"] = model_manager_->get_public_model_name(record.identity.model_name);
+            model_info["checkpoint"] = record.identity.checkpoint;
+            model_info["type"] = record.identity.type;
+            model_info["device"] = record.identity.device;
+            model_info["recipe"] = record.identity.recipe;
+            model_info["loaded"] = loaded_identities.find(item.first) != loaded_identities.end();
+            model_info["telemetry"] = record.telemetry.to_json();
+            result["model_metrics"].push_back(model_info);
+        }
+
+        for (const auto& item : loaded_identities) {
+            if (telemetry_by_model_.find(item.first) != telemetry_by_model_.end()) {
+                continue;
+            }
+            const auto& identity = item.second;
+            json model_info;
+            model_info["model_name"] = model_manager_->get_public_model_name(identity.model_name);
+            model_info["checkpoint"] = identity.checkpoint;
+            model_info["type"] = identity.type;
+            model_info["device"] = identity.device;
+            model_info["recipe"] = identity.recipe;
+            model_info["loaded"] = true;
+            model_info["telemetry"] = Telemetry().to_json();
+            result["model_metrics"].push_back(model_info);
+        }
+
+        result["totals"]["requests"] = aggregate_telemetry_.request_count_total;
+        result["totals"]["input_tokens"] = aggregate_telemetry_.input_tokens_total;
+        result["totals"]["output_tokens"] = aggregate_telemetry_.output_tokens_total;
+        result["totals"]["prompt_tokens"] = aggregate_telemetry_.prompt_tokens_total;
+    }
+
+    return result;
+}
+
+ModelTelemetryIdentity Router::get_telemetry_identity(WrappedServer* server) const {
     if (!server) {
-        return ErrorResponse::from_exception(ModelNotLoadedException());
+        return {};
     }
-    return server->get_telemetry().to_json();
+
+    RecipeOptions recipe_options = server->get_recipe_options();
+    return {
+        server->get_model_name(),
+        server->get_checkpoint(),
+        model_type_to_string(server->get_model_type()),
+        device_type_to_string(server->get_device_type()),
+        recipe_options.get_recipe()
+    };
 }
 
-void Router::update_telemetry(int input_tokens, int output_tokens,
+void Router::record_telemetry_for_model(const ModelTelemetryIdentity& identity,
+                                        int input_tokens,
+                                        int output_tokens,
+                                        double time_to_first_token,
+                                        double tokens_per_second) {
+    if (identity.model_name.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(telemetry_mutex_);
+    ModelTelemetryRecord& record = telemetry_by_model_[identity.key()];
+    record.identity = identity;
+    Telemetry& model_telemetry = record.telemetry;
+    model_telemetry.input_tokens = input_tokens;
+    model_telemetry.output_tokens = output_tokens;
+    model_telemetry.time_to_first_token = time_to_first_token;
+    model_telemetry.tokens_per_second = tokens_per_second;
+    model_telemetry.request_count_total++;
+
+    aggregate_telemetry_.input_tokens = input_tokens;
+    aggregate_telemetry_.output_tokens = output_tokens;
+    aggregate_telemetry_.time_to_first_token = time_to_first_token;
+    aggregate_telemetry_.tokens_per_second = tokens_per_second;
+    aggregate_telemetry_.request_count_total++;
+
+    if (input_tokens > 0) {
+        model_telemetry.input_tokens_total += static_cast<uint64_t>(input_tokens);
+        aggregate_telemetry_.input_tokens_total += static_cast<uint64_t>(input_tokens);
+    }
+    if (output_tokens > 0) {
+        model_telemetry.output_tokens_total += static_cast<uint64_t>(output_tokens);
+        aggregate_telemetry_.output_tokens_total += static_cast<uint64_t>(output_tokens);
+    }
+}
+
+void Router::record_prompt_tokens_for_model(const ModelTelemetryIdentity& identity, int prompt_tokens) {
+    if (identity.model_name.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(telemetry_mutex_);
+    ModelTelemetryRecord& record = telemetry_by_model_[identity.key()];
+    record.identity = identity;
+    Telemetry& model_telemetry = record.telemetry;
+    model_telemetry.prompt_tokens = prompt_tokens;
+    aggregate_telemetry_.prompt_tokens = prompt_tokens;
+    if (prompt_tokens > 0) {
+        model_telemetry.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
+        aggregate_telemetry_.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
+    }
+}
+
+void Router::update_telemetry(const std::string& model_name,
+                              int input_tokens, int output_tokens,
                               double time_to_first_token, double tokens_per_second) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
-    if (server) {
-        server->set_telemetry(input_tokens, output_tokens,
-                             time_to_first_token, tokens_per_second);
+    ModelTelemetryIdentity identity;
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        WrappedServer* server = model_name.empty()
+            ? get_most_recent_server()
+            : find_server_by_model_name(resolve_model_name(model_name));
+        identity = get_telemetry_identity(server);
     }
+    record_telemetry_for_model(identity, input_tokens, output_tokens,
+                               time_to_first_token, tokens_per_second);
 }
 
-void Router::update_prompt_tokens(int prompt_tokens) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
-    if (server) {
-        server->set_prompt_tokens(prompt_tokens);
+void Router::update_prompt_tokens(const std::string& model_name, int prompt_tokens) {
+    ModelTelemetryIdentity identity;
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        WrappedServer* server = model_name.empty()
+            ? get_most_recent_server()
+            : find_server_by_model_name(resolve_model_name(model_name));
+        identity = get_telemetry_identity(server);
     }
+    record_prompt_tokens_for_model(identity, prompt_tokens);
 }
 
 void Router::chat_completion_stream(const std::string& request_body, httplib::DataSink& sink) {
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        server->forward_streaming_request("/v1/chat/completions", request_body, sink);
+        ModelTelemetryIdentity identity = get_telemetry_identity(server);
+        server->forward_streaming_request("/v1/chat/completions", request_body, sink, true, 0,
+            [this, identity](int input_tokens,
+                             int output_tokens,
+                             double time_to_first_token,
+                             double tokens_per_second) {
+                record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                           time_to_first_token, tokens_per_second);
+                record_prompt_tokens_for_model(identity, input_tokens);
+            });
     });
 }
 
 void Router::completion_stream(const std::string& request_body, httplib::DataSink& sink) {
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        server->forward_streaming_request("/v1/completions", request_body, sink);
+        ModelTelemetryIdentity identity = get_telemetry_identity(server);
+        server->forward_streaming_request("/v1/completions", request_body, sink, true, 0,
+            [this, identity](int input_tokens,
+                             int output_tokens,
+                             double time_to_first_token,
+                             double tokens_per_second) {
+                record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                           time_to_first_token, tokens_per_second);
+                record_prompt_tokens_for_model(identity, input_tokens);
+            });
     });
 }
 
 void Router::responses_stream(const std::string& request_body, httplib::DataSink& sink) {
     execute_streaming(request_body, sink, [&](WrappedServer* server) {
-        server->forward_streaming_request("/v1/responses", request_body, sink);
+        ModelTelemetryIdentity identity = get_telemetry_identity(server);
+        server->forward_streaming_request("/v1/responses", request_body, sink, true, 0,
+            [this, identity](int input_tokens,
+                             int output_tokens,
+                             double time_to_first_token,
+                             double tokens_per_second) {
+                record_telemetry_for_model(identity, input_tokens, output_tokens,
+                                           time_to_first_token, tokens_per_second);
+                record_prompt_tokens_for_model(identity, input_tokens);
+            });
     });
 }
 
