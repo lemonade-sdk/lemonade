@@ -1,4 +1,5 @@
 #include <lemon/utils/path_utils.h>
+#include <lemon/system_info.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/process_manager.h>
 #include <algorithm>
@@ -451,6 +452,15 @@ std::string get_runtime_dir() {
             }
         }
     }
+
+    // System services get no XDG_RUNTIME_DIR; use the unit's RuntimeDirectory=.
+    if (SystemInfo::is_running_under_systemd()) {
+        const char* runtime_dir = std::getenv("RUNTIME_DIRECTORY");
+        if (runtime_dir && runtime_dir[0] != '\0') {
+            return std::string(runtime_dir);
+        }
+    }
+
     throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR");
 #endif
 }
