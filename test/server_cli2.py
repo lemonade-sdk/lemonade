@@ -2044,28 +2044,18 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
 
     def test_899_run_load_recipe_options_are_grouped(self):
         """Run/load help should keep every recipe flag under the intended group."""
-        expected_groups = [
-            "General Options:",
-            "Llama.cpp Backend Options:",
-            "Stable Diffusion Options:",
-            "Whisper.cpp Options:",
-            "vLLM Options:",
-            "FastFlowLM Options:",
-        ]
-        expected_flags = [
-            "--ctx-size",
-            "--merge-args",
-            "--llamacpp",
-            "--llamacpp-device",
-            "--llamacpp-args",
-            "--sdcpp",
-            "--sdcpp-args",
-            "--whispercpp",
-            "--whispercpp-args",
-            "--vllm",
-            "--vllm-args",
-            "--flm-args",
-        ]
+        expected_groups = {
+            "General Options:": ["--ctx-size", "--merge-args"],
+            "FastFlowLM Options:": ["--flm-args"],
+            "Llama.cpp Backend Options:": [
+                "--llamacpp",
+                "--llamacpp-device",
+                "--llamacpp-args",
+            ],
+            "Stable Diffusion Options:": ["--sdcpp", "--sdcpp-args"],
+            "vLLM Options:": ["--vllm", "--vllm-args"],
+            "Whisper.cpp Options:": ["--whispercpp", "--whispercpp-args"],
+        }
 
         for command in ("run", "load"):
             with self.subTest(command=command):
@@ -2073,10 +2063,35 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0)
 
                 help_output = result.stdout + result.stderr
-                for group in expected_groups:
-                    self.assertIn(group, help_output)
-                for flag in expected_flags:
-                    self.assertIn(flag, help_output)
+                group_positions = {
+                    group: help_output.find(group) for group in expected_groups
+                }
+                for group, position in group_positions.items():
+                    self.assertNotEqual(position, -1, f"Missing help group: {group}")
+
+                ordered_groups = sorted(
+                    group_positions.items(), key=lambda item: item[1]
+                )
+                for index, (group, start) in enumerate(ordered_groups):
+                    end = (
+                        ordered_groups[index + 1][1]
+                        if index + 1 < len(ordered_groups)
+                        else len(help_output)
+                    )
+                    section = help_output[start:end]
+
+                    for flag in expected_groups[group]:
+                        self.assertTrue(
+                            any(
+                                line.strip().startswith(flag)
+                                and (
+                                    len(line.strip()) == len(flag)
+                                    or line.strip()[len(flag)] in " ,"
+                                )
+                                for line in section.splitlines()
+                            ),
+                            f"{flag} missing from {group} in `{command} --help`",
+                        )
 
     def test_900_launch_docs_match_help_text(self):
         """The launch model-selection wording in docs should match actual CLI behavior/help."""
