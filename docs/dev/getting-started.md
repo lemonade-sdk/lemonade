@@ -617,7 +617,7 @@ The client automatically:
 
 Internal endpoints accept connections from any address, so first-party clients on other machines can manage a shared `lemond`. When `LEMONADE_ADMIN_API_KEY` is set (or `LEMONADE_API_KEY`, which the admin key defaults to), internal endpoints require the admin key as a Bearer token; with no keys set they are unauthenticated.
 
-> **Warning:** If `lemond` is bound to a non-loopback host (e.g. `0.0.0.0`), these control endpoints — including shutdown and config — are reachable from the network. Always set `LEMONADE_API_KEY` or `LEMONADE_ADMIN_API_KEY` on such deployments; `lemond` logs a startup warning if you don't.
+> **Warning:** If `lemond` is bound to a non-loopback host (e.g. `0.0.0.0`), these control endpoints — including shutdown and config — are reachable from the network. `LEMONADE_API_KEY` secures all endpoints; `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without the regular key.
 
 | Method | Path | Description |
 |--------|------|-------------|

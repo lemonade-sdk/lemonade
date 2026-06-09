@@ -1002,8 +1002,9 @@ void Server::run() {
                 << "Serving on non-loopback host '" << bound_host
                 << "' without an API key. All endpoints, including the /internal/* "
                    "control endpoints, are reachable from other machines "
-                   "unauthenticated. Set LEMONADE_API_KEY or LEMONADE_ADMIN_API_KEY "
-                   "to secure this server." << std::endl;
+                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
+                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
+                   "control endpoints." << std::endl;
         } else if (api_key_.empty()) {
             LOG(WARNING, "Server")
                 << "Serving on non-loopback host '" << bound_host
