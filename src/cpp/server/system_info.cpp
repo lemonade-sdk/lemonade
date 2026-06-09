@@ -2253,10 +2253,8 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
         }
 
         bool has_other_arch = false;
-        int ordinal = 0;
         for (const auto& gpu : devices["nvidia_gpu"]) {
             if (!gpu.value("available", false)) {
-                ordinal++;
                 continue;
             }
 
@@ -2264,15 +2262,14 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
                 std::string uuid = gpu.value("uuid", "");
                 if (!uuid.empty()) {
                     devices_to_expose.push_back(uuid);
-                } else {
-                    // Fallback only for detection paths that lack UUIDs. This is less robust
-                    // than UUIDs because numeric CUDA ordinals can differ from nvidia-smi indices.
-                    devices_to_expose.push_back(std::to_string(ordinal));
                 }
+                // If UUID is missing we skip this GPU rather than falling back to a numeric
+                // ordinal — ordinals are unreliable on mixed-arch systems and can expose the
+                // wrong GPU, causing "no kernel image available" crashes like the RTX 5090 +
+                // RTX 4090 case. Returning "" (no restriction) is safer than a wrong ordinal.
             } else {
                 has_other_arch = true;
             }
-            ordinal++;
         }
 
         // No mixed architectures — no need to restrict CUDA_VISIBLE_DEVICES.
@@ -2524,6 +2521,7 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     using fn_GetCount   = nvmlReturn_t (*)(unsigned int*);
     using fn_GetHandle  = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
     using fn_GetName    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+    using fn_GetUUID    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
     using fn_GetCC      = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
     using fn_GetMem     = nvmlReturn_t (*)(nvmlDevice_t, NvmlMemory*);
     using fn_GetDriver  = nvmlReturn_t (*)(char*, unsigned int);
@@ -2541,6 +2539,7 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     if (!nvmlGetHandle)
         nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex");
     auto nvmlGetName   = (fn_GetName)load("nvmlDeviceGetName");
+    auto nvmlGetUUID   = (fn_GetUUID)load("nvmlDeviceGetUUID");
     auto nvmlGetCC     = (fn_GetCC)load("nvmlDeviceGetCudaComputeCapability");
     auto nvmlGetMem    = (fn_GetMem)load("nvmlDeviceGetMemoryInfo");
     auto nvmlGetDriver = (fn_GetDriver)load("nvmlSystemGetDriverVersion");
@@ -2574,6 +2573,12 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
             info.index          = static_cast<int>(i);
             info.name           = name_buf;
             info.driver_version = driver_version;
+
+            if (nvmlGetUUID) {
+                char uuid_buf[96] = {};
+                if (nvmlGetUUID(dev, uuid_buf, sizeof(uuid_buf)) == NVML_SUCCESS)
+                    info.uuid = uuid_buf;
+            }
 
             int major = 0, minor = 0;
             if (nvmlGetCC && nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
