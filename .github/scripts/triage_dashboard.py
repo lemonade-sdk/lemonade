@@ -113,6 +113,9 @@ HTML_TEMPLATE = """<!doctype html>
   .family { margin-bottom: 24px; }
   .family h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
   .family h2 .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .family h2 .chevron { display: inline-block; width: 10px; color: var(--muted); font-size: 10px; }
+  .family h2 .family-count { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .family.collapsible h2:hover { color: var(--fg); }
   .label-row { display: grid; grid-template-columns: 1fr 36px; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; cursor: pointer; margin: 2px 0; }
   .label-row:hover { background: var(--panel); }
   .label-row.active { background: var(--panel-2); outline: 1px solid var(--link); }
@@ -177,7 +180,7 @@ HTML_TEMPLATE = """<!doctype html>
 <div class="footer">Re-run <code>python .github/scripts/triage_dashboard.py</code> to refresh.</div>
 <script>
 const DATA = __DATA__;
-const FAMILY_ORDER = ["assignee::", "engine::", "area::", "runtime::", "priority::", "type", "component", "other", "__unlabeled__"];
+const FAMILY_ORDER = ["engine::", "area::", "runtime::", "priority::", "type", "component", "other", "__unlabeled__", "assignee::"];
 const FAMILY_META = {
   "assignee::":    {name: "Assignee",   color: "var(--link)",       description: "Assigned vs. unassigned · click a user to filter"},
   "engine::":      {name: "Engine",     color: "var(--engine)",     description: "Backend / inference engine"},
@@ -231,6 +234,7 @@ function buildFamilies(items) {
 let activeFilters = new Set();
 let dateFrom = null;  // "YYYY-MM-DD" or null
 let dateTo = null;    // "YYYY-MM-DD" or null
+const collapsedFamilies = new Set(["assignee::"]);  // assignee family is hidden by default
 const families = buildFamilies(DATA);
 
 function prettyFilterName(f) {
@@ -259,22 +263,36 @@ function renderFamilies() {
     const labels = families[fname];
     if (Object.keys(labels).length === 0) continue;
     const meta = FAMILY_META[fname];
-    const max = Math.max(...Object.values(labels));
-    const section = document.createElement("div");
-    section.className = "family";
-    section.innerHTML = `<h2><span class="swatch" style="background:${meta.color}"></span>${meta.name} <span style="font-weight:400; text-transform:none; letter-spacing:0; opacity:0.7;">— ${meta.description}</span></h2>`;
     const entries = Object.entries(labels).sort((a, b) => b[1] - a[1]);
-    for (const [lbl, count] of entries) {
-      const row = document.createElement("div");
-      row.className = "label-row" + (activeFilters.has(lbl) ? " active" : "");
-      const pct = (count / max * 100).toFixed(0);
-      const displayName = prettyFilterName(lbl);
-      row.innerHTML = `
-        <div class="label-name">${escape(displayName)}<div class="bar" style="background:${meta.color}; width:${pct}%"></div></div>
-        <div class="label-count">${count}</div>
-      `;
-      row.addEventListener("click", () => toggleFilter(lbl));
-      section.appendChild(row);
+    const total = entries.reduce((s, e) => s + e[1], 0);
+    const max = Math.max(...Object.values(labels));
+    const collapsible = fname === "assignee::";
+    const isCollapsed = collapsible && collapsedFamilies.has(fname);
+    const section = document.createElement("div");
+    section.className = "family" + (collapsible ? " collapsible" : "");
+    const chevron = collapsible ? `<span class="chevron">${isCollapsed ? "▸" : "▾"}</span>` : "";
+    const countBadge = collapsible ? `<span class="family-count">${total}</span>` : "";
+    section.innerHTML = `<h2${collapsible ? ' style="cursor:pointer; user-select:none;"' : ""}>${chevron}<span class="swatch" style="background:${meta.color}"></span>${meta.name}${countBadge} <span style="font-weight:400; text-transform:none; letter-spacing:0; opacity:0.7;">— ${meta.description}</span></h2>`;
+    if (collapsible) {
+      section.querySelector("h2").addEventListener("click", () => {
+        if (collapsedFamilies.has(fname)) collapsedFamilies.delete(fname);
+        else collapsedFamilies.add(fname);
+        renderFamilies();
+      });
+    }
+    if (!isCollapsed) {
+      for (const [lbl, count] of entries) {
+        const row = document.createElement("div");
+        row.className = "label-row" + (activeFilters.has(lbl) ? " active" : "");
+        const pct = (count / max * 100).toFixed(0);
+        const displayName = prettyFilterName(lbl);
+        row.innerHTML = `
+          <div class="label-name">${escape(displayName)}<div class="bar" style="background:${meta.color}; width:${pct}%"></div></div>
+          <div class="label-count">${count}</div>
+        `;
+        row.addEventListener("click", () => toggleFilter(lbl));
+        section.appendChild(row);
+      }
     }
     wrap.appendChild(section);
   }
