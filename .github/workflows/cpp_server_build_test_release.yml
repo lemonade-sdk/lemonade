@@ -511,6 +511,20 @@ jobs:
           .venv/bin/python test/server_webapp.py --cli-binary ./build/lemonade
           echo "Web-app tests PASSED!"
 
+      - name: Run model name normalization tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
+        run: |
+          set -e
+          echo "Running model name normalization tests (:latest suffix)..."
+          .venv/bin/python test/test_model_name_normalization.py --cli-binary ./build/lemonade
+          echo "Model name normalization tests PASSED!"
+
       - name: Run Ollama API tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -1552,6 +1566,11 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
         run: .venv/bin/python test/server_webapp.py --cli-binary lemonade
+
+      - name: Test model name normalization
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/test_model_name_normalization.py --cli-binary lemonade
 
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
