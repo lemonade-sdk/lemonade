@@ -45,8 +45,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
-          $runner = "${{ runner.name }}"
+          # Force UTC on both platforms so the file contents are comparable
+          # when downloaded for debugging. The monitor itself uses the
+          # artifact's updated_at field from the API, not the file contents,
+          # so this is cosmetic but avoids misleading anyone investigating.
+          $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $runner = "${{ matrix.runner }}"
           "$timestamp" | Out-File -FilePath "heartbeat-$runner.txt" -Encoding utf8
 
       - name: Create heartbeat file (Linux/macOS)
@@ -54,15 +58,19 @@ jobs:
         shell: bash
         run: |
           timestamp=$(date -u -Iseconds)
-          runner="${{ runner.name }}"
+          runner="${{ matrix.runner }}"
           echo "$timestamp" > "heartbeat-$runner.txt"
 
       - name: Upload heartbeat artifact
         uses: actions/upload-artifact@v7
         with:
-          name: heartbeat-${{ runner.name }}
-          path: heartbeat-${{ runner.name }}.txt
-          # 30d retention gives the monitor (weekly, lookback=4) a comfortable
-          # window to find a recent artifact even if a heartbeat run is missed
-          # or delayed.
+          # Name the artifact after the matrix label (the runners.json entry),
+          # NOT runner.name. The monitor looks up artifacts by the label from
+          # runners.json, so any drift between a runner's configured name and
+          # its primary label would surface as a false MISSING alert.
+          name: heartbeat-${{ matrix.runner }}
+          path: heartbeat-${{ matrix.runner }}.txt
+          # 30d retention matches the monitor's default lookback_days=30, so
+          # any heartbeat upload (scheduled or manual recovery) remains visible
+          # for the full scan period.
           retention-days: 30
