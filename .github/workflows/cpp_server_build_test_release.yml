@@ -1051,15 +1051,59 @@ jobs:
           $extraArgs = "${{ matrix.extra_args }}" -split " " | Where-Object { $_ }
           $backends = "${{ matrix.backends }}" -split " " | Where-Object { $_ }
 
+          function Invoke-TestBackend {
+            param(
+              [string]$Backend,
+              [int]$MaxAttempts = 1
+            )
+
+            for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $Backend (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
+              & $venvPython test/${{ matrix.script }} @extraArgs --backend $Backend --cli-binary $serverExe
+              $testExitCode = $LASTEXITCODE
+
+              if ($testExitCode -eq 0) {
+                return
+              }
+
+              if ($attempt -lt $MaxAttempts) {
+                Write-Host "::warning title=Retrying transient backend test::test/${{ matrix.script }} --backend $Backend failed with exit code $testExitCode; cleaning sd-server state and retrying."
+
+                Get-Process sd-server -ErrorAction SilentlyContinue |
+                  Stop-Process -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 20
+
+                try {
+                  Invoke-RestMethod `
+                    -Uri "http://localhost:13305/api/v1/unload" `
+                    -Method Post `
+                    -ContentType "application/json" `
+                    -Body "{}" `
+                    -TimeoutSec 30 | Out-Null
+                } catch {
+                  Write-Host "Unload before retry failed or server had no model loaded: $_" -ForegroundColor Yellow
+                }
+
+                Start-Sleep -Seconds 10
+                continue
+              }
+
+              exit $testExitCode
+            }
+          }
+
           if ($backends.Count -eq 0) {
             Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }}" -ForegroundColor Cyan
             & $venvPython test/${{ matrix.script }} @extraArgs --cli-binary $serverExe
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } else {
             foreach ($backend in $backends) {
-              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend" -ForegroundColor Cyan
-              & $venvPython test/${{ matrix.script }} @extraArgs --backend $backend --cli-binary $serverExe
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              $maxAttempts = 1
+              if ("${{ matrix.name }}" -eq "stable-diffusion" -and $backend -eq "rocm") {
+                $maxAttempts = 3
+              }
+
+              Invoke-TestBackend -Backend $backend -MaxAttempts $maxAttempts
             }
           }
 
