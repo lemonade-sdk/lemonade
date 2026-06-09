@@ -6,18 +6,18 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 
 ### CPU
 - **Platform**: Windows, Linux, macOS
-- **Hardware**: All x86_64 processors
+- **Hardware**: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)
 - **Use Case**: Universal fallback, no GPU required
 - **Performance**: Slowest option, suitable for small models or testing
 - **Installation**: Automatically available via upstream llama.cpp releases
 
 ### Vulkan
 - **Platform**: Windows, Linux
-- **Hardware**: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs
+- **Hardware**: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs, Qualcomm Adreno and other Vulkan-capable GPUs on ARM64 Linux
 - **Use Case**: Cross-vendor GPU acceleration
 - **Performance**: Good performance across all GPU vendors
 - **Installation**: Automatically available via upstream llama.cpp releases
-- **Notes**: Recommended for most GPU users
+- **Notes**: Recommended for most GPU users; on ARM64 Linux (e.g., Qualcomm X Elite), Vulkan is the default backend
 
 ### ROCm
 - **Platform**: Windows, Linux
@@ -52,7 +52,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Use Case**: Advanced users with custom llama.cpp builds
 - **Performance**: Depends on build configuration
 - **Installation**: Requires manual installation of `llama-server` in system PATH
-- **Notes**: Not enabled by default; set `LEMONADE_LLAMACPP_PREFER_SYSTEM=true` in config
+- **Enable**: Set `"llamacpp": { "backend": "system" }` in `config.json` to enable the system backend, or use `lemonade config set llamacpp.backend=system`
 - **HIP plugin on non-standard paths**: When an AMD GPU is present, the system backend needs the GGML HIP plugin (`libggml-hip.so`). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set `LEMONADE_GGML_HIP_PATH` to the full path of the plugin so the backend is reported as available:
 
   ```bash
@@ -179,6 +179,7 @@ lemonade config set llamacpp.rocm_bin=b1260
 
 ### Linux
 - All backends supported (CPU, Vulkan, ROCm, CUDA, System)
+- CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default
 - ROCm requires compatible AMD GPU (see above)
 - CUDA requires compatible NVIDIA GPU (see above)
 - System backend requires manual llama-server installation
