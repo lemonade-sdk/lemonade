@@ -2,6 +2,7 @@
 #include <lemon/system_info.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/process_manager.h>
+#include <lemon/system_info.h>
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -454,7 +455,11 @@ std::string get_runtime_dir() {
     }
 
     // System services get no XDG_RUNTIME_DIR; use the unit's RuntimeDirectory=.
+#ifndef LEMONADE_CLI
     if (SystemInfo::is_running_under_systemd()) {
+#else
+    if (true) {
+#endif
         const char* runtime_dir = std::getenv("RUNTIME_DIRECTORY");
         if (runtime_dir && runtime_dir[0] != '\0') {
             return std::string(runtime_dir);
