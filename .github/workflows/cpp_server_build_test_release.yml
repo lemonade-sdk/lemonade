@@ -847,7 +847,7 @@ jobs:
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan"
-            runner: [Windows, vulkan]
+            runner: [Windows, vulkan, stx-halo]
           - name: ryzenai
             script: server_llm.py
             extra_args: "--wrapped-server ryzenai"
@@ -975,7 +975,7 @@ jobs:
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan"
-            runner: [Linux, vulkan]
+            runner: [Linux, vulkan, stx-halo]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""

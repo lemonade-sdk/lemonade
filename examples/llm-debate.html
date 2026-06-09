@@ -831,8 +831,8 @@
             <h3 style="color: var(--accent-red);">⚠️ Not Enough Model Slots</h3>
             <p id="errorPopupMessage" style="color: var(--text-secondary); margin-bottom: 1rem;"></p>
             <p style="color: var(--text-secondary); font-size: 0.85rem;">
-                Update config.json to increase model slots:<br>
-                <code id="errorPopupCommand">"max_loaded_models": 9</code>
+                Run this command to increase model slots:<br>
+                <code id="errorPopupCommand">lemonade config set max_loaded_models=9</code>
             </p>
             <button class="got-it-btn" style="background: linear-gradient(135deg, var(--accent-red) 0%, #dc2626 100%);" onclick="document.getElementById('errorPopup').style.display='none'">Got it!</button>
         </div>
@@ -1177,7 +1177,7 @@
             const command = document.getElementById('errorPopupCommand');
 
             message.textContent = `You selected ${selectedCount} models, but the server only has ${maxSlots} LLM slot${maxSlots === 1 ? '' : 's'} available.`;
-            command.textContent = `Set LEMONADE_MAX_LOADED_MODELS=${selectedCount} and restart the server`;
+            command.textContent = `lemonade config set max_loaded_models=${selectedCount}`;
             popup.style.display = 'flex';
         }
 
