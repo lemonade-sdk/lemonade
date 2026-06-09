@@ -202,6 +202,124 @@ interface ChatViewProps {
 const TOOLS_KEY = 'use_tools';
 const MAX_IMAGE_DIM = 1024;
 const MAX_IMAGES = 4;
+const IMAGE_SIZE_OPTIONS = [256, 512, 768, 1024, 1536, 2048] as const;
+
+type ImageMode = 'generate' | 'edit';
+
+interface ImageGenerationSettings {
+  steps: number;
+  cfgScale: number;
+  width: number;
+  height: number;
+  seed: number | '';
+  upscaleModel: string;
+}
+
+const DEFAULT_IMAGE_SETTINGS: ImageGenerationSettings = {
+  steps: 20,
+  cfgScale: 7,
+  width: 512,
+  height: 512,
+  seed: -1,
+  upscaleModel: '',
+};
+
+function numberFromUnknown(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function intFromUnknown(value: unknown): number | null {
+  const number = numberFromUnknown(value);
+  return number === null ? null : Math.round(number);
+}
+
+function nestedRecord(source: Record<string, unknown> | undefined, key: string): Record<string, unknown> | undefined {
+  const value = source?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function numberAt(source: Record<string, unknown> | undefined, paths: string[][]): number | null {
+  for (const path of paths) {
+    let cursor: Record<string, unknown> | undefined = source;
+    for (let i = 0; i < path.length - 1; i += 1) {
+      cursor = nestedRecord(cursor, path[i]);
+      if (!cursor) break;
+    }
+    if (!cursor) continue;
+    const value = numberFromUnknown(cursor[path[path.length - 1]]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function parseImageSize(value: unknown): Pick<ImageGenerationSettings, 'width' | 'height'> | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d+)\s*x\s*(\d+)$/i.exec(value.trim());
+  if (!match) return null;
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+function nearestImageSize(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  const exact = IMAGE_SIZE_OPTIONS.find(size => size === value);
+  if (exact) return exact;
+  return IMAGE_SIZE_OPTIONS.reduce((best, size) => (Math.abs(size - value) < Math.abs(best - value) ? size : best), fallback);
+}
+
+function partialImageSettingsFromSource(source?: Record<string, unknown> | null): Partial<ImageGenerationSettings> {
+  if (!source) return {};
+  const next: Partial<ImageGenerationSettings> = {};
+  const steps = intFromUnknown(numberAt(source, [['steps'], ['sample_steps'], ['sample_params', 'sample_steps']]));
+  if (steps !== null && steps > 0) next.steps = steps;
+  const cfgScale = numberAt(source, [['cfg_scale'], ['txt_cfg'], ['guidance'], ['sample_params', 'guidance', 'txt_cfg']]);
+  if (cfgScale !== null && cfgScale > 0) next.cfgScale = cfgScale;
+  const parsedSize = parseImageSize(source.size);
+  const width = parsedSize?.width ?? intFromUnknown(numberAt(source, [['width'], ['image_width']]));
+  const height = parsedSize?.height ?? intFromUnknown(numberAt(source, [['height'], ['image_height']]));
+  if (width !== null && width !== undefined && width > 0) next.width = nearestImageSize(width, DEFAULT_IMAGE_SETTINGS.width);
+  if (height !== null && height !== undefined && height > 0) next.height = nearestImageSize(height, DEFAULT_IMAGE_SETTINGS.height);
+  const seed = intFromUnknown(source.seed);
+  if (seed !== null) next.seed = Math.max(seed, -1);
+  return next;
+}
+
+function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null): ImageGenerationSettings {
+  const modelImageDefaults = partialImageSettingsFromSource(modelInfo?.image_defaults as Record<string, unknown> | undefined);
+  const modelRecipeOptions = partialImageSettingsFromSource(modelInfo?.recipe_options as Record<string, unknown> | undefined);
+  const loadedRecipeOptions = partialImageSettingsFromSource(loadedModel?.recipe_options);
+  return {
+    ...DEFAULT_IMAGE_SETTINGS,
+    ...modelImageDefaults,
+    ...modelRecipeOptions,
+    ...loadedRecipeOptions,
+  };
+}
+
+function modelSupportsImageEdit(modelName: string | null, modelInfo: ModelInfo | null, loadedModel: LoadedModel | null): boolean {
+  const labels = (modelInfo?.labels || []).map(label => label.toLowerCase().trim());
+  if (labels.some(label => ['edit', 'image-edit', 'image-editing', 'image-to-image', 'img2img'].includes(label))) return true;
+
+  const haystack = [
+    modelName,
+    modelInfo?.id,
+    modelInfo?.name,
+    modelInfo?.display_name,
+    String((modelInfo as any)?.model_name || ''),
+    loadedModel?.checkpoint,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  return haystack.includes('flux-2-klein')
+    || haystack.includes('flux_2_klein')
+    || haystack.includes('flux.2.klein')
+    || haystack.includes('flux2-klein')
+    || haystack.includes('qwen-edit')
+    || haystack.includes('image-edit');
+}
 
 const LEMONADE_TOOL_RUNTIME: ChatToolRuntime = {
   tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
@@ -367,6 +485,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations(loadPersistencePreference(storageScope), storageScope));
   const [activeId, setActiveId] = useState<string | null>(() => loadActiveId(loadPersistencePreference(storageScope), storageScope));
   const [inputValue, setInputValue] = useState('');
+  const [imageMode, setImageMode] = useState<ImageMode>('generate');
+  const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
+  const imageSettingsModelRef = useRef<string | null>(null);
+  const imageSettingsTouchedRef = useRef(false);
+  const imageSettingsCommittedRef = useRef(false);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
@@ -434,6 +557,47 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+
+  const defaultImageSettings = useMemo(
+    () => imageDefaultsForModel(currentLoadedModel, currentKnownModelInfo),
+    [currentLoadedModel, currentKnownModelInfo],
+  );
+  const defaultImageSettingsKey = useMemo(() => JSON.stringify(defaultImageSettings), [defaultImageSettings]);
+
+  const markImageSettingsEdited = useCallback((updater: React.SetStateAction<ImageGenerationSettings>) => {
+    imageSettingsTouchedRef.current = true;
+    setImageSettings(updater);
+  }, []);
+
+  const supportsImageEdit = useMemo(
+    () => currentCapability === 'image' && modelSupportsImageEdit(currentModel, currentKnownModelInfo, currentLoadedModel),
+    [currentCapability, currentModel, currentKnownModelInfo, currentLoadedModel],
+  );
+
+  useEffect(() => {
+    const modelKey = currentModel || '';
+    const switchedModel = imageSettingsModelRef.current !== modelKey;
+    if (switchedModel) {
+      imageSettingsModelRef.current = modelKey;
+      imageSettingsTouchedRef.current = false;
+      imageSettingsCommittedRef.current = false;
+      setImageSettings(defaultImageSettings);
+      setImageMode('generate');
+      return;
+    }
+
+    if (currentCapability === 'image' && !imageSettingsTouchedRef.current && !imageSettingsCommittedRef.current) {
+      setImageSettings(defaultImageSettings);
+    }
+  }, [currentModel, currentCapability, defaultImageSettingsKey]);
+
+  useEffect(() => {
+    if (!supportsImageEdit && imageMode !== 'generate') {
+      setImageMode('generate');
+      setPendingImages([]);
+    }
+  }, [supportsImageEdit, imageMode]);
+
   const capabilityForLoaded = useCallback((model: LoadedModel) => {
     const customInfo = customModelInfos.find(m => (m.name || m.id) === model.model_name);
     return customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(model);
@@ -604,15 +768,35 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     model: ModelSnapshot,
     text: string,
     audioFiles: File[],
+    images: string[] = [],
   ) => {
     setCapabilityBusy(true);
     try {
       if (model.capability === 'image') {
         if (!text) throw new Error('Image mode needs a text prompt.');
-        const images = await api.imageGeneration(model.name, text);
+        imageSettingsCommittedRef.current = true;
+        const imageOptions: Record<string, unknown> = {
+          size: `${imageSettings.width}x${imageSettings.height}`,
+          steps: imageSettings.steps,
+          cfg_scale: imageSettings.cfgScale,
+          seed: imageSettings.seed === '' ? -1 : imageSettings.seed,
+        };
+        const effectiveImageMode: ImageMode = images.length > 0 ? 'edit' : imageMode;
+        const resultImages = effectiveImageMode === 'edit'
+          ? await api.imageEdit(model.name, text, images[0], imageOptions)
+          : await api.imageGeneration(model.name, text, imageOptions);
+        const generatedImages = [...resultImages];
+        let content = effectiveImageMode === 'edit'
+          ? `Edited ${resultImages.length} image${resultImages.length === 1 ? '' : 's'} from your prompt.`
+          : `Generated ${resultImages.length} image${resultImages.length === 1 ? '' : 's'} from your prompt.`;
+        if (imageSettings.upscaleModel && resultImages[0]) {
+          const upscaled = await api.imageUpscale(imageSettings.upscaleModel, resultImages[0]);
+          generatedImages.push(upscaled);
+          content = `${content} Added an upscaled version.`;
+        }
         appendAssistantMessage(convoId, {
-          content: `Generated ${images.length} image${images.length === 1 ? '' : 's'} from your prompt.`,
-          generatedImages: images,
+          content,
+          generatedImages,
           model,
         });
       } else if (model.capability === 'tts') {
@@ -645,7 +829,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     } finally {
       setCapabilityBusy(false);
     }
-  }, [appendAssistantMessage, onRefresh]);
+  }, [appendAssistantMessage, imageMode, imageSettings, onRefresh]);
 
   const startAssistantResponse = useCallback(async (
     convoId: string,
@@ -681,7 +865,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         });
         return;
       }
-      await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles);
+      await runCapabilityRequest(convoId, modelSnapshot, text, audioFiles, images || []);
       return;
     }
 
@@ -816,6 +1000,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     appendAssistantMessage,
     currentCapability,
     currentKnownModelInfo,
+    imageMode,
     currentModel,
     knownModelInfos,
     loadedModels,
@@ -833,7 +1018,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const hasImages = pendingImages.length > 0;
     const canSubmitContent = currentCapability === 'audio'
       ? audioFiles.length > 0
-      : (!!text || hasImages || (currentCapability === 'omni' && audioFiles.length > 0));
+      : currentCapability === 'image'
+        ? (imageMode === 'edit' ? (!!text && hasImages) : !!text)
+        : (!!text || hasImages || (currentCapability === 'omni' && audioFiles.length > 0));
     if (!canSubmitContent || isBusy) return;
     if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
 
@@ -928,11 +1115,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
+    if (currentCapability === 'image' && imageMode !== 'edit') return;
+
+    if (currentCapability === 'image' && imageMode === 'edit') {
+      const encoded = await imageToBase64(imageFiles[0]);
+      setPendingImages([encoded]);
+      return;
+    }
+
     const remaining = MAX_IMAGES - pendingImages.length;
     const toProcess = imageFiles.slice(0, remaining);
     const encoded = await Promise.all(toProcess.map(imageToBase64));
     setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
-  }, [currentCapability, pendingImages.length]);
+  }, [currentCapability, imageMode, pendingImages.length]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -988,17 +1183,22 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, [handleSend]);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy;
-  const canAttach = currentCapability === 'chat' || currentCapability === 'omni' || currentCapability === 'audio';
+  const canAttach = currentCapability === 'chat'
+    || currentCapability === 'omni'
+    || currentCapability === 'audio'
+    || (currentCapability === 'image' && imageMode === 'edit');
   const fileAccept = currentCapability === 'audio' ? 'audio/*' : (currentCapability === 'omni' ? 'image/*,audio/*' : 'image/*');
   const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio'
     ? pendingAudioFiles.length > 0
-    : (!!inputValue.trim() || pendingImages.length > 0 || (currentCapability === 'omni' && pendingAudioFiles.length > 0)));
+    : currentCapability === 'image'
+      ? (imageMode === 'edit' ? (!!inputValue.trim() && pendingImages.length > 0) : !!inputValue.trim())
+      : (!!inputValue.trim() || pendingImages.length > 0 || (currentCapability === 'omni' && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message — connect and load a model to send…'
     : currentCapability === 'omni'
       ? `Message ${currentModel} with text, images, or audio…`
       : currentCapability === 'image'
-      ? `Describe an image for ${currentModel}…`
+      ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
       : currentCapability === 'audio'
         ? `Attach an audio file to transcribe with ${currentModel}…`
         : currentCapability === 'tts'
@@ -1007,12 +1207,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const composerHint = currentCapability === 'omni'
     ? 'Omni mode · text, image and audio are routed through chat completions'
     : currentCapability === 'image'
-      ? 'Image mode · prompt becomes /images/generations'
+      ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
     : currentCapability === 'audio'
       ? 'Audio mode · attach one audio file for /audio/transcriptions'
       : currentCapability === 'tts'
         ? 'TTS mode · text becomes /audio/speech'
         : '⏎ to send · Shift+⏎ for newline · Paste or drop images';
+
+  const upscalingModels = useMemo(
+    () => knownModelInfos
+      .filter(info => Array.isArray(info.labels) && info.labels.includes('upscaling'))
+      .map(info => String(info.name || info.id))
+      .filter(Boolean),
+    [knownModelInfos],
+  );
 
   return (
     <div className={`chat ${railExpanded ? 'rail-expanded' : ''}`}>
@@ -1220,6 +1428,98 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             {streamingToolStatus}
           </div>
         )}
+        {currentCapability === 'image' && (
+          <div className="composer__image-settings" aria-label="Image generation settings">
+            <label className="composer__image-setting composer__image-setting--mode">
+              <span>Mode</span>
+              <select
+                value={imageMode}
+                onChange={e => {
+                  const nextMode = e.target.value as ImageMode;
+                  setImageMode(nextMode);
+                  if (nextMode === 'generate') setPendingImages([]);
+                }}
+                disabled={isBusy}
+              >
+                <option value="generate">Generate</option>
+                {supportsImageEdit && <option value="edit">Edit</option>}
+              </select>
+            </label>
+            <label className="composer__image-setting">
+              <span>Steps</span>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={imageSettings.steps}
+                onChange={e => markImageSettingsEdited(prev => ({ ...prev, steps: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting">
+              <span>CFG Scale</span>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                step={0.5}
+                value={imageSettings.cfgScale}
+                onChange={e => markImageSettingsEdited(prev => ({ ...prev, cfgScale: Math.max(1, parseFloat(e.target.value) || 1) }))}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting">
+              <span>Width</span>
+              <select
+                value={imageSettings.width}
+                onChange={e => markImageSettingsEdited(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
+                disabled={isBusy}
+              >
+                {IMAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <label className="composer__image-setting">
+              <span>Height</span>
+              <select
+                value={imageSettings.height}
+                onChange={e => markImageSettingsEdited(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
+                disabled={isBusy}
+              >
+                {IMAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <label className="composer__image-setting">
+              <span>Seed</span>
+              <input
+                type="number"
+                min={-1}
+                value={imageSettings.seed}
+                placeholder="-1"
+                onChange={e => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    markImageSettingsEdited(prev => ({ ...prev, seed: '' }));
+                    return;
+                  }
+                  const seed = parseInt(value, 10);
+                  markImageSettingsEdited(prev => ({ ...prev, seed: Number.isNaN(seed) ? -1 : Math.max(seed, -1) }));
+                }}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting composer__image-setting--upscale">
+              <span>Upscale</span>
+              <select
+                value={imageSettings.upscaleModel}
+                onChange={e => markImageSettingsEdited(prev => ({ ...prev, upscaleModel: e.target.value }))}
+                disabled={isBusy || upscalingModels.length === 0}
+              >
+                <option value="">Off</option>
+                {upscalingModels.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
         {pendingImages.length > 0 && (
           <div className="composer__images">
             {pendingImages.map((src, i) => (
@@ -1256,7 +1556,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             ref={fileInputRef}
             type="file"
             accept={fileAccept}
-            multiple={currentCapability !== 'audio'}
+            multiple={currentCapability !== 'audio' && !(currentCapability === 'image' && imageMode === 'edit')}
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />

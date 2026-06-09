@@ -5043,3 +5043,83 @@ input, textarea {
   color: var(--accent);
   flex-shrink: 0;
 }
+
+/* ---------- Image mode composer settings ---------- */
+.composer__image-settings {
+  max-width: var(--max-content-width);
+  margin: 0 auto var(--space-2);
+  display: grid;
+  grid-template-columns: minmax(112px, 1.1fr) repeat(5, minmax(82px, 0.8fr)) minmax(112px, 1.1fr);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-soft);
+}
+
+.composer__image-setting {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer__image-setting span {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--weight-semibold);
+}
+
+.composer__image-setting input,
+.composer__image-setting select {
+  width: 100%;
+  min-height: 36px;
+  color: var(--text-primary);
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              opacity var(--duration-fast) var(--ease-out);
+}
+
+.composer__image-setting select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23807a6c'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.composer__image-setting input:focus,
+.composer__image-setting select:focus {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.composer__image-setting input:disabled,
+.composer__image-setting select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1100px) {
+  .composer__image-settings {
+    grid-template-columns: repeat(4, minmax(96px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .composer__image-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
