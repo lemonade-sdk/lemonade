@@ -276,29 +276,17 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
     bool is_metrics_route = (req.path == "/metrics");
 
-    // Internal endpoints are restricted to loopback regardless of API key
-    if (is_internal_route) {
-        // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
-        // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
-        // lemond uses to accept both IPv4 and IPv6 on the same port).
-        bool is_loopback = (req.remote_addr == "127.0.0.1" ||
-                            req.remote_addr == "::1" ||
-                            req.remote_addr == "::ffff:127.0.0.1");
-        if (!is_loopback) {
-            LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
-                        << req.remote_addr << " " << req.path << std::endl;
-            res.status = 403;
-            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
-            return httplib::Server::HandlerResponse::Handled;
-        }
-    }
-
-    // Authentication hierarchy:
-    // - Admin key: access to both internal and regular API endpoints
-    // - Regular API key: access only to regular API endpoints (not internal)
-    // - If admin key is not set, it defaults to regular API key value
-    // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
-    // - If no keys are set, all endpoints are accessible without auth
+    // Authentication hierarchy. Two credentials gate two classes of endpoints:
+    // api_key_ gates the regular API endpoints (/api, /v0, /v1); admin_api_key_
+    // gates the internal control endpoints (/internal/*). admin_api_key_ defaults
+    // to api_key_ when LEMONADE_ADMIN_API_KEY is unset.
+    // - admin_api_key_ authenticates against both regular and internal endpoints.
+    // - api_key_ authenticates against the regular endpoints only. It cannot
+    //   reach /internal/* when LEMONADE_ADMIN_API_KEY is set to a distinct value;
+    //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
+    //   regular key also authenticates against /internal/*.
+    // - If api_key_ is empty, the regular endpoints require no authentication.
+    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
     std::string auth_token = httplib::get_bearer_token_auth(req);
 
@@ -1056,6 +1044,41 @@ void Server::run() {
                                  "Cannot start server.");
     }
 
+    // Operators binding beyond loopback should secure the server with an API
+    // key, since every endpoint is reachable from other machines once the host
+    // is non-loopback. The regular API routes (/api, /v0, /v1) are gated by
+    // api_key_; the /internal/* control endpoints (shutdown, set, config) are
+    // gated by admin_api_key_, which defaults to api_key_. Setting only
+    // LEMONADE_ADMIN_API_KEY therefore protects /internal/* but still leaves the
+    // inference and model-management endpoints exposed, so we warn unless the
+    // regular key is set.
+    auto warn_if_unsecured = [this](const std::string& bound_host,
+                                    const std::string& v4, const std::string& v6) {
+        auto is_loopback = [](const std::string& ip) {
+            return ip.empty() || ip.rfind("127.", 0) == 0 || ip == "::1";
+        };
+        if (is_loopback(v4) && is_loopback(v6)) {
+            return;
+        }
+        if (api_key_.empty() && admin_api_key_.empty()) {
+            LOG(WARNING, "Server")
+                << "Serving on non-loopback host '" << bound_host
+                << "' without an API key. All endpoints, including the /internal/* "
+                   "control endpoints, are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
+                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
+                   "control endpoints." << std::endl;
+        } else if (api_key_.empty()) {
+            LOG(WARNING, "Server")
+                << "Serving on non-loopback host '" << bound_host
+                << "' with only an admin API key set. The /internal/* control "
+                   "endpoints are protected, but the inference and model-management "
+                   "endpoints (/api, /v0, /v1) are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure them." << std::endl;
+        }
+    };
+    warn_if_unsecured(host, ipv4, ipv6);
+
     running_ = true;
 
     // Start WebSocket server for realtime API and log streaming
@@ -1202,6 +1225,7 @@ void Server::run() {
         host = config_->host();
         ipv4 = resolve_host_to_ip(AF_INET, host);
         ipv6 = resolve_host_to_ip(AF_INET6, host);
+        warn_if_unsecured(host, ipv4, ipv6);
         LOG(INFO, "Server") << "Rebinding to " << host << ":" << port_ << "..." << std::endl;
         rebind_requested_ = false;
         setup_http_servers();
