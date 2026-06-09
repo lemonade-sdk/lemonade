@@ -3191,6 +3191,7 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
             for (const auto& nvml : nvml_gpus) {
                 GPUInfo gpu;
                 gpu.index              = nvml.index;
+                gpu.uuid               = nvml.uuid;
                 gpu.name               = nvml.name;
                 gpu.available          = true;
                 gpu.compute_capability = nvml.compute_cap;
