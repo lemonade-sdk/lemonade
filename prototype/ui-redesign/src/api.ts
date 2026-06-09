@@ -516,6 +516,18 @@ class LemonadeAPI {
     return images;
   }
 
+  async imageUpscale(model: string, imageUrl: string): Promise<string> {
+    const image = imageUrl.replace(/^data:image\/[^;]+;base64,/, '');
+    const data = await this._json<Record<string, any>>('/api/v1/images/upscale', {
+      method: 'POST',
+      body: { model, image },
+    });
+    const item = Array.isArray(data.data) ? data.data[0] : null;
+    const url = item?.b64_json ? `data:image/png;base64,${item.b64_json}` : item?.url;
+    if (typeof url !== 'string' || url.length === 0) throw new Error('Upscale endpoint returned no image data.');
+    return url;
+  }
+
   async textToSpeech(model: string, input: string, voice = 'alloy', opts: Record<string, unknown> = {}): Promise<{ url: string; blob: Blob }> {
     const resp = await this._fetch('/api/v1/audio/speech', {
       method: 'POST',
@@ -534,6 +546,12 @@ class LemonadeAPI {
     form.append('size', requestedSize);
     form.append('response_format', 'b64_json');
     form.append('n', String(typeof opts.n === 'number' ? opts.n : 1));
+    ['steps', 'cfg_scale', 'seed', 'sample_method', 'flow_shift'].forEach(key => {
+      const value = opts[key];
+      if (typeof value === 'number' || (typeof value === 'string' && value.trim())) {
+        form.append(key, String(value));
+      }
+    });
     form.append('image', imageBlob, 'image.png');
 
     const data = await this._json<Record<string, any>>('/api/v1/images/edits', {
