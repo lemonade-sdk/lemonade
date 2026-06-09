@@ -66,15 +66,23 @@ def family_of(label):
     return "other"
 
 
-def build_summary(items):
-    counts = {}
-    for item in items:
-        if not item["labels"]:
-            counts.setdefault("__unlabeled__", 0)
-            counts["__unlabeled__"] += 1
-        for lbl in item["labels"]:
-            counts[lbl] = counts.get(lbl, 0) + 1
-    return counts
+def script_safe_json(obj):
+    """Serialize obj as JSON safe to embed inside an HTML <script> block.
+
+    json.dumps alone is not safe here: a string such as "</script>" would
+    close the script tag and let the rest of the value be parsed as HTML,
+    enabling injection. We escape <, >, and & so no markup can break out of
+    the script context, and U+2028 / U+2029 which are valid in JSON strings
+    but illegal as raw characters in JavaScript string literals.
+    """
+    return (
+        json.dumps(obj)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
 
 
 HTML_TEMPLATE = """<!doctype html>
@@ -465,7 +473,7 @@ def main():
         HTML_TEMPLATE
         .replace("__REPO__", args.repo)
         .replace("__GENERATED_AT__", now)
-        .replace("__DATA__", json.dumps(items))
+        .replace("__DATA__", script_safe_json(items))
     )
 
     out = Path(args.output)
