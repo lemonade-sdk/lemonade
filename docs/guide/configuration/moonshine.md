@@ -9,7 +9,7 @@ Lemonade integrates [Moonshine](https://github.com/usefulsensors/moonshine) as a
 
 ### CPU
 - **Platform**: Windows x64, Linux x64, macOS arm64 (no Intel macOS — `moonshine-voice` publishes no x86_64 macOS wheel)
-- **Bundle**: a self-contained PyInstaller bundle from [lemonade-sdk/moonshine-server](https://github.com/lemonade-sdk/moonshine-server) with an embedded Python runtime and the `moonshine-voice` native libraries. No system Python install is required (or touched) on the host; Lemonade additionally sets `PYTHONNOUSERSITE=1` at launch.
+- **Bundle**: a self-contained PyInstaller bundle from [lemonade-sdk/moonshine-server-rocm](https://github.com/lemonade-sdk/moonshine-server-rocm) with an embedded Python runtime and the `moonshine-voice` native libraries. No system Python install is required (or touched) on the host; Lemonade additionally sets `PYTHONNOUSERSITE=1` at launch.
 
 ## Install
 
@@ -24,7 +24,7 @@ curl -X POST http://localhost:13305/api/v1/install \
   -d '{"recipe": "moonshine", "backend": "cpu"}'
 ```
 
-The bundle version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json) (`moonshine.cpu`), with tags following the upstream library version (`moonshine0.0.62` = `moonshine-voice` 0.0.62). Bundles are built automatically by [lemonade-sdk/moonshine-server](https://github.com/lemonade-sdk/moonshine-server), a distribution-only repo that tracks `moonshine-voice` PyPI releases — no moonshine code is forked; the `main.py` wrapper in `tools/moonshine-server/` here is frozen together with the PyPI wheel into a self-contained bundle.
+The bundle version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json) (`moonshine.cpu`), with tags following the upstream library version (`moonshine0.0.62` = `moonshine-voice` 0.0.62). Bundles are built automatically by [lemonade-sdk/moonshine-server-rocm](https://github.com/lemonade-sdk/moonshine-server-rocm), a distribution-only repo that tracks `moonshine-voice` PyPI releases — no moonshine code is forked; the `main.py` wrapper in `tools/moonshine-server/` here is frozen together with the PyPI wheel into a self-contained bundle.
 
 ## Models
 

@@ -30,9 +30,9 @@ namespace backends {
 InstallParams MoonshineServer::get_install_params(const std::string& backend, const std::string& version) {
     (void)backend;  // moonshine is CPU-only
     InstallParams params;
-    params.repo = "lemonade-sdk/moonshine-server";
+    params.repo = "lemonade-sdk/moonshine-server-rocm";
 
-    // Self-contained PyInstaller bundles built by the lemonade-sdk/moonshine-server
+    // Self-contained PyInstaller bundles built by the lemonade-sdk/moonshine-server-rocm
     // distribution repo (tracks moonshine-voice PyPI releases; tag scheme
     // moonshine<version>) — no system Python needed. moonshine-voice publishes
     // wheels for win x64, linux x64/arm64, and macOS arm64 only (no Intel
