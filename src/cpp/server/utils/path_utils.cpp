@@ -451,7 +451,18 @@ std::string get_runtime_dir() {
             }
         }
     }
-    throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR");
+
+    // System services can get a RuntimeDirectory= without XDG_RUNTIME_DIR.
+    if (const char* runtime_dir = std::getenv("RUNTIME_DIRECTORY");
+        runtime_dir && runtime_dir[0] != '\0') {
+        std::error_code ec;
+        fs::path base(runtime_dir);
+        if (fs::is_directory(base, ec) && !ec && access(runtime_dir, W_OK | X_OK) == 0) {
+            return base.string();
+        }
+    }
+
+    throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR or RUNTIME_DIRECTORY");
 #endif
 }
 
