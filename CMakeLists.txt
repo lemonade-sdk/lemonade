@@ -1402,6 +1402,18 @@ if(UNIX AND NOT APPLE)
         ")
     endif()
 
+    # Create symlink in standard systemd user search path only if not installing to /usr
+    if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
+        install(CODE "
+            file(MAKE_DIRECTORY \"\$ENV{DESTDIR}/usr/lib/systemd/user\")
+            execute_process(
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    ${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service
+                    \"\$ENV{DESTDIR}/usr/lib/systemd/user/lemond.service\"
+            )
+        ")
+    endif()
+
     # Install sysusers.d snippet so the 'lemonade' system user is created
     install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/sysusers.d
