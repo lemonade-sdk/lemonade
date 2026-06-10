@@ -2,7 +2,7 @@ name: Triage dashboard
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -26,6 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Run dashboard tests
+        run: python .github/scripts/test_triage_dashboard.py
 
       - name: Generate dashboard
         env:
