@@ -617,6 +617,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#docker-run-with-amd-gpu-passthrough-using-rocm-on-wsl" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Docker Run with AMD GPU Passthrough using ROCm on WSL
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#other-docker-methods" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1042,6 +1053,34 @@
     
   
     Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/working-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working Groups
   
 
     
@@ -1743,6 +1782,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#docker-run-with-amd-gpu-passthrough-using-rocm-on-wsl" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Docker Run with AMD GPU Passthrough using ROCm on WSL
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#other-docker-methods" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1814,7 +1864,6 @@
 <span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-e<span class="w"> </span><span class="nv">LEMONADE_LLAMACPP</span><span class="o">=</span>cpu<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:v9.1.3<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>./lemond<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">5000</span>
 </code></pre></div>
@@ -1822,25 +1871,65 @@
 <p>This will run the server on port 5000 inside the container, mapped to port 4000 on your host.</p>
 </blockquote>
 <h3 id="docker-run-with-cpu-backend">Docker Run with CPU backend</h3>
+<p>To use the CPU backend, create or modify the <code>config.json</code> file in the <code>lemonade-recipe</code> volume:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Then run:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-e<span class="w"> </span><span class="nv">LEMONADE_LLAMACPP</span><span class="o">=</span>cpu<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
 </code></pre></div>
 <h3 id="docker-run-with-amd-gpu-passthrough-using-rocm">Docker Run with AMD GPU Passthrough using ROCm</h3>
+<p>To use the ROCm backend, create or modify the <code>config.json</code> file in the <code>lemonade-recipe</code> volume:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Then run:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-e<span class="w"> </span><span class="nv">LEMONADE_LLAMACPP</span><span class="o">=</span>rocm<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--device<span class="o">=</span>/dev/kfd<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--device<span class="o">=</span>/dev/dri<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
+</code></pre></div>
+<blockquote>
+<p>This will run the server using the ROCm backend as the default for llama.cpp.
+</p>
+</blockquote>
+<h3 id="docker-run-with-amd-gpu-passthrough-using-rocm-on-wsl">Docker Run with AMD GPU Passthrough using ROCm on WSL</h3>
+<p>Make sure you follow install steps described in <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html">ROCm for WSL</a></p>
+<p>Create or modify the <code>config.json</code> file in the <code>lemonade-recipe</code> volume:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Then:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--name<span class="w"> </span>lemonade-server<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-p<span class="w"> </span><span class="m">13305</span>:13305<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-cache:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-llama:/opt/lemonade/llama<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>lemonade-recipe:/root/.cache/lemonade<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>/usr/lib/wsl/lib:/usr/lib/wsl/lib:ro<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-v<span class="w"> </span>/opt/rocm/lib:/opt/rocm/lib:ro<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span>/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib:/usr/lib/wsl/lib:/usr/lib<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--device<span class="o">=</span>/dev/dxg<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/lemonade-sdk/lemonade-server:latest
 </code></pre></div>
 <blockquote>
@@ -1864,8 +1953,6 @@
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
-    environment:
-      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
@@ -1874,6 +1961,13 @@ volumes:
   lemonade-recipe:
 </code></pre></div>
 <blockquote>
+<p>To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a <code>config.json</code> file in the <code>lemonade-recipe</code> volume with:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
 <p>You can add more services as needed, or add host devices for the ROCM backend.</p>
 </blockquote>
 <ol>
@@ -1998,6 +2092,10 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="c"># Make executables executable</span>
 <span class="k">RUN</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>./lemond<span class="w"> </span>./lemonade
 
+<span class="c"># Expose the lemond/lemonade binaries on PATH so `docker exec` users can run</span>
+<span class="c"># them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.</span>
+<span class="k">ENV</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">&quot;/opt/lemonade:</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span><span class="s2">&quot;</span>
+
 <span class="c"># Create necessary directories</span>
 <span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/lemonade/llama/cpu<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>/opt/lemonade/llama/vulkan<span class="w"> </span><span class="se">\</span>
@@ -2030,8 +2128,6 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
       - lemonade-llama:/opt/lemonade/llama
       # Persist model options and other backend binaries
       - lemonade-recipe:/root/.cache/lemonade
-    environment:
-      - LEMONADE_LLAMACPP=cpu
     restart: unless-stopped
 
 volumes:
@@ -2039,6 +2135,15 @@ volumes:
   lemonade-llama:
   lemonade-recipe:
 </code></pre></div>
+<blockquote>
+<p>To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a <code>config.json</code> file in the <code>lemonade-recipe</code> volume with:
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></p>
+</blockquote>
 <p>Now run below command within the same directory:</p>
 <div class="highlight"><pre><span></span><code>docker-compose<span class="w"> </span>build
 </code></pre></div>

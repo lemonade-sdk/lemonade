@@ -829,6 +829,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cuda" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CUDA
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#metal" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1175,6 +1186,34 @@
     
   
     Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/working-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working Groups
   
 
     
@@ -1865,6 +1904,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#cuda" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CUDA
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#metal" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2065,7 +2115,7 @@
 <h3 id="cpu">CPU</h3>
 <ul>
 <li><strong>Platform</strong>: Windows, Linux, macOS</li>
-<li><strong>Hardware</strong>: All x86_64 processors</li>
+<li><strong>Hardware</strong>: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)</li>
 <li><strong>Use Case</strong>: Universal fallback, no GPU required</li>
 <li><strong>Performance</strong>: Slowest option, suitable for small models or testing</li>
 <li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
@@ -2073,11 +2123,11 @@
 <h3 id="vulkan">Vulkan</h3>
 <ul>
 <li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs</li>
+<li><strong>Hardware</strong>: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs, Qualcomm Adreno and other Vulkan-capable GPUs on ARM64 Linux</li>
 <li><strong>Use Case</strong>: Cross-vendor GPU acceleration</li>
 <li><strong>Performance</strong>: Good performance across all GPU vendors</li>
 <li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-<li><strong>Notes</strong>: Recommended for most GPU users</li>
+<li><strong>Notes</strong>: Recommended for most GPU users; on ARM64 Linux (e.g., Qualcomm X Elite), Vulkan is the default backend</li>
 </ul>
 <h3 id="rocm">ROCm</h3>
 <ul>
@@ -2089,6 +2139,17 @@
 <li><strong>Stable</strong> (default): Custom builds with latest optimizations from lemonade-sdk</li>
 <li><strong>Nightly</strong>: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)</li>
 <li><strong>Installation</strong>: Varies by channel (see below)</li>
+</ul>
+<h3 id="cuda">CUDA</h3>
+<ul>
+<li><strong>Platform</strong>: Windows, Linux</li>
+<li><strong>Hardware</strong>: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)</li>
+<li><strong>Use Case</strong>: NVIDIA GPU-optimized inference</li>
+<li><strong>Performance</strong>: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs</li>
+<li><strong>Source</strong>: Per-architecture builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></li>
+<li><strong>Binaries</strong>: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)</li>
+<li><strong>Runtime</strong>: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)</li>
+<li><strong>Notes</strong>: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system <code>tar</code>.</li>
 </ul>
 <h3 id="metal">Metal</h3>
 <ul>
@@ -2105,8 +2166,12 @@
 <li><strong>Use Case</strong>: Advanced users with custom llama.cpp builds</li>
 <li><strong>Performance</strong>: Depends on build configuration</li>
 <li><strong>Installation</strong>: Requires manual installation of <code>llama-server</code> in system PATH</li>
-<li><strong>Notes</strong>: Not enabled by default; set <code>LEMONADE_LLAMACPP_PREFER_SYSTEM=true</code> in config</li>
+<li><strong>Enable</strong>: Set <code>"llamacpp": { "backend": "system" }</code> in <code>config.json</code> to enable the system backend, or use <code>lemonade config set llamacpp.backend=system</code></li>
+<li><strong>HIP plugin on non-standard paths</strong>: When an AMD GPU is present, the system backend needs the GGML HIP plugin (<code>libggml-hip.so</code>). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set <code>LEMONADE_GGML_HIP_PATH</code> to the full path of the plugin so the backend is reported as available:</li>
 </ul>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_GGML_HIP_PATH</span><span class="o">=</span>/opt/rocm/lib/libggml-hip.so
+</code></pre></div>
+<p>The filename must look like <code>libggml-hip*.so*</code> (versioned sonames such as <code>libggml-hip.so.0</code> are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.</p>
 <h2 id="rocm-channel-configuration">ROCm Channel Configuration</h2>
 <p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
 <h3 id="stable-channel-default">Stable Channel (Default)</h3>
@@ -2186,9 +2251,10 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <h2 id="choosing-the-right-backend">Choosing the Right Backend</h2>
 <h3 id="decision-tree">Decision Tree</h3>
 <ol>
-<li><strong>Do you have an NVIDIA or Intel GPU?</strong></li>
+<li><strong>Do you have an NVIDIA GPU (Turing or newer)?</strong></li>
+<li>Try <strong>CUDA</strong> first for best performance</li>
 <li>
-<p>Use <strong>Vulkan</strong></p>
+<p>Fall back to <strong>Vulkan</strong> if you encounter issues</p>
 </li>
 <li>
 <p><strong>Do you have an AMD GPU?</strong></p>
@@ -2203,6 +2269,12 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <ul>
 <li>Use <strong>Vulkan</strong> (ROCm not supported)</li>
 </ul>
+</li>
+<li>
+<p><strong>Do you have an Intel GPU or older NVIDIA GPU?</strong></p>
+</li>
+<li>
+<p>Use <strong>Vulkan</strong></p>
 </li>
 <li>
 <p><strong>Do you have Apple Silicon?</strong></p>
@@ -2234,14 +2306,17 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <h2 id="platform-specifics">Platform Specifics</h2>
 <h3 id="linux">Linux</h3>
 <ul>
-<li>All backends supported (CPU, Vulkan, ROCm, System)</li>
+<li>All backends supported (CPU, Vulkan, ROCm, CUDA, System)</li>
+<li>CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default</li>
 <li>ROCm requires compatible AMD GPU (see above)</li>
+<li>CUDA requires compatible NVIDIA GPU (see above)</li>
 <li>System backend requires manual llama-server installation</li>
 </ul>
 <h3 id="windows">Windows</h3>
 <ul>
-<li>Supported: CPU, Vulkan, ROCm</li>
+<li>Supported: CPU, Vulkan, ROCm, CUDA</li>
 <li>ROCm requires compatible AMD GPU</li>
+<li>CUDA requires compatible NVIDIA GPU and Windows 11 22H2+ (for bundled bsdtar that extracts .7z assets)</li>
 <li>No system backend support</li>
 </ul>
 <h3 id="macos">macOS</h3>

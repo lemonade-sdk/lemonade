@@ -1217,6 +1217,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/working-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working Groups
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/contribute/" class="md-nav__link">
         
   
@@ -2123,7 +2151,7 @@
 <span class="w">  </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">13305</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;log_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;global_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">300</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;global_timeout&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;max_loaded_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;no_broadcast&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">&quot;extra_models_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
@@ -2211,7 +2239,7 @@
 <tr>
 <td><code>global_timeout</code></td>
 <td>int</td>
-<td>300</td>
+<td>600</td>
 <td>Timeout in seconds for HTTP, inference, and readiness checks</td>
 </tr>
 <tr>
@@ -2426,8 +2454,10 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
 <h2 id="api-key-and-security">API Key and Security</h2>
 <h3 id="regular-api-key">Regular API Key</h3>
 <p>The <code>LEMONADE_API_KEY</code> environment variable sets an API key for authentication on regular API endpoints (<code>/api/*</code>, <code>/v0/*</code>, <code>/v1/*</code>). On Linux with systemd, set it in the service environment (e.g., via a systemd override or drop-in file). On Windows, set it as a system environment variable.</p>
+<p>When <code>LEMONADE_API_KEY</code> is set, the inference and model-management endpoints reject any request that does not present a matching Bearer token. This is the only credential that gates those endpoints, so it controls whether unauthenticated clients can reach the server at all. When it is unset, those endpoints are reachable without authentication.</p>
 <h3 id="admin-api-key">Admin API Key</h3>
 <p>The <code>LEMONADE_ADMIN_API_KEY</code> environment variable provides elevated access to both regular API endpoints and internal endpoints (<code>/internal/*</code>). When set, it takes precedence over <code>LEMONADE_API_KEY</code> for client authentication.</p>
+<p><code>LEMONADE_ADMIN_API_KEY</code> enables privilege separation between two classes of authenticated clients. Holders of <code>LEMONADE_API_KEY</code> can reach the regular API endpoints, while only holders of <code>LEMONADE_ADMIN_API_KEY</code> can reach the internal control endpoints (<code>/internal/*</code>, e.g. shutdown and configuration). A client presenting only <code>LEMONADE_API_KEY</code> cannot reach <code>/internal/*</code> if <code>LEMONADE_ADMIN_API_KEY</code> is set to a distinct value. If <code>LEMONADE_ADMIN_API_KEY</code> is not set, it defaults to the value of <code>LEMONADE_API_KEY</code>, so the regular key then also authenticates against <code>/internal/*</code> and no privilege separation exists.</p>
 <p><strong>Authentication Hierarchy:</strong></p>
 <table>
 <thead>
@@ -2476,7 +2506,7 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">host</span><span class="o">=</span><span class="m">0</span>.0.0.0
 </code></pre></div>
 <blockquote>
-<p><strong>Note:</strong> Using <code>host: "0.0.0.0"</code> allows connections from any machine on the network. Only do this on trusted networks. Set <code>LEMONADE_API_KEY</code> or <code>LEMONADE_ADMIN_API_KEY</code> to manage access.</p>
+<p><strong>Warning:</strong> Using <code>host: "0.0.0.0"</code> allows connections from any machine on the network — including to the internal control endpoints (<code>/internal/*</code>, e.g. shutdown and config). Only do this on trusted networks, and set an API key to manage access. <code>LEMONADE_API_KEY</code> secures all endpoints; <code>LEMONADE_ADMIN_API_KEY</code> on its own secures only <code>/internal/*</code> and leaves the inference and model-management endpoints (<code>/api</code>, <code>/v0</code>, <code>/v1</code>) open, so set <code>LEMONADE_API_KEY</code> to protect those too. The server logs a warning at startup when bound to a non-loopback host without the regular key.</p>
 </blockquote>
 <h2 id="next-steps">Next Steps</h2>
 <p>The <a href="../../api/">Server Specification</a> provides more information about how to integrate Lemonade Server into an application.</p>

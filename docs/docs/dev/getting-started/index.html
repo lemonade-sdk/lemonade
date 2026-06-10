@@ -923,6 +923,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../working-groups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Working Groups
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../contribute/" class="md-nav__link">
         
   
@@ -2881,7 +2909,7 @@ This is dramatically faster (&lt;1s per renderer change) and is the right loop f
   - Installed binaries: <code>/opt/bin</code>
   - Downloaded backends (llama-server, ryzenai-server): <code>~/.cache/lemonade/bin/</code>
   - Model downloads: <code>~/.cache/huggingface/</code> (follows HF conventions)
-  - Runtime files (lock, log): <code>$XDG_RUNTIME_DIR/lemonade/</code> when set and writable, otherwise <code>/tmp/</code></p>
+  - Runtime files (lock, log): <code>$XDG_RUNTIME_DIR/lemonade/</code> on Linux when set and writable; on macOS, <code>lemonade</code> uses the per-user temporary directory</p>
 <p><strong>macOS:</strong>
 - Uses native system frameworks (Cocoa, Foundation)
 - ARM Macs use Metal backend by default for llama.cpp
@@ -3245,7 +3273,10 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <blockquote>
 <p><strong>These endpoints are for first-party Lemonade software only</strong> (CLI, tray app, desktop app). They are not part of the public API, may change without notice, and must not be relied upon by third-party integrations.</p>
 </blockquote>
-<p>Internal endpoints are restricted to loopback (<code>127.0.0.1</code> / <code>::1</code>) — requests from non-localhost addresses receive <code>403 Forbidden</code>.</p>
+<p>Internal endpoints accept connections from any address, so first-party clients on other machines can manage a shared <code>lemond</code>. When <code>LEMONADE_ADMIN_API_KEY</code> is set (or <code>LEMONADE_API_KEY</code>, which the admin key defaults to), internal endpoints require the admin key as a Bearer token; with no keys set they are unauthenticated.</p>
+<blockquote>
+<p><strong>Warning:</strong> If <code>lemond</code> is bound to a non-loopback host (e.g. <code>0.0.0.0</code>), these control endpoints — including shutdown and config — are reachable from the network. <code>LEMONADE_API_KEY</code> secures all endpoints; <code>LEMONADE_ADMIN_API_KEY</code> on its own secures only <code>/internal/*</code> and leaves the inference and model-management endpoints (<code>/api</code>, <code>/v0</code>, <code>/v1</code>) open, so set <code>LEMONADE_API_KEY</code> to protect those too. <code>lemond</code> logs a startup warning when bound to a non-loopback host without the regular key.</p>
+</blockquote>
 <table>
 <thead>
 <tr>
