@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <cmath>
+#include <thread>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -374,9 +375,12 @@ void RealtimeSessionManager::clear_audio(const std::string& session_id) {
         return;
     }
 
-    // Disconnect streaming backend on clear
+    // Forward clear to the streaming backend, keeping the stream open so
+    // subsequent appends keep streaming. The backend replies with
+    // input_audio_buffer.cleared, which is forwarded to the client.
     if (session->use_streaming_backend.load()) {
-        disconnect_streaming_backend(session);
+        forward_streaming_clear(session);
+        return;
     }
 
     session->audio_buffer.clear();
@@ -518,7 +522,7 @@ void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeS
     // thread owns this callback — a shared_ptr capture would be a cycle.
     std::weak_ptr<RealtimeSession> weak_session = session;
     auto client = std::make_unique<utils::TcpJsonlClient>();
-    bool ok = client->connect(address, [weak_session](const json& msg) {
+    auto callback = [weak_session](const json& msg) {
         auto session = weak_session.lock();
         if (!session || !session->session_active.load() || !session->send_message) {
             return;
@@ -533,10 +537,22 @@ void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeS
             event_type == "input_audio_buffer.speech_started" ||
             event_type == "input_audio_buffer.speech_stopped" ||
             event_type == "input_audio_buffer.committed" ||
+            event_type == "input_audio_buffer.cleared" ||
             event_type == "session.updated") {
             session->send_message(msg);
         }
-    });
+    };
+
+    // Retry with backoff: the backend's TCP listener starts on a separate
+    // thread from its HTTP health endpoint, so a session created right after
+    // model load can otherwise race it and silently lose streaming.
+    bool ok = false;
+    for (int attempt = 0; attempt < 10 && !ok; ++attempt) {
+        if (attempt > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        ok = client->connect(address, callback);
+    }
 
     if (ok) {
         std::lock_guard<std::mutex> lock(session->streaming_mutex);
@@ -586,6 +602,20 @@ void RealtimeSessionManager::forward_streaming_commit(std::shared_ptr<RealtimeSe
     }
     json msg = {
         {"type", "input_audio_buffer.commit"}
+    };
+    session->streaming_client->send(msg);
+}
+
+void RealtimeSessionManager::forward_streaming_clear(std::shared_ptr<RealtimeSession> session) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
+        return;
+    }
+    json msg = {
+        {"type", "input_audio_buffer.clear"}
     };
     session->streaming_client->send(msg);
 }

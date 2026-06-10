@@ -178,11 +178,28 @@ class TcpEventSender(_EventSender):
     def send(self, msg: dict):
         if self._closed:
             return
+        line = (json.dumps(msg) + "\n").encode("utf-8")
+
+        def _write():
+            if self._closed:
+                return
+            try:
+                self.writer.write(line)
+                asyncio.ensure_future(self._drain())
+            except Exception:
+                self._closed = True
+
         try:
-            line = json.dumps(msg) + "\n"
-            self.writer.write(line.encode("utf-8"))
-            # Safe cross-thread drain scheduling
-            asyncio.run_coroutine_threadsafe(self.writer.drain(), self._loop)
+            # Listener callbacks arrive on moonshine_voice's internal C++
+            # thread; StreamWriter is not thread-safe, so schedule the whole
+            # write+drain onto the event loop.
+            self._loop.call_soon_threadsafe(_write)
+        except Exception:
+            self._closed = True
+
+    async def _drain(self):
+        try:
+            await self.writer.drain()
         except Exception:
             self._closed = True
 
@@ -202,14 +219,24 @@ class StreamingListener(TranscriptEventListener):
         super().__init__()
         self.sender = sender
         self._current_text = ""
+        self._suppress_line = False
+
+    def discard_current_line(self):
+        """input_audio_buffer.clear: drop the in-flight line silently while
+        keeping the stream open. The next line emits events normally."""
+        self._current_text = ""
+        self._suppress_line = True
 
     def on_line_started(self, event):
+        self._suppress_line = False
         self._current_text = ""
         # Moonshine opens a "line" when it starts hearing speech — the closest
         # analog to OpenAI's stream-level VAD event.
         self.sender.send({"type": "input_audio_buffer.speech_started"})
 
     def on_line_text_changed(self, event):
+        if self._suppress_line:
+            return
         text = event.line.text or ""
         self._current_text = text
         self.sender.send({
@@ -218,6 +245,10 @@ class StreamingListener(TranscriptEventListener):
         })
 
     def on_line_completed(self, event):
+        if self._suppress_line:
+            self._suppress_line = False
+            self._current_text = ""
+            return
         text = event.line.text or ""
         # Line completion means the speech segment ended: emit the stream-level
         # stop event before the final transcript, mirroring the OpenAI ordering
@@ -278,6 +309,12 @@ async def _handle_streaming_session(reader, sender: _EventSender, transcriber_fa
                 samples = pcm16_to_f32(pcm16_bytes)
                 if samples:
                     stream.add_audio(samples, sample_rate=16000)
+
+            elif msg_type == "input_audio_buffer.clear":
+                # Discard the in-flight line but keep the stream open so
+                # subsequent appends keep streaming
+                listener.discard_current_line()
+                sender.send({"type": "input_audio_buffer.cleared"})
 
             elif msg_type == "input_audio_buffer.commit":
                 # Finalize the in-flight line so the client receives a final
@@ -345,7 +382,7 @@ async def tcp_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         pass
 
 
-def get_handler(transcriber):
+def get_handler(transcriber, tcp_ready=None):
     class MoonshineHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             # Suppress default logging; Lemonade manages its own logs
@@ -354,6 +391,14 @@ def get_handler(transcriber):
         def do_GET(self):
             parsed = urlparse(self.path)
             if parsed.path == "/health":
+                # Not ready until the TCP streaming listener is bound, so
+                # Lemonade's readiness probe cannot race the daemon thread
+                if tcp_ready is not None and not tcp_ready.is_set():
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"status":"starting"}')
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -509,7 +554,7 @@ def run_websocket_server(host: str, port: int, transcriber_factory):
     loop.run_until_complete(_serve())
 
 
-def run_tcp_server(host: str, port: int, transcriber_factory):
+def run_tcp_server(host: str, port: int, transcriber_factory, ready_event=None):
     """Run the TCP line-delimited JSON server in a dedicated asyncio event loop (thread target)."""
     async def _serve():
         server = await asyncio.start_server(
@@ -517,6 +562,8 @@ def run_tcp_server(host: str, port: int, transcriber_factory):
             host, port
         )
         print(f"[moonshine-server] TCP listening on {host}:{port}", file=sys.stderr, flush=True)
+        if ready_event is not None:
+            ready_event.set()
         async with server:
             await server.serve_forever()
 
@@ -549,7 +596,8 @@ def main():
     def transcriber_factory():
         return transcriber
 
-    handler = get_handler(transcriber)
+    tcp_ready = threading.Event()
+    handler = get_handler(transcriber, tcp_ready)
     http_server = HTTPServer(("127.0.0.1", args.port), handler)
 
     # Start WebSocket server in a daemon thread
@@ -563,7 +611,7 @@ def main():
     # Start TCP server in a daemon thread
     tcp_thread = threading.Thread(
         target=run_tcp_server,
-        args=("127.0.0.1", tcp_port, transcriber_factory),
+        args=("127.0.0.1", tcp_port, transcriber_factory, tcp_ready),
         daemon=True,
     )
     tcp_thread.start()

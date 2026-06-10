@@ -168,6 +168,7 @@ private:
     void forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
                                  const std::string& base64_audio);
     void forward_streaming_commit(std::shared_ptr<RealtimeSession> session);
+    void forward_streaming_clear(std::shared_ptr<RealtimeSession> session);
 
     // Get session by ID (returns nullptr if not found)
     std::shared_ptr<RealtimeSession> get_session(const std::string& session_id);

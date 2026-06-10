@@ -121,34 +121,20 @@ class MoonshineTests(ServerTestBase):
         # test_speech.wav says "Just seeing if this is working."
         self.assertIn("working", text.lower())
 
-    @skip_if_unsupported("realtime_websocket")
-    def test_moonshine_realtime_streaming(self):
-        """Stream real speech over the realtime WebSocket and verify the
-        full event sequence: speech_started -> delta(s) -> speech_stopped ->
-        completed -> committed."""
+    def _stream_wav_over_ws(self, ws_url, model_name, clear_before_streaming=False):
+        """Stream test_speech.wav over a realtime WebSocket.
+
+        Returns (events, final_text). With clear_before_streaming, an
+        input_audio_buffer.clear is sent first (preceded by a little audio)
+        to verify streaming continues after a clear.
+        """
         import asyncio
         import base64
         import json as jsonlib
 
         import websockets
 
-        model_name = _get_moonshine_model()
-        if not model_name or "Moonshine" not in model_name:
-            self.skipTest("No Moonshine model configured for testing")
-
         wav_path = os.path.join(os.path.dirname(__file__), "test_speech.wav")
-        if not os.path.exists(wav_path):
-            self.skipTest("test_speech.wav not found")
-
-        self._load_model(model_name)
-
-        health = requests.get(
-            f"http://127.0.0.1:{PORT}/v1/health", timeout=TIMEOUT_DEFAULT
-        ).json()
-        ws_port = health.get("websocket_port")
-        self.assertTrue(ws_port, "websocket_port missing from /health")
-
-        ws_url = f"ws://127.0.0.1:{ws_port}/realtime?model={model_name}"
         chunk_ms = 100
 
         async def stream() -> tuple[set, str]:
@@ -180,6 +166,22 @@ class MoonshineTests(ServerTestBase):
 
                     rtask = asyncio.ensure_future(reader())
 
+                    if clear_before_streaming:
+                        # Send a few chunks, then clear — streaming must
+                        # continue for the audio that follows
+                        for _ in range(3):
+                            frames = wf.readframes(frames_per_chunk)
+                            await ws.send(jsonlib.dumps({
+                                "type": "input_audio_buffer.append",
+                                "audio": base64.b64encode(frames).decode(),
+                            }))
+                            await asyncio.sleep(chunk_ms / 1000)
+                        wf.rewind()
+                        await ws.send(jsonlib.dumps(
+                            {"type": "input_audio_buffer.clear"}
+                        ))
+                        await asyncio.sleep(0.5)
+
                     while True:
                         frames = wf.readframes(frames_per_chunk)
                         if not frames:
@@ -206,10 +208,9 @@ class MoonshineTests(ServerTestBase):
                     rtask.cancel()
             return events, final_text
 
-        events, final_text = asyncio.run(stream())
-        print(f"[MoonshineTest] WS events: {sorted(events)}")
-        print(f"[MoonshineTest] WS final text: {final_text!r}")
+        return asyncio.run(stream())
 
+    def _assert_streaming_events(self, events, final_text):
         for expected in (
             "input_audio_buffer.speech_started",
             "conversation.item.input_audio_transcription.delta",
@@ -219,6 +220,55 @@ class MoonshineTests(ServerTestBase):
         ):
             self.assertIn(expected, events, f"missing realtime event: {expected}")
         self.assertIn("working", final_text.lower())
+
+    def _streaming_preflight(self):
+        model_name = _get_moonshine_model()
+        if not model_name or "Moonshine" not in model_name:
+            self.skipTest("No Moonshine model configured for testing")
+        wav_path = os.path.join(os.path.dirname(__file__), "test_speech.wav")
+        if not os.path.exists(wav_path):
+            self.skipTest("test_speech.wav not found")
+        self._load_model(model_name)
+        return model_name
+
+    @skip_if_unsupported("realtime_websocket")
+    def test_moonshine_realtime_streaming_main_port(self):
+        """Realtime streaming via the WebSocket upgrade on the main HTTP port."""
+        model_name = self._streaming_preflight()
+        ws_url = f"ws://127.0.0.1:{PORT}/v1/realtime?model={model_name}"
+        events, final_text = self._stream_wav_over_ws(ws_url, model_name)
+        print(f"[MoonshineTest] main-port WS events: {sorted(events)}")
+        print(f"[MoonshineTest] main-port WS final text: {final_text!r}")
+        self._assert_streaming_events(events, final_text)
+
+    @skip_if_unsupported("realtime_websocket")
+    def test_moonshine_realtime_streaming_legacy_port(self):
+        """Realtime streaming via the dedicated websocket_port (back-compat)."""
+        model_name = self._streaming_preflight()
+        health = requests.get(
+            f"http://127.0.0.1:{PORT}/v1/health", timeout=TIMEOUT_DEFAULT
+        ).json()
+        ws_port = health.get("websocket_port")
+        self.assertTrue(ws_port, "websocket_port missing from /health")
+        ws_url = f"ws://127.0.0.1:{ws_port}/realtime?model={model_name}"
+        events, final_text = self._stream_wav_over_ws(ws_url, model_name)
+        print(f"[MoonshineTest] legacy-port WS events: {sorted(events)}")
+        print(f"[MoonshineTest] legacy-port WS final text: {final_text!r}")
+        self._assert_streaming_events(events, final_text)
+
+    @skip_if_unsupported("realtime_websocket")
+    def test_moonshine_realtime_clear_then_append(self):
+        """input_audio_buffer.clear must not end streaming: audio appended
+        after a clear still produces deltas and a final transcript."""
+        model_name = self._streaming_preflight()
+        ws_url = f"ws://127.0.0.1:{PORT}/v1/realtime?model={model_name}"
+        events, final_text = self._stream_wav_over_ws(
+            ws_url, model_name, clear_before_streaming=True
+        )
+        print(f"[MoonshineTest] clear-then-append events: {sorted(events)}")
+        print(f"[MoonshineTest] clear-then-append final text: {final_text!r}")
+        self.assertIn("input_audio_buffer.cleared", events)
+        self._assert_streaming_events(events, final_text)
 
     @skip_if_unsupported("transcription")
     def test_moonshine_thread_count(self):
