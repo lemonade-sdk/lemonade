@@ -205,6 +205,9 @@ class StreamingListener(TranscriptEventListener):
 
     def on_line_started(self, event):
         self._current_text = ""
+        # Moonshine opens a "line" when it starts hearing speech — the closest
+        # analog to OpenAI's stream-level VAD event.
+        self.sender.send({"type": "input_audio_buffer.speech_started"})
 
     def on_line_text_changed(self, event):
         text = event.line.text or ""
@@ -216,6 +219,10 @@ class StreamingListener(TranscriptEventListener):
 
     def on_line_completed(self, event):
         text = event.line.text or ""
+        # Line completion means the speech segment ended: emit the stream-level
+        # stop event before the final transcript, mirroring the OpenAI ordering
+        # (speech_stopped -> transcription.completed).
+        self.sender.send({"type": "input_audio_buffer.speech_stopped"})
         self.sender.send({
             "type": "conversation.item.input_audio_transcription.completed",
             "transcript": text,
@@ -273,7 +280,29 @@ async def _handle_streaming_session(reader, sender: _EventSender, transcriber_fa
                     stream.add_audio(samples, sample_rate=16000)
 
             elif msg_type == "input_audio_buffer.commit":
+                # Finalize the in-flight line so the client receives a final
+                # transcript for audio preceding the commit (e.g. the user
+                # stopped recording mid-sentence). moonshine_voice exposes the
+                # finalizer under different names across versions.
+                flushed = False
+                for meth in ("flush", "finalize"):
+                    if hasattr(stream, meth):
+                        try:
+                            getattr(stream, meth)()
+                            flushed = True
+                        except Exception:
+                            pass
+                        break
                 sender.send({"type": "input_audio_buffer.committed"})
+                if not flushed and listener._current_text:
+                    # No finalizer available — synthesize the final transcript
+                    # from the last interim so the client is never left waiting.
+                    sender.send({"type": "input_audio_buffer.speech_stopped"})
+                    sender.send({
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "transcript": listener._current_text,
+                    })
+                    listener._current_text = ""
 
             elif msg_type == "session.update":
                 sender.send({"type": "session.updated", "session": {}})

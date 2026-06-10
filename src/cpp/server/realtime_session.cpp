@@ -516,11 +516,15 @@ void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeS
         if (!session->session_active.load() || !session->send_message) {
             return;
         }
-        // Forward backend events to the WebSocket client
-        // Map moonshine event types to OpenAI Realtime types
+        // Forward backend events to the WebSocket client. The streaming
+        // backend speaks OpenAI Realtime event types; pass through the text
+        // events (delta/completed) and the stream-level audio events
+        // (speech_started/speech_stopped/committed) the UI listens for.
         std::string event_type = msg.value("type", "");
         if (event_type == "conversation.item.input_audio_transcription.delta" ||
             event_type == "conversation.item.input_audio_transcription.completed" ||
+            event_type == "input_audio_buffer.speech_started" ||
+            event_type == "input_audio_buffer.speech_stopped" ||
             event_type == "input_audio_buffer.committed" ||
             event_type == "session.updated") {
             session->send_message(msg);

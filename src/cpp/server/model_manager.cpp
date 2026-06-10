@@ -2444,6 +2444,10 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("transcription");
         labels.insert("realtime-transcription");
     }
+    if (recipe == "moonshine") {
+        labels.insert("transcription");
+        labels.insert("realtime-transcription");
+    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models

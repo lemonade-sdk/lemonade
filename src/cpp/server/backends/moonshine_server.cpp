@@ -2,17 +2,14 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
-#include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
-#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <iomanip>
 #include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -31,13 +28,18 @@ namespace lemon {
 namespace backends {
 
 InstallParams MoonshineServer::get_install_params(const std::string& backend, const std::string& version) {
+    (void)backend;  // moonshine is CPU-only
     InstallParams params;
     params.repo = "lemonade-sdk/moonshine-server";
 
+    // Self-contained PyInstaller bundles built by
+    // .github/workflows/build-moonshine-server.yml — no system Python needed.
+    // moonshine-voice publishes wheels for win x64, linux x64/arm64, and macOS
+    // arm64 only (no Intel macOS), so the macOS asset is arm64-only.
 #ifdef _WIN32
     params.filename = "moonshine-server-" + version + "-windows-x64.zip";
 #elif defined(__APPLE__)
-    params.filename = "moonshine-server-" + version + "-macos-universal.tar.gz";
+    params.filename = "moonshine-server-" + version + "-macos-arm64.tar.gz";
 #else
     params.filename = "moonshine-server-" + version + "-linux-x64.tar.gz";
 #endif
@@ -61,6 +63,8 @@ void MoonshineServer::load(const std::string& model_name,
     (void)do_not_upgrade;
     LOG(INFO, "MoonshineServer") << "Loading model: " << model_name << std::endl;
     LOG(INFO, "MoonshineServer") << "Per-model settings: " << options.to_log_string() << std::endl;
+
+    std::string moonshine_args = options.get_option("moonshine_args");
 
     device_type_ = DEVICE_CPU;
 
@@ -115,6 +119,28 @@ void MoonshineServer::load(const std::string& model_name,
         "--port", std::to_string(port_),
         "--tcp-port", std::to_string(tcp_port_)
     };
+
+    // Lemonade manages the model path and ports; optional moonshine-server
+    // flags come from moonshine_args.
+    std::set<std::string> reserved_flags = {
+        "--model-path",
+        "--model-arch",
+        "--port",
+        "--tcp-port"
+    };
+
+    if (!moonshine_args.empty()) {
+        std::string validation_error = validate_custom_args(moonshine_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom moonshine-server arguments:\n" + validation_error
+            );
+        }
+
+        LOG(DEBUG, "MoonshineServer") << "Adding custom arguments: " << moonshine_args << std::endl;
+        std::vector<std::string> custom_args_vec = parse_custom_args(moonshine_args);
+        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+    }
 
     // Set environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
