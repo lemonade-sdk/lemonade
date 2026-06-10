@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import traceback
 
 import requests
 
@@ -123,6 +124,8 @@ def main():
     cli_binary = args.cli_binary
     base_cli_args = ["--host", "127.0.0.1", "--port", str(PORT)]
 
+    # This intentionally duplicates the workflow curl check so this focused
+    # smoke test also fails clearly if server-side auth enforcement regresses.
     print("Verifying server-side API-key enforcement first...", flush=True)
     assert_health_status(None, 401, "no API key")
     assert_health_status("wrong-key", 401, "wrong API key")
@@ -135,10 +138,12 @@ def main():
     print("Verifying CLI fails without the API key...", flush=True)
     no_key_env = os.environ.copy()
     no_key_env.pop("LEMONADE_API_KEY", None)
+    no_key_env.pop("LEMONADE_ADMIN_API_KEY", None)
     assert_cli_auth_fails(cli_binary, base_cli_args + ["status"], env=no_key_env)
 
     print("Verifying CLI fails with the wrong API key...", flush=True)
     wrong_key_env = os.environ.copy()
+    wrong_key_env.pop("LEMONADE_ADMIN_API_KEY", None)
     wrong_key_env["LEMONADE_API_KEY"] = "wrong-key"
     assert_cli_auth_fails(cli_binary, base_cli_args + ["status"], env=wrong_key_env)
 
@@ -148,6 +153,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as exc:
+    except AssertionError as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
+        sys.exit(1)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
