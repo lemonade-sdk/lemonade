@@ -409,6 +409,9 @@ int64_t VLLMServer::count_openai_prompt_tokens(const json& request) {
         tokenize_request["tool_choice"] = request["tool_choice"];
     }
 
+    // This is a synchronous backend round trip on the request path. It only
+    // runs for oversized max-token requests so vLLM receives a context-safe
+    // limit before generation or streaming begins.
     auto response = forward_request("/tokenize", tokenize_request);
     if (response.contains("error")) {
         LOG(DEBUG, "vLLM") << "Skipping max token fit; /tokenize returned error: "
