@@ -547,9 +547,17 @@ std::string Router::get_backend_address() const {
     return server ? server->get_address() : "";
 }
 
-std::string Router::get_streaming_transcription_address() const {
+std::string Router::get_streaming_transcription_address(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
-    WrappedServer* server = get_most_recent_server();
+    WrappedServer* server = nullptr;
+    if (!model_name.empty()) {
+        // Route by the session's requested model, like the normal inference
+        // path — most-recent would misroute multi-model setups (e.g. a
+        // Whisper session connecting to Moonshine's stream)
+        server = find_server_by_model_name(resolve_model_name(model_name));
+    } else {
+        server = get_most_recent_server();
+    }
     if (!server) {
         return "";
     }

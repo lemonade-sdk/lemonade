@@ -499,7 +499,7 @@ void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeS
         return;
     }
 
-    std::string address = router_->get_streaming_transcription_address();
+    std::string address = router_->get_streaming_transcription_address(session->model);
     if (address.empty()) {
         // Backend does not support streaming transcription
         disconnect_streaming_backend(session);

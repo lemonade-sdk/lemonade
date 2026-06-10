@@ -189,21 +189,26 @@ void WebSocketServer::stop() {
         service_thread_.join();
     }
 
+    // Snapshot and clear under the lock, then close sessions outside it:
+    // closing a streaming session joins the backend TCP read thread, which
+    // may concurrently be forwarding an event through send_json() — that
+    // path takes connections_mutex_ (same pattern as handle_close()).
+    std::unordered_map<std::string, ConnectionState> states;
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
-        for (const auto& [_, state] : connection_states_) {
-            if (!state.realtime_session_id.empty()) {
-                session_manager_->close_session(state.realtime_session_id);
-            }
-            if (!state.log_subscriber_id.empty()) {
-                LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
-            }
-        }
-
+        states = std::move(connection_states_);
         connection_states_.clear();
         connection_websockets_.clear();
         message_queues_.clear();
         receive_buffers_.clear();
+    }
+    for (const auto& [_, state] : states) {
+        if (!state.realtime_session_id.empty()) {
+            session_manager_->close_session(state.realtime_session_id);
+        }
+        if (!state.log_subscriber_id.empty()) {
+            LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
+        }
     }
 
     if (context_) {

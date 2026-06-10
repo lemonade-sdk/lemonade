@@ -26,7 +26,9 @@
 
 #include <httplib.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <functional>
