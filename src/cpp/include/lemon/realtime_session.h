@@ -51,7 +51,9 @@ struct RealtimeSession {
     int64_t last_interim_transcription_ms = 0;  // When we last fired an interim transcription
     std::atomic<bool> interim_in_flight{false};  // Guard against overlapping interim requests
 
-    // Streaming backend connection (used when backend supports IStreamingTranscriptionServer)
+    // Streaming backend connection (used when backend supports IStreamingTranscriptionServer).
+    // streaming_mutex guards streaming_client against concurrent forward/disconnect.
+    std::mutex streaming_mutex;
     std::unique_ptr<utils::TcpJsonlClient> streaming_client;
     std::atomic<bool> use_streaming_backend{false};
 

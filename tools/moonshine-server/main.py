@@ -317,10 +317,7 @@ async def _handle_streaming_session(reader, sender: _EventSender, transcriber_fa
             stream.close()
         except Exception:
             pass
-        try:
-            transcriber.close()
-        except Exception:
-            pass
+        # The transcriber is shared across sessions — do not close it here.
 
 
 async def websocket_handler(websocket, transcriber_factory):
@@ -398,8 +395,12 @@ def get_handler(transcriber):
                 file_item = form["file"]
                 audio_bytes = file_item.file.read()
 
-                # Save to temp file (moonshine_voice.load_wav_file needs a path)
-                ext = os.path.splitext(file_item.filename or "audio.wav")[1]
+                # Save to temp file (moonshine_voice.load_wav_file needs a path).
+                # The suffix comes from the client-supplied filename: allowlist it.
+                allowed_exts = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm"}
+                ext = os.path.splitext(file_item.filename or "audio.wav")[1].lower()
+                if ext not in allowed_exts:
+                    ext = ".wav"
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(audio_bytes)
                     tmp_path = tmp.name
@@ -534,9 +535,11 @@ def main():
     transcriber = load_model(model_path, args.model_arch)
     print(f"[moonshine-server] Model loaded. HTTP={args.port} WS={ws_port} TCP={tcp_port}", file=sys.stderr)
 
-    # Factory so each connection gets its own transcriber
+    # Share the loaded transcriber across connections; each streaming session
+    # gets its own stream via create_stream(). Loading a fresh model per
+    # connection would multiply load time and memory per realtime client.
     def transcriber_factory():
-        return load_model(model_path, args.model_arch)
+        return transcriber
 
     handler = get_handler(transcriber)
     http_server = HTTPServer(("127.0.0.1", args.port), handler)

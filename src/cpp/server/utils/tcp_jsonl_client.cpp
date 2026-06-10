@@ -2,57 +2,52 @@
 
 #include <cerrno>
 #include <cstring>
-#include <sstream>
-#include <vector>
 
 #ifdef _WIN32
+    #include <winsock2.h>
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
+    #define INVALID_SOCKET_JL INVALID_SOCKET
     #define LMCLOSE_SOCKET ::closesocket
     #define SOCKET_ERRNO WSAGetLastError()
+    #define SOCKET_EINTR WSAEINTR
 #else
     #include <arpa/inet.h>
-    #include <netdb.h>
     #include <netinet/in.h>
     #include <sys/socket.h>
     #include <unistd.h>
+    #define INVALID_SOCKET_JL -1
     #define LMCLOSE_SOCKET ::close
     #define SOCKET_ERRNO errno
+    #define SOCKET_EINTR EINTR
 #endif
 
 namespace lemon {
 namespace utils {
 
-TcpJsonlClient::TcpJsonlClient() = default;
+namespace {
+
+void ensure_socket_init() {
+#ifdef _WIN32
+    static const bool initialized = [] {
+        WSADATA wsa_data;
+        return WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0;
+    }();
+    (void)initialized;
+#endif
+}
+
+} // namespace
+
+TcpJsonlClient::TcpJsonlClient() : socket_fd_(INVALID_SOCKET_JL) {}
 
 TcpJsonlClient::~TcpJsonlClient() {
     close();
 }
 
-TcpJsonlClient::TcpJsonlClient(TcpJsonlClient&& other) noexcept
-    : read_thread_(std::move(other.read_thread_)),
-      connected_(other.connected_.exchange(false)),
-      stop_(other.stop_.exchange(true)),
-      socket_fd_(other.socket_fd_),
-      callback_(std::move(other.callback_)) {
-    other.socket_fd_ = -1;
-}
-
-TcpJsonlClient& TcpJsonlClient::operator=(TcpJsonlClient&& other) noexcept {
-    if (this != &other) {
-        close();
-        read_thread_ = std::move(other.read_thread_);
-        connected_ = other.connected_.exchange(false);
-        stop_ = other.stop_.exchange(true);
-        socket_fd_ = other.socket_fd_;
-        callback_ = std::move(other.callback_);
-        other.socket_fd_ = -1;
-    }
-    return *this;
-}
-
 bool TcpJsonlClient::connect(const std::string& address, MessageCallback callback) {
     close();
+    ensure_socket_init();
 
     // Parse "tcp://host:port"
     if (address.rfind("tcp://", 0) != 0) {
@@ -84,8 +79,8 @@ bool TcpJsonlClient::connect(const std::string& address, MessageCallback callbac
 }
 
 bool TcpJsonlClient::do_connect(const std::string& host, int port) {
-    socket_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd_ < 0) {
+    SOCKET sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET_JL) {
         return false;
     }
 
@@ -94,29 +89,24 @@ bool TcpJsonlClient::do_connect(const std::string& host, int port) {
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<uint16_t>(port));
 
+    // Backends hand out numeric loopback addresses; no hostname resolution.
     if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
-        // Try resolving as hostname
-        struct hostent* he = gethostbyname(host.c_str());
-        if (!he || !he->h_addr_list[0]) {
-            LMCLOSE_SOCKET(socket_fd_);
-            socket_fd_ = -1;
-            return false;
-        }
-        std::memcpy(&addr.sin_addr, he->h_addr_list[0], sizeof(struct in_addr));
-    }
-
-    if (::connect(socket_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
-        LMCLOSE_SOCKET(socket_fd_);
-        socket_fd_ = -1;
+        LMCLOSE_SOCKET(sock);
         return false;
     }
 
+    if (::connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
+        LMCLOSE_SOCKET(sock);
+        return false;
+    }
+
+    socket_fd_ = sock;
     return true;
 }
 
 void TcpJsonlClient::send(const json& msg) {
     std::lock_guard<std::mutex> lock(socket_mutex_);
-    if (socket_fd_ < 0 || !connected_.load()) {
+    if (socket_fd_ == INVALID_SOCKET_JL || !connected_.load()) {
         return;
     }
 
@@ -125,12 +115,15 @@ void TcpJsonlClient::send(const json& msg) {
     size_t remaining = line.size();
 
     while (remaining > 0) {
-        ssize_t sent = ::send(socket_fd_, data, remaining, 0);
+#ifdef _WIN32
+        int sent = ::send(socket_fd_, data, static_cast<int>(remaining), 0);
+#else
+        auto sent = ::send(socket_fd_, data, remaining, 0);
+#endif
         if (sent < 0) {
-            if (SOCKET_ERRNO == EINTR) {
+            if (SOCKET_ERRNO == SOCKET_EINTR) {
                 continue;
             }
-            // Connection broken
             connected_.store(false);
             return;
         }
@@ -148,16 +141,16 @@ void TcpJsonlClient::close() {
     }
 
     std::lock_guard<std::mutex> lock(socket_mutex_);
-    if (socket_fd_ >= 0) {
+    if (socket_fd_ != INVALID_SOCKET_JL) {
         LMCLOSE_SOCKET(socket_fd_);
-        socket_fd_ = -1;
+        socket_fd_ = INVALID_SOCKET_JL;
     }
     connected_.store(false);
 }
 
 void TcpJsonlClient::shutdown_socket() {
     std::lock_guard<std::mutex> lock(socket_mutex_);
-    if (socket_fd_ >= 0) {
+    if (socket_fd_ != INVALID_SOCKET_JL) {
 #ifdef _WIN32
         shutdown(socket_fd_, SD_BOTH);
 #else
@@ -175,12 +168,15 @@ void TcpJsonlClient::read_loop(const std::string& host, int port) {
 
     while (!stop_.load() && connected_.load()) {
         char chunk[1024];
-        ssize_t n = recv(socket_fd_, chunk, sizeof(chunk), 0);
+#ifdef _WIN32
+        int n = recv(socket_fd_, chunk, static_cast<int>(sizeof(chunk)), 0);
+#else
+        auto n = recv(socket_fd_, chunk, sizeof(chunk), 0);
+#endif
         if (n <= 0) {
-            if (n < 0 && SOCKET_ERRNO == EINTR) {
+            if (n < 0 && SOCKET_ERRNO == SOCKET_EINTR) {
                 continue;
             }
-            // Connection closed or error
             break;
         }
 
@@ -192,7 +188,6 @@ void TcpJsonlClient::read_loop(const std::string& host, int port) {
             std::string line = buffer.substr(0, pos);
             buffer.erase(0, pos + 1);
 
-            // Remove potential \r
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }

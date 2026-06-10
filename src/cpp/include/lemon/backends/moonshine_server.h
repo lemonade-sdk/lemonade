@@ -4,7 +4,6 @@
 #include "../server_capabilities.h"
 #include "backend_utils.h"
 #include <string>
-#include <filesystem>
 
 namespace lemon {
 namespace backends {
@@ -44,19 +43,11 @@ public:
     std::string get_streaming_address() override;
 
 private:
-    // Build request for moonshine-server
-    json build_transcription_request(const json& request);
-
-    // Forward audio file using multipart form-data
-    json forward_multipart_audio_request(const std::string& file_path,
-                                         const json& params);
-
     // Forward audio data directly (no file I/O) using multipart form-data
     json forward_multipart_audio_data(const std::string& audio_data,
                                       const std::string& filename,
                                       const json& params);
 
-    std::string model_path_;
     int tcp_port_ = 0;     // Port for line-delimited JSON streaming
 };
 

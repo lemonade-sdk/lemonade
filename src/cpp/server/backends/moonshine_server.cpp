@@ -8,8 +8,6 @@
 #include "lemon/error_types.h"
 #include <iostream>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <set>
 #include <vector>
 #include <lemon/utils/aixlog.hpp>
@@ -99,16 +97,27 @@ void MoonshineServer::load(const std::string& model_name,
     std::string executable = BackendUtils::get_backend_binary_path(SPEC, "cpu");
     LOG(INFO, "MoonshineServer") << "Using executable: " << executable << std::endl;
 
-    // Choose ports for HTTP and TCP streaming
-    port_ = choose_port();
-    if (port_ == 0) {
-        throw std::runtime_error("Failed to find an available port");
+    // moonshine-server binds three consecutive ports: HTTP, WS (+1), TCP (+2).
+    // Probe all three before launching instead of assuming +1/+2 are free.
+    port_ = 0;
+    tcp_port_ = 0;
+    int start = 8001;
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        int p = utils::ProcessManager::find_free_port(start);
+        if (p == 0) {
+            break;
+        }
+        if (utils::ProcessManager::find_free_port(p + 1) == p + 1 &&
+            utils::ProcessManager::find_free_port(p + 2) == p + 2) {
+            port_ = p;
+            tcp_port_ = p + 2;
+            break;
+        }
+        start = p + 1;
     }
-
-    tcp_port_ = port_ + 2;  // HTTP + 2 (WS is +1)
-    // Note: We assume port_+2 is available since choose_port() found a free port
-    // and our port range is large enough. If collisions occur, find_free_port
-    // can be used here too.
+    if (port_ == 0 || tcp_port_ == 0) {
+        throw std::runtime_error("Failed to find three consecutive available ports");
+    }
 
     LOG(INFO, "MoonshineServer") << "Starting server on port " << port_
                                  << " (TCP streaming on " << tcp_port_ << ")" << std::endl;
@@ -185,6 +194,9 @@ void MoonshineServer::unload() {
 }
 
 std::string MoonshineServer::get_streaming_address() {
+    if (tcp_port_ == 0) {
+        return "";  // not loaded
+    }
     return "tcp://127.0.0.1:" + std::to_string(tcp_port_);
 }
 
@@ -220,108 +232,6 @@ json MoonshineServer::responses(const json& request) {
             {"code", "model_not_applicable"}
         }}
     };
-}
-
-json MoonshineServer::build_transcription_request(const json& request) {
-    json moonshine_req;
-
-    if (request.contains("file_path")) {
-        moonshine_req["file"] = request["file_path"];
-    }
-
-    if (request.contains("language")) {
-        moonshine_req["language"] = request["language"];
-    }
-
-    if (request.contains("prompt")) {
-        moonshine_req["prompt"] = request["prompt"];
-    }
-
-    if (request.contains("temperature")) {
-        moonshine_req["temperature"] = request["temperature"];
-    }
-
-    if (request.contains("response_format")) {
-        moonshine_req["response_format"] = request["response_format"];
-    } else {
-        moonshine_req["response_format"] = "json";
-    }
-
-    return moonshine_req;
-}
-
-json MoonshineServer::forward_multipart_audio_request(const std::string& file_path,
-                                                      const json& params) {
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file) {
-        throw std::runtime_error("Could not open audio file: " + file_path);
-    }
-
-    std::ostringstream oss;
-    oss << file.rdbuf();
-    std::string file_content = oss.str();
-    file.close();
-
-    LOG(DEBUG, "MoonshineServer") << "Audio file size: " << file_content.size() << " bytes" << std::endl;
-
-    fs::path filepath(file_path);
-    std::string ext = filepath.extension().string();
-    std::string content_type = "audio/wav";
-
-    if (ext == ".mp3") content_type = "audio/mpeg";
-    else if (ext == ".wav") content_type = "audio/wav";
-    else if (ext == ".m4a") content_type = "audio/mp4";
-    else if (ext == ".ogg") content_type = "audio/ogg";
-    else if (ext == ".flac") content_type = "audio/flac";
-    else if (ext == ".webm") content_type = "audio/webm";
-
-    std::vector<utils::MultipartField> fields;
-
-    utils::MultipartField audio_file;
-    audio_file.name = "file";
-    audio_file.data = file_content;
-    audio_file.filename = filepath.filename().string();
-    audio_file.content_type = content_type;
-    fields.push_back(audio_file);
-
-    std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
-    LOG(DEBUG, "MoonshineServer") << "Sending multipart request to " << url << std::endl;
-
-    auto res = utils::HttpClient::post_multipart(url, fields, 0);
-
-    LOG(DEBUG, "MoonshineServer") << "Response status: " << res.status_code << std::endl;
-    LOG(DEBUG, "MoonshineServer") << "Response body: " << res.body << std::endl;
-
-    if (res.status_code != 200) {
-        throw std::runtime_error("moonshine-server returned status " +
-                                std::to_string(res.status_code) + ": " + res.body);
-    }
-
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        return json{{"text", res.body}};
-    }
 }
 
 json MoonshineServer::forward_multipart_audio_data(const std::string& audio_data,

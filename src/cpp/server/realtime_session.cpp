@@ -502,18 +502,25 @@ void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeS
         return;
     }
 
-    // If already connected to the same address, nothing to do
-    if (session->use_streaming_backend.load() && session->streaming_client &&
-        session->streaming_client->is_connected()) {
-        return;
+    {
+        // If already connected to the same address, nothing to do
+        std::lock_guard<std::mutex> lock(session->streaming_mutex);
+        if (session->use_streaming_backend.load() && session->streaming_client &&
+            session->streaming_client->is_connected()) {
+            return;
+        }
     }
 
     // Disconnect any existing streaming connection
     disconnect_streaming_backend(session);
 
+    // Capture weak_ptr: the session owns the client, and the client's read
+    // thread owns this callback — a shared_ptr capture would be a cycle.
+    std::weak_ptr<RealtimeSession> weak_session = session;
     auto client = std::make_unique<utils::TcpJsonlClient>();
-    bool ok = client->connect(address, [session](const json& msg) {
-        if (!session->session_active.load() || !session->send_message) {
+    bool ok = client->connect(address, [weak_session](const json& msg) {
+        auto session = weak_session.lock();
+        if (!session || !session->session_active.load() || !session->send_message) {
             return;
         }
         // Forward backend events to the WebSocket client. The streaming
@@ -532,6 +539,7 @@ void RealtimeSessionManager::connect_streaming_backend(std::shared_ptr<RealtimeS
     });
 
     if (ok) {
+        std::lock_guard<std::mutex> lock(session->streaming_mutex);
         session->streaming_client = std::move(client);
         session->use_streaming_backend.store(true);
         LOG(INFO, "RealtimeSession") << "Connected to streaming backend at " << address << std::endl;
@@ -545,6 +553,7 @@ void RealtimeSessionManager::disconnect_streaming_backend(std::shared_ptr<Realti
         return;
     }
     session->use_streaming_backend.store(false);
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
     if (session->streaming_client) {
         session->streaming_client->close();
         session->streaming_client.reset();
@@ -553,7 +562,11 @@ void RealtimeSessionManager::disconnect_streaming_backend(std::shared_ptr<Realti
 
 void RealtimeSessionManager::forward_streaming_audio(std::shared_ptr<RealtimeSession> session,
                                                      const std::string& base64_audio) {
-    if (!session || !session->streaming_client || !session->streaming_client->is_connected()) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
         return;
     }
     json msg = {
@@ -564,7 +577,11 @@ void RealtimeSessionManager::forward_streaming_audio(std::shared_ptr<RealtimeSes
 }
 
 void RealtimeSessionManager::forward_streaming_commit(std::shared_ptr<RealtimeSession> session) {
-    if (!session || !session->streaming_client || !session->streaming_client->is_connected()) {
+    if (!session) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(session->streaming_mutex);
+    if (!session->streaming_client || !session->streaming_client->is_connected()) {
         return;
     }
     json msg = {

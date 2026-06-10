@@ -1,11 +1,17 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <atomic>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <atomic>
-#include <mutex>
-#include <functional>
+
+#ifdef _WIN32
+    #include <winsock2.h>
+#else
+    typedef int SOCKET;
+#endif
 
 namespace lemon {
 namespace utils {
@@ -28,11 +34,12 @@ public:
     TcpJsonlClient();
     ~TcpJsonlClient();
 
-    // Non-copyable, movable
+    // Non-copyable and non-movable: the read thread is bound to `this`, so a
+    // moved-from object would leave the running thread referencing it.
     TcpJsonlClient(const TcpJsonlClient&) = delete;
     TcpJsonlClient& operator=(const TcpJsonlClient&) = delete;
-    TcpJsonlClient(TcpJsonlClient&&) noexcept;
-    TcpJsonlClient& operator=(TcpJsonlClient&&) noexcept;
+    TcpJsonlClient(TcpJsonlClient&&) = delete;
+    TcpJsonlClient& operator=(TcpJsonlClient&&) = delete;
 
     /**
      * Connect to a TCP endpoint.
@@ -61,7 +68,7 @@ private:
     std::thread read_thread_;
     std::atomic<bool> connected_{false};
     std::atomic<bool> stop_{false};
-    int socket_fd_ = -1;
+    SOCKET socket_fd_;
     MessageCallback callback_;
     mutable std::mutex socket_mutex_;
 
