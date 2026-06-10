@@ -106,6 +106,7 @@ jobs:
           Write-Host "Updating llamacpp rocm-stable to $rocmStable" -ForegroundColor Cyan
           $old = $data.llamacpp.'rocm-stable'
           $data.llamacpp.'rocm-stable' = $rocmStable
+          $data.llamacpp.'cuda' = $rocmStable
           Write-Host "  llamacpp.rocm-stable: $old -> $rocmStable"
 
           $data | ConvertTo-Json -Depth 10 | Set-Content $path -Encoding UTF8
@@ -307,6 +308,7 @@ jobs:
           data['llamacpp']['vulkan'] = llamacpp
           data['llamacpp']['cpu'] = llamacpp
           data['llamacpp']['metal'] = llamacpp
+          data['llamacpp']['cuda'] = rocm_stable
           data['llamacpp']['rocm-stable'] = rocm_stable
           data['llamacpp']['rocm-nightly'] = rocm_nightly
           with open(path, 'w') as f:

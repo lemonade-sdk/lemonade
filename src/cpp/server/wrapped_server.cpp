@@ -223,7 +223,8 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                                               const std::string& request_body,
                                               httplib::DataSink& sink,
                                               bool sse,
-                                              long timeout_seconds) {
+                                              long timeout_seconds,
+                                              TelemetryCallback telemetry_callback) {
     if (!is_process_running()) {
         std::string error_msg = "data: {\"error\":{\"message\":\"No model loaded: " + server_name_ +
                                "\",\"type\":\"model_not_loaded\"}}\n\n";
@@ -240,13 +241,13 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
             // Use StreamingProxy to forward the SSE stream with telemetry callback
             // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
             StreamingProxy::forward_sse_stream(url, request_body, sink,
-                [this](const StreamingProxy::TelemetryData& telemetry) {
-                    // Save telemetry to member variable
-                    telemetry_.input_tokens = telemetry.input_tokens;
-                    telemetry_.output_tokens = telemetry.output_tokens;
-                    telemetry_.time_to_first_token = telemetry.time_to_first_token;
-                    telemetry_.tokens_per_second = telemetry.tokens_per_second;
-                    // Note: decode_token_times is not available from streaming proxy
+                [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {
+                    if (telemetry_callback) {
+                        telemetry_callback(telemetry.input_tokens,
+                                           telemetry.output_tokens,
+                                           telemetry.time_to_first_token,
+                                           telemetry.tokens_per_second);
+                    }
                 },
                 timeout_seconds
             );

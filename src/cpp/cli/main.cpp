@@ -1194,7 +1194,7 @@ int main(int argc, char* argv[]) {
     cleanup_cmd->add_flag("--dry-run", config.dry_run, "Preview what would be cleaned up without deleting");
 
     // Bench command
-    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.model, config.output_file, config.bench);
+    CLI::App* bench_cmd = lemon_cli::register_bench_command(app, config.output_file, config.bench);
 
     // Parse arguments
     try {
@@ -1292,7 +1292,7 @@ int main(int argc, char* argv[]) {
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
     } else if (bench_cmd->count() > 0) {
-        auto bench_config = lemon_cli::build_bench_config(config.model, config.output_file, config.bench);
+        auto bench_config = lemon_cli::build_bench_config(config.output_file, config.bench);
         return lemon_cli::handle_bench_command(client, bench_config);
     } else {
         std::cerr << "Error: No command specified" << std::endl;

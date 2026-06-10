@@ -57,6 +57,8 @@ static bool should_filter_line(const std::string& line) {
     // Also filter FLM's interactive prompt spam
     return (line.find("GET /health") != std::string::npos ||
             line.find("GET /v1/health") != std::string::npos ||
+            // idle heartbeat returned by llamma cpp when its /metrics is scrapped. supressed to decrease visual clutering
+            line.find("srv  update_slots: all slots are idle") != std::string::npos ||
             line.find("Enter 'exit' to stop the server") != std::string::npos);
 }
 

@@ -53,7 +53,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 
 | Command             | Description                         |
 |---------------------|-------------------------------------|
-| `bench MODEL_NAME`  | Benchmark a model's chat completion performance across backends and context sizes. See command options [below](#options-for-bench). |
+| `bench MODEL_NAME [MODEL_NAME ...]`  | Benchmark one or more models' chat completion performance across backends and context sizes. See command options [below](#options-for-bench). |
 
 ### Global Flags
 
@@ -556,17 +556,17 @@ lemonade scan --duration 5
 
 ## Options for bench
 
-The `bench` command measures chat completion performance (TTFT and tokens-per-second) for a given model across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
+The `bench` command measures chat completion performance (TTFT and tokens-per-second) for one or more models across one or more installed backends, context sizes, and scenario workloads. It sends `POST /api/v1/chat/completions` requests and extracts timing data from the server response.
 
 ```
-lemonade bench [options] MODEL_NAME
+lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 ```
 
 ### Required Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `MODEL_NAME` | Registered model name to benchmark |
+| `MODEL_NAME [MODEL_NAME ...]` | One or more registered model names to benchmark. The list of models will be deduplicated before starting the benchmark. |
 
 ### Options
 
@@ -588,6 +588,15 @@ lemonade bench [options] MODEL_NAME
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
 | `--flm-args ARGS` | Custom args for flm serve. Repeat for multiple. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
+
+**Preflight behavior:**
+- Before benchmarking starts, `bench` validates that every requested model is available.
+- If any model is missing or not downloaded and `--auto-pull` is not set, the command exits before running any scenario.
+- With `--auto-pull`, `bench` pulls any missing/not-downloaded models first, then starts benchmarking.
+
+**Timestamp behavior:**
+- Top-level `timestamp` is the command invocation time.
+- Each per-model result includes its own `timestamp` for when that model run started.
 
 ### Scenario Files
 
@@ -648,10 +657,18 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 #### JSON Output
 
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
+The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
+Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
 
 ### Comparison Mode
 
-Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta:
+Pass `--compare PREVIOUS.json` to compare current results against a saved JSON file. This shows percentage change in TTFT and TPS, plus VRAM delta.
+
+Model matching behavior:
+- Models are matched by model name.
+- If a model exists in the current run but not in the previous run, it is reported as **new** and scenario deltas are left blank.
+- If a model exists in the previous run but not in the current run, it is reported as **removed** in the model-set summary.
+- Matched models get full per-scenario delta analysis.
 
 ```bash
 # Save a baseline
@@ -659,6 +676,9 @@ lemonade bench --output baseline.json Qwen3-0.6B-GGUF
 
 # Later, compare after a change
 lemonade bench --compare baseline.json Qwen3-0.6B-GGUF
+
+# Compare multiple models against a previous multi-model run
+lemonade bench --compare baseline-multi.json Bonsai-1.7B Gemma-4-E4B Gemma3-4B
 ```
 
 The comparison table marks each scenario as:
@@ -675,6 +695,9 @@ The comparison table marks each scenario as:
 ```bash
 # Benchmark with default scenarios and all installed backends
 lemonade bench Qwen3-0.6B-GGUF
+
+# Benchmark multiple models in one run. Note that Bonsai-4B is listed twice; it will only be tested once.
+lemonade bench Bonsai-4B-gguf Gemma-4-E4B-it-GGUF Phi-4-mini-instruct-GGUF Qwen3-4B-GGUF Bonsai-4B-gguf Qwen3.5-4B-GGUF
 
 # Benchmark specific backends and context sizes
 lemonade bench --backend vulkan --backend cpu --ctx-size 4096 8192 Qwen3-0.6B-GGUF
