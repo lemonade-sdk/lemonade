@@ -597,10 +597,12 @@ set(SOURCES_CORE
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
+    src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
+    src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/vllm_server.cpp

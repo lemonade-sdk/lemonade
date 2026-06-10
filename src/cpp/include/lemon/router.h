@@ -85,6 +85,10 @@ public:
     // Get backend server address (for streaming proxy)
     std::string get_backend_address() const;
 
+    // Get streaming transcription address for the active backend.
+    // Returns empty string if the backend does not support streaming transcription.
+    std::string get_streaming_transcription_address() const;
+
     // Forward requests to the appropriate wrapped server (non-streaming)
     json chat_completion(const json& request);
     json completion(const json& request);
