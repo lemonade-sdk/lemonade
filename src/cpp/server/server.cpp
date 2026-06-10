@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
@@ -9,13 +10,17 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
+#include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
+#include <cctype>
+#include <cstdlib>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <thread>
 #include <chrono>
@@ -23,6 +28,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <lemon/utils/aixlog.hpp>
 
 #ifdef _WIN32
@@ -256,6 +262,7 @@ void Server::log_request(const httplib::Request& req) {
     if (req.path != "/api/v0/health" && req.path != "/api/v1/health" &&
         req.path != "/v0/health" && req.path != "/v1/health" &&
         req.path != "/live" &&
+        req.path != "/metrics" &&
         !is_quiet_polling_path(req.path)) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << std::endl;
     }
@@ -267,30 +274,19 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                         (req.path.rfind("/v0/", 0) == 0) ||
                         (req.path.rfind("/v1/", 0) == 0);
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
+    bool is_metrics_route = (req.path == "/metrics");
 
-    // Internal endpoints are restricted to loopback regardless of API key
-    if (is_internal_route) {
-        // ::ffff:127.0.0.1 is how an IPv6 socket reports an IPv4 loopback connection
-        // when bound without IPV6_V6ONLY (the default on macOS, and the configuration
-        // lemond uses to accept both IPv4 and IPv6 on the same port).
-        bool is_loopback = (req.remote_addr == "127.0.0.1" ||
-                            req.remote_addr == "::1" ||
-                            req.remote_addr == "::ffff:127.0.0.1");
-        if (!is_loopback) {
-            LOG(WARNING, "Server") << "Rejected internal request from non-loopback address: "
-                        << req.remote_addr << " " << req.path << std::endl;
-            res.status = 403;
-            res.set_content("{\"error\": \"Internal endpoints are only accessible from localhost\"}", "application/json");
-            return httplib::Server::HandlerResponse::Handled;
-        }
-    }
-
-    // Authentication hierarchy:
-    // - Admin key: access to both internal and regular API endpoints
-    // - Regular API key: access only to regular API endpoints (not internal)
-    // - If admin key is not set, it defaults to regular API key value
-    // - If only admin key is set, regular endpoints are accessible without auth, internal requires admin key
-    // - If no keys are set, all endpoints are accessible without auth
+    // Authentication hierarchy. Two credentials gate two classes of endpoints:
+    // api_key_ gates the regular API endpoints (/api, /v0, /v1); admin_api_key_
+    // gates the internal control endpoints (/internal/*). admin_api_key_ defaults
+    // to api_key_ when LEMONADE_ADMIN_API_KEY is unset.
+    // - admin_api_key_ authenticates against both regular and internal endpoints.
+    // - api_key_ authenticates against the regular endpoints only. It cannot
+    //   reach /internal/* when LEMONADE_ADMIN_API_KEY is set to a distinct value;
+    //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
+    //   regular key also authenticates against /internal/*.
+    // - If api_key_ is empty, the regular endpoints require no authentication.
+    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
     std::string auth_token = httplib::get_bearer_token_auth(req);
 
@@ -303,7 +299,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
                 return httplib::Server::HandlerResponse::Handled;
             }
         }
-    } else if (is_api_route && req.method != "OPTIONS") {
+    } else if ((is_api_route || is_metrics_route) && req.method != "OPTIONS") {
         if (!api_key_.empty()) {
             if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
                 res.status = 401;
@@ -326,6 +322,11 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     web_server.Get("/live", [this](const httplib::Request& req, httplib::Response& res) {
         handle_live(req, res);
+    });
+
+    // Prometheus scrape endpoint for Lemonade, model, backend, and system metrics.
+    web_server.Get("/metrics", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_metrics(req, res);
     });
 
     // Setup CORS for all routes
@@ -747,10 +748,49 @@ window.api = {
         // Serve all static assets from the web app directory (JS, CSS, fonts, assets, etc.)
         // Handle both root-level assets and /web-app/ prefixed paths for backwards compatibility
         auto serve_web_app_asset = [web_app_dir](const httplib::Request& req, httplib::Response& res, const std::string& file_path) {
-            std::string full_path = web_app_dir + "/" + file_path;
+            std::error_code ec;
+            namespace fs = std::filesystem;
+
+            auto base = fs::weakly_canonical(fs::path(web_app_dir), ec);
+            if (ec) {
+                res.status = 500;
+                res.set_content("Internal server error", "text/plain");
+                return;
+            }
+
+            auto candidate = fs::weakly_canonical(base / file_path, ec);
+            if (ec) {
+                // Path doesn't exist or cannot be canonicalized
+                res.status = 404;
+                res.set_content("File not found", "text/plain");
+                return;
+            }
+
+            // Verify the resolved path is confined under the base directory.
+            // Use std::filesystem::relative (not string prefix) so it works
+            // correctly on Windows where path separators differ.
+            auto relative = fs::relative(candidate, base, ec);
+            if (ec || relative.empty() || relative.is_absolute()) {
+                // empty = candidate == base (directory, not a file)
+                // is_absolute = somehow escaped (shouldn't happen after canonicalization)
+                res.status = 403;
+                res.set_content("Forbidden", "text/plain");
+                return;
+            }
+            // Belt-and-suspenders: reject if any path component is ".."
+            // (weakly_canonical should have resolved it, but this catches
+            // edge cases on exotic filesystems). Check components, not
+            // substrings, so legitimate filenames like "my..file.js" are allowed.
+            for (const auto& part : relative) {
+                if (part == "..") {
+                    res.status = 403;
+                    res.set_content("Forbidden", "text/plain");
+                    return;
+                }
+            }
 
             // Serve the file
-            std::ifstream file(full_path, std::ios::binary);
+            std::ifstream file(candidate, std::ios::binary);
             if (!file.is_open()) {
                 res.status = 404;
                 res.set_content("File not found", "text/plain");
@@ -947,6 +987,18 @@ std::string Server::resolve_host_to_ip(int ai_family, const std::string& host) {
 void Server::setup_http_logger(httplib::Server &web_server) {
     // Add request logging for ALL requests (except health checks and stats endpoints)
     web_server.set_logger([this](const httplib::Request& req, const httplib::Response& res) {
+        if (req.path == "/metrics") {
+            if (res.status == 200) {
+                bool expected = false;
+                if (metrics_access_logged_.compare_exchange_strong(expected, true)) {
+                    LOG(INFO, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+                }
+            } else {
+                LOG(WARNING, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
+            }
+            return;
+        }
+
         // Skip logging health checks and stats endpoints to reduce log noise
         if (req.path == "/api/v0/health" || req.path == "/api/v1/health" ||
             req.path == "/v0/health" || req.path == "/v1/health" || req.path == "/live" ||
@@ -991,6 +1043,41 @@ void Server::run() {
         throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
                                  "Cannot start server.");
     }
+
+    // Operators binding beyond loopback should secure the server with an API
+    // key, since every endpoint is reachable from other machines once the host
+    // is non-loopback. The regular API routes (/api, /v0, /v1) are gated by
+    // api_key_; the /internal/* control endpoints (shutdown, set, config) are
+    // gated by admin_api_key_, which defaults to api_key_. Setting only
+    // LEMONADE_ADMIN_API_KEY therefore protects /internal/* but still leaves the
+    // inference and model-management endpoints exposed, so we warn unless the
+    // regular key is set.
+    auto warn_if_unsecured = [this](const std::string& bound_host,
+                                    const std::string& v4, const std::string& v6) {
+        auto is_loopback = [](const std::string& ip) {
+            return ip.empty() || ip.rfind("127.", 0) == 0 || ip == "::1";
+        };
+        if (is_loopback(v4) && is_loopback(v6)) {
+            return;
+        }
+        if (api_key_.empty() && admin_api_key_.empty()) {
+            LOG(WARNING, "Server")
+                << "Serving on non-loopback host '" << bound_host
+                << "' without an API key. All endpoints, including the /internal/* "
+                   "control endpoints, are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
+                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
+                   "control endpoints." << std::endl;
+        } else if (api_key_.empty()) {
+            LOG(WARNING, "Server")
+                << "Serving on non-loopback host '" << bound_host
+                << "' with only an admin API key set. The /internal/* control "
+                   "endpoints are protected, but the inference and model-management "
+                   "endpoints (/api, /v0, /v1) are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure them." << std::endl;
+        }
+    };
+    warn_if_unsecured(host, ipv4, ipv6);
 
     running_ = true;
 
@@ -1138,6 +1225,7 @@ void Server::run() {
         host = config_->host();
         ipv4 = resolve_host_to_ip(AF_INET, host);
         ipv6 = resolve_host_to_ip(AF_INET6, host);
+        warn_if_unsecured(host, ipv4, ipv6);
         LOG(INFO, "Server") << "Rebinding to " << host << ":" << port_ << "..." << std::endl;
         rebind_requested_ = false;
         setup_http_servers();
@@ -1317,6 +1405,12 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
 
     auto info = model_manager_->get_model_info(requested_model);
 
+    // Collections have no backend of their own — load each component instead.
+    if (is_collection_recipe(info.recipe)) {
+        ensure_collection_loaded(info);
+        return;
+    }
+
     // Download model if not cached (first-time use)
     // IMPORTANT: Use do_not_upgrade=true to prevent checking HuggingFace for updates
     // This means:
@@ -1339,6 +1433,33 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     // For non-FLM models: Model should already be cached at this point
     router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
+}
+
+void Server::ensure_collection_loaded(const ModelInfo& info) {
+    LOG(INFO, "Server") << "Loading collection components for: " << info.model_name << std::endl;
+    for (const auto& component : info.components) {
+        if (!model_manager_->model_exists(component)) {
+            LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
+            continue;
+        }
+        if (router_->is_model_loaded(component)) {
+            LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
+            continue;
+        }
+        auto comp_info = model_manager_->get_model_info(component);
+        if (!comp_info.downloaded) {
+            LOG(INFO, "Server") << "Downloading component: " << component << std::endl;
+            model_manager_->download_registered_model(comp_info);
+            comp_info = model_manager_->get_model_info(component);
+        }
+        LOG(INFO, "Server") << "Loading component: " << component << std::endl;
+        // Per the documented contract, per-model options like ctx_size or
+        // llamacpp_backend are NOT forwarded from the collection's load request
+        // to its components. Each component uses its own saved recipe_options.json
+        // entry.
+        router_->load_model(component, comp_info, comp_info.recipe_options, true,
+                            /*allow_reload_on_option_change=*/true);
+    }
 }
 
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
@@ -1481,6 +1602,63 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     }
 }
 
+void Server::handle_collection_chat_completions(const nlohmann::json& request_json,
+                                                const ModelInfo& collection_info,
+                                                httplib::Response& res) {
+    // Load the whole collection up front (shared, collection-aware loader) so the
+    // model is fully ready — not just its chat component.
+    try {
+        ensure_collection_loaded(collection_info);
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to load collection '" << collection_info.model_name
+                             << "': " << e.what() << std::endl;
+        auto error_response = create_model_error(collection_info.model_name, e.what());
+        std::string error_code = error_response["error"]["code"].get<std::string>();
+        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.set_content(error_response.dump(), "application/json");
+        return;
+    }
+
+    const bool is_streaming = request_json.contains("stream") &&
+                              request_json["stream"].is_boolean() &&
+                              request_json["stream"].get<bool>();
+
+    if (is_streaming) {
+        LOG(INFO, "Server") << "POST /api/v1/chat/completions - Collection (streaming): "
+                            << collection_info.model_name << std::endl;
+        res.set_header("Cache-Control", "no-cache");
+        res.set_header("Connection", "keep-alive");
+        res.set_header("X-Accel-Buffering", "no");
+        res.set_chunked_content_provider(
+            "text/event-stream",
+            [this, request_json, collection_info](size_t offset, httplib::DataSink& sink) {
+                if (offset > 0) return false;  // single pass
+                CollectionOrchestrator orchestrator(
+                    *router_, *model_manager_,
+                    [this](const std::string& m) { auto_load_model_if_needed(m); });
+                try {
+                    orchestrator.chat_completion_stream(request_json, collection_info, sink);
+                } catch (const std::exception& e) {
+                    LOG(ERROR, "Server") << "Collection streaming failed: " << e.what() << std::endl;
+                }
+                return false;
+            });
+        return;
+    }
+
+    LOG(INFO, "Server") << "POST /api/v1/chat/completions - Collection: "
+                        << collection_info.model_name << std::endl;
+    CollectionOrchestrator orchestrator(
+        *router_, *model_manager_,
+        [this](const std::string& m) { auto_load_model_if_needed(m); });
+    json response = orchestrator.chat_completion(request_json, collection_info);
+    if (response.contains("error")) {
+        set_error_response(response, res);
+        return;
+    }
+    res.set_content(response.dump(), "application/json");
+}
+
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
@@ -1491,6 +1669,25 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "Tools JSON: " << request_json["tools"].dump() << std::endl;
         } else {
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
+        }
+
+        // Omni "collection" models run a server-side tool-calling loop instead of a
+        // plain completion. Branch before auto-load/LLM-type checks: the collection
+        // recipe has no backend of its own; the orchestrator loads each component.
+        if (request_json.contains("model") && request_json["model"].is_string()) {
+            const std::string requested_model = request_json["model"].get<std::string>();
+            try {
+                if (model_manager_->model_exists(requested_model)) {
+                    ModelInfo info = model_manager_->get_model_info(requested_model);
+                    if (is_collection_recipe(info.recipe)) {
+                        handle_collection_chat_completions(request_json, info, res);
+                        return;
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG(DEBUG, "Server") << "Collection check failed for '" << requested_model
+                                     << "': " << e.what() << std::endl;
+            }
         }
 
         // Handle model loading/switching
@@ -1639,7 +1836,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 // OpenAI format uses "usage" field
                 auto usage = response["usage"];
@@ -1672,7 +1870,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             }
 
             // Capture prompt_tokens from usage if available
@@ -1680,7 +1879,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto usage = response["usage"];
                 if (usage.contains("prompt_tokens")) {
                     int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(prompt_tokens);
+                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
             }
         }
@@ -1822,7 +2021,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             } else if (response.contains("usage")) {
                 auto usage = response["usage"];
                 int input_tokens = 0;
@@ -1854,7 +2054,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 LOG(INFO, "Telemetry") << "=================" << std::endl;
 
                 // Save telemetry to router
-                router_->update_telemetry(input_tokens, output_tokens, ttft_seconds, tps);
+                router_->update_telemetry(request_json.value("model", ""), input_tokens, output_tokens,
+                                          ttft_seconds, tps);
             }
 
             // Capture prompt_tokens from usage if available
@@ -1862,7 +2063,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto usage = response["usage"];
                 if (usage.contains("prompt_tokens")) {
                     int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(prompt_tokens);
+                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
                 }
             }
         }
@@ -2260,8 +2461,6 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
 
         // Log the HTTP request
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
-
-        res.set_header("Content-Type", mime_type);
 
         auto audio_source = [this, request_json](size_t offset, httplib::DataSink& sink) {
             // For chunked responses, offset tracks bytes sent so far
@@ -3112,30 +3311,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         // Collection models: load each component instead
         if (is_collection_recipe(info.recipe) && !info.components.empty()) {
-            LOG(INFO, "Server") << "Loading collection components for: " << model_name << std::endl;
-            for (const auto& component : info.components) {
-                if (!model_manager_->model_exists(component)) {
-                    LOG(WARNING, "Server") << "Skipping unknown component: " << component << std::endl;
-                    continue;
-                }
-                if (router_->is_model_loaded(component)) {
-                    LOG(INFO, "Server") << "Component already loaded: " << component << std::endl;
-                    continue;
-                }
-                auto comp_info = model_manager_->get_model_info(component);
-                if (!comp_info.downloaded) {
-                    LOG(INFO, "Server") << "Downloading component: " << component << std::endl;
-                    model_manager_->download_registered_model(comp_info);
-                    comp_info = model_manager_->get_model_info(component);
-                }
-                LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-                // Per the documented contract, per-model options like ctx_size
-                // or llamacpp_backend are NOT forwarded from the collection's
-                // load request to its components. Each component uses its own
-                // saved recipe_options.json entry.
-                router_->load_model(component, comp_info, comp_info.recipe_options, true,
-                                    /*allow_reload_on_option_change=*/true);
-            }
+            ensure_collection_loaded(info);
 
             nlohmann::json response = {
                 {"status", "success"},
@@ -3492,6 +3668,28 @@ void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_metrics(const httplib::Request& req, httplib::Response& res) {
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    try {
+        SystemMetrics system_metrics;
+        system_metrics.cpu_percent = get_cpu_usage();
+        system_metrics.gpu_percent = get_gpu_usage();
+        system_metrics.vram_gb = get_vram_usage();
+        system_metrics.npu_percent = get_npu_utilization();
+
+        res.set_content(build_prometheus_metrics(*router_, system_metrics),
+                        "text/plain; version=0.0.4; charset=utf-8");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_metrics: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content("# Lemonade metrics error\n", "text/plain; version=0.0.4; charset=utf-8");
     }
 }
 

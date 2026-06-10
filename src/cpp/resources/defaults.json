@@ -4,7 +4,7 @@
   "host": "localhost",
   "websocket_port": "auto",
   "log_level": "info",
-  "global_timeout": 300,
+  "global_timeout": 600,
   "max_loaded_models": 1,
   "no_broadcast": false,
   "extra_models_dir": "",
@@ -24,6 +24,7 @@
     "prefer_system": true,
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin",
+    "cuda_bin": "builtin",
     "cpu_bin": "builtin"
   },
   "whispercpp": {

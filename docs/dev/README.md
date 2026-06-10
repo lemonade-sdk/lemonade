@@ -14,6 +14,10 @@ You can also reference the [app](./app.md) and [web-ui](./web-ui.md) guides to l
 
 Understand Lemonade's mission and design tenets before contributing by reading the [philosophy](./philosophy.md).
 
+### Roadmap
+
+Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md), and most substantial contributions should be within the scope of one of these groups.
+
 ### Contributing
 
 The Lemonade project welcomes contributions! Learn about the project's mission, maintainers, and contribution process [here](./contribute.md).

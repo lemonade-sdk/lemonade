@@ -4,14 +4,18 @@
 
 #[cfg(target_os = "macos")]
 mod imp {
+    use std::env;
     use std::path::Path;
     use std::process::{Command, Stdio};
     use std::thread;
     use std::time::{Duration, Instant};
 
     const BINARY_PATH: &str = "/usr/local/bin/lemonade-tray";
-    const LOCK_FILE: &str = "/tmp/lemonade_Tray.lock";
     const KILL_TIMEOUT_SECS: u64 = 30;
+
+    fn lock_file_path() -> std::path::PathBuf {
+        env::temp_dir().join("lemonade_Tray.lock")
+    }
 
     fn graceful_kill_tray() {
         // SIGTERM first; if anything is still running after KILL_TIMEOUT_SECS
@@ -51,8 +55,9 @@ mod imp {
         log::info!("--- STARTING TRAY MANUALLY ---");
         graceful_kill_tray();
 
-        if Path::new(LOCK_FILE).exists() {
-            let _ = std::fs::remove_file(LOCK_FILE);
+        let lock_file = lock_file_path();
+        if lock_file.exists() {
+            let _ = std::fs::remove_file(lock_file);
         }
 
         // macOS GUI apps don't inherit /usr/local/bin in PATH, and runtime

@@ -25,3 +25,9 @@ setup.py
 
 # Misc
 *.md
+
+# Local build artifacts (must not be copied into build context)
+build/
+**/node_modules/
+**/target/
+**/dist/

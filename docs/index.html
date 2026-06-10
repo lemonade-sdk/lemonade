@@ -412,16 +412,28 @@
             if (v) {
               var rpm43 = 'lemonade-server-' + v + '-fc43.x86_64.rpm';
               var rpm44 = 'lemonade-server-' + v + '-fc44.x86_64.rpm';
-              html = '<p class="gs-fedora-label">Fedora 43</p>' +
+              html = '<div style="display:flex;gap:12px;">' +
+                '<div style="flex:1;">' +
+                  '<p class="gs-fedora-label">Fedora 43</p>' +
+                  gsConsoleHtml([
+                    'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm43,
+                    'sudo dnf install ./' + rpm43
+                  ]) +
+                '</div>' +
+                '<div style="flex:1;">' +
+                  '<p class="gs-fedora-label">Fedora 44</p>' +
+                  gsConsoleHtml([
+                    'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm44,
+                    'sudo dnf install ./' + rpm44
+                  ]) +
+                '</div>' +
+              '</div>' +
+              '<div style="margin-top:16px;">' +
                 gsConsoleHtml([
-                  'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm43,
-                  'sudo dnf install ./' + rpm43
+                  'sudo systemctl enable --now lemond',
+                  'sudo systemctl --no-pager status lemond'
                 ]) +
-                '<p class="gs-fedora-label">Fedora 44</p>' +
-                gsConsoleHtml([
-                  'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + rpm44,
-                  'sudo dnf install ./' + rpm44
-                ]);
+              '</div>';
             } else {
               html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
                 '<span class="material-symbols-outlined">open_in_new</span> View latest release</a>';

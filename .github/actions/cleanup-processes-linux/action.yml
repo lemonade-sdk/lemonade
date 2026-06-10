@@ -84,13 +84,12 @@ runs:
             echo "All target processes terminated successfully"
         fi
 
-        # Clean up lock files and PID files
-        # Check both /tmp (fallback) and $XDG_RUNTIME_DIR/lemonade (when set)
         echo ""
         echo "Cleaning up lock and PID files..."
-        rm -f /tmp/lemonade*.lock 2>/dev/null || true
-        rm -f /tmp/lemonade*.pid 2>/dev/null || true
-        rm -f /tmp/lemond.pid 2>/dev/null || true
+        TMP_ROOT="${RUNNER_TEMP:-$PWD}"
+        rm -f "$TMP_ROOT"/lemonade*.lock 2>/dev/null || true
+        rm -f "$TMP_ROOT"/lemonade*.pid 2>/dev/null || true
+        rm -f "$TMP_ROOT"/lemond.pid 2>/dev/null || true
         if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
           rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.lock 2>/dev/null || true
           rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.pid 2>/dev/null || true
@@ -100,9 +99,9 @@ runs:
         # Clean up log files
         echo ""
         echo "Cleaning up log files..."
-        rm -f /tmp/lemonade*.log 2>/dev/null || true
-        rm -f /tmp/lemonade-server*.log 2>/dev/null || true
-        rm -f /tmp/lemond*.log 2>/dev/null || true
+        rm -f "$TMP_ROOT"/lemonade*.log 2>/dev/null || true
+        rm -f "$TMP_ROOT"/lemonade-server*.log 2>/dev/null || true
+        rm -f "$TMP_ROOT"/lemond*.log 2>/dev/null || true
         if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
           rm -f "${XDG_RUNTIME_DIR}/lemonade/lemonade"*.log 2>/dev/null || true
         fi

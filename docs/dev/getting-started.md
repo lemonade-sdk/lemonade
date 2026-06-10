@@ -182,7 +182,7 @@ If not found, the "Open app" menu option is hidden but everything else works.
   - Installed binaries: `/opt/bin`
   - Downloaded backends (llama-server, ryzenai-server): `~/.cache/lemonade/bin/`
   - Model downloads: `~/.cache/huggingface/` (follows HF conventions)
-  - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` when set and writable, otherwise `/tmp/`
+  - Runtime files (lock, log): `$XDG_RUNTIME_DIR/lemonade/` on Linux when set and writable; on macOS, `lemonade` uses the per-user temporary directory
 
 **macOS:**
 - Uses native system frameworks (Cocoa, Foundation)
@@ -615,7 +615,9 @@ The client automatically:
 
 > **These endpoints are for first-party Lemonade software only** (CLI, tray app, desktop app). They are not part of the public API, may change without notice, and must not be relied upon by third-party integrations.
 
-Internal endpoints are restricted to loopback (`127.0.0.1` / `::1`) — requests from non-localhost addresses receive `403 Forbidden`.
+Internal endpoints accept connections from any address, so first-party clients on other machines can manage a shared `lemond`. When `LEMONADE_ADMIN_API_KEY` is set (or `LEMONADE_API_KEY`, which the admin key defaults to), internal endpoints require the admin key as a Bearer token; with no keys set they are unauthenticated.
+
+> **Warning:** If `lemond` is bound to a non-loopback host (e.g. `0.0.0.0`), these control endpoints — including shutdown and config — are reachable from the network. `LEMONADE_API_KEY` secures all endpoints; `LEMONADE_ADMIN_API_KEY` on its own secures only `/internal/*` and leaves the inference and model-management endpoints (`/api`, `/v0`, `/v1`) open, so set `LEMONADE_API_KEY` to protect those too. `lemond` logs a startup warning when bound to a non-loopback host without the regular key.
 
 | Method | Path | Description |
 |--------|------|-------------|

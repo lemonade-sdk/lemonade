@@ -12,7 +12,6 @@ import { ModelsProvider, useModels } from './hooks/useModels';
 import { SystemProvider } from './hooks/useSystem';
 import { DEFAULT_LAYOUT_SETTINGS } from './utils/appSettings';
 import { downloadTracker } from './utils/downloadTracker';
-import { serverFetch } from './utils/serverConfig';
 import CustomCollectionPanel from './components/CustomCollectionPanel';
 import { ToastContainer, useToast } from './Toast';
 import { pullModel, type ModelRegistrationData } from './utils/backendInstaller';
@@ -169,7 +168,6 @@ const AppContent: React.FC = () => {
     const handleDownloadSignal = (e: any) => {
       const downloads = Array.isArray(e.detail?.downloads) ? e.detail.downloads : downloadTracker.getActiveDownloads();
       openIfActive(downloads);
-      void refreshModels();
     };
 
     const handleChatDownloadComplete = () => {
@@ -369,30 +367,23 @@ const AppContent: React.FC = () => {
     const collectionComponents = Array.isArray(requestBody.components)
       ? requestBody.components
       : undefined;
-    const collectionNeedsDownload = requestBody.recipe === 'collection.omni' &&
-      (collectionComponents ?? []).some((component) =>
-        !isModelEffectivelyDownloaded(component, modelsData[component], modelsData)
+    // An Omni collection whose components are all present needs no download —
+    // only its definition gets registered. registrationOnly skips the Download
+    // Manager/progress flow for that case. Require at least one component:
+    // every() is vacuously true for an empty array, which would otherwise let a
+    // malformed collection (missing/empty components) take the no-download path.
+    const collectionFullyDownloaded = requestBody.recipe === 'collection.omni' &&
+      collectionComponents !== undefined &&
+      collectionComponents.length > 0 &&
+      collectionComponents.every((component) =>
+        isModelEffectivelyDownloaded(component, modelsData[component], modelsData)
       );
-
-    if (requestBody.recipe === 'collection.omni' && !collectionNeedsDownload) {
-      const response = await serverFetch('/pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...requestBody, stream: false, subscribe: false }),
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || response.statusText);
-      }
-      return;
-    }
 
     await pullModel(requestBody.model_name, {
       registrationData: requestBody as ModelRegistrationData,
       collectionComponents,
       declaredSizeGB: typeof requestBody.size === 'number' ? requestBody.size : undefined,
+      registrationOnly: collectionFullyDownloaded,
     });
   };
 

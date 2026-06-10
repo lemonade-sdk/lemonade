@@ -133,10 +133,10 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="8"><strong>Text generation</strong></td>
-      <td rowspan="5"><code>llamacpp</code></td>
+      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="6"><code>llamacpp</code></td>
       <td><code>vulkan</code></td>
-      <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU</td>
+      <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -145,8 +145,13 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
       <td><code>cpu</code></td>
-      <td><code>x86_64</code> CPU</td>
+      <td><code>x86_64</code> CPU; ARM64 CPU (Linux)</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -156,7 +161,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>system</code></td>
-      <td><code>x86_64</code> CPU, GPU</td>
+      <td><code>x86_64</code>/ARM64 CPU, GPU</td>
       <td>Linux</td>
     </tr>
     <tr>
@@ -202,11 +207,21 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="2"><strong>Image generation</strong></td>
-      <td rowspan="2"><code>sd-cpp</code></td>
+      <td rowspan="4"><strong>Image generation</strong></td>
+      <td rowspan="4"><code>sd-cpp</code></td>
       <td><code>rocm</code></td>
       <td>Supported AMD ROCm iGPU/dGPU families*</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td><code>cpu</code></td>
@@ -255,18 +270,52 @@ lemonade backends
 </table>
 </details>
 
+<details>
+<summary><small><i>** See supported NVIDIA CUDA platforms</i></small></summary>
+
+<br>
+
+<table>
+  <thead>
+    <tr>
+      <th>Compute Capability</th>
+      <th>Architecture</th>
+      <th>GPU Models</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>sm_75</b></td>
+      <td>Turing</td>
+      <td>RTX 20-series, GTX 16-series, T4</td>
+    </tr>
+    <tr>
+      <td><b>sm_80</b> / <b>sm_86</b></td>
+      <td>Ampere</td>
+      <td>RTX 30-series, A100, A40</td>
+    </tr>
+    <tr>
+      <td><b>sm_89</b></td>
+      <td>Ada Lovelace</td>
+      <td>RTX 40-series, L40, L4</td>
+    </tr>
+    <tr>
+      <td><b>sm_90</b></td>
+      <td>Hopper</td>
+      <td>H100, H200</td>
+    </tr>
+    <tr>
+      <td><b>sm_100</b> / <b>sm_120</b></td>
+      <td>Blackwell</td>
+      <td>RTX 50-series, B100, B200</td>
+    </tr>
+  </tbody>
+</table>
+</details>
+
 ## Project Roadmap
 
-| Under Development          | Under Consideration         | Recently Completed      |
-|---------------------------|-----------------------------|------------------------|
-| Native multi-modal tool calling |                              | vLLM backend            |
-| More whisper.cpp backends |                              | Port app to Tauri      |
-| More SD.cpp backends      |                              | Embeddable binary release |
-| MLX support               |                              | Image generation       |
-|                           |                              | Speech-to-text         |
-|                           |                              | Text-to-speech         |
-|                           |                              | Apps marketplace       |
-
+Lemonade's roadmap is defined by a set of working groups. Visit the landing page [here](./docs/dev/working-groups/README.md) to learn each group's goal and roadmap.
 
 ## Integrate Embeddable Lemonade in You Application
 

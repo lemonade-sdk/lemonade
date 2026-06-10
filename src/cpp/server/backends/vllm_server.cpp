@@ -209,7 +209,7 @@ void VLLMServer::load(const std::string& model_name,
     process_handle_ = ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars);
 
     // vLLM can take longer to start (loading model, compiling kernels)
-    if (!wait_for_ready("/health", 600)) {
+    if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
         ProcessManager::stop_process(process_handle_);
         process_handle_ = {nullptr, 0};
         std::string err = "vllm-server failed to start within timeout";

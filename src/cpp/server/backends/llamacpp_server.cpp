@@ -10,6 +10,7 @@
 #include "lemon/system_info.h"
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
@@ -112,6 +113,10 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
     return backend == "rocm-stable" || backend == "rocm-nightly";
 }
 
+static bool is_llamacpp_cuda_backend(const std::string& backend) {
+    return backend == "cuda";
+}
+
 static std::string trim_version_prefix(const std::string& version) {
     if (!version.empty() && version[0] == 'v') {
         return version.substr(1);
@@ -172,6 +177,34 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #else
         throw std::runtime_error("ROCm nightly llamacpp only supported on Windows and Linux");
 #endif
+    } else if (resolved_backend == "rocm-stable") {
+        params.repo = "lemonade-sdk/llama.cpp";
+        std::string therock_ver = get_therock_version();
+#ifdef _WIN32
+        params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";
+#elif defined(__linux__)
+        params.filename = "llama-" + version + "-bin-ubuntu-rocm-" + therock_ver + "-x64.tar.gz";
+#else
+        throw std::runtime_error("ROCm stable llamacpp is currently supported on Windows and Linux only");
+#endif
+    } else if (resolved_backend == "cuda") {
+        params.repo = "lemonade-sdk/llama.cpp";
+        std::string target_arch = SystemInfo::get_cuda_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("llamacpp", "cuda")
+            );
+        }
+        // lemonade-sdk/llama.cpp releases publish per-Compute-Capability binaries
+        // and embed the build tag in the asset filename, e.g.
+        // llama-b1011-ubuntu-cuda-sm_120-x64.tar.xz.
+#ifdef _WIN32
+        params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
+#elif defined(__linux__)
+        params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#else
+        throw std::runtime_error("CUDA llamacpp is currently supported on Windows and Linux only");
+#endif
     } else if (resolved_backend == "metal") {
         params.repo = "ggml-org/llama.cpp";
 #ifdef __APPLE__
@@ -184,7 +217,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-ubuntu-arm64.tar.gz";
+#else
         params.filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
+#endif
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
@@ -193,7 +230,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-ubuntu-vulkan-arm64.tar.gz";
+#else
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
+#endif
 #else
         throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
 #endif
@@ -294,6 +335,7 @@ void LlamaCppServer::load(const std::string& model_name,
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
+    push_arg(args, reserved_flags, "--metrics");
 
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
@@ -309,8 +351,9 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
-    // Enable context shift for vulkan/rocm (not supported on Metal)
-    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend)) {
+    // Enable context shift for vulkan/rocm/cuda (not supported on Metal)
+    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend) ||
+        is_llamacpp_cuda_backend(llamacpp_backend)) {
         push_overridable_arg(args, llamacpp_args, "--context-shift");
         push_overridable_arg(args, llamacpp_args, "--keep", "16");
     } else {
@@ -397,6 +440,20 @@ void LlamaCppServer::load(const std::string& model_name,
 
         env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
         LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        // The llama.cpp-builds Linux tarballs ship the bundled CUDA runtime
+        // (libcudart.so, libcublas.so, etc.) alongside llama-server, so add the
+        // executable's directory to LD_LIBRARY_PATH like we do for ROCm.
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string lib_path = exe_dir.string();
+
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && strlen(existing_ld_path) > 0) {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+        LOG(DEBUG, "LlamaCpp") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
     }
 #else
     // For ROCm on Windows with gfx1151, set OCL_SET_SVMSIZE
@@ -427,8 +484,40 @@ void LlamaCppServer::load(const std::string& model_name,
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
         }
+    } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
+        // llama-server.exe. Prepend the executable directory to PATH so the loader
+        // resolves them before any system-wide CUDA install.
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string new_path = exe_dir.string();
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
     }
 #endif
+
+    if (is_llamacpp_cuda_backend(llamacpp_backend)) {
+        const char* existing_llama_device = std::getenv("LLAMA_ARG_DEVICE");
+        const bool has_llama_device_override = existing_llama_device && existing_llama_device[0] != '\0';
+
+        bool skip_visible_devices = false;
+        if (!llamacpp_device.empty()) {
+            LOG(INFO, "LlamaCpp")
+                << "Using explicit llama.cpp CUDA device selection: " << llamacpp_device
+                << std::endl;
+            skip_visible_devices = true;
+        } else if (has_llama_device_override) {
+            LOG(INFO, "LlamaCpp")
+                << "Respecting existing LLAMA_ARG_DEVICE=" << existing_llama_device
+                << std::endl;
+            skip_visible_devices = true;
+        }
+        BackendUtils::apply_cuda_env_vars(env_vars, "LlamaCpp", skip_visible_devices);
+    }
 
 #ifdef __APPLE__
     // Forward GGML_METAL_NO_RESIDENCY to llama-server if set in the parent
