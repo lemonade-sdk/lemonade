@@ -92,6 +92,26 @@ bool strip_handled_thinking_fields(json& request_json) {
     return modified;
 }
 
+// Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
+// Returns true if the model name was modified
+bool normalize_client_model_name(json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return false;
+    }
+
+    std::string model_name = request_json["model"].get<std::string>();
+    const std::string latest_suffix = ":latest";
+
+    if (model_name.size() > latest_suffix.size() &&
+        model_name.substr(model_name.size() - latest_suffix.size()) == latest_suffix) {
+        std::string normalized = model_name.substr(0, model_name.size() - latest_suffix.size());
+        request_json["model"] = normalized;
+        return true;
+    }
+
+    return false;
+}
+
 bool prepend_no_think_to_last_user_message(json& request_json) {
     if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
         LOG(DEBUG, "Server") << "No messages array found for /no_think injection" << std::endl;
@@ -288,7 +308,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     // - If api_key_ is empty, the regular endpoints require no authentication.
     // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
-    std::string auth_token = httplib::get_bearer_token_auth(req);
+    // Safely extract bearer token, guarding against malformed Authorization headers
+    std::string auth_token;
+    try {
+        if (req.has_header("Authorization")) {
+            auto auth_value = req.get_header_value("Authorization");
+            // httplib::get_bearer_token_auth does substr(7) for "Bearer ", so check length
+            if (auth_value.size() >= 7) {
+                auth_token = httplib::get_bearer_token_auth(req);
+            }
+            // Silently ignore malformed/short Authorization headers
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
+    }
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -1663,6 +1696,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Normalize client-provided model names (e.g., strip ":latest" suffix)
+        // Must be done before any model_manager/router lookups and before forwarding
+        normalize_client_model_name(request_json);
+
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
             LOG(DEBUG, "Server") << "Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
@@ -1729,6 +1766,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods
+        // Note: request_json was already normalized at the top of this function
         std::string request_body = req.body;
         bool request_modified = false;
 
@@ -1739,10 +1777,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
         request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
-        // If we modified the request, serialize it back to string
-        if (request_modified) {
-            request_body = request_json.dump();
-        }
+        // If we modified the request (or normalized the model name earlier), serialize to string
+        // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
+        // so we always use request_json for the body to ensure model name normalization is applied
+        request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -1896,6 +1934,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Normalize client-provided model names (e.g., strip ":latest" suffix)
+        // Must be done before any model_manager/router lookups and before forwarding
+        normalize_client_model_name(request_json);
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -1933,8 +1975,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use original request body - each backend handles model name transformation internally
-        std::string request_body = req.body;
+        // Use normalized request - model name was already normalized at the top
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
