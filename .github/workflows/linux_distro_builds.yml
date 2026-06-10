@@ -9,7 +9,6 @@ on:
       - "**/CMakeLists.txt"
       - "CMakePresets.json"
       - "cmake/**"
-      - "src/cpp/**"
       - "setup.sh"
       - "test/server_cli2.py"
       - "test/server_endpoints.py"
