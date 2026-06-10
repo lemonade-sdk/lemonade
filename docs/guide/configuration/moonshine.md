@@ -60,7 +60,7 @@ curl http://localhost:13305/v1/audio/transcriptions \
 
 ### Realtime streaming
 
-The WebSocket Realtime API streams interim and final transcripts while audio is being captured. The WebSocket port is OS-assigned and surfaced via `GET /v1/health` (`websocket_port` field). Send `input_audio_buffer.append` events with base64 PCM16 mono 16 kHz audio; Lemonade forwards them to the Moonshine subprocess over an internal line-delimited-JSON TCP bridge and relays the OpenAI Realtime events back:
+The WebSocket Realtime API streams interim and final transcripts while audio is being captured. Connect to `ws://HOST:PORT/realtime?model=...` directly on the main HTTP port (e.g. 13305); a dedicated WebSocket port (OS-assigned, surfaced via `GET /v1/health` `websocket_port`) also remains for backward compatibility. Send `input_audio_buffer.append` events with base64 PCM16 mono 16 kHz audio; Lemonade forwards them to the Moonshine subprocess over an internal line-delimited-JSON TCP bridge and relays the OpenAI Realtime events back:
 
 | Event | When |
 |-------|------|

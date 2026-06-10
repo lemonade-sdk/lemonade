@@ -234,9 +234,119 @@ void Server::start_model_cache_warmup() {
     });
 }
 
+namespace {
+
+// Peek the first bytes of an accepted connection (without consuming them) and
+// decide whether it is a WebSocket upgrade for one of our realtime paths.
+bool peek_websocket_upgrade(socket_t sock) {
+    char buf[4096];
+    for (int attempt = 0; attempt < 50; ++attempt) {  // up to ~500 ms for headers
+#ifdef _WIN32
+        int n = ::recv(sock, buf, static_cast<int>(sizeof(buf)), MSG_PEEK);
+#else
+        auto n = ::recv(sock, buf, sizeof(buf), MSG_PEEK);
+#endif
+        if (n <= 0) {
+            return false;
+        }
+
+        std::string data(buf, static_cast<size_t>(n));
+        if (data.size() >= 4 && data.compare(0, 4, "GET ") != 0) {
+            return false;  // upgrades are always GET
+        }
+        if (data.find("\r\n\r\n") == std::string::npos) {
+            if (static_cast<size_t>(n) == sizeof(buf)) {
+                return false;  // header block too large — let httplib handle it
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;  // headers not fully arrived yet
+        }
+
+        // Path filter: only the WebSocket endpoints are handed over
+        size_t sp1 = data.find(' ');
+        size_t sp2 = data.find(' ', sp1 + 1);
+        if (sp1 == std::string::npos || sp2 == std::string::npos) {
+            return false;
+        }
+        std::string path = data.substr(sp1 + 1, sp2 - sp1 - 1);
+        size_t query = path.find('?');
+        if (query != std::string::npos) {
+            path = path.substr(0, query);
+        }
+        if (path != "/realtime" && path != "/logs/stream") {
+            return false;
+        }
+
+        std::string lower = data;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        size_t upgrade_pos = lower.find("\r\nupgrade:");
+        if (upgrade_pos == std::string::npos) {
+            return false;
+        }
+        size_t line_end = lower.find("\r\n", upgrade_pos + 2);
+        return lower.substr(upgrade_pos, line_end - upgrade_pos).find("websocket") != std::string::npos;
+    }
+    return false;
+}
+
+// httplib::Server that hands WebSocket upgrade connections to the
+// libwebsockets server so /realtime and /logs/stream also work on the main
+// HTTP port. The dedicated websocket_port listener keeps running unchanged.
+class UpgradableHttpServer : public httplib::Server {
+public:
+    using UpgradeHandler = std::function<bool(socket_t)>;
+
+    explicit UpgradableHttpServer(UpgradeHandler handler)
+        : upgrade_handler_(std::move(handler)) {}
+
+private:
+    bool process_and_close_socket(socket_t sock) override {
+        if (upgrade_handler_ && peek_websocket_upgrade(sock)) {
+            if (upgrade_handler_(sock)) {
+                return true;  // ownership transferred to the WebSocket server
+            }
+        }
+
+        // Base behavior. httplib::Server::process_and_close_socket is a
+        // private virtual we cannot delegate to; this mirrors its body using
+        // the protected members it relies on.
+        std::string remote_addr;
+        int remote_port = 0;
+        httplib::detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
+
+        std::string local_addr;
+        int local_port = 0;
+        httplib::detail::get_local_ip_and_port(sock, local_addr, local_port);
+
+        auto ret = httplib::detail::process_server_socket(
+            svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
+            read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
+            write_timeout_usec_,
+            [&](httplib::Stream& strm, bool close_connection, bool& connection_closed) {
+                return process_request(strm, remote_addr, remote_port, local_addr,
+                                       local_port, close_connection, connection_closed,
+                                       nullptr);
+            });
+
+        httplib::detail::shutdown_socket(sock);
+        httplib::detail::close_socket(sock);
+        return ret;
+    }
+
+    UpgradeHandler upgrade_handler_;
+};
+
+} // namespace
+
 void Server::setup_http_servers() {
-    http_server_ = std::make_unique<httplib::Server>();
-    http_server_v6_ = std::make_unique<httplib::Server>();
+    auto upgrade_handler = [this](socket_t sock) -> bool {
+        if (websocket_server_ && websocket_server_->is_running()) {
+            return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
+        }
+        return false;
+    };
+    http_server_ = std::make_unique<UpgradableHttpServer>(upgrade_handler);
+    http_server_v6_ = std::make_unique<UpgradableHttpServer>(upgrade_handler);
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
