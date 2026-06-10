@@ -516,10 +516,21 @@ std::string WebSocketServer::get_request_path(struct lws* wsi) {
 }
 
 WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string& path) {
-    if (path == "/realtime") {
+    // Quad-prefix invariant: endpoints are reachable bare and under
+    // /api/v0, /api/v1, /v0, /v1. OpenAI Realtime SDK clients connect
+    // to /v1/realtime.
+    std::string stripped = path;
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        size_t len = std::strlen(prefix);
+        if (stripped.rfind(prefix, 0) == 0 && stripped.size() > len && stripped[len] == '/') {
+            stripped = stripped.substr(len);
+            break;
+        }
+    }
+    if (stripped == "/realtime") {
         return ConnectionKind::realtime;
     }
-    if (path == "/logs/stream") {
+    if (stripped == "/logs/stream") {
         return ConnectionKind::logs;
     }
     return ConnectionKind::invalid;
