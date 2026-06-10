@@ -12,6 +12,29 @@ inline bool is_collection_recipe(const std::string& recipe) {
     return recipe == COLLECTION_OMNI_MODEL_RECIPE;
 }
 
+enum class ModelState {
+    LOADING,
+    READY,
+    IN_USE,
+    DOWNSIZING,
+    DOWNSIZED,
+    EVICTING,
+    UNLOADED
+};
+
+inline std::string model_state_to_string(ModelState state) {
+    switch (state) {
+        case ModelState::LOADING: return "loading";
+        case ModelState::READY: return "ready";
+        case ModelState::IN_USE: return "in_use";
+        case ModelState::DOWNSIZING: return "downsizing";
+        case ModelState::DOWNSIZED: return "downsized";
+        case ModelState::EVICTING: return "evicting";
+        case ModelState::UNLOADED: return "unloaded";
+        default: return "unknown";
+    }
+}
+
 enum class ModelType {
     LLM,
     EMBEDDING,

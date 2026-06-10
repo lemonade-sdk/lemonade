@@ -64,7 +64,9 @@ public:
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
           last_access_time_(std::chrono::steady_clock::now()),
-          is_busy_(false) {}
+          state_(ModelState::LOADING),
+          active_request_count_(0),
+          load_duration_ms_(0) {}
 
     virtual ~WrappedServer() = default;
 
@@ -84,36 +86,113 @@ public:
         return last_access_time_;
     }
 
-    // Multi-model support: Track if server is currently processing a request
-    void set_busy(bool busy) {
-        std::lock_guard<std::mutex> lock(busy_mutex_);
-        is_busy_ = busy;
-        if (!busy) {
-            busy_cv_.notify_all();
+    // State management
+    ModelState get_state() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return state_;
+    }
+
+    void set_state(ModelState new_state) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        state_ = new_state;
+        state_cv_.notify_all();
+    }
+
+    void set_load_duration_ms(long ms) {
+        load_duration_ms_ = ms;
+    }
+
+    long get_load_duration_ms() const {
+        return load_duration_ms_;
+    }
+
+    // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
+    // Blocks if LOADING.
+    //
+    // Concurrency contract with the eviction engine (see try_commit_eviction):
+    //   - EVICTING is *tentative*. The engine marks the model EVICTING under
+    //     state_mutex_, then later calls try_commit_eviction() — also under
+    //     state_mutex_ — to atomically decide whether to physically unload.
+    //   - If a request arrives while still EVICTING (pre-commit), we "rescue" the
+    //     model here: flip back to IN_USE so try_commit_eviction() sees it is no
+    //     longer evictable and aborts the unload. No reload, no torn state.
+    //   - Once the engine commits, it sets UNLOADED before releasing state_mutex_,
+    //     so any later acquire observes UNLOADED and returns false (router reloads).
+    // Because both paths take state_mutex_, the rescue/commit decision is atomic.
+    bool acquire_for_inference() {
+        std::unique_lock<std::mutex> lock(state_mutex_);
+
+        while (state_ == ModelState::LOADING) {
+            state_cv_.wait(lock);
+        }
+
+        if (state_ == ModelState::UNLOADED) {
+            return false;
+        }
+
+        if (state_ == ModelState::DOWNSIZING || state_ == ModelState::DOWNSIZED) {
+            // Interrupt downsize and restore the model to full readiness.
+            state_ = ModelState::LOADING; // temporarily block others
+            lock.unlock();
+
+            this->restore();
+
+            lock.lock();
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+
+        // Covers READY, IN_USE, and EVICTING (rescue): claim the model.
+        active_request_count_++;
+        state_ = ModelState::IN_USE;
+        state_cv_.notify_all();
+        return true;
+    }
+
+    // Called by the eviction engine (under the router lock) to atomically decide
+    // whether a model marked EVICTING may actually be unloaded. Returns true only
+    // if the model is still idle and EVICTING (commit -> transition to UNLOADED so
+    // later acquires reload). Returns false if a request rescued it (state changed
+    // to IN_USE) or it is otherwise busy, reverting it to READY.
+    bool try_commit_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING && active_request_count_ == 0) {
+            state_ = ModelState::UNLOADED;
+            state_cv_.notify_all();
+            return true;
+        }
+        // Rescued or busy: abandon the eviction.
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+        return false;
+    }
+
+    void release_inference() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (--active_request_count_ == 0) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
         }
     }
 
     bool is_busy() const {
-        std::lock_guard<std::mutex> lock(busy_mutex_);
-        return is_busy_;
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return active_request_count_ > 0;
     }
 
     // Wait until the server is no longer busy processing a request.
-    // If timeout_seconds < 0, wait indefinitely (default behavior).
-    // If timeout_seconds >= 0, wait up to that many seconds before returning.
     void wait_until_not_busy(int timeout_seconds = -1) const {
-        std::unique_lock<std::mutex> lock(busy_mutex_);
+        std::unique_lock<std::mutex> lock(state_mutex_);
         if (timeout_seconds < 0) {
-            // Indefinite wait — original behavior
-            while (is_busy_) {
-                busy_cv_.wait(lock);
+            while (active_request_count_ > 0) {
+                state_cv_.wait(lock);
             }
         } else {
-            // Bounded wait with timeout
-            if (!busy_cv_.wait_for(lock, std::chrono::seconds(timeout_seconds),
-                                   [this] { return !is_busy_; })) {
-                // Timeout expired — server is still busy, proceed anyway
-                // The backend will be force-killed after SIGTERM timeout
+            if (!state_cv_.wait_for(lock, std::chrono::seconds(timeout_seconds),
+                                   [this] { return active_request_count_ == 0; })) {
+                // Timeout expired
             }
         }
     }
@@ -143,6 +222,16 @@ public:
 
     // Unload the model and stop the server
     virtual void unload() = 0;
+
+    // Downsize the model on soft idle (e.g., clear KV cache)
+    virtual void downsize() {
+        // No-op by default
+    }
+
+    // Restore the model from a downsized state
+    virtual void restore() {
+        // No-op by default
+    }
 
     // ICompletionServer implementation - forward requests to the wrapped server
     virtual json chat_completion(const json& request) override = 0;
@@ -207,9 +296,11 @@ protected:
     RecipeOptions recipe_options_;
 
     // Busy state tracking (for safe eviction)
-    mutable std::mutex busy_mutex_;
-    mutable std::condition_variable busy_cv_;
-    bool is_busy_;
+    mutable std::mutex state_mutex_;
+    mutable std::condition_variable state_cv_;
+    ModelState state_;
+    int active_request_count_;
+    long load_duration_ms_;
 };
 
 } // namespace lemon

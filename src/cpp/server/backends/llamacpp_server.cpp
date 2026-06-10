@@ -579,6 +579,25 @@ void LlamaCppServer::unload() {
     }
 }
 
+void LlamaCppServer::downsize() {
+    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
+    try {
+        json slots = get_slots();
+        if (slots.is_array()) {
+            for (const auto& slot : slots) {
+                if (slot.contains("id") && slot["id"].is_number()) {
+                    int id = slot["id"].get<int>();
+                    slots_action(id, "erase", json::object());
+                }
+            }
+        } else if (slots.contains("id")) {
+            slots_action(slots["id"].get<int>(), "erase", json::object());
+        }
+    } catch (const std::exception& e) {
+        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
+    }
+}
+
 json LlamaCppServer::chat_completion(const json& request) {
     // OpenAI API compatibility: Transform max_completion_tokens to max_tokens
     // OpenAI deprecated max_tokens in favor of max_completion_tokens (Sep 2024)

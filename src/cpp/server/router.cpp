@@ -12,7 +12,9 @@
 #include "lemon/recipe_options.h"
 #include <iostream>
 #include <algorithm>
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/aixlog.hpp"
+#include "lemon/global_vram_monitor.h"
+#include "lemon/eviction_engine.h"
 
 namespace lemon {
 
@@ -25,10 +27,23 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
     } else {
     LOG(DEBUG, "Router") << "Max loaded models per type: " << max << std::endl;
     }
+
+    vram_monitor_ = std::make_unique<GlobalVramMonitor>();
+    eviction_engine_ = std::make_unique<EvictionEngine>(this, vram_monitor_.get());
+
+    // Always start the monitor/engine threads; they are cheap no-ops until the
+    // user opts in. The monitor skips the VRAM poll when auto_evict is disabled,
+    // and the engine's per-server check skips models that haven't opted in.
+    // (auto_evict can be toggled at runtime via /internal/set, so we cannot gate
+    // thread creation on the construction-time config value.)
+    vram_monitor_->start();
+    eviction_engine_->start();
 }
 
 Router::~Router() {
-    LOG(DEBUG, "Router") << "Destructor: unloading all models" << std::endl;
+    LOG(DEBUG, "Router") << "Destructor: stopping monitors and unloading all models" << std::endl;
+    if (eviction_engine_) eviction_engine_->stop();
+    if (vram_monitor_) vram_monitor_->stop();
     unload_model("");  // Unload all
 }
 
@@ -178,6 +193,12 @@ void Router::evict_all_servers() {
 
     loaded_servers_.clear();
     LOG(INFO, "Router") << "All models evicted" << std::endl;
+}
+
+void Router::simulate_vram_pressure(double pct) {
+    if (vram_monitor_) {
+        vram_monitor_->simulate_pressure(pct);
+    }
 }
 
 std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& model_info) {
@@ -348,11 +369,14 @@ void Router::load_model(const std::string& model_name,
         LOG(DEBUG, "Router") << "Starting backend (this may take a moment)..." << std::endl;
         bool load_success = false;
         std::string error_message;
+        auto load_start = std::chrono::steady_clock::now();
 
         try {
             new_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
             load_success = true;
-            LOG(DEBUG, "Router") << "Backend started successfully" << std::endl;
+            auto load_end = std::chrono::steady_clock::now();
+            new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
+            LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
         } catch (const std::exception& e) {
             error_message = e.what();
             load_success = false;
@@ -367,6 +391,7 @@ void Router::load_model(const std::string& model_name,
             // may have been overtaken by other models serving requests while
             // the lock was released during the slow backend load).
             new_server->update_access_time();
+            new_server->set_state(ModelState::READY);
 
             // Add to loaded servers
             loaded_servers_.push_back(std::move(new_server));
@@ -409,15 +434,19 @@ void Router::load_model(const std::string& model_name,
 
             LOG(DEBUG, "Router") << "Retrying backend load..." << std::endl;
             try {
+                auto retry_start = std::chrono::steady_clock::now();
                 retry_server->load(canonical_model_name, model_info, effective_options, do_not_upgrade);
+                auto retry_end = std::chrono::steady_clock::now();
+                retry_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(retry_end - retry_start).count());
 
                 lock.lock();
 
+                retry_server->set_state(ModelState::READY);
                 loaded_servers_.push_back(std::move(retry_server));
                 is_loading_ = false;
                 load_cv_.notify_all();
 
-                LOG(DEBUG, "Router") << "Retry successful!" << std::endl;
+                LOG(DEBUG, "Router") << "Retry successful in " << retry_server->get_load_duration_ms() << "ms!" << std::endl;
             } catch (const std::exception& retry_error) {
                 lock.lock();
                 is_loading_ = false;
@@ -460,6 +489,26 @@ void Router::unload_model(const std::string& model_name) {
     }
 }
 
+void Router::evict_if_committed(const std::string& model_name) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+
+    WrappedServer* server = find_server_by_model_name(model_name);
+    if (!server) {
+        return;  // Already gone
+    }
+
+    // Atomically confirm the model is still idle and EVICTING. If a request
+    // rescued it (now IN_USE) this returns false and reverts it to READY, so we
+    // leave it loaded — no crashed generation, no talking to a dead subprocess.
+    if (!server->try_commit_eviction()) {
+        LOG(INFO, "Router") << "Eviction of " << model_name
+                            << " cancelled (rescued by in-flight request)" << std::endl;
+        return;
+    }
+
+    evict_server(server);
+}
+
 std::string Router::get_loaded_model() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
@@ -488,6 +537,7 @@ json Router::get_all_loaded_models() const {
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
         model_info["pid"] = server->get_process_id();
+        model_info["status"] = model_state_to_string(server->get_state());
         RecipeOptions recipe_options =  server->get_recipe_options();
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
@@ -589,17 +639,19 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         }
 
         // Mark as busy and update access time
-        server->set_busy(true);
+        if (!server->acquire_for_inference()) {
+            return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
+        }
         server->update_access_time();
     } // Lock released here
 
     // Execute inference without holding lock (but busy flag prevents eviction)
     try {
         auto response = inference_func(server);
-        server->set_busy(false);
+        server->release_inference();
         return response;
     } catch (...) {
-        server->set_busy(false);
+        server->release_inference();
         throw;
     }
 }
@@ -639,15 +691,19 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             return;
         }
 
-        server->set_busy(true);
+        if (!server->acquire_for_inference()) {
+            std::string error_msg = "data: {\"error\":{\"message\":\"Model evicted: " + requested_model + "\",\"type\":\"model_not_loaded\"}}\n\n";
+            sink.write(error_msg.c_str(), error_msg.size());
+            return;
+        }
         server->update_access_time();
     }
 
     try {
         streaming_func(server);
-        server->set_busy(false);
+        server->release_inference();
     } catch (...) {
-        server->set_busy(false);
+        server->release_inference();
         throw;
     }
 }
@@ -710,17 +766,19 @@ json Router::get_slots() {
         }
 
         // Mark as busy and update access time
-        server->set_busy(true);
+        if (!server->acquire_for_inference()) {
+            return ErrorResponse::from_exception(ModelNotLoadedException("No models loaded"));
+        }
         server->update_access_time();
     } // Lock released here
 
     // Execute without holding lock (but busy flag prevents eviction)
     try {
         auto response = slots_server->get_slots();
-        server->set_busy(false);
+        server->release_inference();
         return response;
     } catch (...) {
-        server->set_busy(false);
+        server->release_inference();
         throw;
     }
 }
@@ -747,17 +805,19 @@ json Router::slots_action(int slot_id, const std::string& action, const json& re
         }
 
         // Mark as busy and update access time
-        server->set_busy(true);
+        if (!server->acquire_for_inference()) {
+            return ErrorResponse::from_exception(ModelNotLoadedException("No models loaded"));
+        }
         server->update_access_time();
     } // Lock released here
 
     // Execute without holding lock (but busy flag prevents eviction)
     try {
         auto response = slots_server->slots_action(slot_id, action, request_body);
-        server->set_busy(false);
+        server->release_inference();
         return response;
     } catch (...) {
-        server->set_busy(false);
+        server->release_inference();
         throw;
     }
 }
@@ -784,17 +844,19 @@ json Router::tokenize(const json& request_body) {
         }
 
         // Mark as busy and update access time
-        server->set_busy(true);
+        if (!server->acquire_for_inference()) {
+            return ErrorResponse::from_exception(ModelNotLoadedException("No models loaded"));
+        }
         server->update_access_time();
     } // Lock released here
 
     // Execute without holding lock (but busy flag prevents eviction)
     try {
         auto response = tokenizer_server->tokenize(request_body);
-        server->set_busy(false);
+        server->release_inference();
         return response;
     } catch (...) {
-        server->set_busy(false);
+        server->release_inference();
         throw;
     }
 }
