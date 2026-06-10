@@ -1,21 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { serverConfig, getServerBaseUrl } from './utils/serverConfig';
-import {
-  AppSettings,
-  CloudProviderConfig,
-  mergeWithDefaultSettings,
-} from './utils/appSettings';
-import CloudProviderModal, {
-  CloudProviderInitialValues,
-  CloudProviderSaveResult,
-} from './CloudProviderModal';
+import { serverConfig } from './utils/serverConfig';
 
+// Mirror of one entry in `/v1/system-info`'s `cloud.providers` array.
+// Single source of truth lives in the server — we never read the local
+// settings file for cloud config (per the post-#2076 refactor: cloud
+// providers are shared infrastructure config, not per-client UI state).
 interface CloudProviderRow {
   name: string;
-  baseUrl: string;
-  hasApiKey: boolean;
-  modelCount: number | null; // null = not yet fetched (or failed)
+  base_url: string;
+  env_var: string;
+  env_var_set: boolean;
+  runtime_key_set: boolean;
+  models_discovered: number;
 }
 
 interface CloudProvidersSectionProps {
@@ -24,294 +21,273 @@ interface CloudProvidersSectionProps {
   showSuccess: (msg: string) => void;
 }
 
-// Read the freshest copy of app settings off the persistence layer, then
-// project into the cloudProviders sub-map. We bounce through
-// mergeWithDefaultSettings so a corrupt file doesn't blow up the section.
-const loadProvidersFromSettings = async (): Promise<Record<string, CloudProviderConfig>> => {
-  if (!window.api?.getSettings) return {};
-  const stored = await window.api.getSettings();
-  const merged = mergeWithDefaultSettings(stored as AppSettings | undefined);
-  return merged.cloudProviders ?? {};
+const fetchCloudProviders = async (): Promise<CloudProviderRow[]> => {
+  const response = await serverConfig.fetch('/system-info');
+  if (!response.ok) return [];
+  const info = await response.json();
+  const providers = info?.cloud?.providers;
+  if (!Array.isArray(providers)) return [];
+  return providers
+    .filter((p: any) => p && typeof p.name === 'string')
+    .map((p: any) => ({
+      name: String(p.name),
+      base_url: typeof p.base_url === 'string' ? p.base_url : '',
+      env_var: typeof p.env_var === 'string' ? p.env_var : '',
+      env_var_set: p.env_var_set === true,
+      runtime_key_set: p.runtime_key_set === true,
+      models_discovered: typeof p.models_discovered === 'number' ? p.models_discovered : 0,
+    }));
 };
 
-// Discovery is a server-side proxy to <base_url>/v1/models that lemond
-// performs with the supplied creds (never persisted server-side). The
-// response shape is {object: "list", data: [{id, ...}, ...]}.
-//
-// Side effects: (1) lemond registers the discovered models server-side
-// (names + upstream id + labels + context + cost, never the creds) so
-// load/chat work; (2) we record the model names in serverConfig so a chat
-// request for a provider whose creds were removed fails loud instead of
-// 404ing opaquely.
-const discoverModelCount = async (
-  name: string,
-  cfg: CloudProviderConfig,
-): Promise<number | null> => {
-  if (!cfg.apiKey) return null;
-  try {
-    const url = `${getServerBaseUrl()}/internal/cloud/discover`;
-    const response = await serverConfig.fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: name, base_url: cfg.baseUrl, api_key: cfg.apiKey }),
-    });
-    if (!response.ok) return null;
-    const body = await response.json();
-    const list = Array.isArray(body?.data) ? body.data : [];
-    const ids = list
-      .map((entry: any) => entry?.id)
-      .filter((id: unknown): id is string => typeof id === 'string');
-    serverConfig.setKnownCloudModels(name, ids);
-    return list.length;
-  } catch {
-    return null;
-  }
-};
+// Simple inline install modal. Single form: provider name, base URL, optional
+// API key. Optional because the operator may have already exported
+// LEMONADE_<P>_API_KEY in lemond's environment — in that case the server's
+// env var takes precedence and the runtime key is silently ignored (the
+// server returns a "warning" field, which we surface).
+interface InstallModalProps {
+  onCancel: () => void;
+  onInstalled: () => void;
+  showError: (msg: string) => void;
+  showSuccess: (msg: string) => void;
+}
 
-const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({
-  searchQuery, showError, showSuccess
-}) => {
-  const [rows, setRows] = useState<CloudProviderRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [modal, setModal] = useState<
-    | { mode: 'add' }
-    | { mode: 'edit'; initialValues: CloudProviderInitialValues }
-    | null
-  >(null);
-  const [refreshNonce, setRefreshNonce] = useState(0);
-  const triggerRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
+const InstallModal: React.FC<InstallModalProps> = ({ onCancel, onInstalled, showError, showSuccess }) => {
+  const [provider, setProvider] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const providers = await loadProvidersFromSettings();
-        if (cancelled) return;
-
-        // Show provider rows immediately with modelCount=null, then update
-        // counts as discovery completes (one async call per provider in
-        // parallel). Keeps the section responsive even when a provider's
-        // /v1/models is slow or unreachable.
-        const initialRows: CloudProviderRow[] = Object.entries(providers)
-          .map(([name, cfg]) => ({
-            name,
-            baseUrl: cfg.baseUrl,
-            hasApiKey: cfg.apiKey.length > 0,
-            modelCount: null,
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
-        setRows(initialRows);
-        setIsLoading(false);
-
-        await Promise.all(
-          Object.entries(providers).map(async ([name, cfg]) => {
-            const count = await discoverModelCount(name, cfg);
-            if (cancelled) return;
-            setRows((prev) =>
-              prev.map((r) => (r.name === name ? { ...r, modelCount: count } : r))
-            );
-          })
-        );
-      } catch (e) {
-        console.error('Failed to load cloud providers:', e);
-        if (!cancelled) setIsLoading(false);
+  const submit = useCallback(async () => {
+    if (!provider.trim() || !baseUrl.trim()) {
+      showError('Provider name and base URL are required.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const body: Record<string, string> = {
+        backend: 'cloud',
+        provider: provider.trim(),
+        base_url: baseUrl.trim(),
+      };
+      if (apiKey.trim()) body.api_key = apiKey.trim();
+      const response = await serverConfig.fetch('/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        showError(`Install failed (${response.status}): ${text}`);
+        setBusy(false);
+        return;
       }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [refreshNonce]);
-
-  // Listen for settings updates pushed from other windows / panels so the
-  // section reflects edits made elsewhere without a page refresh.
-  useEffect(() => {
-    if (!window.api?.onSettingsUpdated) return;
-    const unsubscribe = window.api.onSettingsUpdated(() => triggerRefresh());
-    return () => unsubscribe?.();
-  }, [triggerRefresh]);
-
-  const saveProvider = useCallback(async (result: CloudProviderSaveResult) => {
-    if (!window.api?.getSettings || !window.api?.saveSettings) {
-      throw new Error('Settings storage unavailable');
+      const result = await response.json();
+      const discovered = result?.models_discovered ?? 0;
+      if (result?.warning) {
+        showSuccess(`Installed '${provider.trim()}' (${discovered} models). ${result.warning}`);
+      } else {
+        showSuccess(`Installed '${provider.trim()}' (${discovered} models).`);
+      }
+      onInstalled();
+    } catch (err) {
+      showError(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
+      setBusy(false);
     }
-    const stored = await window.api.getSettings();
-    const merged = mergeWithDefaultSettings(stored as AppSettings | undefined);
-    const existing = merged.cloudProviders[result.name];
-    // apiKey === null means "keep existing" (edit mode without Replace).
-    // Falling back to '' on a brand-new entry is fine — validation in the
-    // modal already required a key in add mode.
-    const apiKey = result.apiKey ?? existing?.apiKey ?? '';
-    merged.cloudProviders[result.name] = { baseUrl: result.baseUrl, apiKey };
-    await window.api.saveSettings(merged);
-    // No cache to refresh: serverConfig.fetch() reads cloud creds straight
-    // from settings per request, so the next request picks this up.
+  }, [provider, baseUrl, apiKey, onInstalled, showError, showSuccess]);
 
-    // Probe the just-saved provider so the user sees an immediate count
-    // (or learns the creds are wrong before they leave the panel).
-    const count = await discoverModelCount(result.name, { baseUrl: result.baseUrl, apiKey });
-    if (count === null) {
-      showError(
-        `Saved '${result.name}', but discovery failed. Check the API key and base URL.`
-      );
-    } else if (count === 0) {
-      showError(
-        `Saved '${result.name}', but discovery returned 0 chat models. Double-check the API key, base URL, and that your account has chat-model access.`
-      );
-    } else {
-      showSuccess(
-        `Saved '${result.name}' — discovered ${count} model${count === 1 ? '' : 's'}.`
-      );
-    }
-    triggerRefresh();
-    // useModels listens for this event to re-fetch the model list. Without
-    // it, the Model Manager keeps showing the pre-save state (no cloud
-    // models even though discovery just succeeded).
-    window.dispatchEvent(new Event('modelsUpdated'));
-  }, [showError, showSuccess, triggerRefresh]);
-
-  const removeProvider = useCallback(async (name: string) => {
-    if (!window.api?.getSettings || !window.api?.saveSettings) {
-      throw new Error('Settings storage unavailable');
-    }
-    const stored = await window.api.getSettings();
-    const merged = mergeWithDefaultSettings(stored as AppSettings | undefined);
-    delete merged.cloudProviders[name];
-    await window.api.saveSettings(merged);
-    showSuccess(`Removed provider '${name}'.`);
-    triggerRefresh();
-    window.dispatchEvent(new Event('modelsUpdated'));
-  }, [showSuccess, triggerRefresh]);
-
-  const query = searchQuery.trim().toLowerCase();
-  const filtered = query
-    ? rows.filter((p) => `${p.name} ${p.baseUrl}`.toLowerCase().includes(query))
-    : rows;
-
-  // Hide the section entirely when a search has no matches and the user is
-  // not searching the section name itself.
-  if (query && filtered.length === 0 && !'cloud'.includes(query)) {
-    return null;
-  }
-
-  return (
-    <>
-      <div className="model-category">
-        {/* Header matches the local recipe rows: static (no chevron, no
-            collapse), label + count on the left, "+ Add" pill on the right. */}
-        <div className="model-category-header static" style={{ justifyContent: 'space-between' }}>
-          <span>
-            <span className="category-label">Cloud</span>
-            <span className="category-count">({filtered.length})</span>
-          </span>
-          <button
-            className="settings-reset-button"
-            style={{ fontSize: '0.65rem', padding: '1px 8px', whiteSpace: 'nowrap' }}
-            title="Add a new cloud provider"
-            onClick={(e) => { e.stopPropagation(); setModal({ mode: 'add' }); }}
-          >
-            + Add
+  return createPortal(
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="modal-header">
+          <h3>Install cloud provider</h3>
+        </div>
+        <div className="modal-body">
+          <label className="form-row">
+            <span>Provider name</span>
+            <input
+              type="text"
+              placeholder="e.g. fireworks, openai"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="form-row">
+            <span>Base URL (OpenAI-compat /v1)</span>
+            <input
+              type="url"
+              placeholder="https://api.fireworks.ai/inference/v1"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="form-row">
+            <span>API key (optional)</span>
+            <input
+              type="password"
+              placeholder="Leave blank if LEMONADE_<PROVIDER>_API_KEY is set"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <p className="form-help">
+            Keys supplied here are kept in lemond's process memory only — never written to disk.
+            For persistence across restarts, set the <code>LEMONADE_&lt;PROVIDER&gt;_API_KEY</code>
+            environment variable before launching lemond.
+          </p>
+        </div>
+        <div className="modal-actions">
+          <button onClick={onCancel} disabled={busy}>Cancel</button>
+          <button onClick={submit} disabled={busy} className="primary">
+            {busy ? 'Installing…' : 'Install'}
           </button>
         </div>
-
-        <div className="model-list">
-          {isLoading ? (
-            <div className="backend-row-item" style={{ padding: '4px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
-              Loading…
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="backend-row-item" style={{ padding: '4px 12px', opacity: 0.7, fontSize: '0.74rem' }}>
-              {query
-                ? 'No providers match your search.'
-                : 'No providers configured. Click "+ Add" to connect Fireworks, OpenAI, Together, OpenRouter, or any OpenAI-compatible endpoint.'}
-            </div>
-          ) : (
-            filtered.map((p) => {
-              // We can't see env vars from the renderer, so a non-zero
-              // modelCount with hasApiKey=false implies the server's
-              // LEMONADE_<NAME>_API_KEY fallback is satisfying discovery.
-              const envKeyLikely = !p.hasApiKey && (p.modelCount ?? 0) > 0;
-              const ok = p.hasApiKey || envKeyLikely;
-              const dotClass = ok ? 'loaded' : 'update-required';
-              const dotTitle = p.hasApiKey
-                ? 'API key stored on this client'
-                : envKeyLikely
-                  ? `Auth working — likely via the LEMONADE_${p.name.toUpperCase()}_API_KEY env var on the server`
-                  : `No API key for this client. Click Edit to add one, or set LEMONADE_${p.name.toUpperCase()}_API_KEY on the server.`;
-
-              return (
-                <div
-                  key={p.name}
-                  className="model-item backend-row-item"
-                  style={{ padding: '2px 12px' }}
-                >
-                  <div className="model-item-content">
-                    <div className="model-info-left backend-row-main">
-                      <div className="backend-row-head">
-                        <span className="model-name backend-name">
-                          <span
-                            className={`model-status-indicator ${dotClass}`}
-                            title={dotTitle}
-                          >●</span>
-                          {p.name}
-                        </span>
-                      </div>
-                      <div className="backend-row-detail">
-                        <div className="backend-inline-meta">
-                          <span className="backend-version">
-                            {p.modelCount === null ? '…' : p.modelCount} model{p.modelCount === 1 ? '' : 's'}
-                          </span>
-                          {p.baseUrl && (
-                            <>
-                              <span className="backend-meta-separator">•</span>
-                              <span className="backend-size" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {p.baseUrl}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        <div className="model-actions">
-                          <button
-                            className="settings-reset-button"
-                            style={{ fontSize: '0.65rem', padding: '1px 8px' }}
-                            onClick={() => setModal({
-                              mode: 'edit',
-                              initialValues: { name: p.name, baseUrl: p.baseUrl, hasApiKey: p.hasApiKey },
-                            })}
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
       </div>
+    </div>,
+    document.body,
+  );
+};
 
-      {modal && createPortal(
-        <div
-          className="settings-overlay"
-          onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => {
-            if (e.target === e.currentTarget) setModal(null);
-          }}
-        >
-          <div className="settings-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
-            <CloudProviderModal
-              mode={modal.mode}
-              initialValues={modal.mode === 'edit' ? modal.initialValues : undefined}
-              onClose={() => setModal(null)}
-              onSave={saveProvider}
-              onRemove={modal.mode === 'edit' ? removeProvider : undefined}
-              showError={showError}
-            />
+const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQuery, showError, showSuccess }) => {
+  const [providers, setProviders] = useState<CloudProviderRow[]>([]);
+  const [showInstall, setShowInstall] = useState(false);
+  const [authKeyDraft, setAuthKeyDraft] = useState<Record<string, string>>({});
+
+  const reload = useCallback(async () => {
+    try {
+      const rows = await fetchCloudProviders();
+      setProviders(rows);
+    } catch (err) {
+      showError(`Failed to load cloud providers: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [showError]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const submitAuth = useCallback(async (name: string) => {
+    const key = (authKeyDraft[name] ?? '').trim();
+    if (!key) {
+      showError('API key cannot be empty.');
+      return;
+    }
+    const response = await serverConfig.fetch('/cloud/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: name, api_key: key }),
+    });
+    if (response.status === 409) {
+      const body = await response.json().catch(() => null);
+      const envVar = body?.error?.env_var ?? `LEMONADE_${name.toUpperCase()}_API_KEY`;
+      showError(`${envVar} is set in lemond's environment; the env var takes precedence and the runtime key was not stored.`);
+      return;
+    }
+    if (!response.ok) {
+      showError(`Set auth failed (${response.status}): ${await response.text()}`);
+      return;
+    }
+    const result = await response.json();
+    setAuthKeyDraft((prev) => ({ ...prev, [name]: '' }));
+    showSuccess(`API key stored for '${name}' (${result?.models_discovered ?? 0} models discovered).`);
+    reload();
+  }, [authKeyDraft, reload, showError, showSuccess]);
+
+  const clearAuth = useCallback(async (name: string) => {
+    const response = await serverConfig.fetch(`/cloud/auth/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      showError(`Clear auth failed (${response.status})`);
+      return;
+    }
+    showSuccess(`Runtime key cleared for '${name}'.`);
+    reload();
+  }, [reload, showError, showSuccess]);
+
+  const uninstall = useCallback(async (name: string) => {
+    if (!window.confirm(`Remove cloud provider '${name}'? Discovered models will be dropped from the cache.`)) return;
+    const response = await serverConfig.fetch('/uninstall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backend: 'cloud', provider: name }),
+    });
+    if (!response.ok) {
+      showError(`Uninstall failed (${response.status})`);
+      return;
+    }
+    showSuccess(`Removed cloud provider '${name}'.`);
+    reload();
+  }, [reload, showError, showSuccess]);
+
+  const query = searchQuery.trim().toLowerCase();
+  const visible = providers.filter((p) => {
+    if (!query) return true;
+    return `${p.name} ${p.base_url}`.toLowerCase().includes(query);
+  });
+
+  return (
+    <div className="model-category">
+      <div className="model-category-header static">
+        <span className="category-label">Cloud providers</span>
+        <span className="category-count">({providers.length})</span>
+        <button className="link-button" onClick={() => setShowInstall(true)}>+ Install provider</button>
+      </div>
+      <div className="model-list">
+        {visible.length === 0 && (
+          <div className="left-panel-empty-state-row">
+            {providers.length === 0
+              ? 'No cloud providers installed.'
+              : 'No providers match the current filter.'}
           </div>
-        </div>,
-        document.body
+        )}
+        {visible.map((p) => (
+          <div key={p.name} className="cloud-provider-row">
+            <div className="cloud-provider-summary">
+              <strong>{p.name}</strong>
+              <span className="cloud-provider-url">{p.base_url}</span>
+              <span className="cloud-provider-models">{p.models_discovered} models</span>
+            </div>
+            <div className="cloud-provider-auth">
+              {p.env_var_set ? (
+                <span className="badge">Auth: env var {p.env_var}</span>
+              ) : p.runtime_key_set ? (
+                <span className="badge">Auth: runtime key</span>
+              ) : (
+                <span className="badge warn">Auth: none — discovery disabled</span>
+              )}
+            </div>
+            {!p.env_var_set && (
+              <div className="cloud-provider-auth-form">
+                <input
+                  type="password"
+                  placeholder={p.runtime_key_set ? 'Replace runtime key…' : 'Set API key…'}
+                  value={authKeyDraft[p.name] ?? ''}
+                  onChange={(e) => setAuthKeyDraft((prev) => ({ ...prev, [p.name]: e.target.value }))}
+                />
+                <button onClick={() => submitAuth(p.name)}>Save</button>
+                {p.runtime_key_set && (
+                  <button onClick={() => clearAuth(p.name)} className="secondary">Clear</button>
+                )}
+              </div>
+            )}
+            <div className="cloud-provider-actions">
+              <button onClick={() => uninstall(p.name)} className="danger">Remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {showInstall && (
+        <InstallModal
+          onCancel={() => setShowInstall(false)}
+          onInstalled={() => { setShowInstall(false); reload(); }}
+          showError={showError}
+          showSuccess={showSuccess}
+        />
       )}
-    </>
+    </div>
   );
 };
 

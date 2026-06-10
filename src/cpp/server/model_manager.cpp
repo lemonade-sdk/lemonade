@@ -9,6 +9,7 @@
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_utils.h>
 #include <lemon/backends/cloud_server.h>
+#include <lemon/cloud_provider_registry.h>
 #include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
@@ -1797,14 +1798,40 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Cloud-offload discovery moved client-side. Each client manages its own
-    // provider credentials in local app settings and calls
-    // POST /internal/cloud/discover on demand to populate its own cloud model
-    // list. This honors AGENTS.md Invariant #11 — per-client state (including
-    // credentials) lives in the client, never in lemond. Server-side env
-    // vars (LEMONADE_<PROVIDER>_API_KEY / _BASE_URL) remain as a fallback
-    // for operator-pre-provisioned deployments, but are consumed per-request
-    // in CloudServer rather than at cache build time.
+    // Cloud-offload discovery is server-side and automatic. For each
+    // installed cloud provider with a resolvable credential (env var or
+    // runtime-auth POST), call discover_models and merge the results into
+    // all_models. Per AGENTS.md invariant #11, the registry persists only
+    // {provider, base_url} pairs — API keys live in env vars or process
+    // memory, never on disk. Failures are logged, never propagated, so a
+    // single offline provider can't block the rest of cache build.
+    if (cloud_registry_ != nullptr) {
+        auto installed = cloud_registry_->list_installed();
+        for (const auto& rec : installed) {
+            const std::string api_key = cloud_registry_->resolve_key(rec.name);
+            if (api_key.empty() || rec.base_url.empty()) {
+                LOG(INFO, "ModelManager") << "Skipping cloud discovery for '"
+                                           << rec.name << "': no API key resolvable"
+                                           << " (set " << CloudProviderRegistry::env_var_name(rec.name)
+                                           << " or POST /v1/cloud/auth)" << std::endl;
+                continue;
+            }
+            std::vector<ModelInfo> discovered;
+            try {
+                discovered = backends::CloudServer::discover_models(rec.name, api_key, rec.base_url);
+            } catch (const std::exception& e) {
+                LOG(WARNING, "ModelManager") << "Cloud discovery threw for '"
+                                              << rec.name << "': " << e.what()
+                                              << std::endl;
+                continue;
+            }
+            for (auto& m : discovered) {
+                if (m.recipe != "cloud" || m.model_name.empty()) continue;
+                // Same merge precedence as FLM: emplace, don't overwrite.
+                all_models.emplace(m.model_name, std::move(m));
+            }
+        }
+    }
 
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
@@ -2317,18 +2344,45 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     return filtered;
 }
 
-void ModelManager::register_discovered_cloud_models(const std::string& provider,
-                                                    const std::vector<ModelInfo>& models) {
-    if (provider.empty()) {
-        return;
+void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
+    cloud_registry_ = registry;
+}
+
+size_t ModelManager::refresh_cloud_models(const std::string& provider) {
+    if (provider.empty() || cloud_registry_ == nullptr) {
+        return 0;
+    }
+
+    // Resolve creds outside the cache lock — resolve_key takes a shared
+    // lock on the registry's mutex internally; holding the cache lock here
+    // doesn't matter but keeping it tight is cheaper.
+    const std::string api_key = cloud_registry_->resolve_key(provider);
+    const std::string base_url = cloud_registry_->base_url_for(provider);
+    if (api_key.empty() || base_url.empty()) {
+        // Drop any stale entries for this provider but don't try to discover —
+        // there's nothing to discover with.
+        return evict_cloud_models(provider);
+    }
+
+    // discover_models() is best-effort; it logs upstream failures and
+    // returns an empty list rather than throwing, so we can keep going for
+    // other providers regardless of network state. This call happens
+    // outside the cache lock because it can take up to 15 s on a slow
+    // provider and we don't want to block /models on it.
+    std::vector<ModelInfo> models;
+    try {
+        models = backends::CloudServer::discover_models(provider, api_key, base_url);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
+                                      << provider << "': " << e.what() << std::endl;
+        return evict_cloud_models(provider);
     }
 
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-    // Reseed semantics: drop this provider's previously-registered cloud
-    // entries before inserting the fresh list, so a model the provider no
-    // longer exposes disappears from the cache (mirrors the client's
-    // per-provider reseed). Other providers' entries are untouched.
+    // Reseed: drop this provider's previously-registered entries before
+    // inserting the fresh list, so a model the provider stopped exposing
+    // disappears. Other providers' entries are untouched.
     for (auto it = models_cache_.begin(); it != models_cache_.end();) {
         if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
             it = models_cache_.erase(it);
@@ -2337,20 +2391,53 @@ void ModelManager::register_discovered_cloud_models(const std::string& provider,
         }
     }
 
+    size_t added = 0;
     for (const auto& m : models) {
-        if (m.recipe != "cloud" || m.model_name.empty()) {
-            continue;
-        }
+        if (m.recipe != "cloud" || m.model_name.empty()) continue;
         ModelInfo info = m;
         // discover_models() populates name/checkpoint/labels/context/cost but
         // not recipe_options; Router needs it to construct CloudServer.
         info.recipe_options = RecipeOptions("cloud", json::object());
         models_cache_[info.model_name] = std::move(info);
+        ++added;
     }
 
-    LOG(DEBUG, "ModelManager") << "Registered " << models.size()
-                                << " discovered cloud model(s) for provider '"
-                                << provider << "'" << std::endl;
+    rebuild_public_model_aliases_locked();
+
+    LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
+                               << provider << "': " << added << " model(s)"
+                               << std::endl;
+    return added;
+}
+
+size_t ModelManager::evict_cloud_models(const std::string& provider) {
+    if (provider.empty()) return 0;
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    size_t removed = 0;
+    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+            it = models_cache_.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    if (removed > 0) {
+        rebuild_public_model_aliases_locked();
+        LOG(DEBUG, "ModelManager") << "Evicted " << removed
+                                    << " cloud model(s) for provider '"
+                                    << provider << "'" << std::endl;
+    }
+    return removed;
+}
+
+size_t ModelManager::count_cloud_models(const std::string& provider) const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return std::count_if(models_cache_.begin(), models_cache_.end(),
+                         [&](const auto& kv) {
+                             return kv.second.recipe == "cloud" &&
+                                    kv.second.cloud_provider == provider;
+                         });
 }
 
 void ModelManager::register_user_model(const std::string& model_name,

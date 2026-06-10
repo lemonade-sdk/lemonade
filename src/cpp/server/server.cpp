@@ -178,7 +178,19 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
+    cloud_registry_ = std::make_unique<CloudProviderRegistry>();
+    // Seed installed providers from config.json. Runtime keys stay empty
+    // until either an env var resolves them per-request or a client POSTs
+    // /v1/cloud/auth — by design we never persist secrets to disk.
+    {
+        json snap = config_->snapshot();
+        if (snap.contains("cloud_providers")) {
+            cloud_registry_->load_from_config(snap["cloud_providers"]);
+        }
+    }
+
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
+    model_manager_->set_cloud_registry(cloud_registry_.get());
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -186,6 +198,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
+    router_->set_cloud_registry(cloud_registry_.get());
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -543,14 +556,27 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_cleanup_cache(req, res);
     });
 
-    // Client-driven cloud-model discovery. Body: {provider, base_url, api_key}.
-    // Calls CloudServer::discover_models() against the supplied creds and
-    // returns the list of chat-capable model ids. lemond does NOT persist
-    // the credentials — they are read once and discarded. This is the
-    // server-side proxy for client discovery to sidestep browser CORS on
-    // direct calls to providers like OpenAI.
-    web_server.Post("/internal/cloud/discover", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_cloud_discover(req, res);
+    // Cloud auth: register quad-prefix POST and a parameterized DELETE.
+    //   POST /v1/cloud/auth        body: {provider, api_key}
+    //   DELETE /v1/cloud/auth/{p}
+    // The runtime key lives in process memory only; env var
+    // LEMONADE_<PROVIDER>_API_KEY takes precedence (POST returns 409 if it
+    // is set). Both endpoints respect LEMONADE_ADMIN_API_KEY when configured
+    // via the standard authentication path applied to /v1/.
+    register_post("cloud/auth", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_set(req, res);
+    });
+    web_server.Delete(R"(/api/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/api/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -1352,39 +1378,6 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
-bool Server::inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json) {
-    // Only act on requests targeting an already-registered cloud-recipe model.
-    // Cloud models are registered when the client runs discovery
-    // (POST /internal/cloud/discover); the per-request path only forwards the
-    // credentials. We do NOT inject for local backends because their request
-    // body is forwarded verbatim to the backend subprocess (llama-server, flm,
-    // etc.), and we don't want cloud API keys in those processes' logs.
-    if (!request_json.contains("model") || !request_json["model"].is_string()) {
-        return false;
-    }
-    const std::string model_name = request_json["model"].get<std::string>();
-
-    if (!model_manager_->model_exists(model_name)) {
-        return false;
-    }
-    if (model_manager_->get_model_info(model_name).recipe != "cloud") {
-        return false;
-    }
-
-    // Per-request credentials. Absent ones fall back to the
-    // LEMONADE_<PROVIDER>_API_KEY / _BASE_URL env vars inside CloudServer.
-    const std::string key = req.get_header_value("X-Lemonade-Cloud-Key");
-    const std::string base_url = req.get_header_value("X-Lemonade-Cloud-Base-Url");
-    if (key.empty() && base_url.empty()) {
-        return false;
-    }
-
-    nlohmann::json creds = nlohmann::json::object();
-    if (!key.empty()) creds["api_key"] = key;
-    if (!base_url.empty()) creds["base_url"] = base_url;
-    request_json["_lemonade_cloud_creds"] = creds;
-    return true;
-}
 
 void Server::handle_health(const httplib::Request& req, httplib::Response& res) {
     // For HEAD requests, just return 200 OK without processing
@@ -1556,9 +1549,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
-        // For cloud-recipe models, copy the per-request credential headers
-        // into the body so CloudServer can forward them (no-op otherwise).
-        bool request_modified = inject_cloud_creds(req, request_json);
+        bool request_modified = false;
 
         // Handle model loading/switching
         if (request_json.contains("model")) {
@@ -1599,7 +1590,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods.
-        // request_modified is initialized above (from inject_cloud_creds).
         std::string request_body = req.body;
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
@@ -1764,9 +1754,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
-        // Copy per-request cloud credential headers into the body for
-        // cloud-recipe models (no-op otherwise).
-        bool request_modified = inject_cloud_creds(req, request_json);
+        bool request_modified = false;
 
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
@@ -1805,9 +1793,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // request_modified was set earlier by inject_cloud_creds. Re-dump
-        // only if injection happened, so non-cloud paths avoid the
-        // parse+dump cost.
         std::string request_body = request_modified ? request_json.dump() : req.body;
 
         if (is_streaming) {
@@ -2893,9 +2878,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
-        // Copy per-request cloud credential headers into the body for
-        // cloud-recipe models (no-op otherwise).
-        bool request_modified = inject_cloud_creds(req, request_json);
+        bool request_modified = false;
 
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
@@ -2920,8 +2903,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // request_modified set earlier by inject_cloud_creds. Re-dump only
-        // when needed so non-cloud paths skip the parse+dump cost.
         std::string request_body = request_modified ? request_json.dump() : req.body;
 
         if (is_streaming) {
@@ -3155,11 +3136,11 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
 
-        // Cloud models are registered when the client runs discovery
-        // (POST /internal/cloud/discover), so a cloud model reaching /load is
-        // already in the cache. /load carries no creds payload; CloudServer
-        // reads the per-request X-Lemonade-Cloud-Key / -Base-Url headers (or
-        // env-var fallback) when a request is actually forwarded.
+        // Cloud models are registered automatically at cache build / cloud-auth
+        // / install time, so a cloud model reaching /load is already in the
+        // cache. /load carries no creds payload; CloudServer reads the
+        // resolved key (env var or runtime POST) from CloudProviderRegistry
+        // when a request is actually forwarded.
 
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
@@ -3413,54 +3394,83 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
     }
 }
 
-void Server::handle_cloud_discover(const httplib::Request& req, httplib::Response& res) {
+void Server::persist_cloud_providers() {
+    if (cache_dir_.empty() || !cloud_registry_) return;
+    try {
+        json snap = config_->snapshot();
+        snap["cloud_providers"] = cloud_registry_->to_config_array();
+        ConfigFile::save(cache_dir_, snap);
+    } catch (const std::exception& e) {
+        // Persistence failure must not undo the in-memory change — the
+        // registry is already updated and the provider is usable until
+        // restart. Log so the operator can see why config.json is stale.
+        LOG(WARNING, "Server") << "Failed to persist cloud_providers to config.json: "
+                                << e.what() << std::endl;
+    }
+}
+
+void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res) {
     try {
         const auto body = nlohmann::json::parse(req.body);
         if (!body.contains("provider") || !body["provider"].is_string() ||
-            !body.contains("base_url") || !body["base_url"].is_string() ||
-            !body.contains("api_key")  || !body["api_key"].is_string()) {
+            !body.contains("api_key") || !body["api_key"].is_string()) {
             res.status = 400;
-            res.set_content(R"({"error":{"message":"Body must contain string fields: provider, base_url, api_key","type":"invalid_request_error"}})",
-                            "application/json");
+            nlohmann::json error = {{"error", {
+                {"message", "Body must contain string fields: provider, api_key"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
             return;
         }
         const auto provider = body["provider"].get<std::string>();
-        const auto base_url = body["base_url"].get<std::string>();
         const auto api_key = body["api_key"].get<std::string>();
-
-        // discover_models is best-effort — it logs upstream failures and
-        // returns an empty list rather than throwing, so we can always
-        // produce a well-formed response. Empty list with status 200 means
-        // "auth probably wrong" or "upstream returned no chat models"; the
-        // client surfaces that to the user.
-        auto models = backends::CloudServer::discover_models(provider, api_key, base_url);
-
-        // Register the discovered models (names + static metadata, never the
-        // credentials) so Router can construct CloudServer on load/chat and
-        // /models + /health can report context window / cost / labels without
-        // the client having to re-send them on every request.
-        model_manager_->register_discovered_cloud_models(provider, models);
-
-        nlohmann::json data = nlohmann::json::array();
-        for (const auto& info : models) {
-            nlohmann::json entry = {
-                {"id", info.model_name},
-                {"checkpoint", info.checkpoint()},
-                {"cloud_provider", info.cloud_provider},
-                {"labels", info.labels},
-            };
-            if (info.max_context_window > 0) {
-                entry["max_context_window"] = info.max_context_window;
-            }
-            if (info.cost_input_per_million >= 0) {
-                entry["cost_input_per_million"] = info.cost_input_per_million;
-            }
-            if (info.cost_output_per_million >= 0) {
-                entry["cost_output_per_million"] = info.cost_output_per_million;
-            }
-            data.push_back(std::move(entry));
+        if (provider.empty() || api_key.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "provider and api_key must be non-empty"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
         }
-        nlohmann::json response = {{"object", "list"}, {"data", data}};
+
+        if (!cloud_registry_->is_installed(provider)) {
+            res.status = 404;
+            nlohmann::json error = {{"error", {
+                {"message", "Cloud provider '" + provider + "' is not installed. "
+                            "Call POST /v1/install with backend=cloud, provider, "
+                            "and base_url first."},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // env-wins-over-runtime: if the env var is set, refuse the runtime
+        // key with 409 so the caller knows their POST had no effect.
+        if (!cloud_registry_->set_runtime_key(provider, api_key)) {
+            res.status = 409;
+            const auto env_name = CloudProviderRegistry::env_var_name(provider);
+            nlohmann::json error = {{"error", {
+                {"message", env_name + " is set in the lemond process; the env var "
+                            "takes precedence and the runtime key was not stored."},
+                {"type", "auth_conflict"},
+                {"env_var", env_name}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Refresh the provider's discovered model list with the new key.
+        // Best-effort — refresh logs failures and returns 0. Either way the
+        // key is stored and the response reflects the auth state.
+        size_t models_after = model_manager_->refresh_cloud_models(provider);
+
+        const auto state = cloud_registry_->auth_state(provider);
+        nlohmann::json response = {
+            {"provider", provider},
+            {"auth_state", {
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set}
+            }},
+            {"models_discovered", models_after}
+        };
         res.set_content(response.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         res.status = 400;
@@ -3468,7 +3478,43 @@ void Server::handle_cloud_discover(const httplib::Request& req, httplib::Respons
                                             {"type", "invalid_request_error"}}}};
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_cloud_discover: " << e.what() << std::endl;
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const std::string provider = req.matches[1].str();
+        if (provider.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {{"message", "Missing provider in URL"},
+                                                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        const bool cleared = cloud_registry_->clear_runtime_key(provider);
+        // If the env var is set, models stay discovered (env still authenticates);
+        // if not, the cache should reflect the now-unauthenticated state.
+        const auto state = cloud_registry_->auth_state(provider);
+        if (!state.env_var_set) {
+            model_manager_->evict_cloud_models(provider);
+        }
+
+        nlohmann::json response = {
+            {"provider", provider},
+            {"cleared_runtime_key", cleared},
+            {"auth_state", {
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set}
+            }}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_clear: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
         res.set_content(error.dump(), "application/json");
@@ -3661,6 +3707,26 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Surface runtime config flags that affect client-side install/download UX.
     if (auto* cfg = RuntimeConfig::global()) {
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
+    }
+
+    // Cloud providers: per-provider {name, base_url, env_var_set,
+    // runtime_key_set, models_discovered}. Never includes the key itself.
+    // Clients use this to decide whether to prompt for an API key, show a
+    // "configured by env var" badge, or surface the model count to the user.
+    if (cloud_registry_) {
+        nlohmann::json providers = nlohmann::json::array();
+        for (const auto& rec : cloud_registry_->list_installed()) {
+            auto state = cloud_registry_->auth_state(rec.name);
+            providers.push_back({
+                {"name", rec.name},
+                {"base_url", rec.base_url},
+                {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set},
+                {"models_discovered", model_manager_->count_cloud_models(rec.name)}
+            });
+        }
+        system_info["cloud"] = {{"providers", providers}};
     }
 
     res.set_content(system_info.dump(), "application/json");
@@ -4768,6 +4834,65 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Cloud install branch. Cloud providers don't have a binary to fetch —
+        // "installing" one means registering its OpenAI-compat base URL with
+        // the in-process CloudProviderRegistry so that ModelManager can
+        // discover its catalog as soon as the matching API key is supplied
+        // (env var or POST /v1/cloud/auth). Shape:
+        //   {backend: "cloud", provider: "fireworks",
+        //    base_url: "https://api.fireworks.ai/inference/v1",
+        //    api_key: "..."}  // optional
+        if (request_json.value("backend", "") == "cloud") {
+            const std::string provider = request_json.value("provider", "");
+            const std::string base_url = request_json.value("base_url", "");
+            const std::string api_key = request_json.value("api_key", "");
+            if (provider.empty() || base_url.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            LOG(INFO, "Server") << "Installing cloud provider '" << provider
+                                  << "' with base_url " << base_url << std::endl;
+            cloud_registry_->install(provider, base_url);
+            persist_cloud_providers();
+
+            // Best-effort optional auth: if api_key was supplied, treat this
+            // as "install + auth in one shot". Honors the env-wins rule: if
+            // LEMONADE_<P>_API_KEY is set, we don't store the runtime key and
+            // we don't error — install still succeeds, env var still wins.
+            bool runtime_key_stored = false;
+            if (!api_key.empty()) {
+                runtime_key_stored = cloud_registry_->set_runtime_key(provider, api_key);
+            }
+
+            // Best-effort discovery. Empty result is fine — install means
+            // "registered", not "verified-and-non-empty". The client can
+            // call /v1/system-info later to see how many models showed up.
+            size_t models_after = model_manager_->refresh_cloud_models(provider);
+            const auto state = cloud_registry_->auth_state(provider);
+
+            nlohmann::json response = {
+                {"status", "success"},
+                {"backend", "cloud"},
+                {"provider", provider},
+                {"base_url", cloud_registry_->base_url_for(provider)},
+                {"models_discovered", models_after},
+                {"auth_state", {
+                    {"env_var_set", state.env_var_set},
+                    {"runtime_key_set", state.runtime_key_set}
+                }}
+            };
+            if (!api_key.empty() && !runtime_key_stored) {
+                response["warning"] = CloudProviderRegistry::env_var_name(provider) +
+                    " is set; supplied api_key was ignored.";
+            }
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
@@ -4868,6 +4993,53 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
 void Server::handle_uninstall(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+
+        // Cloud uninstall: drop the provider record + its runtime key +
+        // every discovered model. Idempotent — uninstalling an unknown
+        // provider returns 404 (matching the symmetric install error shape)
+        // rather than silently succeeding, so CI scripts can tell which
+        // case happened.
+        if (request_json.value("backend", "") == "cloud") {
+            const std::string provider = request_json.value("provider", "");
+            if (provider.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud uninstall requires 'provider' string field"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            // Unload any loaded cloud-recipe models for this provider before
+            // erasing them from the cache. Router::unload_model expects a
+            // model_name, not a recipe filter — walk the loaded list manually.
+            auto loaded = router_->get_all_loaded_models();
+            for (const auto& m : loaded) {
+                if (m.value("recipe", "") == "cloud" &&
+                    m.value("cloud_provider", "") == provider) {
+                    router_->unload_model(m.value("model_name", ""));
+                }
+            }
+            bool removed = cloud_registry_->uninstall(provider);
+            size_t evicted = model_manager_->evict_cloud_models(provider);
+            if (!removed) {
+                res.status = 404;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' is not installed"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            persist_cloud_providers();
+            nlohmann::json response = {
+                {"status", "success"},
+                {"backend", "cloud"},
+                {"provider", provider},
+                {"models_evicted", evicted}
+            };
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
 

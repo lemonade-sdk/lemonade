@@ -61,5 +61,6 @@
   },
   "kokoro": {
     "cpu_bin": "builtin"
-  }
+  },
+  "cloud_providers": []
 }

@@ -157,15 +157,6 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         return acc;
       }
 
-      // Cloud models come exclusively from client discovery
-      // (fetchCloudModelsFromProviders): this client only knows the providers
-      // it has configured, whereas /models may also list cloud models another
-      // client registered — which this client can't use (no creds) and
-      // shouldn't display. Skipping them here keeps the two sources disjoint.
-      if (model.recipe === 'cloud') {
-        return acc;
-      }
-
       const modelInfo: ModelInfo = {
         checkpoint: model.checkpoint,
         recipe: model.recipe,
@@ -256,104 +247,10 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
   }
 };
 
-// Client-driven cloud model discovery. Reads cloud providers out of the
-// local app settings and asks lemond to proxy a /v1/models call for each.
-// Failures are swallowed so a dead provider doesn't sink the whole model
-// list — the user just sees fewer entries. This is the client-side
-// equivalent of the server-side Step 1.7 that used to live in
-// ModelManager::build_cache before cloud creds moved client-side.
-const fetchCloudModelsFromProviders = async (): Promise<ModelsData> => {
-  if (typeof window === 'undefined' || !window.api?.getSettings) return {};
-  let providers: Record<string, { baseUrl: string; apiKey: string }> = {};
-  try {
-    const stored = await window.api.getSettings();
-    const raw = (stored as any)?.cloudProviders;
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      for (const [name, cfg] of Object.entries(raw)) {
-        if (!cfg || typeof cfg !== 'object') continue;
-        const c = cfg as any;
-        if (typeof c.baseUrl === 'string' && typeof c.apiKey === 'string' && c.apiKey.length > 0) {
-          providers[name] = { baseUrl: c.baseUrl, apiKey: c.apiKey };
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to read cloud providers from settings:', err);
-    return {};
-  }
-  if (Object.keys(providers).length === 0) return {};
-
-  const { serverConfig, getServerBaseUrl } = await import('./serverConfig');
-
-  const results = await Promise.all(
-    Object.entries(providers).map(async ([name, cfg]) => {
-      try {
-        const url = `${getServerBaseUrl()}/internal/cloud/discover`;
-        const response = await serverConfig.fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: name, base_url: cfg.baseUrl, api_key: cfg.apiKey }),
-        });
-        if (!response.ok) return {} as ModelsData;
-        const body = await response.json();
-        const list = Array.isArray(body?.data) ? body.data : [];
-        const out: ModelsData = {};
-        // The server registered these models (and their upstream id / labels /
-        // context / cost) during this same discovery call, so chat/load only
-        // needs to forward credentials — we just record the model names so
-        // serverConfig.fetch can tell a cloud model with missing creds apart
-        // from a local one.
-        const ids: string[] = [];
-        for (const entry of list) {
-          if (!entry?.id || typeof entry.id !== 'string') continue;
-          const info: ModelInfo = {
-            checkpoint: typeof entry.checkpoint === 'string' ? entry.checkpoint : '',
-            recipe: 'cloud',
-            // useModels.suggestedModels (which feeds the Model Manager
-            // picker) filters to `info.suggested || name.startsWith(USER_MODEL_PREFIX)`.
-            // Cloud models are added through the UI like user models, so
-            // mark them suggested so they surface in the picker.
-            suggested: true,
-            downloaded: true, // cloud models have no local artifact
-          };
-          if (typeof entry.cloud_provider === 'string' && entry.cloud_provider) {
-            info.cloud_provider = entry.cloud_provider;
-          } else {
-            info.cloud_provider = name;
-          }
-          if (Array.isArray(entry.labels)) {
-            info.labels = entry.labels.filter((l: unknown): l is string => typeof l === 'string');
-          }
-          // Static metadata the provider reported (context window + per-1M cost).
-          if (typeof entry.max_context_window === 'number') info.max_context_window = entry.max_context_window;
-          if (typeof entry.cost_input_per_million === 'number') info.cost_input_per_million = entry.cost_input_per_million;
-          if (typeof entry.cost_output_per_million === 'number') info.cost_output_per_million = entry.cost_output_per_million;
-          out[entry.id] = info;
-          ids.push(entry.id);
-        }
-        serverConfig.setKnownCloudModels(name, ids);
-        return out;
-      } catch (err) {
-        console.warn(`Cloud discovery failed for provider '${name}':`, err);
-        return {} as ModelsData;
-      }
-    })
-  );
-
-  return results.reduce<ModelsData>((acc, partial) => ({ ...acc, ...partial }), {});
-};
-
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  // Built-in + user models come from the server's /models (its source of
-  // truth). Cloud models come from client discovery only — this client
-  // discovers exactly the providers it has configured, so it never shows
-  // another client's cloud models (which it couldn't use without their
-  // credentials, per AGENTS.md Invariant #11). fetchBuiltInModelsFromAPI
-  // drops cloud-recipe entries for the same reason, so the two sets are
-  // disjoint and a plain spread is enough.
-  const [builtIns, cloud] = await Promise.all([
-    fetchBuiltInModelsFromAPI(),
-    fetchCloudModelsFromProviders(),
-  ]);
-  return { ...builtIns, ...cloud };
+  // Cloud models are now served by lemond through /v1/models like every other
+  // recipe — the server discovers them from each installed provider as soon
+  // as an API key is resolvable (env var or POST /v1/cloud/auth). No
+  // client-side discovery, no per-client mirroring.
+  return fetchBuiltInModelsFromAPI();
 };

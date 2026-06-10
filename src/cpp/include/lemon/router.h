@@ -20,6 +20,8 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+class CloudProviderRegistry;
+
 class Router {
 public:
     Router(RuntimeConfig* config,
@@ -27,6 +29,11 @@ public:
            BackendManager* backend_manager);
 
     ~Router();
+
+    // Wires the cloud provider registry so the Router can construct
+    // CloudServer instances with a credential source. Pointer (not
+    // ownership) — Server owns the registry.
+    void set_cloud_registry(CloudProviderRegistry* registry);
 
     // Load a model with the appropriate backend
     // Optional per-model settings override the defaults
@@ -109,6 +116,7 @@ private:
     RuntimeConfig* config_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
+    CloudProviderRegistry* cloud_registry_ = nullptr;  // Non-owning
 
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_

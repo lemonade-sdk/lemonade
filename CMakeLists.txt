@@ -578,6 +578,7 @@ set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
+    src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/hf_variants.cpp

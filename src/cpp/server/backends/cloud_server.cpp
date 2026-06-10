@@ -1,4 +1,5 @@
 #include "lemon/backends/cloud_server.h"
+#include "lemon/cloud_provider_registry.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
@@ -331,9 +332,11 @@ std::string build_public_name(const std::string& provider, const std::string& up
 CloudServer::CloudServer(const std::string& provider,
                          const std::string& log_level,
                          ModelManager* model_manager,
-                         BackendManager* backend_manager)
+                         BackendManager* backend_manager,
+                         CloudProviderRegistry* registry)
     : WrappedServer("cloud", log_level, model_manager, backend_manager),
-      provider_(provider) {}
+      provider_(provider),
+      registry_(registry) {}
 
 CloudServer::~CloudServer() {
     unload();
@@ -357,10 +360,10 @@ void CloudServer::load(const std::string& model_name,
             "(provider's upstream model id)");
     }
 
-    // No credential resolution at load time — keys and base URLs are per-
-    // request now (see PerRequestCreds in the header). We just record the
-    // upstream model id so the per-request handlers know what to rewrite
-    // "model" to before forwarding.
+    // No credential resolution at load time — creds are resolved per request
+    // via the registry so a runtime key supplied after load still works for
+    // already-loaded models. We just record the upstream model id so the
+    // per-request handlers know what to rewrite "model" to before forwarding.
     upstream_model_ = model_info.checkpoint();
     LOG(INFO, "Cloud") << "Cloud provider: " << provider_
                        << ", upstream model: " << upstream_model_ << std::endl;
@@ -374,50 +377,58 @@ void CloudServer::unload() {
     loaded_ = false;
 }
 
-CloudServer::PerRequestCreds CloudServer::extract_creds(json& request) const {
-    PerRequestCreds creds;
-
-    // 1. Per-request creds injected by server.cpp from X-Lemonade-Cloud-*
-    //    headers. Strip the field before we forward upstream — providers
-    //    that strict-validate (Fireworks) will 400 on unknown keys.
-    if (request.contains("_lemonade_cloud_creds") &&
-        request["_lemonade_cloud_creds"].is_object()) {
-        const auto& injected = request["_lemonade_cloud_creds"];
-        if (injected.contains("api_key") && injected["api_key"].is_string()) {
-            creds.api_key = injected["api_key"].get<std::string>();
-        }
-        if (injected.contains("base_url") && injected["base_url"].is_string()) {
-            creds.base_url = injected["base_url"].get<std::string>();
-        }
-        request.erase("_lemonade_cloud_creds");
+CloudServer::ResolvedCreds CloudServer::resolve_creds() const {
+    ResolvedCreds creds;
+    if (registry_ == nullptr) {
+        return creds;
     }
-
-    // 2. Env-var fallback for any field the client did not supply. This
-    //    is the operator-pre-provisioned path — a self-hosted lemond can
-    //    expose a "house" cloud key to all clients without each client
-    //    configuring its own.
-    std::string upper = provider_;
-    for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    if (creds.api_key.empty()) {
-        std::string env_name = "LEMONADE_" + upper + "_API_KEY";
-        if (const char* v = std::getenv(env_name.c_str()); v && *v) {
-            creds.api_key = v;
-        }
-    }
-    if (creds.base_url.empty()) {
-        std::string env_name = "LEMONADE_" + upper + "_BASE_URL";
-        if (const char* v = std::getenv(env_name.c_str()); v && *v) {
-            creds.base_url = v;
-        }
-    }
-
-    // Strip a trailing slash so path concatenation ("base + /chat/...")
-    // doesn't yield "//chat/...". Some providers (notably nginx-fronted
-    // ones) 404 on the doubled slash.
+    creds.api_key = registry_->resolve_key(provider_);
+    creds.base_url = registry_->base_url_for(provider_);
+    // The registry already normalizes base_url on install, but a defensive
+    // strip here keeps the contract local — anyone tracing post_with_auth
+    // can see the joined URL can't double-slash.
     while (!creds.base_url.empty() && creds.base_url.back() == '/') {
         creds.base_url.pop_back();
     }
     return creds;
+}
+
+json CloudServer::missing_creds_error() const {
+    const std::string env_name = CloudProviderRegistry::env_var_name(provider_);
+    bool installed = registry_ != nullptr && registry_->is_installed(provider_);
+    std::string msg;
+    if (!installed) {
+        msg = "Cloud provider '" + provider_ + "' is not installed. "
+              "POST /v1/install with {\"backend\":\"cloud\",\"provider\":\"" +
+              provider_ + "\",\"base_url\":\"https://...\"} first.";
+    } else {
+        msg = "No API key for cloud provider '" + provider_ + "'. Set the " +
+              env_name + " env var or POST /v1/cloud/auth with "
+              "{\"provider\":\"" + provider_ + "\",\"api_key\":\"...\"}.";
+    }
+    return ErrorResponse::create(
+        msg,
+        ErrorType::BACKEND_ERROR,
+        {{"provider", provider_}}
+    );
+}
+
+std::string CloudServer::missing_creds_sse() const {
+    const std::string env_name = CloudProviderRegistry::env_var_name(provider_);
+    bool installed = registry_ != nullptr && registry_->is_installed(provider_);
+    std::string msg;
+    if (!installed) {
+        msg = "Cloud provider '" + provider_ + "' is not installed.";
+    } else {
+        msg = "No API key for cloud provider '" + provider_ + "'. Set " +
+              env_name + " or POST /v1/cloud/auth.";
+    }
+    json err = {{"error", {
+        {"message", msg},
+        {"type", "backend_error"},
+        {"provider", provider_}
+    }}};
+    return "data: " + err.dump() + "\n\n";
 }
 
 json CloudServer::rewrite_model_field(const json& request) const {
@@ -432,21 +443,12 @@ json CloudServer::rewrite_model_field(const json& request) const {
 }
 
 json CloudServer::post_with_auth(const std::string& path, const json& request,
-                                  const PerRequestCreds& creds, long timeout_seconds) {
+                                  const ResolvedCreds& creds, long timeout_seconds) {
     if (!loaded_) {
         return ErrorResponse::from_exception(ModelNotLoadedException(server_name_));
     }
     if (creds.api_key.empty() || creds.base_url.empty()) {
-        std::string upper = provider_;
-        for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        return ErrorResponse::create(
-            "Missing cloud credentials for provider '" + provider_ + "'. Set "
-            "X-Lemonade-Cloud-Key and X-Lemonade-Cloud-Base-Url request headers, "
-            "or the LEMONADE_" + upper + "_API_KEY and LEMONADE_" + upper +
-            "_BASE_URL env vars on the server.",
-            ErrorType::BACKEND_ERROR,
-            {{"provider", provider_}}
-        );
+        return missing_creds_error();
     }
     std::string url = creds.base_url + path;
     std::map<std::string, std::string> headers = {
@@ -489,14 +491,12 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
 
 json CloudServer::chat_completion(const json& request) {
     json modified = rewrite_model_field(request);
-    PerRequestCreds creds = extract_creds(modified);
-    return post_with_auth("/chat/completions", modified, creds);
+    return post_with_auth("/chat/completions", modified, resolve_creds());
 }
 
 json CloudServer::completion(const json& request) {
     json modified = rewrite_model_field(request);
-    PerRequestCreds creds = extract_creds(modified);
-    return post_with_auth("/completions", modified, creds);
+    return post_with_auth("/completions", modified, resolve_creds());
 }
 
 json CloudServer::responses(const json& /*request*/) {
@@ -534,35 +534,25 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         suffix = suffix.substr(v1_prefix.size());
     }
 
-    // Parse the body once so we can both extract per-request credentials
-    // (injected by server.cpp from X-Lemonade-Cloud-* headers) and rewrite
-    // the "model" field. If parsing fails, fall back to env-var-only creds.
-    PerRequestCreds creds;
+    // Rewrite the "model" field to the provider's upstream id. If parsing
+    // fails the body forwards verbatim — most providers will then 400 with
+    // a body the client can interpret, which is more informative than
+    // refusing locally.
     std::string forwarded_body = request_body;
     try {
         json req = json::parse(request_body);
-        creds = extract_creds(req);
         req["model"] = upstream_model_;
         if (req.contains("max_completion_tokens") && !req.contains("max_tokens")) {
             req["max_tokens"] = req["max_completion_tokens"];
         }
         forwarded_body = req.dump();
     } catch (const json::exception&) {
-        // Parse failure means no injected creds — try env vars only.
-        json empty = json::object();
-        creds = extract_creds(empty);
+        // Best-effort: forward whatever we got.
     }
 
+    ResolvedCreds creds = resolve_creds();
     if (creds.api_key.empty() || creds.base_url.empty()) {
-        std::string upper = provider_;
-        for (auto& c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        json extra = {{"provider", provider_}};
-        std::string error_msg = sse_error(
-            "Missing cloud credentials for provider '" + provider_ + "'. Set "
-            "X-Lemonade-Cloud-Key and X-Lemonade-Cloud-Base-Url request headers, "
-            "or the LEMONADE_" + upper + "_API_KEY and LEMONADE_" + upper +
-            "_BASE_URL env vars on the server.",
-            "backend_error", extra);
+        std::string error_msg = missing_creds_sse();
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         return;

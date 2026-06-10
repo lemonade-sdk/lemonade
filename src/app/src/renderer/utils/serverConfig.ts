@@ -12,26 +12,10 @@ import { tauriReady } from '../tauriShim';
 type PortChangeListener = (port: number) => void;
 type UrlChangeListener = (url: string, apiKey: string) => void;
 
-// Per-provider cloud credentials, mirrored from app settings. Used by
-// fetch() to attach X-Lemonade-Cloud-Key / X-Lemonade-Cloud-Base-Url
-// headers when the request body's "model" prefix matches a configured
-// provider. lemond's CloudServer reads + strips these headers; non-cloud
-// requests are untouched.
-type CloudProviderCacheEntry = { baseUrl: string; apiKey: string };
-
 class ServerConfig {
   private port: number = 13305;
   private explicitBaseUrl: string | null = null;
   private apiKey: string | null = null;
-  // Names of models the client discovered as cloud models (e.g.
-  // "fireworks.kimi-k2p5"), reseeded per provider at discovery. Used only to
-  // tell "cloud model whose provider creds aren't configured" apart from a
-  // plain local model, so fetch() can fail loud instead of firing a
-  // credential-less request the server rejects with an opaque 404. The
-  // server learns the upstream id / labels / context / cost at discovery
-  // (POST /internal/cloud/discover), so none of that is sent per request —
-  // fetch() only attaches the credentials.
-  private knownCloudModels: Set<string> = new Set();
   private portListeners: Set<PortChangeListener> = new Set();
   private urlListeners: Set<UrlChangeListener> = new Set();
   private isDiscovering: boolean = false;
@@ -120,72 +104,6 @@ class ServerConfig {
           this.setUpdatedAPIKey(apiKey);
         }
       });
-    }
-  }
-
-  // Read the configured cloud providers from app settings — the single
-  // source of truth (the same store the cloud-provider UI writes and that
-  // modelData.ts reads for discovery). We deliberately do NOT keep a
-  // long-lived in-memory copy: a cached map drifts out of sync with settings
-  // (the web app's onSettingsUpdated is a no-op, and another tab/client can
-  // edit settings), and a stale cache silently drops the per-request creds
-  // headers, which the server then rejects with an opaque 404. Reading fresh
-  // costs one settings read per HTTP request (not per token) — negligible
-  // next to inference latency.
-  private async readCloudProvidersFromSettings(): Promise<Map<string, CloudProviderCacheEntry>> {
-    const out = new Map<string, CloudProviderCacheEntry>();
-    try {
-      if (typeof window === 'undefined' || !window.api?.getSettings) return out;
-      const stored = await window.api.getSettings();
-      const providers = (stored as any)?.cloudProviders;
-      if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
-        for (const [name, cfg] of Object.entries(providers)) {
-          if (!cfg || typeof cfg !== 'object') continue;
-          const c = cfg as any;
-          if (typeof c.baseUrl === 'string' && typeof c.apiKey === 'string' && c.apiKey.length > 0) {
-            out.set(name, { baseUrl: c.baseUrl, apiKey: c.apiKey });
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to read cloud providers from settings:', err);
-    }
-    return out;
-  }
-
-  // Resolve the cloud provider creds for a model name. Convention: cloud
-  // models are named "<provider>.<upstream-id>", so the prefix before the
-  // first dot is the provider slug. Provider slugs contain no dots, so the
-  // first dot is always the namespace separator. Returns null for
-  // local/non-cloud models (no dot, or prefix not in the configured
-  // providers — so a local name like "Qwen2.5-..." won't match unless a
-  // provider is literally named "Qwen2").
-  private async resolveCloudProvider(
-    model: unknown,
-  ): Promise<{ provider: string; entry: CloudProviderCacheEntry } | null> {
-    if (typeof model !== 'string') return null;
-    const dot = model.indexOf('.');
-    if (dot <= 0) return null;
-    const prefix = model.substring(0, dot);
-    const providers = await this.readCloudProvidersFromSettings();
-    const entry = providers.get(prefix);
-    return entry ? { provider: prefix, entry } : null;
-  }
-
-  // Called by the discovery paths after each cloud discovery. Reseeds the set
-  // of known cloud model names for one provider (replaces this provider's
-  // prior entries, so a model the provider stopped exposing is forgotten).
-  // Used only by fetch() to distinguish a cloud model with missing creds from
-  // a local model — the server learns everything else at discovery.
-  setKnownCloudModels(provider: string, ids: string[]): void {
-    const prefix = `${provider}.`;
-    for (const name of Array.from(this.knownCloudModels)) {
-      if (name.startsWith(prefix)) {
-        this.knownCloudModels.delete(name);
-      }
-    }
-    for (const id of ids) {
-      if (id) this.knownCloudModels.add(id);
     }
   }
 
@@ -407,49 +325,6 @@ class ServerConfig {
       options.headers = {
         ...options.headers,
         Authorization: `Bearer ${this.apiKey}`,
-      }
-    }
-
-    // If the request body names a cloud-routed model, attach the per-request
-    // cloud headers. lemond's chat handlers copy these into the forwarded
-    // request body as "_lemonade_cloud_creds" so CloudServer can read and
-    // strip them before forwarding upstream. Creds are resolved from app
-    // settings (the source of truth) at request time — see resolveCloudProvider
-    // for why we don't trust a cached map.
-    if (typeof options.body === 'string' && options.body.length > 0 && options.body[0] === '{') {
-      let modelField: unknown;
-      try {
-        const parsed = JSON.parse(options.body);
-        // OpenAI-compat endpoints use "model"; lemonade's /load uses "model_name".
-        modelField = parsed?.model ?? parsed?.model_name;
-      } catch {
-        modelField = undefined; // Body wasn't JSON; nothing to inject.
-      }
-
-      // Only dotted names can be cloud models ("<provider>.<id>"); skip the
-      // settings read entirely for plain local names. The server already knows
-      // the model's upstream id / labels / context / cost from discovery, so
-      // we attach only the credentials here.
-      if (typeof modelField === 'string' && modelField.indexOf('.') > 0) {
-        const resolved = await this.resolveCloudProvider(modelField);
-        if (resolved) {
-          options.headers = {
-            ...options.headers,
-            'X-Lemonade-Cloud-Key': resolved.entry.apiKey,
-            'X-Lemonade-Cloud-Base-Url': resolved.entry.baseUrl,
-          };
-        } else if (this.knownCloudModels.has(modelField)) {
-          // The model was discovered as a cloud model but no provider creds
-          // resolve for it now — the provider is not configured (or was
-          // removed) on this client. Fail loud instead of firing a
-          // credential-less request that the server rejects with an opaque
-          // "Model not found" 404.
-          const prefix = modelField.slice(0, modelField.indexOf('.'));
-          throw new Error(
-            `"${modelField}" is a cloud model, but no API key is configured for ` +
-            `provider "${prefix}" on this client. Add it under Settings → Cloud Providers.`,
-          );
-        }
       }
     }
 

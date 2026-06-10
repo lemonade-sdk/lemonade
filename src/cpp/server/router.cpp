@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/cloud_provider_registry.h"
 #include "lemon/backends/cloud_server.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
@@ -30,6 +31,10 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
 Router::~Router() {
     LOG(DEBUG, "Router") << "Destructor: unloading all models" << std::endl;
     unload_model("");  // Unload all
+}
+
+void Router::set_cloud_registry(CloudProviderRegistry* registry) {
+    cloud_registry_ = registry;
 }
 
 WrappedServer* Router::find_server_by_model_name(const std::string& model_name) const {
@@ -199,7 +204,8 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
         LOG(DEBUG, "Router") << "Creating CloudServer backend (provider: "
                              << model_info.cloud_provider << ")" << std::endl;
         new_server = std::make_unique<backends::CloudServer>(model_info.cloud_provider, log_level,
-                                                              model_manager_, backend_manager_);
+                                                              model_manager_, backend_manager_,
+                                                              cloud_registry_);
     } else if (model_info.recipe == "whispercpp") {
         LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);
@@ -509,7 +515,7 @@ json Router::get_all_loaded_models() const {
 
         // Static metadata from the registry entry. Cloud models carry the
         // provider-reported context window + per-million-token cost (recorded
-        // at discovery by register_discovered_cloud_models); local models
+        // at discovery by ModelManager::refresh_cloud_models); local models
         // surface their runtime context via recipe_options instead.
         try {
             const ModelInfo reg_info = model_manager_->get_model_info(server->get_model_name());

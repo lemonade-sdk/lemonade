@@ -106,9 +106,31 @@ struct ModelInfo {
     std::string mmproj() const { return checkpoint("mmproj"); }
 };
 
+class CloudProviderRegistry;
+
 class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
+
+    // Wires the cloud provider registry. ModelManager uses it to look up
+    // {base_url, api_key} per provider when refreshing cloud models during
+    // build_cache(). Pointer (not ownership) — Server owns the registry.
+    // Must be called before the first build_cache() / get_supported_models().
+    void set_cloud_registry(CloudProviderRegistry* registry);
+
+    // Refresh discovered models for one provider. Looks up creds via the
+    // registry, calls CloudServer::discover_models, and re-seeds the
+    // provider's entries (drop-then-add semantics). No-op + warning if the
+    // provider has no resolvable key. Returns the number of models present
+    // after refresh. Throws never — errors logged, empty result returned.
+    size_t refresh_cloud_models(const std::string& provider);
+
+    // Drop every cached model for one provider (used by uninstall). Returns
+    // the count removed. Doesn't touch the registry — caller already did.
+    size_t evict_cloud_models(const std::string& provider);
+
+    // Count of currently-cached cloud models for a provider. For system-info.
+    size_t count_cloud_models(const std::string& provider) const;
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
@@ -127,23 +149,6 @@ public:
     void register_user_model(const std::string& model_name,
                             const json& model_data,
                             const std::string& source = "");
-
-    // Register the cloud models a client discovered for one provider into the
-    // in-memory cache. Cloud creds stay client-side (Invariant #11), but the
-    // model list does NOT — Router::load_model needs a ModelInfo to construct
-    // CloudServer, and /models + /health read their static metadata (context
-    // window, per-token cost, capability labels) from here. The chat/load
-    // handlers therefore no longer carry any of that metadata per request;
-    // they only forward the per-request credentials. This is called from
-    // POST /internal/cloud/discover with the ModelInfos returned by
-    // CloudServer::discover_models (which already carry name, checkpoint,
-    // labels, context window and cost).
-    //
-    // Reseed semantics: replaces this provider's previously-registered cloud
-    // entries (so a model the provider stopped exposing disappears); other
-    // providers' entries are left intact. Credentials are never stored here.
-    void register_discovered_cloud_models(const std::string& provider,
-                                          const std::vector<ModelInfo>& models);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
@@ -256,6 +261,7 @@ private:
     json user_models_;
     json recipe_options_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
+    CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

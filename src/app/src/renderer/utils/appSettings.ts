@@ -37,16 +37,6 @@ export interface TTSSettings {
   enableUserTTS: BooleanSetting;
 }
 
-// Per-provider cloud credentials. Lives client-side (same model as
-// `apiKey` above) — lemond never persists these. Attached to outbound
-// chat/completion requests via X-Lemonade-Cloud-Key /
-// X-Lemonade-Cloud-Base-Url headers when the requested model belongs
-// to a configured provider.
-export interface CloudProviderConfig {
-  baseUrl: string;
-  apiKey: string;
-}
-
 export interface AppSettings {
   temperature: NumericSetting;
   topK: NumericSetting;
@@ -56,7 +46,6 @@ export interface AppSettings {
   collapseThinkingByDefault: BooleanSetting;
   baseURL: StringSetting;
   apiKey: StringSetting;
-  cloudProviders: Record<string, CloudProviderConfig>;
   layout: LayoutSettings;
   tts: TTSSettings;
 }
@@ -116,7 +105,6 @@ export const createDefaultSettings = (): AppSettings => ({
   collapseThinkingByDefault: { value: BASE_SETTING_VALUES.collapseThinkingByDefault, useDefault: true },
   baseURL: { value: BASE_SETTING_VALUES.baseURL, useDefault: true },
   apiKey: { value: BASE_SETTING_VALUES.apiKey, useDefault: true },
-  cloudProviders: {},
   layout: { ...DEFAULT_LAYOUT_SETTINGS },
   tts: {...DEFAULT_TTS_SETTINGS}
 });
@@ -130,9 +118,6 @@ export const cloneSettings = (settings: AppSettings): AppSettings => ({
   collapseThinkingByDefault: { ...settings.collapseThinkingByDefault },
   baseURL: { ...settings.baseURL },
   apiKey: { ...settings.apiKey },
-  cloudProviders: Object.fromEntries(
-    Object.entries(settings.cloudProviders ?? {}).map(([k, v]) => [k, { ...v }])
-  ),
   layout: { ...settings.layout },
   tts: { ...settings.tts },
 });
@@ -246,22 +231,6 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
       value,
       useDefault,
     };
-  }
-
-  // Merge cloud providers — each entry must have string baseUrl + apiKey;
-  // anything malformed is dropped silently so a corrupt settings file
-  // doesn't surface as a JS error at app startup.
-  const rawCloudProviders = (incoming as any).cloudProviders;
-  if (rawCloudProviders && typeof rawCloudProviders === 'object' && !Array.isArray(rawCloudProviders)) {
-    const merged: Record<string, CloudProviderConfig> = {};
-    for (const [name, cfg] of Object.entries(rawCloudProviders)) {
-      if (!cfg || typeof cfg !== 'object') continue;
-      const c = cfg as any;
-      if (typeof c.baseUrl === 'string' && typeof c.apiKey === 'string') {
-        merged[name] = { baseUrl: c.baseUrl, apiKey: c.apiKey };
-      }
-    }
-    defaults.cloudProviders = merged;
   }
 
   // Merge layout settings

@@ -19,6 +19,7 @@
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "cloud_provider_registry.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
 
@@ -93,10 +94,18 @@ private:
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
 
-    // Client-driven cloud-model discovery. Body: {provider, base_url, api_key}.
-    // Proxies a one-shot call to the provider's /v1/models and returns the
-    // discovered chat-capable models. Credentials are never persisted.
-    void handle_cloud_discover(const httplib::Request& req, httplib::Response& res);
+    // Cloud auth (public, all four prefixes).
+    //   POST /v1/cloud/auth   body: {provider, api_key}
+    //     -> store key in process memory for that provider, refresh the
+    //        provider's discovered model list. Returns 409 if the
+    //        provider's env var is set (env wins).
+    //   DELETE /v1/cloud/auth/{provider}
+    //     -> clear the in-memory runtime key (env var unaffected).
+    // Admin-gated only when LEMONADE_ADMIN_API_KEY is explicitly set, same
+    // gate as /internal/shutdown — matches the existing pattern so dev
+    // loops without any keys still work.
+    void handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res);
+    void handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
@@ -185,15 +194,12 @@ private:
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
-    // Cloud credential injection. Per-client cloud keys travel with each
-    // request via X-Lemonade-Cloud-Key and X-Lemonade-Cloud-Base-Url
-    // headers (mirrors how the lemonade client API key works). When the
-    // requested model has recipe="cloud", copy those headers into the
-    // request body as "_lemonade_cloud_creds" so CloudServer can read +
-    // strip them. Returns true if the json was mutated (caller must
-    // re-dump the body for streaming paths). Non-cloud models are left
-    // untouched so the secrets never reach local subprocesses.
-    bool inject_cloud_creds(const httplib::Request& req, nlohmann::json& request_json);
+    // Helper: persist the registry's installed-providers list into config.json
+    // by overlaying onto the current runtime-config snapshot. Called after
+    // install/uninstall. Errors are logged and swallowed — a failure to
+    // persist must not prevent the in-memory state change that already
+    // happened.
+    void persist_cloud_providers();
 
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
@@ -224,6 +230,7 @@ private:
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
+    std::unique_ptr<CloudProviderRegistry> cloud_registry_;
     std::unique_ptr<WebSocketServer> websocket_server_;
 
     std::mutex downloads_mutex_;

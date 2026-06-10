@@ -6,46 +6,49 @@
 #include <vector>
 
 namespace lemon {
+
+class CloudProviderRegistry;
+
 namespace backends {
 
 /**
  * CloudServer offloads inference to a remote OpenAI-compatible cloud provider
  * (Fireworks, OpenAI, Together, Groq, OpenRouter, DeepInfra, vLLM, LM Studio,
- * etc.) instead of running a local subprocess. It is generic: the provider
- * name comes from the per-model "cloud_provider" field; base URL and API key
- * are supplied per-request by the client (or via LEMONADE_<PROVIDER>_BASE_URL
- * and LEMONADE_<PROVIDER>_API_KEY env vars as a server-side fallback).
+ * etc.) instead of running a local subprocess.
  *
- * Per-client credentials: lemond does NOT persist cloud keys. Each client
- * (desktop app, CLI, third-party SDK) supplies its own credentials per
- * request via the X-Lemonade-Cloud-Key and X-Lemonade-Cloud-Base-Url
- * headers. The server.cpp chat handlers extract these and inject them into
- * the request body as the "_lemonade_cloud_creds" field; CloudServer reads
- * and strips the field before forwarding upstream. This mirrors how the
- * lemonade client API key works (per-client storage, sent per request) and
- * honors Invariant #11 in AGENTS.md.
+ * Credentials live SERVER-SIDE in CloudProviderRegistry. Resolution priority:
+ *   1. LEMONADE_<PROVIDER_UPPER>_API_KEY env var (operator-provisioned)
+ *   2. In-memory runtime key set via POST /v1/cloud/auth (ephemeral, dies on
+ *      restart; never persisted to disk)
+ *   3. None — CloudServer returns a clean 401-shape error
+ *
+ * Base URL lives in the registry's persisted per-provider record (config.json
+ * field "cloud_providers"). Setting LEMONADE_<PROVIDER_UPPER>_BASE_URL has no
+ * effect — the URL is registered once via /v1/install.
+ *
+ * Provider selection: recipe="cloud" + the per-model "cloud_provider" field.
+ * The Router constructs CloudServer for cloud recipes, with the provider name
+ * fixed by the model's registration. Discovery is server-driven now: at cache
+ * build time, ModelManager calls discover_models for every installed provider
+ * with a resolvable key, and again whenever a new key is supplied or a
+ * provider is installed.
  *
  * Scope: chat-only (chat/completions and completions on OpenAI v1). Other
  * modalities — embeddings, audio, reranking, image — are intentionally not
- * served. discover_models() filters its result to LLM ids so the router
- * never sees a cloud model it cannot dispatch. Adding a modality means
- * adding both the capability interface here and the registry filter there.
+ * served. discover_models() filters its result to chat-capable ids so the
+ * router never sees a cloud model it cannot dispatch.
  *
  * Wire format: OpenAI v1 — chat/completions, completions, models. Bearer
  * auth. Streaming via SSE. Providers that diverge from this shape (notably
  * Anthropic) need a sibling backend class — they are not handled here.
- *
- * Selection: recipe="cloud" + the per-model "cloud_provider" field. The
- * Router constructs CloudServer for cloud recipes. Discovery is now
- * client-driven via POST /internal/cloud/discover — the server no longer
- * auto-populates cloud models at cache build time.
  */
 class CloudServer : public WrappedServer {
 public:
     CloudServer(const std::string& provider,
                 const std::string& log_level,
                 ModelManager* model_manager,
-                BackendManager* backend_manager);
+                BackendManager* backend_manager,
+                CloudProviderRegistry* registry);
 
     ~CloudServer() override;
 
@@ -77,27 +80,25 @@ public:
                                                    const std::string& base_url);
 
 private:
-    // Per-request credentials extracted from "_lemonade_cloud_creds" field
-    // (injected by server.cpp from X-Lemonade-Cloud-* headers) with env-var
-    // fallback. The base_url has its trailing slash stripped so path
-    // concatenation doesn't produce "//chat/...".
-    struct PerRequestCreds {
+    struct ResolvedCreds {
         std::string api_key;
         std::string base_url;
     };
 
-    // Extracts and strips "_lemonade_cloud_creds" from the request (mutates).
-    // Falls back to LEMONADE_<PROVIDER>_API_KEY / _BASE_URL env vars for any
-    // missing field. Returns the resolved creds; api_key or base_url may
-    // still be empty if neither header nor env var supplied them.
-    PerRequestCreds extract_creds(json& request) const;
+    // Looks up creds from the registry. Returns empty fields when the
+    // provider is unauthenticated or the registry is missing — callers
+    // surface that as a clean 401-shape error.
+    ResolvedCreds resolve_creds() const;
 
     json post_with_auth(const std::string& path, const json& request,
-                        const PerRequestCreds& creds, long timeout_seconds = 0);
+                        const ResolvedCreds& creds, long timeout_seconds = 0);
     json rewrite_model_field(const json& request) const;
+    json missing_creds_error() const;
+    std::string missing_creds_sse() const;
 
     std::string provider_;       // e.g., "fireworks", "openai", "groq"
     std::string upstream_model_; // provider's model id (from ModelInfo.checkpoint())
+    CloudProviderRegistry* registry_ = nullptr;  // Not owned
     bool loaded_ = false;
 };
 
