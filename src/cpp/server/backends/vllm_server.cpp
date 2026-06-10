@@ -281,7 +281,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
             std::chrono::steady_clock::now() - start).count();
         const double decode_seconds = elapsed_seconds - telemetry.time_to_first_token;
         const double tps_seconds = decode_seconds > 0.0 ? decode_seconds : elapsed_seconds;
-        if (tps_seconds > 0.0) {
+        if (tps_seconds > 1e-6) {
             set_telemetry(telemetry.input_tokens,
                         telemetry.output_tokens,
                         telemetry.time_to_first_token,
