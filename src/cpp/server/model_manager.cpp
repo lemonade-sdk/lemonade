@@ -958,6 +958,48 @@ void ModelManager::invalidate_models_cache() {
     cache_valid_ = false;
 }
 
+bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
+    std::vector<std::string> candidate_keys;
+
+    if (auto canon = parse_canonical_id(model_name)) {
+        if (canon->source == ModelSource::Registered) {
+            candidate_keys.push_back(canon->bare_name);
+        }
+    } else if (!model_name.empty()) {
+        candidate_keys.push_back(model_name);
+    }
+
+    if (candidate_keys.empty()) {
+        return false;
+    }
+
+    json latest_user_models = load_optional_json(get_user_models_file());
+    if (!latest_user_models.is_object()) {
+        return false;
+    }
+
+    bool found = false;
+    for (const auto& key : candidate_keys) {
+        if (latest_user_models.contains(key)) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        user_models_ = std::move(latest_user_models);
+        cache_valid_ = false;
+    }
+
+    build_cache();
+    return true;
+}
+
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
@@ -1520,11 +1562,53 @@ json ModelManager::load_optional_json(const std::string& path) {
 
 static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
-    fs::path dir = fs::path(save_path).parent_path();
+    fs::path target = path_from_utf8(save_path);
+    fs::path dir = target.parent_path();
     fs::create_directories(dir);
 
-    LOG(INFO, "ModelManager") << "Saving " << fs::path(save_path).filename() << std::endl;
-    JsonUtils::save_to_file(to_save, save_path);
+    LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
+
+    // Write via a unique sibling temp file and then rename into place. Readers
+    // should never observe a truncated or half-written registry, and concurrent
+    // writers should not collide on the same temporary path.
+    std::ostringstream tmp_suffix;
+    tmp_suffix << ".tmp."
+               << std::this_thread::get_id() << "."
+               << std::chrono::steady_clock::now().time_since_epoch().count() << "."
+               << reinterpret_cast<std::uintptr_t>(&to_save);
+    fs::path tmp = target;
+    tmp += tmp_suffix.str();
+    {
+        std::ofstream file(tmp, std::ios::trunc);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open file for writing: " + path_to_utf8(tmp));
+        }
+        try {
+            file << to_save.dump(2);
+            file.flush();
+        } catch (const json::exception& e) {
+            throw std::runtime_error("Failed to write JSON to file " + path_to_utf8(tmp) + ": " + e.what());
+        }
+        if (!file) {
+            throw std::runtime_error("Failed to flush JSON file: " + path_to_utf8(tmp));
+        }
+    }
+
+    std::error_code ec;
+    fs::rename(tmp, target, ec);
+#ifdef _WIN32
+    if (ec) {
+        ec.clear();
+        fs::remove(target, ec);
+        ec.clear();
+        fs::rename(tmp, target, ec);
+    }
+#endif
+    if (ec) {
+        std::error_code cleanup_ec;
+        fs::remove(tmp, cleanup_ec);
+        throw std::runtime_error("Failed to replace JSON file " + save_path + ": " + ec.message());
+    }
 }
 
 void ModelManager::save_user_models(const json& user_models) {
@@ -2089,14 +2173,15 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
     // Build cache if needed
     build_cache();
 
-    // Filter and return only downloaded, non-collection models. Collections
-    // are Lemonade-specific (a virtual entry that loads multiple
-    // real models) and aren't meaningful to OpenAI-compatible clients —
-    // the desktop app fetches them explicitly via ?show_all=true.
+    // Filter and return downloaded models. Collections (Omni) are included once
+    // all their components are downloaded: the server orchestrates /chat/completions
+    // for them (see CollectionOrchestrator), so they are genuine OpenAI-compatible
+    // chat models and should appear in /v1/models and Ollama /api/tags. A collection's
+    // `downloaded` flag already reflects component status (see build_cache).
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     std::map<std::string, ModelInfo> downloaded;
     for (const auto& [name, info] : models_cache_) {
-        if (info.downloaded && !is_collection_recipe(info.recipe)) {
+        if (info.downloaded) {
             auto it = canonical_public_names_.find(name);
             const std::string& public_name = it != canonical_public_names_.end() ? it->second : name;
             ModelInfo public_info = info;
@@ -2197,7 +2282,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (enable_dgpu_gtt)
     {
-      LOG(INFO, "ModelManager") << "LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+      LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
                 << "     Models are being filtered assuming GTT memory." << std::endl
                 << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
@@ -2265,6 +2350,29 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
         if (largest_mem_pool_gb > 0.0) {
             LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
+        }
+        if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu")) {
+            const auto& nvidia_gpus = system_info["devices"]["nvidia_gpu"];
+            if (nvidia_gpus.is_array()) {
+                for (const auto& gpu : nvidia_gpus) {
+                    if (gpu.value("available", false)) {
+                        std::string name = gpu.value("name", "unknown");
+                        std::string family = gpu.value("family", "");
+                        std::string cc = gpu.value("compute_capability", "");
+                        std::string suffix;
+                        if (!cc.empty()) suffix = " (compute " + cc + ", " + (family.empty() ? "unsupported arch" : family) + ")";
+                        else if (!family.empty()) suffix = " (" + family + ")";
+                        else suffix = " (arch unknown -- nvidia-smi may have failed)";
+                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: " << name << suffix << std::endl;
+                    } else if (gpu.contains("error")) {
+                        LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: " << gpu["error"].get<std::string>() << std::endl;
+                    }
+                }
+                if (system_info["devices"].contains("nvidia_gpu_error")) {
+                    LOG(INFO, "ModelManager") << "  - NVIDIA GPU: detection error: "
+                        << system_info["devices"]["nvidia_gpu_error"].get<std::string>() << std::endl;
+                }
+            }
         }
         debug_printed = true;
     }
@@ -2493,14 +2601,22 @@ void ModelManager::register_user_model(const std::string& model_name,
         model_entry["source"] = source;
     }
 
-    json updated_user_models = user_models_;
-    updated_user_models[clean_name] = model_entry;
-
-    save_user_models(updated_user_models);
-    user_models_ = updated_user_models;
-
-    // Add new model to cache incrementally
-    add_model_to_cache("user." + clean_name);
+    // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
+    // can otherwise both start from the same registry snapshot and the later
+    // save can drop the first model, producing a hard "Model not found" on the
+    // next auto-load. Read the latest disk copy under the same process mutex so
+    // stale in-memory state cannot overwrite another registration.
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json updated_user_models = load_optional_json(get_user_models_file());
+        if (!updated_user_models.is_object()) {
+            updated_user_models = json::object();
+        }
+        updated_user_models[clean_name] = model_entry;
+        save_user_models(updated_user_models);
+        user_models_ = std::move(updated_user_models);
+        cache_valid_ = false;
+    }
 }
 
 // Find the FLM executable: install dir on Windows, system PATH on Linux.
@@ -2726,12 +2842,16 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
         auto it = models_cache_.find(info.model_name);
         if (it != models_cache_.end())
         {
-            json updated_user_models = user_models_;
+            json updated_user_models = load_optional_json(get_user_models_file());
+            if (!updated_user_models.is_object()) {
+                updated_user_models = json::object();
+            }
             auto model = updated_user_models.find(strip_user_model_prefix(canonical_model_name));
             if (model != updated_user_models.end()) {
                 (*model)["size"] = it->second.size;
-                user_models_ = updated_user_models;
                 save_user_models(updated_user_models);
+                user_models_ = std::move(updated_user_models);
+                cache_valid_ = false;
             }
         }
     }
@@ -2969,17 +3089,13 @@ void ModelManager::download_model(const std::string& model_name,
         }
     }
 
-    // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip entirely
-    // This prevents unnecessary HuggingFace API queries when we just want to use cached models
-    // The do_not_upgrade flag means:
-    //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
-    //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
-    if (do_not_upgrade && is_model_downloaded(model_name)) {
-        LOG(INFO, "ModelManager") << "Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
-        return;
-    }
-
-    // Register user models to user_models.json
+    // Persist registration and recipe options BEFORE the cache-first shortcut
+    // below. A registration/import/overwrite that targets an already-downloaded
+    // model must still update user_models.json and recipe_options.json. The
+    // do_not_upgrade fast return only skips the Hugging Face download/update
+    // check — it must never skip the metadata the caller asked us to record,
+    // otherwise an import that reports success would silently leave the old
+    // checkpoints/options in place.
     if (is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
     }
@@ -2997,6 +3113,17 @@ void ModelManager::download_model(const std::string& model_name,
         }
         model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
         save_model_options(model_info);
+    }
+
+    // CRITICAL: If do_not_upgrade=true AND model is already downloaded, skip the
+    // download/HF update check. Registration and recipe options were already
+    // persisted above, so an import/overwrite still takes effect on disk.
+    // The do_not_upgrade flag means:
+    //   - Load/inference endpoints: Don't check HuggingFace for updates (use cache if available)
+    //   - Pull endpoint: Always check HuggingFace for latest version (do_not_upgrade=false)
+    if (do_not_upgrade && is_model_downloaded(model_name)) {
+        LOG(INFO, "ModelManager") << "Model already downloaded and do_not_upgrade=true, using cached version" << std::endl;
+        return;
     }
 
     download_registered_model(model_info, do_not_upgrade, progress_callback);
@@ -3529,7 +3656,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     // Get HF token if available
     std::map<std::string, std::string> headers;
     const char* hf_token = std::getenv("HF_TOKEN");
-    if (hf_token) {
+    if (hf_token && hf_token[0]) {
         headers["Authorization"] = "Bearer " + std::string(hf_token);
     }
 
@@ -3775,7 +3902,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             manifest["files"].push_back(file_entry);
         }
     }
-    
+
     // Write manifest (indicates download in progress)
     JsonUtils::save_to_file(manifest, manifest_path);
     LOG(INFO, "ModelManager") << "Created download manifest" << std::endl;
@@ -4053,8 +4180,8 @@ void ModelManager::download_from_flm(const std::string& checkpoint,
 }
 
 void ModelManager::delete_model(const std::string& model_name) {
-    std::string canonical_model_name = resolve_model_name(model_name);
-    auto info = get_model_info(canonical_model_name);
+    auto info = get_model_info(model_name);
+    std::string canonical_model_name = info.model_name;
 
     LOG(INFO, "ModelManager") << "Deleting model: " << canonical_model_name << std::endl;
     LOG(INFO, "ModelManager") << "Checkpoint: " << info.checkpoint() << std::endl;
@@ -4118,10 +4245,15 @@ void ModelManager::delete_model(const std::string& model_name) {
 
         // Remove from user models if it's a user model
         if (is_user_model_name(canonical_model_name)) {
-        json updated_user_models = user_models_;
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            json updated_user_models = load_optional_json(get_user_models_file());
+            if (!updated_user_models.is_object()) {
+                updated_user_models = json::object();
+            }
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
-            user_models_ = updated_user_models;
+            user_models_ = std::move(updated_user_models);
+            cache_valid_ = false;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -4147,10 +4279,15 @@ void ModelManager::delete_model(const std::string& model_name) {
         }
 
         if (is_user_model_name(canonical_model_name)) {
-        json updated_user_models = user_models_;
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            json updated_user_models = load_optional_json(get_user_models_file());
+            if (!updated_user_models.is_object()) {
+                updated_user_models = json::object();
+            }
             updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
             save_user_models(updated_user_models);
-            user_models_ = updated_user_models;
+            user_models_ = std::move(updated_user_models);
+            cache_valid_ = false;
             LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
         }
 
@@ -4237,10 +4374,15 @@ void ModelManager::delete_model(const std::string& model_name) {
 
     // Remove from user models if it's a user model
     if (is_user_model_name(canonical_model_name)) {
-        json updated_user_models = user_models_;
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        json updated_user_models = load_optional_json(get_user_models_file());
+        if (!updated_user_models.is_object()) {
+            updated_user_models = json::object();
+        }
         updated_user_models.erase(strip_user_model_prefix(canonical_model_name));
         save_user_models(updated_user_models);
-        user_models_ = updated_user_models;
+        user_models_ = std::move(updated_user_models);
+        cache_valid_ = false;
         LOG(INFO, "ModelManager") << "✓ Removed from user_models.json" << std::endl;
     }
 
@@ -4327,12 +4469,24 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-    auto it = models_cache_.find(canonical_name);
-    if (it != models_cache_.end()) {
-        return it->second;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        auto it = models_cache_.find(canonical_name);
+        if (it != models_cache_.end()) {
+            return it->second;
+        }
+    }
+
+    if (refresh_user_models_from_disk_for_lookup(model_name)) {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        auto it = models_cache_.find(canonical_name);
+        if (it != models_cache_.end()) {
+            return it->second;
+        }
     }
 
     throw std::runtime_error("Model not found: " + model_name);
@@ -4359,10 +4513,23 @@ bool ModelManager::model_exists(const std::string& model_name) {
     build_cache();
 
     // O(1) lookup in cache
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-    return models_cache_.find(canonical_name) != models_cache_.end();
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        if (models_cache_.find(canonical_name) != models_cache_.end()) {
+            return true;
+        }
+    }
+
+    if (refresh_user_models_from_disk_for_lookup(model_name)) {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        auto alias_it = public_model_aliases_.find(model_name);
+        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        return models_cache_.find(canonical_name) != models_cache_.end();
+    }
+
+    return false;
 }
 
 std::optional<std::string> ModelManager::validate_collection_request(
@@ -4389,34 +4556,45 @@ std::optional<std::string> ModelManager::validate_collection_request(
 }
 
 bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
-    // Direct match in server_models_ (built-ins are keyed bare).
-    if (server_models_.contains(model_name)) {
-        return true;
-    }
-    if (auto canon = parse_canonical_id(model_name)) {
-        switch (canon->source) {
-            case ModelSource::Registered:
-                return user_models_.contains(canon->bare_name);
-            case ModelSource::Builtin:
-                return server_models_.contains(canon->bare_name);
-            case ModelSource::Imported:
-                // extra.* models are filesystem-discovered; not in either JSON registry.
-                return false;
+    auto exists_in_registries = [this](const std::string& name) -> bool {
+        // Direct match in server_models_ (built-ins are keyed bare).
+        if (server_models_.contains(name)) {
+            return true;
         }
+        if (auto canon = parse_canonical_id(name)) {
+            switch (canon->source) {
+                case ModelSource::Registered:
+                    return user_models_.contains(canon->bare_name);
+                case ModelSource::Builtin:
+                    return server_models_.contains(canon->bare_name);
+                case ModelSource::Imported:
+                    // extra.* models are filesystem-discovered; not in either JSON registry.
+                    return false;
+            }
+        }
+        return false;
+    };
+
+    if (exists_in_registries(model_name)) {
+        return true;
     }
 
     std::string canonical_name = resolve_model_name(model_name);
-    if (auto canon = parse_canonical_id(canonical_name)) {
-        switch (canon->source) {
-            case ModelSource::Registered:
-                return user_models_.contains(canon->bare_name);
-            case ModelSource::Builtin:
-                return server_models_.contains(canon->bare_name);
-            case ModelSource::Imported:
-                return false;
-        }
+    if (exists_in_registries(canonical_name) || server_models_.contains(canonical_name)) {
+        return true;
     }
-    return server_models_.contains(canonical_name);
+
+    // If a stale warm cache caused the alias/registry lookup to miss, reload the
+    // persisted user registry before reporting a hard "not found".
+    if (refresh_user_models_from_disk_for_lookup(model_name)) {
+        if (exists_in_registries(model_name)) {
+            return true;
+        }
+        canonical_name = resolve_model_name(model_name);
+        return exists_in_registries(canonical_name) || server_models_.contains(canonical_name);
+    }
+
+    return false;
 }
 
 ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name) {
@@ -4445,8 +4623,22 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         return false;
     };
 
-    if (!try_resolve(model_name)) {
-        try_resolve(resolve_model_name(model_name));
+    bool resolved = try_resolve(model_name);
+    if (!resolved) {
+        std::string canonical_name = resolve_model_name(model_name);
+        if (canonical_name != model_name) {
+            resolved = try_resolve(canonical_name);
+        }
+    }
+
+    if (!resolved && refresh_user_models_from_disk_for_lookup(model_name)) {
+        resolved = try_resolve(model_name);
+        if (!resolved) {
+            std::string canonical_name = resolve_model_name(model_name);
+            if (canonical_name != model_name) {
+                resolved = try_resolve(canonical_name);
+            }
+        }
     }
 
     json* model_json = nullptr;

@@ -77,7 +77,11 @@ public:
 
     // Model management commands
     int list_models(bool show_all, const std::string& name_filter = "") const;
-    int pull_model(const nlohmann::json& model_data, const std::string& display_name = "");
+    // Pulls/registers a model. By default the pull is cache-first
+    // (do_not_upgrade=true): an already-downloaded model is reused without
+    // contacting Hugging Face. Only the explicit `lemonade pull` update flow
+    // should pass upgrade=true to force an HF update check.
+    int pull_model(const nlohmann::json& model_data, const std::string& display_name = "", bool upgrade = false);
     int delete_model(const std::string& model_name) const;
     int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
     int unload_model(const std::string& model_name) const;

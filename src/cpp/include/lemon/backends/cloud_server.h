@@ -67,7 +67,8 @@ public:
                                    const std::string& request_body,
                                    httplib::DataSink& sink,
                                    bool sse = true,
-                                   long timeout_seconds = 0) override;
+                                   long timeout_seconds = 0,
+                                   TelemetryCallback telemetry_callback = nullptr) override;
 
     /// Fetch the list of models accessible to this API key from the
     /// provider's /v1/models endpoint. Returns ModelInfos with name,

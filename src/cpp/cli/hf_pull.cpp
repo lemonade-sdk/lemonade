@@ -276,7 +276,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
 
         std::cout << "Pulling " << checkpoint
                   << " as " << suggested_name << std::endl;
-        return client.pull_model(pull_body, suggested_name);
+        return client.pull_model(pull_body, suggested_name, /*upgrade=*/true);
     }
 
     // Resolve variant by case-insensitive name match.
@@ -339,7 +339,7 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
     std::cout << "Pulling " << pull_body["checkpoint"].get<std::string>()
               << " as " << model_name << std::endl;
 
-    return client.pull_model(pull_body, model_name);
+    return client.pull_model(pull_body, model_name, /*upgrade=*/true);
 }
 
 }  // namespace lemon_cli

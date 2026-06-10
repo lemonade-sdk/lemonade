@@ -458,16 +458,12 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     try {
         auto response = utils::HttpClient::post(url, request.dump(), headers, timeout_seconds);
         if (response.status_code == 200) {
-            json body = json::parse(response.body);
-            // Best-effort telemetry from OpenAI-shape usage.
-            if (body.contains("usage") && body["usage"].is_object()) {
-                const auto& usage = body["usage"];
-                int prompt_tokens = usage.value("prompt_tokens", 0);
-                int completion_tokens = usage.value("completion_tokens", 0);
-                set_telemetry(prompt_tokens, completion_tokens, 0.0, 0.0);
-                set_prompt_tokens(prompt_tokens);
-            }
-            return body;
+            // Telemetry: the chat/completions handler in server.cpp parses
+            // the `usage` field off the returned JSON and calls
+            // Router::update_telemetry / update_prompt_tokens. CloudServer
+            // returns the body unchanged so that path picks up the same
+            // prompt/completion counts every other backend reports.
+            return json::parse(response.body);
         }
 
         json error_details;
@@ -509,7 +505,15 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                                             const std::string& request_body,
                                             httplib::DataSink& sink,
                                             bool sse,
-                                            long timeout_seconds) {
+                                            long timeout_seconds,
+                                            TelemetryCallback telemetry_callback) {
+    // Telemetry from cloud streaming responses: OpenAI-shape SSE puts the
+    // usage block in the final pre-[DONE] chunk. We don't parse it here —
+    // the Router-level streaming path delivers cleaner numbers than we can
+    // reconstruct from chunked output, and matching local backends here
+    // would only diverge subtly. Passing the callback through preserves the
+    // contract for callers that pass one in.
+    (void) telemetry_callback;
     auto sse_error = [](const std::string& message, const std::string& type,
                         const json& extra = json::object()) {
         json err = {{"error", {{"message", message}, {"type", type}}}};
