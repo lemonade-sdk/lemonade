@@ -223,7 +223,7 @@ jobs:
           - label: cpu
             backend: cpu
             channel: ""
-            runner: [self-hosted, Windows, 128gb, cpu]
+            runner: [self-hosted, Windows, 128gb, vulkan]
           - label: vulkan
             backend: vulkan
             channel: ""
@@ -232,10 +232,13 @@ jobs:
             backend: rocm
             channel: stable
             runner: [self-hosted, Windows, 128gb, rocm]
-          - label: cuda
-            backend: cuda
-            channel: ""
-            runner: [self-hosted, Windows, 128gb, cuda]
+          # CUDA validation is prepared but disabled until a CUDA runner is available.
+          # The updater still pins sd-cpp.cuda and the release asset check still verifies
+          # CUDA artifacts. Re-enable this block once the runner exists.
+          # - label: cuda
+          #   backend: cuda
+          #   channel: ""
+          #   runner: [self-hosted, Windows, 128gb, cuda]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -400,7 +403,7 @@ jobs:
           release = os.environ["SDCPP_RELEASE"]
           short_release = os.environ["SDCPP_SHORT_RELEASE"]
           update_backends = os.environ["SDCPP_UPDATE_BACKENDS"]
-          labels = ["cpu", "vulkan", "rocm-stable", "cuda"]
+          labels = ["cpu", "vulkan", "rocm-stable"]
 
           rows = []
           prompt = None
