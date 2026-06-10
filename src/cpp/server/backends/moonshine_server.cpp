@@ -32,10 +32,11 @@ InstallParams MoonshineServer::get_install_params(const std::string& backend, co
     InstallParams params;
     params.repo = "lemonade-sdk/moonshine-server";
 
-    // Self-contained PyInstaller bundles built by
-    // .github/workflows/build-moonshine-server.yml — no system Python needed.
-    // moonshine-voice publishes wheels for win x64, linux x64/arm64, and macOS
-    // arm64 only (no Intel macOS), so the macOS asset is arm64-only.
+    // Self-contained PyInstaller bundles built by the lemonade-sdk/moonshine-server
+    // distribution repo (tracks moonshine-voice PyPI releases; tag scheme
+    // moonshine<version>) — no system Python needed. moonshine-voice publishes
+    // wheels for win x64, linux x64/arm64, and macOS arm64 only (no Intel
+    // macOS), so the macOS asset is arm64-only.
 #ifdef _WIN32
     params.filename = "moonshine-server-" + version + "-windows-x64.zip";
 #elif defined(__APPLE__)

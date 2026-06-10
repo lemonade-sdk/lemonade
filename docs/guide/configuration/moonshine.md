@@ -24,7 +24,7 @@ curl -X POST http://localhost:13305/api/v1/install \
   -d '{"recipe": "moonshine", "backend": "cpu"}'
 ```
 
-The bundle version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json) (`moonshine.cpu`). Bundles are produced by the `build-moonshine-server` workflow in this repository.
+The bundle version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json) (`moonshine.cpu`), with tags following the upstream library version (`moonshine0.0.62` = `moonshine-voice` 0.0.62). Bundles are built automatically by [lemonade-sdk/moonshine-server](https://github.com/lemonade-sdk/moonshine-server), a distribution-only repo that tracks `moonshine-voice` PyPI releases — no moonshine code is forked; the `main.py` wrapper in `tools/moonshine-server/` here is frozen together with the PyPI wheel into a self-contained bundle.
 
 ## Models
 
