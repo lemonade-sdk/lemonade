@@ -396,11 +396,19 @@ def get_handler(transcriber):
                 audio_bytes = file_item.file.read()
 
                 # Save to temp file (moonshine_voice.load_wav_file needs a path).
-                # The suffix comes from the client-supplied filename: allowlist it.
-                allowed_exts = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm"}
-                ext = os.path.splitext(file_item.filename or "audio.wav")[1].lower()
-                if ext not in allowed_exts:
-                    ext = ".wav"
+                # The suffix derives from the client-supplied filename: map it to
+                # a constant so no client data ever reaches the path (CodeQL
+                # py/path-injection).
+                allowed_exts = {
+                    ".wav": ".wav",
+                    ".mp3": ".mp3",
+                    ".m4a": ".m4a",
+                    ".ogg": ".ogg",
+                    ".flac": ".flac",
+                    ".webm": ".webm",
+                }
+                client_ext = os.path.splitext(file_item.filename or "audio.wav")[1].lower()
+                ext = allowed_exts.get(client_ext, ".wav")
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(audio_bytes)
                     tmp_path = tmp.name
