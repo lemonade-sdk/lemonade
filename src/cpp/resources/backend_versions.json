@@ -15,6 +15,10 @@
     "npu": "v1.8.4",
     "metal": "v1.8.4"
   },
+  "sherpa-onnx": {
+    "cpu": "v1.13.2",
+    "rocm": "v1.13.2"
+  },
   "sd-cpp": {
     "cpu": "master-672-1f9ee88",
     "rocm-stable": "master-672-1f9ee88",

@@ -1224,6 +1224,24 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return model_cache_path;  // Return directory even if index not found
     }
 
+    // For sherpa-onnx, return the directory holding the transducer triple
+    // (encoder/decoder/joiner .onnx + tokens.txt). SherpaServer resolves the
+    // individual files from this directory.
+    if (info.recipe == "sherpa-onnx") {
+        if (safe_exists(model_cache_path_fs)) {
+            for (const auto& entry : fs::recursive_directory_iterator(model_cache_path_fs, safe_dir_options)) {
+                if (entry.is_regular_file()) {
+                    std::string fname = entry.path().filename().string();
+                    if (fname.find("encoder") != std::string::npos &&
+                        entry.path().extension() == ".onnx") {
+                        return path_to_utf8(entry.path().parent_path());
+                    }
+                }
+            }
+        }
+        return model_cache_path;  // Return directory even if triple not found
+    }
+
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
@@ -2435,6 +2453,10 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("image");
     }
     if (recipe == "whispercpp") {
+        labels.insert("transcription");
+        labels.insert("realtime-transcription");
+    }
+    if (recipe == "sherpa-onnx") {
         labels.insert("transcription");
         labels.insert("realtime-transcription");
     }

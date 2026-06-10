@@ -856,6 +856,18 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
+      // Sherpa-ONNX streaming transducer (encoder/decoder/joiner .onnx + tokens.txt)
+      const hasTransducerTriple =
+        files.some(f => f.includes('encoder') && f.endsWith('.onnx')) &&
+        files.some(f => f.includes('decoder') && f.endsWith('.onnx')) &&
+        files.some(f => f.includes('joiner') && f.endsWith('.onnx')) &&
+        files.some(f => f.endsWith('tokens.txt'));
+      if (hasTransducerTriple || (modelId.toLowerCase().includes('sherpa') && hasTransducerTriple)) {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'sherpa-onnx', label: 'Sherpa-ONNX' } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
       // Stable Diffusion
       if (tags.includes('stable-diffusion') || tags.includes('text-to-image') || modelId.toLowerCase().includes('stable-diffusion') || modelId.toLowerCase().includes('flux')) {
         setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'sd-cpp', label: 'SD.cpp' } }));
@@ -1843,14 +1855,14 @@ const [searchQuery, setSearchQuery] = useState('');
                     detectingBackendFor === null &&
                     hfSearchResults.every((m: HFModelInfo) => {
                       const backend = hfModelBackends[m.id];
-                      return backend === null || (backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
+                      return backend === null || (backend != null && ['sd-cpp', 'whispercpp', 'sherpa-onnx'].includes(backend.recipe));
                     }))
                 ) && (
                   <div className="hf-search-message">No compatible models found.</div>
                 )}
                 {hfSearchResults.filter((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
-                  return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
+                  return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp', 'sherpa-onnx'].includes(backend.recipe));
                 }).map((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
                   const isDetecting = detectingBackendFor === hfModel.id;

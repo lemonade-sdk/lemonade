@@ -601,6 +601,7 @@ set(SOURCES_CORE
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
+    src/cpp/server/backends/sherpa_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/vllm_server.cpp

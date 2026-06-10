@@ -486,6 +486,15 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"metal", {}},
     }},
 
+    // sherpa-onnx (streaming STT) - ROCm for AMD GPUs (Linux x64, per PR #1110);
+    // CPU execution provider on Windows/Linux x86_64.
+    {"sherpa-onnx", "rocm", {"linux"}, {
+        {"amd_gpu", {"gfx1100", "gfx1101", "gfx1102", "gfx1030", "gfx1031", "gfx1032"}},
+    }},
+    {"sherpa-onnx", "cpu", {"windows", "linux"}, {
+        {"cpu", {"x86_64"}},
+    }},
+
     // kokoro - Windows/Linux x86_64; macOS arm64 (Metal)
     {"kokoro", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},

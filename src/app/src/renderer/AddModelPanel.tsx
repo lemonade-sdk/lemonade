@@ -62,6 +62,10 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     name: 'Whisper-Tiny',
     checkpoint: 'ggerganov/whisper.cpp:ggml-tiny.bin',
   },
+  'sherpa-onnx': {
+    name: 'Sherpa-Streaming-Zipformer-EN',
+    checkpoint: 'csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26',
+  },
   'sd-cpp': {
     name: 'Z-Image-Turbo',
     checkpoint: 'Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors',

@@ -8,6 +8,7 @@ import ConnectedBackendRow from './components/ConnectedBackendRow';
 const RECIPE_ORDER = new Map([
   'llamacpp',
   'whispercpp',
+  'sherpa-onnx',
   'sd-cpp',
   'kokoro',
   'flm',

@@ -3,6 +3,7 @@
 #include "lemon/system_info.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sherpa_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/ryzenaiserver.h"
@@ -39,6 +40,7 @@ namespace lemon::backends {
     const BackendSpec* try_get_spec_for_recipe(const std::string& recipe) {
         if (recipe == "llamacpp") return &LlamaCppServer::SPEC;
         if (recipe == "whispercpp") return &WhisperServer::SPEC;
+        if (recipe == "sherpa-onnx") return &SherpaServer::SPEC;
         if (recipe == "sd-cpp") return &SDServer::SPEC;
         if (recipe == "kokoro") return &KokoroServer::SPEC;
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;

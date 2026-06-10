@@ -3,6 +3,7 @@
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/whisper_server.h"
+#include "lemon/backends/sherpa_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/vllm_server.h"
@@ -186,6 +187,9 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     if (model_info.recipe == "whispercpp") {
         LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);
+    } else if (model_info.recipe == "sherpa-onnx") {
+        LOG(DEBUG, "Router") << "Creating SherpaServer backend" << std::endl;
+        new_server = std::make_unique<backends::SherpaServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "kokoro") {
         LOG(DEBUG, "Router") << "Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level, model_manager_, backend_manager_);

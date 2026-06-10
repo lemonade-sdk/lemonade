@@ -453,6 +453,19 @@ json WhisperServer::build_transcription_request(const json& request, bool transl
         whisper_req["response_format"] = "json";  // Default
     }
 
+    // Standardized optional carrier-audio params (see audio_types.h
+    // RequestParam). whisper-server resamples internally to 16 kHz, so these
+    // are forwarded as hints/passthrough and do not change the managed flags.
+    if (request.contains(audio::RequestParam::SAMPLE_RATE)) {
+        whisper_req[audio::RequestParam::SAMPLE_RATE] = request[audio::RequestParam::SAMPLE_RATE];
+    }
+    if (request.contains(audio::RequestParam::AUDIO_BITRATE)) {
+        whisper_req[audio::RequestParam::AUDIO_BITRATE] = request[audio::RequestParam::AUDIO_BITRATE];
+    }
+    if (request.contains(audio::RequestParam::CHANNELS)) {
+        whisper_req[audio::RequestParam::CHANNELS] = request[audio::RequestParam::CHANNELS];
+    }
+
     // Add translate flag if needed
     if (translate) {
         whisper_req["translate"] = true;

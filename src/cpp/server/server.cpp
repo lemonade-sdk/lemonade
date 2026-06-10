@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/audio_types.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
@@ -2318,6 +2319,20 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
         if (req.form.has_field("temperature")) {
             request_json["temperature"] = std::stod(req.form.get_field("temperature"));
+        }
+        // Standardized optional carrier-audio params (see audio_types.h
+        // RequestParam). Honored uniformly by every transcription backend.
+        if (req.form.has_field(audio::RequestParam::SAMPLE_RATE)) {
+            request_json[audio::RequestParam::SAMPLE_RATE] =
+                std::stoi(req.form.get_field(audio::RequestParam::SAMPLE_RATE));
+        }
+        if (req.form.has_field(audio::RequestParam::AUDIO_BITRATE)) {
+            request_json[audio::RequestParam::AUDIO_BITRATE] =
+                std::stoi(req.form.get_field(audio::RequestParam::AUDIO_BITRATE));
+        }
+        if (req.form.has_field(audio::RequestParam::CHANNELS)) {
+            request_json[audio::RequestParam::CHANNELS] =
+                std::stoi(req.form.get_field(audio::RequestParam::CHANNELS));
         }
 
         // Extract audio file

@@ -173,3 +173,62 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ```
 
 See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.
+
+## Speech-to-Text Backends
+
+`lemond` ships two speech-to-text (transcription) backends. Both implement the same
+OpenAI-compatible `POST /api/v1/audio/transcriptions` endpoint and the realtime
+WebSocket transcription path, so they are interchangeable from the client's point
+of view.
+
+| Backend | Recipe | Devices | Strength |
+| --- | --- | --- | --- |
+| whisper.cpp | `whispercpp` | cpu, vulkan, npu, metal | Batch / file transcription, broad audio-format support |
+| sherpa-onnx | `sherpa-onnx` | rocm, cpu | True low-latency streaming (transducer models) |
+
+### sherpa-onnx (streaming STT, ROCm)
+
+The `sherpa-onnx` backend wraps the [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
+`sherpa-onnx-online-websocket-server`, which serves streaming transducer
+(encoder/decoder/joiner + `tokens.txt`) models. It is well-suited to the realtime
+transcription path because it emits partial results as audio streams in.
+
+- **Backends:** `rocm` selects the AMD ROCm execution provider added in
+  sherpa-onnx [PR #1110](https://github.com/k2-fsa/sherpa-onnx/pull/1110)
+  (built with `-DSHERPA_ONNX_ENABLE_ROCM=ON`, launched with `--provider=rocm`,
+  **Linux x64 only**). `cpu` uses the upstream shared build with the CPU
+  execution provider.
+- **Models:** point the checkpoint at a streaming transducer repo that contains
+  `encoder*.onnx`, `decoder*.onnx`, `joiner*.onnx`, and `tokens.txt`
+  (for example `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`).
+- **Input:** the streaming backend consumes mono 16&nbsp;kHz PCM16 WAV. Use a
+  whisper.cpp model for compressed/long-form file inputs.
+- **Custom args:** pass sherpa flags such as `--num-threads` or
+  `--decoding-method modified_beam_search` via `sherpa-onnx.args` /
+  `--sherpa-onnx-args`. The model triple, `--port`, and `--provider` are managed
+  by `lemond`.
+
+```bash
+# Select the ROCm provider for sherpa-onnx
+./lemonade config set sherpa-onnx.backend rocm
+
+# Bundle the sherpa-onnx ROCm backend at packaging time (Linux x64)
+./lemonade backends install sherpa-onnx:rocm
+```
+
+### Standardized transcription request parameters
+
+In addition to the OpenAI fields (`file`, `model`, `language`, `prompt`,
+`temperature`, `response_format`), the `audio/transcriptions` endpoint accepts a
+small, standardized set of optional carrier-audio parameters that every
+transcription backend honors uniformly:
+
+| Field | Meaning |
+| --- | --- |
+| `sample_rate` | Source sample rate in Hz (e.g. `8000` for telephony, `16000` for wideband) |
+| `audio_bitrate` | Source audio bitrate in bits per second (informational / passthrough) |
+| `channels` | Number of channels (1 = mono, 2 = stereo; multi-channel is downmixed) |
+| `language` | BCP-47 / ISO-639 language hint |
+
+These are all optional; omitting them preserves the existing OpenAI-compatible
+behavior.

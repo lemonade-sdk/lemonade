@@ -43,5 +43,42 @@ namespace Limits {
     constexpr double MAX_AUDIO_DURATION_SECONDS = 600.0;       // 10 minutes
 }
 
+// Standardized optional request parameters for the audio transcription API.
+//
+// These supplement the OpenAI-compatible fields (file, model, language, prompt,
+// temperature, response_format) with a small, documented set of carrier-audio
+// knobs that every transcription backend understands the same way. They are all
+// OPTIONAL — when absent the backend keeps its existing behavior, so OpenAI
+// compatibility is preserved.
+//
+// Defined once here and honored by every ITranscriptionServer backend
+// (whisper.cpp, sherpa-onnx, ...) via build_transcription_request(), so the API
+// surface is uniform regardless of which backend serves the request. Do NOT
+// introduce per-backend ad-hoc parameter names; extend this set instead.
+namespace RequestParam {
+    // Source sample rate of the supplied audio, in Hz (e.g. 8000 for telephony
+    // / carrier audio, 16000 for wideband). Backends that need a specific
+    // internal rate use this to drive resampling.
+    constexpr const char* SAMPLE_RATE = "sample_rate";
+
+    // Source audio bitrate in bits per second (e.g. 64000). Informational /
+    // passthrough hint describing compressed carrier audio.
+    constexpr const char* AUDIO_BITRATE = "audio_bitrate";
+
+    // Number of channels in the source audio (1 = mono, 2 = stereo). Transducer
+    // backends require mono and will downmix when more than one channel is sent.
+    constexpr const char* CHANNELS = "channels";
+
+    // BCP-47 / ISO-639 language hint (also part of the OpenAI surface).
+    constexpr const char* LANGUAGE = "language";
+}
+
+// Default sample rate assumed when a request omits RequestParam::SAMPLE_RATE.
+// 16 kHz mono PCM is the canonical input for streaming transducer models.
+namespace AudioDefaults {
+    constexpr int SAMPLE_RATE_HZ = 16000;
+    constexpr int CHANNELS = 1;
+}
+
 } // namespace audio
 } // namespace lemon
