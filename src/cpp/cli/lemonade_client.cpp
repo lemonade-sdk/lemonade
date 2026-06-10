@@ -145,6 +145,8 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
         res = cli.Get(path);
     } else if (method == "POST") {
         res = cli.Post(path, body, content_type);
+    } else if (method == "DELETE") {
+        res = cli.Delete(path);
     } else {
         throw std::runtime_error("Unsupported HTTP method: " + method);
     }
