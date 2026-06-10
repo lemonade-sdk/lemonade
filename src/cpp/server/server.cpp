@@ -234,128 +234,29 @@ void Server::start_model_cache_warmup() {
     });
 }
 
-namespace {
-
-// Peek the first bytes of an accepted connection (without consuming them) and
-// decide whether it is a WebSocket upgrade for one of our realtime paths.
-bool peek_websocket_upgrade(socket_t sock) {
-    char buf[4096];
-    for (int attempt = 0; attempt < 50; ++attempt) {  // up to ~500 ms for headers
-#ifdef _WIN32
-        int n = ::recv(sock, buf, static_cast<int>(sizeof(buf)), MSG_PEEK);
-#else
-        auto n = ::recv(sock, buf, sizeof(buf), MSG_PEEK);
-#endif
-        if (n <= 0) {
-            return false;
-        }
-
-        std::string data(buf, static_cast<size_t>(n));
-        if (data.size() >= 4 && data.compare(0, 4, "GET ") != 0) {
-            return false;  // upgrades are always GET
-        }
-        if (data.find("\r\n\r\n") == std::string::npos) {
-            if (static_cast<size_t>(n) == sizeof(buf)) {
-                return false;  // header block too large — let httplib handle it
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;  // headers not fully arrived yet
-        }
-
-        // Path filter: only the WebSocket endpoints are handed over
-        size_t sp1 = data.find(' ');
-        size_t sp2 = data.find(' ', sp1 + 1);
-        if (sp1 == std::string::npos || sp2 == std::string::npos) {
-            return false;
-        }
-        std::string path = data.substr(sp1 + 1, sp2 - sp1 - 1);
-        size_t query = path.find('?');
-        if (query != std::string::npos) {
-            path = path.substr(0, query);
-        }
-        // Accept the bare and quad-prefixed forms (mirrors classify_path;
-        // OpenAI Realtime SDK clients use /v1/realtime)
-        for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
-            size_t len = std::strlen(prefix);
-            if (path.rfind(prefix, 0) == 0 && path.size() > len && path[len] == '/') {
-                path = path.substr(len);
-                break;
-            }
-        }
-        if (path != "/realtime" && path != "/logs/stream") {
-            return false;
-        }
-
-        std::string lower = data;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        size_t upgrade_pos = lower.find("\r\nupgrade:");
-        if (upgrade_pos == std::string::npos) {
-            return false;
-        }
-        size_t line_end = lower.find("\r\n", upgrade_pos + 2);
-        return lower.substr(upgrade_pos, line_end - upgrade_pos).find("websocket") != std::string::npos;
-    }
-    return false;
-}
-
-// httplib::Server that hands WebSocket upgrade connections to the
-// libwebsockets server so /realtime and /logs/stream also work on the main
-// HTTP port. The dedicated websocket_port listener keeps running unchanged.
-class UpgradableHttpServer : public httplib::Server {
-public:
-    using UpgradeHandler = std::function<bool(socket_t)>;
-
-    explicit UpgradableHttpServer(UpgradeHandler handler)
-        : upgrade_handler_(std::move(handler)) {}
-
-private:
-    bool process_and_close_socket(socket_t sock) override {
-        if (upgrade_handler_ && peek_websocket_upgrade(sock)) {
-            if (upgrade_handler_(sock)) {
-                return true;  // ownership transferred to the WebSocket server
-            }
-        }
-
-        // Base behavior. httplib::Server::process_and_close_socket is a
-        // private virtual we cannot delegate to; this mirrors its body using
-        // the protected members it relies on.
-        std::string remote_addr;
-        int remote_port = 0;
-        httplib::detail::get_remote_ip_and_port(sock, remote_addr, remote_port);
-
-        std::string local_addr;
-        int local_port = 0;
-        httplib::detail::get_local_ip_and_port(sock, local_addr, local_port);
-
-        auto ret = httplib::detail::process_server_socket(
-            svr_sock_, sock, keep_alive_max_count_, keep_alive_timeout_sec_,
-            read_timeout_sec_, read_timeout_usec_, write_timeout_sec_,
-            write_timeout_usec_,
-            [&](httplib::Stream& strm, bool close_connection, bool& connection_closed) {
-                return process_request(strm, remote_addr, remote_port, local_addr,
-                                       local_port, close_connection, connection_closed,
-                                       nullptr);
-            });
-
-        httplib::detail::shutdown_socket(sock);
-        httplib::detail::close_socket(sock);
-        return ret;
-    }
-
-    UpgradeHandler upgrade_handler_;
-};
-
-} // namespace
+// Extract the member-function pointer for httplib::Server's private virtual
+// process_and_close_socket (see upgradable_http_server.h). Explicit
+// instantiation is the one context where C++ permits naming a private member.
+template struct lemon::detail::PrivateMemberInit<
+    lemon::detail::ProcessAndCloseSocketTag,
+    &httplib::Server::process_and_close_socket>;
 
 void Server::setup_http_servers() {
+    http_server_ = std::make_unique<RoutedHttpServer>();
+    http_server_v6_ = std::make_unique<RoutedHttpServer>();
+
+    // Front listeners for the main port: WebSocket upgrades for /realtime and
+    // /logs/stream are adopted by the libwebsockets server; everything else is
+    // processed by the routed servers above. The dedicated websocket_port
+    // listener keeps running unchanged.
     auto upgrade_handler = [this](socket_t sock) -> bool {
         if (websocket_server_ && websocket_server_->is_running()) {
             return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
         }
         return false;
     };
-    http_server_ = std::make_unique<UpgradableHttpServer>(upgrade_handler);
-    http_server_v6_ = std::make_unique<UpgradableHttpServer>(upgrade_handler);
+    http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
+    http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -365,11 +266,32 @@ void Server::setup_http_servers() {
         return new httplib::ThreadPool(8);
     };
 
+    // The fronts own the accept loops (and therefore the task queues)
+    http_front_->new_task_queue = task_queue_factory;
+    http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+}
+
+void Server::stop_http_listeners() {
+    // The routed servers never own the listen socket: clear the injected fd so
+    // their per-connection keep-alive loops exit, then close it once via the
+    // fronts (which are the servers actually listening).
+    if (http_server_) {
+        http_server_->set_listen_socket(INVALID_SOCKET);
+    }
+    if (http_server_v6_) {
+        http_server_v6_->set_listen_socket(INVALID_SOCKET);
+    }
+    if (http_front_) {
+        http_front_->stop();
+    }
+    if (http_front_v6_) {
+        http_front_v6_->stop();
+    }
 }
 
 Server::~Server() {
@@ -1226,15 +1148,18 @@ void Server::run() {
             setup_http_logger(*http_server_);
             http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
                 LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
-                int result = http_server_->bind_to_port(ipv4, port_);
+                int result = http_front_->bind_to_port(ipv4, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                // The routed server's keep-alive loop runs only while it sees
+                // a valid listen socket
+                http_server_->set_listen_socket(http_front_->listen_socket());
                 LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
                 listener_started = true;
-                if (!http_server_->listen_after_bind()) {
+                if (!http_front_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
@@ -1245,15 +1170,16 @@ void Server::run() {
             setup_http_logger(*http_server_v6_);
             http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
                 LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
-                int result = http_server_v6_->bind_to_port(ipv6, port_);
+                int result = http_front_v6_->bind_to_port(ipv6, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                http_server_v6_->set_listen_socket(http_front_v6_->listen_socket());
                 LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
                 listener_started = true;
-                if (!http_server_v6_->listen_after_bind()) {
+                if (!http_front_v6_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
@@ -1368,8 +1294,7 @@ void Server::stop() {
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();
-        http_server_v6_->stop();
-        http_server_->stop();
+        stop_http_listeners();
         running_ = false;
         shutdown_requested_ = false;  // Reset for potential future use
 
@@ -4396,15 +4321,13 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                 port_.store(new_port);
                 rebind_requested_ = true;
                 udp_beacon_.stopBroadcasting();
-                http_server_->stop();
-                http_server_v6_->stop();
+                stop_http_listeners();
             }
         } else if (key == "host") {
             LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
             rebind_requested_ = true;
             udp_beacon_.stopBroadcasting();
-            http_server_->stop();
-            http_server_v6_->stop();
+            stop_http_listeners();
             // Restart websocket server with new host
             if (websocket_server_) {
                 websocket_server_->stop();
