@@ -198,6 +198,17 @@ transcription path because it emits partial results as audio streams in.
   (built with `-DSHERPA_ONNX_ENABLE_ROCM=ON`, launched with `--provider=rocm`,
   **Linux x64 only**). `cpu` uses the upstream shared build with the CPU
   execution provider.
+- **AMD GPU support:** the ROCm backend supports **all AMD GPUs** —
+  RDNA2/3/3.5/4 and CDNA. There is a single, architecture-agnostic ROCm asset
+  (`linux-x64-rocm`), not a per-`gfx` download like `llamacpp:rocm` /
+  `sd-cpp:rocm`. It is a multi-arch ("fat") build: one binary compiled for a
+  broad AMD GPU target list, so the same download runs on every AMD GPU and the
+  runtime picks the matching device code. The asset is produced by
+  [`.github/workflows/build-sherpa-onnx-rocm.yml`](../../.github/workflows/build-sherpa-onnx-rocm.yml).
+  - **Escape hatch:** for an AMD GPU whose `gfx` arch is newer than the compiled
+    target list, set `HSA_OVERRIDE_GFX_VERSION` (e.g. `11.0.0`) in the
+    environment before launching; `lemond` inherits it from the parent process,
+    so no extra configuration is needed.
 - **Models:** point the checkpoint at a streaming transducer repo that contains
   `encoder*.onnx`, `decoder*.onnx`, `joiner*.onnx`, and `tokens.txt`
   (for example `csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26`).

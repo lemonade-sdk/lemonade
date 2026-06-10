@@ -4,8 +4,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include <cstring>
@@ -13,11 +11,8 @@
 #include <chrono>
 #include <thread>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <set>
 #include <vector>
-#include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <nlohmann/json.hpp>
@@ -49,6 +44,15 @@ InstallParams SherpaServer::get_install_params(const std::string& backend, const
         // not yet publish a prebuilt ROCm asset, so lemonade hosts a ROCm build
         // (-DSHERPA_ONNX_ENABLE_ROCM=ON -DBUILD_SHARED_LIBS=ON) in the same
         // style as the whisper.cpp builds repo. Linux x64 only, per PR #1110.
+        //
+        // ALL-AMD-GPU build: this single asset is a multi-arch ("fat") binary
+        // compiled for a broad AMD GPU target list (RDNA2/3/3.5/4 + CDNA), so
+        // ONE download runs on every AMD GPU. It is intentionally NOT per-gfx
+        // (unlike llamacpp/sd, which call SystemInfo::get_rocm_arch() and fetch
+        // an arch-specific asset). There is no gfx pin here. The build is
+        // produced by .github/workflows/build-sherpa-onnx-rocm.yml. Any future
+        // unlisted arch can still be forced at runtime via HSA_OVERRIDE_GFX_VERSION
+        // (inherited from the parent process env).
 #if defined(__linux__)
         params.repo = "lemonade-sdk/sherpa-onnx-builds";
         params.filename = "sherpa-onnx-" + version + "-linux-x64-rocm-shared.tar.bz2";

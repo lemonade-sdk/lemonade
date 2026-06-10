@@ -488,8 +488,15 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // sherpa-onnx (streaming STT) - ROCm for AMD GPUs (Linux x64, per PR #1110);
     // CPU execution provider on Windows/Linux x86_64.
+    //
+    // The ROCm asset is a multi-arch ("fat") build covering ALL AMD GPUs
+    // (RDNA2/3/3.5/4 + CDNA), so the device family set is intentionally empty
+    // ({} = all AMD GPU families). Unlike llamacpp/sd, sherpa is NOT pinned to a
+    // per-gfx arch and does NOT use SystemInfo::get_rocm_arch(); a single binary
+    // serves every AMD GPU. Any future unlisted arch can still be forced with the
+    // HSA_OVERRIDE_GFX_VERSION env var (inherited from the parent process).
     {"sherpa-onnx", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1100", "gfx1101", "gfx1102", "gfx1030", "gfx1031", "gfx1032"}},
+        {"amd_gpu", {}},  // all AMD GPU families (multi-arch ROCm build)
     }},
     {"sherpa-onnx", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},

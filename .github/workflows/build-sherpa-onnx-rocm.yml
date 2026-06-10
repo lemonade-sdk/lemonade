@@ -1,0 +1,173 @@
+name: Build sherpa-onnx ROCm (all AMD GPUs) 🛠️
+
+# Builds the sherpa-onnx ROCm prebuilt that lemonade's "sherpa-onnx" backend
+# downloads for the `rocm` provider (see SherpaServer::get_install_params).
+#
+# ALL-AMD-GPU POLICY
+# ------------------
+# This produces ONE Linux x64 shared-library asset that runs on EVERY AMD GPU.
+# It is a multi-arch ("fat") binary: the HIP/ROCm device code is compiled for a
+# broad GPU target list (RDNA2/3/3.5/4 + CDNA), so a single download serves all
+# AMD GPUs. Unlike llamacpp/sd (which publish per-gfx assets and select one via
+# SystemInfo::get_rocm_arch()), sherpa is intentionally NOT architecture-specific.
+#
+# Why a fat binary covers all AMD GPUs: each listed gfx target is compiled to its
+# own device code object and bundled into the shared libraries; at load time the
+# ROCm runtime picks the code object matching the installed GPU. Listing every
+# supported arch therefore yields one binary that JIT-free-runs on all of them.
+# For any arch NOT in the list, the runtime escape hatch is the
+# HSA_OVERRIDE_GFX_VERSION env var (e.g. 11.0.0), which lemonade inherits from the
+# parent process env automatically — no code change needed.
+#
+# The asset is named exactly as SherpaServer::get_install_params() expects:
+#   sherpa-onnx-<version>-linux-x64-rocm-shared.tar.bz2
+# and is published as a release on lemonade-sdk/sherpa-onnx-builds with the tag
+# equal to the pinned version in src/cpp/resources/backend_versions.json
+# (sherpa-onnx.rocm, currently v1.13.2).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag / version to publish (must match backend_versions.json sherpa-onnx.rocm)'
+        required: true
+        default: 'v1.13.2'
+      gpu_targets:
+        description: 'AMD GPU targets (semicolon-separated). Default covers RDNA2/3/3.5/4 + CDNA.'
+        required: false
+        default: 'gfx900;gfx906;gfx908;gfx90a;gfx942;gfx1030;gfx1100;gfx1101;gfx1102;gfx1151;gfx1200;gfx1201'
+
+permissions:
+  contents: write
+
+env:
+  # k2-fsa/sherpa-onnx PR #1110 adds the AMD ROCm execution provider. We build
+  # from that PR ref until it merges upstream.
+  SHERPA_ONNX_PR: "1110"
+
+jobs:
+  build-sherpa-onnx-rocm:
+    name: Build sherpa-onnx ROCm (Linux x64, all AMD GPUs)
+    # TODO(operator): set this to a ROCm-capable build runner label. The build
+    # needs the ROCm/HIP toolchain (hipcc, rocm-device-libs) installed; it does
+    # NOT need a physical AMD GPU (device code is cross-compiled for the target
+    # list). A self-hosted runner with ROCm 6.x, or a container image such as
+    # rocm/dev-ubuntu-22.04, satisfies this. Replace the placeholder below.
+    runs-on: [self-hosted, linux, x64, rocm]  # TODO(operator): wire up a ROCm build runner with this label
+    # If using a bare runner instead of a ROCm-preinstalled one, uncomment to
+    # build inside the official ROCm dev image:
+    # container:
+    #   image: rocm/dev-ubuntu-22.04:6.2
+
+    env:
+      VERSION: ${{ github.event.inputs.version }}
+      GPU_TARGETS: ${{ github.event.inputs.gpu_targets }}
+
+    steps:
+      - name: Show build parameters
+        shell: bash
+        run: |
+          echo "sherpa-onnx version/tag : $VERSION"
+          echo "sherpa-onnx PR ref      : #$SHERPA_ONNX_PR (ROCm execution provider)"
+          echo "AMD GPU targets         : $GPU_TARGETS"
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # ROCm/HIP toolchain is expected to be preinstalled on the runner (or
+          # provided by the container image). Here we install the generic build
+          # tooling. cmake >= 3.18 is required by the sherpa-onnx ROCm path.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git build-essential cmake ninja-build python3 ca-certificates bzip2 tar
+          cmake --version
+          # Sanity-check the ROCm toolchain is on PATH (hipcc); fail early if not.
+          which hipcc || { echo "::error::hipcc not found — runner is not ROCm-capable. See the runs-on TODO."; exit 1; }
+          hipcc --version || true
+
+      - name: Checkout k2-fsa/sherpa-onnx at PR #1110 (ROCm execution provider)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/k2-fsa/sherpa-onnx.git sherpa-onnx
+          cd sherpa-onnx
+          # Fetch the PR head ref and check it out detached. PR #1110 adds the
+          # ROCm execution provider (-DSHERPA_ONNX_ENABLE_ROCM=ON / --provider=rocm).
+          git fetch origin "pull/${SHERPA_ONNX_PR}/head:pr-${SHERPA_ONNX_PR}"
+          git checkout "pr-${SHERPA_ONNX_PR}"
+          git log -1 --oneline
+
+      - name: Configure (CMake) — ROCm ON, shared libs, all-AMD-GPU multi-arch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd sherpa-onnx
+          mkdir -p build
+          # Multi-arch fat binary: we pass the broad GPU target list under EVERY
+          # variable that the onnxruntime-ROCm + sherpa-onnx + HIP build layers
+          # may honor, so whichever one is read, all AMD archs are compiled in:
+          #   - CMAKE_HIP_ARCHITECTURES : modern CMake HIP language target list
+          #   - GPU_TARGETS / AMDGPU_TARGETS : ROCm/onnxruntime amdgpu target list
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DSHERPA_ONNX_ENABLE_ROCM=ON \
+            -DSHERPA_ONNX_ENABLE_PYTHON=OFF \
+            -DSHERPA_ONNX_ENABLE_TESTS=OFF \
+            -DSHERPA_ONNX_ENABLE_CHECK=OFF \
+            -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
+            -DSHERPA_ONNX_ENABLE_WEBSOCKET=ON \
+            -DCMAKE_HIP_ARCHITECTURES="$GPU_TARGETS" \
+            -DGPU_TARGETS="$GPU_TARGETS" \
+            -DAMDGPU_TARGETS="$GPU_TARGETS" \
+            -DCMAKE_INSTALL_PREFIX="$PWD/install"
+
+      - name: Build & install
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd sherpa-onnx
+          cmake --build build --config Release -j"$(nproc)"
+          cmake --install build --config Release
+          # Confirm the websocket server binary that lemonade launches is present.
+          test -x install/bin/sherpa-onnx-online-websocket-server
+
+      - name: Package asset (name must match get_install_params)
+        id: package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd sherpa-onnx
+          # Asset layout mirrors upstream k2-fsa shared builds: bin/ + lib/ so
+          # SherpaServer finds the binary and the sibling lib/ on the rpath.
+          ASSET="sherpa-onnx-${VERSION}-linux-x64-rocm-shared.tar.bz2"
+          STAGE="sherpa-onnx-${VERSION}-linux-x64-rocm-shared"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -a install/bin "$STAGE/bin"
+          cp -a install/lib "$STAGE/lib"
+          tar -cjf "$ASSET" "$STAGE"
+          ls -lh "$ASSET"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to lemonade-sdk/sherpa-onnx-builds
+        shell: bash
+        env:
+          # TODO(operator): GITHUB_TOKEN cannot write to a different repo. Provide
+          # a PAT (or fine-grained token) with `contents:write` on
+          # lemonade-sdk/sherpa-onnx-builds as a secret, e.g. SHERPA_BUILDS_TOKEN.
+          GH_TOKEN: ${{ secrets.SHERPA_BUILDS_TOKEN }}
+        run: |
+          set -euxo pipefail
+          cd sherpa-onnx
+          ASSET="${{ steps.package.outputs.asset }}"
+          REPO="lemonade-sdk/sherpa-onnx-builds"
+          # Create the release if it does not exist yet, then upload (clobber so
+          # re-runs replace the asset). Tag == pinned version in backend_versions.json.
+          if ! gh release view "$VERSION" --repo "$REPO" >/dev/null 2>&1; then
+            gh release create "$VERSION" --repo "$REPO" \
+              --title "sherpa-onnx $VERSION (ROCm, all AMD GPUs)" \
+              --notes "Multi-arch ROCm build of k2-fsa/sherpa-onnx PR #${SHERPA_ONNX_PR}. One Linux x64 shared-library asset covering RDNA2/3/3.5/4 + CDNA: ${GPU_TARGETS}. Runtime escape hatch for unlisted archs: HSA_OVERRIDE_GFX_VERSION."
+          fi
+          gh release upload "$VERSION" "$ASSET" --repo "$REPO" --clobber

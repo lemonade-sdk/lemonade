@@ -4,9 +4,7 @@
 #include "../server_capabilities.h"
 #include "backend_utils.h"
 #include <string>
-#include <filesystem>
 #include <vector>
-#include <cstdint>
 
 namespace lemon {
 namespace backends {
