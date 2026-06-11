@@ -117,7 +117,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset windows
+          cmake --preset vs18
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
