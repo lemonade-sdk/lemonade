@@ -113,8 +113,12 @@ bool is_agent_launch_llm(const lemonade::ModelInfo& model) {
            lemon::get_model_type_from_labels(model.labels) == lemon::ModelType::LLM;
 }
 
+bool is_tool_calling_agent_launch_llm(const lemonade::ModelInfo& model) {
+    return is_agent_launch_llm(model) && has_label(model, "tool-calling");
+}
+
 bool is_recommended_for_launch(const lemonade::ModelInfo& model) {
-    return is_agent_launch_llm(model) && has_label(model, "hot") && has_label(model, "tool-calling");
+    return is_tool_calling_agent_launch_llm(model) && has_label(model, "hot");
 }
 
 bool is_recommended_for_run(const lemonade::ModelInfo& model) {
@@ -423,7 +427,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             std::vector<const lemonade::ModelInfo*> downloaded_llm_models;
             downloaded_llm_models.reserve(downloaded_models.size());
             for (const auto& model : downloaded_models) {
-                if (is_agent_launch_llm(model)) {
+                if (is_tool_calling_agent_launch_llm(model)) {
                     downloaded_llm_models.push_back(&model);
                 }
             }
@@ -454,7 +458,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             }
 
             if (downloaded_llm_models.empty()) {
-                std::cout << "No downloaded LLMs found." << std::endl;
+                std::cout << "No downloaded tool-calling LLMs found." << std::endl;
             }
 
             int selected = 0;
