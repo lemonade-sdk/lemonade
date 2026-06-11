@@ -20,7 +20,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'list_models',
-      description: 'List all models known to the lemonade server (loaded, downloaded, and registry). Returns model names, status, available recipes, and sizes. Each model may support multiple recipes — a recipe defines how the model runs (e.g. "llamacpp" for GPU/CPU via llama.cpp, "flm" for NPU via FastFlowLM).',
+      description: 'List all models known to the lemonade server (loaded, downloaded, and registry). Returns model names, status, available recipes, and sizes. Each model may support multiple recipes — a recipe defines how the model runs (e.g. "llamacpp" for GPU/CPU via llama.cpp, "flm" for NPU via FastFlowLM, "moonshine" for CPU streaming speech-to-text).',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -125,7 +125,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'list_backends',
-      description: 'List all recipes and their backends with install status. A recipe (e.g. llamacpp, whispercpp, flm, kokoro, sd-cpp, vllm) defines the inference engine. Each recipe has backends (e.g. vulkan, rocm, cpu, metal, npu) that target specific hardware. Returns install state (installed, installable, update_available, update_required), version, and supported devices for each. Check this before recommending a recipe — if the user needs GPU but vulkan is not installed, suggest installing it first.',
+      description: 'List all recipes and their backends with install status. A recipe (e.g. llamacpp, whispercpp, moonshine, flm, kokoro, sd-cpp, vllm) defines the inference engine. Each recipe has backends (e.g. vulkan, rocm, cpu, metal, npu) that target specific hardware. Returns install state (installed, installable, update_available, update_required), version, and supported devices for each. Check this before recommending a recipe — if the user needs GPU but vulkan is not installed, suggest installing it first.',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -137,7 +137,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
       parameters: {
         type: 'object',
         properties: {
-          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "sd-cpp", "kokoro", "flm", "vllm").' },
+          recipe: { type: 'string', description: 'The recipe name (e.g. "llamacpp", "whispercpp", "moonshine", "sd-cpp", "kokoro", "flm", "vllm").' },
           backend: { type: 'string', description: 'The backend to install (e.g. "vulkan", "rocm", "cpu", "metal", "npu").' },
         },
         required: ['recipe', 'backend'],

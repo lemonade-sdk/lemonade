@@ -1,7 +1,7 @@
 import type { ModelInfo } from './api';
 
 export type Capability = 'chat' | 'omni' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
-export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'auto';
+export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'auto';
 
 export interface RecipeOptions {
   ctx_size?: number;
@@ -17,6 +17,8 @@ export interface RecipeOptions {
   sdcpp_args?: string;
   whispercpp_backend?: string;
   whispercpp_args?: string;
+  moonshine_backend?: string;
+  moonshine_args?: string;
   vllm_backend?: string;
   vllm_args?: string;
   flm_args?: string;
@@ -87,6 +89,9 @@ const LABEL_MAP: Record<string, Capability> = {
   multimodal: 'omni',
   audio: 'transcription',
   transcription: 'transcription',
+  'realtime-transcription': 'transcription',
+  stt: 'transcription',
+  'speech-to-text': 'transcription',
   tts: 'tts',
   image: 'image',
   embedding: 'embedding',
@@ -105,7 +110,7 @@ export function labelsFor(model: ModelInfo | string | null | undefined): Capabil
   const recipes = Array.isArray(obj?.recipes) ? obj.recipes : [];
   const recipeText = `${recipe} ${recipes.map(r => String((r as any).recipe || '')).join(' ')}`.toLowerCase();
   const name = String(obj?.id || obj?.name || obj?.display_name || '').toLowerCase();
-  if (recipeText.includes('whisper') || (recipeText.includes('flm') && (name.includes('whisper') || name.includes('parakeet')))) caps.push('transcription');
+  if (recipeText.includes('whisper') || recipeText.includes('moonshine') || (recipeText.includes('flm') && (name.includes('whisper') || name.includes('parakeet')))) caps.push('transcription');
   if (recipeText.includes('kokoro')) caps.push('tts');
   if (recipeText.includes('sd-cpp')) caps.push('image');
   if (name.includes('embed')) caps.push('embedding');

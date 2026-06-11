@@ -147,7 +147,7 @@ export function upsertCustomModel(scope: string, draft: CustomModelDraft): Custo
   if (Object.keys(record.component_roles || {}).length === 0) delete record.component_roles;
   if (record.type === 'omni' && record.components?.length) {
     record.recipe = COLLECTION_OMNI_RECIPE;
-    record.checkpoint = record.checkpoint || record.components[0];
+    record.checkpoint = '';
   }
   saveCustomModels(scope, [record, ...current.filter(m => m.id !== record.id && m.name.toLowerCase() !== name.toLowerCase())]);
   return record;
@@ -183,27 +183,30 @@ export function customRegistrationOptions(model: ModelInfo): Record<string, unkn
   const type = String((model as any).type || '').trim();
   const labels = Array.isArray(model.labels) ? model.labels : [];
   const components = Array.isArray((model as any).components) ? (model as any).components.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0) : [];
+  if ((recipe === COLLECTION_OMNI_RECIPE || type === 'omni') && components.length) {
+    return { recipe: COLLECTION_OMNI_RECIPE, components };
+  }
+
   const opts: Record<string, unknown> = { custom: true };
   if (checkpoint) opts.checkpoint = checkpoint;
   if (recipe) opts.recipe = recipe;
-  if (type) opts.type = type;
-  if (labels.length) opts.labels = labels;
-  if (components.length) opts.components = components;
-  if ((model as any).component_roles) {
-    const roles = Object.fromEntries(
-      Object.entries((model as any).component_roles as Record<string, unknown>)
-        .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
-    );
-    if (Object.keys(roles).length > 0) opts.component_roles = roles;
-  }
+  // Current /v1/pull registration uses capability booleans rather than a generic type/labels payload.
+  if (labels.includes('reasoning')) opts.reasoning = true;
+  if (labels.some(label => ['vision', 'omni', 'multimodal', 'vision-language', 'image-input'].includes(label))) opts.vision = true;
+  if (type === 'embedding' || labels.some(label => label === 'embedding' || label === 'embeddings')) opts.embedding = true;
+  if (type === 'reranking' || labels.some(label => label === 'reranking' || label === 'reranker')) opts.reranking = true;
+  const mmproj = String((model as any).mmproj || '').trim();
+  if (mmproj) opts.mmproj = mmproj;
   if (type !== 'omni' && (model as any).max_context_window) opts.ctx_size = (model as any).max_context_window;
   return opts;
 }
 
 export function customLoadOptions(model: ModelInfo): Record<string, unknown> | undefined {
   if (!(model as any).custom) return undefined;
-  const opts = customRegistrationOptions(model) || { custom: true };
-  return { ...opts, save_options: false };
+  const opts: Record<string, unknown> = { save_options: false };
+  const type = String((model as any).type || '').trim();
+  if (type !== 'omni' && (model as any).max_context_window) opts.ctx_size = (model as any).max_context_window;
+  return opts;
 }
 
 export const CUSTOM_CAPABILITIES: Array<{ value: CustomModelCapability; label: string; hint: string }> = [

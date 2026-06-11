@@ -281,6 +281,23 @@ export interface LogStreamHandle {
   close: () => void;
 }
 
+export interface RealtimeTranscriptionCallbacks {
+  onConnected?: () => void;
+  onDisconnected?: () => void;
+  onError?: (message: string) => void;
+  onSpeechEvent?: (event: 'started' | 'stopped') => void;
+  onTranscription?: (text: string, isFinal: boolean) => void;
+  onAudioBufferCleared?: () => void;
+}
+
+export interface RealtimeTranscriptionHandle {
+  sendAudio: (base64Audio: string) => void;
+  commitAudio: () => void;
+  clearAudio: () => void;
+  close: () => void;
+  isConnected: () => boolean;
+}
+
 export type LemonadeRequestInit = Omit<RequestInit, 'body'> & { body?: unknown };
 
 export type ChatMessageContent = string | null | Array<
@@ -441,6 +458,173 @@ class LemonadeAPI {
   private async _json<T = unknown>(path: string, opts?: LemonadeRequestInit): Promise<T> {
     const resp = await this._fetch(path, opts);
     return resp.json() as Promise<T>;
+  }
+
+  private _buildWebSocketUrl(path: string, port?: number, query?: URLSearchParams): string {
+    const url = new URL(this.baseUrl);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (port !== undefined) url.port = String(port);
+    url.pathname = path.startsWith('/') ? path : `/${path}`;
+
+    const params = new URLSearchParams(query);
+    if (this.apiKey) params.set('api_key', this.apiKey);
+    url.search = params.toString();
+    return url.toString();
+  }
+
+  private _openRealtimeSocket(
+    wsUrl: string,
+    model: string,
+    callbacks: RealtimeTranscriptionCallbacks,
+    timeoutMs = 5000,
+  ): Promise<RealtimeTranscriptionHandle> {
+    return new Promise((resolve, reject) => {
+      let opened = false;
+      let settled = false;
+      const socket = new WebSocket(wsUrl);
+      const send = (msg: object) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+      };
+      const handle: RealtimeTranscriptionHandle = {
+        sendAudio: base64Audio => send({ type: 'input_audio_buffer.append', audio: base64Audio }),
+        commitAudio: () => send({ type: 'input_audio_buffer.commit' }),
+        clearAudio: () => send({ type: 'input_audio_buffer.clear' }),
+        close: () => socket.close(1000, 'OK'),
+        isConnected: () => socket.readyState === WebSocket.OPEN,
+      };
+
+      const timer = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        socket.close();
+        reject(new Error(`WebSocket connect timeout: ${wsUrl}`));
+      }, timeoutMs);
+
+      socket.addEventListener('open', () => {
+        opened = true;
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(handle);
+        }
+        send({ type: 'session.update', session: { model } });
+      });
+
+      socket.addEventListener('message', event => {
+        try {
+          const msg = JSON.parse(event.data);
+          switch (msg.type) {
+            case 'session.created':
+              callbacks.onConnected?.();
+              break;
+            case 'input_audio_buffer.speech_started':
+              callbacks.onSpeechEvent?.('started');
+              break;
+            case 'input_audio_buffer.speech_stopped':
+              callbacks.onSpeechEvent?.('stopped');
+              break;
+            case 'input_audio_buffer.cleared':
+              callbacks.onAudioBufferCleared?.();
+              break;
+            case 'conversation.item.input_audio_transcription.delta':
+              if (typeof msg.delta === 'string') callbacks.onTranscription?.(msg.delta, false);
+              break;
+            case 'conversation.item.input_audio_transcription.completed':
+              if (typeof msg.transcript === 'string') callbacks.onTranscription?.(msg.transcript, true);
+              break;
+            case 'error':
+              callbacks.onError?.(msg.error?.message || 'Server error');
+              break;
+          }
+        } catch (err) {
+          callbacks.onError?.(`Invalid realtime payload: ${String(err)}`);
+        }
+      });
+
+      socket.addEventListener('error', () => {
+        if (!opened && !settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          reject(new Error(`WebSocket connect failed: ${wsUrl}`));
+          return;
+        }
+        if (opened) callbacks.onError?.('WebSocket error');
+      });
+
+      socket.addEventListener('close', event => {
+        if (!opened && !settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          reject(new Error(`WebSocket closed before opening: ${wsUrl}`));
+          return;
+        }
+        if (opened && event.code !== 1000) {
+          callbacks.onError?.(`WebSocket closed (code=${event.code}).`);
+        }
+        callbacks.onDisconnected?.();
+      });
+    });
+  }
+
+  private _openLogSocket(wsUrl: string, callbacks: LogStreamCallbacks, afterSeq?: number | null, suppressPreOpenErrors = false): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      let opened = false;
+      let settled = false;
+      const socket = new WebSocket(wsUrl);
+      const timer = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        socket.close();
+        reject(new Error(`WebSocket connect timeout: ${wsUrl}`));
+      }, 5000);
+
+      socket.addEventListener('open', () => {
+        opened = true;
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          resolve(socket);
+        }
+        socket.send(JSON.stringify({
+          type: 'logs.subscribe',
+          after_seq: afterSeq ?? null,
+        }));
+        callbacks.onConnected?.();
+      });
+
+      socket.addEventListener('message', (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'logs.snapshot') {
+            callbacks.onSnapshot?.(msg.entries ?? []);
+          } else if (msg.type === 'logs.entry' && msg.entry) {
+            callbacks.onEntry?.(msg.entry);
+          } else if (msg.type === 'error') {
+            callbacks.onError?.(msg.error?.message || 'Server error');
+          }
+        } catch {}
+      });
+
+      socket.addEventListener('error', () => {
+        if (!opened && !settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          reject(new Error(`WebSocket connect failed: ${wsUrl}`));
+          return;
+        }
+        if (!suppressPreOpenErrors || opened) callbacks.onError?.('WebSocket error');
+      });
+
+      socket.addEventListener('close', () => {
+        if (!opened && !settled) {
+          settled = true;
+          window.clearTimeout(timer);
+          reject(new Error(`WebSocket closed before opening: ${wsUrl}`));
+          return;
+        }
+        if (opened) callbacks.onDisconnected?.();
+      });
+    });
   }
 
   // ── Endpoints ───────────────────────────────────────────────────
@@ -613,55 +797,45 @@ class LemonadeAPI {
   // ── Log stream (WebSocket) ──────────────────────────────────────
 
   connectLogStream(callbacks: LogStreamCallbacks, afterSeq?: number | null): LogStreamHandle {
-    const health = this._healthData;
-    if (!health?.websocket_port) {
-      callbacks.onError?.('No WebSocket port available');
-      return { close: () => {} };
-    }
+    let closed = false;
+    let socket: WebSocket | null = null;
 
-    // Build WS URL from the HTTP base URL
-    const baseUrl = new URL(this.baseUrl);
-    const wsProto = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProto}//${baseUrl.hostname}:${health.websocket_port}/logs/stream`;
-
-    let socket: WebSocket;
-    try {
-      socket = new WebSocket(wsUrl);
-    } catch (err) {
-      callbacks.onError?.(`WebSocket connection failed: ${err}`);
-      return { close: () => {} };
-    }
-
-    socket.addEventListener('open', () => {
-      socket.send(JSON.stringify({
-        type: 'logs.subscribe',
-        after_seq: afterSeq ?? null,
-      }));
-      callbacks.onConnected?.();
-    });
-
-    socket.addEventListener('message', (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'logs.snapshot') {
-          callbacks.onSnapshot?.(msg.entries ?? []);
-        } else if (msg.type === 'logs.entry' && msg.entry) {
-          callbacks.onEntry?.(msg.entry);
-        } else if (msg.type === 'error') {
-          callbacks.onError?.(msg.error?.message || 'Server error');
+    // Logs belong to the configured Lemonade API origin. Do not use
+    // health.websocket_port here: on current Lemonade builds that port is used
+    // by realtime audio, so subscribing to logs there creates noisy background
+    // connections without ever receiving log entries.
+    const wsUrl = this._buildWebSocketUrl('/logs/stream');
+    this._openLogSocket(wsUrl, callbacks, afterSeq, true)
+      .then(openedSocket => {
+        if (closed) {
+          openedSocket.close(1000, 'OK');
+          return;
         }
-      } catch {}
-    });
+        socket = openedSocket;
+      })
+      .catch(() => {
+        if (!closed) callbacks.onError?.('Could not connect to log stream on the Lemonade API port.');
+      });
 
-    socket.addEventListener('error', () => {
-      callbacks.onError?.('WebSocket error');
-    });
+    return {
+      close: () => {
+        closed = true;
+        socket?.close(1000, 'OK');
+      },
+    };
+  }
 
-    socket.addEventListener('close', () => {
-      callbacks.onDisconnected?.();
-    });
-
-    return { close: () => socket.close(1000, 'OK') };
+  async connectRealtimeTranscription(model: string, callbacks: RealtimeTranscriptionCallbacks = {}): Promise<RealtimeTranscriptionHandle> {
+    const query = new URLSearchParams({ model });
+    const mainUrl = this._buildWebSocketUrl('/v1/realtime', undefined, query);
+    try {
+      return await this._openRealtimeSocket(mainUrl, model, callbacks);
+    } catch {
+      const health = this._healthData || await this.health();
+      if (!health.websocket_port) throw new Error('Server did not advertise a realtime WebSocket port.');
+      const legacyUrl = this._buildWebSocketUrl('/realtime', health.websocket_port, query);
+      return this._openRealtimeSocket(legacyUrl, model, callbacks);
+    }
   }
 
   // ── Backend management ──────────────────────────────────────────
@@ -715,7 +889,7 @@ class LemonadeAPI {
     return [];
   }
 
-  async controlDownload(downloadId: string, action: 'pause' | 'resume' | 'cancel' | 'remove'): Promise<unknown> {
+  async controlDownload(downloadId: string, action: 'pause' | 'cancel' | 'remove'): Promise<unknown> {
     const result = await this._json('/api/v1/downloads/control', {
       method: 'POST',
       body: { id: downloadId, action },
@@ -752,7 +926,6 @@ class LemonadeAPI {
       const body: Record<string, unknown> = {
         ...(opts || {}),
         model_name: modelName,
-        model: modelName,
         stream: true,
         // Let lemond own the download so progress survives F5/new tabs.
         // Browser SSE is still supported below for older servers.

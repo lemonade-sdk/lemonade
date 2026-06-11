@@ -5106,6 +5106,17 @@ input, textarea {
   background: var(--surface-2);
 }
 
+.composer__image-setting input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.composer__image-setting input[type=number]::-webkit-outer-spin-button,
+.composer__image-setting input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .composer__image-setting input:disabled,
 .composer__image-setting select:disabled {
   opacity: 0.55;
@@ -5122,4 +5133,98 @@ input, textarea {
   .composer__image-settings {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* Live realtime transcription in audio mode */
+.composer__mic {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              opacity var(--duration-fast);
+}
+
+.composer__mic:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.composer__mic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer__mic--recording {
+  background: var(--danger-soft);
+  border-color: rgba(217, 122, 108, 0.42);
+  color: var(--danger);
+}
+
+.composer__live {
+  max-width: var(--max-content-width);
+  margin: 0 auto var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.composer__live--error {
+  border-color: rgba(217, 122, 108, 0.28);
+  background: var(--danger-soft);
+  color: var(--text-primary);
+}
+
+.composer__live-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.composer__live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.composer__live-dot--speaking {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px rgba(217, 122, 108, 0.16);
+}
+
+.composer__live-meter {
+  width: 72px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.composer__live-meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 80ms linear;
+}
+
+.composer__live-text {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  white-space: pre-wrap;
 }

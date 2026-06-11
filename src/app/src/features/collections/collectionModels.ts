@@ -14,7 +14,13 @@ export function isCollectionRecipe(recipe?: string | null): boolean {
 
 export function getCollectionComponents(model?: ModelInfo | null): string[] {
   if (!model) return [];
-  const raw = (model as any).components;
+  const candidates = [
+    (model as any).components,
+    (model as any).component_models,
+    (model as any).composite_models,
+    (model as any).recipe_options?.components,
+  ];
+  const raw = candidates.find(Array.isArray);
   if (!Array.isArray(raw)) return [];
   return Array.from(new Set(raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map(item => item.trim())));
 }

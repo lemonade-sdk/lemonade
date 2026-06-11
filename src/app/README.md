@@ -90,13 +90,13 @@ This prototype showcases the **redesigned UI** with capability-keyed presets (v1
 ### Multimodal / Omni Mode
 - **Omni capability detection** recognizes loaded models marked as `omni`, `multimodal`, `vision`, VLM, LLaVA, Pixtral, Qwen-VL, MiniCPM-V, Mllama, GPT-4o-style, and similar names or labels.
 - **Omni composer mode** keeps those models in chat instead of misrouting them as plain LLMs or image/audio utility models. Text, image attachments, and one audio attachment are sent through `/api/v1/chat/completions` using OpenAI-style multimodal content parts.
-- **Specialized modes remain explicit:** image models route to `/api/v1/images/generations`, transcription models to `/api/v1/audio/transcriptions`, and TTS models to `/api/v1/audio/speech`.
+- **Specialized modes remain explicit:** image models route to `/api/v1/images/generations`, Whisper/Moonshine transcription models to `/api/v1/audio/transcriptions`, and TTS models to `/api/v1/audio/speech`.
 
 ### Custom Models
 - **Custom model form** on the Models page lets a user register a local/HuggingFace checkpoint or path, recipe/backend, labels, and capability.
 - **Custom Omni models** are first-class: choose `Omni` in the capability dropdown and the composer treats the model as multimodal chat even if the server health response later lacks perfect capability metadata.
 - **Scoped per user:** custom definitions are saved under the active guest/user storage scope. Guest custom models are shared on the browser; signed-in users get private custom definitions.
-- **Load path:** custom models call `/api/v1/load` with `model_name`, `checkpoint`, `recipe`, `type`, and labels so a future production implementation can map this form directly to server-side model registry creation.
+- **Load path:** custom models register/pull with the current Lemonade payload (`model_name`, `checkpoint`, `recipe`, capability booleans, optional `mmproj`). Custom Omni collections register as `recipe: "collection.omni"` with a `components` array, then load by `model_name`.
 
 ### Local Users / Privacy Prototype
 - **Guest mode is shared:** users can chat without signing in. If guest history is enabled, it is visible to anyone using the same browser profile.
@@ -201,5 +201,6 @@ See [`.squad/decisions.md`](../../.squad/decisions.md) and [`.squad/agents/matti
 - Omni registry/custom collection models stay selectable as the Omni wrapper even when lemond reports the loaded runtime as individual vLLM/llama/vision/audio components.
 - Model typing is deliberately conservative: vLLM and plain LLM recipes stay in LLM mode; only explicit Omni/multimodal/VL metadata or collection recipes become Omni.
 - Model downloads are started with server-owned persistence (`subscribe: false`) and the Models page polls `/api/v1/downloads`, so active downloads reappear after refresh/new tab on servers that expose the downloads API.
-- Custom Omni collections can be created from named text, vision, image, transcription, and speech components.
+- Custom Omni collections can be created from named text, vision, image, transcription, and speech components and are sent to Lemonade as `collection.omni` plus `components`, not as pseudo-checkpoint registrations.
 - Account popovers use an opaque raised surface so labels remain readable over the model grid.
+- Backend summary now falls back from `/system-info` `lemonade_version` to `/health` `version`, so Linux builds no longer show `Lemonade unknown ...` when system-info omits the version.

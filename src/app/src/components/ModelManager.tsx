@@ -24,7 +24,8 @@ function recipeIcon(recipe: string): string {
     case 'flm': return '⚡';
     case 'ryzenai-llm': return '🔶';
     case 'sd-cpp': return '🎨';
-    case 'whispercpp': return '🎤';
+    case 'whispercpp': return '🤫';
+    case 'moonshine': return '🌙';
     case 'kokoro': return '🔊';
     case 'collection.omni': return '🧩';
     case 'collection': return '📦';
@@ -40,6 +41,7 @@ function recipeLabel(recipe: string): string {
     case 'ryzenai-llm': return 'RyzenAI';
     case 'sd-cpp': return 'Stable Diffusion';
     case 'whispercpp': return 'Whisper';
+    case 'moonshine': return 'Moonshine';
     case 'kokoro': return 'Kokoro TTS';
     case 'collection.omni': return 'Omni Collection';
     case 'collection': return 'Collection';
@@ -181,6 +183,7 @@ const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, ti
 const RECIPE_BADGES: Record<string, string> = {
   llamacpp: '🦙 llama.cpp',
   vllm: '🏭 vLLM',
+  moonshine: '🌙 Moonshine',
   'ryzenai-llm': '🔷 RyzenAI',
   'collection.omni': '🧩 Omni Collection',
 };
@@ -198,7 +201,10 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
   image: [{ value: 'sd-cpp', label: 'Stable Diffusion', hint: 'Stable Diffusion C++ backend' }],
-  audio: [{ value: 'whispercpp', label: 'Whisper', hint: 'Whisper C++ transcription backend' }],
+  audio: [
+    { value: 'whispercpp', label: 'Whisper', hint: 'Whisper C++ transcription backend' },
+    { value: 'moonshine', label: 'Moonshine', hint: 'CPU streaming speech-to-text backend' },
+  ],
   tts: [{ value: 'kokoro', label: 'Kokoro TTS', hint: 'Kokoro text-to-speech backend' }],
   embedding: [{ value: 'llamacpp', label: 'llama.cpp', hint: 'Embedding through llama.cpp-compatible model' }],
   reranking: [{ value: 'llamacpp', label: 'llama.cpp', hint: 'Reranking through llama.cpp-compatible model' }],
@@ -309,7 +315,7 @@ const OMNI_COMPONENT_ROLE_CONFIG: Record<OmniComponentRole, { label: string; pla
   },
   transcription: {
     label: 'Transcription',
-    placeholder: 'Search Whisper/audio components…',
+    placeholder: 'Search Whisper/Moonshine/audio components…',
     help: 'Optional speech-to-text model.',
   },
   speech: {
@@ -345,7 +351,7 @@ function isOmniComponentEligible(m: ModelInfo, role: OmniComponentRole): boolean
     case 'edit':
       return hasAnyLabel(m, ['edit', 'image-edit', 'image-editing', 'upscaling']);
     case 'transcription':
-      return cap === 'audio' || hasAnyLabel(m, ['audio', 'transcription', 'realtime-transcription', 'asr']);
+      return cap === 'audio' || hasAnyLabel(m, ['audio', 'transcription', 'realtime-transcription', 'asr', 'stt', 'speech-to-text']);
     case 'speech':
       return cap === 'tts' || hasAnyLabel(m, ['tts', 'speech', 'text-to-speech']);
     default:
