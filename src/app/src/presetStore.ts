@@ -1,7 +1,10 @@
 import type { ModelInfo } from './api';
+import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';
 
-export type Capability = 'chat' | 'omni' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
+export type Capability = 'all' | 'chat' | 'omni' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
 export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'auto';
+
+export const KNOWN_CAPABILITIES: Capability[] = ['all', 'chat', 'image', 'omni', 'vision', 'code', 'transcription', 'tts', 'embedding', 'reranking'];
 
 export interface RecipeOptions {
   ctx_size?: number;
@@ -41,10 +44,14 @@ export interface Preset {
   sampling: SamplingParams;
   engine_hint?: PresetRecipe;
   starter: boolean;
+  auto_opt_run_id?: string | null;
+  auto_opt_enabled?: boolean;
 }
 
 export const LS_USER_PRESETS = 'user_presets';
 export const LS_APPLIED_PRESETS = 'applied_presets';
+export const LS_BACKEND_PRESETS = 'backend_presets';
+export const PRESET_STORE_EVENT = 'lemonade:preset-store-changed';
 
 let activeStorageScope = 'guest:shared';
 
@@ -54,6 +61,37 @@ export function setPresetStorageScope(scope: string): void {
 
 function scopedPresetKey(key: string): string {
   return `lemonade:${activeStorageScope}:${key}`;
+}
+
+function emitPresetStoreEvent(): void {
+  try { window.dispatchEvent(new CustomEvent(PRESET_STORE_EVENT)); } catch {}
+}
+
+export const DEFAULT_PRESET: Preset = {
+  id: 's-default',
+  name: 'Default',
+  description: 'Use Lemonade defaults and automatic backend selection.',
+  applies_to: ['all'],
+  recipe_options: { ctx_size: 4096, steps: 20, cfg_scale: 7.0, width: 512, height: 512 },
+  sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 },
+  engine_hint: 'auto',
+  starter: true,
+  auto_opt_enabled: true,
+  auto_opt_run_id: null,
+};
+
+
+export function normalizePresetCapabilities(id: string | undefined, caps: Capability[] | undefined): Capability[] {
+  const cleaned = [...new Set((caps || []).filter((cap): cap is Capability => KNOWN_CAPABILITIES.includes(cap as Capability)))];
+  if (cleaned.includes('all')) return ['all'];
+  if (id === DEFAULT_PRESET.id) return ['all'];
+  return [cleaned[0] || 'chat'];
+}
+
+export function presetSupportsCapability(preset: Pick<Preset, 'id' | 'applies_to'>, cap: Capability): boolean {
+  const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
+  if (caps.includes('all')) return true;
+  return caps.includes(cap);
 }
 
 export const STARTERS: Preset[] = [
@@ -68,6 +106,7 @@ export const STARTERS: Preset[] = [
 ];
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
+  all: 'All',
   chat: 'Chat',
   omni: 'Omni',
   image: 'Image',
@@ -127,20 +166,25 @@ export function presetLabelsFor(preset: Preset): Capability[] {
 
 export function isCompatible(preset: Preset, model: ModelInfo | string | null | undefined): boolean {
   const modelCaps = labelsFor(model);
-  return preset.applies_to.some(cap => modelCaps.includes(cap));
+  const presetCaps = normalizePresetCapabilities(preset.id, preset.applies_to);
+  if (presetCaps.includes('all')) return true;
+  return presetCaps.some(cap => modelCaps.includes(cap));
 }
 
 export function sanitizePreset(p: Partial<Preset>): Preset | null {
   if (!Array.isArray(p.applies_to) || p.applies_to.length === 0) return null;
+  const id = p.id || `u-${Date.now()}`;
   return {
-    id: p.id || `u-${Date.now()}`,
+    id,
     name: p.name || 'Untitled',
     description: p.description || '',
-    applies_to: p.applies_to,
+    applies_to: normalizePresetCapabilities(id, p.applies_to as Capability[]),
     recipe_options: p.recipe_options || {},
     sampling: p.sampling || {},
     engine_hint: p.engine_hint || 'auto',
     starter: p.starter ?? false,
+    auto_opt_run_id: p.auto_opt_run_id ?? null,
+    auto_opt_enabled: p.auto_opt_enabled ?? true,
   };
 }
 
@@ -160,27 +204,104 @@ export function loadApplied(): Record<string, string> {
   return {};
 }
 
+export function loadBackendApplied(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(scopedPresetKey(LS_BACKEND_PRESETS));
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
 export function saveUserPresets(presets: Preset[]): void {
   localStorage.setItem(scopedPresetKey(LS_USER_PRESETS), JSON.stringify(presets));
+  emitPresetStoreEvent();
 }
 
 export function saveApplied(applied: Record<string, string>): void {
   localStorage.setItem(scopedPresetKey(LS_APPLIED_PRESETS), JSON.stringify(applied));
+  emitPresetStoreEvent();
+}
+
+export function saveBackendApplied(applied: Record<string, string>): void {
+  localStorage.setItem(scopedPresetKey(LS_BACKEND_PRESETS), JSON.stringify(applied));
+  emitPresetStoreEvent();
 }
 
 export function allStoredPresets(): Preset[] {
-  return [...STARTERS, ...loadUserPresets()];
+  return [DEFAULT_PRESET, ...STARTERS, ...loadUserPresets()];
 }
 
-export function activePresetForModel(modelName: string): Preset | null {
-  const presetId = loadApplied()[modelName];
-  return allStoredPresets().find(p => p.id === presetId) || null;
+export function activePresetForModel(modelName: string): Preset {
+  const presetId = loadApplied()[modelName] || DEFAULT_PRESET.id;
+  return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
 }
 
-export function recipeOptionsForModel(modelName: string): RecipeOptions | undefined {
-  return activePresetForModel(modelName)?.recipe_options;
+export function activePresetForBackend(key: string): Preset {
+  const presetId = loadBackendApplied()[key] || DEFAULT_PRESET.id;
+  return allStoredPresets().find(p => p.id === presetId) || DEFAULT_PRESET;
+}
+
+function pickRecipeOptions(options: RecipeOptions, keys: Array<keyof RecipeOptions>): RecipeOptions {
+  const picked: RecipeOptions = {};
+  for (const key of keys) {
+    const value = options[key];
+    if (value !== undefined && value !== '') {
+      (picked as Record<string, unknown>)[key] = value;
+    }
+  }
+  return picked;
+}
+
+export function recipeOptionsForCapability(options: RecipeOptions, capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'): RecipeOptions {
+  if (!options || Object.keys(options).length === 0) return {};
+
+  switch (capability) {
+    case 'image':
+      return pickRecipeOptions(options, ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+    case 'audio':
+    case 'transcription':
+      return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
+    case 'tts':
+      return pickRecipeOptions(options, ['merge_args']);
+    case 'embedding':
+    case 'reranking':
+    case 'chat':
+    case 'omni':
+    case 'vision':
+    case 'code':
+      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
+    case 'all':
+    default:
+      return { ...options };
+  }
+}
+
+export function recipeOptionsForModel(modelName: string, model?: ModelInfo | null): RecipeOptions | undefined {
+  const preset = activePresetForModel(modelName);
+  const options = preset.recipe_options || {};
+  const scopedOptions = model
+    ? recipeOptionsForCapability(options, capabilityFromModelInfo(model))
+    : options;
+  return Object.keys(scopedOptions || {}).length > 0 ? scopedOptions : undefined;
 }
 
 export function samplingForModel(modelName: string): SamplingParams {
-  return activePresetForModel(modelName)?.sampling || {};
+  return activePresetForModel(modelName).sampling || {};
+}
+
+export function presetIcon(preset: Pick<Preset, 'id' | 'name' | 'starter'> | null | undefined): string {
+  if (!preset) return '🧰';
+  const id = String(preset.id || '').toLowerCase();
+  const name = String(preset.name || '').toLowerCase();
+  if (id === DEFAULT_PRESET.id || name === 'default') return '🍋';
+  if (name.includes('balanced')) return '⚖️';
+  if (name.includes('quality')) return '💎';
+  if (name.includes('fast')) return '🏎️';
+  if (name.includes('quick')) return '⏱️';
+  if (name.includes('creative')) return '✍️';
+  if (name.includes('long')) return '📚';
+  if (name.includes('code')) return '💻';
+  if (name.includes('sharp')) return '🔍';
+  if (name.includes('memory')) return '💾';
+  return preset.starter ? '🧪' : '🧰';
 }
