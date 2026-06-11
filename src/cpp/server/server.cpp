@@ -3627,7 +3627,7 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
             const auto env_name = CloudProviderRegistry::env_var_name(provider);
             nlohmann::json error = {{"error", {
                 {"message", env_name + " is set in the lemond process; the env var "
-                            "takes precedence and the runtime key was not stored."},
+                            "takes precedence and the supplied API key was not stored."},
                 {"type", "auth_conflict"},
                 {"env_var", env_name}}}};
             res.set_content(error.dump(), "application/json");
