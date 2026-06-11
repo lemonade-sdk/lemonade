@@ -115,6 +115,89 @@ static json make_anthropic_thinking_block(const std::string& thinking) {
     };
 }
 
+static bool valid_http_error_status(int status_code) {
+    return status_code >= 400 && status_code <= 599;
+}
+
+static int get_backend_error_status(const json& error, int default_status_code = 500) {
+    if (!error.is_object()) {
+        return default_status_code;
+    }
+
+    if (error.contains("status_code") && error["status_code"].is_number_integer()) {
+        int status_code = error["status_code"].get<int>();
+        if (valid_http_error_status(status_code)) {
+            return status_code;
+        }
+    }
+
+    if (error.contains("details") && error["details"].is_object()) {
+        const auto& details = error["details"];
+        if (details.contains("status_code") && details["status_code"].is_number_integer()) {
+            int status_code = details["status_code"].get<int>();
+            if (valid_http_error_status(status_code)) {
+                return status_code;
+            }
+        }
+    }
+
+    return default_status_code;
+}
+
+static std::string map_status_to_anthropic_error_type(int status_code) {
+    if (status_code == 401 || status_code == 403) {
+        return "authentication_error";
+    }
+    if (status_code == 404) {
+        return "not_found_error";
+    }
+    if (status_code == 429) {
+        return "rate_limit_error";
+    }
+    if (status_code >= 400 && status_code < 500) {
+        return "invalid_request_error";
+    }
+    return "api_error";
+}
+
+static std::string get_backend_error_message(const json& error) {
+    if (error.is_object()) {
+        if (error.contains("message") && error["message"].is_string()) {
+            return error["message"].get<std::string>();
+        }
+        return error.dump();
+    }
+    if (error.is_string()) {
+        return error.get<std::string>();
+    }
+    if (!error.is_null()) {
+        return error.dump();
+    }
+    return "backend error";
+}
+
+static json make_anthropic_error(const json& error, int status_code) {
+    return {
+        {"type", "error"},
+        {"error", {
+            {"type", map_status_to_anthropic_error_type(status_code)},
+            {"message", get_backend_error_message(error)}
+        }}
+    };
+}
+
+static bool send_anthropic_backend_error(const json& response, httplib::Response& res) {
+    if (!response.contains("error")) {
+        return false;
+    }
+
+    const auto& error = response["error"];
+    int status_code = get_backend_error_status(error);
+    res.status = status_code;
+    res.set_content(make_anthropic_error(error, status_code).dump(), "application/json");
+    return true;
+}
+
 static std::string join_text_blocks(const json& value, std::vector<std::string>& warnings, const std::string& field_name) {
     if (value.is_string()) {
         return value.get<std::string>();
@@ -241,9 +324,15 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
 }  // namespace
 
 void OllamaApi::register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self) {
-    server.Post("/v1/messages", [self](const httplib::Request& req, httplib::Response& res) {
+    auto messages_handler = [self](const httplib::Request& req, httplib::Response& res) {
         self->handle_anthropic_messages(req, res);
-    });
+    };
+
+    server.Post("/api/messages", messages_handler);
+    server.Post("/api/v0/messages", messages_handler);
+    server.Post("/api/v1/messages", messages_handler);
+    server.Post("/v0/messages", messages_handler);
+    server.Post("/v1/messages", messages_handler);
 }
 
 json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector<std::string>& warnings) {
@@ -717,6 +806,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
     int text_content_index = -1;
     std::string inline_content_buffer;
     bool inline_thinking_mode = false;
+    bool stream_error = false;
 
     adapter_sink.is_writable = client_sink.is_writable;
 
@@ -743,6 +833,12 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
         }
         sent_message_start = true;
         return true;
+    };
+
+    auto send_error_event = [&](const json& error) -> bool {
+        int status_code = get_backend_error_status(error);
+        stream_error = true;
+        return write_sse_event(client_sink, "error", make_anthropic_error(error, status_code));
     };
 
     auto close_thinking_block = [&]() -> bool {
@@ -982,6 +1078,8 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                           &sse_buffer,
                           &sent_message_start,
                           &send_message_start,
+                          &send_error_event,
+                          &stream_error,
                           &send_thinking_delta,
                           &process_content_delta,
                           &flush_inline_content,
@@ -1019,6 +1117,17 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
 
             try {
                 auto openai_chunk = json::parse(json_str);
+
+                if (openai_chunk.contains("error")) {
+                    if (!send_error_event(openai_chunk["error"])) {
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (stream_error) {
+                    continue;
+                }
 
                 if (!sent_message_start) {
                     if (openai_chunk.contains("id") && openai_chunk["id"].is_string()) {
@@ -1132,6 +1241,7 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                          &sent_message_start,
                          &sent_thinking_content_start,
                          &sent_text_content_start,
+                         &stream_error,
                          &started_tool_blocks,
                          &stopped_tool_blocks,
                          &tool_content_indices,
@@ -1139,6 +1249,11 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
                          &input_tokens,
                          &output_tokens,
                          &warnings]() {
+        if (stream_error) {
+            client_sink.done();
+            return;
+        }
+
         if (!flush_inline_content() || !send_message_start()) {
             client_sink.done();
             return;
@@ -1285,6 +1400,9 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
 
         openai_req["stream"] = false;
         auto openai_response = router_->chat_completion(openai_req);
+        if (send_anthropic_backend_error(openai_response, res)) {
+            return;
+        }
         auto anthropic_response = convert_openai_chat_to_anthropic(openai_response, model, warnings);
         res.set_content(anthropic_response.dump(), "application/json");
 

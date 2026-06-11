@@ -289,6 +289,12 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
     std::string auth_token = httplib::get_bearer_token_auth(req);
+    if (auth_token.empty()) {
+        auth_token = req.get_header_value("X-Api-Key");
+        if (auth_token.empty()) {
+            auth_token = req.get_header_value("x-api-key");
+        }
+    }
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -901,7 +907,9 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
+        {"Access-Control-Allow-Headers",
+         "Content-Type, Authorization, X-Api-Key, x-api-key, Anthropic-Version, "
+         "anthropic-version, Anthropic-Beta, anthropic-beta"}
     });
 
     // Handle preflight OPTIONS requests
