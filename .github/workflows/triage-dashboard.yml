@@ -1,17 +1,17 @@
 name: Triage dashboard
 
 # Publishes the triage dashboard to a SEPARATE repo's GitHub Pages
-# (lemonade-sdk/triage -> https://lemonade-sdk.github.io/triage/) rather than
-# this repo's Pages. This repo's Pages serves the production lemonade-server.ai
-# site from the `website` branch (deploy-from-branch) and is only meant to
-# refresh at release boundaries, so the dashboard must never touch it.
+# (lemonade-sdk/lemonade-triage -> https://lemonade-sdk.github.io/lemonade-triage/)
+# rather than this repo's Pages. This repo's Pages serves the production
+# lemonade-server.ai site from the `website` branch (deploy-from-branch) and is
+# only meant to refresh at release boundaries, so the dashboard must never
+# touch it.
 #
 # One-time setup (admin):
-#   1. Create the public repo lemonade-sdk/triage.
-#   2. In that repo: Settings -> Pages -> Source = "Deploy from a branch",
-#      Branch = gh-pages / (root). The first run below creates the branch.
-#   3. Add a secret TRIAGE_DASHBOARD_TOKEN to THIS repo (fine-grained PAT or
-#      deploy token with contents:write on lemonade-sdk/triage).
+#   1. lemonade-sdk/lemonade-triage exists with Pages set to "Deploy from a
+#      branch", Branch = main / (root).
+#   2. Add a secret TRIAGE_DASHBOARD_TOKEN to THIS repo (fine-grained PAT or
+#      deploy token with contents:write on lemonade-sdk/lemonade-triage).
 
 on:
   schedule:
@@ -55,10 +55,10 @@ jobs:
         run: |
           cd _site
           git init -q
-          git checkout -q -b gh-pages
+          git checkout -q -b main
           git add .
           git -c user.name="Lemonade Bot" -c user.email="lemonade@amd.com" \
             commit -q -m "Update triage dashboard"
           git push -f -q \
-            "https://x-access-token:${DEPLOY_TOKEN}@github.com/lemonade-sdk/triage.git" \
-            gh-pages
+            "https://x-access-token:${DEPLOY_TOKEN}@github.com/lemonade-sdk/lemonade-triage.git" \
+            main
