@@ -84,6 +84,36 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
     "sm_120",  // Blackwell    (RTX 50)
 };
 
+// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
+// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
+const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
+    // RDNA2 family (gfx103X)
+    {"gfx1030", "gfx103X"},
+    {"gfx1031", "gfx103X"},
+    {"gfx1032", "gfx103X"},
+    {"gfx1034", "gfx103X"},
+    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
+    // map to "" so get_rocm_arch skips them
+    {"gfx1033", ""},
+    {"gfx1035", ""},
+    {"gfx1036", ""},
+
+    // RDNA3 family (gfx110X)
+    {"gfx1100", "gfx110X"},
+    {"gfx1101", "gfx110X"},
+    {"gfx1102", "gfx110X"},
+    {"gfx1103", "gfx110X"},
+
+    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
+    {"gfx1150", "gfx1150"},  // Maps to exact binary name
+    {"gfx1151", "gfx1151"},  // Maps to exact binary name
+    {"gfx1152", "gfx1152"},  // Maps to exact binary name
+
+    // RDNA4 family (gfx120X)
+    {"gfx1200", "gfx120X"},
+    {"gfx1201", "gfx120X"},
+};
+
 #ifdef __linux__
 namespace {
 
@@ -437,7 +467,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -468,8 +498,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1150", "gfx1151", "gfx1152",
+            "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -538,6 +568,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
@@ -1835,6 +1866,16 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx1150";
     }
 
+    // KRK Point iGPUs (gfx1152 architecture)
+    // Radeon 840M / 860M Graphics
+    if (device_lower.find("840m") != std::string::npos ||
+        device_lower.find("860m") != std::string::npos) {
+        return "gfx1152";
+    }
+
+    // RDNA4 GPUs (gfx120X architecture)
+    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
+    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
     if (device_lower.find("r9700") != std::string::npos ||
         device_lower.find("9060") != std::string::npos ||
         device_lower.find("9070") != std::string::npos) {
