@@ -613,7 +613,38 @@ class OllamaTests(ServerTestBase):
     # Anthropic-compatible /v1/messages tests
     # ========================================================================
 
-    def test_024_anthropic_messages_non_streaming(self):
+    def test_024_anthropic_cors_allows_anthropic_headers(self):
+        """Test CORS preflight allows Anthropic-style client headers."""
+        response = requests.options(
+            f"{OLLAMA_BASE_URL}/v1/messages",
+            headers={
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": (
+                    "content-type, x-api-key, anthropic-version, anthropic-beta"
+                ),
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 204)
+        allowed = response.headers.get("Access-Control-Allow-Headers", "").lower()
+        self.assertIn("x-api-key", allowed)
+        self.assertIn("anthropic-version", allowed)
+        self.assertIn("anthropic-beta", allowed)
+
+    def test_025_anthropic_messages_route_aliases(self):
+        """Test Anthropic messages route aliases are registered."""
+        for path in ("/api/messages", "/api/v1/messages", "/v0/messages"):
+            response = requests.post(
+                f"{OLLAMA_BASE_URL}{path}",
+                json={"messages": []},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, path)
+            data = response.json()
+            self.assertEqual(data.get("type"), "error")
+            self.assertEqual(data.get("error", {}).get("type"), "invalid_request_error")
+
+    def test_026_anthropic_messages_non_streaming(self):
         """Test Anthropic-compatible non-streaming messages endpoint."""
         self.ensure_model_pulled()
 
@@ -654,7 +685,7 @@ class OllamaTests(ServerTestBase):
         self.assertIn("input_tokens", data["usage"])
         self.assertIn("output_tokens", data["usage"])
 
-    def test_025_anthropic_messages_streaming(self):
+    def test_027_anthropic_messages_streaming(self):
         """Test Anthropic-compatible streaming messages endpoint."""
         self.ensure_model_pulled()
 
@@ -697,7 +728,33 @@ class OllamaTests(ServerTestBase):
         self.assertIn("content_block_start", event_types)
         self.assertIn("message_stop", event_types)
 
-    def test_026_anthropic_messages_tool_calling(self):
+    def test_028_anthropic_messages_count_tokens(self):
+        """Test Anthropic-compatible count_tokens endpoint."""
+        self.ensure_model_pulled()
+
+        payload = {
+            "model": ENDPOINT_TEST_MODEL,
+            "system": "You are concise.",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Count these tokens"}],
+                }
+            ],
+        }
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages/count_tokens",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("input_tokens", data)
+        self.assertIsInstance(data["input_tokens"], int)
+        self.assertGreater(data["input_tokens"], 0)
+
+    def test_029_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""
         # Use a model with native tool-calling support in its chat template;
         # the tiny test model (gemma-3) lacks tool markers so the llama.cpp
