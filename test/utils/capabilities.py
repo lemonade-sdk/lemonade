@@ -157,6 +157,19 @@ CAPABILITIES = {
                 "audio": "whisper-v3-turbo-FLM",
             },
         },
+        "moonshine": {
+            "backends": ["cpu"],
+            "supports": {
+                "transcription": True,
+                # English-only checkpoints; the language param is ignored
+                "transcription_with_language": False,
+                "rai_cache": False,
+                "realtime_websocket": True,
+            },
+            "test_models": {
+                "audio": "Moonshine-Tiny-Streaming",
+            },
+        },
     },
     "stable_diffusion": {
         "sd-cpp": {
