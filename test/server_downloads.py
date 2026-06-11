@@ -34,14 +34,21 @@ from utils.test_models import (
     get_hf_cache_dir_candidates,
 )
 
-
-DEFAULT_POLL_SECONDS = float(os.environ.get("LEMONADE_DOWNLOAD_TEST_POLL_SECONDS", "0.25"))
-DEFAULT_WAIT_SECONDS = float(os.environ.get("LEMONADE_DOWNLOAD_TEST_WAIT_SECONDS", "25"))
+DEFAULT_POLL_SECONDS = float(
+    os.environ.get("LEMONADE_DOWNLOAD_TEST_POLL_SECONDS", "0.25")
+)
+DEFAULT_WAIT_SECONDS = float(
+    os.environ.get("LEMONADE_DOWNLOAD_TEST_WAIT_SECONDS", "25")
+)
 REAL_DOWNLOAD_WAIT_SECONDS = float(
     os.environ.get("LEMONADE_DOWNLOAD_REAL_TEST_WAIT_SECONDS", "300")
 )
-REAL_DOWNLOAD_MODEL = os.environ.get("LEMONADE_DOWNLOAD_TEST_MODEL", ENDPOINT_TEST_MODEL)
-RUN_REAL_DOWNLOAD_TESTS = os.environ.get("LEMONADE_RUN_REAL_DOWNLOAD_TESTS", "").lower() in {
+REAL_DOWNLOAD_MODEL = os.environ.get(
+    "LEMONADE_DOWNLOAD_TEST_MODEL", ENDPOINT_TEST_MODEL
+)
+RUN_REAL_DOWNLOAD_TESTS = os.environ.get(
+    "LEMONADE_RUN_REAL_DOWNLOAD_TESTS", ""
+).lower() in {
     "1",
     "true",
     "yes",
@@ -102,7 +109,9 @@ def _flip_one_byte(path: Path, *, preserve_gguf_magic: bool) -> tuple[int, bytes
 
     if preserve_gguf_magic:
         if size <= 8:
-            raise AssertionError(f"File is too small to corrupt after GGUF magic: {path}")
+            raise AssertionError(
+                f"File is too small to corrupt after GGUF magic: {path}"
+            )
         offset = min(max(8, size // 2), size - 1)
     else:
         offset = 0
@@ -140,7 +149,10 @@ class ServerDownloadRegistryTests(ServerTestBase):
         return data
 
     def _get_job(self, download_id):
-        return next((item for item in self._get_downloads() if item.get("id") == download_id), None)
+        return next(
+            (item for item in self._get_downloads() if item.get("id") == download_id),
+            None,
+        )
 
     def _control_download(self, download_id, action):
         response = requests.post(
@@ -151,7 +163,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
         response.raise_for_status()
         return response.json()
 
-    def _post_pull(self, model_name, *, stream=True, subscribe=False, do_not_upgrade=True, **extra):
+    def _post_pull(
+        self, model_name, *, stream=True, subscribe=False, do_not_upgrade=True, **extra
+    ):
         body = {
             "model": model_name,
             "stream": stream,
@@ -167,7 +181,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
         response.raise_for_status()
         return response.json()
 
-    def _wait_for_job(self, download_id, predicate, description, timeout=DEFAULT_WAIT_SECONDS):
+    def _wait_for_job(
+        self, download_id, predicate, description, timeout=DEFAULT_WAIT_SECONDS
+    ):
         deadline = time.time() + timeout
         last_job = None
         while time.time() < deadline:
@@ -177,14 +193,13 @@ class ServerDownloadRegistryTests(ServerTestBase):
             if job is not None and predicate(job):
                 return job
             time.sleep(DEFAULT_POLL_SECONDS)
-        self.fail(
-            f"Timed out waiting for {description}. Last snapshot: {last_job!r}"
-        )
+        self.fail(f"Timed out waiting for {description}. Last snapshot: {last_job!r}")
 
     def _wait_for_status(self, download_id, statuses, timeout=DEFAULT_WAIT_SECONDS):
         return self._wait_for_job(
             download_id,
-            lambda job: job.get("status") in statuses and job.get("running") is not True,
+            lambda job: job.get("status") in statuses
+            and job.get("running") is not True,
             f"{download_id} to reach one of {sorted(statuses)}",
             timeout=timeout,
         )
@@ -204,9 +219,13 @@ class ServerDownloadRegistryTests(ServerTestBase):
             self._wait_for_status(download_id, TERMINAL_STATUSES, timeout=60)
             self._control_download(download_id, "remove")
 
-        self.assertIsNone(self._get_job(download_id), "download row should be removable")
+        self.assertIsNone(
+            self._get_job(download_id), "download row should be removable"
+        )
 
-    def _wait_for_completed_download(self, model_name, *, timeout=REAL_DOWNLOAD_WAIT_SECONDS):
+    def _wait_for_completed_download(
+        self, model_name, *, timeout=REAL_DOWNLOAD_WAIT_SECONDS
+    ):
         download_id = f"model:{model_name}"
         self._remove_row_if_present(download_id)
         snapshot = self._post_pull(
@@ -219,7 +238,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
         self.assertEqual(snapshot.get("type"), "model")
         self.assertEqual(snapshot.get("model_name"), model_name)
 
-        job = self._wait_for_status(download_id, {"completed", "error"}, timeout=timeout)
+        job = self._wait_for_status(
+            download_id, {"completed", "error"}, timeout=timeout
+        )
         if job.get("status") == "error":
             self.fail(f"download failed: {job.get('error') or job!r}")
         self.assertEqual(job.get("status"), "completed")
@@ -241,7 +262,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
         repo_id, variant = _checkpoint_parts(checkpoint)
 
         candidates: list[Path] = []
-        cache_roots = [Path(path).expanduser() for path in get_hf_cache_dir_candidates()]
+        cache_roots = [
+            Path(path).expanduser() for path in get_hf_cache_dir_candidates()
+        ]
 
         if repo_id and "/" in repo_id:
             repo_cache = _repo_cache_dir_name(repo_id)
@@ -278,7 +301,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
             self.assertIn(field, job)
         self.assertIsInstance(job["id"], str)
         self.assertEqual(job["type"], "model")
-        self.assertIn(job["status"], {"downloading", "completed", "paused", "cancelled", "error"})
+        self.assertIn(
+            job["status"], {"downloading", "completed", "paused", "cancelled", "error"}
+        )
         self.assertIsInstance(job["running"], bool)
 
     def test_001_pull_subscribe_false_registers_download_and_control_can_remove(self):
@@ -331,14 +356,18 @@ class ServerDownloadRegistryTests(ServerTestBase):
     def test_003_real_tiny_model_download_completes_and_exposes_terminal_snapshot(self):
         """Optional CI smoke test: a real small model reaches completed/running=false."""
         if not RUN_REAL_DOWNLOAD_TESTS:
-            self.skipTest("set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads")
+            self.skipTest(
+                "set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads"
+            )
 
         job = self._wait_for_completed_download(REAL_DOWNLOAD_MODEL)
         self._assert_completed_job_schema(job)
         self.assertEqual(job.get("percent"), 100)
 
         info = self._get_model_info(REAL_DOWNLOAD_MODEL)
-        self.assertTrue(info.get("downloaded"), f"{REAL_DOWNLOAD_MODEL} should be marked downloaded")
+        self.assertTrue(
+            info.get("downloaded"), f"{REAL_DOWNLOAD_MODEL} should be marked downloaded"
+        )
         self.assertEqual(info.get("recipe"), "llamacpp")
 
         gguf = self._find_downloaded_gguf(REAL_DOWNLOAD_MODEL)
@@ -347,9 +376,13 @@ class ServerDownloadRegistryTests(ServerTestBase):
     def test_004_real_download_redownloads_corrupted_gguf_magic(self):
         """Optional CI smoke test: cached HTML/pointer-like GGUF payloads are not trusted."""
         if not RUN_REAL_DOWNLOAD_TESTS:
-            self.skipTest("set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads")
+            self.skipTest(
+                "set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads"
+            )
         if not RUN_GGUF_MAGIC_TESTS:
-            self.skipTest("set LEMONADE_RUN_GGUF_MAGIC_TESTS=1 to exercise the extra GGUF-magic cache check")
+            self.skipTest(
+                "set LEMONADE_RUN_GGUF_MAGIC_TESTS=1 to exercise the extra GGUF-magic cache check"
+            )
 
         self._wait_for_completed_download(REAL_DOWNLOAD_MODEL)
         gguf = self._find_downloaded_gguf(REAL_DOWNLOAD_MODEL)
@@ -373,7 +406,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
     def test_005_real_download_sha_verification_redownloads_corrupted_payload(self):
         """Optional CI smoke test: SHA/Git-SHA catches corruption beyond the GGUF magic header."""
         if not RUN_REAL_DOWNLOAD_TESTS:
-            self.skipTest("set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads")
+            self.skipTest(
+                "set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads"
+            )
 
         self._wait_for_completed_download(REAL_DOWNLOAD_MODEL)
         gguf = self._find_downloaded_gguf(REAL_DOWNLOAD_MODEL)
@@ -412,7 +447,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
                     error.lower(),
                     "hash failures must surface an explicit verification error",
                 )
-                self.fail(f"download hash verification failed as expected but did not recover: {error}")
+                self.fail(
+                    f"download hash verification failed as expected but did not recover: {error}"
+                )
 
             self.assertEqual(job.get("status"), "completed")
             self._remove_row_if_present(download_id)
@@ -431,7 +468,9 @@ class ServerDownloadRegistryTests(ServerTestBase):
     def test_006_real_download_reuses_valid_verified_cache_without_redownload(self):
         """Optional CI/local smoke test: a valid cached GGUF is verified and reused, not redownloaded."""
         if not RUN_REAL_DOWNLOAD_TESTS:
-            self.skipTest("set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads")
+            self.skipTest(
+                "set LEMONADE_RUN_REAL_DOWNLOAD_TESTS=1 to exercise real downloads"
+            )
 
         self._wait_for_completed_download(REAL_DOWNLOAD_MODEL)
         gguf = self._find_downloaded_gguf(REAL_DOWNLOAD_MODEL)

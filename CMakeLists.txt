@@ -347,6 +347,11 @@ if(NOT USE_SYSTEM_LWS)
         cmake_policy(SET CMP0148 OLD)
     endif()
     set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    # pkg_check_modules(LWS ...) caches LWS_LIBRARIES even when the system lib
+    # is unused; libwebsockets' own CMake unsets the directory variable, which
+    # un-shadows the stale cache entry and duplicates the "websockets" target
+    # in its export set — a hard error on CMake >= 4. Clear it before the fetch.
+    unset(LWS_LIBRARIES CACHE)
     FetchContent_Declare(libwebsockets
         GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
         GIT_TAG v${MIN_LWS_VERSION}
@@ -597,10 +602,12 @@ set(SOURCES_CORE
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
+    src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
+    src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/vllm_server.cpp

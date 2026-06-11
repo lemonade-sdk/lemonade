@@ -2109,7 +2109,6 @@ class EndpointTests(ServerTestBase):
         )
         print("[OK] system-info contains release_url for backends")
 
-
     # =========================================================================
     # PULL/VARIANTS TESTS
     # The two error-only tests (030, 031) run in every CI environment because
@@ -2161,7 +2160,9 @@ class EndpointTests(ServerTestBase):
             data["error"],
             f"Expected 'owner/name' format hint in error message, got: {data['error']}",
         )
-        print("[OK] Malformed checkpoint (no slash) returns 400 with owner/name format hint")
+        print(
+            "[OK] Malformed checkpoint (no slash) returns 400 with owner/name format hint"
+        )
 
     @unittest.skipUnless(
         os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
@@ -2195,7 +2196,9 @@ class EndpointTests(ServerTestBase):
             data["error"],
             f"Unexpected 404 error message: {data['error']}",
         )
-        print("[OK] Nonexistent HuggingFace checkpoint returns 404 with descriptive error")
+        print(
+            "[OK] Nonexistent HuggingFace checkpoint returns 404 with descriptive error"
+        )
 
     @unittest.skipUnless(
         os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
@@ -2251,7 +2254,9 @@ class EndpointTests(ServerTestBase):
             self.assertIn("files", v)
             self.assertIn("sharded", v)
             self.assertIn(
-                "size_bytes", v, f"Variant '{v.get('name')}' is missing 'size_bytes' field"
+                "size_bytes",
+                v,
+                f"Variant '{v.get('name')}' is missing 'size_bytes' field",
             )
             self.assertIsInstance(v["files"], list)
             self.assertGreater(

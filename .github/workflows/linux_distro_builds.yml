@@ -33,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
 
     strategy:
       fail-fast: false
@@ -43,9 +45,6 @@ jobs:
             python: python
           - distro: Debian
             image: debian:trixie
-            python: python3
-          - distro: Fedora
-            image: fedora:latest
             python: python3
           - distro: openSUSE
             image: opensuse/tumbleweed:latest

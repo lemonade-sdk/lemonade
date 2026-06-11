@@ -236,6 +236,9 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
   // Merge layout settings
   const rawLayout = incoming.layout;
   if (rawLayout && typeof rawLayout === 'object') {
+    if (rawLayout.theme === 'dark' || rawLayout.theme === 'light') {
+      defaults.layout.theme = rawLayout.theme;
+    }
     // Merge boolean visibility settings
     if (typeof rawLayout.isChatVisible === 'boolean') {
       defaults.layout.isChatVisible = rawLayout.isChatVisible;
