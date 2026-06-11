@@ -256,7 +256,11 @@ std::string resolve_hf_cache_dir() {
     }
     std::string hf_home = get_environment_variable_utf8("HF_HOME");
     if (!hf_home.empty()) {
-        return (fs::path(hf_home) / "hub").string();
+#ifdef _WIN32
+        return hf_home + "\\hub";
+#else
+        return hf_home + "/hub";
+#endif
     }
     return default_hf_cache_dir();
 }

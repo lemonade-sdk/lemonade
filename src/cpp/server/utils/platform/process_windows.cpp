@@ -1,6 +1,24 @@
+// Windows header discipline — must precede all other includes.
+// Mirrors the setup that was previously in process_manager.cpp before
+// the platform files were made self-contained.
+#ifdef _WIN32
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#include <windows.h>
+#include <processenv.h>
+#pragma comment(lib, "ws2_32.lib")
+// Un-define ERROR to avoid conflict with LOG(ERROR, ...) / SEVERITY::ERROR
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 #include <lemon/utils/process_platform.h>
 #include <lemon/utils/aixlog.hpp>
-#include <windows.h>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
