@@ -176,6 +176,30 @@ int main() {
                           "--some-generic user-a --some-generic user-b"),
         "--some-generic family --some-generic user-a --some-generic user-b");
 
+    json binary_config = json::parse(R"({
+        "schema_version": 1,
+        "families": {
+            "binary_family": {
+                "match": [{"checkpoint_regex": "^Binary/"}],
+                "args": "--feature-enabled --no-old-feature --valued-flag family"
+            }
+        }
+    })");
+    failures += !expect_args(
+        "incoming binary negation overrides prior positive flag",
+        resolve_vllm_args("Binary-vLLM", "Binary/Model", binary_config, "--no-feature-enabled"),
+        "--no-old-feature --valued-flag family --no-feature-enabled");
+
+    failures += !expect_args(
+        "incoming positive binary flag overrides prior negation",
+        resolve_vllm_args("Binary-vLLM", "Binary/Model", binary_config, "--old-feature"),
+        "--feature-enabled --valued-flag family --old-feature");
+
+    failures += !expect_args(
+        "binary negation does not remove valued flags",
+        resolve_vllm_args("Binary-vLLM", "Binary/Model", binary_config, "--no-valued-flag"),
+        "--feature-enabled --no-old-feature --valued-flag family --no-valued-flag");
+
     failures += !expect_args(
         "user can disable config auto tool choice",
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--disable-auto-tool-choice"),

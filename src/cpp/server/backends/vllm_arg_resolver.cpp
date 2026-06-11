@@ -48,6 +48,10 @@ bool is_generic_conflict_key(const std::string& key) {
     return key.rfind("flag:", 0) == 0;
 }
 
+bool is_binary_generic_arg(const ParsedArg& arg) {
+    return arg.values.empty() && is_generic_conflict_key(conflict_key(arg.flag));
+}
+
 std::set<std::string> repeated_generic_conflict_keys(const std::vector<ParsedArg>& args) {
     std::map<std::string, size_t> counts;
     for (const auto& arg : args) {
@@ -141,6 +145,18 @@ void merge_layer(std::vector<ParsedArg>& target, const std::vector<ParsedArg>& i
                                             return conflict_key(existing.flag) == key;
                                         }),
                          target.end());
+        }
+        if (is_binary_generic_arg(arg)) {
+            std::string negated_flag = lemon::utils::negate_flag(arg.flag);
+            if (!negated_flag.empty()) {
+                std::string negated_key = conflict_key(negated_flag);
+                target.erase(std::remove_if(target.begin(), target.end(),
+                                            [&](const ParsedArg& existing) {
+                                                return is_binary_generic_arg(existing) &&
+                                                       conflict_key(existing.flag) == negated_key;
+                                            }),
+                             target.end());
+            }
         }
         target.push_back(arg);
     }
