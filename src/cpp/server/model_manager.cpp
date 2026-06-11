@@ -68,8 +68,19 @@ static void ensure_create_directories(const fs::path& p) {
     std::wstring wpath = p.wstring();
     DWORD result = SHCreateDirectoryExW(NULL, wpath.c_str(), NULL);
     if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
+        char error_msg[256];
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            result,
+            0,
+            error_msg,
+            sizeof(error_msg),
+            nullptr
+        );
+        std::string desc = error_msg[0] ? error_msg : "unknown error";
         throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
-                                 "': " + ec.message());
+                                 "': " + desc);
     }
 }
 #else
