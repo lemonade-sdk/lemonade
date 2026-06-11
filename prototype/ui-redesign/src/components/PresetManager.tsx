@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api, { LoadedModel, ModelInfo } from '../api';
+import { capabilityIcon } from '../modelCapabilities';
 import {
   CAPABILITY_LABELS,
+  DEFAULT_PRESET,
+  KNOWN_CAPABILITIES,
   Capability,
   Preset,
   PresetRecipe,
@@ -12,6 +15,8 @@ import {
   labelsFor,
   loadApplied,
   loadUserPresets,
+  normalizePresetCapabilities,
+  presetIcon,
   presetLabelsFor,
   sanitizePreset,
   saveApplied,
@@ -42,13 +47,62 @@ const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   kokoro: [],
 };
 
-const CAPABILITIES: Capability[] = ['chat', 'omni', 'image', 'transcription', 'tts', 'embedding', 'reranking', 'vision', 'code'];
+const CAPABILITIES: Capability[] = ['all', 'chat', 'image'];
+
+interface AutoOptRun {
+  id: string;
+  name: string;
+  date: string;
+  lemonadeVersion: string;
+  summary: string;
+  args: string;
+  backends: { name: string; version: string; device: string }[];
+}
+
+const AUTO_OPT_RUNS: AutoOptRun[] = [
+  {
+    id: 'autoopt-1',
+    name: 'AutoOpt #1',
+    date: '2026-06-11',
+    lemonadeVersion: '0.6.0-prototype',
+    summary: 'Balanced local baseline for llama.cpp on mixed CPU/GPU machines.',
+    args: '--threads auto --batch-size 512 --ubatch-size 256 --ctx-size 4096',
+    backends: [
+      { name: 'llama.cpp', version: 'b5412', device: 'CPU baseline' },
+      { name: 'Vulkan', version: '1.3 safe path', device: 'GPU if available' },
+    ],
+  },
+  {
+    id: 'autoopt-2',
+    name: 'AutoOpt #2',
+    date: '2026-06-09',
+    lemonadeVersion: '0.6.0-prototype',
+    summary: 'Low-memory fallback that favors predictable CPU execution.',
+    args: '--threads auto --batch-size 256 --ubatch-size 128 --ctx-size 4096 --n-gpu-layers 0',
+    backends: [
+      { name: 'llama.cpp', version: 'b5408', device: 'CPU' },
+    ],
+  },
+  {
+    id: 'autoopt-3',
+    name: 'AutoOpt #3',
+    date: '2026-06-05',
+    lemonadeVersion: '0.5.9',
+    summary: 'Throughput-oriented llama.cpp draft for larger VRAM systems.',
+    args: '--threads auto --batch-size 1024 --ubatch-size 512 --ctx-size 8192 --n-gpu-layers 99',
+    backends: [
+      { name: 'llama.cpp', version: 'b5389', device: 'GPU preferred' },
+      { name: 'CUDA/Vulkan', version: 'runtime default', device: 'Auto by Lemonade' },
+    ],
+  },
+];
 
 function modelName(model: ModelInfo): string {
   return model.id || model.name || model.display_name || 'unknown';
 }
 
 function capChipClass(cap: Capability): string {
+  if (cap === 'all') return 'cap-chip--all';
   if (cap === 'transcription') return 'cap-chip--audio';
   if (cap === 'embedding') return 'cap-chip--embed';
   if (cap === 'reranking') return 'cap-chip--rerank';
@@ -178,6 +232,9 @@ function paramsPreview(preset: Preset): string {
   const cap = primaryCap(preset);
   const ro = preset.recipe_options || {};
   const sp = preset.sampling || {};
+  if (cap === 'all') {
+    return `temp ${sp.temperature != null ? sp.temperature.toFixed(2) : '—'} · ctx ${ro.ctx_size ?? '—'} · ${ro.steps ?? '—'} steps`;
+  }
   if (cap === 'image') {
     return `${ro.steps ?? '—'} steps · cfg ${ro.cfg_scale != null ? ro.cfg_scale.toFixed(1) : '—'}`;
   }
@@ -187,9 +244,25 @@ function paramsPreview(preset: Preset): string {
   return 'client-side preset';
 }
 
+function hasManualArgs(preset: Pick<Preset, 'recipe_options'>): boolean {
+  const ro = preset.recipe_options || {};
+  return Boolean(
+    String(ro.llamacpp_args || '').trim()
+    || String(ro.sdcpp_args || '').trim()
+    || String(ro.vllm_args || '').trim()
+    || String(ro.flm_args || '').trim()
+    || String(ro.whispercpp_args || '').trim()
+    || String(ro.moonshine_args || '').trim()
+  );
+}
+
+const PresetIcon: React.FC<{ preset: Preset; className?: string }> = ({ preset, className }) => (
+  <span className={className || 'preset-icon'} aria-hidden="true">{presetIcon(preset)}</span>
+);
+
 const CapabilityChip: React.FC<{ cap: Capability; small?: boolean; on?: boolean; off?: boolean }> = ({ cap, small, on, off }) => (
   <span className={`cap-chip ${capChipClass(cap)}${small ? ' cap-chip--sm' : ''}${on ? ' is-on' : ''}${off ? ' is-off' : ''}`}>
-    <span className="cap-chip__dot" aria-hidden="true" />
+    <span className="cap-chip__icon" aria-hidden="true">{capabilityIcon(cap)}</span>
     {CAPABILITY_LABELS[cap] || cap}
   </span>
 );
@@ -220,6 +293,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [importError, setImportError] = useState<string | null>(null);
   const [applyTarget, setApplyTarget] = useState('');
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
+  const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
+  const [selectedAutoRunId, setSelectedAutoRunId] = useState(AUTO_OPT_RUNS[0]?.id || '');
 
   useEffect(() => { saveUserPresets(userPresets); }, [userPresets]);
   useEffect(() => { saveApplied(appliedPresets); }, [appliedPresets]);
@@ -232,7 +307,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     return () => { alive = false; };
   }, []);
 
-  const allPresets = useMemo(() => [...STARTERS, ...userPresets], [userPresets]);
+  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
   const lookupPreset = useCallback((id: string) => allPresets.find(p => p.id === id) || null, [allPresets]);
 
   const allModelOptions = useMemo(() => {
@@ -261,6 +336,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 },
       engine_hint: 'auto',
       starter: false,
+      auto_opt_enabled: true,
+      auto_opt_run_id: AUTO_OPT_RUNS[0]?.id || null,
     };
     setUserPresets(prev => [newPreset, ...prev]);
     openSlideover(newPreset);
@@ -310,12 +387,13 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   }, [importPresets]);
 
   const handleClone = useCallback((preset: Preset) => {
+    const clonedId = `u-${Date.now()}`;
     const cloned: Preset = {
       ...preset,
-      id: `u-${Date.now()}`,
+      id: clonedId,
       name: `${preset.name} (copy)`,
       starter: false,
-      applies_to: [...preset.applies_to],
+      applies_to: normalizePresetCapabilities(clonedId, preset.applies_to),
       recipe_options: { ...preset.recipe_options },
       sampling: { ...preset.sampling },
     };
@@ -356,13 +434,49 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
     });
   }, []);
 
+  const selectedAutoRun = AUTO_OPT_RUNS.find(run => run.id === selectedAutoRunId) || AUTO_OPT_RUNS[0];
+
   return (
     <>
-      <section className="recipes" data-view="presets">
+      <section className={`recipes recipes--with-rail${autoRailCollapsed ? ' context-rail-collapsed' : ''}`} data-view="presets">
+        <aside className={`context-rail context-rail--autoopt${autoRailCollapsed ? ' is-collapsed' : ''}`} aria-label="AutoOpt runs">
+          <div className="context-rail__head">
+            <button type="button" className="context-rail__toggle" onClick={() => setAutoRailCollapsed(v => !v)} aria-label="Toggle AutoOpt rail">☰</button>
+            <div className="context-rail__title-wrap">
+              <span className="context-rail__eyebrow">Auto Optimizer</span>
+              <strong className="context-rail__title">Runs</strong>
+            </div>
+          </div>
+          <div className="context-rail__body">
+            <p className="context-rail__hint">Select a safe local optimization result and attach it to editable presets. Manual args override AutoOpt.</p>
+            <div className="auto-run-list">
+              {AUTO_OPT_RUNS.map(run => (
+                <article key={run.id} className={`auto-run-card${selectedAutoRunId === run.id ? ' is-active' : ''}`}>
+                  <button type="button" className="auto-run-card__main" onClick={() => setSelectedAutoRunId(run.id)}>
+                    <span className="auto-run-card__icon">⚙️</span>
+                    <span className="auto-run-card__text">
+                      <strong>{run.name}</strong>
+                      <span>{run.date} · Lemonade {run.lemonadeVersion}</span>
+                    </span>
+                  </button>
+                  <details className="auto-run-card__details" onClick={e => e.stopPropagation()}>
+                    <summary>Backend details</summary>
+                    <p>{run.summary}</p>
+                    <code>{run.args}</code>
+                    <ul>
+                      {run.backends.map(backend => <li key={`${run.id}-${backend.name}-${backend.version}`}>{backend.name} {backend.version} · {backend.device}</li>)}
+                    </ul>
+                  </details>
+                </article>
+              ))}
+            </div>
+          </div>
+        </aside>
+        <div className="recipes__main">
         <div className="recipes__head">
           <div className="recipes__title">
             <h1>Presets</h1>
-            <span className="recipes__title-sub" data-recipes-count>{STARTERS.length} starters · {userPresets.length} yours</span>
+            <span className="recipes__title-sub" data-recipes-count>Default · {STARTERS.length} starters · {userPresets.length} yours</span>
           </div>
           <div className="recipes__actions">
             <button className="btn btn--primary" onClick={handleNewPreset}>+ New Preset</button>
@@ -381,21 +495,36 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
         <div className="recipes__body">
           <p className="recipes__lede">
             Presets are saved ways to use a model. They apply to capabilities like <strong>Chat</strong> or <strong>Image</strong>,
-            can stage recipe options for the next explicit model load, and pass chat sampling defaults per request.
+            can stage recipe options for the next explicit model load, pass chat sampling defaults per request, and optionally follow an AutoOpt run.
           </p>
           {importError && <p className="preset-error" role="alert">⚠ {importError}</p>}
+
+
+          {selectedAutoRun && (
+            <div className="autoopt-summary">
+              <div>
+                <span className="autoopt-summary__kicker">Selected AutoOpt result</span>
+                <strong>{selectedAutoRun.name}</strong>
+                <span>{selectedAutoRun.summary}</span>
+              </div>
+              <code>{selectedAutoRun.args}</code>
+            </div>
+          )}
 
           <div className="zone">
             <div className="zone__head">
               <span className="zone__dot zone__dot--ready" />
               <span className="zone__title">Bundled starters</span>
-              <span className="zone__count">{STARTERS.length}</span>
+              <span className="zone__count">{STARTERS.length + 1}</span>
               <span className="zone__rule" />
             </div>
-            <div className="recipe-grid" data-recipe-grid="starters">
-              {STARTERS.map(preset => (
-                <PresetCard key={preset.id} preset={preset} onClick={() => openSlideover(preset)} onClone={() => handleClone(preset)} />
-              ))}
+            <div className="recipe-grid recipe-grid--starters-combined">
+              <PresetCard preset={DEFAULT_PRESET} onClick={() => openSlideover(DEFAULT_PRESET)} onClone={() => handleClone(DEFAULT_PRESET)} />
+              <div className="recipe-grid__contents" data-recipe-grid="starters">
+                {STARTERS.map(preset => (
+                  <PresetCard key={preset.id} preset={preset} onClick={() => openSlideover(preset)} onClone={() => handleClone(preset)} />
+                ))}
+              </div>
             </div>
           </div>
 
@@ -457,6 +586,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             </div>
           )}
         </div>
+        </div>
       </section>
 
       <div className={`scrim${selectedPreset ? ' is-open' : ''}`} onClick={() => setSelectedPreset(null)} />
@@ -474,6 +604,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             onExport={handleExport}
             onDelete={handleDelete}
             onClose={() => setSelectedPreset(null)}
+            autoRuns={AUTO_OPT_RUNS}
           />
         )}
       </aside>
@@ -489,7 +620,7 @@ const PresetCard: React.FC<{
   onExport?: () => void;
 }> = ({ preset, onClick, onClone, onApply, onExport }) => (
   <article
-    className="recipe-card"
+    className={`recipe-card${hasManualArgs(preset) ? ' recipe-card--manual' : ''}`}
     data-recipe-id={preset.id}
     tabIndex={0}
     role="button"
@@ -498,7 +629,7 @@ const PresetCard: React.FC<{
     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
   >
     {preset.starter && <span className="starter-badge">Starter</span>}
-    <div className="recipe-card__head"><PhaseGlyph /><span className="recipe-card__name">{preset.name}</span></div>
+    <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
     <p className="recipe-card__desc">{preset.description}</p>
     <div className="cap-chip-list cap-chip-list--card" title="Applies to">
       {presetLabelsFor(preset).map(cap => <CapabilityChip key={cap} cap={cap} small />)}
@@ -532,7 +663,8 @@ const SlideoverContent: React.FC<{
   onExport: (preset: Preset) => void;
   onDelete: (preset: Preset) => void;
   onClose: () => void;
-}> = ({ preset, models, applyTarget, onApplyTargetChange, onApply, applySuccess, onSave, onClone, onExport, onDelete, onClose }) => {
+  autoRuns: AutoOptRun[];
+}> = ({ preset, models, applyTarget, onApplyTargetChange, onApply, applySuccess, onSave, onClone, onExport, onDelete, onClose, autoRuns }) => {
   const isReadOnly = preset.starter;
   const ro = preset.recipe_options || {};
   const sp = preset.sampling || {};
@@ -541,6 +673,7 @@ const SlideoverContent: React.FC<{
   const [description, setDescription] = useState(preset.description);
   const [appliesTo, setAppliesTo] = useState<Capability[]>(preset.applies_to);
   const [engineHint, setEngineHint] = useState<PresetRecipe>(preset.engine_hint || 'auto');
+  const [autoOptRunId, setAutoOptRunId] = useState(preset.auto_opt_run_id || autoRuns[0]?.id || '');
   const [ctxSize, setCtxSize] = useState(parseContextSize(ro.ctx_size));
   const [steps, setSteps] = useState(ro.steps ?? 20);
   const [cfgScale, setCfgScale] = useState(ro.cfg_scale ?? 7.0);
@@ -561,8 +694,9 @@ const SlideoverContent: React.FC<{
     const nextSp = preset.sampling || {};
     setName(preset.name);
     setDescription(preset.description);
-    setAppliesTo(preset.applies_to);
+    setAppliesTo(normalizePresetCapabilities(preset.id, preset.applies_to));
     setEngineHint(preset.engine_hint || 'auto');
+    setAutoOptRunId(preset.auto_opt_run_id || autoRuns[0]?.id || '');
     setCtxSize(parseContextSize(nextRo.ctx_size));
     setSteps(nextRo.steps ?? 20);
     setCfgScale(nextRo.cfg_scale ?? 7.0);
@@ -577,18 +711,27 @@ const SlideoverContent: React.FC<{
     setTopK(nextSp.top_k ?? 40);
     setRepeatPenalty(nextSp.repeat_penalty ?? 1.05);
     setSaved(false);
-  }, [preset]);
+  }, [preset, autoRuns]);
+
+  const hasAllCapability = appliesTo.includes('all');
+  const manualArgsActive = Boolean(
+    ((hasAllCapability || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) && llamacppArgs.trim())
+    || ((hasAllCapability || appliesTo.includes('image')) && sdcppArgs.trim())
+  );
+  const selectedAutoRun = autoRuns.find(run => run.id === autoOptRunId) || autoRuns[0];
 
   const currentPreset = useMemo<Preset>(() => ({
     ...preset,
     name,
     description,
-    applies_to: appliesTo.length > 0 ? appliesTo : ['chat'],
+    applies_to: normalizePresetCapabilities(preset.id, appliesTo),
     engine_hint: engineHint,
     recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
     sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
     starter: false,
-  }), [preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty]);
+    auto_opt_enabled: !manualArgsActive,
+    auto_opt_run_id: manualArgsActive ? null : (autoOptRunId || autoRuns[0]?.id || null),
+  }), [preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, manualArgsActive, autoOptRunId, autoRuns]);
 
   const selectedModel = models.find(m => modelName(m) === applyTarget);
   const selectedModelContextLimit = contextLimitForModel(selectedModel);
@@ -599,15 +742,13 @@ const SlideoverContent: React.FC<{
     if (ctxSize > ctxSliderMax) setCtxSize(ctxSliderMax);
   }, [ctxSize, ctxSliderMax]);
   const validKeys = RECIPE_KEYS[engineHint] || [];
-  const hasChat = appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
-  const hasImage = appliesTo.includes('image');
+  const hasAll = appliesTo.includes('all');
+  const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+  const hasImage = hasAll || appliesTo.includes('image');
 
   const toggleCap = (cap: Capability) => {
     if (isReadOnly) return;
-    setAppliesTo(prev => {
-      const next = prev.includes(cap) ? prev.filter(c => c !== cap) : [...prev, cap];
-      return next.length > 0 ? next : prev;
-    });
+    setAppliesTo([cap]);
   };
 
   const handleSave = () => {
@@ -621,10 +762,12 @@ const SlideoverContent: React.FC<{
       <div className="slideover__head">
         <div className="slideover__top">
           <div className="slideover__title-wrap">
-            <PhaseGlyph size="lg" />
-            {isReadOnly ? <h2 className="slideover__title" data-recipe-name>{preset.name}</h2> : (
-              <input className="slideover__title-input" value={name} onChange={e => setName(e.target.value)} placeholder="Preset name" data-recipe-name />
-            )}
+            <div className="slideover__title-with-icon">
+              <PresetIcon preset={preset} className="preset-icon preset-icon--lg" />
+              {isReadOnly ? <h2 className="slideover__title" data-recipe-name>{preset.name}</h2> : (
+                <input className="slideover__title-input" value={name} onChange={e => setName(e.target.value)} placeholder="Preset name" data-recipe-name />
+              )}
+            </div>
           </div>
           <button className="slideover__close" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -684,16 +827,31 @@ const SlideoverContent: React.FC<{
           )}
         </div>
 
+        <div className="slideover__section preset-autoopt">
+          <h3>AutoOpt</h3>
+          <p className="slideover__hint">Default is AutoOpt. Entering manual raw args below disables AutoOpt for this preset until those args are cleared.</p>
+          <div className="field"><label className="field__label">AutoOpt result</label><div className="field__row"><select className="select" value={autoOptRunId} disabled={isReadOnly || manualArgsActive} onChange={e => setAutoOptRunId(e.target.value)}>{autoRuns.map(run => <option key={run.id} value={run.id}>{run.name} · {run.date} · Lemonade {run.lemonadeVersion}</option>)}</select></div></div>
+          {selectedAutoRun && <p className="preset-autoopt__args"><span>{manualArgsActive ? 'Manual override active' : 'AutoOpt active'}</span><code>{manualArgsActive ? 'Clear manual args to re-enable AutoOpt.' : selectedAutoRun.args}</code></p>}
+        </div>
+
         <details className="slideover__section preset-advanced">
           <summary>Advanced engine options</summary>
           <p className="slideover__hint">Optional backend hints and raw recipe_options keys. Closed by default.</p>
           <div className="field"><label className="field__label">Engine hint</label><div className="field__row"><select className="select" value={engineHint} disabled={isReadOnly} onChange={e => setEngineHint(e.target.value as PresetRecipe)}>{(Object.keys(ENGINE_LABELS) as PresetRecipe[]).map(r => <option key={r} value={r}>{ENGINE_LABELS[r]}</option>)}</select></div></div>
           <p className="preset-valid-keys">Valid recipe_options keys: {validKeys.length ? validKeys.join(', ') : 'none'}</p>
-          <div className="field"><label className="field__label">llamacpp_backend</label><div className="field__row"><input className="input" value={llamacppBackend} disabled={isReadOnly} placeholder="auto" onChange={e => setLlamacppBackend(e.target.value)} /></div></div>
-          <div className="field"><label className="field__label">llamacpp_device</label><div className="field__row"><input className="input" value={llamacppDevice} disabled={isReadOnly} placeholder="e.g. Vulkan0" onChange={e => setLlamacppDevice(e.target.value)} /></div></div>
-          <div className="field"><label className="field__label">llamacpp_args</label><div className="field__row"><input className="input" value={llamacppArgs} disabled={isReadOnly} placeholder="e.g. --n-gpu-layers 99" onChange={e => setLlamacppArgs(e.target.value)} /></div></div>
-          <div className="field"><label className="field__label">Image width × height</label><div className="field__row"><input type="number" className="input input--narrow" value={imgWidth} disabled={isReadOnly} onChange={e => setImgWidth(Number(e.target.value))} /><span style={{ color: 'var(--text-tertiary)' }}>×</span><input type="number" className="input input--narrow" value={imgHeight} disabled={isReadOnly} onChange={e => setImgHeight(Number(e.target.value))} /></div></div>
-          <div className="field"><label className="field__label">sdcpp_args</label><div className="field__row"><input className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
+          {hasChat && (
+            <>
+              <div className="field"><label className="field__label">llamacpp_backend</label><div className="field__row"><input className="input" value={llamacppBackend} disabled={isReadOnly} placeholder="auto" onChange={e => setLlamacppBackend(e.target.value)} /></div></div>
+              <div className="field"><label className="field__label">llamacpp_device</label><div className="field__row"><input className="input" value={llamacppDevice} disabled={isReadOnly} placeholder="e.g. Vulkan0" onChange={e => setLlamacppDevice(e.target.value)} /></div></div>
+              <div className="field"><label className="field__label">llamacpp_args</label><div className="field__row"><input className="input" value={llamacppArgs} disabled={isReadOnly} placeholder="e.g. --n-gpu-layers 99" onChange={e => setLlamacppArgs(e.target.value)} /></div></div>
+            </>
+          )}
+          {hasImage && (
+            <>
+              <div className="field"><label className="field__label">Image width × height</label><div className="field__row"><input type="number" className="input input--narrow" value={imgWidth} disabled={isReadOnly} onChange={e => setImgWidth(Number(e.target.value))} /><span style={{ color: 'var(--text-tertiary)' }}>×</span><input type="number" className="input input--narrow" value={imgHeight} disabled={isReadOnly} onChange={e => setImgHeight(Number(e.target.value))} /></div></div>
+              <div className="field"><label className="field__label">sdcpp_args</label><div className="field__row"><input className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
+            </>
+          )}
         </details>
 
         <div className="slideover__section">
@@ -743,22 +901,27 @@ function buildRecipeOptions(
   sdcppArgs: string,
 ): RecipeOptions {
   const opts: RecipeOptions = {};
-  if (appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) opts.ctx_size = ctxSize;
-  if (appliesTo.includes('image')) {
+  const hasAll = appliesTo.includes('all');
+  const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+  const hasImage = hasAll || appliesTo.includes('image');
+  if (hasChat) {
+    opts.ctx_size = ctxSize;
+    if (llamacppBackend) opts.llamacpp_backend = llamacppBackend;
+    if (llamacppDevice) opts.llamacpp_device = llamacppDevice;
+    if (llamacppArgs) opts.llamacpp_args = llamacppArgs;
+  }
+  if (hasImage) {
     opts.steps = steps;
     opts.cfg_scale = cfgScale;
     opts.width = imgWidth;
     opts.height = imgHeight;
+    if (sdcppArgs) opts.sdcpp_args = sdcppArgs;
   }
-  if (llamacppBackend) opts.llamacpp_backend = llamacppBackend;
-  if (llamacppDevice) opts.llamacpp_device = llamacppDevice;
-  if (llamacppArgs) opts.llamacpp_args = llamacppArgs;
-  if (sdcppArgs) opts.sdcpp_args = sdcppArgs;
   return opts;
 }
 
 function buildSampling(appliesTo: Capability[], temperature: number, topP: number, topK: number, repeatPenalty: number): SamplingParams {
-  if (!appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) return {};
+  if (!appliesTo.includes('all') && !appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision')) return {};
   return { temperature, top_p: topP, top_k: topK, repeat_penalty: repeatPenalty };
 }
 

@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api, { friendlyErrorMessage } from '../api';
+import {
+  DEFAULT_PRESET,
+  PRESET_STORE_EVENT,
+  Capability,
+  Preset,
+  STARTERS,
+  loadBackendApplied,
+  loadUserPresets,
+  presetIcon,
+  presetSupportsCapability,
+  saveBackendApplied,
+} from '../presetStore';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -115,6 +127,36 @@ const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS'] as const;
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
 
+function backendKey(recipe: string, backend: string): string {
+  return `${recipe}:${backend}`;
+}
+
+function backendCapabilitiesForRecipe(recipe: string): Capability[] {
+  switch (recipe) {
+    case 'sd-cpp': return ['image'];
+    case 'whispercpp':
+    case 'moonshine': return ['transcription'];
+    case 'kokoro': return ['tts'];
+    case 'llamacpp':
+    case 'flm':
+    case 'ryzenai-llm':
+    case 'vllm':
+    default: return ['chat', 'code', 'vision', 'omni'];
+  }
+}
+
+function presetCompatibleWithBackend(preset: Preset, key: string): boolean {
+  if (!key) return true;
+  const [recipe] = key.split(':');
+  return backendCapabilitiesForRecipe(recipe).some(cap => presetSupportsCapability(preset, cap));
+}
+
+
+function backendLabelFromKey(key: string): string {
+  const [recipe, backend] = key.split(':');
+  return `${RECIPE_LABELS[recipe] || recipe} · ${backend || 'auto'}`;
+}
+
 /* ── Helpers ─────────────────────────────────────────────── */
 
 function stateBadge(state: BackendInfo['state']): { label: string; cls: string } {
@@ -212,6 +254,23 @@ const BackendManager: React.FC = () => {
   const [showTech, setShowTech] = useState(false);
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
+  const [backendPresets, setBackendPresets] = useState<Record<string, string>>(loadBackendApplied);
+  const [presetRailCollapsed, setPresetRailCollapsed] = useState(false);
+  const [selectedBackendKey, setSelectedBackendKey] = useState('');
+  const [selectedRailPresetId, setSelectedRailPresetId] = useState(DEFAULT_PRESET.id);
+  const [presetRailHovered, setPresetRailHovered] = useState(false);
+  const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
+  const [presetNotice, setPresetNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const reloadPresetState = () => {
+      setUserPresets(loadUserPresets());
+      setBackendPresets(loadBackendApplied());
+    };
+    window.addEventListener(PRESET_STORE_EVENT, reloadPresetState);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadPresetState);
+  }, []);
 
   /* ── Fetch system-info ────────────────────────────────── */
 
@@ -239,7 +298,7 @@ const BackendManager: React.FC = () => {
   }, []);
 
   const handleInstall = useCallback(async (recipe: string, backend: string, isUpdate = false, skipConfirm = false) => {
-    const key = `${recipe}:${backend}`;
+    const key = backendKey(recipe, backend);
     const actionLabel = isUpdate ? 'Updating' : 'Installing';
     const doneLabel = isUpdate ? 'updated' : 'installed';
     if (!skipConfirm) {
@@ -287,7 +346,7 @@ const BackendManager: React.FC = () => {
     const ok = window.confirm(`Uninstall ${RECIPE_LABELS[recipe] || recipe} · ${backend}? This removes local backend runtime files.`);
     if (!ok) return;
     try {
-      setInstalling(`${recipe}:${backend}`);
+      setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
       toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
       fetchInfo();
@@ -368,6 +427,52 @@ const BackendManager: React.FC = () => {
     return count;
   }, [sysInfo]);
 
+  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
+
+  const activePresetForBackendKey = useCallback((key: string): Preset => {
+    const presetId = backendPresets[key] || DEFAULT_PRESET.id;
+    const preset = allPresets.find(p => p.id === presetId) || DEFAULT_PRESET;
+    return presetCompatibleWithBackend(preset, key) ? preset : DEFAULT_PRESET;
+  }, [allPresets, backendPresets]);
+
+  const selectedRailPreset = allPresets.find(p => p.id === selectedRailPresetId) || DEFAULT_PRESET;
+  const selectedBackendPreset = selectedBackendKey ? activePresetForBackendKey(selectedBackendKey) : null;
+  const railSummaryPreset = selectedBackendPreset || selectedRailPreset;
+  const highlightedPresetId = presetRailHovered ? (hoveredRailPresetId || railSummaryPreset.id) : null;
+
+  const allBackendKeys = useMemo(() => {
+    if (!sysInfo?.recipes) return [] as string[];
+    const keys: string[] = [];
+    for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
+      for (const backend of Object.keys(recipeInfo.backends)) keys.push(backendKey(recipe, backend));
+    }
+    return keys.sort((a, b) => backendLabelFromKey(a).localeCompare(backendLabelFromKey(b)));
+  }, [sysInfo]);
+
+  const backendsUsingSelectedPreset = useMemo(
+    () => allBackendKeys.filter(key => activePresetForBackendKey(key).id === railSummaryPreset.id),
+    [allBackendKeys, activePresetForBackendKey, railSummaryPreset.id],
+  );
+
+  const handlePresetRailPick = useCallback((preset: Preset) => {
+    setSelectedRailPresetId(preset.id);
+    if (!selectedBackendKey) return;
+    if (!presetCompatibleWithBackend(preset, selectedBackendKey)) {
+      setPresetNotice(`“${preset.name}” does not apply to ${backendLabelFromKey(selectedBackendKey)}.`);
+      window.setTimeout(() => setPresetNotice(null), 2800);
+      return;
+    }
+    setBackendPresets(prev => {
+      const next = { ...prev };
+      if (preset.id === DEFAULT_PRESET.id) delete next[selectedBackendKey];
+      else next[selectedBackendKey] = preset.id;
+      saveBackendApplied(next);
+      return next;
+    });
+    setPresetNotice(`${backendLabelFromKey(selectedBackendKey)} → ${preset.name}`);
+    window.setTimeout(() => setPresetNotice(null), 2200);
+  }, [selectedBackendKey]);
+
   /* ── Device detail row ────────────────────────────────── */
 
   const deviceDetail = useCallback((deviceKey: DeviceKey): string => {
@@ -381,6 +486,66 @@ const BackendManager: React.FC = () => {
       default: return '';
     }
   }, [sysInfo]);
+
+  const renderPresetRail = () => (
+    <aside
+      className={`context-rail context-rail--presets${presetRailCollapsed ? ' is-collapsed' : ''}`}
+      aria-label="Backend preset rail"
+      onMouseEnter={() => setPresetRailHovered(true)}
+      onMouseLeave={() => { setPresetRailHovered(false); setHoveredRailPresetId(null); }}
+    >
+      <div className="context-rail__head">
+        <button type="button" className="context-rail__toggle" onClick={() => setPresetRailCollapsed(v => !v)} aria-label="Toggle backend preset rail">☰</button>
+        <div className="context-rail__title-wrap">
+          <span className="context-rail__eyebrow">By backend</span>
+          <strong className="context-rail__title">{selectedBackendKey ? backendLabelFromKey(selectedBackendKey) : 'Presets'}</strong>
+        </div>
+      </div>
+      <div className="context-rail__body">
+        <div className="preset-rail-summary">
+          <span className="preset-rail-summary__label">Selected preset</span>
+          <strong><span aria-hidden="true">{presetIcon(railSummaryPreset)}</span> {railSummaryPreset.name}</strong>
+          <span>{backendsUsingSelectedPreset.length} backend{backendsUsingSelectedPreset.length === 1 ? '' : 's'} assigned</span>
+        </div>
+        <p className="context-rail__hint">
+          {selectedBackendKey ? 'Click a preset to connect it with this backend baseline.' : 'Hover or pick a preset to outline matching backends.'}
+        </p>
+        <div className="preset-rail-list">
+          {allPresets.map(preset => {
+            const isActive = selectedBackendKey ? selectedBackendPreset?.id === preset.id : selectedRailPreset.id === preset.id;
+            const disabled = Boolean(selectedBackendKey && !presetCompatibleWithBackend(preset, selectedBackendKey));
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                className={`preset-rail-card${isActive ? ' is-active' : ''}${disabled ? ' is-disabled' : ''}`}
+                onClick={() => handlePresetRailPick(preset)}
+                onMouseEnter={() => setHoveredRailPresetId(preset.id)}
+                onFocus={() => setHoveredRailPresetId(preset.id)}
+                onBlur={() => setHoveredRailPresetId(null)}
+                title={disabled ? 'Incompatible with selected backend capability' : preset.description}
+              >
+                <span className="preset-rail-card__icon">{isActive ? '✓' : presetIcon(preset)}</span>
+                <span className="preset-rail-card__text">
+                  <strong>{preset.name}</strong>
+                  <span>{preset.description || 'Custom local preset'}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {selectedBackendKey && selectedBackendPreset && (
+          <div className="preset-rail-summary preset-rail-summary--backend">
+            <span className="preset-rail-summary__label">Selected backend</span>
+            <strong>{backendLabelFromKey(selectedBackendKey)}</strong>
+            <span><span aria-hidden="true">{presetIcon(selectedBackendPreset)}</span> {selectedBackendPreset.name}</span>
+          </div>
+        )}
+        {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
+      </div>
+    </aside>
+  );
+
 
   /* ── Render ───────────────────────────────────────────── */
 
@@ -398,7 +563,9 @@ const BackendManager: React.FC = () => {
   }
 
   return (
-    <section className={`backends${showTech ? ' show-tech' : ''}`} data-view="backends">
+    <section className={`backends backends--with-rail${showTech ? ' show-tech' : ''}${presetRailCollapsed ? ' context-rail-collapsed' : ''}`} data-view="backends">
+      {renderPresetRail()}
+      <div className="backends__main">
       <div className="backends__head">
         <div className="backends__title">
           <h1>Backends</h1>
@@ -485,18 +652,24 @@ const BackendManager: React.FC = () => {
                       <td key={cap}>
                         {entries.map(({ recipe, backend, info }) => {
                           const badge = stateBadge(info.state);
-                          const isInstalling = installing === `${recipe}:${backend}`;
+                          const cellKey = backendKey(recipe, backend);
+                          const isInstalling = installing === cellKey;
+                          const activePreset = activePresetForBackendKey(cellKey);
+                          const isSelectedBackend = selectedBackendKey === cellKey;
+                          const isPresetHighlighted = Boolean(highlightedPresetId && activePreset.id === highlightedPresetId);
                           return (
-                            <div className="cell" key={`${recipe}-${backend}`}
-                              data-cell={`${recipe}:${backend}`}>
+                            <div className={`cell cell--selectable${isSelectedBackend ? ' is-selected' : ''}${isPresetHighlighted ? ' cell--preset-highlight' : ''}`} key={`${recipe}-${backend}`}
+                              data-cell={cellKey}
+                              onClick={() => setSelectedBackendKey(current => current === cellKey ? '' : cellKey)}>
                               <span className="cell__name">
                                 {RECIPE_LABELS[recipe] || recipe}
                                 {backend !== 'cpu' && backend !== 'npu' && ` · ${backend}`}
                               </span>
                               <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
                               {showTech && info.version && <span className="cell__sha">{info.version}</span>}
+                              <span className="cell__preset"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
                               {showTech && info.message && <span className="cell__message">{info.message}</span>}
-                              <div className="cell__actions">
+                              <div className="cell__actions" onClick={e => e.stopPropagation()}>
                                 {(info.state === 'installable') && (
                                   <button
                                     className="cell__swap"
@@ -541,6 +714,7 @@ const BackendManager: React.FC = () => {
       )}
 
       {toastMsg && <div className="backends__toast" data-backends-toast>{toastMsg}</div>}
+      </div>
     </section>
   );
 };

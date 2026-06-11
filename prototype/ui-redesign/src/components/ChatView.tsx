@@ -25,6 +25,7 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
+import { PRESET_STORE_EVENT, activePresetForModel, presetIcon } from '../presetStore';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -526,6 +527,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [liveError, setLiveError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
+  const [presetVersion, setPresetVersion] = useState(0);
   const [railExpanded, setRailExpanded] = useState(true);
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
@@ -595,6 +597,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  useEffect(() => {
+    const updatePresetVersion = () => setPresetVersion(v => v + 1);
+    window.addEventListener(PRESET_STORE_EVENT, updatePresetVersion);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, updatePresetVersion);
+  }, []);
+  const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
+
   const supportsRealtimeAudio = useMemo(
     () => currentCapability === 'audio'
       && canUseMicrophone()
@@ -1596,6 +1605,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           <span className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)}`}>
             {capabilityIcon(currentCapability)} {capabilityLabel(currentCapability)} mode
           </span>
+          {currentPreset && (
+            <span className="composer__preset-badge" title="Active preset for this model">
+              <span aria-hidden="true">{presetIcon(currentPreset)}</span> Preset: {currentPreset.name}
+            </span>
+          )}
           <button
             className={`composer__tools-toggle ${useTools ? 'composer__tools-toggle--active' : ''}`}
             onClick={() => {

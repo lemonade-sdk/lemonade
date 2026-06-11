@@ -103,19 +103,22 @@ const App: React.FC = () => {
   const [accountResetNonce, setAccountResetNonce] = useState(0);
   const viewRef = useRef<View>(view);
   const startupEmptyModelRouteRef = useRef(true);
+  const startupUserInteractionRef = useRef(false);
 
   useEffect(() => { viewRef.current = view; }, [view]);
 
-  const routeEmptyStartupToModels = useCallback((loaded: LoadedModel[]) => {
+  const routeEmptyStartupToModels = useCallback((loaded: LoadedModel[], knownModelCount: number) => {
     if (!startupEmptyModelRouteRef.current) return;
     startupEmptyModelRouteRef.current = false;
-    if (loaded.length === 0 && viewRef.current === 'chat') {
+    if (loaded.length !== 0 || knownModelCount <= 0 || viewRef.current !== 'chat') return;
+    window.setTimeout(() => {
+      if (startupUserInteractionRef.current || viewRef.current !== 'chat') return;
       setViewState('models');
       try { localStorage.setItem('lemonade_current_view', 'models'); } catch { /* ignore */ }
       if (window.location.hash !== '#/models') {
         window.history.replaceState(null, '', '#/models');
       }
-    }
+    }, 650);
   }, []);
 
   useEffect(() => {
@@ -185,6 +188,7 @@ const App: React.FC = () => {
   }, [accountSession.storageScope]);
 
   const setView = useCallback((v: View) => {
+    startupUserInteractionRef.current = true;
     setViewState(v);
     try { localStorage.setItem('lemonade_current_view', v); } catch { /* ignore */ }
     // Update hash without triggering hashchange (we're already setting state)
@@ -224,7 +228,7 @@ const App: React.FC = () => {
       const result = await api.refresh().catch(() => null);
       if (result) {
         applyLoadedModels(result.health.all_models_loaded);
-        routeEmptyStartupToModels(result.health.all_models_loaded);
+        routeEmptyStartupToModels(result.health.all_models_loaded, result.models.data.length);
       } else {
         refreshGlobalModels();
       }
@@ -253,7 +257,7 @@ const App: React.FC = () => {
   }, [setView]);
 
   return (
-    <div className="app">
+    <div className="app" onPointerDownCapture={() => { startupUserInteractionRef.current = true; }} onKeyDownCapture={() => { startupUserInteractionRef.current = true; }}>
       <header className="titlebar">
         <div className="titlebar__brand">
           <svg className="titlebar__lemon" width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

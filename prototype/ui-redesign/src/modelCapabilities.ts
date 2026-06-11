@@ -154,9 +154,20 @@ export function capabilityBadge(capability: ModelCapability): string {
   }
 }
 
-export function capabilityIcon(capability: ModelCapability): string {
+export function capabilityIcon(capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'): string {
   switch (capability) {
-    case 'chat': return '💬'; case 'omni': return '✦'; case 'image': return '🖼'; case 'audio': return '🎙'; case 'tts': return '🔊'; case 'embedding': return '🔢'; case 'reranking': return '🔀'; default: return '⚙';
+    case 'all': return '🌐';
+    case 'chat': return '💬';
+    case 'omni': return '✦';
+    case 'image': return '🖼';
+    case 'audio': return '🎙';
+    case 'transcription': return '🎙';
+    case 'tts': return '🔊';
+    case 'embedding': return '🔢';
+    case 'reranking': return '🔀';
+    case 'vision': return '👁';
+    case 'code': return '⌘';
+    default: return '⚙';
   }
 }
 

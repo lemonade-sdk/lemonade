@@ -79,6 +79,12 @@ function normalizeModels(data: unknown): ModelsData {
   return { data: Array.isArray(obj.data) ? obj.data as ModelInfo[] : [] };
 }
 
+function modelInfoKey(model: ModelInfo | null | undefined): string {
+  if (!model) return '';
+  return String((model as any).model_name || model.name || model.id || '').trim();
+}
+
+
 function blobFromDataUrl(dataUrl: string): Blob {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
   if (!match) throw new Error('Expected an image data URL for editing.');
@@ -648,8 +654,10 @@ class LemonadeAPI {
     return this._json<ModelInfo>(`/api/v1/models/${encodeURIComponent(id)}`);
   }
 
-  async loadModel(modelName: string, recipeOptions?: Record<string, unknown>): Promise<unknown> {
-    const stagedOptions = recipeOptionsForModel(modelName);
+  async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
+    const target = modelName.trim().toLowerCase();
+    const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo);
     const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();

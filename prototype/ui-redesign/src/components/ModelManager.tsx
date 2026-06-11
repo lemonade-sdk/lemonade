@@ -4,6 +4,7 @@ import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, cap
 import type { AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
+import { DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, isCompatible, loadApplied, loadUserPresets, presetIcon, saveApplied } from '../presetStore';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -288,6 +289,14 @@ function loadedIsVirtualOmniCollection(model: LoadedModel): boolean {
     && components.some(component => typeof component === 'string' && component.trim().length > 0);
 }
 
+function canShowPresetHighlight(m: ModelInfo | null | undefined): boolean {
+  if (!m) return true;
+  const recipe = String((m as any).recipe || '').toLowerCase();
+  if (recipe === 'collection.omni' || recipe === 'collection') return false;
+  if (isCollectionModel(m)) return false;
+  return capabilityFromModelInfo(m) !== 'omni';
+}
+
 type OmniComponentOptionSource = 'custom' | 'downloaded' | 'registered';
 
 interface OmniComponentOption {
@@ -533,25 +542,65 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [customError, setCustomError] = useState<string | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
 
+  const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
+  const [appliedPresets, setAppliedPresets] = useState<Record<string, string>>(loadApplied);
+  const [presetRailCollapsed, setPresetRailCollapsed] = useState(false);
+  const [selectedRailPresetId, setSelectedRailPresetId] = useState<string>(DEFAULT_PRESET.id);
+  const [presetRailHovered, setPresetRailHovered] = useState(false);
+  const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
+  const [presetNotice, setPresetNotice] = useState<string | null>(null);
+  const hasVisibleModelsRef = useRef(false);
+  const modelsSnapshotRef = useRef<string>('');
+  const loadedSnapshotRef = useRef<string>('');
+
+  useEffect(() => {
+    hasVisibleModelsRef.current = models.length > 0 || loadedModels.length > 0 || customModels.length > 0;
+  }, [models.length, loadedModels.length, customModels.length]);
+
   const reloadCustomModels = useCallback(() => {
     setCustomModels(loadCustomModels(accountSession.storageScope).map(customModelToModelInfo));
   }, [accountSession.storageScope]);
 
   useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
 
+  const reloadPresetState = useCallback(() => {
+    setUserPresets(loadUserPresets());
+    setAppliedPresets(loadApplied());
+  }, [accountSession.storageScope]);
+
+  useEffect(() => {
+    reloadPresetState();
+    window.addEventListener(PRESET_STORE_EVENT, reloadPresetState);
+    return () => window.removeEventListener(PRESET_STORE_EVENT, reloadPresetState);
+  }, [reloadPresetState]);
+
   const refresh = useCallback(async () => {
     if (!api.isConnected) {
       setModelsLoading(false);
-      setModels([]);
-      setLoadedModels([]);
+      if (!hasVisibleModelsRef.current) {
+        modelsSnapshotRef.current = '[]';
+        loadedSnapshotRef.current = '[]';
+        setModels([]);
+        setLoadedModels([]);
+      }
       return;
     }
-    setModelsLoading(true);
+    if (!hasVisibleModelsRef.current) setModelsLoading(true);
     try {
       const result = await api.refresh();
       if (result) {
-        setModels(Array.isArray(result.models.data) ? result.models.data.filter((m): m is ModelInfo => !!m && !!modelName(m)) : []);
-        setLoadedModels(Array.isArray(result.health.all_models_loaded) ? result.health.all_models_loaded.filter(m => !!m?.model_name) : []);
+        const nextModels = Array.isArray(result.models.data) ? result.models.data.filter((m): m is ModelInfo => !!m && !!modelName(m)) : [];
+        const nextLoaded = Array.isArray(result.health.all_models_loaded) ? result.health.all_models_loaded.filter(m => !!m?.model_name) : [];
+        const nextModelsSig = JSON.stringify(nextModels);
+        const nextLoadedSig = JSON.stringify(nextLoaded);
+        if (modelsSnapshotRef.current !== nextModelsSig) {
+          modelsSnapshotRef.current = nextModelsSig;
+          setModels(nextModels);
+        }
+        if (loadedSnapshotRef.current !== nextLoadedSig) {
+          loadedSnapshotRef.current = nextLoadedSig;
+          setLoadedModels(nextLoaded);
+        }
       }
     } catch (err) {
       console.warn('Failed to refresh model list:', err);
@@ -660,18 +709,71 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   /* ── Actions ─────────────────────────────────────────────── */
 
+  const findCurrentModel = (name: string): ModelInfo | null => {
+    const target = name.toLowerCase();
+    return allModels.find(mi => modelName(mi).toLowerCase() === target) || null;
+  };
+
+  const ensureCustomRegistration = async (model: ModelInfo | null) => {
+    if (!model || !(model as any).custom) return;
+    await api.pullModel(modelName(model), {}, customRegistrationOptions(model));
+  };
+
+  const ensureCustomCollectionComponentsRegistered = async (model: ModelInfo) => {
+    if (!isCollectionModel(model)) return;
+    for (const componentName of getCollectionComponents(model)) {
+      const componentInfo = findCurrentModel(componentName);
+      if (componentInfo && (componentInfo as any).custom) {
+        await ensureCustomRegistration(componentInfo);
+      }
+    }
+  };
+
+  const loadModelRuntime = async (target: ModelInfo | string, visited = new Set<string>(), registered = new Set<string>()) => {
+    const name = typeof target === 'string' ? target : modelName(target);
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (visited.has(key)) throw new Error(`Circular Omni collection reference: ${name}`);
+    visited.add(key);
+
+    const info = typeof target === 'string' ? findCurrentModel(name) : target;
+    const components = info && isCollectionModel(info) ? getCollectionComponents(info) : [];
+
+    if (components.length > 0) {
+      // Mirror Lemonade main: collection models are registered as collection.omni
+      // entries, but loading them means loading their concrete component models.
+      // The collection itself stays the selected virtual model in the UI.
+      if (!registered.has(key)) {
+        await ensureCustomRegistration(info);
+        registered.add(key);
+      }
+      for (const componentName of components) {
+        const componentInfo = findCurrentModel(componentName);
+        await loadModelRuntime(componentInfo || componentName, visited, registered);
+      }
+      visited.delete(key);
+      return;
+    }
+
+    if (!registered.has(key)) {
+      await ensureCustomRegistration(info);
+      registered.add(key);
+    }
+    await api.loadModel(name, info ? customLoadOptions(info) : undefined, info);
+    visited.delete(key);
+  };
+
   const handleLoad = async (model: ModelInfo) => {
     if (loadingModel) return;
     const name = modelName(model);
     setLoadingModel(name);
     try {
-      if ((model as any).custom) {
-        await api.pullModel(name, {}, customRegistrationOptions(model));
-      }
-      await api.loadModel(name, customLoadOptions(model));
+      await loadModelRuntime(model);
       await refresh();
       onModelSelect(name);
-    } catch { /* keep going */ }
+    } catch (err) {
+      console.error('Load failed:', err);
+    }
     setLoadingModel(null);
   };
 
@@ -715,6 +817,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
 
+    await ensureCustomCollectionComponentsRegistered(model);
+
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
         if (data.percent !== undefined) {
@@ -749,6 +853,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
 
+    await ensureCustomCollectionComponentsRegistered(model);
+
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
         if (data.percent !== undefined) {
@@ -761,10 +867,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         await refresh();
         setLoadingModel(name);
         try {
-          await api.loadModel(name, customLoadOptions(model));
+          await loadModelRuntime(model, new Set<string>(), new Set<string>([name.toLowerCase()]));
           await refresh();
           onModelSelect(name);
-        } catch { /* keep going */ }
+        } catch (err) {
+          console.error('Load after pull failed:', err);
+        }
         setLoadingModel(null);
       },
       onError: () => {
@@ -916,6 +1024,46 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     return merged;
   }, [customModels, models]);
 
+  const allPresets = useMemo(() => [DEFAULT_PRESET, ...STARTERS, ...userPresets], [userPresets]);
+
+  const activePresetForName = useCallback((name: string): Preset => {
+    const presetId = appliedPresets[name] || DEFAULT_PRESET.id;
+    return allPresets.find(p => p.id === presetId) || DEFAULT_PRESET;
+  }, [allPresets, appliedPresets]);
+
+  const focusedModelName = expandedModel || selectedModel || '';
+  const focusedModelInfo = useMemo(
+    () => focusedModelName ? allModels.find(m => modelName(m) === focusedModelName) || ({ id: focusedModelName, name: focusedModelName } as ModelInfo) : null,
+    [allModels, focusedModelName],
+  );
+  const focusedPreset = focusedModelName ? activePresetForName(focusedModelName) : null;
+  const selectedRailPreset = allPresets.find(p => p.id === selectedRailPresetId) || DEFAULT_PRESET;
+  const railSummaryPreset = (focusedModelName && focusedPreset) ? focusedPreset : selectedRailPreset;
+  const highlightedPresetId = presetRailHovered ? (hoveredRailPresetId || selectedRailPreset.id) : null;
+  const assignedToRailSummaryPreset = useMemo(
+    () => allModels.filter(m => canShowPresetHighlight(m) && activePresetForName(modelName(m)).id === railSummaryPreset.id),
+    [allModels, activePresetForName, railSummaryPreset.id],
+  );
+
+  const handlePresetRailPick = useCallback((preset: Preset) => {
+    setSelectedRailPresetId(preset.id);
+    if (!focusedModelInfo || !focusedModelName) return;
+    if (preset.id !== DEFAULT_PRESET.id && !isCompatible(preset, focusedModelInfo)) {
+      setPresetNotice(`“${preset.name}” is not compatible with ${focusedModelName}.`);
+      window.setTimeout(() => setPresetNotice(null), 2800);
+      return;
+    }
+    setAppliedPresets(prev => {
+      const next = { ...prev };
+      if (preset.id === DEFAULT_PRESET.id) delete next[focusedModelName];
+      else next[focusedModelName] = preset.id;
+      saveApplied(next);
+      return next;
+    });
+    setPresetNotice(`${focusedModelName} → ${preset.name}`);
+    window.setTimeout(() => setPresetNotice(null), 2200);
+  }, [focusedModelInfo, focusedModelName]);
+
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
       llm: [],
@@ -965,7 +1113,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     for (const m of allModels) {
       const name = modelName(m);
       if (loadedNames.has(name)) continue;
-      if ((m as any).downloaded || isCollectionFullyDownloaded(m, allModels)) dl.push(m);
+      const isDownloaded = isCollectionModel(m)
+        ? isCollectionFullyDownloaded(m, allModels)
+        : Boolean((m as any).downloaded);
+      if (isDownloaded) dl.push(m);
       else av.push(m);
     }
     return { downloaded: dl, available: av };
@@ -1073,6 +1224,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const checkpoint = (m as any).checkpoint || '';
     const checkpoints = (m as any).checkpoints || {};
     const recipe = (m as any).recipe || '';
+    const activePreset = activePresetForName(name);
     const maxCtx = liveCtxSize || (m as any).max_context_window;
     const showContext = capabilityFromModelInfo(m) !== 'omni' && Boolean(maxCtx);
     const compositeModels = Array.isArray((m as any).composite_models) ? (m as any).composite_models : [];
@@ -1091,6 +1243,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <div className="detail__field">
               <span className="detail__label">Backend</span>
               <span className="detail__value">{recipeIcon(recipe)} {recipeLabel(recipe)}</span>
+            </div>
+            <div className="detail__field">
+              <span className="detail__label">Active preset</span>
+              <span className="detail__value detail__preset-value"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
+              <span className="detail__hint">{loadedNames.has(name) ? 'Chat behavior applies now. Load options apply after reload.' : 'Applies on load. Backend remains auto by Lemonade.'}</span>
             </div>
             {m.size && (
               <div className="detail__field">
@@ -1179,8 +1336,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const componentCount = Array.isArray(m.recipe_options?.components) ? m.recipe_options.components.length : 0;
     const isActive = selectedModel === m.model_name;
     const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
+    const activePreset = activePresetForName(m.model_name);
+    const isPresetHighlighted = Boolean(highlightedPresetId
+      && activePreset.id === highlightedPresetId
+      && (info ? canShowPresetHighlight(info) : !loadedIsVirtualOmniCollection(m)));
     return (
-      <div className={`row row--running${isActive ? ' row--active' : ''}`} key={m.model_name}>
+      <div className={`row row--running${isActive ? ' row--active' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={m.model_name}>
         <div className="row__content" onClick={() => toggleDetail(m.model_name)}>
           <div className="row__main">
             <div className="row__icon row__icon--running" style={{ borderColor: typeColor(type) }}>
@@ -1193,6 +1354,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
                 {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
               </span>
+              <span className="row__preset-pill"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
             </div>
           </div>
           <div className="row__right">
@@ -1266,9 +1428,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const isLoading = loadingModel === name;
     const pullPercent = pulling[name];
     const isPulling = pullPercent !== undefined;
+    const activePreset = activePresetForName(name);
+    const isPresetHighlighted = Boolean(highlightedPresetId
+      && activePreset.id === highlightedPresetId
+      && canShowPresetHighlight(m));
 
     return (
-      <div className={`row${expandedModel === name ? ' row--expanded' : ''}`} key={name}>
+      <div className={`row${expandedModel === name ? ' row--expanded' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={name}>
         <div className="row__content" onClick={() => toggleDetail(name)}>
           <div className="row__main">
             <div className="row__icon" style={{ borderColor: typeColor(type) }}>
@@ -1283,6 +1449,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 {capabilityFromModelInfo(m) !== 'omni' && (m as any).max_context_window ? ` · ${((m as any).max_context_window / 1024).toFixed(0)}K ctx` : ''}
               </span>
               {renderLabels(modelLabels(m))}
+              <span className="row__preset-pill"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
             </div>
           </div>
           <div className="row__right">
@@ -1497,6 +1664,59 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     );
   };
 
+  const renderPresetRail = () => (
+    <aside
+      className={`context-rail context-rail--presets${presetRailCollapsed ? ' is-collapsed' : ''}`}
+      aria-label="Preset rail"
+      onMouseEnter={() => setPresetRailHovered(true)}
+      onMouseLeave={() => { setPresetRailHovered(false); setHoveredRailPresetId(null); }}
+    >
+      <div className="context-rail__head">
+        <button type="button" className="context-rail__toggle" onClick={() => setPresetRailCollapsed(v => !v)} aria-label="Toggle preset rail">☰</button>
+        <div className="context-rail__title-wrap">
+          <span className="context-rail__eyebrow">By model</span>
+          <strong className="context-rail__title">{focusedModelName ? `For ${focusedModelName}` : 'Presets'}</strong>
+        </div>
+      </div>
+      <div className="context-rail__body">
+        <div className="preset-rail-summary">
+          <span className="preset-rail-summary__label">Selected preset</span>
+          <strong><span aria-hidden="true">{presetIcon(railSummaryPreset)}</span> {railSummaryPreset.name}</strong>
+          <span>{focusedModelName ? 'Active for this model' : `${assignedToRailSummaryPreset.length} model${assignedToRailSummaryPreset.length === 1 ? '' : 's'} assigned`}</span>
+        </div>
+        <p className="context-rail__hint">
+          {focusedModelName ? 'Click a preset to assign it to this model. Backend selection stays automatic.' : 'Hover or pick a preset to outline matching models.'}
+        </p>
+        <div className="preset-rail-list">
+          {allPresets.map(preset => {
+            const isActive = focusedModelName ? focusedPreset?.id === preset.id : selectedRailPreset.id === preset.id;
+            const disabled = Boolean(focusedModelInfo && preset.id !== DEFAULT_PRESET.id && !isCompatible(preset, focusedModelInfo));
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                className={`preset-rail-card${isActive ? ' is-active' : ''}${disabled ? ' is-disabled' : ''}`}
+                onClick={() => handlePresetRailPick(preset)}
+                onMouseEnter={() => setHoveredRailPresetId(preset.id)}
+                onFocus={() => setHoveredRailPresetId(preset.id)}
+                onBlur={() => setHoveredRailPresetId(null)}
+                title={disabled ? 'Incompatible with selected model' : preset.description}
+              >
+                <span className="preset-rail-card__icon">{isActive ? '✓' : presetIcon(preset)}</span>
+                <span className="preset-rail-card__text">
+                  <strong>{preset.name}</strong>
+                  <span>{preset.description || 'Custom local preset'}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
+      </div>
+    </aside>
+  );
+
+
   /* ── Keyboard shortcut ───────────────────────────────────── */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1550,7 +1770,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   return (
-    <div className="manager">
+    <div className={`manager manager--with-rail${presetRailCollapsed ? ' context-rail-collapsed' : ''}`}>
+      {renderPresetRail()}
+      <div className="manager__main">
       <div className="manager__head">
         <div className="manager__title">
           <h1>Models</h1>
@@ -1613,7 +1835,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       </div>
 
       <div className="manager__body">
-
         {showCustomForm && (
           <section className="zone custom-model-form" aria-label={`Add ${customFormTitle}`}>
             <div className="zone__head">
@@ -1785,6 +2006,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             : 'Connect to a Lemonade server to see models.'
           }</p>
         </div>
+      </div>
       </div>
     </div>
   );
