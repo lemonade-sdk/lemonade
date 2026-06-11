@@ -33,13 +33,35 @@ static std::string escape_windows_arg(const std::string& arg) {
     return result;
 }
 
+// Helper function to check if a line should be filtered
+static bool should_filter_line(const std::string& line) {
+    // Filter out health check requests (both /health and /v1/health)
+    // Also filter FLM's interactive prompt spam
+    return (line.find("GET /health") != std::string::npos ||
+            line.find("GET /v1/health") != std::string::npos ||
+            // idle heartbeat returned by llamma cpp when its /metrics is scrapped. supressed to decrease visual clutering
+            line.find("srv  update_slots: all slots are idle") != std::string::npos ||
+            line.find("Enter 'exit' to stop the server") != std::string::npos);
+}
+
+static bool is_error_line(const std::string& line) {
+    std::string lowered = line;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lowered.find("error") != std::string::npos;
+}
+
 // Helper function: filter and log process output
 static void log_process_line(const std::string& line) {
-    // Filter out health check spam
-    if (line.find("/health") != std::string::npos) {
+    if (should_filter_line(line)) {
         return;
     }
-    std::cout << line << std::endl;
+
+    if (is_error_line(line)) {
+        LOG(ERROR, "Process") << line << std::endl;
+    } else {
+        LOG(INFO, "Process") << line << std::endl;
+    }
 }
 
 // Thread function to read from pipe and filter output
