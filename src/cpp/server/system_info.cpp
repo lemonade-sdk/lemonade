@@ -437,7 +437,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx101X", "gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -468,8 +468,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx101X", "gfx1150",
-            "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1150",
+            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -507,7 +507,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
 
     // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
@@ -530,7 +530,6 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
-    {"gfx1152", "Radeon (gfx1152)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
@@ -1846,12 +1845,6 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         device_lower.find("6600") != std::string::npos ||
         device_lower.find("6500") != std::string::npos) {
         return "gfx103X";
-    }
-
-    if (device_lower.find("5700") != std::string::npos ||
-        device_lower.find("5600") != std::string::npos ||
-        device_lower.find("5500") != std::string::npos) {
-        return "gfx101X";
     }
 
     return "";
