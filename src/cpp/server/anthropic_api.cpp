@@ -321,18 +321,99 @@ static json parse_openai_tool_arguments(const json& tool_call, std::vector<std::
     return json::object();
 }
 
+static std::string stringify_openai_content_for_token_count(const json& content) {
+    if (content.is_string()) {
+        return content.get<std::string>();
+    }
+
+    if (!content.is_array()) {
+        return content.dump();
+    }
+
+    std::vector<std::string> parts;
+    for (const auto& block : content) {
+        if (!block.is_object()) {
+            continue;
+        }
+
+        std::string type = block.value("type", "");
+        if (type == "text" && block.contains("text") && block["text"].is_string()) {
+            parts.push_back(block["text"].get<std::string>());
+        } else if (type == "image_url") {
+            parts.push_back("[image]");
+        }
+    }
+
+    return join_strings(parts);
+}
+
+static std::string render_openai_chat_for_token_count(const json& openai_request) {
+    std::ostringstream prompt;
+
+    if (openai_request.contains("messages") && openai_request["messages"].is_array()) {
+        for (const auto& message : openai_request["messages"]) {
+            if (!message.is_object()) {
+                continue;
+            }
+
+            std::string role = message.value("role", "user");
+            prompt << role << ": ";
+            if (message.contains("content")) {
+                prompt << stringify_openai_content_for_token_count(message["content"]);
+            }
+            if (message.contains("reasoning_content") && message["reasoning_content"].is_string()) {
+                prompt << "\nreasoning: " << message["reasoning_content"].get<std::string>();
+            }
+            if (message.contains("tool_calls")) {
+                prompt << "\ntool_calls: " << message["tool_calls"].dump();
+            }
+            if (message.contains("tool_call_id") && message["tool_call_id"].is_string()) {
+                prompt << "\ntool_call_id: " << message["tool_call_id"].get<std::string>();
+            }
+            prompt << "\n";
+        }
+    }
+
+    if (openai_request.contains("tools")) {
+        prompt << "tools: " << openai_request["tools"].dump() << "\n";
+    }
+
+    return prompt.str();
+}
+
+static int count_tokenizer_response_tokens(const json& tokenize_response) {
+    if (tokenize_response.contains("tokens") && tokenize_response["tokens"].is_array()) {
+        return static_cast<int>(tokenize_response["tokens"].size());
+    }
+    if (tokenize_response.contains("count") && tokenize_response["count"].is_number_integer()) {
+        return tokenize_response["count"].get<int>();
+    }
+    if (tokenize_response.contains("input_tokens") && tokenize_response["input_tokens"].is_number_integer()) {
+        return tokenize_response["input_tokens"].get<int>();
+    }
+    return 0;
+}
+
 }  // namespace
 
 void OllamaApi::register_anthropic_routes(httplib::Server& server, const std::shared_ptr<OllamaApi>& self) {
     auto messages_handler = [self](const httplib::Request& req, httplib::Response& res) {
         self->handle_anthropic_messages(req, res);
     };
+    auto count_tokens_handler = [self](const httplib::Request& req, httplib::Response& res) {
+        self->handle_anthropic_count_tokens(req, res);
+    };
 
     server.Post("/api/messages", messages_handler);
+    server.Post("/api/messages/count_tokens", count_tokens_handler);
     server.Post("/api/v0/messages", messages_handler);
+    server.Post("/api/v0/messages/count_tokens", count_tokens_handler);
     server.Post("/api/v1/messages", messages_handler);
+    server.Post("/api/v1/messages/count_tokens", count_tokens_handler);
     server.Post("/v0/messages", messages_handler);
+    server.Post("/v0/messages/count_tokens", count_tokens_handler);
     server.Post("/v1/messages", messages_handler);
+    server.Post("/v1/messages/count_tokens", count_tokens_handler);
 }
 
 json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, std::vector<std::string>& warnings) {
@@ -1324,6 +1405,61 @@ void OllamaApi::stream_openai_sse_to_anthropic_sse(const std::string& openai_bod
     };
 
     call_router(openai_body, adapter_sink);
+}
+
+void OllamaApi::handle_anthropic_count_tokens(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto request_json = json::parse(req.body);
+        std::vector<std::string> warnings;
+
+        std::string model = normalize_model_name(request_json.value("model", ""));
+        if (model.empty()) {
+            res.status = 400;
+            json error = {{"message", "model is required"}};
+            res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
+            return;
+        }
+
+        auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);
+        openai_req["stream"] = false;
+
+        try {
+            auto_load_model(model);
+        } catch (const std::exception&) {
+            res.status = 404;
+            json error = {{"message", "model '" + model + "' not found, try pulling it first"}};
+            res.set_content(make_anthropic_error(error, 404).dump(), "application/json");
+            return;
+        }
+
+        if (!warnings.empty()) {
+            std::ostringstream warning_header;
+            for (size_t i = 0; i < warnings.size(); ++i) {
+                if (i > 0) warning_header << " | ";
+                warning_header << warnings[i];
+            }
+            res.set_header("X-Lemonade-Warning", warning_header.str());
+        }
+
+        std::string prompt = render_openai_chat_for_token_count(openai_req);
+        json tokenize_request = {{"content", prompt}};
+        auto tokenize_response = router_->tokenize(tokenize_request);
+        if (send_anthropic_backend_error(tokenize_response, res)) {
+            return;
+        }
+
+        json response = {{"input_tokens", count_tokenizer_response_tokens(tokenize_response)}};
+        res.set_content(response.dump(), "application/json");
+    } catch (const json::parse_error& e) {
+        res.status = 400;
+        json error = {{"message", std::string("Invalid JSON in request body: ") + e.what()}};
+        res.set_content(make_anthropic_error(error, 400).dump(), "application/json");
+    } catch (const std::exception& e) {
+        std::cerr << "[OllamaApi] Error in Anthropic count_tokens: " << e.what() << std::endl;
+        res.status = 500;
+        json error = {{"message", std::string(e.what())}};
+        res.set_content(make_anthropic_error(error, 500).dump(), "application/json");
+    }
 }
 
 void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::Response& res) {
