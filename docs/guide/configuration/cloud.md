@@ -1,8 +1,8 @@
 # Cloud Offload
 
-Lemonade can route inference to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, vLLM, LM Studio, etc.) alongside locally-loaded models. Cloud-routed models show up in `/v1/models` like any other recipe, so every client connecting to your `lemond` — the desktop app, the CLI, third-party SDKs, and agents launched via `lemonade launch` — sees the same catalog without per-client configuration.
+Lemonade can route inference to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, etc.) alongside locally-loaded models. Cloud-routed models show up in `/v1/models` like any other recipe, so every client connecting to your `lemond` — the desktop app, the CLI, third-party SDKs, and agents launched via `lemonade launch` — sees the same catalog without per-client configuration.
 
-> **Status: experimental.** Cloud routing has been validated with Fireworks, OpenAI, OpenRouter, and Together. Other OpenAI-compatible providers (vLLM, LM Studio, DeepInfra, …) should work; report problems with `lemond` logs and the provider's `/v1/models` response.
+> **Status: experimental.** Cloud routing has been validated with Fireworks, OpenAI, OpenRouter, and Together. Other OpenAI-compatible providers should work; report problems with `lemond` logs and the provider's `/v1/models` response.
 
 ## Quickstart
 

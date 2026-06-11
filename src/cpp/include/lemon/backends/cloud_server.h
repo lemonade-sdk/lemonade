@@ -12,9 +12,9 @@ class CloudProviderRegistry;
 namespace backends {
 
 /**
- * CloudServer offloads inference to a remote OpenAI-compatible cloud provider
- * (Fireworks, OpenAI, Together, Groq, OpenRouter, DeepInfra, vLLM, LM Studio,
- * etc.) instead of running a local subprocess.
+ * CloudServer offloads inference to a remote OpenAI-compatible provider
+ * (Fireworks, OpenAI, Together, Groq, OpenRouter, DeepInfra, etc.) instead
+ * of running a local subprocess.
  *
  * Credentials live SERVER-SIDE in CloudProviderRegistry. Resolution priority:
  *   1. LEMONADE_<PROVIDER_UPPER>_API_KEY env var (operator-provisioned)

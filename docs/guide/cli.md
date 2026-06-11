@@ -532,7 +532,7 @@ lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-N
 
 ## Options for cloud
 
-The `cloud` command manages OpenAI-compatible cloud providers (Fireworks, OpenAI, OpenRouter, Together, vLLM, LM Studio, etc.). Provider URLs persist in `lemond`'s `config.json`; API keys live in env vars (preferred) or `lemond`'s process memory and are never written to disk. See the [Cloud Offload guide](./configuration/cloud.md) for the full workflow.
+The `cloud` command manages OpenAI-compatible cloud providers (Fireworks, OpenAI, OpenRouter, Together, etc.). Provider URLs persist in `lemond`'s `config.json`; API keys live in env vars (preferred) or `lemond`'s process memory and are never written to disk. See the [Cloud Offload guide](./configuration/cloud.md) for the full workflow.
 
 ```bash
 lemonade cloud [install|uninstall|auth|clear|list]
