@@ -404,14 +404,6 @@ void OllamaApi::register_anthropic_routes(httplib::Server& server, const std::sh
         self->handle_anthropic_count_tokens(req, res);
     };
 
-    server.Post("/api/messages", messages_handler);
-    server.Post("/api/messages/count_tokens", count_tokens_handler);
-    server.Post("/api/v0/messages", messages_handler);
-    server.Post("/api/v0/messages/count_tokens", count_tokens_handler);
-    server.Post("/api/v1/messages", messages_handler);
-    server.Post("/api/v1/messages/count_tokens", count_tokens_handler);
-    server.Post("/v0/messages", messages_handler);
-    server.Post("/v0/messages/count_tokens", count_tokens_handler);
     server.Post("/v1/messages", messages_handler);
     server.Post("/v1/messages/count_tokens", count_tokens_handler);
 }
