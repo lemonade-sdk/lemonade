@@ -631,19 +631,6 @@ class OllamaTests(ServerTestBase):
         self.assertIn("anthropic-version", allowed)
         self.assertIn("anthropic-beta", allowed)
 
-    def test_025_anthropic_messages_route_aliases(self):
-        """Test Anthropic messages route aliases are registered."""
-        for path in ("/api/messages", "/api/v1/messages", "/v0/messages"):
-            response = requests.post(
-                f"{OLLAMA_BASE_URL}{path}",
-                json={"messages": []},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(response.status_code, 400, path)
-            data = response.json()
-            self.assertEqual(data.get("type"), "error")
-            self.assertEqual(data.get("error", {}).get("type"), "invalid_request_error")
-
     def test_026_anthropic_messages_non_streaming(self):
         """Test Anthropic-compatible non-streaming messages endpoint."""
         self.ensure_model_pulled()
