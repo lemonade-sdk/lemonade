@@ -317,7 +317,7 @@ void WhisperServer::load(const std::string& model_name,
         exe_path,
         args,
         "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
+        true,   // inherit_output — always show whisper-server stdout/stderr for diagnostics
         false,  // filter_health_logs
         env_vars
     );
@@ -327,6 +327,11 @@ void WhisperServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "WhisperServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "WhisperServer") << "Executable: " << exe_path << std::endl;
+    LOG(INFO, "WhisperServer") << "LD_LIBRARY_PATH: " << [&]() -> std::string {
+        for (const auto& e : env_vars) if (e.first == "LD_LIBRARY_PATH") return e.second;
+        return "(not set)";
+    }() << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
