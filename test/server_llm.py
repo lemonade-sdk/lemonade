@@ -960,7 +960,9 @@ class LLMTests(ServerTestBase):
         self.assertIn("tokens", data_with_pieces)
         tokens_with_pieces = data_with_pieces["tokens"]
         self.assertIsInstance(tokens_with_pieces, list)
-        self.assertGreater(len(tokens_with_pieces), 0, "Tokens list should not be empty")
+        self.assertGreater(
+            len(tokens_with_pieces), 0, "Tokens list should not be empty"
+        )
 
         # Verify that the response conforms to the specified JSON output for default response
         for token in tokens:
@@ -971,7 +973,9 @@ class LLMTests(ServerTestBase):
         # Verify that the response conforms to the specified JSON output for with_pieces response
         for token in tokens_with_pieces:
             # Formats 2 & 3: List of objects with id and piece
-            self.assertIsInstance(token, dict, f"Token should be an int or a dict, got {type(token)}")
+            self.assertIsInstance(
+                token, dict, f"Token should be an int or a dict, got {type(token)}"
+            )
             self.assertIn("id", token)
             self.assertIn("piece", token)
             self.assertIsInstance(token["id"], int)
@@ -986,6 +990,7 @@ class LLMTests(ServerTestBase):
                 self.fail(f"Unexpected type for piece: {type(token['piece'])}")
 
         print("[OK] Tokenize response format verified")
+
 
 if __name__ == "__main__":
     run_server_tests(LLMTests, "LLM/EMBEDDING/RERANKING/SLOTS TESTS", modality="llm")

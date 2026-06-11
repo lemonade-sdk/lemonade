@@ -1,6 +1,7 @@
 #include "lemon/streaming_proxy.h"
 #include <sstream>
 #include <iostream>
+#include <chrono>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -15,17 +16,27 @@ void StreamingProxy::forward_sse_stream(
     std::string telemetry_buffer;
     bool stream_error = false;
     bool has_done_marker = false;
+    bool has_first_token = false;
+    double time_to_first_token = 0.0;
+    const auto start_time = std::chrono::steady_clock::now();
 
     // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &telemetry_buffer, &has_done_marker](const char* data, size_t length) {
+        [&sink, &telemetry_buffer, &has_done_marker, &has_first_token,
+         &time_to_first_token, &start_time](const char* data, size_t length) {
             // Buffer for telemetry parsing
             telemetry_buffer.append(data, length);
 
             // Check if this chunk contains [DONE]
             std::string chunk(data, length);
+            if (!has_first_token && chunk.find("data: ") != std::string::npos) {
+                has_first_token = true;
+                time_to_first_token = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start_time).count();
+            }
+
             if (chunk.find("[DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
@@ -61,6 +72,9 @@ void StreamingProxy::forward_sse_stream(
 
         // Parse telemetry from buffered data
         auto telemetry = parse_telemetry(telemetry_buffer);
+        if (telemetry.time_to_first_token <= 0.0) {
+            telemetry.time_to_first_token = time_to_first_token;
+        }
         telemetry.print();
 
         if (on_complete) {
