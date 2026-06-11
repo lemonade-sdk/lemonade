@@ -126,6 +126,41 @@ _NAME_ARCH_TABLE = [
 ]
 
 
+def cuda_sm_value(arch: str) -> int:
+    """Convert sm_XX token to integer value for comparison."""
+    if len(arch) <= 3 or not arch.startswith("sm_"):
+        return 0
+    try:
+        return int(arch[3:])
+    except ValueError:
+        return 0
+
+
+def normalize_cuda_arch(arch: str) -> str:
+    """
+    Map an sm_XX token to the nearest supported binary target.
+    If the arch is directly in CUDA_SUPPORTED_ARCHS, returns it unchanged.
+    Otherwise finds the highest supported arch <= the detected arch,
+    enabling forward-compatible GPUs (e.g. sm_121 GB10 -> sm_120 binary).
+    Returns "" if no suitable match exists.
+    """
+    if not arch:
+        return ""
+    if arch in CUDA_SUPPORTED_ARCHS:
+        return arch
+    detected_val = cuda_sm_value(arch)
+    if detected_val <= 0:
+        return ""
+    best = ""
+    best_val = 0
+    for supported in CUDA_SUPPORTED_ARCHS:
+        val = cuda_sm_value(supported)
+        if val <= detected_val and val > best_val:
+            best_val = val
+            best = supported
+    return best
+
+
 def identify_cuda_arch_from_name(device_name: str) -> str:
     """Compact fallback: infer sm_XX from GPU marketing name."""
     name = device_name.lower()
@@ -202,6 +237,39 @@ class TestComputeCapToSm(unittest.TestCase):
             self.assertNotIn(
                 sm, CUDA_SUPPORTED_ARCHS, f"{cap} -> {sm} unexpectedly in supported set"
             )
+
+    def test_gb10_compute_cap(self):
+        # NVIDIA GB10 (Thor SoC) reports compute capability 12.1
+        self.assertEqual(compute_cap_to_sm("12.1"), "sm_121")
+
+
+class TestNormalizeCudaArch(unittest.TestCase):
+    def test_supported_arch_passthrough(self):
+        for arch in CUDA_SUPPORTED_ARCHS:
+            with self.subTest(arch=arch):
+                self.assertEqual(normalize_cuda_arch(arch), arch)
+
+    def test_gb10_fallback(self):
+        # GB10 (sm_121) should fall back to sm_120 (nearest supported Blackwell binary)
+        self.assertEqual(normalize_cuda_arch("sm_121"), "sm_120")
+
+    def test_fallback_to_best_supported(self):
+        # sm_121 -> sm_120, not sm_100 or sm_89
+        result = normalize_cuda_arch("sm_121")
+        self.assertEqual(result, "sm_120")
+
+    def test_unsupported_old_arch_returns_empty(self):
+        # sm_50 (Maxwell) is below all supported arches — no fallback
+        self.assertEqual(normalize_cuda_arch("sm_50"), "")
+        self.assertEqual(normalize_cuda_arch("sm_60"), "")
+        self.assertEqual(normalize_cuda_arch("sm_70"), "")
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(normalize_cuda_arch(""), "")
+
+    def test_invalid_returns_empty(self):
+        self.assertEqual(normalize_cuda_arch("invalid"), "")
+        self.assertEqual(normalize_cuda_arch("sm_"), "")
 
 
 class TestIdentifyCudaArchFromName(unittest.TestCase):

@@ -659,6 +659,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name);
 std::string identify_cuda_arch_from_name(const std::string& device_name);
 std::string identify_npu_arch();
 static std::string compute_cap_to_sm(const std::string& compute_cap);
+static std::string normalize_cuda_arch(const std::string& arch);
 static std::string read_version_file(const fs::path& version_file);
 static std::string get_expected_backend_version(const std::string& recipe, const std::string& backend);
 
@@ -1138,7 +1139,10 @@ json SystemInfo::build_recipes_info(const json& devices) {
         for (const auto& gpu : devices["nvidia_gpu"]) {
             if (gpu.value("available", false)) {
                 std::string name = gpu.value("name", "");
-                std::string family = gpu.value("family", "");
+                // Normalize to the nearest supported arch so that GPUs with
+                // unsupported minor revisions (e.g. sm_121 GB10 -> sm_120)
+                // still match the BACKEND_AVAILABILITY constraint set.
+                std::string family = normalize_cuda_arch(gpu.value("family", ""));
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "nvidia_gpu",
@@ -2133,10 +2137,37 @@ static int cuda_sm_value(const std::string& arch) {
     }
 }
 
+// Maps an sm_XX token to the nearest supported binary target.
+// If the arch is directly in CUDA_SUPPORTED_ARCHS, returns it unchanged.
+// Otherwise finds the highest supported arch that is <= the detected arch,
+// enabling forward-compatible GPUs (e.g. sm_121 GB10 -> sm_120 binary).
+// Returns "" if no suitable match exists.
+static std::string normalize_cuda_arch(const std::string& arch) {
+    if (arch.empty()) return "";
+    if (CUDA_SUPPORTED_ARCHS.count(arch)) return arch;
+
+    int detected_val = cuda_sm_value(arch);
+    if (detected_val <= 0) return "";
+
+    std::string best;
+    int best_val = 0;
+    for (const auto& supported : CUDA_SUPPORTED_ARCHS) {
+        int val = cuda_sm_value(supported);
+        if (val <= detected_val && val > best_val) {
+            best_val = val;
+            best = supported;
+        }
+    }
+    return best;
+}
+
 static std::string cuda_arch_from_gpu_json(const json& gpu) {
     std::string family = gpu.value("family", "");
-    if (!family.empty() && CUDA_SUPPORTED_ARCHS.count(family)) {
-        return family;
+    if (!family.empty()) {
+        std::string normalized = normalize_cuda_arch(family);
+        if (!normalized.empty()) {
+            return normalized;
+        }
     }
 
     std::string name = gpu.value("name", "");
