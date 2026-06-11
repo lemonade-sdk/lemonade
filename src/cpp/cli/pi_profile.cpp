@@ -10,9 +10,14 @@ namespace fs = std::filesystem;
 namespace lemon_cli {
 namespace {
 
-// Pi always stores its config under ~/.pi/agent/ (%USERPROFILE%\.pi\agent\ on
-// Windows). It does not honor XDG_CONFIG_HOME.
+// Pi stores its config under ~/.pi/agent/ (%USERPROFILE%\.pi\agent\ on Windows)
+// by default, or in $PI_CODING_AGENT_DIR if set. It does not honor XDG_CONFIG_HOME.
 std::string resolve_pi_agent_dir() {
+    const char* pi_dir = std::getenv("PI_CODING_AGENT_DIR");
+    if (pi_dir && pi_dir[0] != '\0') {
+        return std::string(pi_dir);
+    }
+
 #ifdef _WIN32
     const char* home = std::getenv("USERPROFILE");
 #else
