@@ -182,4 +182,27 @@ bool sync_pi_settings_file(const std::string& provider_name,
     return write_json_atomic(settings_path, settings, error_out);
 }
 
+bool pi_has_default_config() {
+    const std::string settings_path = resolve_pi_settings_path();
+    if (settings_path.empty() || !fs::exists(settings_path)) {
+        return false;
+    }
+
+    std::ifstream file(settings_path);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    try {
+        nlohmann::json settings = nlohmann::json::parse(file);
+        if (!settings.is_object()) {
+            return false;
+        }
+        return settings.contains("defaultProvider") && settings["defaultProvider"].is_string() &&
+               settings.contains("defaultModel") && settings["defaultModel"].is_string();
+    } catch (const nlohmann::json::exception&) {
+        return false;
+    }
+}
+
 } // namespace lemon_cli

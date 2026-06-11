@@ -545,10 +545,14 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     }
 
     if (config.agent == "pi") {
-        std::string settings_error;
-        if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
-            std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
-            std::cerr << "Continuing with launch anyway..." << std::endl;
+        // Only write settings.json if pi doesn't already have a default provider/model.
+        // This preserves existing user configuration while providing seamless first-time UX.
+        if (!lemon_cli::pi_has_default_config()) {
+            std::string settings_error;
+            if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
+                std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
         }
     }
 }
