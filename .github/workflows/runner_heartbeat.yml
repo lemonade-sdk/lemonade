@@ -2,50 +2,75 @@ name: Runner Heartbeat
 
 on:
   schedule:
-    - cron: "0 1 * * 0"    # every Sunday at 1AM UTC
+    - cron: "0 1 * * 1"   # weekly on Monday at 01:00 UTC
   workflow_dispatch:
 
 permissions:
   actions: write  # Required to upload artifacts
+  contents: read  # Required to checkout runners.json
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      runners: ${{ steps.load.outputs.runners }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/runners.json
+          sparse-checkout-cone-mode: false
+
+      - name: Load runner list from runners.json
+        id: load
+        run: |
+          set -euo pipefail
+          runners=$(jq -c '.runners' .github/runners.json)
+          echo "runners=$runners" >> "$GITHUB_OUTPUT"
+          echo "Loaded runners: $runners"
+
   heartbeat:
+    needs: setup
     strategy:
       matrix:
-        runner:
-          - jfowers-stx-01
-          - jfowers-stx-02
-          - sjlab-stx-halo-06
-          - sjlab-stx-halo-07
-          - sjlab-stx-halo-08
-          - sjlab-stx-halo-09
-          - sjlab-stx-halo-10
-          - sjlab-stx-halo-11
-          - sjlab-stx-halo-12
-          - sjlab-stx-halo-13
-          - sjlab-stx-0
+        runner: ${{ fromJSON(needs.setup.outputs.runners) }}
       fail-fast: false  # Continue even if one runner fails
     runs-on: [self-hosted, "${{ matrix.runner }}"]
+    # Fail fast if no runner is available to pick up this job, instead of
+    # waiting indefinitely in the queue.
+    timeout-minutes: 10
     steps:
       - name: Create heartbeat file (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
-          $runner = "${{ runner.name }}"
+          # Force UTC on both platforms so the file contents are comparable
+          # when downloaded for debugging. The monitor itself uses the
+          # artifact's updated_at field from the API, not the file contents,
+          # so this is cosmetic but avoids misleading anyone investigating.
+          $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $runner = "${{ matrix.runner }}"
           "$timestamp" | Out-File -FilePath "heartbeat-$runner.txt" -Encoding utf8
 
-      - name: Create heartbeat file (Linux)
-        if: runner.os == 'Linux'
+      - name: Create heartbeat file (Linux/macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
-          timestamp=$(date -Iseconds)
-          runner="${{ runner.name }}"
+          timestamp=$(date -u -Iseconds)
+          runner="${{ matrix.runner }}"
           echo "$timestamp" > "heartbeat-$runner.txt"
 
       - name: Upload heartbeat artifact
         uses: actions/upload-artifact@v7
         with:
-          name: heartbeat-${{ runner.name }}
-          path: heartbeat-${{ runner.name }}.txt
-          retention-days: 14
+          # Name the artifact after the matrix label (the runners.json entry),
+          # NOT runner.name. The monitor looks up artifacts by the label from
+          # runners.json, so any drift between a runner's configured name and
+          # its primary label would surface as a false MISSING alert.
+          name: heartbeat-${{ matrix.runner }}
+          path: heartbeat-${{ matrix.runner }}.txt
+          # 30d retention matches the monitor's default lookback_days=30, so
+          # any heartbeat upload (scheduled or manual recovery) remains visible
+          # for the full scan period.
+          retention-days: 30
