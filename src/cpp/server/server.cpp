@@ -614,6 +614,12 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
     }
 
+    if (auth_token.empty()) {
+        auth_token = req.get_header_value("X-Api-Key");
+        if (auth_token.empty()) {
+            auth_token = req.get_header_value("x-api-key");
+        }
+    }
     telemetry::g_current_auth_token = auth_token;
 
     if (is_internal_route) {
@@ -1334,7 +1340,10 @@ void Server::setup_cors(httplib::Server &web_server) {
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
         {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id"}
+        {"Access-Control-Allow-Headers",
+         "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, "
+         "X-Api-Key, x-api-key, Anthropic-Version, anthropic-version, Anthropic-Beta, "
+         "anthropic-beta"}
     });
 
     // Handle preflight OPTIONS requests
