@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - ".github/scripts/triage_dashboard.py"
+      - ".github/scripts/test_triage_dashboard.py"
       - ".github/workflows/triage-dashboard.yml"
 
 concurrency:
