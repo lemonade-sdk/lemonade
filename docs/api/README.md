@@ -17,3 +17,4 @@ This spec details all supported endpoints. It is organized into pages that corre
 | [Anthropic-Compatible API](./anthropic.md) | Use this for clients built around Anthropic's message format. |
 | [llama.cpp-Specific API](./llamacpp.md) | Reference for llama.cpp-specific compatibility and conventions. |
 | [Lemonade-Specific API](./lemonade.md) | Local-first API for managing lifecycle, configuration, backends, etc. |
+| [Realtime WebSocket API](./realtime.md) | OpenAI Realtime-compatible streaming transcription, including the single-port upgrade path for client software. |

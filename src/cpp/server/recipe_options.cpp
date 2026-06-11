@@ -22,6 +22,7 @@ static const json DEFAULTS = {
     {"sdcpp_args", ""},
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
+    {"moonshine_args", ""},      // Custom arguments to pass to moonshine-server
     // Image generation defaults (for sd-cpp recipe)
     // These are recipe-level defaults only, not CLI arguments — per reviewer guidance,
     // there are too many image gen params for CLI flags, and no universal defaults.
@@ -52,6 +53,7 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
+    {"moonshine_args", "--moonshine-args"},
     {"flm_args", "--flm-args"},
     {"vllm_backend", "--vllm"},
     {"vllm_args", "--vllm-args"}
@@ -62,6 +64,8 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
         return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
     } else if (recipe == "whispercpp") {
         return {"whispercpp_backend", "whispercpp_args", "merge_args"};
+    } else if (recipe == "moonshine") {
+        return {"moonshine_args", "merge_args"};
     } else if (recipe == "flm") {
         return {"ctx_size", "flm_args", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
@@ -231,6 +235,7 @@ static const json CLI_OPTIONS = {
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}, {"group", "Stable Diffusion Options"}}},
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}, {"group", "Whisper.cpp Options"}}},
     {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}, {"group", "Whisper.cpp Options"}}},
+    {"--moonshine-args", {{"option_name", "moonshine_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_MOONSHINE_ARGS"}, {"help", "Custom arguments to pass to moonshine-server"}}},
     {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_VLLM"}, {"help", "vLLM backend to use"}, {"group", "vLLM Options"}}},
     {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_VLLM_ARGS"}, {"help", "Custom arguments to pass to vllm-server"}, {"group", "vLLM Options"}}},
     // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
