@@ -133,9 +133,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build/_deps
-          key: fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
+          # vs2026 marker: VS 2022-built _deps are generator-incompatible with the
+          # VS 2026 configure, so they must not be restored across the toolchain bump.
+          key: fetchcontent-windows-vs2026-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            fetchcontent-windows-
+            fetchcontent-windows-vs2026-
 
       - name: Run setup.ps1 to configure environment
         shell: PowerShell
@@ -151,8 +153,10 @@ jobs:
           Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
 
           # Single build command: wix_installers depends on all C++ targets,
-          # tauri-app, and web-app via CMake dependency graph
-          cmake --build --preset windows --target wix_installers
+          # tauri-app, and web-app via CMake dependency graph.
+          # Build by directory (not --preset) so we follow whichever generator
+          # setup.ps1 auto-detected for the installed Visual Studio version.
+          cmake --build build --config Release --target wix_installers
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
@@ -778,18 +782,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: fetchcontent-windows-embeddable-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-windows-embeddable-
+          # vs2026 marker: see installer job — VS 2022-built _deps cannot be
+          # reused by the VS 2026 configure.
+          key: fetchcontent-windows-embeddable-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-windows-embeddable-vs2026-
 
       - name: Build embeddable archive
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          cmake --preset windows -DBUILD_WEB_APP=OFF
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build --preset windows --target embeddable
+          cmake --build build --config Release --target embeddable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
