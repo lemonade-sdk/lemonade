@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import platform
+import re
 import requests
 import shutil
 import subprocess
@@ -201,6 +202,61 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     return result
 
 
+def _is_transient_cli_pull_failure(result):
+    """Return True when a failed CLI pull looks like a transient server/HF issue."""
+    if result.returncode == 0:
+        return False
+
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+    transient_statuses = {408, 409, 429, 500, 502, 503, 504}
+    observed_statuses = {
+        int(match) for match in re.findall(r"(?:status\s*[:=]|http\s*)(\d{3})", output)
+    }
+
+    if observed_statuses.intersection(transient_statuses):
+        return True
+
+    return (
+        "too many requests" in output
+        or "rate limit" in output
+        or "temporarily unavailable" in output
+        or "connection reset" in output
+        or "connection aborted" in output
+        or "connection refused" in output
+        or "timed out" in output
+        or "timeout" in output
+    )
+
+
+def run_cli_pull_command_with_retry(args, timeout=TIMEOUT_MODEL_OPERATION, attempts=3):
+    """Run a CLI pull command with bounded retry for transient setup failures.
+
+    The command still has to succeed with exit code 0. This only retries failures
+    that look transient, such as HF rate limits or temporary server/network errors.
+    """
+    last_result = None
+
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(min(30, 2 ** (attempt - 1)))
+
+        result = run_cli_command(args, timeout=timeout)
+        if result.returncode == 0:
+            return result
+
+        last_result = result
+        if _is_transient_cli_pull_failure(result) and attempt < attempts:
+            print(
+                f"Transient CLI pull failure, attempt {attempt}/{attempts}. "
+                "Retrying..."
+            )
+            continue
+
+        break
+
+    return last_result
+
+
 class PersistentServerCLIClientTests(unittest.TestCase):
     """
     CLI client tests that run with a persistent server.
@@ -337,17 +393,117 @@ sys.exit(0)
     # List Tests
     # =============================================================================
 
+    def _section_between(self, output, start_header, end_header=None):
+        lines = output.splitlines()
+        self.assertIn(start_header, lines)
+
+        start = lines.index(start_header) + 1
+        end = (
+            lines.index(end_header)
+            if end_header and end_header in lines
+            else len(lines)
+        )
+
+        return "\n".join(lines[start:end])
+
+    def _parse_model_table(self, section_text):
+        parsed_models = []
+        for line in section_text.splitlines():
+            line = line.strip()
+            if (
+                not line
+                or line.startswith("Model Name")
+                or line.startswith("---")
+                or "No local models" in line
+                or "No models available" in line
+            ):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                name = parts[0]
+                downloaded = parts[1] == "Yes"
+                details = parts[2] if len(parts) > 2 else ""
+                parsed_models.append(
+                    {"name": name, "downloaded": downloaded, "details": details}
+                )
+        return parsed_models
+
     def test_020_list(self):
         """Test list command."""
         result = self.assertCommandSucceeds(["list"])
         output = result.stdout + result.stderr
         print(f"List output: {output}")
+        output_lines = output.splitlines()
+        self.assertIn("Local", output_lines)
+        self.assertIn("Available for Download", output_lines)
+        self.assertLess(
+            output_lines.index("Local"),
+            output_lines.index("Available for Download"),
+        )
+
+        local_section = self._section_between(output, "Local", "Available for Download")
+        available_section = self._section_between(output, "Available for Download")
+
+        local_models = self._parse_model_table(local_section)
+        available_models = self._parse_model_table(available_section)
+
+        if not local_models:
+            self.assertIn("No local models downloaded.", local_section)
+        else:
+            for m in local_models:
+                self.assertTrue(
+                    m["downloaded"],
+                    f"Model {m['name']} in Local section should be downloaded (Yes)",
+                )
+
+        for m in available_models:
+            self.assertFalse(
+                m["downloaded"],
+                f"Model {m['name']} in Available for Download section should not be downloaded (No)",
+            )
 
     def test_021_list_downloaded_flag(self):
         """Test list --downloaded flag."""
+        # Get all models from the full list to know what's available vs downloaded
+        all_result = self.assertCommandSucceeds(["list"])
+        all_output = all_result.stdout + all_result.stderr
+        available_section = self._section_between(all_output, "Available for Download")
+        available_models = self._parse_model_table(available_section)
+
         result = self.assertCommandSucceeds(["list", "--downloaded"])
         output = result.stdout + result.stderr
         print(f"List --downloaded output: {output}")
+        output_lines = output.splitlines()
+        self.assertNotIn("Local", output_lines)
+        self.assertNotIn("Available for Download", output_lines)
+
+        # A fresh cache has no local models yet, so --downloaded may return
+        # the empty local-state message instead of a table.
+        if "No local models downloaded." in output:
+            downloaded_models = []
+        else:
+            self.assertIn("Model Name", output)
+            self.assertIn("Downloaded", output)
+            self.assertIn("Details", output)
+            downloaded_models = self._parse_model_table(output)
+
+        for m in downloaded_models:
+            self.assertTrue(
+                m["downloaded"],
+                f"Model {m['name']} in --downloaded list should be downloaded (Yes)",
+            )
+
+        non_downloaded_names = [
+            m["name"] for m in available_models if not m["downloaded"]
+        ]
+        if non_downloaded_names:
+            downloaded_names = [m["name"] for m in downloaded_models]
+            for name in non_downloaded_names:
+                self.assertNotIn(
+                    name,
+                    downloaded_names,
+                    f"Non-downloaded model {name} should not be in --downloaded list",
+                )
 
     # =============================================================================
     # Export Tests
@@ -475,7 +631,7 @@ sys.exit(0)
 
     def test_050_pull_with_checkpoint(self):
         """Test pull command with --checkpoint option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -491,7 +647,7 @@ sys.exit(0)
 
     def test_051_pull_with_labels(self):
         """Test pull command with --label option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -534,7 +690,7 @@ sys.exit(0)
 
     def test_053_pull_with_multiple_checkpoints(self):
         """Test pull command with multiple checkpoints (e.g., main + mmproj)."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -553,9 +709,14 @@ sys.exit(0)
 
     def test_054_pull_registered_name(self):
         """Test pull command with a registered model name (no flags)."""
-        result = self.assertCommandSucceeds(
+        result = run_cli_pull_command_with_retry(
             ["pull", ENDPOINT_TEST_MODEL],
             timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: {result.stderr}",
         )
         output = result.stdout.lower() + result.stderr.lower()
         self.assertFalse(
@@ -569,7 +730,7 @@ sys.exit(0)
         # Unique user.<name> entries surface under the bare public name.
         public_name = collection_name[5:]
         try:
-            result = self.assertCommandSucceeds(
+            result = run_cli_pull_command_with_retry(
                 [
                     "pull",
                     collection_name,
@@ -579,6 +740,11 @@ sys.exit(0)
                     ENDPOINT_TEST_MODEL,
                 ],
                 timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Command failed with exit code {result.returncode}: {result.stderr}",
             )
             output = result.stdout.lower() + result.stderr.lower()
             self.assertFalse(
@@ -1874,6 +2040,57 @@ sys.exit(0)
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
     """Lightweight checks that compare CLI help semantics with docs text."""
+
+    def test_899_run_load_recipe_options_are_grouped(self):
+        """Run/load help should keep every recipe flag under the intended group."""
+        expected_groups = {
+            "General Options:": ["--ctx-size", "--merge-args"],
+            "FastFlowLM Options:": ["--flm-args"],
+            "Llama.cpp Backend Options:": [
+                "--llamacpp",
+                "--llamacpp-device",
+                "--llamacpp-args",
+            ],
+            "Stable Diffusion Options:": ["--sdcpp", "--sdcpp-args"],
+            "vLLM Options:": ["--vllm", "--vllm-args"],
+            "Whisper.cpp Options:": ["--whispercpp", "--whispercpp-args"],
+        }
+
+        for command in ("run", "load"):
+            with self.subTest(command=command):
+                result = run_cli_command([command, "--help"], timeout=TIMEOUT_DEFAULT)
+                self.assertEqual(result.returncode, 0)
+
+                help_output = result.stdout + result.stderr
+                group_positions = {
+                    group: help_output.find(group) for group in expected_groups
+                }
+                for group, position in group_positions.items():
+                    self.assertNotEqual(position, -1, f"Missing help group: {group}")
+
+                ordered_groups = sorted(
+                    group_positions.items(), key=lambda item: item[1]
+                )
+                for index, (group, start) in enumerate(ordered_groups):
+                    end = (
+                        ordered_groups[index + 1][1]
+                        if index + 1 < len(ordered_groups)
+                        else len(help_output)
+                    )
+                    section = help_output[start:end]
+
+                    for flag in expected_groups[group]:
+                        self.assertTrue(
+                            any(
+                                line.strip().startswith(flag)
+                                and (
+                                    len(line.strip()) == len(flag)
+                                    or line.strip()[len(flag)] in " ,"
+                                )
+                                for line in section.splitlines()
+                            ),
+                            f"{flag} missing from {group} in `{command} --help`",
+                        )
 
     def test_900_launch_docs_match_help_text(self):
         """The launch model-selection wording in docs should match actual CLI behavior/help."""

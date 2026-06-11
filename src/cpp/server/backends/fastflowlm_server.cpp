@@ -418,7 +418,8 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
                                                   const std::string& request_body,
                                                   httplib::DataSink& sink,
                                                   bool sse,
-                                                  long timeout_seconds) {
+                                                  long timeout_seconds,
+                                                  TelemetryCallback telemetry_callback) {
     // Streaming is only supported for LLM models
     if (model_type_ == ModelType::TRANSCRIPTION || model_type_ == ModelType::EMBEDDING) {
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
@@ -435,10 +436,12 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
         std::string modified_body = request.dump();
 
         // Call base class with modified request
-        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse, timeout_seconds);
+        WrappedServer::forward_streaming_request(endpoint, modified_body, sink, sse,
+                                                 timeout_seconds, telemetry_callback);
     } catch (const json::exception& e) {
         // If JSON parsing fails, forward original request
-        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse, timeout_seconds);
+        WrappedServer::forward_streaming_request(endpoint, request_body, sink, sse,
+                                                 timeout_seconds, telemetry_callback);
     }
 }
 

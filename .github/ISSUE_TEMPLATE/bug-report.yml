@@ -110,7 +110,7 @@ body:
 
         **Additional diagnostic commands (run these and paste the output):**
         - `lemonade status` — shows server info and loaded models
-         
+
         - `lemonade backends` — shows installed backends and driver status
 
         **Platform-specific tips:**

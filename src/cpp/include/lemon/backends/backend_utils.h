@@ -3,6 +3,8 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -84,7 +86,12 @@ namespace lemon::backends {
 
         /** Download and install the specified version of the backend from github.
          *  If progress_cb is provided, it receives download progress events instead of console output. */
-        static void install_from_github(const BackendSpec& spec, const std::string& expected_version, const std::string& repo, const std::string& filename, const std::string& backend, DownloadProgressCallback progress_cb = nullptr);
+        static void install_from_github(const BackendSpec& spec,
+                                        const std::string& expected_version,
+                                        const std::string& repo,
+                                        const std::string& filename,
+                                        const std::string& backend,
+                                        DownloadProgressCallback progress_cb = nullptr);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
@@ -136,5 +143,22 @@ namespace lemon::backends {
                                          const std::string& backend,
                                          std::string& out_section,
                                          std::string& out_bin_key);
+
+        /**
+         * Append shared CUDA environment variables to env_vars.
+         *
+         * Sets CUDA_VISIBLE_DEVICES to device indices matching the installed CUDA arch
+         * (unless skip_visible_devices is true or the variable is already set in the
+         * environment). On Linux, always sets __NV_PRIME_RENDER_OFFLOAD=1 so the NVIDIA
+         * dGPU is activated on Optimus/PRIME systems in On-Demand mode.
+         *
+         * Call this for every CUDA backend subprocess launch. Pass
+         * skip_visible_devices=true when the caller provides an explicit device
+         * selection through a backend-specific mechanism (e.g. llama.cpp --device).
+         */
+        static void apply_cuda_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            bool skip_visible_devices = false);
     };
 } // namespace lemon::backends

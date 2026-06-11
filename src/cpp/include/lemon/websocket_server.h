@@ -65,6 +65,14 @@ public:
      */
     int get_port() const { return port_; }
 
+    /**
+     * Adopt an already-accepted TCP socket carrying an HTTP WebSocket
+     * upgrade request (bytes unconsumed). Used by the main HTTP server to
+     * upgrade /realtime and /logs/stream connections on its own port.
+     * Thread-safe; ownership of the socket transfers on success.
+     */
+    bool adopt_socket(intptr_t fd);
+
     // libwebsockets callback (public — referenced by file-scope protocols array)
     static int ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
                            void* user, void* in, size_t len);
@@ -89,9 +97,14 @@ private:
     Router* router_;
     std::unique_ptr<RealtimeSessionManager> session_manager_;
     struct lws_context* context_{nullptr};
+    struct lws_vhost* vhost_{nullptr};
     std::thread service_thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> writable_dispatch_pending_{false};
+
+    // Sockets handed over by the HTTP server, adopted on the service thread
+    std::queue<intptr_t> pending_adoptions_;
+    std::mutex adoption_mutex_;
 
     std::unordered_map<std::string, ConnectionState> connection_states_;
     // Map connection IDs to lws wsi pointers for sending
@@ -128,6 +141,7 @@ private:
     void handle_realtime_connection(const std::string& connection_id,
                                     struct lws* wsi);
     void schedule_pending_writes();
+    void drain_pending_adoptions();
 
     // Service loop run in background thread
     void service_loop();

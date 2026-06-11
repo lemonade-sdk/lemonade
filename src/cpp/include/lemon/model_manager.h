@@ -90,6 +90,9 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
+    // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
+    int moonshine_arch = -1;
+
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }
@@ -238,6 +241,11 @@ private:
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
     mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
     mutable bool cache_valid_ = false;
+
+    // Refresh user_models.json on-demand when a user.* lookup misses the cache.
+    // This keeps startup cache warmup / external registry writes from causing
+    // stale hard "Model not found" failures for registered user models.
+    bool refresh_user_models_from_disk_for_lookup(const std::string& model_name);
 
     void rebuild_public_model_aliases_locked();
 };

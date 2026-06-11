@@ -1,6 +1,8 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/process_manager.h>
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <vector>
 #include <string>
@@ -269,6 +271,27 @@ std::string find_executable_in_path(const std::string& executable_name) {
 
 bool is_ggml_hip_plugin_available() {
 #ifdef __linux__
+    // Allow distros/packagers that install outside the FHS paths below
+    // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
+    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env) {
+        // Require the basename to look like the HIP plugin (libggml-hip*.so*,
+        // case-insensitive, versioned sonames allowed). This is a sanity check,
+        // not a security boundary: the path is not forwarded to ggml's loader,
+        // so we cannot verify it is actually loadable. It only guards against an
+        // accidental override pointing at an unrelated existing file.
+        std::string name = fs::path(env).filename().string();
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        const bool name_matches = name.rfind("libggml-hip", 0) == 0 &&
+                                  name.find(".so") != std::string::npos;
+        // LEMONADE_GGML_HIP_PATH is user-controlled, so use the non-throwing
+        // filesystem overload: an odd or malformed path resolves to "not a
+        // regular file" (ec set) instead of raising a filesystem_error.
+        std::error_code hip_path_ec;
+        if (name_matches && fs::is_regular_file(env, hip_path_ec)) {
+            return true;
+        }
+    }
     // On Linux x86_64, check common system library paths for the HIP plugin
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)
@@ -428,7 +451,18 @@ std::string get_runtime_dir() {
             }
         }
     }
-    throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR");
+
+    // System services can get a RuntimeDirectory= without XDG_RUNTIME_DIR.
+    if (const char* runtime_dir = std::getenv("RUNTIME_DIRECTORY");
+        runtime_dir && runtime_dir[0] != '\0') {
+        std::error_code ec;
+        fs::path base(runtime_dir);
+        if (fs::is_directory(base, ec) && !ec && access(runtime_dir, W_OK | X_OK) == 0) {
+            return base.string();
+        }
+    }
+
+    throw std::runtime_error("Unable to resolve writable runtime directory from XDG_RUNTIME_DIR or RUNTIME_DIRECTORY");
 #endif
 }
 

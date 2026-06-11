@@ -19,6 +19,7 @@
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "upgradable_http_server.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
 
@@ -57,6 +58,9 @@ private:
     // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
     void setup_http_servers();
 
+    // Stop the main-port listeners (fronts) and detach the routed servers
+    void stop_http_listeners();
+
     // Unified config endpoints
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
     void handle_config_get(const httplib::Request& req, httplib::Response& res);
@@ -79,6 +83,10 @@ private:
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
+    // Server-side tool-calling orchestration for Omni "collection" models.
+    void handle_collection_chat_completions(const nlohmann::json& request_json,
+                                            const ModelInfo& collection_info,
+                                            httplib::Response& res);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
@@ -93,6 +101,7 @@ private:
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
+    void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
@@ -180,6 +189,10 @@ private:
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
+    // Load every component of a collection (Omni) model, downloading any that are
+    // missing. Shared by handle_load and auto_load_model_if_needed.
+    void ensure_collection_loaded(const ModelInfo& info);
+
     // Helper function to convert ModelInfo to JSON (used by models endpoints)
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
 
@@ -203,8 +216,12 @@ private:
     std::thread model_cache_warmup_thread_;
 
 
-    std::unique_ptr<httplib::Server> http_server_;
-    std::unique_ptr<httplib::Server> http_server_v6_;
+    // Routed servers (all routes/handlers; never listen) and the main-port
+    // front listeners that feed them — see upgradable_http_server.h
+    std::unique_ptr<RoutedHttpServer> http_server_;
+    std::unique_ptr<RoutedHttpServer> http_server_v6_;
+    std::unique_ptr<UpgradableFrontServer> http_front_;
+    std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
@@ -217,6 +234,7 @@ private:
     bool running_;
     std::atomic<bool> shutdown_requested_{false};
     std::atomic<bool> rebind_requested_{false};
+    std::atomic<bool> metrics_access_logged_{false};
 
     std::string api_key_;
     std::string admin_api_key_;
