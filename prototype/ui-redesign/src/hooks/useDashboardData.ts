@@ -247,7 +247,7 @@ export function useDashboardData(): DashboardData {
       } else {
         setSlotsUnsupported(loaded.length > 0);
         setSlotStatus(loaded.length > 0
-          ? 'Loaded models do not expose llama.cpp/vLLM slot telemetry.'
+          ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
           : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
       }
       setSlots(slotData);
