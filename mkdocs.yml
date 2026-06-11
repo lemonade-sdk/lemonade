@@ -83,6 +83,7 @@ nav:
     - Web UI: dev/web-ui.md
     - Lemonade Omni Models: dev/lemonade-omni.md
     - Infrastructure: dev/self-hosted-runners.md
+    - Release Process: dev/release.md
   - API Spec:
       - Overview: api/README.md
       - OpenAI Compatible: api/openai.md
