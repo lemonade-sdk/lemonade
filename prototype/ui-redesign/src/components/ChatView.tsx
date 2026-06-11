@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, friendlyErrorMessage } from '../api';
+import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, RealtimeTranscriptionHandle, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
+import { useAudioCapture } from '../hooks/useAudioCapture';
 import {
   canSelectInComposer,
   canUseChatCompletions,
@@ -321,6 +322,32 @@ function modelSupportsImageEdit(modelName: string | null, modelInfo: ModelInfo |
     || haystack.includes('image-edit');
 }
 
+function modelSupportsRealtimeAudio(modelName: string | null, modelInfo: ModelInfo | null, loadedModel: LoadedModel | null): boolean {
+  const labels = (modelInfo?.labels || []).map(label => label.toLowerCase().trim());
+  if (labels.includes('realtime-transcription')) return true;
+
+  const recipe = String((modelInfo as any)?.recipe || loadedModel?.recipe || '').toLowerCase();
+  if (recipe.includes('moonshine') || recipe.includes('whispercpp')) return true;
+
+  const haystack = [
+    modelName,
+    modelInfo?.id,
+    modelInfo?.name,
+    modelInfo?.display_name,
+    String((modelInfo as any)?.model_name || ''),
+    loadedModel?.model_name,
+    loadedModel?.checkpoint,
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes('moonshine') || haystack.includes('whisper');
+}
+
+function canUseMicrophone(): boolean {
+  return typeof window !== 'undefined'
+    && window.isSecureContext
+    && typeof navigator !== 'undefined'
+    && !!navigator.mediaDevices?.getUserMedia;
+}
+
 const LEMONADE_TOOL_RUNTIME: ChatToolRuntime = {
   tools: LEMONADE_TOOLS as unknown as Record<string, unknown>[],
   execute: executeTool as unknown as ChatToolRuntime['execute'],
@@ -492,6 +519,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const imageSettingsCommittedRef = useRef(false);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [pendingAudioFiles, setPendingAudioFiles] = useState<File[]>([]);
+  const [isLiveRecording, setIsLiveRecording] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [railExpanded, setRailExpanded] = useState(true);
   const [useTools, setUseTools] = useState(() => {
@@ -504,6 +537,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
   const streamModelsRef = useRef<Record<string, ModelSnapshot | null>>({});
+  const realtimeRef = useRef<RealtimeTranscriptionHandle | null>(null);
+  const isLiveRecordingRef = useRef(false);
+  const liveTranscriptRef = useRef('');
+  const liveFinalizeTimerRef = useRef<number | null>(null);
+  const audioLevelRef = useRef(0);
 
   const currentLoadedModel = useMemo(
     () => loadedModels.find(m => m.model_name === currentModel) || null,
@@ -557,6 +595,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  const supportsRealtimeAudio = useMemo(
+    () => currentCapability === 'audio'
+      && canUseMicrophone()
+      && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
+    [currentCapability, currentModel, currentKnownModelInfo, currentLoadedModel],
+  );
 
   const defaultImageSettings = useMemo(
     () => imageDefaultsForModel(currentLoadedModel, currentKnownModelInfo),
@@ -608,6 +652,36 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   );
   const modeSupportsChatCompletions = currentLoadedModel ? canUseChatCompletions(currentLoadedModel) : (currentCapability === 'chat' || currentCapability === 'omni');
   const modeSupportsTools = modeSupportsChatCompletions;
+
+  const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
+    if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const accumulated = liveTranscriptRef.current;
+    if (isFinal) {
+      const next = accumulated ? `${accumulated} ${trimmed}` : trimmed;
+      liveTranscriptRef.current = next;
+      setLiveTranscript(next);
+    } else {
+      setLiveTranscript(accumulated ? `${accumulated} ${trimmed}` : trimmed);
+    }
+  }, []);
+
+  const handleLiveSpeechEvent = useCallback((event: 'started' | 'stopped') => {
+    setIsSpeaking(event === 'started');
+  }, []);
+
+  const handleAudioChunk = useCallback((base64: string) => {
+    realtimeRef.current?.sendAudio(base64);
+  }, []);
+
+  const handleAudioLevel = useCallback((level: number) => {
+    const smoothed = audioLevelRef.current * 0.7 + level * 0.3;
+    audioLevelRef.current = smoothed;
+    setAudioLevel(smoothed);
+  }, []);
+
+  const { startRecording, stopRecording, error: micError } = useAudioCapture(handleAudioChunk, handleAudioLevel);
 
   useEffect(() => {
     const currentStillUsable = currentModel && loadedModels.some(m => m.model_name === currentModel && canSelectInComposer(m));
@@ -672,7 +746,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   // Derived: is the CURRENT conversation streaming?
   const currentStream = activeId ? streaming.getStream(activeId) : undefined;
   const isStreaming = !!currentStream;
-  const isBusy = isStreaming || capabilityBusy;
+  const isBusy = isStreaming || capabilityBusy || isLiveRecording;
   const streamingContent = currentStream?.content || '';
   const streamingThinking = currentStream?.thinking || '';
   const streamingToolStatus = currentStream?.toolStatus || '';
@@ -762,6 +836,122 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       }));
     }
   }, [activeId, currentModelSnapshot, streaming, updateConversation]);
+
+  const appendLiveTranscript = useCallback((text: string) => {
+    if (!currentModelSnapshot) return;
+    const finalText = text.trim();
+    if (!finalText) return;
+    const modelSnapshot = currentModelSnapshot;
+    const userMessage: Message = {
+      role: 'user',
+      content: 'Live microphone recording',
+      audioName: 'Microphone',
+      model: modelSnapshot,
+    };
+    const assistantMessage: Message = {
+      role: 'assistant',
+      content: finalText,
+      model: modelSnapshot,
+    };
+
+    if (!activeId) {
+      const newConvo: Conversation = {
+        id: generateId(),
+        title: 'Live microphone recording',
+        model: modelSnapshot,
+        messages: [userMessage, assistantMessage],
+        updatedAt: Date.now(),
+        schemaVersion: STORAGE_VERSION,
+      };
+      setConversations(prev => [newConvo, ...prev]);
+      setActiveId(newConvo.id);
+      return;
+    }
+
+    updateConversation(activeId, c => ({
+      ...c,
+      messages: [...c.messages, userMessage, assistantMessage],
+      model: modelSnapshot,
+      title: c.messages.length === 0 ? 'Live microphone recording' : c.title,
+      updatedAt: Date.now(),
+    }));
+  }, [activeId, currentModelSnapshot, updateConversation]);
+
+  const clearLiveMicState = useCallback(() => {
+    setIsLiveRecording(false);
+    setIsLiveConnected(false);
+    setIsSpeaking(false);
+    setAudioLevel(0);
+    audioLevelRef.current = 0;
+    isLiveRecordingRef.current = false;
+  }, []);
+
+  const handleMicStart = useCallback(async () => {
+    if (!currentModel || !currentModelSnapshot || currentCapability !== 'audio' || !supportsRealtimeAudio || isStreaming || capabilityBusy) return;
+    if (liveFinalizeTimerRef.current) {
+      window.clearTimeout(liveFinalizeTimerRef.current);
+      liveFinalizeTimerRef.current = null;
+    }
+    setLiveError(null);
+    setLiveTranscript('');
+    liveTranscriptRef.current = '';
+    try {
+      const handle = await api.connectRealtimeTranscription(currentModel, {
+        onConnected: () => setIsLiveConnected(true),
+        onDisconnected: () => setIsLiveConnected(false),
+        onError: message => setLiveError(message),
+        onSpeechEvent: handleLiveSpeechEvent,
+        onTranscription: handleLiveTranscription,
+      });
+      realtimeRef.current = handle;
+      isLiveRecordingRef.current = true;
+      await startRecording();
+      setIsLiveRecording(true);
+    } catch (err) {
+      realtimeRef.current?.close();
+      realtimeRef.current = null;
+      stopRecording();
+      clearLiveMicState();
+      setLiveError(friendlyErrorMessage(err));
+    }
+  }, [
+    capabilityBusy,
+    clearLiveMicState,
+    currentCapability,
+    currentModel,
+    currentModelSnapshot,
+    handleLiveSpeechEvent,
+    handleLiveTranscription,
+    isStreaming,
+    startRecording,
+    stopRecording,
+    supportsRealtimeAudio,
+  ]);
+
+  const handleMicStop = useCallback(() => {
+    stopRecording();
+    const handle = realtimeRef.current;
+    handle?.commitAudio();
+    clearLiveMicState();
+
+    liveFinalizeTimerRef.current = window.setTimeout(() => {
+      const finalText = liveTranscriptRef.current.trim();
+      if (finalText) appendLiveTranscript(finalText);
+      setLiveTranscript('');
+      liveTranscriptRef.current = '';
+      handle?.close();
+      if (realtimeRef.current === handle) realtimeRef.current = null;
+      liveFinalizeTimerRef.current = null;
+    }, 1200);
+  }, [appendLiveTranscript, clearLiveMicState, stopRecording]);
+
+  useEffect(() => {
+    return () => {
+      stopRecording();
+      realtimeRef.current?.close();
+      if (liveFinalizeTimerRef.current) window.clearTimeout(liveFinalizeTimerRef.current);
+    };
+  }, [stopRecording]);
 
   const runCapabilityRequest = useCallback(async (
     convoId: string,
@@ -1200,7 +1390,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       : currentCapability === 'image'
       ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
       : currentCapability === 'audio'
-        ? `Attach an audio file to transcribe with ${currentModel}…`
+        ? `Attach audio or use the mic with ${currentModel}…`
         : currentCapability === 'tts'
           ? `Text to speak with ${currentModel}…`
           : `Message ${currentModel}…`;
@@ -1209,7 +1399,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
     : currentCapability === 'audio'
-      ? 'Audio mode · attach one audio file for /audio/transcriptions'
+      ? 'Audio mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
       : currentCapability === 'tts'
         ? 'TTS mode · text becomes /audio/speech'
         : '⏎ to send · Shift+⏎ for newline · Paste or drop images';
@@ -1540,6 +1730,18 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             ))}
           </div>
         )}
+        {(isLiveRecording || liveTranscript || liveError || micError) && currentCapability === 'audio' && (
+          <div className={`composer__live${liveError || micError ? ' composer__live--error' : ''}`}>
+            <div className="composer__live-head">
+              <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
+              <span>{isLiveRecording ? (isLiveConnected ? 'Live microphone' : 'Connecting microphone…') : 'Microphone'}</span>
+              {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
+            </div>
+            <div className="composer__live-text">
+              {liveError || micError || liveTranscript || 'Listening… start speaking to see transcription.'}
+            </div>
+          </div>
+        )}
         <div className="composer__bar">
           <button
             className="composer__attach"
@@ -1560,6 +1762,18 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
+          {currentCapability === 'audio' && (
+            <button
+              className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
+              onClick={isLiveRecording ? handleMicStop : handleMicStart}
+              disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
+              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
+              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
+              aria-pressed={isLiveRecording}
+            >
+              🎙
+            </button>
+          )}
           <textarea
             ref={inputRef}
             className="composer__input"

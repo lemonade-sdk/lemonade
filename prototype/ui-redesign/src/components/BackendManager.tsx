@@ -30,13 +30,18 @@ interface RecipeInfo {
 }
 
 interface SystemInfoData {
-  'OS Version': string;
-  lemonade_version: string;
+  'OS Version'?: string;
+  os_version?: string;
+  lemonade_version?: string;
+  version?: string;
   devices: {
     cpu?: DeviceInfo;
     amd_gpu?: DeviceInfo[];
+    amd_dgpu?: DeviceInfo[];
+    amd_igpu?: DeviceInfo;
     nvidia_gpu?: DeviceInfo[];
     amd_npu?: DeviceInfo;
+    npu?: DeviceInfo;
     metal?: DeviceInfo;
   };
   recipes: Record<string, RecipeInfo>;
@@ -48,6 +53,7 @@ interface SystemInfoData {
 const RECIPE_LABELS: Record<string, string> = {
   llamacpp:       'llama.cpp',
   whispercpp:     'whisper.cpp',
+  moonshine:      'Moonshine',
   'sd-cpp':       'stable-diffusion.cpp',
   kokoro:         'Kokoro TTS',
   flm:            'FastFlowLM',
@@ -59,6 +65,7 @@ const RECIPE_LABELS: Record<string, string> = {
 const RECIPE_CAPABILITY: Record<string, string> = {
   llamacpp:       'LLM',
   whispercpp:     'Audio',
+  moonshine:      'Audio',
   'sd-cpp':       'Image',
   kokoro:         'TTS',
   flm:            'LLM',
@@ -126,6 +133,42 @@ function uniq<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
+function asArray<T>(value: T | T[] | undefined | null): T[] {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function cleanString(value: unknown): string {
+  const s = String(value || '').trim();
+  return s && s.toLowerCase() !== 'unknown' ? s : '';
+}
+
+function lemonadeVersion(info: SystemInfoData | null): string {
+  return cleanString(info?.lemonade_version)
+    || cleanString(info?.version)
+    || cleanString(api.healthData?.version)
+    || 'unknown';
+}
+
+function osVersion(info: SystemInfoData | null): string {
+  return cleanString(info?.['OS Version'])
+    || cleanString(info?.os_version)
+    || 'OS unknown';
+}
+
+function amdGpuDevices(info: SystemInfoData | null): DeviceInfo[] {
+  if (!info?.devices) return [];
+  return [
+    ...asArray(info.devices.amd_gpu),
+    ...asArray(info.devices.amd_dgpu),
+    ...asArray(info.devices.amd_igpu),
+  ];
+}
+
+function amdNpuDevice(info: SystemInfoData | null): DeviceInfo | undefined {
+  return info?.devices?.amd_npu || info?.devices?.npu;
+}
+
 function normalizeDeviceToken(token: string): DeviceKey {
   const t = token.toLowerCase().replace(/[^a-z0-9]+/g, '');
   if (!t || t === 'unknown') return 'unknown';
@@ -176,6 +219,7 @@ const BackendManager: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      if (!api.healthData) await api.health().catch(() => null);
       const data = await api.systemInfo() as unknown as SystemInfoData;
       setSysInfo(data);
     } catch (err) {
@@ -281,9 +325,9 @@ const BackendManager: React.FC = () => {
     const devs: DeviceKey[] = [];
     if (sysInfo.devices.cpu?.available) devs.push('cpu');
     if ((sysInfo.devices.nvidia_gpu || []).some(g => g.available)) devs.push('nvidia_gpu');
-    if ((sysInfo.devices.amd_gpu || []).some(g => g.available)) devs.push('amd_gpu');
+    if (amdGpuDevices(sysInfo).some(g => g.available)) devs.push('amd_gpu');
     if (sysInfo.devices.metal?.available) devs.push('metal');
-    if (sysInfo.devices.amd_npu?.available) devs.push('amd_npu');
+    if (amdNpuDevice(sysInfo)?.available) devs.push('amd_npu');
     return devs;
   }, [sysInfo]);
 
@@ -330,10 +374,10 @@ const BackendManager: React.FC = () => {
     if (!sysInfo) return '';
     switch (deviceKey) {
       case 'cpu': return sysInfo.devices.cpu?.name || '';
-      case 'amd_gpu': return (sysInfo.devices.amd_gpu || []).map(g => g.name).join(', ') || '';
+      case 'amd_gpu': return amdGpuDevices(sysInfo).map(g => g.name).filter(Boolean).join(', ') || '';
       case 'nvidia_gpu': return (sysInfo.devices.nvidia_gpu || []).map(g => g.name).join(', ') || '';
       case 'metal': return sysInfo.devices.metal?.name || '';
-      case 'amd_npu': return sysInfo.devices.amd_npu?.name || '';
+      case 'amd_npu': return amdNpuDevice(sysInfo)?.name || '';
       default: return '';
     }
   }, [sysInfo]);
@@ -393,9 +437,9 @@ const BackendManager: React.FC = () => {
         {sysInfo && (
           <div className="backends__summary">
             <span className="backends__version">
-              Lemonade {sysInfo.lemonade_version || 'unknown'}
+              Lemonade {lemonadeVersion(sysInfo)}
             </span>
-            <span className="backends__os">{sysInfo['OS Version'] || 'OS unknown'}</span>
+            <span className="backends__os">{osVersion(sysInfo)}</span>
           </div>
         )}
       </div>

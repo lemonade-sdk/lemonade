@@ -208,7 +208,7 @@ const LogViewer: React.FC = () => {
 
   useEffect(() => {
     shouldReconnectRef.current = true;
-    // Health check is needed for websocket_port — connect stream as soon as it's ready
+    // Health check verifies the API before opening the log stream.
     // Fetch server log level in parallel (non-blocking)
     const tryConnect = async () => {
       if (!shouldReconnectRef.current) return;

@@ -16,14 +16,14 @@ const TYPE_TO_CAPABILITY: Record<string, ModelCapability> = {
   vision: 'omni', vlm: 'omni', 'vision-language': 'omni', omni: 'omni', multimodal: 'omni', 'multi-modal': 'omni',
   'audio-chat': 'omni', realtime: 'omni',
   image: 'image', diffusion: 'image', 'image-generation': 'image',
-  audio: 'audio', transcription: 'audio', 'realtime-transcription': 'audio', asr: 'audio',
+  audio: 'audio', transcription: 'audio', 'realtime-transcription': 'audio', asr: 'audio', stt: 'audio', 'speech-to-text': 'audio',
   tts: 'tts', speech: 'tts', 'text-to-speech': 'tts',
   embedding: 'embedding', embeddings: 'embedding', reranking: 'reranking', reranker: 'reranking',
 };
 
 const NON_CHAT_RECIPE_HINTS: Array<[string, ModelCapability]> = [
   ['stable-diffusion', 'image'], ['diffusion', 'image'], ['sd-cpp', 'image'],
-  ['whisper', 'audio'], ['asr', 'audio'],
+  ['whisper', 'audio'], ['moonshine', 'audio'], ['asr', 'audio'], ['speech-to-text', 'audio'],
   ['kokoro', 'tts'], ['text-to-speech', 'tts'], ['tts', 'tts'],
   ['embedding', 'embedding'], ['rerank', 'reranking'],
 ];
@@ -86,7 +86,7 @@ export function capabilityFromLabels(labels?: string[]): ModelCapability {
 
   if (lower.some(l => l === 'image' || l === 'image-generation' || l === 'edit' || l === 'upscaling')) return 'image';
   if (lower.some(l => l === 'tts' || l === 'speech' || l === 'text-to-speech')) return 'tts';
-  if (lower.some(l => l === 'transcription' || l === 'realtime-transcription' || l === 'asr')) return 'audio';
+  if (lower.some(l => l === 'transcription' || l === 'realtime-transcription' || l === 'asr' || l === 'stt' || l === 'speech-to-text')) return 'audio';
   if (lower.some(l => l === 'embeddings' || l === 'embedding')) return 'embedding';
   if (lower.some(l => l === 'reranking' || l === 'reranker')) return 'reranking';
 
