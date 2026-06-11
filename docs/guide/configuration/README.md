@@ -8,7 +8,11 @@ Lemonade Server starts automatically with the OS after installation. Configurati
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux (systemd):** `/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+
+  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
 - **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
 
@@ -243,8 +247,12 @@ lemond --port 9000 --host 0.0.0.0
 If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux
+# Linux (Debian/Ubuntu)
 sudo nano /var/lib/lemonade/.cache/lemonade/config.json
+
+# Linux (Fedora/Red Hat)
+sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:

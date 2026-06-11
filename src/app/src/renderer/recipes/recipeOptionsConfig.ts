@@ -48,6 +48,13 @@ export interface WhisperOptions {
   saveOptions: BooleanOption;
 }
 
+export interface MoonshineOptions {
+  recipe: 'moonshine';
+  moonshineArgs: StringOption;
+  mergeArgs: BooleanOption;
+  saveOptions: BooleanOption;
+}
+
 export interface FlmOptions {
   recipe: 'flm';
   ctxSize: NumericOption;
@@ -84,7 +91,7 @@ export interface VLLMOptions {
 }
 
 // Union type of all recipe options
-export type RecipeOptions = LlamaOptions | WhisperOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
+export type RecipeOptions = LlamaOptions | WhisperOptions | MoonshineOptions | FlmOptions | RyzenAIOptions | StableDiffusionOptions | VLLMOptions;
 
 // =============================================================================
 // Recipe Constants
@@ -205,6 +212,14 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     description: 'Custom arguments to pass to whisper-server, for example --convert',
   },
 
+  // Moonshine (streaming STT) options
+  moonshineArgs: {
+    type: 'string',
+    default: '',
+    label: 'Moonshine Arguments',
+    description: 'Custom arguments to pass to moonshine-server',
+  },
+
   // Stable Diffusion options
   sdcppBackend: {
     type: 'string',
@@ -264,7 +279,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
 // Recipe Configuration - Maps recipes to their available options
 // =============================================================================
 
-export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
+export type RecipeName = 'llamacpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'sd-cpp' | 'vllm';
 
 /**
  * Maps recipe names to the option keys they support.
@@ -273,6 +288,7 @@ export type RecipeName = 'llamacpp' | 'whispercpp' | 'flm' | 'ryzenai-llm' | 'sd
 export const RECIPE_OPTIONS_MAP: Record<RecipeName, string[]> = {
   'llamacpp': ['ctxSize', 'llamacppBackend', 'llamacppArgs', 'mergeArgs', 'saveOptions'],
   'whispercpp': ['whispercppBackend', 'whispercppArgs', 'mergeArgs', 'saveOptions'],
+  'moonshine': ['moonshineArgs', 'mergeArgs', 'saveOptions'],
   'flm': ['ctxSize', 'mergeArgs', 'saveOptions'],
   'ryzenai-llm': ['ctxSize', 'saveOptions'],
   'sd-cpp': ['sdcppBackend', 'steps', 'cfgScale', 'width', 'height', 'mergeArgs', 'saveOptions'],
@@ -307,6 +323,7 @@ const FRONTEND_TO_API_MAP: Record<string, string> = {
   llamacppArgs: 'llamacpp_args',
   whispercppBackend: 'whispercpp_backend',
   whispercppArgs: 'whispercpp_args',
+  moonshineArgs: 'moonshine_args',
   sdcppBackend: 'sd-cpp_backend',
   cfgScale: 'cfg_scale',
   vllmBackend: 'vllm_backend',

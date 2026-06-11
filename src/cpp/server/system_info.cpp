@@ -538,6 +538,11 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"vllm", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
+
+    // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
+    {"moonshine", "cpu", {"windows", "linux", "macos"}, {
+        {"cpu", {"x86_64", "arm64"}},
+    }},
 };
 
 // ============================================================================

@@ -40,7 +40,7 @@ std::vector<GPUInfo> MacOSSystemInfo::detect_metal_gpus() {
                         GPUInfo additional_gpu;
                         additional_gpu.name = [dev.name UTF8String];
                         additional_gpu.available = true;
-                        
+
                         uint64_t additional_vram = [dev recommendedMaxWorkingSetSize];
                         additional_gpu.vram_gb = additional_vram / (1024.0 * 1024.0 * 1024.0);
                         additional_gpu.driver_version = [dev.architecture.name UTF8String];

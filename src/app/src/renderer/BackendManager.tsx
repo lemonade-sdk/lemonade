@@ -9,6 +9,7 @@ import CloudProvidersSection from './CloudProvidersSection';
 const RECIPE_ORDER = new Map([
   'llamacpp',
   'whispercpp',
+  'moonshine',
   'sd-cpp',
   'kokoro',
   'flm',

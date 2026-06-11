@@ -99,6 +99,9 @@ struct ModelInfo {
     double cost_input_per_million = -1.0;
     double cost_output_per_million = -1.0;
 
+    // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
+    int moonshine_arch = -1;
+
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }

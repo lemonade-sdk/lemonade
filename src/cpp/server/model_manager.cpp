@@ -28,6 +28,10 @@
 #include <limits>
 #include <lemon/utils/aixlog.hpp>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
@@ -1787,8 +1791,10 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
+        info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1829,6 +1835,7 @@ void ModelManager::build_cache() {
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -2220,7 +2227,6 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 }
 
 
-
 double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
     // Get the maximum POSSIBLE accessible memory of the device in question,
     // taking into account the respective memory allocation behavior.
@@ -2593,6 +2599,10 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("transcription");
         labels.insert("realtime-transcription");
     }
+    if (recipe == "moonshine") {
+        labels.insert("transcription");
+        labels.insert("realtime-transcription");
+    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
@@ -2825,7 +2835,7 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
         return;
     }
 
-    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    // Use recipe-specific download paths
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
@@ -3723,6 +3733,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
+        bool is_moonshine = info.recipe == "moonshine";
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3732,6 +3743,23 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             } else {
                 throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
+        } else if (is_moonshine) {
+            // Moonshine variant is a directory path (e.g., "medium-streaming-en/quantized")
+            // Download all files under that directory
+            std::string folder_prefix = main_variant;
+            if (!folder_prefix.empty() && folder_prefix.back() != '/') {
+                folder_prefix += "/";
+            }
+            for (const auto& file : repo_files) {
+                if (starts_with_ignore_case(file, folder_prefix)) {
+                    files_to_download[main_repo_id].push_back(file);
+                }
+            }
+            if (files_to_download[main_repo_id].empty()) {
+                throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
+            }
+            LOG(INFO, "ModelManager") << "Moonshine: downloading " << files_to_download[main_repo_id].size()
+                                      << " files from " << main_variant << std::endl;
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
@@ -4678,6 +4706,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         if ((*model_json)["size"].is_number()) {
             info.size = (*model_json)["size"].get<double>();
         }
+    }
+
+    // Parse moonshine_arch
+    if (model_json->contains("moonshine_arch") && (*model_json)["moonshine_arch"].is_number_integer()) {
+        info.moonshine_arch = (*model_json)["moonshine_arch"].get<int>();
     }
 
     return info;

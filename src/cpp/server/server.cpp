@@ -93,6 +93,26 @@ bool strip_handled_thinking_fields(json& request_json) {
     return modified;
 }
 
+// Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
+// Returns true if the model name was modified
+bool normalize_client_model_name(json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return false;
+    }
+
+    std::string model_name = request_json["model"].get<std::string>();
+    const std::string latest_suffix = ":latest";
+
+    if (model_name.size() > latest_suffix.size() &&
+        model_name.substr(model_name.size() - latest_suffix.size()) == latest_suffix) {
+        std::string normalized = model_name.substr(0, model_name.size() - latest_suffix.size());
+        request_json["model"] = normalized;
+        return true;
+    }
+
+    return false;
+}
+
 bool prepend_no_think_to_last_user_message(json& request_json) {
     if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
         LOG(DEBUG, "Server") << "No messages array found for /no_think injection" << std::endl;
@@ -248,9 +268,29 @@ void Server::start_model_cache_warmup() {
     });
 }
 
+// Extract the member-function pointer for httplib::Server's private virtual
+// process_and_close_socket (see upgradable_http_server.h). Explicit
+// instantiation is the one context where C++ permits naming a private member.
+template struct lemon::detail::PrivateMemberInit<
+    lemon::detail::ProcessAndCloseSocketTag,
+    &httplib::Server::process_and_close_socket>;
+
 void Server::setup_http_servers() {
-    http_server_ = std::make_unique<httplib::Server>();
-    http_server_v6_ = std::make_unique<httplib::Server>();
+    http_server_ = std::make_unique<RoutedHttpServer>();
+    http_server_v6_ = std::make_unique<RoutedHttpServer>();
+
+    // Front listeners for the main port: WebSocket upgrades for /realtime and
+    // /logs/stream are adopted by the libwebsockets server; everything else is
+    // processed by the routed servers above. The dedicated websocket_port
+    // listener keeps running unchanged.
+    auto upgrade_handler = [this](socket_t sock) -> bool {
+        if (websocket_server_ && websocket_server_->is_running()) {
+            return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
+        }
+        return false;
+    };
+    http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
+    http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -260,11 +300,32 @@ void Server::setup_http_servers() {
         return new httplib::ThreadPool(8);
     };
 
+    // The fronts own the accept loops (and therefore the task queues)
+    http_front_->new_task_queue = task_queue_factory;
+    http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+}
+
+void Server::stop_http_listeners() {
+    // The routed servers never own the listen socket: clear the injected fd so
+    // their per-connection keep-alive loops exit, then close it once via the
+    // fronts (which are the servers actually listening).
+    if (http_server_) {
+        http_server_->set_listen_socket(INVALID_SOCKET);
+    }
+    if (http_server_v6_) {
+        http_server_v6_->set_listen_socket(INVALID_SOCKET);
+    }
+    if (http_front_) {
+        http_front_->stop();
+    }
+    if (http_front_v6_) {
+        http_front_v6_->stop();
+    }
 }
 
 Server::~Server() {
@@ -302,7 +363,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     // - If api_key_ is empty, the regular endpoints require no authentication.
     // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
-    std::string auth_token = httplib::get_bearer_token_auth(req);
+    // Safely extract bearer token, guarding against malformed Authorization headers
+    std::string auth_token;
+    try {
+        if (req.has_header("Authorization")) {
+            auto auth_value = req.get_header_value("Authorization");
+            // httplib::get_bearer_token_auth does substr(7) for "Bearer ", so check length
+            if (auth_value.size() >= 7) {
+                auth_token = httplib::get_bearer_token_auth(req);
+            }
+            // Silently ignore malformed/short Authorization headers
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
+    }
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -1144,15 +1218,18 @@ void Server::run() {
             setup_http_logger(*http_server_);
             http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
                 LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
-                int result = http_server_->bind_to_port(ipv4, port_);
+                int result = http_front_->bind_to_port(ipv4, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                // The routed server's keep-alive loop runs only while it sees
+                // a valid listen socket
+                http_server_->set_listen_socket(http_front_->listen_socket());
                 LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
                 listener_started = true;
-                if (!http_server_->listen_after_bind()) {
+                if (!http_front_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
@@ -1163,15 +1240,16 @@ void Server::run() {
             setup_http_logger(*http_server_v6_);
             http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
                 LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
-                int result = http_server_v6_->bind_to_port(ipv6, port_);
+                int result = http_front_v6_->bind_to_port(ipv6, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                http_server_v6_->set_listen_socket(http_front_v6_->listen_socket());
                 LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
                 listener_started = true;
-                if (!http_server_v6_->listen_after_bind()) {
+                if (!http_front_v6_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
@@ -1286,8 +1364,7 @@ void Server::stop() {
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();
-        http_server_v6_->stop();
-        http_server_->stop();
+        stop_http_listeners();
         running_ = false;
         shutdown_requested_ = false;  // Reset for potential future use
 
@@ -1718,6 +1795,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Normalize client-provided model names (e.g., strip ":latest" suffix)
+        // Must be done before any model_manager/router lookups and before forwarding
+        normalize_client_model_name(request_json);
+
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
             LOG(DEBUG, "Server") << "Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
@@ -1786,6 +1867,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
         // model name transformation internally via their forward methods.
+        // Note: request_json was already normalized at the top of this function
         std::string request_body = req.body;
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
@@ -1795,10 +1877,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         }
         request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
-        // If we modified the request, serialize it back to string
-        if (request_modified) {
-            request_body = request_json.dump();
-        }
+        // If we modified the request (or normalized the model name earlier), serialize to string
+        // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
+        // so we always use request_json for the body to ensure model name normalization is applied
+        request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -1954,6 +2036,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
 
         bool request_modified = false;
 
+        // Normalize client-provided model names (e.g., strip ":latest" suffix)
+        // Must be done before any model_manager/router lookups and before forwarding
+        normalize_client_model_name(request_json);
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -1991,7 +2077,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = request_modified ? request_json.dump() : req.body;
+        // Use normalized request - model name was already normalized at the top
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -4491,15 +4578,13 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                 port_.store(new_port);
                 rebind_requested_ = true;
                 udp_beacon_.stopBroadcasting();
-                http_server_->stop();
-                http_server_v6_->stop();
+                stop_http_listeners();
             }
         } else if (key == "host") {
             LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
             rebind_requested_ = true;
             udp_beacon_.stopBroadcasting();
-            http_server_->stop();
-            http_server_v6_->stop();
+            stop_http_listeners();
             // Restart websocket server with new host
             if (websocket_server_) {
                 websocket_server_->stop();
