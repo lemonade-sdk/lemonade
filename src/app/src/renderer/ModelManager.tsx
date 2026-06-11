@@ -22,6 +22,7 @@ import { EjectIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
 import { mergeWithDefaultSettings } from './utils/appSettings';
+import { tauriReady } from './tauriShim';
 
 interface ModelFamily {
   displayName: string;
@@ -377,6 +378,7 @@ const [searchQuery, setSearchQuery] = useState('');
   useEffect(() => {
     const loadModelManagerSettings = async () => {
       try {
+        await tauriReady;
         if (!window.api?.getSettings) return;
         const settings = mergeWithDefaultSettings(await window.api.getSettings());
         setShowDownloadedOnly(settings.modelManager.showDownloadedOnly);
@@ -393,6 +395,7 @@ const [searchQuery, setSearchQuery] = useState('');
     setShowFilterPanel(false);
 
     try {
+      await tauriReady;
       if (!window.api?.getSettings || !window.api?.saveSettings) return;
       const currentSettings = await window.api.getSettings();
       await window.api.saveSettings({
