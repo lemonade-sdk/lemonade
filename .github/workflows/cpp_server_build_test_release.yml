@@ -2020,7 +2020,7 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY" --api-key "$LEMONADE_API_KEY"
 
       - name: Capture and upload server logs
         if: always()
