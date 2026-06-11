@@ -476,7 +476,7 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`. If omitted, you will be prompted to select one. | No |
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
@@ -498,9 +498,10 @@ Codex-only option:
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
 - Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
 - `--agent-args` is parsed and appended to the launched agent command.
-- Supported agents: `claude`, `codex`, `opencode`
+- Supported agents: `claude`, `codex`, `opencode`, `pi`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
-- When no `--api-key` is provided, the generated opencode provider uses a default `apiKey` value of `lemonade`.
+- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`.
+- When no `--api-key` is provided, the generated `opencode` and `pi` providers use a default `apiKey` value of `lemonade`.
 
 **Examples:**
 

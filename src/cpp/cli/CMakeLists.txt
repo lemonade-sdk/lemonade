@@ -95,6 +95,7 @@ set(COMMON_SOURCES
     agent_launcher.cpp
     agent_config_file.cpp
     opencode_profile.cpp
+    pi_profile.cpp
 )
 
 # ============================================================
