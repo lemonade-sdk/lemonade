@@ -8,17 +8,26 @@ import { collectionComponentLabel, getCollectionComponents, isCollectionModel, i
 /* ── Helpers ─────────────────────────────────────────────────── */
 
 function formatSize(gb: number): string {
+  if (!Number.isFinite(gb) || gb <= 0) return 'size unknown';
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   if (gb >= 0.01) return `${(gb * 1000).toFixed(0)} MB`;
   return `< 1 MB`;
 }
 
-function modelName(m: ModelInfo): string {
-  return (m as any).model_name || m.name || m.id;
+function modelName(m: ModelInfo | null | undefined): string {
+  if (!m) return '';
+  const raw = (m as any).model_name ?? m.name ?? m.id ?? '';
+  return String(raw).trim();
+}
+
+function modelLabels(m: ModelInfo | null | undefined): string[] {
+  const labels = (m as any)?.labels;
+  if (!Array.isArray(labels)) return [];
+  return labels.map(label => String(label).trim()).filter(Boolean);
 }
 
 function recipeIcon(recipe: string): string {
-  switch (recipe) {
+  switch (String(recipe || '').toLowerCase()) {
     case 'llamacpp': return '🦙';
     case 'vllm': return '🏭';
     case 'flm': return '⚡';
@@ -34,7 +43,8 @@ function recipeIcon(recipe: string): string {
 }
 
 function recipeLabel(recipe: string): string {
-  switch (recipe) {
+  const normalized = String(recipe || '').toLowerCase();
+  switch (normalized) {
     case 'llamacpp': return 'llama.cpp';
     case 'vllm': return 'vLLM';
     case 'flm': return 'FastFlowLM';
@@ -45,7 +55,7 @@ function recipeLabel(recipe: string): string {
     case 'kokoro': return 'Kokoro TTS';
     case 'collection.omni': return 'Omni Collection';
     case 'collection': return 'Collection';
-    default: return recipe;
+    default: return recipe || 'Unknown';
   }
 }
 
@@ -498,6 +508,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loadedModels, setLoadedModels] = useState<LoadedModel[]>([]);
   const [connectionStatus, setConnectionStatus] = useState(api.status);
+  const [modelsLoading, setModelsLoading] = useState(api.isConnected && api.allModels.length === 0);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model → percent
   const pullAbortRef = useRef<Record<string, AbortController>>({});
@@ -529,11 +540,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   useEffect(() => { reloadCustomModels(); }, [reloadCustomModels]);
 
   const refresh = useCallback(async () => {
-    if (!api.isConnected) return;
-    const result = await api.refresh();
-    if (result) {
-      setModels(result.models.data);
-      setLoadedModels(result.health.all_models_loaded);
+    if (!api.isConnected) {
+      setModelsLoading(false);
+      setModels([]);
+      setLoadedModels([]);
+      return;
+    }
+    setModelsLoading(true);
+    try {
+      const result = await api.refresh();
+      if (result) {
+        setModels(Array.isArray(result.models.data) ? result.models.data.filter((m): m is ModelInfo => !!m && !!modelName(m)) : []);
+        setLoadedModels(Array.isArray(result.health.all_models_loaded) ? result.health.all_models_loaded.filter(m => !!m?.model_name) : []);
+      }
+    } catch (err) {
+      console.warn('Failed to refresh model list:', err);
+    } finally {
+      setModelsLoading(false);
     }
   }, []);
 
@@ -880,12 +903,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const merged: ModelInfo[] = [];
     for (const m of customModels) {
       const name = modelName(m).toLowerCase();
+      if (!name || seen.has(name)) continue;
       seen.add(name);
       merged.push(m);
     }
     for (const m of models) {
       const name = modelName(m).toLowerCase();
-      if (!seen.has(name)) merged.push(m);
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      merged.push(m);
     }
     return merged;
   }, [customModels, models]);
@@ -964,7 +990,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(m => {
         const name = modelName(m).toLowerCase();
-        const labels = (m.labels || []).join(' ').toLowerCase();
+        const labels = modelLabels(m).join(' ').toLowerCase();
         const recipe = ((m as any).recipe || '').toLowerCase();
         return name.includes(q) || labels.includes(q) || recipe.includes(q);
       });
@@ -996,7 +1022,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        if (!m.model_name.toLowerCase().includes(q) && !m.recipe.toLowerCase().includes(q)) return false;
+        if (!String(m.model_name || '').toLowerCase().includes(q) && !String(m.recipe || '').toLowerCase().includes(q)) return false;
       }
       return true;
     });
@@ -1028,9 +1054,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   /* ── Render helpers ──────────────────────────────────────── */
 
   const renderLabels = (labels: string[]) => {
-    if (!labels || labels.length === 0) return null;
+    const normalizedLabels = labels.map(label => String(label).trim()).filter(Boolean);
+    if (normalizedLabels.length === 0) return null;
     // Filter out the 'llamacpp' label since it's redundant with recipe
-    const displayLabels = labels.filter(l => l !== 'llamacpp' && l !== 'custom');
+    const displayLabels = normalizedLabels.filter(l => l !== 'llamacpp' && l !== 'custom');
     if (displayLabels.length === 0) return null;
     return (
       <div className="row__labels">
@@ -1048,7 +1075,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const recipe = (m as any).recipe || '';
     const maxCtx = liveCtxSize || (m as any).max_context_window;
     const showContext = capabilityFromModelInfo(m) !== 'omni' && Boolean(maxCtx);
-    const compositeModels = (m as any).composite_models || [];
+    const compositeModels = Array.isArray((m as any).composite_models) ? (m as any).composite_models : [];
     const collectionComponents = getCollectionComponents(m);
     const url = hfUrl(checkpoint);
     const exportData = {
@@ -1077,11 +1104,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <span className="detail__value">{(maxCtx / 1024).toFixed(0)}K tokens</span>
               </div>
             )}
-            {m.labels && m.labels.length > 0 && (
+            {modelLabels(m).length > 0 && (
               <div className="detail__field">
                 <span className="detail__label">Capabilities</span>
                 <div className="detail__caps">
-                  {m.labels.filter(l => l !== 'llamacpp').map(l => (
+                  {modelLabels(m).filter(l => l !== 'llamacpp').map(l => (
                     <span key={l} className="detail__cap">{labelDisplay(l)}</span>
                   ))}
                 </div>
@@ -1145,6 +1172,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   };
 
   const renderRunningModel = (m: LoadedModel) => {
+    if (!m?.model_name) return null;
     const info = allModels.find(mi => modelName(mi) === m.model_name);
     const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
     const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
@@ -1232,6 +1260,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   const renderModelRow = (m: ModelInfo, isDownloaded: boolean) => {
     const name = modelName(m);
+    if (!name) return null;
     const type = modelType(m);
     const isCollection = isCollectionModel(m);
     const isLoading = loadingModel === name;
@@ -1253,7 +1282,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 {m.size ? ` · ${formatSize(m.size)}` : ''}
                 {capabilityFromModelInfo(m) !== 'omni' && (m as any).max_context_window ? ` · ${((m as any).max_context_window / 1024).toFixed(0)}K ctx` : ''}
               </span>
-              {renderLabels(m.labels || [])}
+              {renderLabels(modelLabels(m))}
             </div>
           </div>
           <div className="row__right">
@@ -1481,7 +1510,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, []);
 
   /* ── Stats ───────────────────────────────────────────────── */
-  const showManagerEmpty = filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0;
+  const showManagerEmpty = !modelsLoading && filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
   const customFormTitle = isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model';
   const customRecipeOptions = recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource);
@@ -1660,6 +1689,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <button className="btn btn--ghost" type="button" onClick={closeCustomForm}>Cancel</button>
               </div>
             </form>
+          </section>
+        )}
+
+        {modelsLoading && (
+          <section className="zone" aria-label="Loading models">
+            <div className="zone__head">
+              <span className="zone__dot zone__dot--available" />
+              <span className="zone__title">Loading models…</span>
+              <span className="zone__rule" />
+            </div>
+            <div className="manager__loading">Refreshing Lemonade model registry…</div>
           </section>
         )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import api, { ConnectionStatus, LoadedModel } from './api';
 import { canSelectInComposer, capabilityFromModelInfo, selectPreferredLoadedModel } from './modelCapabilities';
 import AccountMenu from './features/accounts/AccountMenu';
@@ -101,7 +101,22 @@ const App: React.FC = () => {
     return session;
   });
   const [accountResetNonce, setAccountResetNonce] = useState(0);
+  const viewRef = useRef<View>(view);
+  const startupEmptyModelRouteRef = useRef(true);
 
+  useEffect(() => { viewRef.current = view; }, [view]);
+
+  const routeEmptyStartupToModels = useCallback((loaded: LoadedModel[]) => {
+    if (!startupEmptyModelRouteRef.current) return;
+    startupEmptyModelRouteRef.current = false;
+    if (loaded.length === 0 && viewRef.current === 'chat') {
+      setViewState('models');
+      try { localStorage.setItem('lemonade_current_view', 'models'); } catch { /* ignore */ }
+      if (window.location.hash !== '#/models') {
+        window.history.replaceState(null, '', '#/models');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     setPresetStorageScope(accountSession.storageScope);
@@ -207,11 +222,15 @@ const App: React.FC = () => {
     api.connect().then(async connected => {
       if (!connected) return;
       const result = await api.refresh().catch(() => null);
-      if (result) applyLoadedModels(result.health.all_models_loaded);
-      else refreshGlobalModels();
+      if (result) {
+        applyLoadedModels(result.health.all_models_loaded);
+        routeEmptyStartupToModels(result.health.all_models_loaded);
+      } else {
+        refreshGlobalModels();
+      }
     });
     return () => { unsubStatus(); unsubModels(); };
-  }, [applyLoadedModels]);
+  }, [applyLoadedModels, routeEmptyStartupToModels]);
 
   // App-level health polling: skip when Dashboard is active (it polls every 2s)
   useEffect(() => {

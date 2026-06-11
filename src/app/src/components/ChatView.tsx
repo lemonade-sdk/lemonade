@@ -1782,7 +1782,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            disabled={isBusy || currentCapability === 'audio'}
+            disabled={isBusy}
             rows={1}
           />
           {isStreaming ? (
