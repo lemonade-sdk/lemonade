@@ -215,7 +215,6 @@ void configure_opencode_agent(const std::string& model,
 void configure_pi_agent(const std::string& model,
                         const std::string& api_key,
                         AgentConfig& config) {
-    (void)model;  // Pi reads the default model from settings.json, not args.
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
     config.binary_name = "pi";
@@ -234,7 +233,10 @@ void configure_pi_agent(const std::string& model,
     config.env_vars = {
         {"LEMONADE_API_KEY", resolved_api_key}
     };
-    config.extra_args = {};
+    config.extra_args = {
+        "--provider", "Lemonade",
+        "--model", model
+    };
     config.install_instructions =
         "Install Pi coding agent:\n"
         "  npm i -g @earendil-works/pi-coding-agent";
