@@ -18,7 +18,7 @@ from typing import Iterable
 
 SDCPP_RELEASE_RE = re.compile(r"^master-[0-9]+-[0-9a-f]{7,40}$")
 DEFAULT_BACKENDS = ("cpu", "vulkan", "rocm-stable", "metal", "cuda")
-FORBIDDEN_BACKENDS = {"rocm-nightly", "rocm-nighly"}
+FORBIDDEN_BACKENDS = {"rocm-nightly"}
 
 
 def parse_csv(value: str) -> list[str]:

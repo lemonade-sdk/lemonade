@@ -37,6 +37,7 @@ env:
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
   LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
   SDCPP_REPO: leejet/stable-diffusion.cpp
+  SDCPP_CUDA_REPO: lemonade-sdk/stable-diffusion.cpp
   # Update only existing sd-cpp pins. Do not add/touch rocm-nightly.
   SDCPP_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal,cuda
   SDCPP_TEST_PROMPT: "A small glass of lemonade on a clean table, product photo, high detail"
@@ -115,6 +116,17 @@ jobs:
           gh api repos/${SDCPP_REPO}/releases/tags/${RELEASE} --jq '.assets[].name' | sort > assets.txt
           cat assets.txt
 
+          # CUDA validation is disabled until a CUDA runner exists. Keep the CUDA
+          # asset probe non-blocking, but use the real CUDA artifact names from
+          # lemonade-sdk/stable-diffusion.cpp: windows-cuda and ubuntu-cuda.
+          if gh api repos/${SDCPP_CUDA_REPO}/releases/tags/${RELEASE} --jq '.assets[].name' | sort > cuda-assets.txt 2>/dev/null; then
+            echo "CUDA release assets from ${SDCPP_CUDA_REPO}:"
+            cat cuda-assets.txt
+          else
+            echo "::notice::No matching CUDA release found in ${SDCPP_CUDA_REPO} for ${RELEASE}; CUDA validation is disabled for this workflow run."
+            : > cuda-assets.txt
+          fi
+
           python3 <<'PY'
           import os
           import re
@@ -123,6 +135,7 @@ jobs:
 
           short = os.environ['SHORT_RELEASE']
           assets = set(Path('assets.txt').read_text(encoding='utf-8').splitlines())
+          cuda_assets = set(Path('cuda-assets.txt').read_text(encoding='utf-8').splitlines())
 
           checks = {
               'cpu': [
@@ -140,10 +153,6 @@ jobs:
               'metal': [
                   rf'^sd-{re.escape(short)}-bin-Darwin-macOS-[^/]+-arm64\.zip$',
               ],
-              'cuda': [
-                  rf'^sd-{re.escape(short)}-bin-win-cuda12-x64\.zip$',
-                  rf'^sd-{re.escape(short)}-windows-cuda-.+-x64\.zip$',
-              ],
           }
 
           missing = []
@@ -151,8 +160,12 @@ jobs:
               if not any(re.match(pattern, asset) for pattern in patterns for asset in assets):
                   missing.append(f"{backend}: {' OR '.join(patterns)}")
 
-          if 'cuda' not in missing and any(asset == 'cudart-sd-bin-win-cu12-x64.zip' for asset in assets):
-              print('Found CUDA runtime asset: cudart-sd-bin-win-cu12-x64.zip')
+          cuda_patterns = [
+              rf'^sd-{re.escape(short)}-windows-cuda-sm_[0-9]+-x64\.zip$',
+              rf'^sd-{re.escape(short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$',
+          ]
+          if cuda_assets and not any(re.match(pattern, asset) for pattern in cuda_patterns for asset in cuda_assets):
+              missing.append(f"cuda: {' OR '.join(cuda_patterns)}")
 
           if missing:
               print('Missing expected release assets:', file=sys.stderr)
@@ -223,6 +236,8 @@ jobs:
           - label: cpu
             backend: cpu
             channel: ""
+            # No dedicated CPU runner label exists; run CPU validation on the
+            # existing Windows 128GB Vulkan host with the sd-cpp CPU backend.
             runner: [self-hosted, Windows, 128gb, vulkan]
           - label: vulkan
             backend: vulkan
@@ -233,8 +248,8 @@ jobs:
             channel: stable
             runner: [self-hosted, Windows, 128gb, rocm]
           # CUDA validation is prepared but disabled until a CUDA runner is available.
-          # The updater still pins sd-cpp.cuda and the release asset check still verifies
-          # CUDA artifacts. Re-enable this block once the runner exists.
+          # The updater still pins sd-cpp.cuda and the release step probes CUDA
+          # artifact names. Re-enable this block once the runner exists.
           # - label: cuda
           #   backend: cuda
           #   channel: ""
@@ -251,7 +266,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: sdcpp-build
-          path: build
+          path: .
 
       - name: Verify binaries
         shell: PowerShell
@@ -418,47 +433,52 @@ jobs:
                   row["artifact"] = f"sdcpp-validation-{label}"
                   rows.append(row)
 
+          summary = {}
+          for row in rows:
+              label = row.get("label")
+              item = summary.setdefault(
+                  label,
+                  {"total": 0, "passed": 0, "elapsed": 0.0, "missing": False},
+              )
+              if row.get("missing"):
+                  item["missing"] = True
+                  continue
+              item["total"] += 1
+              if row.get("pass"):
+                  item["passed"] += 1
+              try:
+                  item["elapsed"] += float(row.get("elapsed_s", 0) or 0)
+              except (TypeError, ValueError):
+                  pass
+
           lines = [
-              "## Auto-update stable-diffusion.cpp backends",
+              f"This updates the existing `sd-cpp` backend pins to `{release}`.",
               "",
-              f"- **stable-diffusion.cpp**: `{release}` (`{short_release}` assets)",
-              f"- Updated existing `sd-cpp` pins: `{update_backends}`",
-              "- `sd-cpp.rocm-nightly` is intentionally not created or updated.",
-              "- Release asset inventory was checked before validation.",
-              "",
-              "## Deterministic validation evidence",
+              "Validated with the same prompt and seed on each available runner:",
               "",
               f"- Prompt: `{prompt or os.environ.get('SDCPP_TEST_PROMPT', '')}`",
-              "- Seed: `12345`",
-              "- Steps: `4`",
+              "- Seed / steps: `12345` / `4`",
+              "- Models: `SD-Turbo-GGUF`, `Flux-2-Klein-4B`",
               "- Sizes: `512x256`, `1024x1024`",
-              "- Models: `SD-Turbo-GGUF` and `Flux-2-Klein-4B`",
-              "- Timing column is end-to-end request wall-clock time and can include first-use model download/load.",
               "",
-              "| Runner | Model | Size | Result | PNG bytes | Time | Artifact image path |",
-              "|---|---|---:|---|---:|---:|---|",
+              "| Backend | Result | Total time | Evidence |",
+              "|---|---:|---:|---|",
           ]
 
-          for row in rows:
-              if row.get("missing"):
-                  lines.append(f"| {row['label']} | - | - | MISSING | - | - | - |")
+          for label in labels:
+              item = summary.get(label, {"missing": True, "total": 0, "passed": 0, "elapsed": 0.0})
+              if item.get("missing") and item.get("total", 0) == 0:
+                  lines.append(f"| {label} | missing | - | `sdcpp-validation-{label}` |")
                   continue
-              status = "PASS" if row.get("pass") else "FAIL"
-              error = row.get("error")
-              if error:
-                  status = f"{status}: {str(error)[:120].replace('|', '/')}"
-              lines.append(
-                  f"| {row.get('label', '')} | {row.get('model', '')} | {row.get('size', '')} | "
-                  f"{status} | {row.get('bytes', '-')} | {row.get('elapsed_s', '-')}s | "
-                  f"`{row.get('image_path', '')}` |"
-              )
+              result = f"{item['passed']}/{item['total']} images"
+              elapsed = f"{item['elapsed']:.1f}s"
+              lines.append(f"| {label} | {result} | {elapsed} | `sdcpp-validation-{label}` |")
 
           lines += [
               "",
-              "Generated PNGs and JSON summaries are attached to the workflow artifacts for visual inspection.",
-              "",
-              "---",
-              "*Auto-generated by validate_sdcpp workflow.*",
+              "The workflow artifacts contain the generated PNGs plus per-image timings.",
+              "CUDA is pinned, but CUDA validation is disabled until a matching runner is available.",
+              "`sd-cpp.rocm-nightly` is not touched.",
           ]
 
           Path("pr_body.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
