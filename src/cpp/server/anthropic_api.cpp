@@ -494,6 +494,18 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
                             continue;
                         }
 
+                        if (source_type == "url" && source.contains("url") && source["url"].is_string()) {
+                            std::string url = source["url"].get<std::string>();
+                            if (!url.empty()) {
+                                has_non_text = true;
+                                content_parts.push_back({
+                                    {"type", "image_url"},
+                                    {"image_url", {{"url", url}}}
+                                });
+                                continue;
+                            }
+                        }
+
                         add_warning(warnings, "Ignored image block with unsupported source format");
                         continue;
                     }
@@ -614,6 +626,7 @@ json OllamaApi::convert_anthropic_to_openai_chat(const json& anthropic_request, 
     openai_req["messages"] = messages;
 
     if (anthropic_request.contains("max_tokens")) {
+        openai_req["max_tokens"] = anthropic_request["max_tokens"];
         openai_req["max_completion_tokens"] = anthropic_request["max_tokens"];
     }
     if (anthropic_request.contains("temperature")) {
