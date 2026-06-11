@@ -19,8 +19,10 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
-| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend |
-| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
+| `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
+| `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
+| `POST` | [`/v1/cloud/auth`](#post-v1cloudauth) | Set an in-memory API key for a cloud provider |
+| `DELETE` | [`/v1/cloud/auth/{provider}`](#delete-v1cloudauthprovider) | Clear the in-memory API key for a cloud provider |
 | `WS` | [`/logs/stream`](#log-streaming-api-websocket) | Log Streaming |
 | `GET` | [`/live`](#get-live) | Check server liveness for load balancers and orchestrators |
 | `GET` | [`/metrics`](#get-metrics) | Prometheus metrics scrape endpoint |
@@ -946,13 +948,23 @@ curl "http://localhost:13305/v1/system-info"
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
         - `version` - Installed or configured backend version (when available)
+- `cloud` - Cloud OpenAI-compatible providers configured on this server (omitted when no providers are installed). Contains:
+  - `providers` - Array, one entry per installed provider:
+    - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
+    - `base_url` - Persisted base URL from `config.json`.
+    - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
+    - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
+    - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
+    - `models_discovered` - Number of chat-capable models currently in the catalog for this provider.
 
 ## `POST /v1/install`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Install or update a backend for a specific recipe/backend pair. If the backend is already installed but outdated, this endpoint updates it to the configured version.
+Install or update a backend for a specific recipe/backend pair, **or** register a cloud OpenAI-compatible provider. The request body is dispatched by the `backend` field: any value other than `"cloud"` is treated as a local backend install.
 
-### Parameters
+### Install a local backend
+
+If the backend is already installed but outdated, this endpoint updates it to the configured version.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -961,7 +973,7 @@ Install or update a backend for a specific recipe/backend pair. If the backend i
 | `stream` | No | If `true`, returns Server-Sent Events with progress. Defaults to `false`. |
 | `force` | No | If `true`, bypasses hardware filtering for `unsupported` backends and attempts installation anyway. Defaults to `false`. |
 
-### Example request
+Example request:
 
 ```bash
 curl -X POST http://localhost:13305/v1/install \
@@ -973,7 +985,7 @@ curl -X POST http://localhost:13305/v1/install \
   }'
 ```
 
-### Response format
+Response format:
 
 ```json
 {
@@ -985,19 +997,63 @@ curl -X POST http://localhost:13305/v1/install \
 
 In case of an error, returns an `error` field with details.
 
+### Install a cloud provider
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Registers an OpenAI-compatible chat provider. The base URL is persisted to `config.json`; the optional `api_key` lives in `lemond` process memory only (cleared on restart). See the [Cloud Offload guide](../guide/configuration/cloud.md) for the full workflow.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `backend` | Yes | Must be the literal string `"cloud"`. |
+| `provider` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `base_url` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `api_key` | No | Optional. If set, stored in process memory; honors env-wins precedence (see `/v1/cloud/auth`). |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/install \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backend": "cloud",
+    "provider": "fireworks",
+    "base_url": "https://api.fireworks.ai/inference/v1"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status": "success",
+  "backend": "cloud",
+  "provider": "fireworks",
+  "base_url": "https://api.fireworks.ai/inference/v1",
+  "models_discovered": 12,
+  "auth_state": {
+    "env_var_set": true,
+    "runtime_key_set": false
+  }
+}
+```
+
+`models_discovered` is `0` when no API key is resolvable. If `api_key` is supplied but the provider's env var is also set, the response includes a `warning` string explaining the env var took precedence.
+
 ## `POST /v1/uninstall`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Uninstall a backend for a specific recipe/backend pair. If loaded models are using that backend, they are unloaded first.
+Uninstall a backend for a specific recipe/backend pair, **or** remove a cloud provider. Dispatched by the `backend` field, mirroring `/v1/install`.
 
-### Parameters
+### Uninstall a local backend
+
+If loaded models are using that backend, they are unloaded first.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `recipe` | Yes | Recipe name |
 | `backend` | Yes | Backend name |
 
-### Example request
+Example request:
 
 ```bash
 curl -X POST http://localhost:13305/v1/uninstall \
@@ -1008,7 +1064,7 @@ curl -X POST http://localhost:13305/v1/uninstall \
   }'
 ```
 
-### Response format
+Response format:
 
 ```json
 {
@@ -1019,6 +1075,123 @@ curl -X POST http://localhost:13305/v1/uninstall \
 ```
 
 In case of an error, returns an `error` field with details.
+
+### Uninstall a cloud provider
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Removes the provider record from `config.json`, drops its in-memory API key (if any), and evicts every discovered model for that provider from the cache. Returns 404 if the provider was never installed.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `backend` | Yes | Must be the literal string `"cloud"`. |
+| `provider` | Yes | Installed provider name. |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:13305/v1/uninstall \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backend": "cloud",
+    "provider": "fireworks"
+  }'
+```
+
+Response format:
+
+```json
+{
+  "status": "success",
+  "backend": "cloud",
+  "provider": "fireworks",
+  "models_evicted": 12
+}
+```
+
+## `POST /v1/cloud/auth`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Set an in-memory API key for a previously-installed cloud provider, and trigger a refresh of that provider's discovered model list. The key lives in `lemond` process memory only — it is never written to disk and is cleared on `lemond` restart. For persistence across restarts, set `LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.
+
+### Authentication precedence
+
+If `LEMONADE_<PROVIDER>_API_KEY` is set in `lemond`'s environment, the env var takes precedence and this endpoint returns **409 Conflict** without storing the supplied key. This is the safety guarantee that lets an operator provision a "house" key via env without worrying about a client silently overriding it.
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `provider` | Yes | Installed provider name. |
+| `api_key` | Yes | API key to store in `lemond` process memory. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/cloud/auth \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "fireworks",
+    "api_key": "fw-XXXXX"
+  }'
+```
+
+### Response format (success — 200)
+
+```json
+{
+  "provider": "fireworks",
+  "auth_state": {
+    "env_var_set": false,
+    "runtime_key_set": true
+  },
+  "models_discovered": 12
+}
+```
+
+### Response format (env-var conflict — 409)
+
+```json
+{
+  "error": {
+    "type": "auth_conflict",
+    "env_var": "LEMONADE_FIREWORKS_API_KEY",
+    "message": "LEMONADE_FIREWORKS_API_KEY is set in the lemond process; the env var takes precedence and the supplied API key was not stored."
+  }
+}
+```
+
+### Other error responses
+
+| Status | Cause |
+|---|---|
+| `400` | Body is missing `provider` or `api_key`, or one of them is empty. |
+| `404` | Provider is not installed. Call `POST /v1/install` with `backend:"cloud"` first. |
+
+## `DELETE /v1/cloud/auth/{provider}`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Clear the in-memory API key for a provider. Any env-var-based key (`LEMONADE_<PROVIDER>_API_KEY`) remains in effect. If no env-var key is set, the provider's discovered models are evicted from the catalog since they are no longer authenticatable.
+
+### Example request
+
+```bash
+curl -X DELETE http://localhost:13305/v1/cloud/auth/fireworks
+```
+
+### Response format
+
+```json
+{
+  "provider": "fireworks",
+  "cleared_runtime_key": true,
+  "auth_state": {
+    "env_var_set": false,
+    "runtime_key_set": false
+  }
+}
+```
+
+`cleared_runtime_key` is `false` when no in-memory key was present (e.g., the only key was from the env var).
 
 ## Log Streaming API (WebSocket)
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
