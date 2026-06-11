@@ -71,6 +71,7 @@ nav:
       - Running Many Models: guide/configuration/multi-model.md
       - llama.cpp: guide/configuration/llamacpp.md
       - vLLM: guide/configuration/vllm.md
+      - Moonshine: guide/configuration/moonshine.md
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md
@@ -89,6 +90,7 @@ nav:
       - Anthropic Compatible: api/anthropic.md
       - llama.cpp Specific: api/llamacpp.md
       - Lemonade Specific: api/lemonade.md
+      - Realtime WebSocket: api/realtime.md
   - Embeddable Lemonade:
       - Overview: embeddable/README.md
       - Runtime: embeddable/runtime.md

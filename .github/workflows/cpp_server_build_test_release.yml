@@ -605,6 +605,20 @@ jobs:
           .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary ./build/lemonade
           echo "Whisper Metal inference tests PASSED!"
 
+      - name: Run moonshine inference tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running moonshine inference tests..."
+          .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary ./build/lemonade
+          echo "Moonshine inference tests PASSED!"
+
       - name: Ensure binaries are executable before upload (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -882,6 +896,11 @@ jobs:
             extra_args: "--wrapped-server flm"
             backends: "npu"
             runner: [Windows, xdna2]
+          - name: moonshine
+            script: server_moonshine.py
+            extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Windows]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
@@ -1000,6 +1019,11 @@ jobs:
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
             runner: [Linux, vulkan]
+          - name: moonshine
+            script: server_moonshine.py
+            extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Linux]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"

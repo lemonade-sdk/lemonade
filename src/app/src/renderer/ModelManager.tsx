@@ -837,6 +837,14 @@ const [searchQuery, setSearchQuery] = useState('');
         return;
       }
 
+      // Moonshine streaming STT — must run before the generic ONNX detection
+      // (moonshine repos are ONNX-based and would be misclassified as ryzenai-llm)
+      if (modelId.toLowerCase().includes('moonshine') && files.some(f => f.endsWith('.onnx'))) {
+        setHfModelBackends((prev: Record<string, DetectedBackend | null>) => ({ ...prev, [modelId]: { recipe: 'moonshine', label: 'Moonshine' } }));
+        if (totalFileSize) setHfModelSizes((prev: Record<string, number | undefined>) => ({ ...prev, [modelId]: totalFileSize }));
+        return;
+      }
+
       // ONNX detection
       if (files.some(f => f.endsWith('.onnx') || f.endsWith('.onnx_data'))) {
         const id = modelId.toLowerCase();
@@ -1843,14 +1851,14 @@ const [searchQuery, setSearchQuery] = useState('');
                     detectingBackendFor === null &&
                     hfSearchResults.every((m: HFModelInfo) => {
                       const backend = hfModelBackends[m.id];
-                      return backend === null || (backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
+                      return backend === null || (backend != null && ['sd-cpp', 'whispercpp', 'moonshine'].includes(backend.recipe));
                     }))
                 ) && (
                   <div className="hf-search-message">No compatible models found.</div>
                 )}
                 {hfSearchResults.filter((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
-                  return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp'].includes(backend.recipe));
+                  return backend !== null && !(backend != null && ['sd-cpp', 'whispercpp', 'moonshine'].includes(backend.recipe));
                 }).map((hfModel: HFModelInfo) => {
                   const backend = hfModelBackends[hfModel.id];
                   const isDetecting = detectingBackendFor === hfModel.id;
