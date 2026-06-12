@@ -275,7 +275,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: sdcpp-build
-          path: .
+          path: build
 
       - name: Verify binaries
         shell: PowerShell
