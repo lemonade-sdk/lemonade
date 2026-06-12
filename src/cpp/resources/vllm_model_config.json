@@ -12,16 +12,16 @@
     }
   },
   "models": {
-    "Qwen3.5-0.8B-vLLM": {
+    "Qwen3.5-0.8B-FP16-vLLM": {
       "family": "qwen3."
     },
-    "Qwen3.5-2B-vLLM": {
+    "Qwen3.5-2B-FP16-vLLM": {
       "family": "qwen3."
     },
-    "Qwen3.5-4B-vLLM": {
+    "Qwen3.5-4B-FP16-vLLM": {
       "family": "qwen3."
     },
-    "Qwen3.5-9B-vLLM": {
+    "Qwen3.5-9B-FP16-vLLM": {
       "family": "qwen3."
     }
   }
