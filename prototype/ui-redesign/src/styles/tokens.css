@@ -1,43 +1,51 @@
-/* tokens.css — design tokens for the lemonade UI redesign prototype.
+/* tokens.css — design tokens for the Lemonade UI redesign prototype.
  *
- * Dark theme primary. Soft warm dark, never pure black.
- * Type scale, spacing, radii, motion all live here so the rest of the
- * stylesheet can be expressed in terms of intent, not magic numbers.
+ * Theme tokens follow the public docs/website design language: a bright
+ * crystalline light theme plus the Midnight Palette dark theme. Keep the
+ * Lemonade yellow invariant across themes so product identity stays stable.
  */
 
 :root {
-  /* ---------- Color roles (dark) ---------- */
-  --surface-base:   #16140f;
-  --surface-1:      #1d1b16;
-  --surface-2:      #25221c;
-  --surface-3:      #2f2c25;
-  --surface-raised: #1d1b16;
-  --surface-glass:  rgba(29, 27, 22, 0.72);
+  /* ---------- Color roles (dark / Midnight Palette) ---------- */
+  --surface-base:   #0E0E0B;
+  --surface-1:      #1A1813;
+  --surface-2:      #1F1D17;
+  --surface-3:      #25221B;
+  --surface-raised: #2D2922;
+  --surface-glass:  rgba(45, 41, 33, 0.72);
 
-  --text-primary:   #f3efe6;
-  --text-secondary: #b8b1a2;
-  --text-tertiary:  #807a6c;
-  --text-disabled:  #4f4a40;
+  --text-primary:   #F2EFE5;
+  --text-secondary: #C7C2B5;
+  --text-tertiary:  #A8A39A;
+  --text-disabled:  #5C594F;
 
-  --accent:         #e8c66b;
-  --accent-hover:   #f0d385;
-  --accent-deep:    #c89a3a;
-  --accent-soft:    rgba(232, 198, 107, 0.14);
-  --accent-strong:  rgba(232, 198, 107, 0.22);
-  --accent-on:      #1a1610;
+  --accent:         #FCD846;
+  --accent-hover:   #FAF972;
+  --accent-deep:    #5C4B00;
+  --accent-soft:    rgba(252, 216, 70, 0.14);
+  --accent-strong:  rgba(252, 216, 70, 0.24);
+  --accent-on:      #000000;
 
-  --success:        #7fb38a;
-  --success-soft:   rgba(127, 179, 138, 0.14);
-  --warn:           #d9a35b;
-  --warn-soft:      rgba(217, 163, 91, 0.14);
-  --danger:         #d97a6c;
-  --danger-soft:    rgba(217, 122, 108, 0.14);
-  --info:           #7baed4;
-  --info-soft:      rgba(123, 174, 212, 0.14);
+  --success:        #78A86B;
+  --success-soft:   rgba(120, 168, 107, 0.15);
+  --warn:           #F2B94F;
+  --warn-soft:      rgba(242, 185, 79, 0.15);
+  --danger:         #EF8D7F;
+  --danger-soft:    rgba(239, 141, 127, 0.15);
+  --info:           #88BDE9;
+  --info-soft:      rgba(136, 189, 233, 0.15);
 
-  --border:         rgba(255, 245, 220, 0.08);
-  --border-subtle:  rgba(255, 245, 220, 0.06);
-  --border-strong:  rgba(255, 245, 220, 0.12);
+  --border:         rgba(255, 255, 255, 0.10);
+  --border-subtle:  rgba(255, 255, 255, 0.07);
+  --border-strong:  rgba(252, 216, 70, 0.18);
+
+  --bg-primary: var(--surface-base);
+  --bg-secondary: var(--surface-1);
+  --surface-0: var(--surface-base);
+  --text-muted: var(--text-tertiary);
+  --error: var(--danger);
+  --primary-yellow: var(--accent);
+  --on-primary: var(--accent-on);
 
   /* ---------- Typography ---------- */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
@@ -54,6 +62,7 @@
   --text-3xl:  32px;
 
   --weight-regular:  400;
+  --weight-normal:   400;
   --weight-medium:   500;
   --weight-semibold: 600;
   --weight-bold:     700;
@@ -92,6 +101,7 @@
   --shadow-md:
     0 4px 12px rgba(0, 0, 0, 0.22),
     0 2px 4px rgba(0, 0, 0, 0.14);
+  --shadow-soft: var(--shadow-md);
   --shadow-lg:
     0 18px 48px rgba(0, 0, 0, 0.42),
     0 8px 16px rgba(0, 0, 0, 0.20);
@@ -102,6 +112,7 @@
 
   --duration-fast:  150ms;
   --duration-base:  220ms;
+  --duration-normal: 220ms;
   --duration-slow:  380ms;
 
   /* ---------- Layout constants ---------- */
@@ -115,37 +126,37 @@
 
 /* ---------- Light theme overrides ---------- */
 [data-theme="light"] {
-  --surface-base:   #f5f3ee;
-  --surface-1:      #eae7e0;
-  --surface-2:      #dfdcd4;
-  --surface-3:      #d4d0c7;
-  --surface-raised: #ffffff;
-  --surface-glass:  rgba(255, 255, 255, 0.82);
+  --surface-base:   #FFFFFF;
+  --surface-1:      #FFFFFF;
+  --surface-2:      #F6F6F6;
+  --surface-3:      #EFEDE0;
+  --surface-raised: #FFFFFF;
+  --surface-glass:  rgba(255, 255, 255, 0.78);
 
-  --text-primary:   #1a1810;
-  --text-secondary: #5a5548;
-  --text-tertiary:  #8a8476;
-  --text-disabled:  #b5b0a5;
+  --text-primary:   #000000;
+  --text-secondary: #2D2F2F;
+  --text-tertiary:  #52525B;
+  --text-disabled:  #999999;
 
-  --accent:         #b8942a;
-  --accent-hover:   #a3810e;
-  --accent-deep:    #8a6d10;
-  --accent-soft:    rgba(184, 148, 42, 0.12);
-  --accent-strong:  rgba(184, 148, 42, 0.20);
-  --accent-on:      #ffffff;
+  --accent:         #FCD846;
+  --accent-hover:   #FAF972;
+  --accent-deep:    #5C4B00;
+  --accent-soft:    rgba(252, 216, 70, 0.18);
+  --accent-strong:  rgba(252, 216, 70, 0.32);
+  --accent-on:      #000000;
 
-  --success:        #3d8a4c;
-  --success-soft:   rgba(61, 138, 76, 0.10);
-  --warn:           #b07920;
-  --warn-soft:      rgba(176, 121, 32, 0.10);
-  --danger:         #c0524a;
-  --danger-soft:    rgba(192, 82, 74, 0.10);
-  --info:           #3a7dab;
-  --info-soft:      rgba(58, 125, 171, 0.10);
+  --success:        #3C6531;
+  --success-soft:   rgba(60, 101, 49, 0.10);
+  --warn:           #9A6A00;
+  --warn-soft:      rgba(252, 216, 70, 0.20);
+  --danger:         #B94A3D;
+  --danger-soft:    rgba(185, 74, 61, 0.10);
+  --info:           #306EA8;
+  --info-soft:      rgba(48, 110, 168, 0.10);
 
-  --border:         rgba(30, 25, 10, 0.10);
-  --border-subtle:  rgba(30, 25, 10, 0.06);
-  --border-strong:  rgba(30, 25, 10, 0.16);
+  --border:         rgba(0, 0, 0, 0.10);
+  --border-subtle:  rgba(0, 0, 0, 0.07);
+  --border-strong:  rgba(92, 75, 0, 0.18);
 
   --shadow-sm:
     0 1px 2px rgba(0, 0, 0, 0.06),
@@ -153,6 +164,7 @@
   --shadow-md:
     0 4px 12px rgba(0, 0, 0, 0.08),
     0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-soft: var(--shadow-md);
   --shadow-lg:
     0 18px 48px rgba(0, 0, 0, 0.12),
     0 8px 16px rgba(0, 0, 0, 0.06);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage, DownloadProgressEvent } from '../api';
-import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel } from '../modelCapabilities';
+import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
+import { CapabilityIcon, Icon } from './Icon';
 import type { AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
@@ -72,17 +73,17 @@ function modelLabels(m: ModelInfo | null | undefined): string[] {
 
 function recipeIcon(recipe: string): string {
   switch (String(recipe || '').toLowerCase()) {
-    case 'llamacpp': return '🦙';
-    case 'vllm': return '🏭';
-    case 'flm': return '⚡';
-    case 'ryzenai-llm': return '🔶';
-    case 'sd-cpp': return '🎨';
-    case 'whispercpp': return '🤫';
-    case 'moonshine': return '🌙';
-    case 'kokoro': return '🔊';
-    case 'collection.omni': return '🧩';
-    case 'collection': return '📦';
-    default: return '🤖';
+    case 'llamacpp': return 'llama.cpp';
+    case 'vllm': return 'vLLM';
+    case 'flm': return 'FLM';
+    case 'ryzenai-llm': return 'RyzenAI';
+    case 'sd-cpp': return 'SD';
+    case 'whispercpp': return 'Whisper';
+    case 'moonshine': return 'Moonshine';
+    case 'kokoro': return 'TTS';
+    case 'collection.omni': return 'Omni';
+    case 'collection': return 'Collection';
+    default: return 'Model';
   }
 }
 
@@ -123,25 +124,25 @@ function typeColor(type: string): string {
 
 function labelDisplay(label: string): string {
   const map: Record<string, string> = {
-    'tool-calling': '🔧 Tools',
-    'vision': '👁 Vision',
-    'omni': '✦ Omni',
-    'multimodal': '✦ Multimodal',
-    'vision-language': '✦ Vision Language',
-    'reasoning': '🧠 Reasoning',
-    'coding': '💻 Code',
-    'hot': '🔥 Popular',
-    'mtp': '🚀 MTP',
-    'embeddings': '📐 Embeddings',
-    'reranking': '🔀 Reranking',
-    'transcription': '🎤 Transcription',
-    'realtime-transcription': '🎙 Realtime',
-    'chat-transcription': '💬 Chat ASR',
-    'tts': '🔊 TTS',
-    'image': '🎨 Image',
-    'edit': '✏️ Edit',
-    'upscaling': '🔍 Upscale',
-    'custom': '⚙️ Custom',
+    'tool-calling': 'Tools',
+    'vision': 'Vision',
+    'omni': 'Omni',
+    'multimodal': 'Multimodal',
+    'vision-language': 'Vision Language',
+    'reasoning': 'Reasoning',
+    'coding': 'Code',
+    'hot': 'Popular',
+    'mtp': 'MTP',
+    'embeddings': 'Embeddings',
+    'reranking': 'Reranking',
+    'transcription': 'Transcription',
+    'realtime-transcription': 'Realtime',
+    'chat-transcription': 'Chat ASR',
+    'tts': 'TTS',
+    'image': 'Image',
+    'edit': 'Edit',
+    'upscaling': 'Upscale',
+    'custom': 'Custom',
   };
   return map[label] || label;
 }
@@ -229,17 +230,17 @@ const CopyInlineButton: React.FC<{ text: string; title?: string }> = ({ text, ti
       title={copied ? 'Copied' : title}
       aria-label={copied ? 'Copied' : title}
     >
-      {copied ? '✓' : '⧉'}
+      {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
     </button>
   );
 };
 
 const RECIPE_BADGES: Record<string, string> = {
-  llamacpp: '🦙 llama.cpp',
-  vllm: '🏭 vLLM',
-  moonshine: '🌙 Moonshine',
-  'ryzenai-llm': '🔷 RyzenAI',
-  'collection.omni': '🧩 Omni Collection',
+  llamacpp: 'llama.cpp',
+  vllm: 'vLLM',
+  moonshine: 'Moonshine',
+  'ryzenai-llm': 'RyzenAI',
+  'collection.omni': 'Omni Collection',
 };
 
 type CustomRecipeOption = { value: string; label: string; hint: string };
@@ -293,14 +294,14 @@ type CustomModelDraftState = {
   speechComponent: string;
 };
 
-const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
-  { key: 'all', label: 'All', icon: '🌐' },
-  { key: 'llm', label: 'LLM', icon: '💬' },
-  { key: 'omni', label: 'Omni', icon: '✦' },
-  { key: 'image', label: 'Image', icon: '🎨' },
-  { key: 'audio', label: 'Audio', icon: '🎤' },
-  { key: 'tts', label: 'TTS', icon: '🔊' },
-  { key: 'embedding', label: 'Embed', icon: '📐' },
+const FILTER_TABS: { key: FilterTab; label: string; icon: ModelCapability | 'all' }[] = [
+  { key: 'all', label: 'All', icon: 'all' },
+  { key: 'llm', label: 'LLM', icon: 'chat' },
+  { key: 'omni', label: 'Omni', icon: 'omni' },
+  { key: 'image', label: 'Image', icon: 'image' },
+  { key: 'audio', label: 'Audio', icon: 'audio' },
+  { key: 'tts', label: 'TTS', icon: 'tts' },
+  { key: 'embedding', label: 'Embed', icon: 'embedding' },
 ];
 
 function createEmptyCustomDraft(mode: CustomFormMode = 'model'): CustomModelDraftState {
@@ -537,7 +538,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); }}
               >
-                🤗 Search HuggingFace for “{query.trim()}”
+                Search HuggingFace for “{query.trim()}”
               </button>
             )}
           </div>
@@ -1387,7 +1388,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             )}
             {url && (
               <a className="detail__hf-link" href={url} target="_blank" rel="noopener noreferrer">
-                🤗 View on Hugging Face
+                View on Hugging Face
               </a>
             )}
             <button
@@ -1450,7 +1451,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               onClick={(e) => { e.stopPropagation(); handleUnload(m); }}
               disabled={loadingModel === m.model_name}
             >
-              {loadingModel === m.model_name ? '⏳' : 'Unload'}
+              {loadingModel === m.model_name ? 'Working…' : 'Unload'}
             </button>
             <button
               className="row__action row__action--delete"
@@ -1462,7 +1463,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               disabled={loadingModel === m.model_name}
               title={info && (info as any).custom ? 'Delete custom model definition' : 'Delete model files'}
             >
-              🗑
+              <Icon name="x" size={14} />
             </button>
             <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
           </div>
@@ -1543,7 +1544,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   className="row__action row__action--cancel"
                   onClick={(e) => { e.stopPropagation(); handleCancelPull(name); }}
                   title="Cancel download"
-                >✕</button>
+                ><Icon name="x" size={13} /></button>
               </div>
             ) : isDownloaded ? (
               <>
@@ -1561,7 +1562,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   disabled={isLoading}
                   title={(m as any).custom ? 'Delete custom model definition' : 'Delete model files'}
                 >
-                  🗑
+                  <Icon name="x" size={14} />
                 </button>
               </>
             ) : (
@@ -1615,7 +1616,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
         <div className="row__content" onClick={handleExpand}>
           <div className="row__main">
-            <div className="row__icon row__icon--hf">🤗</div>
+            <div className="row__icon row__icon--hf"><Icon name="download" size={18} /></div>
             <div className="row__text">
               <span className="row__name-wrap"><span className="row__name">{r.id}</span><CopyInlineButton text={r.id} title="Copy repository name" /></span>
               <span className="row__sub">
@@ -1642,7 +1643,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   className="row__action row__action--cancel"
                   onClick={(e) => { e.stopPropagation(); handleCancelHfPull(r.id); }}
                   title="Cancel download"
-                >✕</button>
+                ><Icon name="x" size={13} /></button>
               </div>
             ) : (
               <button
@@ -1660,7 +1661,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
             >
-              🤗 View
+              View
             </a>
             <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </div>
@@ -1722,7 +1723,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                             {v.name}{v.sharded ? ' (sharded)' : ''}
                           </span>
                           <span className="hf-detail__gguf-size">{formatBytes(v.size_bytes)}</span>
-                          <span className="hf-detail__gguf-action">↓ Download</span>
+                          <span className="hf-detail__gguf-action">Download</span>
                         </button>
                       ))}
                     </div>
@@ -1734,7 +1735,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  🤗 View on Hugging Face
+                  View on Hugging Face
                 </a>
               </div>
             </div>
@@ -1811,12 +1812,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, []);
 
   /* ── Stats ───────────────────────────────────────────────── */
-  const showManagerEmpty = !modelsLoading && filteredRunning.length === 0 && filteredDownloaded.length === 0 && filteredAvailable.length === 0;
+  const showHuggingFaceZone = filterTab !== 'omni';
+  const hasHuggingFaceActivity = showHuggingFaceZone
+    && searchQuery.trim().length >= 2
+    && (hfLoading || Boolean(hfError) || filteredHfResults.length > 0);
+  const showManagerEmpty = !modelsLoading
+    && filteredRunning.length === 0
+    && filteredDownloaded.length === 0
+    && filteredAvailable.length === 0
+    && !hasHuggingFaceActivity;
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
   const customFormTitle = isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model';
   const customRecipeOptions = recipeOptionsForCustomDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
-  const showHuggingFaceZone = filterTab !== 'omni';
   const totalDownloaded = downloaded.length + displayLoadedModels.length;
   const totalPulling = Object.keys(pulling).length;
   const updateOmniComponent = (role: OmniComponentRole, value: string) => {
@@ -1850,6 +1858,36 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setShowAllAvailable(true);
   };
 
+
+  const shouldPinHuggingFaceZone = showHuggingFaceZone && searchQuery.trim().length >= 2;
+  const renderHuggingFaceZone = () => !showHuggingFaceZone ? null : (
+    <section className="zone zone--hf zone--hf-compact">
+      <div className="zone__head">
+        <span className="zone__dot zone__dot--hf" />
+        <span className="zone__title">HuggingFace</span>
+        {!hfLoading && hfResults.length > 0 && <span className="zone__count">{filteredHfResults.length}</span>}
+        <span className="zone__rule" />
+      </div>
+      {hfLoading ? (
+        <div className="hf-zone__loading">
+          <span className="hf-zone__spinner" />
+          <span>Searching HuggingFace…</span>
+        </div>
+      ) : hfError ? (
+        <div className="hf-zone__empty hf-zone__empty--error">
+          <Icon name="alert" size={16} />
+          <span>HuggingFace search is unavailable: {hfError}</span>
+        </div>
+      ) : searchQuery.trim().length >= 2 && filteredHfResults.length > 0 ? (
+        filteredHfResults.map(r => renderHfRow(r))
+      ) : (
+        <div className="hf-zone__empty">
+          <Icon name="download" size={16} />
+          <span>{searchQuery.trim().length < 2 ? 'Type at least 2 characters to search HuggingFace' : 'No HuggingFace results for this query'}</span>
+        </div>
+      )}
+    </section>
+  );
   return (
     <div className={`manager manager--with-rail${presetRailCollapsed ? ' context-rail-collapsed' : ''}`}>
       {renderPresetRail()}
@@ -1907,7 +1945,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 className={`manager__filter${filterTab === tab.key ? ' manager__filter--active' : ''}`}
                 onClick={() => setFilterTab(tab.key)}
               >
-                <span className="manager__filter-icon">{tab.icon}</span>
+                <span className="manager__filter-icon"><CapabilityIcon capability={tab.icon} size={13} /></span>
                 {tab.label}
               </button>
             ))}
@@ -1985,7 +2023,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <label>Extra labels
                 <input value={customDraft.labels} onChange={e => handleCustomDraftChange({ labels: e.target.value })} placeholder="tool-calling, reasoning" />
               </label>
-              {customError && <div className="custom-model-form__error">⚠ {customError}</div>}
+              {customError && <div className="custom-model-form__error"><Icon name="alert" size={14} /> {customError}</div>}
               <div className="custom-model-form__actions">
                 <button className="btn btn--primary" type="submit">Save {isCustomOmniCollectionDraft ? 'Omni collection' : 'custom model'}</button>
                 <button className="btn btn--ghost" type="button" onClick={closeCustomForm}>Cancel</button>
@@ -2004,6 +2042,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <div className="manager__loading">Refreshing Lemonade model registry…</div>
           </section>
         )}
+
+        {shouldPinHuggingFaceZone && renderHuggingFaceZone()}
 
         {/* Running zone */}
         {filteredRunning.length > 0 && (
@@ -2052,36 +2092,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           </section>
         )}
 
-        {/* HuggingFace zone — registry checkpoint search, hidden for collection-only Omni tab */}
-        {showHuggingFaceZone && <section className="zone zone--hf">
-          <div className="zone__head">
-            <span className="zone__dot zone__dot--hf" />
-            <span className="zone__title">HuggingFace</span>
-            {!hfLoading && hfResults.length > 0 && <span className="zone__count">{filteredHfResults.length}</span>}
-            <span className="zone__rule" />
-          </div>
-          {hfLoading ? (
-            <div className="hf-zone__loading">
-              <span className="hf-zone__spinner" />
-              <span>Searching HuggingFace…</span>
-            </div>
-          ) : hfError ? (
-            <div className="hf-zone__empty hf-zone__empty--error">
-              <span>⚠</span>
-              <span>HuggingFace search is unavailable: {hfError}</span>
-            </div>
-          ) : searchQuery.trim().length >= 2 && filteredHfResults.length > 0 ? (
-            filteredHfResults.map(r => renderHfRow(r))
-          ) : (
-            <div className="hf-zone__empty">
-              <span>🤗</span>
-              <span>{searchQuery.trim().length < 2 ? 'Type at least 2 characters to search HuggingFace' : 'No HuggingFace results for this query'}</span>
-            </div>
-          )}
-        </section>}
+        {!shouldPinHuggingFaceZone && renderHuggingFaceZone()}
 
         <div className={`manager__empty${showManagerEmpty ? '' : ' manager__empty--hidden'}`} aria-hidden={!showManagerEmpty}>
-          <span className="manager__empty-icon">{api.isConnected ? '🤖' : '🔌'}</span>
+          <span className="manager__empty-icon">{api.isConnected ? <Icon name="box" size={42} /> : <Icon name="plug" size={42} />}</span>
           <p>{api.isConnected
             ? 'No models found matching your search.'
             : 'Connect to a Lemonade server to see models.'

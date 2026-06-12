@@ -45,13 +45,13 @@ function relativeTime(ms: number): string {
 
 function typeIcon(type: string): string {
   switch (type) {
-    case 'llm': return '💬';
-    case 'embedding': return '🔢';
-    case 'reranking': return '🔀';
-    case 'transcription': return '🎙';
-    case 'image': return '🖼';
-    case 'tts': return '🔊';
-    default: return '⚙';
+    case 'llm': return 'LLM';
+    case 'embedding': return 'Emb';
+    case 'reranking': return 'Rank';
+    case 'transcription': return 'ASR';
+    case 'image': return 'Image';
+    case 'tts': return 'TTS';
+    default: return 'Model';
   }
 }
 
@@ -219,17 +219,17 @@ const Dashboard: React.FC = () => {
         <div className="dash2-bar__right">
           <button className={`dash2-bar__btn ${paused ? 'is-paused' : ''}`}
             onClick={() => setPaused(p => !p)} title={paused ? 'Resume' : 'Pause'}>
-            {paused ? '▶' : '⏸'}
+            {paused ? 'Resume' : 'Pause'}
           </button>
         </div>
       </header>
 
-      {lastError && <div className="dash2-err">⚠ {lastError}</div>}
+      {lastError && <div className="dash2-err">Warning: {lastError}</div>}
 
       <div className="dash2-scroll">
         {/* ═══ HERO — Aggregate Throughput ═══ */}
         <div className="dash2-card dash2-card--glow">
-          <h2 className="dash2-card__h">⚡ Aggregate Throughput</h2>
+          <h2 className="dash2-card__h">Aggregate Throughput</h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}
           <div className="dash2-hero-metrics">
@@ -240,7 +240,7 @@ const Dashboard: React.FC = () => {
               <span className="dash2-hero-metric__unit">tok/s</span>
               {counters.peakTps > 0 && (
                 <span className="dash2-hero-metric__peak">
-                  ⚡ peak {counters.peakTps.toFixed(1)}
+                  peak {counters.peakTps.toFixed(1)}
                 </span>
               )}
             </div>

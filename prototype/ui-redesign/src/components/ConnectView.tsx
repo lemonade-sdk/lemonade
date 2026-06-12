@@ -131,7 +131,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
           <span className="form-field__hint">When unchecked, the key is only kept in memory for this browser session.</span>
         </div>
 
-        {error && <div className="connect__error">⚠ {error}</div>}
+        {error && <div className="connect__error">Warning: {error}</div>}
         {notice && <div className="connect__notice">{notice}</div>}
 
         <button

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, RealtimeTranscriptionHandle, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
+import LogViewer from './LogViewer';
+import { Icon, CapabilityIcon } from './Icon';
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import {
@@ -197,7 +199,7 @@ interface ChatViewProps {
   currentModel: string | null;
   loadedModels: LoadedModel[];
   onModelSelect: (model: string) => void;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   accountSession: AccountSession;
 }
 
@@ -325,7 +327,7 @@ function modelSupportsImageEdit(modelName: string | null, modelInfo: ModelInfo |
 
 function modelSupportsRealtimeAudio(modelName: string | null, modelInfo: ModelInfo | null, loadedModel: LoadedModel | null): boolean {
   const labels = (modelInfo?.labels || []).map(label => label.toLowerCase().trim());
-  if (labels.includes('realtime-transcription')) return true;
+  if (labels.some(label => ['realtime-transcription', 'realtime', 'audio-input', 'audio-chat', 'chat-transcription'].includes(label))) return true;
 
   const recipe = String((modelInfo as any)?.recipe || loadedModel?.recipe || '').toLowerCase();
   if (recipe.includes('moonshine') || recipe.includes('whispercpp')) return true;
@@ -339,7 +341,7 @@ function modelSupportsRealtimeAudio(modelName: string | null, modelInfo: ModelIn
     loadedModel?.model_name,
     loadedModel?.checkpoint,
   ].filter(Boolean).join(' ').toLowerCase();
-  return haystack.includes('moonshine') || haystack.includes('whisper');
+  return haystack.includes('moonshine') || haystack.includes('whisper') || haystack.includes('realtime') || haystack.includes('audio-chat');
 }
 
 function canUseMicrophone(): boolean {
@@ -394,6 +396,17 @@ function composeToolRuntimes(runtimes: Array<ChatToolRuntime | null | undefined>
 
 function collectToolArtifacts(toolCalls?: ToolCallEntry[]): ToolArtifact[] {
   return (toolCalls || []).flatMap(call => call.artifacts || []);
+}
+
+function summarizeToolOnlyResponse(toolCalls?: ToolCallEntry[]): string {
+  const finished = (toolCalls || []).filter(call => call.status === 'done' || call.status === 'error');
+  if (finished.length === 0) return '';
+  const names = finished
+    .map(call => TOOL_LABELS[call.name] || call.name)
+    .filter(Boolean)
+    .slice(0, 3);
+  const suffix = finished.length > names.length ? ` and ${finished.length - names.length} more` : '';
+  return `Completed ${finished.length} tool call${finished.length === 1 ? '' : 's'}: ${names.join(', ')}${suffix}.`;
 }
 
 function collectConversationImages(messages: Message[]): string[] {
@@ -496,7 +509,7 @@ const CopyInlineButton: React.FC<{ text: string; title?: string; className?: str
       title={copied ? 'Copied' : title}
       aria-label={copied ? 'Copied' : title}
     >
-      {copied ? '✓' : '⧉'}
+      {copied ? <Icon name="check" size={13} /> : <Icon name="copy" size={13} />}
     </button>
   );
 };
@@ -532,9 +545,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
   });
+  const [showInlineLogs, setShowInlineLogs] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelPickerQuery, setModelPickerQuery] = useState('');
+  const [modelPickerLoading, setModelPickerLoading] = useState<string | null>(null);
+  const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
@@ -604,11 +623,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, []);
   const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
 
+  const hasRealtimeAudio = useMemo(
+    () => !!currentModel && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
+    [currentModel, currentKnownModelInfo, currentLoadedModel],
+  );
   const supportsRealtimeAudio = useMemo(
-    () => currentCapability === 'audio'
-      && canUseMicrophone()
-      && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
-    [currentCapability, currentModel, currentKnownModelInfo, currentLoadedModel],
+    () => canUseMicrophone() && hasRealtimeAudio,
+    [hasRealtimeAudio],
   );
 
   const defaultImageSettings = useMemo(
@@ -659,8 +680,56 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     () => loadedModels.filter(m => canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'tts'].includes(capabilityForLoaded(m))),
     [loadedModels, capabilityForLoaded],
   );
+  type ModelPickerOption = {
+    name: string;
+    capability: ModelCapability;
+    loaded: boolean;
+    info?: ModelInfo;
+    detail: string;
+  };
+
+  const modelPickerOptions = useMemo<ModelPickerOption[]>(() => {
+    const seen = new Set<string>();
+    const options: ModelPickerOption[] = [];
+    const addOption = (option: ModelPickerOption) => {
+      const key = option.name.toLowerCase();
+      if (!option.name || seen.has(key)) return;
+      if (!['chat', 'omni', 'image', 'audio', 'tts'].includes(option.capability)) return;
+      seen.add(key);
+      options.push(option);
+    };
+
+    selectableModels.forEach(model => addOption({
+      name: model.model_name,
+      capability: capabilityForLoaded(model),
+      loaded: true,
+      detail: `Loaded · ${model.recipe || 'runtime'}${model.device ? ` · ${model.device}` : ''}`,
+    }));
+
+    knownModelInfos.forEach(info => {
+      const name = String((info as any).model_name || info.name || info.id || '').trim();
+      const capability = capabilityFromModelInfo(info);
+      const labels = (info.labels || []).map(label => label.toLowerCase());
+      const downloaded = labels.some(label => ['downloaded', 'local', 'installed', 'ready'].includes(label));
+      addOption({
+        name,
+        capability,
+        loaded: false,
+        info,
+        detail: downloaded ? 'Downloaded · click to load' : 'Registry · click to load',
+      });
+    });
+
+    const q = modelPickerQuery.trim().toLowerCase();
+    const filtered = q
+      ? options.filter(option => `${option.name} ${capabilityLabel(option.capability)} ${option.detail}`.toLowerCase().includes(q))
+      : options;
+    return filtered.slice(0, 80);
+  }, [capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
+
   const modeSupportsChatCompletions = currentLoadedModel ? canUseChatCompletions(currentLoadedModel) : (currentCapability === 'chat' || currentCapability === 'omni');
   const modeSupportsTools = modeSupportsChatCompletions;
+  const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || supportsRealtimeAudio;
 
   const handleLiveTranscription = useCallback((text: string, isFinal: boolean) => {
     if (!isLiveRecordingRef.current && liveFinalizeTimerRef.current === null) return;
@@ -691,6 +760,17 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, []);
 
   const { startRecording, stopRecording, error: micError } = useAudioCapture(handleAudioChunk, handleAudioLevel);
+
+  useEffect(() => {
+    if (!modelPickerOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const root = modelPickerRef.current;
+      if (!root || root.contains(event.target as Node)) return;
+      setModelPickerOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [modelPickerOpen]);
 
   useEffect(() => {
     const currentStillUsable = currentModel && loadedModels.some(m => m.model_name === currentModel && canSelectInComposer(m));
@@ -727,7 +807,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       ...c,
       messages: [...c.messages, {
         role: 'assistant',
-        content: stats.content || mediaFallback,
+        content: stats.content || mediaFallback || summarizeToolOnlyResponse(toolCalls),
         thinking: stats.reasoning || undefined,
         toolCalls,
         stats,
@@ -850,6 +930,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     if (!currentModelSnapshot) return;
     const finalText = text.trim();
     if (!finalText) return;
+
+    // For chat/omni/audio-chat models, microphone input becomes editable draft text
+    // so the same selected model can be used for both chat and audio capture.
+    if (modeSupportsChatCompletions) {
+      setInputValue(prev => prev.trim()
+        ? `${prev.trimEnd()}
+
+${finalText}`
+        : finalText);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+
     const modelSnapshot = currentModelSnapshot;
     const userMessage: Message = {
       role: 'user',
@@ -884,7 +977,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       title: c.messages.length === 0 ? 'Live microphone recording' : c.title,
       updatedAt: Date.now(),
     }));
-  }, [activeId, currentModelSnapshot, updateConversation]);
+  }, [activeId, currentModelSnapshot, modeSupportsChatCompletions, updateConversation]);
 
   const clearLiveMicState = useCallback(() => {
     setIsLiveRecording(false);
@@ -896,7 +989,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   }, []);
 
   const handleMicStart = useCallback(async () => {
-    if (!currentModel || !currentModelSnapshot || currentCapability !== 'audio' || !supportsRealtimeAudio || isStreaming || capabilityBusy) return;
+    if (!currentModel || !currentModelSnapshot || !supportsRealtimeAudio || isStreaming || capabilityBusy) return;
     if (liveFinalizeTimerRef.current) {
       window.clearTimeout(liveFinalizeTimerRef.current);
       liveFinalizeTimerRef.current = null;
@@ -1071,7 +1164,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     let requestModelName = currentModel || modelSnapshot.name;
     let requestText = text;
     let requestImages = images;
-    let includeDirectAudioParts = currentCapability === 'omni' && audioFiles.length > 0;
+    let includeDirectAudioParts = canUseAudioInput && modeSupportsChatCompletions && audioFiles.length > 0;
 
     const omniRuntime = collectionInfo
       ? buildOmniToolRuntime(collectionInfo, knownModelInfos, {
@@ -1205,6 +1298,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     loadedModels,
     modeSupportsChatCompletions,
     modeSupportsTools,
+    canUseAudioInput,
     runCapabilityRequest,
     streaming,
     updateConversation,
@@ -1215,11 +1309,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const text = (overrideText ?? inputValue).trim();
     const audioFiles = [...pendingAudioFiles];
     const hasImages = pendingImages.length > 0;
-    const canSubmitContent = currentCapability === 'audio'
+    const canSubmitContent = currentCapability === 'audio' && !modeSupportsChatCompletions
       ? audioFiles.length > 0
       : currentCapability === 'image'
         ? (imageMode === 'edit' ? (!!text && hasImages) : !!text)
-        : (!!text || hasImages || (currentCapability === 'omni' && audioFiles.length > 0));
+        : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy) return;
     if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
 
@@ -1294,6 +1388,32 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     );
   }, [activeId, appendAssistantMessage, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
+  const handleEditUserMessage = useCallback(async (messageIndex: number, revisedContent: string) => {
+    const text = revisedContent.trim();
+    if (!text || !activeId || isBusy) return;
+    if (!api.isConnected || !currentModel || !currentModelSnapshot) return;
+    const convo = conversations.find(c => c.id === activeId);
+    if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
+
+    const originalMessage = convo.messages[messageIndex];
+    const priorMessages = convo.messages.slice(0, messageIndex);
+    const editedUserMessage: Message = {
+      ...originalMessage,
+      content: text,
+      model: currentModelSnapshot,
+    };
+
+    setConversations(prev => prev.map(c => c.id === activeId ? {
+      ...c,
+      messages: [...priorMessages, editedUserMessage],
+      model: currentModelSnapshot,
+      title: messageIndex === 0 ? titleFromInput(text, !!editedUserMessage.images?.length) : c.title,
+      updatedAt: Date.now(),
+    } : c));
+
+    await startAssistantResponse(activeId, currentModelSnapshot, editedUserMessage, priorMessages, [], false);
+  }, [activeId, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1304,11 +1424,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   // ── Attachment handling ────────────────────────────────────
 
   const addAttachments = useCallback(async (files: File[]) => {
-    if (currentCapability === 'audio' || currentCapability === 'omni') {
+    if (canUseAudioInput) {
       const audioFiles = files.filter(f => f.type.startsWith('audio/'));
       if (audioFiles.length > 0) {
         setPendingAudioFiles(audioFiles.slice(0, 1));
-        if (currentCapability === 'audio') return;
+        if (currentCapability === 'audio' && !modeSupportsChatCompletions) return;
       }
     }
 
@@ -1326,7 +1446,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     const toProcess = imageFiles.slice(0, remaining);
     const encoded = await Promise.all(toProcess.map(imageToBase64));
     setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
-  }, [currentCapability, imageMode, pendingImages.length]);
+  }, [canUseAudioInput, currentCapability, imageMode, modeSupportsChatCompletions, pendingImages.length]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -1375,6 +1495,29 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     setPersistHistory(prev => !prev);
   }, []);
 
+  const handleModelPickerSelect = useCallback(async (option: ModelPickerOption) => {
+    if (option.loaded) {
+      onModelSelect(option.name);
+      setModelPickerOpen(false);
+      setModelPickerQuery('');
+      return;
+    }
+    if (!api.isConnected || modelPickerLoading) return;
+    setModelPickerError(null);
+    setModelPickerLoading(option.name);
+    try {
+      await api.loadModel(option.name, undefined, option.info || null);
+      await Promise.resolve(onRefresh());
+      onModelSelect(option.name);
+      setModelPickerOpen(false);
+      setModelPickerQuery('');
+    } catch (err) {
+      setModelPickerError(friendlyErrorMessage(err));
+    } finally {
+      setModelPickerLoading(null);
+    }
+  }, [modelPickerLoading, onModelSelect, onRefresh]);
+
   // ── Option select from assistant messages ───────────────────
 
   const handleOptionSelect = useCallback((text: string) => {
@@ -1385,17 +1528,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const canAttach = currentCapability === 'chat'
     || currentCapability === 'omni'
     || currentCapability === 'audio'
+    || supportsRealtimeAudio
     || (currentCapability === 'image' && imageMode === 'edit');
-  const fileAccept = currentCapability === 'audio' ? 'audio/*' : (currentCapability === 'omni' ? 'image/*,audio/*' : 'image/*');
-  const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio'
+  const fileAccept = canUseAudioInput
+    ? (currentCapability === 'image' ? 'image/*' : 'image/*,audio/*')
+    : 'image/*';
+  const canSubmit = !!currentModel && !isBusy && (currentCapability === 'audio' && !modeSupportsChatCompletions
     ? pendingAudioFiles.length > 0
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? (!!inputValue.trim() && pendingImages.length > 0) : !!inputValue.trim())
-      : (!!inputValue.trim() || pendingImages.length > 0 || (currentCapability === 'omni' && pendingAudioFiles.length > 0)));
+      : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message — connect and load a model to send…'
-    : currentCapability === 'omni'
-      ? `Message ${currentModel} with text, images, or audio…`
+    : currentCapability === 'omni' || supportsRealtimeAudio
+      ? `Message ${currentModel} with text${canUseAudioInput ? ', images, or audio' : ' or images'}…`
       : currentCapability === 'image'
       ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
       : currentCapability === 'audio'
@@ -1403,7 +1549,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         : currentCapability === 'tts'
           ? `Text to speak with ${currentModel}…`
           : `Message ${currentModel}…`;
-  const composerHint = currentCapability === 'omni'
+  const composerHint = supportsRealtimeAudio && modeSupportsChatCompletions
+    ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
+    : currentCapability === 'omni'
     ? 'Omni mode · text, image and audio are routed through chat completions'
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? 'Image mode · attach one source image and prompt becomes /images/edits' : 'Image mode · prompt becomes /images/generations')
@@ -1411,7 +1559,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
       ? 'Audio mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
       : currentCapability === 'tts'
         ? 'TTS mode · text becomes /audio/speech'
-        : '⏎ to send · Shift+⏎ for newline · Paste or drop images';
+        : 'Enter to send · Shift+Enter for newline · Paste or drop images';
 
   const upscalingModels = useMemo(
     () => knownModelInfos
@@ -1422,7 +1570,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   );
 
   return (
-    <div className={`chat ${railExpanded ? 'rail-expanded' : ''}`}>
+    <div className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}>
       {/* Conversation rail */}
       <aside className="rail">
         <div className="rail__head">
@@ -1518,6 +1666,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
                   userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
+                  onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
                 />
               ))}
 
@@ -1566,7 +1715,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
               {capabilityBusy && !isStreaming && (
                 <article className="message message--assistant">
-                  <div className="message__avatar">{capabilityIcon(currentCapability)}</div>
+                  <div className="message__avatar"><CapabilityIcon capability={currentCapability} size={16} /></div>
                   <div className="message__body">
                     <div className="message__author-row">
                       <div className="message__author">{modelDisplayName(currentModelSnapshot)}</div>
@@ -1584,27 +1733,74 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
         </div>
       </div>
 
+      {showInlineLogs && (
+        <aside className="chat__logs" aria-label="Lemonade logs next to chat">
+          <LogViewer />
+        </aside>
+      )}
+
       {/* Composer */}
       <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
-          {selectableModels.length > 0 && (
-            <div className="composer__model-picker">
+          {(modelPickerOptions.length > 0 || modelPickerOpen) && (
+            <div className="composer__model-picker" ref={modelPickerRef}>
               <span className="composer__model-label">Model</span>
-              <select
-                className="composer__model-select"
-                value={currentModel || ''}
-                onChange={e => onModelSelect(e.target.value)}
+              <button
+                type="button"
+                className="composer__model-button"
+                onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
+                aria-haspopup="listbox"
+                aria-expanded={modelPickerOpen}
               >
-                {selectableModels.map(m => {
-                  const cap = capabilityForLoaded(m);
-                  return <option key={m.model_name} value={m.model_name}>{capabilityIcon(cap)} {m.model_name} · {capabilityLabel(cap)}</option>;
-                })}
-              </select>
+                <CapabilityIcon capability={currentCapability} size={14} />
+                <span className="composer__model-button-name">{currentModel || 'Choose model'}</span>
+                <span className="composer__model-button-caret">▾</span>
+              </button>
+              {modelPickerOpen && (
+                <div className="composer__model-menu" role="dialog" aria-label="Search models">
+                  <label className="composer__model-search">
+                    <Icon name="search" size={14} />
+                    <input
+                      autoFocus
+                      value={modelPickerQuery}
+                      placeholder="Search loaded or downloaded models…"
+                      onChange={e => setModelPickerQuery(e.target.value)}
+                    />
+                  </label>
+                  <div className="composer__model-results" role="listbox">
+                    {modelPickerOptions.map(option => (
+                      <button
+                        type="button"
+                        key={option.name}
+                        className={`composer__model-option${option.name === currentModel ? ' is-active' : ''}`}
+                        onClick={() => handleModelPickerSelect(option)}
+                        disabled={!!modelPickerLoading}
+                        role="option"
+                        aria-selected={option.name === currentModel}
+                      >
+                        <CapabilityIcon capability={option.capability} size={15} />
+                        <span className="composer__model-option-text">
+                          <strong>{option.name}</strong>
+                          <span>{capabilityLabel(option.capability)} · {option.detail}</span>
+                        </span>
+                        {modelPickerLoading === option.name && <span className="composer__model-option-loading">Loading…</span>}
+                      </button>
+                    ))}
+                    {modelPickerOptions.length === 0 && <div className="composer__model-empty">No matching models</div>}
+                  </div>
+                  {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
+                </div>
+              )}
             </div>
           )}
-          <span className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)}`}>
-            {capabilityIcon(currentCapability)} {capabilityLabel(currentCapability)} mode
-          </span>
+          <button
+            type="button"
+            className={`composer__mode-badge composer__mode-badge--${capabilityBadge(currentCapability)} composer__mode-badge--interactive`}
+            onClick={() => setModelPickerOpen(true)}
+            title="Mode follows the selected model. Open model search to change it."
+          >
+            <CapabilityIcon capability={currentCapability} size={13} /> {supportsRealtimeAudio && modeSupportsChatCompletions ? 'Chat + Audio' : capabilityLabel(currentCapability)} mode
+          </button>
           {currentPreset && (
             <span className="composer__preset-badge" title="Active preset for this model">
               <span aria-hidden="true">{presetIcon(currentPreset)}</span> Preset: {currentPreset.name}
@@ -1623,7 +1819,15 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
               : 'Tools are only available for chat-completion models'}
             aria-pressed={useTools && modeSupportsTools}
           >
-            🛠 Tools {useTools && modeSupportsTools ? 'ON' : 'OFF'}
+            <Icon name="tools" size={13} /> Tools {useTools && modeSupportsTools ? 'ON' : 'OFF'}
+          </button>
+          <button
+            className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
+            onClick={() => setShowInlineLogs(v => !v)}
+            aria-pressed={showInlineLogs}
+            title="Show logs next to the chat"
+          >
+            <Icon name="logs" size={13} /> Logs
           </button>
         </div>
         {streamingToolStatus && (
@@ -1738,13 +1942,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
           <div className="composer__files">
             {pendingAudioFiles.map((file, i) => (
               <div key={`${file.name}-${i}`} className="composer__file-chip">
-                <span>🎙 {file.name}</span>
+                <span><Icon name="mic" size={13} /> {file.name}</span>
                 <button onClick={removeAudio} aria-label="Remove audio file">×</button>
               </div>
             ))}
           </div>
         )}
-        {(isLiveRecording || liveTranscript || liveError || micError) && currentCapability === 'audio' && (
+        {(isLiveRecording || liveTranscript || liveError || micError) && (supportsRealtimeAudio || currentCapability === 'audio') && (
           <div className={`composer__live${liveError || micError ? ' composer__live--error' : ''}`}>
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
@@ -1761,22 +1965,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             className="composer__attach"
             onClick={() => fileInputRef.current?.click()}
             disabled={!canAttach || !currentModel || isBusy || pendingImages.length >= MAX_IMAGES}
-            title={currentCapability === 'audio' ? 'Attach audio' : currentCapability === 'omni' ? 'Attach image or audio' : 'Attach image'}
-            aria-label={currentCapability === 'audio' ? 'Attach audio' : currentCapability === 'omni' ? 'Attach image or audio' : 'Attach image'}
+            title={canUseAudioInput ? 'Attach image or audio' : 'Attach image'}
+            aria-label={canUseAudioInput ? 'Attach image or audio' : 'Attach image'}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-            </svg>
+            <Icon name="paperclip" size={16} />
           </button>
           <input
             ref={fileInputRef}
             type="file"
             accept={fileAccept}
-            multiple={currentCapability !== 'audio' && !(currentCapability === 'image' && imageMode === 'edit')}
+            multiple={!(currentCapability === 'audio' && !modeSupportsChatCompletions) && !(currentCapability === 'image' && imageMode === 'edit')}
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
-          {currentCapability === 'audio' && (
+          {(supportsRealtimeAudio || isLiveRecording) && (
             <button
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
@@ -1785,7 +1987,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
               aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
               aria-pressed={isLiveRecording}
             >
-              🎙
+              <Icon name="mic" size={16} />
             </button>
           )}
           <textarea
@@ -1800,14 +2002,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
             rows={1}
           />
           {isStreaming ? (
-            <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop">■</button>
+            <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
           ) : (
             <button
               className="composer__send"
               onClick={() => handleSend()}
               disabled={!canSubmit}
               aria-label="Send"
-            >↑</button>
+            ><Icon name="send" size={16} /></button>
           )}
         </div>
         <div className="composer__hint">{composerHint}</div>
@@ -1838,19 +2040,19 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
 
       <div className="chips" role="list">
         <button className="chip" role="listitem" onClick={() => onChipClick('Summarize this document for me')}>
-          <span className="chip__icon" aria-hidden="true">📄</span>
+          <span className="chip__icon" aria-hidden="true"><Icon name="file" size={16} /></span>
           Summarize a doc
         </button>
         <button className="chip" role="listitem" onClick={() => onChipClick('Review this code and suggest improvements')}>
-          <span className="chip__icon" aria-hidden="true">💻</span>
+          <span className="chip__icon" aria-hidden="true"><Icon name="code" size={16} /></span>
           Code review
         </button>
         <button className="chip" role="listitem" onClick={() => onChipClick('Create an image of a cozy lemonade stand at sunset')}>
-          <span className="chip__icon" aria-hidden="true">🖼</span>
+          <span className="chip__icon" aria-hidden="true"><Icon name="image" size={16} /></span>
           Create image
         </button>
         <button className="chip" role="listitem" onClick={() => onChipClick('Turn this text into natural speech')}>
-          <span className="chip__icon" aria-hidden="true">🔊</span>
+          <span className="chip__icon" aria-hidden="true"><Icon name="tts" size={16} /></span>
           Text to speech
         </button>
       </div>
@@ -1881,7 +2083,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                   <span className="active-card__device">{m.device || 'device unknown'}</span>
                 </div>
                 <div className="active-card__badges">
-                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}>{capabilityIcon(cap)} {capabilityLabel(cap)}</span>
+                  <span className={`cap-badge cap-badge--${capabilityBadge(cap)}`}><CapabilityIcon capability={cap} size={13} /> {capabilityLabel(cap)}</span>
                 </div>
                 {isActive ? (
                   <span className="active-card__status">● Active {capabilityLabel(cap)} mode</span>
@@ -1957,7 +2159,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
         return (
           <details key={i} className={`message__tool-call message__tool-call--${tc.status}`}>
             <summary>
-              <span className="message__tool-call-icon">{tc.status === 'running' ? '⏳' : tc.status === 'error' ? '❌' : '✅'}</span>
+              <span className="message__tool-call-icon">{tc.status === 'running' ? <Icon name="clock" size={13} /> : tc.status === 'error' ? <Icon name="x" size={13} /> : <Icon name="check" size={13} />}</span>
               <span className="message__tool-call-name">{TOOL_LABELS[tc.name] || tc.name}</span>
               {tc.args && <span className="message__tool-call-args">{tc.args}</span>}
             </summary>
@@ -1971,10 +2173,22 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onEditUser }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(message.content || '');
+
+  useEffect(() => {
+    if (!isEditing) setEditDraft(message.content || '');
+  }, [isEditing, message.content]);
 
   if (message.role === 'user') {
+    const saveEdit = () => {
+      const trimmed = editDraft.trim();
+      if (!trimmed) return;
+      setIsEditing(false);
+      onEditUser?.(trimmed);
+    };
     return (
       <article className="message message--user">
         <div className="message__avatar">{userLabel.charAt(0).toUpperCase()}</div>
@@ -1988,11 +2202,32 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             </div>
           )}
           {message.audioName && (
-            <div className="message__file-chip">🎙 {message.audioName}</div>
+            <div className="message__file-chip"><Icon name="mic" size={13} /> {message.audioName}</div>
           )}
-          {message.content && (
+          {isEditing ? (
+            <div className="message__edit">
+              <textarea
+                className="message__edit-input"
+                value={editDraft}
+                onChange={event => setEditDraft(event.target.value)}
+                rows={Math.max(3, Math.min(10, editDraft.split('\n').length + 1))}
+                autoFocus
+              />
+              <div className="message__edit-actions">
+                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> Save & resend</button>
+                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> Cancel</button>
+              </div>
+            </div>
+          ) : message.content ? (
             <div className="message__content message__content--user">
               <MarkdownMessage content={message.content} />
+            </div>
+          ) : null}
+          {!isEditing && onEditUser && message.content && (
+            <div className="message__actions" aria-label="Message actions">
+              <button type="button" className="message__action" onClick={() => setIsEditing(true)}>
+                <Icon name="edit" size={13} /> Edit & resend
+              </button>
             </div>
           )}
         </div>
@@ -2053,7 +2288,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             onClick={() => copyTextToClipboard(message.content || message.thinking || '')}
             disabled={!(message.content || message.thinking)}
           >
-            ⧉ Copy
+            <Icon name="copy" size={13} /> Copy
           </button>
           {onRetry && (
             <button type="button" className="message__action" onClick={onRetry}>
