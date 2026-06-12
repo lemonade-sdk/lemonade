@@ -9,6 +9,7 @@
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
+#include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
@@ -56,7 +57,8 @@ static const std::vector<std::string> VALID_LABELS = {
 static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex",
-    "opencode"
+    "opencode",
+    "pi"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -517,6 +519,8 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
     const lemon_cli::AgentConfigProfile* profile = nullptr;
     if (config.agent == "opencode") {
         profile = &lemon_cli::opencode_profile();
+    } else if (config.agent == "pi") {
+        profile = &lemon_cli::pi_profile();
     }
 
     if (profile == nullptr) {
@@ -538,6 +542,18 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
         std::cerr << "Warning: Failed to sync " << config.agent
                   << " config: " << error_message << std::endl;
         std::cerr << "Continuing with launch anyway..." << std::endl;
+    }
+
+    if (config.agent == "pi") {
+        // Only write settings.json if pi doesn't already have a default provider/model.
+        // This preserves existing user configuration while providing seamless first-time UX.
+        if (!lemon_cli::pi_has_default_config()) {
+            std::string settings_error;
+            if (!lemon_cli::sync_pi_settings_file("Lemonade", config.model, settings_error)) {
+                std::cerr << "Warning: Failed to sync pi settings: " << settings_error << std::endl;
+                std::cerr << "Continuing with launch anyway..." << std::endl;
+            }
+        }
     }
 }
 
