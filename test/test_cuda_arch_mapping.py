@@ -150,6 +150,7 @@ def identify_cuda_arch_from_name(device_name: str) -> str:
         "b100",
         "b200",
         "l40",
+        "gb10",
     ]
     if not any(kw in name for kw in nvidia_ids):
         return ""
@@ -221,6 +222,7 @@ class TestIdentifyCudaArchFromName(unittest.TestCase):
             ("NVIDIA A10", "sm_86"),
             ("NVIDIA A40", "sm_86"),
             ("NVIDIA GB10", "sm_121"),
+            ("GB10", "sm_121"),
             # RTX PRO Blackwell (sm_120) — both the generic "Blackwell" keyword
             # and the explicit RTX PRO model numbers must resolve to sm_120.
             ("NVIDIA RTX PRO 3000 Blackwell Generation Laptop GPU", "sm_120"),
