@@ -439,7 +439,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                     << std::endl;
             }
 
-            std::cout << "Browse dowloaded LLMs:" << std::endl;
+            std::cout << "Browse downloaded LLMs:" << std::endl;
             std::cout << "  0) Browse recommended models (download may be required)" << std::endl;
             for (size_t i = 0; i < downloaded_llm_models.size(); ++i) {
                 const auto& model = *downloaded_llm_models[i];
