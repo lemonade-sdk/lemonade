@@ -1,11 +1,15 @@
 import React from 'react';
 import { ModelCapability } from '../modelCapabilities';
+import type { Preset } from '../presetStore';
+import { presetIconName } from '../presetStore';
 
-type IconName =
+export type IconName =
   | 'sun' | 'moon' | 'paperclip' | 'mic' | 'send' | 'stop' | 'copy' | 'check'
   | 'x' | 'tools' | 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding'
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
-  | 'search' | 'edit' | 'download' | 'plug' | 'box' | 'alert' | 'clock';
+  | 'search' | 'edit' | 'download' | 'play' | 'plug' | 'box' | 'alert' | 'clock'
+  | 'citrus' | 'scale' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
+  | 'hard-drive' | 'sliders-horizontal';
 
 interface IconProps {
   name: IconName;
@@ -50,10 +54,20 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'search': return <><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></>;
       case 'edit': return <><path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17v3z" /><path d="M14 7l3 3" /></>;
       case 'download': return <><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></>;
+      case 'play': return <path d="M8 5.5v13l11-6.5-11-6.5z" />;
       case 'plug': return <><path d="M8 2v5M16 2v5" /><path d="M7 7h10v4a5 5 0 01-10 0V7z" /><path d="M12 16v6" /></>;
       case 'box': return <><path d="M21 16V8l-9-5-9 5v8l9 5 9-5z" /><path d="M3.5 8.5L12 13l8.5-4.5" /><path d="M12 13v8" /></>;
       case 'alert': return <><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.3 3.9L2.8 17a2 2 0 001.7 3h15a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /></>;
       case 'clock': return <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>;
+      case 'citrus': return <><path d="M6.5 17.5a7.8 7.8 0 010-11 7.8 7.8 0 0111 11 7.8 7.8 0 01-11 0z" /><path d="M12 4.5V19" /><path d="M5 12h14" /><path d="M8.2 7.8l7.9 7.9" /><path d="M16.1 7.8l-7.9 7.9" /><path d="M14.7 3.2c1.3-.6 2.7-.6 4.1.1-.7 1.3-1.8 2.2-3.1 2.6" /></>;
+      case 'scale': return <><path d="M12 3v18" /><path d="M6 7h12" /><path d="M6 7l-4 7h8L6 7z" /><path d="M18 7l-4 7h8l-4-7z" /><path d="M7 21h10" /></>;
+      case 'gem': return <><path d="M6 3h12l4 6-10 12L2 9l4-6z" /><path d="M2 9h20" /><path d="M8 3l4 18 4-18" /></>;
+      case 'gauge': return <><path d="M4 15a8 8 0 1116 0" /><path d="M12 15l4-5" /><path d="M8 19h8" /></>;
+      case 'timer': return <><path d="M10 2h4" /><path d="M12 14l3-3" /><circle cx="12" cy="13" r="8" /></>;
+      case 'pen-line': return <><path d="M4 20h4l11-11a2.1 2.1 0 00-3-3L5 17v3z" /><path d="M14 7l3 3" /><path d="M3 22h18" /></>;
+      case 'library': return <><path d="M4 19.5V5a2 2 0 012-2h12v16H6a2 2 0 00-2 2" /><path d="M8 7h6" /><path d="M8 11h6" /><path d="M8 15h4" /></>;
+      case 'hard-drive': return <><path d="M4 12l2-7h12l2 7" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M7 16h.01" /><path d="M17 16h.01" /></>;
+      case 'sliders-horizontal': return <><path d="M4 6h7" /><path d="M15 6h5" /><circle cx="13" cy="6" r="2" /><path d="M4 12h3" /><path d="M11 12h9" /><circle cx="9" cy="12" r="2" /><path d="M4 18h10" /><path d="M18 18h2" /><circle cx="16" cy="18" r="2" /></>;
       default: return <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 9h6v6H9z" /></>;
     }
   })();
@@ -85,4 +99,9 @@ export function capabilityIconName(capability: ModelCapability | 'all' | 'vision
 
 export const CapabilityIcon: React.FC<{ capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'; size?: number; className?: string; title?: string }> = ({ capability, size, className, title }) => (
   <Icon name={capabilityIconName(capability)} size={size} className={className} title={title} />
+);
+
+
+export const PresetIcon: React.FC<{ preset: Pick<Preset, 'id' | 'name' | 'starter'> | null | undefined; size?: number; className?: string; title?: string }> = ({ preset, size = 14, className, title }) => (
+  <Icon name={presetIconName(preset)} size={size} className={className} title={title || preset?.name} />
 );

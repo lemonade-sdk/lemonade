@@ -8,12 +8,11 @@ import {
   STARTERS,
   loadBackendApplied,
   loadUserPresets,
-  presetIcon,
   presetParamPreviewLines,
   presetSupportsCapability,
   saveBackendApplied,
 } from '../presetStore';
-import { Icon } from './Icon';
+import { Icon, PresetIcon } from './Icon';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -506,7 +505,7 @@ const BackendManager: React.FC = () => {
       <div className="context-rail__body">
         <div className="preset-rail-summary">
           <span className="preset-rail-summary__label">Selected preset</span>
-          <strong><span aria-hidden="true">{presetIcon(railSummaryPreset)}</span> {railSummaryPreset.name}</strong>
+          <strong><PresetIcon preset={railSummaryPreset} /> {railSummaryPreset.name}</strong>
           <span>{backendsUsingSelectedPreset.length} backend{backendsUsingSelectedPreset.length === 1 ? '' : 's'} assigned</span>
           <span className="preset-param-lines">{presetParamPreviewLines(railSummaryPreset).map(line => <span key={line}>{line}</span>)}</span>
         </div>
@@ -528,7 +527,7 @@ const BackendManager: React.FC = () => {
                 onBlur={() => setHoveredRailPresetId(null)}
                 title={disabled ? 'Incompatible with selected backend capability' : preset.description}
               >
-                <span className="preset-rail-card__icon">{isActive ? '✓' : presetIcon(preset)}</span>
+                <span className="preset-rail-card__icon">{isActive ? <Icon name="check" size={13} /> : <PresetIcon preset={preset} />}</span>
                 <span className="preset-rail-card__text">
                   <strong>{preset.name}</strong>
                   <span className="preset-rail-card__params preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
@@ -541,7 +540,7 @@ const BackendManager: React.FC = () => {
           <div className="preset-rail-summary preset-rail-summary--backend">
             <span className="preset-rail-summary__label">Selected backend</span>
             <strong>{backendLabelFromKey(selectedBackendKey)}</strong>
-            <span><span aria-hidden="true">{presetIcon(selectedBackendPreset)}</span> {selectedBackendPreset.name}</span>
+            <span><PresetIcon preset={selectedBackendPreset} /> {selectedBackendPreset.name}</span>
           </div>
         )}
         {presetNotice && <div className="context-rail__notice">{presetNotice}</div>}
@@ -670,7 +669,7 @@ const BackendManager: React.FC = () => {
                               </span>
                               <span className={`cell__badge ${badge.cls}`}>{badge.label}</span>
                               {showTech && info.version && <span className="cell__sha">{info.version}</span>}
-                              <span className="cell__preset"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
+                              <span className="cell__preset"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
                               {showTech && info.message && <span className="cell__message">{info.message}</span>}
                               <div className="cell__actions" onClick={e => e.stopPropagation()}>
                                 {(info.state === 'installable') && (

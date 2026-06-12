@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { ModelInfo, LoadedModel, PullCallbacks, PullVariantsResult, HFModelResult, searchHuggingFace, friendlyErrorMessage, DownloadProgressEvent } from '../api';
 import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, capabilityIcon, capabilityLabel, ModelCapability } from '../modelCapabilities';
-import { CapabilityIcon, Icon } from './Icon';
+import { CapabilityIcon, Icon, PresetIcon } from './Icon';
 import type { AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
-import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetIcon, presetParamPreviewLines, saveApplied } from '../presetStore';
+import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -71,21 +71,53 @@ function modelLabels(m: ModelInfo | null | undefined): string[] {
   return labels.map(label => String(label).trim()).filter(Boolean);
 }
 
-function recipeIcon(recipe: string): string {
-  switch (String(recipe || '').toLowerCase()) {
+function recipeBadgeText(recipe: string): string {
+  const normalized = String(recipe || '').toLowerCase();
+  switch (normalized) {
     case 'llamacpp': return 'llama.cpp';
     case 'vllm': return 'vLLM';
     case 'flm': return 'FLM';
     case 'ryzenai-llm': return 'RyzenAI';
-    case 'sd-cpp': return 'SD';
+    case 'sd-cpp': return 'SD.cpp';
     case 'whispercpp': return 'Whisper';
     case 'moonshine': return 'Moonshine';
-    case 'kokoro': return 'TTS';
+    case 'kokoro': return 'Kokoro';
     case 'collection.omni': return 'Omni';
     case 'collection': return 'Collection';
-    default: return 'Model';
+    default: return recipe || 'Backend';
   }
 }
+
+function recipeColor(recipe: string): string {
+  const normalized = String(recipe || '').toLowerCase();
+  switch (normalized) {
+    case 'llamacpp': return '#facc15';
+    case 'vllm': return '#60a5fa';
+    case 'flm': return '#34d399';
+    case 'ryzenai-llm': return '#f97316';
+    case 'sd-cpp': return '#c084fc';
+    case 'whispercpp': return '#38bdf8';
+    case 'moonshine': return '#22d3ee';
+    case 'kokoro': return '#f472b6';
+    case 'collection.omni': return '#a78bfa';
+    case 'collection': return '#94a3b8';
+    default: return 'var(--text-tertiary)';
+  }
+}
+
+const BackendBadge: React.FC<{ recipe: string; running?: boolean }> = ({ recipe, running = false }) => {
+  const label = recipeLabel(recipe);
+  return (
+    <div
+      className={`row__backend-badge${running ? ' row__backend-badge--running' : ''}`}
+      style={{ '--backend-color': recipeColor(recipe) } as React.CSSProperties}
+      title={label}
+      aria-label={label}
+    >
+      <span>{recipeBadgeText(recipe)}</span>
+    </div>
+  );
+};
 
 function recipeLabel(recipe: string): string {
   const normalized = String(recipe || '').toLowerCase();
@@ -107,19 +139,6 @@ function recipeLabel(recipe: string): string {
 function modelType(m: ModelInfo): string {
   const cap = capabilityFromModelInfo(m);
   return cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
-}
-
-function typeColor(type: string): string {
-  switch (type) {
-    case 'llm': return 'var(--accent)';
-    case 'omni': return '#facc15';
-    case 'image': return '#c084fc';
-    case 'audio': return '#60a5fa';
-    case 'tts': return '#34d399';
-    case 'embedding': return '#f97316';
-    case 'reranking': return '#f43f5e';
-    default: return 'var(--text-tertiary)';
-  }
 }
 
 function labelDisplay(label: string): string {
@@ -1313,11 +1332,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <div className="detail__meta">
             <div className="detail__field">
               <span className="detail__label">Backend</span>
-              <span className="detail__value">{recipeIcon(recipe)} {recipeLabel(recipe)}</span>
+              <span className="detail__value">{recipeLabel(recipe)}</span>
             </div>
             <div className="detail__field">
               <span className="detail__label">Active preset</span>
-              <span className="detail__value detail__preset-value"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
+              <span className="detail__value detail__preset-value"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
               <span className="detail__hint">{loadedNames.has(name) ? 'Runtime behavior applies now. Load options apply after reload.' : 'Applies on load. Backend remains auto by Lemonade.'}</span>
             </div>
             <div className="detail__field">
@@ -1408,7 +1427,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     if (!m?.model_name) return null;
     const info = allModels.find(mi => modelName(mi) === m.model_name);
     const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
-    const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
     const componentCount = Array.isArray(m.recipe_options?.components) ? m.recipe_options.components.length : 0;
     const runningCtx = supportsContextDisplay(cap)
       ? (positiveNumber(m.recipe_options?.ctx_size) ?? (info ? contextSizeForDisplay(info, undefined, serverDefaultCtxSize) : serverDefaultCtxSize))
@@ -1423,9 +1441,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       <div className={`row row--running${isActive ? ' row--active' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={m.model_name}>
         <div className="row__content" onClick={() => toggleDetail(m.model_name)}>
           <div className="row__main">
-            <div className="row__icon row__icon--running" style={{ borderColor: typeColor(type) }}>
-              {recipeIcon(m.recipe)}
-            </div>
+            <BackendBadge recipe={m.recipe} running />
             <div className="row__text">
               <span className="row__name-wrap"><span className="row__name">{m.model_name}</span><CopyInlineButton text={m.model_name} />{info && (info as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
               <span className="row__sub">
@@ -1434,7 +1450,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 {runningCtx ? ` · ${contextLabel(runningCtx)} ctx` : ''}
                 {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
               </span>
-              <span className="row__preset-pill"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
+              <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
             </div>
           </div>
           <div className="row__right">
@@ -1503,7 +1519,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const renderModelRow = (m: ModelInfo, isDownloaded: boolean) => {
     const name = modelName(m);
     if (!name) return null;
-    const type = modelType(m);
     const isCollection = isCollectionModel(m);
     const isLoading = loadingModel === name;
     const pullPercent = pulling[name];
@@ -1518,9 +1533,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       <div className={`row${expandedModel === name ? ' row--expanded' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={name}>
         <div className="row__content" onClick={() => toggleDetail(name)}>
           <div className="row__main">
-            <div className="row__icon" style={{ borderColor: typeColor(type) }}>
-              {recipeIcon((m as any).recipe)}
-            </div>
+            <BackendBadge recipe={String((m as any).recipe || '')} />
             <div className="row__text">
               <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span><CopyInlineButton text={name} />{(m as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
               <span className="row__sub">
@@ -1530,7 +1543,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 {rowCtx ? ` · ${contextLabel(rowCtx)} ctx` : ''}
               </span>
               {renderLabels(modelLabels(m))}
-              <span className="row__preset-pill"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
+              <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
             </div>
           </div>
           <div className="row__right">
@@ -1554,7 +1567,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
                   disabled={isLoading}
                 >
-                  {isLoading ? '⏳ Loading…' : '▶ Load'}
+                  {isLoading ? 'Loading…' : <> <Icon name="play" size={13} /> Load</>}
                 </button>
                 <button
                   className="row__action row__action--delete"
@@ -1572,14 +1585,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   onClick={(e) => { e.stopPropagation(); handlePull(m); }}
                   disabled={isPulling}
                 >
-                  ↓ Download
+                  <Icon name="download" size={13} /> Download
                 </button>
                 <button
                   className="row__action"
                   onClick={(e) => { e.stopPropagation(); handlePullAndLoad(m); }}
                   disabled={isPulling}
                 >
-                  ↓▶ Get & Load
+                  <><Icon name="download" size={13} /><Icon name="play" size={13} /> Get & Load</>
                 </button>
               </>
             )}
@@ -1651,7 +1664,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 onClick={(e) => { e.stopPropagation(); handleExpand(); }}
                 title="Expand to pick a variant to download"
               >
-                ↓ Download
+                <Icon name="download" size={13} /> Download
               </button>
             )}
             <a
@@ -1762,7 +1775,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       <div className="context-rail__body">
         <div className="preset-rail-summary">
           <span className="preset-rail-summary__label">Selected preset</span>
-          <strong><span aria-hidden="true">{presetIcon(railSummaryPreset)}</span> {railSummaryPreset.name}</strong>
+          <strong><PresetIcon preset={railSummaryPreset} /> {railSummaryPreset.name}</strong>
           <span>{focusedModelName ? 'Active for this model' : `${assignedToRailSummaryPreset.length} model${assignedToRailSummaryPreset.length === 1 ? '' : 's'} assigned`}</span>
           <span className="preset-param-lines">{effectivePresetParamPreviewLines(railSummaryPreset, focusedModelInfo, focusedModelInfo ? contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize) : serverDefaultCtxSize).map(line => <span key={line}>{line}</span>)}</span>
         </div>
@@ -1784,7 +1797,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 onBlur={() => setHoveredRailPresetId(null)}
                 title={disabled ? 'Incompatible with selected model' : preset.description}
               >
-                <span className="preset-rail-card__icon">{isActive ? '✓' : presetIcon(preset)}</span>
+                <span className="preset-rail-card__icon">{isActive ? <Icon name="check" size={13} /> : <PresetIcon preset={preset} />}</span>
                 <span className="preset-rail-card__text">
                   <strong>{preset.name}</strong>
                   <span className="preset-rail-card__params preset-param-lines">{(focusedModelInfo ? effectivePresetParamPreviewLines(preset, focusedModelInfo, contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize)) : presetParamPreviewLines(preset, undefined, serverDefaultCtxSize)).map(line => <span key={line}>{line}</span>)}</span>
