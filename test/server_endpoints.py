@@ -20,6 +20,7 @@ Usage:
     python server_endpoints.py
 """
 
+import json
 import os
 import platform
 import unittest
@@ -680,11 +681,16 @@ class EndpointTests(ServerTestBase):
             f"{loaded_after['pid']}"
         )
 
-    def _start_mock_cloud_provider(self, upstream_ids, chat_handler=None):
+    def _start_mock_cloud_provider(self, upstream_ids, chat_handler=None,
+                                    sse_chunks=None):
         """Spin up an in-process OpenAI-compatible mock provider.
 
         Serves GET /v1/models with the given ids and (optionally) POST
-        /v1/chat/completions via chat_handler(body) -> dict. Returns
+        /v1/chat/completions. When `sse_chunks` is provided, the chat
+        endpoint emits each chunk as an SSE `data:` line (the caller is
+        responsible for shaping each chunk as OpenAI-compat JSON) and
+        terminates with `data: [DONE]\\n\\n`. Otherwise it falls back to
+        the non-streaming chat_handler(body) -> dict shape. Returns
         (base_url, stop_fn). The base URL ends with /v1.
         """
         import json as _json
@@ -706,7 +712,7 @@ class EndpointTests(ServerTestBase):
                     self.end_headers()
 
             def do_POST(self):  # noqa: N802
-                if chat_handler is None or "/chat/completions" not in self.path:
+                if "/chat/completions" not in self.path:
                     self.send_response(404)
                     self.end_headers()
                     return
@@ -716,6 +722,22 @@ class EndpointTests(ServerTestBase):
                     parsed = _json.loads(body or b"{}")
                 except _json.JSONDecodeError:
                     parsed = {}
+                if sse_chunks is not None and parsed.get("stream") is True:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.end_headers()
+                    for chunk in sse_chunks:
+                        line = f"data: {_json.dumps(chunk)}\n\n".encode()
+                        self.wfile.write(line)
+                        self.wfile.flush()
+                    self.wfile.write(b"data: [DONE]\n\n")
+                    self.wfile.flush()
+                    return
+                if chat_handler is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 resp = chat_handler(parsed)
                 payload = _json.dumps(resp).encode()
                 self.send_response(200)
@@ -913,11 +935,14 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(body["error"]["type"], "invalid_request_error")
         print("[OK] /cloud/auth on unknown provider returns 404")
 
-    def test_012f_chat_without_credentials_returns_clean_error(self):
-        """A cloud model that's installed but has no resolvable key must
-        produce a structured error, not a stack-trace 500."""
-        provider = "testunauth"
-        upstream_id = "vendor/no-key-model"
+    def test_012f_chat_against_evicted_cloud_model_returns_404(self):
+        """When DELETE /cloud/auth/{provider} clears the runtime key it also
+        evicts that provider's discovered models from the cache. A chat call
+        referring to one of those models must surface the standard model
+        not-found 404, not a stack-trace 500 — eviction has to be visible
+        to the chat endpoint."""
+        provider = "testevicted"
+        upstream_id = "vendor/evicted-model"
         public_name = f"{provider}.{upstream_id}"
         base_url, stop_provider = self._start_mock_cloud_provider([upstream_id])
         try:
@@ -926,19 +951,11 @@ class EndpointTests(ServerTestBase):
                 json={"backend": "cloud", "provider": provider, "base_url": base_url},
                 timeout=TIMEOUT_DEFAULT,
             )
-            # Auth, discover, then immediately clear the runtime key so the
-            # model is still in cache but unauthenticatable. We use this
-            # path because chat needs the model to be loadable first.
             requests.post(
                 f"{self.base_url}/cloud/auth",
                 json={"provider": provider, "api_key": "k"},
                 timeout=TIMEOUT_DEFAULT,
             )
-            # Manually evict (don't go through DELETE auth, which also evicts
-            # the model) — we want to keep the model in cache for the test.
-            # Instead: just verify the no-key case produces a structured error
-            # by clearing the key, which DOES evict, and then asserting that
-            # chat returns the install-prompt error rather than crashing.
             requests.delete(
                 f"{self.base_url}/cloud/auth/{provider}",
                 timeout=TIMEOUT_DEFAULT,
@@ -952,9 +969,6 @@ class EndpointTests(ServerTestBase):
                 },
                 timeout=TIMEOUT_DEFAULT,
             )
-            # After eviction the model is gone, so we expect the standard
-            # "model not found" 404 — the structured error path. This also
-            # validates that eviction is observable to the chat endpoint.
             self.assertEqual(resp.status_code, 404, resp.text)
             requests.post(
                 f"{self.base_url}/uninstall",
@@ -964,6 +978,320 @@ class EndpointTests(ServerTestBase):
         finally:
             stop_provider()
         print("[OK] Chat against an evicted cloud model returns a clean 404")
+
+    def test_012j_chat_with_loaded_model_but_cleared_key_returns_missing_creds(self):
+        """The real missing-creds path: load a cloud model (router holds an
+        active CloudServer instance), then clear the runtime key. Subsequent
+        chat calls reuse the already-loaded server — they bypass model-not-
+        found and hit resolve_creds() at request time, which must return
+        the structured missing_creds_error() instead of crashing or 500."""
+        provider = "testmissingkey"
+        upstream_id = "vendor/needs-creds"
+        public_name = f"{provider}.{upstream_id}"
+
+        def chat_response(req):
+            # Should never be called — creds are cleared before chat.
+            return {"error": "mock should not have been reached"}
+
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], chat_handler=chat_response,
+        )
+        try:
+            requests.post(
+                f"{self.base_url}/install",
+                json={"backend": "cloud", "provider": provider, "base_url": base_url},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={"provider": provider, "api_key": "k"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            # Load the model so the router holds a live CloudServer instance.
+            load_resp = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_resp.status_code, 200, load_resp.text)
+
+            # Clear the runtime key. evict_cloud_models drops the cache entry
+            # but the router's loaded CloudServer instance keeps loaded_=true,
+            # which is exactly the state that exercises missing_creds_error().
+            clear_resp = requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(clear_resp.status_code, 200, clear_resp.text)
+
+            chat_resp = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            # Whichever specific status the structured error uses, the
+            # contract is: it must not be 200 (mock should never run) and
+            # the body must be JSON with an `error` envelope that names
+            # the missing-credentials condition — never an HTML stack-trace
+            # or empty body — so a UI/CLI can route the user to /cloud/auth.
+            self.assertNotEqual(chat_resp.status_code, 200,
+                                "Chat must not succeed without creds")
+            body = chat_resp.json()
+            self.assertIn("error", body, f"Missing structured error envelope: {chat_resp.text}")
+            err = body["error"]
+            self.assertIn("message", err, f"Error envelope missing message: {body}")
+            self.assertIn("type", err, f"Error envelope missing type: {body}")
+            msg = err["message"].lower()
+            self.assertTrue(
+                "api key" in msg or "credential" in msg or "auth" in msg,
+                f"Error message should reference missing credentials: {err['message']}",
+            )
+            # The provider name should appear so multi-provider setups know
+            # which one to authenticate.
+            self.assertIn(
+                provider, err.get("details", {}).get("provider", "") + err["message"],
+                f"Error should name the offending provider: {body}",
+            )
+        finally:
+            stop_provider()
+            requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": public_name},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        print("[OK] Loaded cloud model + cleared key returns missing_creds_error()")
+
+    def test_012k_streaming_chat_through_cloud_provider(self):
+        """End-to-end SSE through a cloud-routed model: the upstream provider
+        emits OpenAI-shape `data:` chunks, CloudServer streams them through to
+        the client unchanged, and the client sees `[DONE]` as the terminator."""
+        provider = "teststream"
+        upstream_id = "vendor/streamer"
+        public_name = f"{provider}.{upstream_id}"
+
+        sse_chunks = [
+            {
+                "id": "cmpl-stream-1",
+                "object": "chat.completion.chunk",
+                "choices": [{"index": 0, "delta": {"content": "Hel"}}],
+            },
+            {
+                "id": "cmpl-stream-1",
+                "object": "chat.completion.chunk",
+                "choices": [{"index": 0, "delta": {"content": "lo"}}],
+            },
+            {
+                "id": "cmpl-stream-1",
+                "object": "chat.completion.chunk",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            },
+        ]
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], sse_chunks=sse_chunks,
+        )
+        try:
+            requests.post(
+                f"{self.base_url}/install",
+                json={"backend": "cloud", "provider": provider, "base_url": base_url},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={"provider": provider, "api_key": "k"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            with requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": public_name,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": True,
+                    "max_tokens": 5,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+                stream=True,
+            ) as resp:
+                self.assertEqual(resp.status_code, 200, resp.text)
+                deltas = []
+                saw_done = False
+                for raw in resp.iter_lines():
+                    if not raw:
+                        continue
+                    line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[len("data:"):].strip()
+                    if payload == "[DONE]":
+                        saw_done = True
+                        break
+                    obj = json.loads(payload)
+                    delta = obj.get("choices", [{}])[0].get("delta", {})
+                    if "content" in delta:
+                        deltas.append(delta["content"])
+                self.assertTrue(saw_done, "Stream must end with data: [DONE]")
+                self.assertEqual(
+                    "".join(deltas), "Hello",
+                    f"Streamed chunks did not assemble correctly: {deltas}",
+                )
+        finally:
+            stop_provider()
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        print("[OK] Streaming chat through cloud provider round-trips SSE")
+
+    def test_012g_install_rejects_bad_provider_name(self):
+        """Provider names must be [a-z0-9_-]+ lowercase. Uppercase ('Fireworks'
+        vs 'fireworks') would resolve the same env var but be distinct registry
+        records — registry-level confusion the install path now refuses."""
+        for bad_name in ["Fireworks", "with space", "vendor/x", "with.dot", ""]:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": bad_name,
+                    "base_url": "https://example.com/v1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code,
+                400,
+                f"Install accepted bad provider name {bad_name!r}: {resp.text}",
+            )
+            body = resp.json()
+            self.assertEqual(body["error"]["type"], "invalid_request_error")
+        print("[OK] /install rejects non-[a-z0-9_-]+ provider names with 400")
+
+    def test_012h_install_rejects_insecure_http_base_url(self):
+        """An http:// base URL to a non-loopback host would leak the Bearer
+        API key in plaintext on every forwarded request. Refuse those at
+        install time. https:// and http://localhost are both allowed."""
+        # http:// to a non-loopback host: rejected.
+        resp = requests.post(
+            f"{self.base_url}/install",
+            json={
+                "backend": "cloud",
+                "provider": "httpguard",
+                "base_url": "http://api.example.com/v1",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+        body = resp.json()
+        self.assertEqual(body["error"]["type"], "invalid_request_error")
+        self.assertIn("plaintext", body["error"]["message"].lower())
+
+        # gopher:// (any non-http(s) scheme): rejected.
+        resp = requests.post(
+            f"{self.base_url}/install",
+            json={
+                "backend": "cloud",
+                "provider": "schemeguard",
+                "base_url": "gopher://example.com/v1",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+
+        # http://localhost: allowed (mock-provider tests need this).
+        resp = requests.post(
+            f"{self.base_url}/install",
+            json={
+                "backend": "cloud",
+                "provider": "localhttpguard",
+                "base_url": "http://localhost:1/v1",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        # Clean up the test provider so the registry doesn't accumulate state.
+        requests.post(
+            f"{self.base_url}/uninstall",
+            json={"backend": "cloud", "provider": "localhttpguard"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        print("[OK] /install rejects http:// to non-loopback hosts, allows http://localhost")
+
+    def test_012i_cloud_refresh_is_idempotent_no_duplicates(self):
+        """refresh_cloud_models must evict-then-emplace this provider's prior
+        entries on every call. Asymmetry with build_cache() (overwrite instead
+        of emplace) would not be visible on a clean cache, but would surface
+        as duplicate or stale entries after a second /cloud/auth — so we
+        re-auth the same provider with the same key twice and verify the
+        same set of models is present, exactly once each."""
+        provider = "idempotent"
+        upstream_ids = ["vendor/a", "vendor/b"]
+        base_url, stop_provider = self._start_mock_cloud_provider(upstream_ids)
+        try:
+            requests.post(
+                f"{self.base_url}/install",
+                json={"backend": "cloud", "provider": provider, "base_url": base_url},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # First auth: discover both upstream ids.
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={"provider": provider, "api_key": "k1"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertEqual(resp.json()["models_discovered"], 2)
+
+            # Second auth with the same key: must still report exactly 2 — the
+            # eviction step removes the previous entries before re-emplacing.
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={"provider": provider, "api_key": "k1"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertEqual(
+                resp.json()["models_discovered"], 2,
+                "Re-auth must report the same count — refresh is supposed to "
+                "evict the provider's prior entries before re-emplacing",
+            )
+
+            # /models lists each discovered id exactly once.
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            ids = [m["id"] for m in models.get("data", [])]
+            for uid in upstream_ids:
+                expected = f"{provider}.{uid}"
+                self.assertEqual(
+                    ids.count(expected), 1,
+                    f"Expected {expected} exactly once in /models, ids={ids}",
+                )
+        finally:
+            stop_provider()
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        print("[OK] Cloud refresh is idempotent — re-auth produces no duplicates")
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""

@@ -31,6 +31,7 @@
     #include <ws2tcpip.h>
     #include <shellapi.h>
     #include <io.h>
+    #include <windows.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
@@ -39,6 +40,7 @@
     #include <sys/wait.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <termios.h>
 #endif
 
 #include "lemon/utils/aixlog.hpp"
@@ -173,6 +175,46 @@ struct CliConfig {
     // Bench command options
     lemon_cli::BenchCliOptions bench;
 };
+
+// Read a line from stdin with terminal echo disabled, so secrets (API keys,
+// passwords) don't linger in scrollback / screen-share. Returns the typed
+// line (without trailing newline). Falls back to plain getline if the
+// terminal can't be put into no-echo mode — better to keep the prompt
+// usable than to refuse it.
+static std::string read_secret_line() {
+    std::string out;
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    bool restored = false;
+    if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
+        SetConsoleMode(h, mode & ~ENABLE_ECHO_INPUT);
+        restored = true;
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        SetConsoleMode(h, mode);
+    }
+#else
+    struct termios old_tio{}, new_tio{};
+    bool restored = false;
+    if (tcgetattr(fileno(stdin), &old_tio) == 0) {
+        new_tio = old_tio;
+        new_tio.c_lflag &= ~ECHO;
+        if (tcsetattr(fileno(stdin), TCSANOW, &new_tio) == 0) {
+            restored = true;
+        }
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        tcsetattr(fileno(stdin), TCSANOW, &old_tio);
+    }
+#endif
+    // Echo a newline so the cursor advances — the user's Enter was swallowed
+    // along with the rest of the input when echo was off.
+    std::cout << std::endl;
+    return out;
+}
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
 // On Windows, ShellExecuteA is already shell-free.
@@ -1333,8 +1375,10 @@ int main(int argc, char* argv[]) {
                               << std::endl;
                     return 1;
                 }
-                std::cout << "API key for " << config.cloud_provider << ": ";
-                std::getline(std::cin, key);
+                std::cout << "API key for " << config.cloud_provider
+                          << " (input hidden): ";
+                std::cout.flush();
+                key = read_secret_line();
                 if (key.empty()) {
                     std::cerr << "Error: empty API key" << std::endl;
                     return 1;

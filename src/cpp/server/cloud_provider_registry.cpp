@@ -18,6 +18,56 @@ std::string CloudProviderRegistry::env_var_name(const std::string& provider) {
     return "LEMONADE_" + upper + "_API_KEY";
 }
 
+std::string CloudProviderRegistry::validate_provider_name(const std::string& provider) {
+    if (provider.empty()) {
+        return "Provider name is required";
+    }
+    if (provider.size() > 64) {
+        return "Provider name must be 64 characters or fewer";
+    }
+    for (unsigned char c : provider) {
+        const bool ok = (c >= 'a' && c <= 'z') ||
+                        (c >= '0' && c <= '9') ||
+                        c == '_' || c == '-';
+        if (!ok) {
+            return "Provider name must match [a-z0-9_-]+ (lowercase, no spaces, slashes, or dots)";
+        }
+    }
+    return "";
+}
+
+std::string CloudProviderRegistry::validate_base_url(const std::string& base_url) {
+    if (base_url.empty()) {
+        return "Base URL is required";
+    }
+    const std::string lower = [&]() {
+        std::string s = base_url;
+        for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    }();
+    const std::string https = "https://";
+    const std::string http = "http://";
+    if (lower.compare(0, https.size(), https) == 0) {
+        return "";
+    }
+    if (lower.compare(0, http.size(), http) == 0) {
+        // Allow only loopback hosts so the Bearer API key isn't sent in
+        // plaintext on a typo'd scheme. Mock-provider tests use these.
+        const std::string host_and_rest = lower.substr(http.size());
+        auto host_end = host_and_rest.find_first_of(":/");
+        const std::string host = host_end == std::string::npos
+                                     ? host_and_rest
+                                     : host_and_rest.substr(0, host_end);
+        if (host == "localhost" || host == "127.0.0.1" || host == "[::1]") {
+            return "";
+        }
+        return "Base URL uses http:// to a non-loopback host (" + host +
+               "); refused because it would send the Bearer API key in plaintext. "
+               "Use https:// or set the host to localhost / 127.0.0.1 for local mocks.";
+    }
+    return "Base URL must start with https:// (or http:// for localhost)";
+}
+
 std::string CloudProviderRegistry::normalize_base_url(std::string url) {
     while (!url.empty() && url.back() == '/') {
         url.pop_back();

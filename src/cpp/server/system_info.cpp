@@ -1645,8 +1645,9 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     // Cloud offload has no local hardware/OS requirements; availability is
-    // gated by config.json (cloud_offload.enabled) and a provider API key,
-    // checked elsewhere in filter_models_by_backend / CloudServer::load.
+    // gated by the CloudProviderRegistry (config.json "cloud_providers") and
+    // a resolvable API key (env var or runtime auth), checked elsewhere in
+    // filter_models_by_backend / CloudServer::load.
     if (recipe == "cloud") {
         return "";
     }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { serverConfig } from './utils/serverConfig';
+import { useModels } from './hooks/useModels';
 
 // Mirror of one entry in `/v1/system-info`'s `cloud.providers` array.
 // Single source of truth lives in the server — we never read the local
@@ -402,6 +403,13 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
     { mode: 'install' } | { mode: 'edit'; row: CloudProviderRow } | null
   >(null);
 
+  // Install / uninstall / edit on a cloud provider can change the set of
+  // models visible in /v1/models (discovery adds the provider's chat-capable
+  // ids, eviction removes them). The Backends tab doesn't re-fetch the
+  // models list on its own — refresh the global store so the user doesn't
+  // have to reload the tab to see new cloud entries.
+  const { refresh: refreshModels } = useModels();
+
   const reload = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -413,6 +421,11 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
       setIsLoading(false);
     }
   }, [showError]);
+
+  const reloadAll = useCallback(async () => {
+    await reload();
+    await refreshModels();
+  }, [reload, refreshModels]);
 
   useEffect(() => {
     reload();
@@ -524,7 +537,7 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
             {modal.mode === 'install' ? (
               <InstallModal
                 onClose={() => setModal(null)}
-                onInstalled={() => { setModal(null); reload(); }}
+                onInstalled={() => { setModal(null); reloadAll(); }}
                 showError={showError}
                 showSuccess={showSuccess}
               />
@@ -532,7 +545,7 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
               <EditModal
                 row={modal.row}
                 onClose={() => setModal(null)}
-                onChanged={() => { setModal(null); reload(); }}
+                onChanged={() => { setModal(null); reloadAll(); }}
                 showError={showError}
                 showSuccess={showSuccess}
               />

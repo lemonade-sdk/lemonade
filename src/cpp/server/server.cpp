@@ -2034,8 +2034,6 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
-        bool request_modified = false;
-
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
@@ -3165,8 +3163,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
-        bool request_modified = false;
-
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -3190,7 +3186,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = request_modified ? request_json.dump() : req.body;
+        std::string request_body = req.body;
 
         if (is_streaming) {
             try {
@@ -5134,6 +5130,22 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 res.status = 400;
                 nlohmann::json error = {{"error", {
                     {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", err},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", err},
                     {"type", "invalid_request_error"}}}};
                 res.set_content(error.dump(), "application/json");
                 return;

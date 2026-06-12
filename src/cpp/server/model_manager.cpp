@@ -2397,9 +2397,10 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         // Cloud-offloaded models bypass local backend/RAM checks (the model
-        // executes on a remote provider). Discovery is client-driven now —
-        // server-side cache normally has none of these, but if a user has
-        // pinned one into user_models.json we still pass it through here.
+        // executes on a remote provider). Discovery is server-side and runs
+        // at every cache build, so this branch normally sees the full set
+        // of discovered cloud entries plus anything a user pinned into
+        // user_models.json.
         if (recipe == "cloud") {
             filtered[name] = info;
             continue;
@@ -2474,8 +2475,10 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     const std::string base_url = cloud_registry_->base_url_for(provider);
     if (api_key.empty() || base_url.empty()) {
         // Drop any stale entries for this provider but don't try to discover —
-        // there's nothing to discover with.
-        return evict_cloud_models(provider);
+        // there's nothing to discover with. The contract is "models present
+        // after refresh", so return 0 (not the evicted count).
+        evict_cloud_models(provider);
+        return 0;
     }
 
     // discover_models() is best-effort; it logs upstream failures and
@@ -2489,7 +2492,9 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;
-        return evict_cloud_models(provider);
+        // Same contract: evict stale entries, report 0 present after refresh.
+        evict_cloud_models(provider);
+        return 0;
     }
 
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
@@ -2508,11 +2513,25 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     size_t added = 0;
     for (const auto& m : models) {
         if (m.recipe != "cloud" || m.model_name.empty()) continue;
+        // Match build_cache()'s precedence exactly: emplace, don't overwrite.
+        // Any pre-existing entry under the same bare cache key wins — whether
+        // it's an FLM model, another cloud provider that discovered first, or
+        // a builtin/extra/user record. This provider's previously-registered
+        // entries are already cleared above, so emplace here is symmetric
+        // with build_cache and immune to a fast /cloud/auth racing past an
+        // already-populated cache.
         ModelInfo info = m;
         // discover_models() populates name/checkpoint/labels/context/cost but
         // not recipe_options; Router needs it to construct CloudServer.
         info.recipe_options = RecipeOptions("cloud", json::object());
-        models_cache_[info.model_name] = std::move(info);
+        auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
+        if (!inserted) {
+            LOG(INFO, "ModelManager")
+                << "Cloud discovery for '" << provider << "' skipping '"
+                << it->first << "': name already held (recipe="
+                << it->second.recipe << ")" << std::endl;
+            continue;
+        }
         ++added;
     }
 

@@ -92,6 +92,21 @@ public:
     // and CLI can render the same name in error messages.
     static std::string env_var_name(const std::string& provider);
 
+    // Validates a candidate provider name against the registry's accepted
+    // character set ([a-z0-9_-]+, non-empty). Lowercase-only is enforced
+    // because env_var_name() uppercases — "Fireworks" and "fireworks" would
+    // otherwise be distinct records resolving the same env var. Slashes /
+    // spaces / dots also break dot-namespaced model ids. Returns empty
+    // string on OK, a human-readable error message otherwise.
+    static std::string validate_provider_name(const std::string& provider);
+
+    // Validates a candidate base URL: must be https:// (any host), or
+    // http:// limited to localhost / 127.0.0.1 / ::1 so the mock-provider
+    // tests still work. Anything else is rejected — a typo'd scheme would
+    // leak the Bearer API key in plaintext on every forwarded request.
+    // Returns empty string on OK, a human-readable error message otherwise.
+    static std::string validate_base_url(const std::string& base_url);
+
 private:
     static std::string normalize_base_url(std::string url);
 
