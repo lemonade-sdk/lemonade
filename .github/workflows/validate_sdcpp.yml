@@ -27,8 +27,7 @@ on:
     - cron: "20 17 * * 0"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
@@ -210,7 +209,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           Write-Host "Building Lemonade server binaries..." -ForegroundColor Cyan
           if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-          cmake --preset windows
+          cmake --preset vs18
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build --config Release --target lemond lemonade
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -395,6 +394,9 @@ jobs:
     name: Create update PR
     needs: [discover-release, validate]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
       needs.validate.result == 'success'
