@@ -82,6 +82,7 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
     "sm_90",   // Hopper       (H100, H200)
     "sm_100",  // Blackwell DC (B100, B200)
     "sm_120",  // Blackwell    (RTX 50)
+    "sm_121",  // Blackwell    (GB10 / Thor SoC)
 };
 
 #ifdef __linux__
@@ -430,7 +431,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"metal", {}},
     }},
     {"llamacpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -475,7 +476,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Linux)
     {"sd-cpp", "cuda", {"linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
 
     // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
@@ -550,6 +551,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"sm_90",  "NVIDIA H100 / H200 (Hopper)"},
     {"sm_100", "NVIDIA B100 / B200 (Blackwell)"},
     {"sm_120", "GeForce RTX 50 series (Blackwell)"},
+    {"sm_121", "NVIDIA GB10 (Blackwell)"},
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
@@ -1751,7 +1753,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     // Quick guard: require at least one NVIDIA identifier substring
     static const std::vector<std::string> NVIDIA_IDS = {
         "nvidia", "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
-        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40",
+        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40", "gb10",
     };
     bool is_nvidia = false;
     for (const auto& id : NVIDIA_IDS) {
@@ -1772,6 +1774,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     // sm_100 is listed first as a belt-and-suspenders fallback (the early guard
     // above already returns before this table is reached for B100/B200).
     static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
+        {"sm_121", {"gb10"}},
         {"sm_100", {"b100", "b200"}},
         {"sm_120", {"blackwell", "rtx 50", "rtx50", "5090", "5080", "5070", "5060",
                     "rtx pro 6000", "rtx pro 5000", "rtx pro 4500", "rtx pro 4000",
