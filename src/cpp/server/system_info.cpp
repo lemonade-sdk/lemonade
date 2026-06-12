@@ -1216,6 +1216,15 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // Some recipe/backend pairs are defined multiple times for OS-specific
+    // support, e.g. moonshine/cpu has separate Windows, Linux, and macOS
+    // entries. Keep the most useful status for the current system:
+    // non-unsupported states beat current-OS unsupported states, which beat
+    // unsupported fallback entries from other OS definitions.
+    constexpr int kOtherOsUnsupportedPriority = 0;
+    constexpr int kCurrentOsUnsupportedPriority = 1;
+    constexpr int kNonUnsupportedPriority = 2;
+
     std::map<std::pair<std::string, std::string>, int> backend_status_priority;
 
     auto set_backend_status = [&recipes, &backend_status_priority](
@@ -1224,7 +1233,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
                                 const json& backend_status,
                                 int unsupported_priority) {
         const std::string state = backend_status.value("state", "unsupported");
-        const int priority = (state == "unsupported") ? unsupported_priority : 2;
+        const int priority = (state == "unsupported")
+            ? unsupported_priority
+            : kNonUnsupportedPriority;
         const auto key = std::make_pair(recipe, backend_name);
 
         auto existing_priority = backend_status_priority.find(key);
@@ -1284,7 +1295,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"can_uninstall", true},
             };
 
-            set_backend_status(def.recipe, def.backend, backend, 0);
+            set_backend_status(def.recipe, def.backend, backend, kOtherOsUnsupportedPriority);
             continue;
         }
 
@@ -1561,7 +1572,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
         // using BackendManager as the single source of truth for repo/version mappings.
 
-        set_backend_status(def.recipe, def.backend, backend, 1);
+        set_backend_status(def.recipe, def.backend, backend, kCurrentOsUnsupportedPriority);
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
