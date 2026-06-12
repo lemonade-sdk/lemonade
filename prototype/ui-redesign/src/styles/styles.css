@@ -5669,3 +5669,50 @@ input, textarea {
   margin: 0;
 }
 .cap-chip--all { --cap-color: var(--accent); }
+
+/* Compact preset parameter previews */
+.preset-param-lines {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--text-tertiary);
+}
+
+.preset-param-lines > span {
+  display: block;
+}
+
+.recipe-card__param-val.preset-param-lines {
+  color: var(--text-primary);
+}
+
+.preset-rail-card__params.preset-param-lines {
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+.detail__param-lines {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.preset-empty-overrides {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.preset-empty-overrides strong {
+  color: var(--text-primary);
+}

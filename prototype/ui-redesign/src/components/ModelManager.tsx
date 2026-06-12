@@ -4,7 +4,7 @@ import { canSelectInComposer, capabilityFromLoaded, capabilityFromModelInfo, cap
 import type { AccountSession } from '../features/accounts/accountStore';
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
-import { DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, isCompatible, loadApplied, loadUserPresets, presetIcon, saveApplied } from '../presetStore';
+import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetIcon, presetParamPreviewLines, saveApplied } from '../presetStore';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -15,10 +15,53 @@ function formatSize(gb: number): string {
   return `< 1 MB`;
 }
 
+function positiveNumber(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function supportsContextDisplay(capability: ReturnType<typeof capabilityFromModelInfo> | ReturnType<typeof capabilityFromLoaded>): boolean {
+  return capability === 'chat' || capability === 'omni' || capability === 'unknown';
+}
+
+function contextSizeForDisplay(model: ModelInfo | null | undefined, liveCtxSize?: unknown, fallbackCtxSize?: unknown): number | undefined {
+  if (!model) return positiveNumber(liveCtxSize) ?? positiveNumber(fallbackCtxSize) ?? DEFAULT_CONTEXT_SIZE;
+  const capability = capabilityFromModelInfo(model);
+  if (!supportsContextDisplay(capability)) return undefined;
+  return positiveNumber(liveCtxSize) ?? modelContextSize(model, fallbackCtxSize);
+}
+
+function contextLabel(ctx: number): string {
+  return `${(ctx / 1024).toFixed(0)}K`;
+}
+
 function modelName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
   const raw = (m as any).model_name ?? m.name ?? m.id ?? '';
   return String(raw).trim();
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function withLoadedRecipeOptions(info: ModelInfo | null | undefined, loaded: LoadedModel | null | undefined): ModelInfo | null {
+  if (!info && !loaded) return null;
+  if (!loaded) return info || null;
+  const base = info || ({ id: loaded.model_name, name: loaded.model_name } as ModelInfo);
+  const recipeOptions = {
+    ...objectRecord((base as any).recipe_options),
+    ...objectRecord(loaded.recipe_options),
+  };
+  return {
+    ...base,
+    model_name: (base as any).model_name || loaded.model_name,
+    name: (base as any).name || loaded.model_name,
+    checkpoint: (base as any).checkpoint || loaded.checkpoint,
+    recipe: (base as any).recipe || loaded.recipe,
+    type: (base as any).type || loaded.type,
+    recipe_options: recipeOptions,
+  } as ModelInfo;
 }
 
 function modelLabels(m: ModelInfo | null | undefined): string[] {
@@ -549,6 +592,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [presetRailHovered, setPresetRailHovered] = useState(false);
   const [hoveredRailPresetId, setHoveredRailPresetId] = useState<string | null>(null);
   const [presetNotice, setPresetNotice] = useState<string | null>(null);
+  const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
   const hasVisibleModelsRef = useRef(false);
   const modelsSnapshotRef = useRef<string>('');
   const loadedSnapshotRef = useRef<string>('');
@@ -611,14 +655,34 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  const refreshServerDefaultCtxSize = useCallback(async () => {
+    if (!api.isConnected) {
+      setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+      return;
+    }
+    try {
+      setServerDefaultCtxSize(await api.getDefaultContextSize() ?? DEFAULT_CONTEXT_SIZE);
+    } catch {
+      setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (connectionStatus === 'connected') refreshServerDefaultCtxSize();
+    else setServerDefaultCtxSize(DEFAULT_CONTEXT_SIZE);
+  }, [connectionStatus, refreshServerDefaultCtxSize]);
+
   // Re-fetch when server connection status changes (e.g. connects after initial mount)
   useEffect(() => {
     const unsub = api.onStatusChange((status) => {
       setConnectionStatus(status);
-      if (status === 'connected') refresh();
+      if (status === 'connected') {
+        refresh();
+        refreshServerDefaultCtxSize();
+      }
     });
     return unsub;
-  }, [refresh]);
+  }, [refresh, refreshServerDefaultCtxSize]);
 
   // Re-fetch when models are loaded/unloaded/deleted via any path (tools, other views)
   useEffect(() => {
@@ -1032,10 +1096,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   }, [allPresets, appliedPresets]);
 
   const focusedModelName = expandedModel || selectedModel || '';
-  const focusedModelInfo = useMemo(
-    () => focusedModelName ? allModels.find(m => modelName(m) === focusedModelName) || ({ id: focusedModelName, name: focusedModelName } as ModelInfo) : null,
-    [allModels, focusedModelName],
-  );
+  const focusedModelInfo = useMemo(() => {
+    if (!focusedModelName) return null;
+    const info = allModels.find(m => modelName(m) === focusedModelName) || ({ id: focusedModelName, name: focusedModelName } as ModelInfo);
+    const loaded = loadedModels.find(m => m.model_name === focusedModelName);
+    return withLoadedRecipeOptions(info, loaded);
+  }, [allModels, focusedModelName, loadedModels]);
   const focusedPreset = focusedModelName ? activePresetForName(focusedModelName) : null;
   const selectedRailPreset = allPresets.find(p => p.id === selectedRailPresetId) || DEFAULT_PRESET;
   const railSummaryPreset = (focusedModelName && focusedPreset) ? focusedPreset : selectedRailPreset;
@@ -1225,14 +1291,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const checkpoints = (m as any).checkpoints || {};
     const recipe = (m as any).recipe || '';
     const activePreset = activePresetForName(name);
-    const maxCtx = liveCtxSize || (m as any).max_context_window;
-    const showContext = capabilityFromModelInfo(m) !== 'omni' && Boolean(maxCtx);
+    const capability = capabilityFromModelInfo(m);
+    const isDefaultPassthrough = activePreset.id === DEFAULT_PRESET.id && !presetHasApplicablePreviewOverrides(activePreset, capability);
+    const explicitCtx = positiveNumber(liveCtxSize) ?? positiveNumber((m as any).max_context_window);
+    const displayCtx = contextSizeForDisplay(m, liveCtxSize, serverDefaultCtxSize);
+    const activePresetLines = effectivePresetParamPreviewLines(activePreset, m, displayCtx);
+    const showContext = Boolean(displayCtx);
     const compositeModels = Array.isArray((m as any).composite_models) ? (m as any).composite_models : [];
     const collectionComponents = getCollectionComponents(m);
     const url = hfUrl(checkpoint);
     const exportData = {
       ...m,
-      ...(maxCtx ? { max_context_window: maxCtx } : {}),
+      ...(explicitCtx ? { max_context_window: explicitCtx } : {}),
     };
 
     return (
@@ -1247,7 +1317,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <div className="detail__field">
               <span className="detail__label">Active preset</span>
               <span className="detail__value detail__preset-value"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
-              <span className="detail__hint">{loadedNames.has(name) ? 'Chat behavior applies now. Load options apply after reload.' : 'Applies on load. Backend remains auto by Lemonade.'}</span>
+              <span className="detail__hint">{loadedNames.has(name) ? 'Runtime behavior applies now. Load options apply after reload.' : 'Applies on load. Backend remains auto by Lemonade.'}</span>
+            </div>
+            <div className="detail__field">
+              <span className="detail__label">{isDefaultPassthrough ? 'Model defaults' : 'Preset settings'}</span>
+              <span className="detail__value detail__param-lines">{activePresetLines.map(line => <span key={line}>{line}</span>)}</span>
+              {isDefaultPassthrough && <span className="detail__hint">No preset override is sent; Lemonade uses the model's current defaults.</span>}
             </div>
             {m.size && (
               <div className="detail__field">
@@ -1258,7 +1333,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             {showContext && (
               <div className="detail__field">
                 <span className="detail__label">Context</span>
-                <span className="detail__value">{(maxCtx / 1024).toFixed(0)}K tokens</span>
+                <span className="detail__value">{contextLabel(displayCtx!)} tokens</span>
               </div>
             )}
             {modelLabels(m).length > 0 && (
@@ -1334,6 +1409,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const cap = info ? capabilityFromModelInfo(info) : capabilityFromLoaded(m);
     const type = cap === 'chat' || cap === 'unknown' ? 'llm' : cap;
     const componentCount = Array.isArray(m.recipe_options?.components) ? m.recipe_options.components.length : 0;
+    const runningCtx = supportsContextDisplay(cap)
+      ? (positiveNumber(m.recipe_options?.ctx_size) ?? (info ? contextSizeForDisplay(info, undefined, serverDefaultCtxSize) : serverDefaultCtxSize))
+      : undefined;
     const isActive = selectedModel === m.model_name;
     const selectable = canSelectInComposer(m) || (cap === 'chat' || cap === 'omni' || cap === 'image' || cap === 'audio' || cap === 'tts');
     const activePreset = activePresetForName(m.model_name);
@@ -1352,6 +1430,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               <span className="row__sub">
                 {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
                 {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
+                {runningCtx ? ` · ${contextLabel(runningCtx)} ctx` : ''}
                 {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
               </span>
               <span className="row__preset-pill"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
@@ -1393,11 +1472,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           // find matching ModelInfo for detail
           const info = allModels.find(mi => modelName(mi) === m.model_name);
           if (!info) return null;
-          // Merge loaded model's live recipe_options over static registry data
+          const liveInfo = withLoadedRecipeOptions(info, m) || info;
           const liveCtx = m.recipe_options?.ctx_size as number | undefined;
           return (
             <>
-              {renderModelDetail(info, liveCtx)}
+              {renderModelDetail(liveInfo, liveCtx)}
               {m.recipe_options && Object.keys(m.recipe_options).length > 0 && (
                 <div className="row__detail row__detail--live">
                   <div className="detail__field">
@@ -1429,6 +1508,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const pullPercent = pulling[name];
     const isPulling = pullPercent !== undefined;
     const activePreset = activePresetForName(name);
+    const rowCtx = contextSizeForDisplay(m, undefined, serverDefaultCtxSize);
     const isPresetHighlighted = Boolean(highlightedPresetId
       && activePreset.id === highlightedPresetId
       && canShowPresetHighlight(m));
@@ -1446,7 +1526,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 {recipeLabel((m as any).recipe || '')}
                 {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
                 {m.size ? ` · ${formatSize(m.size)}` : ''}
-                {capabilityFromModelInfo(m) !== 'omni' && (m as any).max_context_window ? ` · ${((m as any).max_context_window / 1024).toFixed(0)}K ctx` : ''}
+                {rowCtx ? ` · ${contextLabel(rowCtx)} ctx` : ''}
               </span>
               {renderLabels(modelLabels(m))}
               <span className="row__preset-pill"><span aria-hidden="true">{presetIcon(activePreset)}</span> {activePreset.name}</span>
@@ -1683,6 +1763,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           <span className="preset-rail-summary__label">Selected preset</span>
           <strong><span aria-hidden="true">{presetIcon(railSummaryPreset)}</span> {railSummaryPreset.name}</strong>
           <span>{focusedModelName ? 'Active for this model' : `${assignedToRailSummaryPreset.length} model${assignedToRailSummaryPreset.length === 1 ? '' : 's'} assigned`}</span>
+          <span className="preset-param-lines">{effectivePresetParamPreviewLines(railSummaryPreset, focusedModelInfo, focusedModelInfo ? contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize) : serverDefaultCtxSize).map(line => <span key={line}>{line}</span>)}</span>
         </div>
         <p className="context-rail__hint">
           {focusedModelName ? 'Click a preset to assign it to this model. Backend selection stays automatic.' : 'Hover or pick a preset to outline matching models.'}
@@ -1705,7 +1786,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <span className="preset-rail-card__icon">{isActive ? '✓' : presetIcon(preset)}</span>
                 <span className="preset-rail-card__text">
                   <strong>{preset.name}</strong>
-                  <span>{preset.description || 'Custom local preset'}</span>
+                  <span className="preset-rail-card__params preset-param-lines">{(focusedModelInfo ? effectivePresetParamPreviewLines(preset, focusedModelInfo, contextSizeForDisplay(focusedModelInfo, undefined, serverDefaultCtxSize)) : presetParamPreviewLines(preset, undefined, serverDefaultCtxSize)).map(line => <span key={line}>{line}</span>)}</span>
                 </span>
               </button>
             );

@@ -9,6 +9,7 @@ import {
   loadBackendApplied,
   loadUserPresets,
   presetIcon,
+  presetParamPreviewLines,
   presetSupportsCapability,
   saveBackendApplied,
 } from '../presetStore';
@@ -506,6 +507,7 @@ const BackendManager: React.FC = () => {
           <span className="preset-rail-summary__label">Selected preset</span>
           <strong><span aria-hidden="true">{presetIcon(railSummaryPreset)}</span> {railSummaryPreset.name}</strong>
           <span>{backendsUsingSelectedPreset.length} backend{backendsUsingSelectedPreset.length === 1 ? '' : 's'} assigned</span>
+          <span className="preset-param-lines">{presetParamPreviewLines(railSummaryPreset).map(line => <span key={line}>{line}</span>)}</span>
         </div>
         <p className="context-rail__hint">
           {selectedBackendKey ? 'Click a preset to connect it with this backend baseline.' : 'Hover or pick a preset to outline matching backends.'}
@@ -528,7 +530,7 @@ const BackendManager: React.FC = () => {
                 <span className="preset-rail-card__icon">{isActive ? '✓' : presetIcon(preset)}</span>
                 <span className="preset-rail-card__text">
                   <strong>{preset.name}</strong>
-                  <span>{preset.description || 'Custom local preset'}</span>
+                  <span className="preset-rail-card__params preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
                 </span>
               </button>
             );

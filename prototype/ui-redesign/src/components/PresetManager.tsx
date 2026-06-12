@@ -18,6 +18,7 @@ import {
   normalizePresetCapabilities,
   presetIcon,
   presetLabelsFor,
+  presetParamPreviewLines,
   sanitizePreset,
   saveApplied,
   saveUserPresets,
@@ -228,20 +229,8 @@ function primaryCap(preset: Pick<Preset, 'applies_to'>): Capability {
   return preset.applies_to[0] || 'chat';
 }
 
-function paramsPreview(preset: Preset): string {
-  const cap = primaryCap(preset);
-  const ro = preset.recipe_options || {};
-  const sp = preset.sampling || {};
-  if (cap === 'all') {
-    return `temp ${sp.temperature != null ? sp.temperature.toFixed(2) : '—'} · ctx ${ro.ctx_size ?? '—'} · ${ro.steps ?? '—'} steps`;
-  }
-  if (cap === 'image') {
-    return `${ro.steps ?? '—'} steps · cfg ${ro.cfg_scale != null ? ro.cfg_scale.toFixed(1) : '—'}`;
-  }
-  if (cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision') {
-    return `temp ${sp.temperature != null ? sp.temperature.toFixed(2) : '—'} · ctx ${ro.ctx_size ?? '—'}`;
-  }
-  return 'client-side preset';
+function paramsPreviewLines(preset: Preset): string[] {
+  return presetParamPreviewLines(preset);
 }
 
 function hasManualArgs(preset: Pick<Preset, 'recipe_options'>): boolean {
@@ -636,7 +625,7 @@ const PresetCard: React.FC<{
     </div>
     <div className="recipe-card__params" aria-hidden="true">
       <span className="recipe-card__param-key">params</span>
-      <span className="recipe-card__param-val">{paramsPreview(preset)}</span>
+      <span className="recipe-card__param-val preset-param-lines">{paramsPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
     </div>
     <div className="recipe-card__actions" onClick={e => e.stopPropagation()}>
       {preset.starter ? (
@@ -720,18 +709,26 @@ const SlideoverContent: React.FC<{
   );
   const selectedAutoRun = autoRuns.find(run => run.id === autoOptRunId) || autoRuns[0];
 
-  const currentPreset = useMemo<Preset>(() => ({
-    ...preset,
-    name,
-    description,
-    applies_to: normalizePresetCapabilities(preset.id, appliesTo),
-    engine_hint: engineHint,
-    recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
-    sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
-    starter: false,
-    auto_opt_enabled: !manualArgsActive,
-    auto_opt_run_id: manualArgsActive ? null : (autoOptRunId || autoRuns[0]?.id || null),
-  }), [preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, manualArgsActive, autoOptRunId, autoRuns]);
+  const currentPreset = useMemo<Preset>(() => {
+    if (isReadOnly) {
+      return {
+        ...preset,
+        applies_to: normalizePresetCapabilities(preset.id, preset.applies_to),
+      };
+    }
+    return {
+      ...preset,
+      name,
+      description,
+      applies_to: normalizePresetCapabilities(preset.id, appliesTo),
+      engine_hint: engineHint,
+      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
+      sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
+      starter: false,
+      auto_opt_enabled: !manualArgsActive,
+      auto_opt_run_id: manualArgsActive ? null : (autoOptRunId || autoRuns[0]?.id || null),
+    };
+  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, manualArgsActive, autoOptRunId, autoRuns]);
 
   const selectedModel = models.find(m => modelName(m) === applyTarget);
   const selectedModelContextLimit = contextLimitForModel(selectedModel);
@@ -745,6 +742,7 @@ const SlideoverContent: React.FC<{
   const hasAll = appliesTo.includes('all');
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = hasAll || appliesTo.includes('image');
+  const isDefaultEmptyPreset = preset.id === DEFAULT_PRESET.id;
 
   const toggleCap = (cap: Capability) => {
     if (isReadOnly) return;
@@ -794,7 +792,14 @@ const SlideoverContent: React.FC<{
 
         <div className="slideover__section">
           <h3>Behavior</h3>
-          {hasChat && (
+          {isDefaultEmptyPreset && (
+            <div className="preset-empty-overrides">
+              <strong>No preset overrides</strong>
+              <span>Lemonade uses the selected model's current defaults for sampling, context and image generation.</span>
+              <span className="preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
+            </div>
+          )}
+          {!isDefaultEmptyPreset && hasChat && (
             <div data-preset-fields="chat">
               <div className="field"><label className="field__label">Creativity</label><div className="field__row"><input type="range" className="slider" min={0} max={2} step={0.05} value={temperature} disabled={isReadOnly} onChange={e => setTemperature(Number(e.target.value))} data-recipe-temp /><span className="field__value">{temperature.toFixed(2)}</span></div></div>
               <div className="field"><label className="field__label">Precision (top_p)</label><div className="field__row"><input type="range" className="slider" min={0} max={1} step={0.01} value={topP} disabled={isReadOnly} onChange={e => setTopP(Number(e.target.value))} data-recipe-top-p /><span className="field__value">{topP.toFixed(2)}</span></div></div>
@@ -819,7 +824,7 @@ const SlideoverContent: React.FC<{
               <div className="field"><label className="field__label">Repeat penalty</label><div className="field__row"><input type="range" className="slider" min={0.9} max={1.5} step={0.01} value={repeatPenalty} disabled={isReadOnly} onChange={e => setRepeatPenalty(Number(e.target.value))} data-recipe-rp /><span className="field__value">{repeatPenalty.toFixed(2)}</span></div></div>
             </div>
           )}
-          {hasImage && (
+          {!isDefaultEmptyPreset && hasImage && (
             <div data-preset-fields="image">
               <div className="field"><label className="field__label">Steps</label><div className="field__row"><input type="range" className="slider" min={1} max={100} step={1} value={steps} disabled={isReadOnly} onChange={e => setSteps(Number(e.target.value))} data-recipe-steps /><span className="field__value">{steps}</span></div></div>
               <div className="field"><label className="field__label">CFG scale</label><div className="field__row"><input type="range" className="slider" min={1} max={30} step={0.5} value={cfgScale} disabled={isReadOnly} onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg /><span className="field__value">{cfgScale.toFixed(1)}</span></div></div>
@@ -827,14 +832,14 @@ const SlideoverContent: React.FC<{
           )}
         </div>
 
-        <div className="slideover__section preset-autoopt">
+        {!isDefaultEmptyPreset && <div className="slideover__section preset-autoopt">
           <h3>AutoOpt</h3>
           <p className="slideover__hint">Default is AutoOpt. Entering manual raw args below disables AutoOpt for this preset until those args are cleared.</p>
           <div className="field"><label className="field__label">AutoOpt result</label><div className="field__row"><select className="select" value={autoOptRunId} disabled={isReadOnly || manualArgsActive} onChange={e => setAutoOptRunId(e.target.value)}>{autoRuns.map(run => <option key={run.id} value={run.id}>{run.name} · {run.date} · Lemonade {run.lemonadeVersion}</option>)}</select></div></div>
           {selectedAutoRun && <p className="preset-autoopt__args"><span>{manualArgsActive ? 'Manual override active' : 'AutoOpt active'}</span><code>{manualArgsActive ? 'Clear manual args to re-enable AutoOpt.' : selectedAutoRun.args}</code></p>}
-        </div>
+        </div>}
 
-        <details className="slideover__section preset-advanced">
+        {!isDefaultEmptyPreset && <details className="slideover__section preset-advanced">
           <summary>Advanced engine options</summary>
           <p className="slideover__hint">Optional backend hints and raw recipe_options keys. Closed by default.</p>
           <div className="field"><label className="field__label">Engine hint</label><div className="field__row"><select className="select" value={engineHint} disabled={isReadOnly} onChange={e => setEngineHint(e.target.value as PresetRecipe)}>{(Object.keys(ENGINE_LABELS) as PresetRecipe[]).map(r => <option key={r} value={r}>{ENGINE_LABELS[r]}</option>)}</select></div></div>
@@ -852,7 +857,7 @@ const SlideoverContent: React.FC<{
               <div className="field"><label className="field__label">sdcpp_args</label><div className="field__row"><input className="input" value={sdcppArgs} disabled={isReadOnly} placeholder="e.g. --diffusion-fa" onChange={e => setSdcppArgs(e.target.value)} /></div></div>
             </>
           )}
-        </details>
+        </details>}
 
         <div className="slideover__section">
           <h3>Apply to a model</h3>
