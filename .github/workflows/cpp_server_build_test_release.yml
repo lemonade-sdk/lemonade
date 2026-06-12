@@ -1921,9 +1921,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          # CLI commands should work because LEMONADE_API_KEY is in the env
-          # and the CLI client reads it automatically
-          .venv/bin/python test/server_cli2.py --cli-binary lemonade
+          # Keep this job focused on API-key propagation. The full CLI suite
+          # runs elsewhere and includes model-pull/delete coverage unrelated to auth.
+          .venv/bin/python test/server_cli_apikey.py --cli-binary lemonade
 
       - name: Capture and upload server logs
         if: always()
@@ -2020,7 +2020,9 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY" --api-key "$LEMONADE_API_KEY"
+          # Keep this job focused on API-key propagation. The full CLI suite
+          # runs elsewhere and includes model-pull/delete coverage unrelated to auth.
+          "$VENV_PYTHON" test/server_cli_apikey.py --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()
