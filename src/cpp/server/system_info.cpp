@@ -539,9 +539,17 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
 
-    // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
-    {"moonshine", "cpu", {"windows", "linux", "macos"}, {
+    // Moonshine - CPU-only streaming STT. Platforms match the published
+    // moonshine-server-rocm bundles (moonshine-voice wheels): Windows x64,
+    // Linux x64/arm64, macOS arm64. No Intel macOS or Windows-arm64 wheel.
+    {"moonshine", "cpu", {"windows"}, {
+        {"cpu", {"x86_64"}},
+    }},
+    {"moonshine", "cpu", {"linux"}, {
         {"cpu", {"x86_64", "arm64"}},
+    }},
+    {"moonshine", "cpu", {"macos"}, {
+        {"cpu", {"arm64"}},
     }},
 };
 
