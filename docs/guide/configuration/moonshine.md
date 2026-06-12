@@ -8,7 +8,7 @@ Lemonade integrates [Moonshine](https://github.com/usefulsensors/moonshine) as a
 ## Available Backend
 
 ### CPU
-- **Platform**: Windows x64, Linux x64, macOS arm64 (no Intel macOS — `moonshine-voice` publishes no x86_64 macOS wheel)
+- **Platform**: Windows x64, Linux x64/arm64, macOS arm64 (no Intel macOS or Windows-arm64 — `moonshine-voice` publishes no wheel for those)
 - **Bundle**: a self-contained PyInstaller bundle from [lemonade-sdk/moonshine-server-rocm](https://github.com/lemonade-sdk/moonshine-server-rocm) with an embedded Python runtime and the `moonshine-voice` native libraries. No system Python install is required (or touched) on the host; Lemonade additionally sets `PYTHONNOUSERSITE=1` at launch.
 
 ## Install

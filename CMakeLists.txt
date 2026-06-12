@@ -719,6 +719,7 @@ if(WIN32)
         wbemuuid
         ole32
         oleaut32
+        shell32
     )
 elseif(APPLE)
     target_link_libraries(lemonade-server-core PUBLIC

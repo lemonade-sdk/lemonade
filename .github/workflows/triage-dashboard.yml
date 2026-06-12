@@ -1,0 +1,64 @@
+name: Triage dashboard
+
+# Publishes the triage dashboard to a SEPARATE repo's GitHub Pages
+# (lemonade-sdk/lemonade-triage -> https://lemonade-sdk.github.io/lemonade-triage/)
+# rather than this repo's Pages. This repo's Pages serves the production
+# lemonade-server.ai site from the `website` branch (deploy-from-branch) and is
+# only meant to refresh at release boundaries, so the dashboard must never
+# touch it.
+#
+# One-time setup (admin):
+#   1. lemonade-sdk/lemonade-triage exists with Pages set to "Deploy from a
+#      branch", Branch = main / (root).
+#   2. Add a secret TRIAGE_DASHBOARD_TOKEN to THIS repo (fine-grained PAT or
+#      deploy token with contents:write on lemonade-sdk/lemonade-triage).
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/triage_dashboard.py"
+      - ".github/scripts/test_triage_dashboard.py"
+      - ".github/workflows/triage-dashboard.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run dashboard tests
+        run: python .github/scripts/test_triage_dashboard.py
+
+      - name: Generate dashboard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p _site
+          python .github/scripts/triage_dashboard.py \
+            --repo "${{ github.repository }}" \
+            --output _site/index.html
+
+      - name: Publish to triage dashboard repo
+        env:
+          DEPLOY_TOKEN: ${{ secrets.TRIAGE_DASHBOARD_TOKEN }}
+        run: |
+          cd _site
+          git init -q
+          git checkout -q -b main
+          git add .
+          git -c user.name="Lemonade Bot" -c user.email="lemonade@amd.com" \
+            commit -q -m "Update triage dashboard"
+          git push -f -q \
+            "https://x-access-token:${DEPLOY_TOKEN}@github.com/lemonade-sdk/lemonade-triage.git" \
+            main

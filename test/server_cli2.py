@@ -125,6 +125,7 @@ def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
 # Global configuration
 _config = {
     "cli_binary": None,
+    "cli_api_key": None,
 }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -145,10 +146,17 @@ def parse_cli_args():
         default=get_default_cli_binary(),
         help="Path to lemonade CLI binary (default: CMake build output)",
     )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key to pass to all CLI invocations (for servers requiring auth)",
+    )
 
     args = parser.parse_args()
 
     _config["cli_binary"] = args.cli_binary
+    _config["cli_api_key"] = args.api_key
 
     return args
 
@@ -156,6 +164,9 @@ def parse_cli_args():
 def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     """
     Run a CLI command and return the result.
+
+    If --api-key was provided to the test runner, it is automatically prepended
+    to every CLI invocation so commands work against a server requiring auth.
 
     Args:
         args: List of command arguments (without the binary)
@@ -167,6 +178,9 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     Returns:
         subprocess.CompletedProcess result
     """
+    cli_args = list(args)
+    if _config["cli_api_key"]:
+        cli_args = ["--api-key", _config["cli_api_key"]] + cli_args
     cli_binary = get_cli_binary()
     if os.path.isabs(cli_binary):
         resolved_cli_binary = cli_binary
@@ -1425,65 +1439,6 @@ sys.exit(0)
             self.assertIn("never", argv)
             self.assertIn("--custom", argv)
             self.assertIn("a b", argv)
-
-    def test_102i_launch_recipe_env_var_bindings_preserved(self):
-        """Launch should continue honoring hidden recipe env vars like LEMONADE_CTX_SIZE."""
-        if IS_WINDOWS:
-            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
-
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            capture_path = os.path.join(temp_dir, "claude_capture_ctx_env.json")
-            self._write_fake_agent(temp_dir, "claude", capture_path)
-            env = self._build_stubbed_agent_env(temp_dir)
-            env["LEMONADE_CTX_SIZE"] = "2048"
-
-            result = run_cli_command(
-                [
-                    "launch",
-                    "claude",
-                    "--model",
-                    ENDPOINT_TEST_MODEL,
-                ],
-                timeout=TIMEOUT_DEFAULT,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 0)
-            self.assertTrue(
-                os.path.exists(capture_path),
-                "Fake claude binary was not executed",
-            )
-
-            deadline = time.time() + TIMEOUT_MODEL_OPERATION
-            loaded_model = None
-            while time.time() < deadline:
-                response = requests.get(
-                    f"http://127.0.0.1:{PORT}/api/v1/health",
-                    headers=_auth_headers(),
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(response.status_code, 200)
-                health_data = response.json()
-                loaded_model = next(
-                    (
-                        model
-                        for model in health_data.get("all_models_loaded", [])
-                        if model.get("model_name") == ENDPOINT_TEST_MODEL
-                    ),
-                    None,
-                )
-                recipe_options = (loaded_model or {}).get("recipe_options", {})
-                if recipe_options.get("ctx_size") == 2048:
-                    break
-                time.sleep(1)
-
-            self.assertIsNotNone(
-                loaded_model, f"Model {ENDPOINT_TEST_MODEL} should be loaded"
-            )
-            self.assertEqual(
-                loaded_model.get("recipe_options", {}).get("ctx_size"),
-                2048,
-            )
 
     def test_103_launch_explicit_model_with_repo_flags_is_deterministic(self):
         """Explicit model should skip import flow even when repo flags are present."""

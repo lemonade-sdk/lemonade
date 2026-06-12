@@ -34,11 +34,14 @@ InstallParams MoonshineServer::get_install_params(const std::string& backend, co
     // distribution repo (tracks moonshine-voice PyPI releases; tag scheme
     // moonshine<version>) — no system Python needed. moonshine-voice publishes
     // wheels for win x64, linux x64/arm64, and macOS arm64 only (no Intel
-    // macOS), so the macOS asset is arm64-only.
+    // macOS, no Windows-arm64), matching the platforms advertised in
+    // system_info.cpp.
 #ifdef _WIN32
     params.filename = "moonshine-server-" + version + "-windows-x64.zip";
 #elif defined(__APPLE__)
     params.filename = "moonshine-server-" + version + "-macos-arm64.tar.gz";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    params.filename = "moonshine-server-" + version + "-linux-arm64.tar.gz";
 #else
     params.filename = "moonshine-server-" + version + "-linux-x64.tar.gz";
 #endif
