@@ -1216,6 +1216,42 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // Some recipe/backend pairs are defined multiple times for OS-specific
+    // support, e.g. moonshine/cpu has separate Windows, Linux, and macOS
+    // entries. Keep the most useful status for the current system:
+    // non-unsupported states beat current-OS unsupported states, which beat
+    // unsupported fallback entries from other OS definitions.
+    static constexpr int kOtherOsUnsupportedPriority = 0;
+    static constexpr int kCurrentOsUnsupportedPriority = 1;
+    static constexpr int kNonUnsupportedPriority = 2;
+
+    std::map<std::pair<std::string, std::string>, int> backend_status_priority;
+
+    auto set_backend_status = [&recipes, &backend_status_priority](
+                                const std::string& recipe,
+                                const std::string& backend_name,
+                                const json& backend_status,
+                                int unsupported_priority) {
+        const std::string state = backend_status.value("state", "unsupported");
+        const int priority = (state == "unsupported")
+            ? unsupported_priority
+            : kNonUnsupportedPriority;
+        const auto key = std::make_pair(recipe, backend_name);
+
+        auto existing_priority = backend_status_priority.find(key);
+        if (existing_priority != backend_status_priority.end()
+            && priority <= existing_priority->second) {
+            return;
+        }
+
+        if (!recipes.contains(recipe)) {
+            recipes[recipe] = {{"backends", json::object()}};
+        }
+
+        recipes[recipe]["backends"][backend_name] = backend_status;
+        backend_status_priority[key] = priority;
+    };
+
     // Default to preferring system llamacpp on Linux AMD systems.
     // Can be set via config.json: {"llamacpp": {"prefer_system": true}}
     bool prefer_llamacpp_system = false;
@@ -1259,12 +1295,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"can_uninstall", true},
             };
 
-            // Add to the appropriate recipe/backend structure
-            if (recipes.contains(def.recipe)) {
-                recipes[def.recipe]["backends"][def.backend] = backend;
-            } else {
-                recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
-            }
+            set_backend_status(def.recipe, def.backend, backend, kOtherOsUnsupportedPriority);
             continue;
         }
 
@@ -1541,11 +1572,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
         // using BackendManager as the single source of truth for repo/version mappings.
 
-        // Add to the appropriate recipe/backend structure
-        if (!recipes.contains(def.recipe)) {
-            recipes[def.recipe] = {{"backends", json::object()}};
-        }
-        recipes[def.recipe]["backends"][def.backend] = backend;
+        set_backend_status(def.recipe, def.backend, backend, kCurrentOsUnsupportedPriority);
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
