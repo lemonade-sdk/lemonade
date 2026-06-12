@@ -1,6 +1,8 @@
 #include <lemon/utils/process_platform.h>
 #include <lemon/utils/aixlog.hpp>
 
+#include <stdexcept>
+
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
