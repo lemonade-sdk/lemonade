@@ -1221,9 +1221,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
     // entries. Keep the most useful status for the current system:
     // non-unsupported states beat current-OS unsupported states, which beat
     // unsupported fallback entries from other OS definitions.
-    constexpr int kOtherOsUnsupportedPriority = 0;
-    constexpr int kCurrentOsUnsupportedPriority = 1;
-    constexpr int kNonUnsupportedPriority = 2;
+    static constexpr int kOtherOsUnsupportedPriority = 0;
+    static constexpr int kCurrentOsUnsupportedPriority = 1;
+    static constexpr int kNonUnsupportedPriority = 2;
 
     std::map<std::pair<std::string, std::string>, int> backend_status_priority;
 
