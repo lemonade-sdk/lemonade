@@ -788,10 +788,22 @@ class LemonadeAPI {
     return [];
   }
 
+  // ── Runtime config ─────────────────────────────────────────────
+
+  async getRuntimeConfig(): Promise<Record<string, unknown>> {
+    return this._json<Record<string, unknown>>('/internal/config');
+  }
+
+  async getDefaultContextSize(): Promise<number | undefined> {
+    const data = await this.getRuntimeConfig();
+    const n = Number(data.ctx_size);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+  }
+
   // ── Log level ───────────────────────────────────────────────────
 
   async getLogLevel(): Promise<string> {
-    const data = await this._json<Record<string, unknown>>('/internal/config');
+    const data = await this.getRuntimeConfig();
     return (data.log_level as string) || 'info';
   }
 

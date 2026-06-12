@@ -52,6 +52,7 @@ export const LS_USER_PRESETS = 'user_presets';
 export const LS_APPLIED_PRESETS = 'applied_presets';
 export const LS_BACKEND_PRESETS = 'backend_presets';
 export const PRESET_STORE_EVENT = 'lemonade:preset-store-changed';
+export const DEFAULT_CONTEXT_SIZE = 4096;
 
 let activeStorageScope = 'guest:shared';
 
@@ -70,9 +71,9 @@ function emitPresetStoreEvent(): void {
 export const DEFAULT_PRESET: Preset = {
   id: 's-default',
   name: 'Default',
-  description: 'Use Lemonade defaults and automatic backend selection.',
+  description: 'Use current models defaults and automatic backend selection.',
   applies_to: ['all'],
-  recipe_options: { ctx_size: 4096, steps: 20, cfg_scale: 7.0, width: 512, height: 512 },
+  recipe_options: {},
   sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 },
   engine_hint: 'auto',
   starter: true,
@@ -104,6 +105,189 @@ export const STARTERS: Preset[] = [
   { id: 's-sharp', name: 'Sharp', description: 'More steps and tighter guidance for crisp, deliberate image generation.', applies_to: ['image'], recipe_options: { steps: 30, cfg_scale: 8.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
   { id: 's-quick', name: 'Quick', description: 'Fewer steps, looser guidance — fast drafts and iteration.', applies_to: ['image'], recipe_options: { steps: 15, cfg_scale: 7.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
 ];
+
+
+function formatDash(value: unknown, digits?: number): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '---';
+  return digits === undefined ? String(Math.round(n)) : n.toFixed(digits);
+}
+
+function isChatPreviewCapability(capability: ModelCapability | null | undefined): boolean {
+  return capability === 'chat' || capability === 'omni' || capability === 'unknown';
+}
+
+function capabilityForPresetPreview(capability: ModelCapability | null | undefined): Capability | null {
+  switch (capability) {
+    case 'chat': return 'chat';
+    case 'omni': return 'omni';
+    case 'image': return 'image';
+    case 'audio': return 'transcription';
+    case 'tts': return 'tts';
+    case 'embedding': return 'embedding';
+    case 'reranking': return 'reranking';
+    default: return null;
+  }
+}
+
+function hasOwnPreviewValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== '';
+}
+
+function previewContext(value: unknown, fallbackCtxSize?: unknown): number {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return Math.round(n);
+  const fallback = Number(fallbackCtxSize);
+  if (Number.isFinite(fallback) && fallback > 0) return Math.round(fallback);
+  return DEFAULT_CONTEXT_SIZE;
+}
+
+function readNumberFrom(value: unknown, paths: string[][]): number | undefined {
+  for (const path of paths) {
+    let cur: unknown = value;
+    for (const key of path) {
+      if (!cur || typeof cur !== 'object') { cur = undefined; break; }
+      cur = (cur as Record<string, unknown>)[key];
+    }
+    const n = Number(cur);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return undefined;
+}
+
+const CONTEXT_PATHS = [
+  ['recipe_options', 'ctx_size'], ['options', 'ctx_size'], ['ctx_size'], ['n_ctx'],
+  ['max_context_window'], ['max_ctx_size'], ['max_ctx'], ['context_window'], ['context_length'], ['max_sequence_length'],
+];
+
+function contextFromRecipe(recipe: unknown): number | undefined {
+  return readNumberFrom(recipe, CONTEXT_PATHS);
+}
+
+function recipesForModel(model: ModelInfo | null | undefined): unknown[] {
+  return Array.isArray(model?.recipes) ? model!.recipes : [];
+}
+
+function recipeName(recipe: unknown): string {
+  if (!recipe || typeof recipe !== 'object') return '';
+  return String((recipe as Record<string, unknown>).recipe
+    || (recipe as Record<string, unknown>).name
+    || (recipe as Record<string, unknown>).id
+    || '').trim().toLowerCase();
+}
+
+function readNumberFromActiveRecipe(model: ModelInfo | null | undefined, paths: string[][]): number | undefined {
+  const recipes = recipesForModel(model);
+  const activeRecipe = String((model as Record<string, unknown> | null | undefined)?.recipe || '').trim().toLowerCase();
+  if (activeRecipe) {
+    for (const recipe of recipes) {
+      if (recipeName(recipe) === activeRecipe) {
+        const n = readNumberFrom(recipe, paths);
+        if (n) return n;
+      }
+    }
+  }
+  for (const recipe of recipes) {
+    const n = readNumberFrom(recipe, paths);
+    if (n) return n;
+  }
+  return undefined;
+}
+
+function readNumberFromModelOrRecipe(model: ModelInfo | null | undefined, paths: string[][]): number | undefined {
+  return readNumberFrom(model, paths) ?? readNumberFromActiveRecipe(model, paths);
+}
+
+export function modelContextSize(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): number {
+  const fromModel = readNumberFrom(model, CONTEXT_PATHS);
+  if (fromModel) return Math.round(fromModel);
+
+  const fromRecipe = readNumberFromActiveRecipe(model, CONTEXT_PATHS);
+  if (fromRecipe) return Math.round(fromRecipe);
+
+  return previewContext(undefined, fallbackCtxSize);
+}
+
+export function presetHasOverrides(preset: Pick<Preset, 'recipe_options' | 'sampling'>): boolean {
+  const recipeOptions = preset.recipe_options || {};
+  const sampling = preset.sampling || {};
+  return Object.values(recipeOptions).some(value => value !== undefined && value !== '')
+    || Object.values(sampling).some(value => value !== undefined && value !== '');
+}
+
+export function presetHasApplicablePreviewOverrides(preset: Pick<Preset, 'recipe_options' | 'sampling'>, capability?: ModelCapability | null): boolean {
+  const recipeOptions = capability
+    ? recipeOptionsForCapability(preset.recipe_options || {}, capability)
+    : (preset.recipe_options || {});
+  const sampling = !capability || isChatPreviewCapability(capability) ? (preset.sampling || {}) : {};
+  return Object.values(recipeOptions).some(hasOwnPreviewValue)
+    || Object.values(sampling).some(hasOwnPreviewValue);
+}
+
+export function presetParamPreviewLines(preset: Preset, modelCapability?: ModelCapability | null, fallbackCtxSize?: unknown): string[] {
+  const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
+  const ro = preset.recipe_options || {};
+  const sp = preset.sampling || {};
+  const targetCap = capabilityForPresetPreview(modelCapability);
+  if (targetCap && !caps.includes('all') && !caps.includes(targetCap)) return ['---'];
+
+  const showChat = modelCapability
+    ? isChatPreviewCapability(modelCapability)
+    : caps.includes('all') || caps.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+  const showImage = modelCapability
+    ? modelCapability === 'image'
+    : caps.includes('all') || caps.includes('image');
+  const hasImageValues = hasOwnPreviewValue(ro.steps) || hasOwnPreviewValue(ro.cfg_scale);
+  const lines: string[] = [];
+
+  if (showChat) {
+    lines.push(`temp ${formatDash(sp.temperature, 2)} · ctx ${formatDash(previewContext(ro.ctx_size, fallbackCtxSize))}`);
+  }
+  if (showImage && (hasImageValues || !showChat)) {
+    lines.push(`${formatDash(ro.steps)} steps · cfg ${formatDash(ro.cfg_scale, 1)}`);
+  }
+  return lines.length ? lines : ['---'];
+}
+
+export function presetParamPreview(preset: Preset): string {
+  return presetParamPreviewLines(preset).join(' · ');
+}
+
+export function modelDefaultParamPreviewLines(model: ModelInfo | null | undefined, fallbackCtxSize?: unknown): string[] {
+  if (!model) return [`temp --- · ctx ${formatDash(previewContext(undefined, fallbackCtxSize))}`];
+  const capability = capabilityFromModelInfo(model);
+  const candidate = model as Record<string, unknown>;
+  const ctx = modelContextSize(model, fallbackCtxSize);
+  const temperature = readNumberFrom(candidate, [
+    ['sampling', 'temperature'], ['sample_params', 'temperature'], ['recipe_options', 'temperature'], ['temperature'],
+  ]);
+  const steps = readNumberFromModelOrRecipe(model, [
+    ['recipe_options', 'steps'], ['recipe_options', 'sample_steps'], ['sample_params', 'sample_steps'], ['sample_params', 'steps'], ['steps'], ['sample_steps'],
+  ]);
+  const cfg = readNumberFromModelOrRecipe(model, [
+    ['recipe_options', 'cfg_scale'], ['recipe_options', 'txt_cfg'], ['sample_params', 'guidance', 'txt_cfg'], ['sample_params', 'cfg_scale'], ['txt_cfg'], ['guidance'], ['cfg_scale'],
+  ]);
+
+  if (capability === 'image') {
+    return [`${formatDash(steps)} steps · cfg ${formatDash(cfg, 1)}`];
+  }
+  if (isChatPreviewCapability(capability)) {
+    return [`temp ${formatDash(temperature, 2)} · ctx ${formatDash(ctx)}`];
+  }
+  return ['---'];
+}
+
+export function effectivePresetParamPreviewLines(preset: Preset, model?: ModelInfo | null, fallbackCtxSize?: unknown): string[] {
+  const ctxFallback = model ? modelContextSize(model, fallbackCtxSize) : fallbackCtxSize;
+  const capability = model ? capabilityFromModelInfo(model) : undefined;
+  const caps = normalizePresetCapabilities(preset.id, preset.applies_to);
+  const targetCap = capabilityForPresetPreview(capability);
+  if (targetCap && !caps.includes('all') && !caps.includes(targetCap)) return ['---'];
+  if (model && !presetHasApplicablePreviewOverrides(preset, capability)) {
+    return modelDefaultParamPreviewLines(model, ctxFallback);
+  }
+  return presetParamPreviewLines(preset, capability, ctxFallback);
+}
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {
   all: 'All',
