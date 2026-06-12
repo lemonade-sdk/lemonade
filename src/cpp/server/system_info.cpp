@@ -438,7 +438,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -469,8 +469,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1150", "gfx1151", "gfx1152",
+            "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -539,6 +539,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
@@ -1863,6 +1864,11 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
+    }
+
+    if (device_lower.find("840m") != std::string::npos ||
+        device_lower.find("860m") != std::string::npos) {
+        return "gfx1152";
     }
 
     if (device_lower.find("r9700") != std::string::npos ||

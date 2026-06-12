@@ -484,9 +484,9 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         std::string arch = lemon::SystemInfo::get_rocm_arch();
-        if (arch == "gfx1151") {
+        if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
-            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
+            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
         }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
