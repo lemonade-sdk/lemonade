@@ -473,19 +473,44 @@ export function samplingForModel(modelName: string): SamplingParams {
   return activePresetForModel(modelName).sampling || {};
 }
 
-export function presetIcon(preset: Pick<Preset, 'id' | 'name' | 'starter'> | null | undefined): string {
-  if (!preset) return '🧰';
-  const id = String(preset.id || '').toLowerCase();
-  const name = String(preset.name || '').toLowerCase();
-  if (id === DEFAULT_PRESET.id || name === 'default') return '🍋';
-  if (name.includes('balanced')) return '⚖️';
-  if (name.includes('quality')) return '💎';
-  if (name.includes('fast')) return '🏎️';
-  if (name.includes('quick')) return '⏱️';
-  if (name.includes('creative')) return '✍️';
-  if (name.includes('long')) return '📚';
-  if (name.includes('code')) return '💻';
-  if (name.includes('sharp')) return '🔍';
-  if (name.includes('memory')) return '💾';
-  return preset.starter ? '🧪' : '🧰';
+export type PresetIconName =
+  | 'citrus'
+  | 'scale'
+  | 'gem'
+  | 'gauge'
+  | 'timer'
+  | 'pen-line'
+  | 'library'
+  | 'code'
+  | 'search'
+  | 'hard-drive'
+  | 'sliders-horizontal';
+
+export function getPresetIcon(id: string, nameRaw: string): PresetIconName {
+  const normalizedId = String(id || '').toLowerCase();
+  const name = String(nameRaw || '').toLowerCase();
+
+  if (normalizedId === DEFAULT_PRESET.id || name === 'default') return 'citrus';
+  if (name.includes('balanced')) return 'scale';
+  if (name.includes('quality')) return 'gem';
+  if (name.includes('fast')) return 'gauge';
+  if (name.includes('quick')) return 'timer';
+  if (name.includes('creative')) return 'pen-line';
+  if (name.includes('long')) return 'library';
+  if (name.includes('code')) return 'code';
+  if (name.includes('sharp')) return 'search';
+  if (name.includes('memory')) return 'hard-drive';
+
+  return 'sliders-horizontal';
+}
+
+export function presetIconName(preset: Pick<Preset, 'id' | 'name' | 'starter'> | null | undefined): PresetIconName {
+  if (!preset) return 'sliders-horizontal';
+  return getPresetIcon(String(preset.id || ''), String(preset.name || ''));
+}
+
+// Backwards-compatible string API for older call sites. New UI code should render
+// the returned icon name through <PresetIcon /> instead of showing emoji glyphs.
+export function presetIcon(preset: Pick<Preset, 'id' | 'name' | 'starter'> | null | undefined): PresetIconName {
+  return presetIconName(preset);
 }

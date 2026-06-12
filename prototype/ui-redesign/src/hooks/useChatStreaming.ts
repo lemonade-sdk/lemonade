@@ -5,6 +5,12 @@ import { LEMONADE_TOOLS, executeTool, ToolCall, ToolResult } from '../tools/lemo
 export type { ToolCall } from '../tools/lemonadeTools';
 
 const MAX_TOOL_ROUNDS = 5;
+const TOOL_FOLLOWUP_PROMPT = [
+  "Use the tool result to answer the user's last request with concrete, specific details.",
+  'Do not stop at a raw count such as "105 models" or at "success". Present the actual names/status/details returned by the tool.',
+  'If a tool result has status=needs_choice, call ask_question with the returned choices/candidates. Otherwise answer now in natural language.',
+  'Do not call the same tool with the same arguments again unless the result explicitly asks you to.',
+].join(' ');
 
 export interface ToolArtifact {
   type: 'image' | 'audio';
@@ -33,7 +39,13 @@ const DEFAULT_TOOL_RUNTIME: ChatToolRuntime = {
 /** Produce a short human-readable summary of a tool result */
 function summarizeResult(toolName: string, data: Record<string, unknown>): string {
   switch (toolName) {
-    case 'list_models': return `${data.count} models found`;
+    case 'list_models': {
+      const counts = (data as any).counts || {};
+      const total = Number(counts.loaded || 0) + Number(counts.downloaded || 0);
+      if (Number.isFinite(total) && total > 0) return `${total} local model(s): ${counts.loaded || 0} loaded, ${counts.downloaded || 0} downloaded`;
+      if (counts.registry) return `${counts.registry} registry model(s)`;
+      return 'Model inventory retrieved';
+    }
     case 'get_model_info': return `${(data as any).display_name || (data as any).name || (data as any).id || 'model'} — ${((data as any).recipes || []).length} recipe(s)`;
     case 'load_model': return 'Model loaded';
     case 'unload_model': return 'Model unloaded';
@@ -42,10 +54,26 @@ function summarizeResult(toolName: string, data: Record<string, unknown>): strin
       return Array.isArray(loaded) ? `${loaded.length} model(s) loaded` : JSON.stringify(data).slice(0, 80);
     }
     case 'get_server_health': return `${data.status} — ${data.loaded_models} model(s)`;
-    case 'pull_model': return `${data.status}`;
+    case 'pull_model': {
+      const anyData = data as any;
+      if (anyData.status === 'needs_choice') {
+        const items = anyData.choices || anyData.candidates || anyData.variants || [];
+        return Array.isArray(items) ? `Needs choice: ${items.slice(0, 4).map((item: any) => item.id || item.name || item).join(', ')}` : 'Needs choice';
+      }
+      return `${anyData.status || 'download complete'}${anyData.model ? ` — ${anyData.model}` : ''}`;
+    }
     case 'delete_model': return 'Model deleted';
-    case 'get_system_info': return 'System info retrieved';
-    case 'list_backends': return `${Object.keys(data).length} recipe(s)`;
+    case 'get_system_info': {
+      const anyData = data as any;
+      const counts = anyData.counts || {};
+      const devices = anyData.devices || {};
+      const deviceNames = Object.entries(devices).flatMap(([kind, items]: [string, any]) => Array.isArray(items) ? items.map((item: any) => `${kind}: ${item.name || 'unknown'}`) : []);
+      return [`System info: ${counts.recipes || 0} recipe(s), ${counts.installed_backends || 0} installed backend(s)`, ...deviceNames.slice(0, 4)].join(' · ');
+    }
+    case 'list_backends': {
+      const recipes = (data as any).recipes || data;
+      return `${Object.keys(recipes || {}).length} recipe(s): ${Object.keys(recipes || {}).slice(0, 5).join(', ')}`;
+    }
     case 'install_backend': return `${data.status}`;
     case 'ask_question': return 'Presenting choices';
     default: return JSON.stringify(data).slice(0, 80);
@@ -208,13 +236,18 @@ export function useChatStreaming(
               }
             }
 
-            // Append tool results
+            // Append tool results, then remind the model to produce a real final
+            // answer (or call a narrower tool) instead of echoing a broad count.
             for (const result of results) {
               fullMessages = [
                 ...fullMessages,
                 { role: 'tool' as const, content: result.content, tool_call_id: result.tool_call_id },
               ];
             }
+            fullMessages = [
+              ...fullMessages,
+              { role: 'user' as const, content: TOOL_FOLLOWUP_PROMPT },
+            ];
 
             // Clear tool status, keep accumulated tool call entries
             setActiveStreams(prev => ({

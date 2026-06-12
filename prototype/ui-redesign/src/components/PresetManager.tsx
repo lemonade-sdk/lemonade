@@ -16,13 +16,13 @@ import {
   loadApplied,
   loadUserPresets,
   normalizePresetCapabilities,
-  presetIcon,
   presetLabelsFor,
   presetParamPreviewLines,
   sanitizePreset,
   saveApplied,
   saveUserPresets,
 } from '../presetStore';
+import { PresetIcon } from './Icon';
 
 const ENGINE_LABELS: Record<PresetRecipe, string> = {
   auto: 'Auto — server decides',
@@ -244,10 +244,6 @@ function hasManualArgs(preset: Pick<Preset, 'recipe_options'>): boolean {
     || String(ro.moonshine_args || '').trim()
   );
 }
-
-const PresetIcon: React.FC<{ preset: Preset; className?: string }> = ({ preset, className }) => (
-  <span className={className || 'preset-icon'} aria-hidden="true">{presetIcon(preset)}</span>
-);
 
 const CapabilityChip: React.FC<{ cap: Capability; small?: boolean; on?: boolean; off?: boolean }> = ({ cap, small, on, off }) => (
   <span className={`cap-chip ${capChipClass(cap)}${small ? ' cap-chip--sm' : ''}${on ? ' is-on' : ''}${off ? ' is-off' : ''}`}>

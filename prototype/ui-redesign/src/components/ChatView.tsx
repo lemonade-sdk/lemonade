@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import api, { ChatMessage, ChatCompletionStats, LoadedModel, ModelInfo, RealtimeTranscriptionHandle, friendlyErrorMessage } from '../api';
 import MarkdownMessage from './MarkdownMessage';
 import LogViewer from './LogViewer';
-import { Icon, CapabilityIcon } from './Icon';
+import { Icon, CapabilityIcon, PresetIcon } from './Icon';
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import {
@@ -27,7 +27,7 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { PRESET_STORE_EVENT, activePresetForModel, presetIcon } from '../presetStore';
+import { PRESET_STORE_EVENT, activePresetForModel } from '../presetStore';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -401,12 +401,13 @@ function collectToolArtifacts(toolCalls?: ToolCallEntry[]): ToolArtifact[] {
 function summarizeToolOnlyResponse(toolCalls?: ToolCallEntry[]): string {
   const finished = (toolCalls || []).filter(call => call.status === 'done' || call.status === 'error');
   if (finished.length === 0) return '';
-  const names = finished
-    .map(call => TOOL_LABELS[call.name] || call.name)
-    .filter(Boolean)
-    .slice(0, 3);
-  const suffix = finished.length > names.length ? ` and ${finished.length - names.length} more` : '';
-  return `Completed ${finished.length} tool call${finished.length === 1 ? '' : 's'}: ${names.join(', ')}${suffix}.`;
+  const lines = finished.slice(0, 6).map(call => {
+    const label = TOOL_LABELS[call.name] || call.name;
+    const result = (call.result || '').trim();
+    return result ? `**${label}**\n${result}` : `**${label}** ${call.status === 'error' ? 'failed.' : 'completed.'}`;
+  });
+  const suffix = finished.length > lines.length ? `\n\n…and ${finished.length - lines.length} more tool call(s).` : '';
+  return `${lines.join('\n\n')}${suffix}`;
 }
 
 function collectConversationImages(messages: Message[]): string[] {
@@ -709,14 +710,14 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     knownModelInfos.forEach(info => {
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       const capability = capabilityFromModelInfo(info);
-      const labels = (info.labels || []).map(label => label.toLowerCase());
-      const downloaded = labels.some(label => ['downloaded', 'local', 'installed', 'ready'].includes(label));
+      const downloaded = Boolean((info as any).downloaded);
+      if (!downloaded) return;
       addOption({
         name,
         capability,
         loaded: false,
         info,
-        detail: downloaded ? 'Downloaded · click to load' : 'Registry · click to load',
+        detail: 'Downloaded · click to load',
       });
     });
 
@@ -1237,7 +1238,16 @@ ${finalText}`
       systemPrompts.push([
         'You are a helpful assistant integrated with a local AI inference app called Lemonade.',
         'Use Lemonade management tools when the user asks about local models, backends, hardware capability, or server health.',
-        'When presenting choices, use the ask_question tool so the UI can render clickable options.',
+        '',
+        'Tool routing rules:',
+        '- Backend/recipe/CPU/GPU/NPU/install-status questions: call list_backends, not list_models.',
+        '- Named model questions: call get_model_info for that exact model. Do not answer from list_models alone.',
+        '- Load/start/use model requests: resolve the downloaded model, then call load_model. If CPU/GPU/NPU is specified, pass backend/device explicitly.',
+        '- Download/pull requests: call pull_model. It searches Lemonade registry first, then Hugging Face GGUF when needed. If pull_model returns needs_choice, call ask_question with its choices.',
+        '- System/hardware questions: call get_system_info and then summarize the returned OS/version/devices/backend counts.',
+        '- General inventory questions: call list_models. It defaults to local models only; request registry/all only if the user explicitly asks what can be downloaded.',
+        '- After any tool call, give a concrete final answer with names/status/details. Never stop at a bare count like “105 models”.',
+        '- When choices are needed, use ask_question so the UI can render clickable options.',
         '',
         'RICH CONTENT: Responses are rendered as Markdown with code blocks, Mermaid diagrams, HTML snippets, and LaTeX math.',
         '',
@@ -1763,7 +1773,7 @@ ${finalText}`
                     <input
                       autoFocus
                       value={modelPickerQuery}
-                      placeholder="Search loaded or downloaded models…"
+                      placeholder="Search downloaded models…"
                       onChange={e => setModelPickerQuery(e.target.value)}
                     />
                   </label>
@@ -1803,7 +1813,7 @@ ${finalText}`
           </button>
           {currentPreset && (
             <span className="composer__preset-badge" title="Active preset for this model">
-              <span aria-hidden="true">{presetIcon(currentPreset)}</span> Preset: {currentPreset.name}
+              <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
             </span>
           )}
           <button
