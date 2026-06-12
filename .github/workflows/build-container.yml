@@ -17,6 +17,8 @@ jobs:
             ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
           - ubuntu_version: "26.04"
             ubuntu_ppa: ""
+          - ubuntu_version: "26.10"
+            ubuntu_ppa: "ppa:lemonade-team/bleeding-edge"
 
     permissions:
       contents: read
