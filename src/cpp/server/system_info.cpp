@@ -437,7 +437,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx1100", "gfx1101", "gfx1102", "gfx1103", "gfx1150", "gfx1151", "gfx1152", "gfx1200", "gfx1201", "gfx1030", "gfx1031", "gfx1032", "gfx1033", "gfx1034", "gfx1035", "gfx1036"}},
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -468,8 +468,10 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1100", "gfx1101", "gfx1102", "gfx1103",
+            "gfx1150", "gfx1151", "gfx1152",
+            "gfx1200", "gfx1201",
+            "gfx1030", "gfx1031", "gfx1032", "gfx1033", "gfx1034", "gfx1035", "gfx1036"
         }},
     }},
 
@@ -507,7 +509,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
 
     // vLLM - ROCm backend for AMD GPUs (Linux only)
     {"vllm", "rocm", {"linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
+        {"amd_gpu", {"gfx1100", "gfx1101", "gfx1102", "gfx1103", "gfx1150", "gfx1151", "gfx1152", "gfx1200", "gfx1201"}},
     }},
 
     // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
@@ -528,11 +530,25 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"arm64", "ARM64 processors"},
 
     // AMD GPU architectures (ROCm)
+    {"gfx1100", "Radeon RX 7900 series (RDNA3)"},
+    {"gfx1101", "Radeon RX 7800 series (RDNA3)"},
+    {"gfx1102", "Radeon RX 7700 series (RDNA3)"},
+    {"gfx1103", "Radeon RX 7600 series (RDNA3)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
-    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
-    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
-    {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
+    {"gfx1152", "Radeon 870M (Strix Point)"},
+    {"gfx1200", "Radeon RX 9060 series (RDNA4)"},
+    {"gfx1201", "Radeon RX 9070 series (RDNA4)"},
+    {"gfx1010", "Radeon RX 6400 series (RDNA2)"},
+    {"gfx1011", "Radeon RX 6500 series (RDNA2)"},
+    {"gfx1012", "Radeon RX 6300 series (RDNA2)"},
+    {"gfx1030", "Radeon RX 6700 series (RDNA2)"},
+    {"gfx1031", "Radeon RX 6800 series (RDNA2)"},
+    {"gfx1032", "Radeon RX 6900 series (RDNA2)"},
+    {"gfx1033", "Radeon RX 6950 series (RDNA2)"},
+    {"gfx1034", "Radeon RX 6600 series (RDNA2)"},
+    {"gfx1035", "Radeon RX 6700 XT series (RDNA2)"},
+    {"gfx1036", "Radeon RX 6750 series (RDNA2)"},
 
     // NVIDIA GPU compute capabilities (CUDA)
     {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
@@ -1786,65 +1802,66 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     return "";
 }
 
-// Helper to identify ROCm architecture from GPU name.
+// Load the therock section from backend_versions.json. Returns empty JSON if not found.
+static json load_therock_config() {
+    std::string config_path = utils::get_resource_path("resources/backend_versions.json");
+    return utils::JsonUtils::load_from_file(config_path).value("therock", json::object());
+}
+
+// Resolve a marketing GPU name to an ISA using the JSON marketing_to_isa mapping.
+// Returns the first matching ISA, or empty string if no match.
+static std::string resolve_isa_from_marketing_name(const std::string& device_name) {
+    json config = load_therock_config();
+    if (!config.contains("marketing_to_isa") || !config["marketing_to_isa"].is_object()) {
+        return "";
+    }
+
+    std::string device_lower = device_name;
+    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
+
+    for (const auto& [pattern, isa_list] : config["marketing_to_isa"].items()) {
+        if (device_lower.find(std::string(pattern)) != std::string::npos) {
+            if (isa_list.is_array() && !isa_list.empty()) {
+                return isa_list[0].get<std::string>();
+            }
+        }
+    }
+    return "";
+}
+
+// Helper to identify ROCm ISA from GPU name.
+// Sources (in priority order):
+//   1. Exact ISA string from HSA (e.g., "gfx1151", "gfx1101")
+//   2. KFD numeric topology (e.g., "110100" -> "gfx1101")
+//   3. Marketing name -> ISA lookup from backend_versions.json
+// Returns an exact ISA string (e.g., "gfx1151", "gfx1101") or empty string if not recognized.
+// No wildcard architectures are ever returned.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
+    // Priority 1: Exact ISA string from HSA (e.g., "gfx1151", "gfx1101")
     std::smatch gfx_match;
     if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
         return gfx_match[1].str();
     }
 
-    // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
+    // Priority 2: KFD numeric topology (e.g., "110100" -> "gfx1101")
+    // KFD format: MAJOR*10000 + MINOR*100 + REVISION
     if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
-        if (device_lower.length() >= 4) {
-            std::string major = device_lower.substr(0, 2);
+        int value = std::stoi(device_lower);
+        int major = value / 10000;
+        int minor = (value % 10000) / 100;
+        return "gfx" + std::to_string(major) + std::to_string(minor);
+    }
 
-            int minor_int = std::stoi(device_lower.substr(2, 2));
-            std::string minor = std::to_string(minor_int);
-
-            int revision_int = std::stoi(device_lower.substr(4, 2));
-            std::string revision = std::to_string(revision_int);
-
-            return "gfx" + major + minor + revision;
+    // Priority 3: Marketing name -> ISA lookup from JSON
+    if (device_lower.find("radeon") != std::string::npos ||
+        device_lower.find("amd") != std::string::npos) {
+        std::string isa = resolve_isa_from_marketing_name(device_lower);
+        if (!isa.empty()) {
+            return isa;
         }
-    }
-
-    if (device_lower.find("radeon") == std::string::npos &&
-        device_lower.find("amd") == std::string::npos) {
-        return "";
-    }
-
-    if (device_lower.find("8050s") != std::string::npos ||
-        device_lower.find("8060s") != std::string::npos ||
-        device_lower.find("device 1586") != std::string::npos) {
-        return "gfx1151";
-    }
-
-    if (device_lower.find("880m") != std::string::npos ||
-        device_lower.find("890m") != std::string::npos) {
-        return "gfx1150";
-    }
-
-    if (device_lower.find("r9700") != std::string::npos ||
-        device_lower.find("9060") != std::string::npos ||
-        device_lower.find("9070") != std::string::npos) {
-        return "gfx120X";
-    }
-
-    if (device_lower.find("7700") != std::string::npos ||
-        device_lower.find("7800") != std::string::npos ||
-        device_lower.find("7900") != std::string::npos ||
-        device_lower.find("v710") != std::string::npos) {
-        return "gfx110X";
-    }
-
-    if (device_lower.find("6800") != std::string::npos ||
-        device_lower.find("6700") != std::string::npos ||
-        device_lower.find("6600") != std::string::npos ||
-        device_lower.find("6500") != std::string::npos) {
-        return "gfx103X";
     }
 
     return "";

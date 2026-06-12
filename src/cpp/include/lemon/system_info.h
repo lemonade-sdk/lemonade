@@ -218,8 +218,13 @@ public:
 // Factory function
 std::unique_ptr<SystemInfo> create_system_info();
 
-// Helper to identify ROCm architecture from GPU name
-// Returns architecture string (e.g., "gfx1150", "gfx1151", "gfx110X", "gfx120X") or empty string if not recognized
+// Helper to identify ROCm ISA from GPU name.
+// Sources (in priority order):
+//   1. Exact ISA string from HSA (e.g., "gfx1151", "gfx1101")
+//   2. KFD numeric topology (e.g., "110100" → "gfx1101")
+//   3. Marketing name → ISA lookup from backend_versions.json
+// Returns an exact ISA string (e.g., "gfx1151", "gfx1101") or empty string if not recognized.
+// No wildcard architectures are ever returned.
 std::string identify_rocm_arch_from_name(const std::string& device_name);
 
 // Helper to identify CUDA Compute Capability from a marketing GPU name

@@ -157,19 +157,13 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
         return false;
     }
 
-    // Check if this architecture is supported
-    if (backend_versions["therock"].contains("architectures") &&
-        backend_versions["therock"]["architectures"].is_array()) {
-        bool arch_supported = false;
-        for (const auto& arch : backend_versions["therock"]["architectures"]) {
-            if (arch.is_string() && arch.get<std::string>() == rocm_arch) {
-                arch_supported = true;
-                break;
-            }
-        }
-        if (!arch_supported) {
-            return false;
-        }
+    // Check if this ISA is supported via url_mapping (single source of truth).
+    if (!backend_versions["therock"].contains("url_mapping") ||
+        !backend_versions["therock"]["url_mapping"].contains(rocm_arch)) {
+        LOG(DEBUG, "BackendManager")
+            << "ROCm ISA " << rocm_arch
+            << " is not in the supported ISA list (url_mapping), skipping TheRock installation";
+        return false;
     }
 
     return true;

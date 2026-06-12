@@ -24,37 +24,10 @@
   },
   "therock": {
     "version": "7.13.0",
-    "architectures": [
-      "gfx908",
-      "gfx90a",
-      "gfx942",
-      "gfx1100",
-      "gfx1101",
-      "gfx1102",
-      "gfx1103",
-      "gfx1150",
-      "gfx1151",
-      "gfx1152",
-      "gfx1200",
-      "gfx1201",
-      "gfx1010",
-      "gfx1011",
-      "gfx1012",
-      "gfx1030",
-      "gfx1031",
-      "gfx1032",
-      "gfx1033",
-      "gfx1034",
-      "gfx1035",
-      "gfx1036"
-    ],
     "url_mapping": {
       "gfx908": "gfx90X-dcgpu",
       "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
-      "gfx103X": "gfx103X-all",
-      "gfx110X": "gfx110X-all",
-      "gfx120X": "gfx120X-all",
       "gfx1100": "gfx110X-all",
       "gfx1101": "gfx110X-all",
       "gfx1102": "gfx110X-all",
@@ -74,6 +47,29 @@
       "gfx1034": "gfx103X-all",
       "gfx1035": "gfx103X-all",
       "gfx1036": "gfx103X-all"
+    },
+    "marketing_to_isa": {
+      "8050s": ["gfx1151"],
+      "8060s": ["gfx1151"],
+      "device 1586": ["gfx1151"],
+      "880m": ["gfx1150"],
+      "890m": ["gfx1150"],
+      "radeon 9700": ["gfx1200"],
+      "9060": ["gfx1200"],
+      "9070": ["gfx1200"],
+      "radeon 7700": ["gfx1100"],
+      "radeon 7800": ["gfx1100"],
+      "radeon 7900": ["gfx1100"],
+      "v710": ["gfx1100"],
+      "radeon 6800": ["gfx1030"],
+      "radeon 6700": ["gfx1030"],
+      "radeon 6600": ["gfx1030"],
+      "radeon 6500": ["gfx1030"]
+    },
+    "env_overrides": {
+      "gfx1151": {
+        "OCL_SET_SVM_SIZE": "262144"
+      }
     }
   },
   "ryzenai-llm": {

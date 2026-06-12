@@ -479,10 +479,19 @@ void LlamaCppServer::load(const std::string& model_name,
             env_vars.push_back({"PATH", new_path});
         }
 
-        std::string arch = lemon::SystemInfo::get_rocm_arch();
-        if (arch == "gfx1151") {
-            env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
-            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
+        // Apply per-ISA environment variable overrides from backend_versions.json
+        std::string config_path = lemon::utils::get_resource_path("resources/backend_versions.json");
+        json config = lemon::utils::JsonUtils::load_from_file(config_path);
+        if (config.contains("therock") && config["therock"].contains("env_overrides")) {
+            std::string arch = lemon::SystemInfo::get_rocm_arch();
+            if (!arch.empty() && config["therock"]["env_overrides"].contains(arch)) {
+                const auto& overrides = config["therock"]["env_overrides"][arch];
+                for (const auto& [key, val] : overrides.items()) {
+                    env_vars.push_back({key, val.get<std::string>()});
+                    LOG(DEBUG, "LlamaCpp") << "Setting " << key << "=" << val.get<std::string>()
+                                            << " for " << arch;
+                }
+            }
         }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
