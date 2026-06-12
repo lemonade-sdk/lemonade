@@ -40,7 +40,7 @@ git pull
 
 git tag v10.7.0
 
-git push --tags
+git push origin v10.7.0
 ```
 
 Example action from v10.7.0: https://github.com/lemonade-sdk/lemonade/actions/runs/27283434473/job/80590025966
