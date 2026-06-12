@@ -712,9 +712,10 @@ if(USE_SYSTEM_ZSTD)
     target_compile_options(lemonade-server-core PUBLIC ${ZSTD_CFLAGS_OTHER})
 endif()
 
-if(BUILD_TESTING)
+set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
+if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_executable(test_vllm_arg_resolver
-        test/cpp/test_vllm_arg_resolver.cpp
+        ${VLLM_ARG_RESOLVER_TEST_SOURCE}
         src/cpp/server/backends/vllm_arg_resolver.cpp
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
