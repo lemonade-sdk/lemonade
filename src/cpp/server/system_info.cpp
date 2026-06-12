@@ -1836,16 +1836,11 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx1150";
     }
 
-    // KRK Point iGPUs (gfx1152 architecture)
-    // Radeon 840M / 860M Graphics
     if (device_lower.find("840m") != std::string::npos ||
         device_lower.find("860m") != std::string::npos) {
         return "gfx1152";
     }
 
-    // RDNA4 GPUs (gfx120X architecture)
-    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
-    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
     if (device_lower.find("r9700") != std::string::npos ||
         device_lower.find("9060") != std::string::npos ||
         device_lower.find("9070") != std::string::npos) {
