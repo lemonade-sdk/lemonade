@@ -156,18 +156,18 @@ export function capabilityBadge(capability: ModelCapability): string {
 
 export function capabilityIcon(capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'): string {
   switch (capability) {
-    case 'all': return '🌐';
-    case 'chat': return '💬';
-    case 'omni': return '✦';
-    case 'image': return '🖼';
-    case 'audio': return '🎙';
-    case 'transcription': return '🎙';
-    case 'tts': return '🔊';
-    case 'embedding': return '🔢';
-    case 'reranking': return '🔀';
-    case 'vision': return '👁';
-    case 'code': return '⌘';
-    default: return '⚙';
+    case 'all': return 'All';
+    case 'chat': return 'Chat';
+    case 'omni': return 'Omni';
+    case 'image': return 'Image';
+    case 'audio': return 'Audio';
+    case 'transcription': return 'Audio';
+    case 'tts': return 'TTS';
+    case 'embedding': return 'Emb';
+    case 'reranking': return 'Rank';
+    case 'vision': return 'Vision';
+    case 'code': return 'Code';
+    default: return 'Model';
   }
 }
 

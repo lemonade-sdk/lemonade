@@ -47,7 +47,9 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
         type: 'object',
         properties: {
           model_name: { type: 'string', description: 'The model name/ID to load.' },
-          recipe: { type: 'string', description: 'The recipe to use. Examples: "llamacpp" (auto-selects best GPU/CPU backend), "llamacpp-vulkan" (AMD/NVIDIA GPU), "llamacpp-cpu" (CPU only), "flm" (NPU), "ryzenai-llm" (hybrid NPU). Always specify — check get_model_info for available options.' },
+          recipe: { type: 'string', description: 'The recipe to use. Examples: "llamacpp", "flm", "ryzenai-llm". Combined inputs like "llamacpp-cpu" are accepted and are normalized to recipe=llamacpp plus backend=cpu.' },
+          backend: { type: 'string', description: 'Optional backend/device target for the recipe. Examples: "cpu", "vulkan", "rocm", "metal", "npu". Use "cpu" when the user asks to load on CPU.' },
+          device: { type: 'string', description: 'Alias for backend. Examples: "cpu", "gpu", "npu".' },
           n_ctx: { type: 'number', description: 'Context window size (e.g. 4096, 8192, 32768). Higher uses more memory.' },
           n_gpu_layers: { type: 'number', description: 'Number of layers to offload to GPU. Higher = faster but uses more VRAM.' },
         },
@@ -222,7 +224,33 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
 
       case 'load_model': {
         const opts: Record<string, unknown> = {};
-        if (args.recipe) opts.recipe = args.recipe;
+        const recipeArg = typeof args.recipe === 'string' ? args.recipe.trim().toLowerCase() : '';
+        const backendArg = typeof args.backend === 'string' ? args.backend.trim().toLowerCase()
+          : (typeof args.device === 'string' ? args.device.trim().toLowerCase() : '');
+        let recipe = recipeArg;
+        let backend = backendArg;
+
+        // The model often answers with recipe strings such as "llamacpp-cpu".
+        // Normalize these so the server does not silently fall back to its GPU default.
+        const llamacppMatch = /^llamacpp[-_:](cpu|vulkan|rocm|metal|cuda)$/i.exec(recipeArg);
+        if (llamacppMatch) {
+          recipe = 'llamacpp';
+          backend = llamacppMatch[1].toLowerCase();
+        }
+
+        if (recipe) opts.recipe = recipe;
+        if (backend) {
+          if (recipe === 'llamacpp' || !recipe) {
+            opts.llamacpp_backend = backend === 'gpu' ? 'vulkan' : backend;
+            if (backend === 'cpu') opts.llamacpp_device = 'cpu';
+          } else if (recipe.includes('whisper')) {
+            opts.whispercpp_backend = backend;
+          } else if (recipe.includes('moonshine')) {
+            opts.moonshine_backend = backend;
+          } else if (recipe.includes('vllm')) {
+            opts.vllm_backend = backend;
+          }
+        }
         if (args.n_ctx) opts.n_ctx = args.n_ctx;
         if (args.n_gpu_layers) opts.n_gpu_layers = args.n_gpu_layers;
         result = await api.loadModel(args.model_name as string, Object.keys(opts).length > 0 ? opts : undefined);

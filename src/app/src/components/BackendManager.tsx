@@ -13,6 +13,7 @@ import {
   presetSupportsCapability,
   saveBackendApplied,
 } from '../presetStore';
+import { Icon } from './Icon';
 
 /* ── Types matching /api/v1/system-info response ─────────── */
 
@@ -317,7 +318,7 @@ const BackendManager: React.FC = () => {
           }
         },
         onComplete: async () => {
-          toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
+          toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} ${doneLabel}`);
           setInstalling(null);
           try {
             const fresh = await api.systemInfo() as unknown as SystemInfoData;
@@ -325,7 +326,7 @@ const BackendManager: React.FC = () => {
             if (isUpdate && fresh?.recipes?.[recipe]?.backends?.[backend]) {
               const newState = fresh.recipes[recipe].backends[backend].state;
               if (newState === 'update_required' || newState === 'update_available') {
-                toast(`⚠ ${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — the existing binary may need to be removed manually`);
+                toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} still needs update — the existing binary may need to be removed manually`);
               }
             }
           } catch {
@@ -333,12 +334,12 @@ const BackendManager: React.FC = () => {
           }
         },
         onError: (err) => {
-          toast(`✗ ${actionLabel} failed: ${err.message}`);
+          toast(`${actionLabel} failed: ${err.message}`);
           setInstalling(null);
         },
       });
     } catch (err) {
-      toast(`✗ ${actionLabel} failed: ${friendlyErrorMessage(err)}`);
+      toast(`${actionLabel} failed: ${friendlyErrorMessage(err)}`);
       setInstalling(null);
     }
   }, [fetchInfo, toast]);
@@ -349,10 +350,10 @@ const BackendManager: React.FC = () => {
     try {
       setInstalling(backendKey(recipe, backend));
       await api.uninstallBackend(recipe, backend);
-      toast(`✓ ${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
+      toast(`${RECIPE_LABELS[recipe] || recipe} · ${backend} uninstalled`);
       fetchInfo();
     } catch (err) {
-      toast(`✗ Uninstall failed: ${friendlyErrorMessage(err)}`);
+      toast(`Uninstall failed: ${friendlyErrorMessage(err)}`);
     } finally {
       setInstalling(null);
     }
@@ -583,7 +584,7 @@ const BackendManager: React.FC = () => {
 
         {error && (
           <div className="banner banner--error" data-backends-error>
-            <span className="banner__icon" aria-hidden="true">⚠</span>
+            <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
             <span className="banner__text">Could not load backend system info: {error}</span>
             <button className="banner__action" onClick={fetchInfo} disabled={loading}>Retry</button>
           </div>
@@ -591,7 +592,7 @@ const BackendManager: React.FC = () => {
 
         {updatesAvailable > 0 && (
           <div className="banner banner--warn" data-backends-banner>
-            <span className="banner__icon" aria-hidden="true">⚠</span>
+            <span className="banner__icon" aria-hidden="true"><Icon name="alert" size={16} /></span>
             <span className="banner__text" data-backends-banner-text>
               {updatesAvailable} backend update{updatesAvailable > 1 ? 's' : ''} available
             </span>
@@ -616,7 +617,7 @@ const BackendManager: React.FC = () => {
       {matrixRows.length === 0 ? (
         <div className="matrix matrix--empty" data-backends-matrix-empty>
           <div className="hf-zone__empty">
-            <span>🧩</span>
+            <Icon name="box" size={20} />
             <span>No backend/device data is available for this Lemonade server yet.</span>
           </div>
         </div>

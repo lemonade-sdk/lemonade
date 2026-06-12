@@ -103,7 +103,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({ session, onSessionChange, onD
           </div>
 
           {notice && <div className="account-menu__notice">{notice}</div>}
-          {error && <div className="account-menu__error">⚠ {error}</div>}
+          {error && <div className="account-menu__error">{error}</div>}
 
           {mode === 'menu' && (
             <>
