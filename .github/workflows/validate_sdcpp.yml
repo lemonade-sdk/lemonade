@@ -38,8 +38,8 @@ env:
   LITE_MODE: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.lite == true) }}
   SDCPP_REPO: leejet/stable-diffusion.cpp
   SDCPP_CUDA_REPO: lemonade-sdk/stable-diffusion.cpp
-  # Update only existing sd-cpp pins. Do not add/touch rocm-nightly.
-  SDCPP_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal,cuda
+  # Base sd-cpp pins to update. CUDA is added only when matching CUDA assets exist.
+  SDCPP_BASE_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal
   SDCPP_TEST_PROMPT: "A small glass of lemonade on a clean table, product photo, high detail"
   SDCPP_TEST_SEED: "12345"
   SDCPP_TEST_STEPS: "4"
@@ -57,6 +57,7 @@ jobs:
       release: ${{ steps.release.outputs.release }}
       short_release: ${{ steps.release.outputs.short_release }}
       is_update_run: ${{ steps.release.outputs.is_update_run }}
+      update_backends: ${{ steps.assets.outputs.update_backends }}
     steps:
       - uses: actions/checkout@v5
 
@@ -106,6 +107,7 @@ jobs:
           echo "Using stable-diffusion.cpp release: $RELEASE ($SHORT_RELEASE)"
 
       - name: Verify upstream release has expected backend assets
+        id: assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -174,6 +176,14 @@ jobs:
               sys.exit(1)
           PY
 
+          if [ -s cuda-assets.txt ]; then
+            UPDATE_BACKENDS="${SDCPP_BASE_UPDATE_BACKENDS},cuda"
+          else
+            UPDATE_BACKENDS="${SDCPP_BASE_UPDATE_BACKENDS}"
+          fi
+          echo "update_backends=${UPDATE_BACKENDS}" >> "$GITHUB_OUTPUT"
+          echo "Will update sd-cpp backend pins: ${UPDATE_BACKENDS}"
+
   build:
     name: Build Lemonade with sd-cpp pin
     needs: discover-release
@@ -192,7 +202,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           python .github/scripts/update_sdcpp_versions.py `
             --release "${{ needs.discover-release.outputs.release }}" `
-            --backends "${{ env.SDCPP_UPDATE_BACKENDS }}"
+            --backends "${{ needs.discover-release.outputs.update_backends }}"
 
       - name: Build C++ Server with CMake
         shell: PowerShell
@@ -401,14 +411,14 @@ jobs:
         run: |
           python3 .github/scripts/update_sdcpp_versions.py \
             --release "${{ needs.discover-release.outputs.release }}" \
-            --backends "${{ env.SDCPP_UPDATE_BACKENDS }}"
+            --backends "${{ needs.discover-release.outputs.update_backends }}"
 
       - name: Generate PR body
         shell: bash
         env:
           SDCPP_RELEASE: ${{ needs.discover-release.outputs.release }}
           SDCPP_SHORT_RELEASE: ${{ needs.discover-release.outputs.short_release }}
-          SDCPP_UPDATE_BACKENDS: ${{ env.SDCPP_UPDATE_BACKENDS }}
+          SDCPP_UPDATE_BACKENDS: ${{ needs.discover-release.outputs.update_backends }}
         run: |
           python3 <<'PY'
           import json
@@ -418,7 +428,9 @@ jobs:
           release = os.environ["SDCPP_RELEASE"]
           short_release = os.environ["SDCPP_SHORT_RELEASE"]
           update_backends = os.environ["SDCPP_UPDATE_BACKENDS"]
+          updated = [item.strip() for item in update_backends.split(",") if item.strip()]
           labels = ["cpu", "vulkan", "rocm-stable"]
+          unvalidated = [backend for backend in updated if backend not in labels]
 
           rows = []
           prompt = None
@@ -454,6 +466,10 @@ jobs:
           lines = [
               f"This updates the existing `sd-cpp` backend pins to `{release}`.",
               "",
+              f"- Updated pins: `{', '.join(updated)}`",
+              f"- Validated backends: `{', '.join(labels)}`",
+              "- Updated but not validated here: " + (f"`{', '.join(unvalidated)}`" if unvalidated else "none"),
+              "",
               "Validated with the same prompt and seed on each available runner:",
               "",
               f"- Prompt: `{prompt or os.environ.get('SDCPP_TEST_PROMPT', '')}`",
@@ -477,7 +493,8 @@ jobs:
           lines += [
               "",
               "The workflow artifacts contain the generated PNGs plus per-image timings.",
-              "CUDA is pinned, but CUDA validation is disabled until a matching runner is available.",
+              "CUDA is only pinned when matching CUDA assets exist; CUDA validation remains disabled until a matching runner is available.",
+              "Metal is pinned when updated, but not validated in this workflow because there is no macOS matrix leg.",
               "`sd-cpp.rocm-nightly` is not touched.",
           ]
 
