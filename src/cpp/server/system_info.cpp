@@ -37,10 +37,6 @@
 #endif
 
 #ifdef __linux__
-#include <unistd.h>
-#endif
-
-#ifdef __linux__
 #include <dlfcn.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -86,35 +82,7 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
     "sm_90",   // Hopper       (H100, H200)
     "sm_100",  // Blackwell DC (B100, B200)
     "sm_120",  // Blackwell    (RTX 50)
-};
-
-// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
-// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
-const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA2 family (gfx103X)
-    {"gfx1030", "gfx103X"},
-    {"gfx1031", "gfx103X"},
-    {"gfx1032", "gfx103X"},
-    {"gfx1034", "gfx103X"},
-    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
-    // map to "" so get_rocm_arch skips them
-    {"gfx1033", ""},
-    {"gfx1035", ""},
-    {"gfx1036", ""},
-
-    // RDNA3 family (gfx110X)
-    {"gfx1100", "gfx110X"},
-    {"gfx1101", "gfx110X"},
-    {"gfx1102", "gfx110X"},
-    {"gfx1103", "gfx110X"},
-
-    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
-    {"gfx1150", "gfx1150"},  // Maps to exact binary name
-    {"gfx1151", "gfx1151"},  // Maps to exact binary name
-
-    // RDNA4 family (gfx120X)
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
+    "sm_121",  // Blackwell    (GB10 / Thor SoC)
 };
 
 #ifdef __linux__
@@ -463,7 +431,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"metal", {}},
     }},
     {"llamacpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -506,9 +474,9 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         }},
     }},
 
-    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Windows/Linux)
-    {"sd-cpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+    // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Linux)
+    {"sd-cpp", "cuda", {"linux"}, {
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
 
     // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
@@ -542,6 +510,19 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     {"vllm", "rocm", {"linux"}, {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
+
+    // Moonshine - CPU-only streaming STT. Platforms match the published
+    // moonshine-server-rocm bundles (moonshine-voice wheels): Windows x64,
+    // Linux x64/arm64, macOS arm64. No Intel macOS or Windows-arm64 wheel.
+    {"moonshine", "cpu", {"windows"}, {
+        {"cpu", {"x86_64"}},
+    }},
+    {"moonshine", "cpu", {"linux"}, {
+        {"cpu", {"x86_64", "arm64"}},
+    }},
+    {"moonshine", "cpu", {"macos"}, {
+        {"cpu", {"arm64"}},
+    }},
 };
 
 // ============================================================================
@@ -570,6 +551,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"sm_90",  "NVIDIA H100 / H200 (Hopper)"},
     {"sm_100", "NVIDIA B100 / B200 (Blackwell)"},
     {"sm_120", "GeForce RTX 50 series (Blackwell)"},
+    {"sm_121", "NVIDIA GB10 (Blackwell)"},
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
@@ -1771,7 +1753,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     // Quick guard: require at least one NVIDIA identifier substring
     static const std::vector<std::string> NVIDIA_IDS = {
         "nvidia", "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
-        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40",
+        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40", "gb10",
     };
     bool is_nvidia = false;
     for (const auto& id : NVIDIA_IDS) {
@@ -1792,6 +1774,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     // sm_100 is listed first as a belt-and-suspenders fallback (the early guard
     // above already returns before this table is reached for B100/B200).
     static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
+        {"sm_121", {"gb10"}},
         {"sm_100", {"b100", "b200"}},
         {"sm_120", {"blackwell", "rtx 50", "rtx50", "5090", "5080", "5070", "5060",
                     "rtx pro 6000", "rtx pro 5000", "rtx pro 4500", "rtx pro 4000",
@@ -1815,21 +1798,13 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
 }
 
 // Helper to identify ROCm architecture from GPU name.
-// Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
-// If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
     std::smatch gfx_match;
     if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
-        std::string arch = gfx_match[1].str();
-        auto it = ROCM_ARCH_MAPPING.find(arch);
-        if (it != ROCM_ARCH_MAPPING.end()) {
-            return it->second;
-        }
-
-        return arch;
+        return gfx_match[1].str();
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
@@ -1843,16 +1818,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
             int revision_int = std::stoi(device_lower.substr(4, 2));
             std::string revision = std::to_string(revision_int);
 
-            std::string arch = "gfx" + major + minor + revision;
-
-            // Apply architecture family mapping if available
-            // Otherwise return the detected arch for unsupported GPUs
-            auto it = ROCM_ARCH_MAPPING.find(arch);
-            if (it != ROCM_ARCH_MAPPING.end()) {
-                return it->second;
-            }
-
-            return arch;  // Return the detected arch even if unsupported
+            return "gfx" + major + minor + revision;
         }
     }
 
@@ -1861,35 +1827,23 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "";
     }
 
-    // STX Halo iGPUs (gfx1151 architecture)
-    // Radeon 8050S Graphics / Radeon 8060S Graphics
     if (device_lower.find("8050s") != std::string::npos ||
         device_lower.find("8060s") != std::string::npos ||
         device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
 
-    // STX Point iGPUs (gfx1150 architecture)
-    // Radeon 880M / 890M Graphics
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
 
-    // RDNA4 GPUs (gfx120X architecture)
-    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
-    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
     if (device_lower.find("r9700") != std::string::npos ||
         device_lower.find("9060") != std::string::npos ||
         device_lower.find("9070") != std::string::npos) {
         return "gfx120X";
     }
 
-    // RDNA3 GPUs (gfx110X architecture)
-    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
-    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
-    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
-    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
     if (device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
@@ -1897,10 +1851,6 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx110X";
     }
 
-    // RDNA2 GPUs (gfx103X architecture)
-    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
-    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
-    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
     if (device_lower.find("6800") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
         device_lower.find("6600") != std::string::npos ||
@@ -2257,10 +2207,8 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
         }
 
         bool has_other_arch = false;
-        int ordinal = 0;
         for (const auto& gpu : devices["nvidia_gpu"]) {
             if (!gpu.value("available", false)) {
-                ordinal++;
                 continue;
             }
 
@@ -2268,15 +2216,14 @@ std::string SystemInfo::get_cuda_visible_devices_for_arch(const std::string& arc
                 std::string uuid = gpu.value("uuid", "");
                 if (!uuid.empty()) {
                     devices_to_expose.push_back(uuid);
-                } else {
-                    // Fallback only for detection paths that lack UUIDs. This is less robust
-                    // than UUIDs because numeric CUDA ordinals can differ from nvidia-smi indices.
-                    devices_to_expose.push_back(std::to_string(ordinal));
                 }
+                // If UUID is missing we skip this GPU rather than falling back to a numeric
+                // ordinal — ordinals are unreliable on mixed-arch systems and can expose the
+                // wrong GPU, causing "no kernel image available" crashes like the RTX 5090 +
+                // RTX 4090 case. Returning "" (no restriction) is safer than a wrong ordinal.
             } else {
                 has_other_arch = true;
             }
-            ordinal++;
         }
 
         // No mixed architectures — no need to restrict CUDA_VISIBLE_DEVICES.
@@ -2422,13 +2369,22 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
         output, 10);
     if (rc != 0 || output.empty()) return result;
 #else
-    FILE* pipe = popen(
-        "nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total "
-        "--format=csv,noheader,nounits 2>/dev/null", "r");
-    if (!pipe) return result;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) output += buffer;
-    pclose(pipe);
+    static const char* smi_query =
+        " --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total"
+        " --format=csv,noheader,nounits 2>/dev/null";
+    for (const char* smi : {"nvidia-smi", "/usr/bin/nvidia-smi"}) {
+        std::string cmd = std::string(smi) + smi_query;
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) continue;
+        std::string candidate;
+        char buffer[512];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) candidate += buffer;
+        int rc = pclose(pipe);
+        if (rc == 0 && !candidate.empty()) {
+            output = candidate;
+            break;
+        }
+    }
     if (output.empty()) return result;
 #endif
 
@@ -2491,6 +2447,112 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
     }
     return result;
 }
+
+#ifdef __linux__
+// Query GPU info via NVML (libnvidia-ml.so.1) using dlopen so no link-time
+// dependency is required.  NVML communicates with the NVIDIA kernel module
+// through /dev/nvidiactl (allowed by the snap opengl interface) rather than
+// through /proc/driver/nvidia/, making it the correct fallback when nvidia-smi
+// fails due to AppArmor restrictions in snap strict confinement.
+static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
+    std::vector<NvidiaSmiGpuInfo> result;
+
+    void* handle = dlopen("libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
+    if (!handle)
+        handle = dlopen("/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
+    if (!handle)
+        return result;
+
+    // Minimal NVML ABI surface — only what we actually call.
+    using nvmlDevice_t = void*;
+    using nvmlReturn_t = int;
+    constexpr nvmlReturn_t NVML_SUCCESS = 0;
+    constexpr unsigned int NVML_DEVICE_NAME_BUFFER_SIZE = 96;
+    struct NvmlMemory { unsigned long long total, free, used; };
+
+    using fn_Init       = nvmlReturn_t (*)(void);
+    using fn_Shutdown   = nvmlReturn_t (*)(void);
+    using fn_GetCount   = nvmlReturn_t (*)(unsigned int*);
+    using fn_GetHandle  = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
+    using fn_GetName    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+    using fn_GetUUID    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+    using fn_GetCC      = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
+    using fn_GetMem     = nvmlReturn_t (*)(nvmlDevice_t, NvmlMemory*);
+    using fn_GetDriver  = nvmlReturn_t (*)(char*, unsigned int);
+
+    auto load = [&](const char* sym) { return dlsym(handle, sym); };
+
+    auto nvmlInit    = (fn_Init)load("nvmlInit_v2");
+    if (!nvmlInit)
+        nvmlInit = (fn_Init)load("nvmlInit");
+    auto nvmlShutdown = (fn_Shutdown)load("nvmlShutdown");
+    auto nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount_v2");
+    if (!nvmlGetCount)
+        nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount");
+    auto nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex_v2");
+    if (!nvmlGetHandle)
+        nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex");
+    auto nvmlGetName   = (fn_GetName)load("nvmlDeviceGetName");
+    auto nvmlGetUUID   = (fn_GetUUID)load("nvmlDeviceGetUUID");
+    auto nvmlGetCC     = (fn_GetCC)load("nvmlDeviceGetCudaComputeCapability");
+    auto nvmlGetMem    = (fn_GetMem)load("nvmlDeviceGetMemoryInfo");
+    auto nvmlGetDriver = (fn_GetDriver)load("nvmlSystemGetDriverVersion");
+
+    if (!nvmlInit || !nvmlShutdown || !nvmlGetCount || !nvmlGetHandle ||
+        !nvmlGetName) {
+        dlclose(handle);
+        return result;
+    }
+
+    if (nvmlInit() != NVML_SUCCESS) {
+        dlclose(handle);
+        return result;
+    }
+
+    char driver_buf[64] = {};
+    std::string driver_version;
+    if (nvmlGetDriver && nvmlGetDriver(driver_buf, sizeof(driver_buf)) == NVML_SUCCESS)
+        driver_version = driver_buf;
+
+    unsigned int count = 0;
+    if (nvmlGetCount(&count) == NVML_SUCCESS) {
+        for (unsigned int i = 0; i < count; i++) {
+            nvmlDevice_t dev = nullptr;
+            if (nvmlGetHandle(i, &dev) != NVML_SUCCESS) continue;
+
+            char name_buf[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
+            if (nvmlGetName(dev, name_buf, sizeof(name_buf)) != NVML_SUCCESS) continue;
+
+            NvidiaSmiGpuInfo info;
+            info.index          = static_cast<int>(i);
+            info.name           = name_buf;
+            info.driver_version = driver_version;
+
+            if (nvmlGetUUID) {
+                char uuid_buf[96] = {};
+                if (nvmlGetUUID(dev, uuid_buf, sizeof(uuid_buf)) == NVML_SUCCESS)
+                    info.uuid = uuid_buf;
+            }
+
+            int major = 0, minor = 0;
+            if (nvmlGetCC && nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
+                info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
+
+            if (nvmlGetMem) {
+                NvmlMemory mem{};
+                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS)
+                    info.vram_gb = static_cast<double>(mem.total) / (1024.0 * 1024.0 * 1024.0);
+            }
+
+            result.push_back(info);
+        }
+    }
+
+    nvmlShutdown();
+    dlclose(handle);
+    return result;
+}
+#endif
 
 // ============================================================================
 // Windows implementation
@@ -3072,16 +3134,41 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
         return gpus;
     }
 
-    // Secondary: /proc/driver/nvidia/gpus/*/information — readable whenever the
+    // Secondary: NVML via dlopen — libnvidia-ml.so.1 communicates with the NVIDIA
+    // kernel module through /dev/nvidiactl (allowed by the snap opengl interface)
+    // rather than /proc/driver/nvidia/, so it works under snap strict confinement.
+    // Returns full name, compute capability, and per-GPU VRAM — same quality as nvidia-smi.
+    {
+        auto nvml_gpus = query_nvidia_nvml();
+        if (!nvml_gpus.empty()) {
+            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; NVML library fallback succeeded" << std::endl;
+            for (const auto& nvml : nvml_gpus) {
+                GPUInfo gpu;
+                gpu.index              = nvml.index;
+                gpu.uuid               = nvml.uuid;
+                gpu.name               = nvml.name;
+                gpu.available          = true;
+                gpu.compute_capability = nvml.compute_cap;
+                gpu.driver_version     = nvml.driver_version.empty()
+                    ? get_nvidia_driver_version() : nvml.driver_version;
+                if (gpu.driver_version.empty()) gpu.driver_version = "Unknown";
+                gpu.vram_gb            = nvml.vram_gb;
+                gpus.push_back(gpu);
+            }
+            return gpus;
+        }
+    }
+
+    // Tertiary: /proc/driver/nvidia/gpus/*/information — readable whenever the
     // nvidia kernel module is loaded, even when the GPU is in Optimus power-save
-    // mode and nvidia-smi fails. Provides the full model name and GPU UUID, which
-    // is enough for identify_cuda_arch_from_name() to determine the sm_XX family.
-    // (No compute_capability here; family is resolved from the name.)
+    // mode and NVML/nvidia-smi fail. Provides the full model name and GPU UUID,
+    // which is enough for identify_cuda_arch_from_name() to determine the sm_XX
+    // family. (No compute_capability here; family is resolved from the name.)
     {
         fs::path gpus_dir = "/proc/driver/nvidia/gpus";
         std::error_code ec;
         if (fs::exists(gpus_dir, ec) && fs::is_directory(gpus_dir, ec)) {
-            LOG(WARNING, "SystemInfo") << "nvidia-smi detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
+            LOG(WARNING, "SystemInfo") << "nvidia-smi/NVML detection failed; falling back to /proc/driver/nvidia/gpus" << std::endl;
             std::string driver_version = get_nvidia_driver_version();
             // VRAM is intentionally left unset here: get_nvidia_vram() reads a
             // single memory.total value, which would be wrong if applied to
@@ -3110,6 +3197,47 @@ std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
                     gpu.driver_version = driver_version;
                     gpus.push_back(gpu);
                 }
+            }
+            if (!gpus.empty()) return gpus;
+        }
+    }
+
+    // Fallback: /sys/class/drm — readable via hardware-observe; works in snap strict
+    // confinement where /proc/driver/nvidia/ access is restricted.  Provides GPU
+    // presence and device IDs but not human-readable names, so name defaults to a
+    // placeholder that downstream callers can refine.
+    {
+        fs::path drm_path = "/sys/class/drm";
+        std::error_code ec;
+        if (fs::exists(drm_path, ec) && fs::is_directory(drm_path, ec)) {
+            std::string driver_version = get_nvidia_driver_version();
+            for (const auto& entry : fs::directory_iterator(drm_path, ec)) {
+                std::string card_name = entry.path().filename().string();
+                // Only top-level card* entries; skip connectors (contain '-').
+                if (card_name.rfind("card", 0) != 0 || card_name.find('-') != std::string::npos)
+                    continue;
+
+                fs::path vendor_path = entry.path() / "device" / "vendor";
+                std::ifstream vendor_file(vendor_path);
+                if (!vendor_file.is_open()) continue;
+                std::string vendor_str;
+                std::getline(vendor_file, vendor_str);
+                if (vendor_str != "0x10de") continue;  // NVIDIA PCI vendor ID
+
+                std::string device_id;
+                fs::path device_path = entry.path() / "device" / "device";
+                std::ifstream device_file(device_path);
+                if (device_file.is_open()) std::getline(device_file, device_id);
+
+                GPUInfo gpu;
+                gpu.available      = true;
+                gpu.driver_version = driver_version.empty() ? "Unknown" : driver_version;
+                gpu.name           = device_id.empty()
+                    ? "NVIDIA GPU"
+                    : "NVIDIA GPU [" + device_id + "]";
+                // VRAM intentionally left unset: get_nvidia_vram() shells out to
+                // nvidia-smi, which we already know is unavailable at this point.
+                gpus.push_back(gpu);
             }
             if (!gpus.empty()) return gpus;
         }
@@ -3382,6 +3510,18 @@ std::string LinuxSystemInfo::get_nvidia_driver_version() {
             }
         }
         pclose(pipe);
+    }
+
+    // Fallback: /sys/module/nvidia/version — accessible via hardware-observe interface
+    // and does not require /proc/driver/nvidia/ access.
+    {
+        std::ifstream sysfile("/sys/module/nvidia/version");
+        if (sysfile.is_open()) {
+            std::string version;
+            if (std::getline(sysfile, version) && !version.empty()) {
+                return version;
+            }
+        }
     }
 
     // Fallback: Try /proc/driver/nvidia/version

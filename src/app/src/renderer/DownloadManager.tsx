@@ -184,6 +184,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
   };
 
+  const isFinalizingDownload = (download: DownloadItem): boolean => {
+    return download.status === 'downloading' &&
+      !download.bytesTotalIsLowerBound &&
+      download.bytesTotal > 0 &&
+      download.bytesDownloaded >= download.bytesTotal;
+  };
+
   const isServerDownloadId = (downloadId?: string): boolean =>
     downloadId?.startsWith('model:') === true || downloadId?.startsWith('backend:') === true;
 
@@ -578,8 +585,9 @@ Partial files may remain on disk.`);
             <div className="download-list">
               {downloads.map(download => {
                 const isExpanded = expandedDownloads.has(download.id);
+                const isFinalizing = isFinalizingDownload(download);
                 const speed = calculateSpeed(download);
-                const eta = calculateETA(download);
+                const eta = isFinalizing ? 'finalizing...' : calculateETA(download);
 
                 return (
                   <div
@@ -649,7 +657,9 @@ Partial files may remain on disk.`);
                       <div className="download-item-actions">
                         {download.status === 'downloading' && (
                           <>
-                            <span className="download-speed">{formatSpeed(speed)}</span>
+                            {!isFinalizing && (
+                              <span className="download-speed">{formatSpeed(speed)}</span>
+                            )}
                             <span className="download-eta">{eta}</span>
                             <button
                               className="download-action-btn pause-btn"
@@ -807,10 +817,12 @@ Partial files may remain on disk.`);
                               <span className="download-detail-label">Total Size:</span>
                               <span className="download-detail-value">{formatTotalBytes(download)}</span>
                             </div>
-                            <div className="download-detail-row">
-                              <span className="download-detail-label">Speed:</span>
-                              <span className="download-detail-value">{formatSpeed(speed)}</span>
-                            </div>
+                            {!isFinalizing && (
+                              <div className="download-detail-row">
+                                <span className="download-detail-label">Speed:</span>
+                                <span className="download-detail-value">{formatSpeed(speed)}</span>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>

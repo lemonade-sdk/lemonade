@@ -61,5 +61,10 @@
   },
   "kokoro": {
     "cpu_bin": "builtin"
+  },
+  "moonshine": {
+    "args": "",
+    "cpu_args": "",
+    "cpu_bin": "builtin"
   }
 }

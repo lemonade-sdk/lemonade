@@ -26,11 +26,16 @@
 #include <limits>
 #include <lemon/utils/aixlog.hpp>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
 #ifdef _WIN32
 #include <windows.h>
+#include <Shlobj.h>
 // MSVC's std::filesystem refuses to traverse reparse points it considers
 // "untrusted" when the process token lacks symlink privileges (e.g., when
 // launched from an MSI installer custom action). The Win32 API has no such
@@ -46,9 +51,55 @@ static bool safe_is_directory(const fs::path& p) {
 // fs::recursive_directory_iterator also throws on these reparse points.
 // skip_permission_denied tells it to skip inaccessible entries instead of throwing.
 static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
+// MSVC's create_directories also fails on symlinks crossing volume boundaries
+// ("untrusted mount point"). SHCreateDirectoryExW does not have this restriction.
+// Throws on failure to preserve the fail-fast semantics of fs::create_directories.
+static void ensure_create_directories(const fs::path& p) {
+    if (p.empty()) return;
+    if (safe_is_directory(p)) return;
+    if (safe_exists(p)) {
+        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
+                                 path_to_utf8(p) + "'");
+    }
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    if (!ec) return;
+    // Fall back to Win32 API which handles cross-volume symlinks gracefully
+    std::wstring wpath = p.wstring();
+    DWORD result = SHCreateDirectoryExW(NULL, wpath.c_str(), NULL);
+    if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
+        char error_msg[256];
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            result,
+            0,
+            error_msg,
+            sizeof(error_msg),
+            nullptr
+        );
+        std::string desc = error_msg[0] ? error_msg : "unknown error";
+        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                 "': " + desc);
+    }
+}
 #else
 static bool safe_exists(const fs::path& p) { return fs::exists(p); }
 static bool safe_is_directory(const fs::path& p) { return fs::is_directory(p); }
+static void ensure_create_directories(const fs::path& p) {
+    if (p.empty()) return;
+    if (safe_is_directory(p)) return;
+    if (safe_exists(p)) {
+        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
+                                 path_to_utf8(p) + "'");
+    }
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                 "': " + ec.message());
+    }
+}
 static constexpr auto safe_dir_options = fs::directory_options::none;
 #endif
 
@@ -418,7 +469,7 @@ static void write_hf_ref_main(const fs::path& model_cache_path, const std::strin
     }
 
     fs::path refs_dir = model_cache_path / "refs";
-    fs::create_directories(refs_dir);
+    ensure_create_directories(refs_dir);
     std::ofstream refs_file(refs_dir / "main");
     if (refs_file.is_open()) {
         refs_file << commit_hash;
@@ -923,7 +974,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
             recipe_options_ = std::move(migrated_options);
             try {
                 fs::path dir = fs::path(get_recipe_options_file()).parent_path();
-                fs::create_directories(dir);
+                ensure_create_directories(dir);
                 JsonUtils::save_to_file(recipe_options_, get_recipe_options_file());
                 LOG(INFO, "ModelManager") << "migrated " << migrated
                           << " legacy recipe_options keys to builtin. prefix" << std::endl;
@@ -1556,7 +1607,7 @@ static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
     fs::path target = path_from_utf8(save_path);
     fs::path dir = target.parent_path();
-    fs::create_directories(dir);
+    ensure_create_directories(dir);
 
     LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
 
@@ -1779,7 +1830,9 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
+        info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1819,6 +1872,7 @@ void ModelManager::build_cache() {
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -2170,7 +2224,6 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 }
 
 
-
 double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
     // Get the maximum POSSIBLE accessible memory of the device in question,
     // taking into account the respective memory allocation behavior.
@@ -2232,7 +2285,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (enable_dgpu_gtt)
     {
-      LOG(INFO, "ModelManager") << "LEMONADE_ENABLE_DGPU_GTT has been set to true." << std::endl
+      LOG(INFO, "ModelManager") << "enable_dgpu_gtt has been set to true." << std::endl
                 << "     Models are being filtered assuming GTT memory." << std::endl
                 << "     Using GTT on a dGPU will have a significant performance impact." << std::endl;
     }
@@ -2435,6 +2488,10 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("image");
     }
     if (recipe == "whispercpp") {
+        labels.insert("transcription");
+        labels.insert("realtime-transcription");
+    }
+    if (recipe == "moonshine") {
         labels.insert("transcription");
         labels.insert("realtime-transcription");
     }
@@ -2664,7 +2721,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    // Use recipe-specific download paths
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
@@ -3245,7 +3302,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         std::string output_path = file_download_path + "/" + filename;
 
         // Create parent directory for file (handles folders in filenames)
-        fs::create_directories(fs::path(output_path).parent_path());
+        ensure_create_directories(fs::path(output_path).parent_path());
 
         LOG(INFO, "ModelManager") << "Downloading: " << filename << "..." << std::endl;
 
@@ -3482,10 +3539,10 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     fs::path hf_cache_path = path_from_utf8(hf_cache);
 
     // Create cache directory structure
-    fs::create_directories(hf_cache_path);
+    ensure_create_directories(hf_cache_path);
 
     fs::path model_cache_path = hf_cache_path / repo_id_to_cache_dir_name(main_repo_id);
-    fs::create_directories(model_cache_path);
+    ensure_create_directories(model_cache_path);
 
     std::map<std::string, fs::path> repo_cache_paths;
     std::map<std::string, std::string> repo_previous_refs;
@@ -3536,7 +3593,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Create snapshot directory using commit hash
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
-    fs::create_directories(snapshot_path);
+    ensure_create_directories(snapshot_path);
 
     // refs/main is advanced only after the selected files are successfully
     // downloaded, or an unchanged previous snapshot is selected. This keeps Lemonade on the previous active
@@ -3562,6 +3619,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
+        bool is_moonshine = info.recipe == "moonshine";
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3571,6 +3629,23 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             } else {
                 throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
+        } else if (is_moonshine) {
+            // Moonshine variant is a directory path (e.g., "medium-streaming-en/quantized")
+            // Download all files under that directory
+            std::string folder_prefix = main_variant;
+            if (!folder_prefix.empty() && folder_prefix.back() != '/') {
+                folder_prefix += "/";
+            }
+            for (const auto& file : repo_files) {
+                if (starts_with_ignore_case(file, folder_prefix)) {
+                    files_to_download[main_repo_id].push_back(file);
+                }
+            }
+            if (files_to_download[main_repo_id].empty()) {
+                throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
+            }
+            LOG(INFO, "ModelManager") << "Moonshine: downloading " << files_to_download[main_repo_id].size()
+                                      << " files from " << main_variant << std::endl;
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
@@ -3661,7 +3736,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         repo_cache_paths[repo_id] = other_cache_path;
         repo_previous_refs[repo_id] = read_hf_ref_main(other_cache_path);
         fs::path other_snapshot = other_cache_path / "snapshots" / other_hash;
-        fs::create_directories(other_snapshot);
+        ensure_create_directories(other_snapshot);
 
         // refs/main for auxiliary repos is advanced only after successful
         // download, matching the main repo behavior.
@@ -4517,6 +4592,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         if ((*model_json)["size"].is_number()) {
             info.size = (*model_json)["size"].get<double>();
         }
+    }
+
+    // Parse moonshine_arch
+    if (model_json->contains("moonshine_arch") && (*model_json)["moonshine_arch"].is_number_integer()) {
+        info.moonshine_arch = (*model_json)["moonshine_arch"].get<int>();
     }
 
     return info;

@@ -125,8 +125,9 @@ def get_hf_cache_dir_candidates():
     return candidates
 
 
-# Default port for lemonade server
-PORT = 13305
+# Default port for lemonade server (override with LEMONADE_TEST_PORT to test
+# against a non-default port, e.g. when a production lemond owns 13305)
+PORT = int(os.environ.get("LEMONADE_TEST_PORT", "13305"))
 
 # =============================================================================
 # TIMEOUT CONSTANTS (in seconds)

@@ -1313,6 +1313,40 @@
         ],
         "size": 1.62
     },
+    "Moonshine-Tiny-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
+        "recipe": "moonshine",
+        "moonshine_arch": 2,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription"
+        ],
+        "size": 0.034
+    },
+    "Moonshine-Small-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
+        "recipe": "moonshine",
+        "moonshine_arch": 4,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription"
+        ],
+        "size": 0.123
+    },
+    "Moonshine-Medium-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
+        "recipe": "moonshine",
+        "moonshine_arch": 5,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription",
+            "hot"
+        ],
+        "size": 0.245
+    },
     "SD-Turbo": {
         "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
         "recipe": "sd-cpp",

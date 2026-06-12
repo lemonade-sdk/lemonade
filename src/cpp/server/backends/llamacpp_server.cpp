@@ -201,7 +201,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
+#else
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#endif
 #else
         throw std::runtime_error("CUDA llamacpp is currently supported on Windows and Linux only");
 #endif
