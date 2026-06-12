@@ -84,35 +84,6 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
     "sm_120",  // Blackwell    (RTX 50)
 };
 
-// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
-// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
-const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA2 family (gfx103X)
-    {"gfx1030", "gfx103X"},
-    {"gfx1031", "gfx103X"},
-    {"gfx1032", "gfx103X"},
-    {"gfx1034", "gfx103X"},
-    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
-    // map to "" so get_rocm_arch skips them
-    {"gfx1033", ""},
-    {"gfx1035", ""},
-    {"gfx1036", ""},
-
-    // RDNA3 family (gfx110X)
-    {"gfx1100", "gfx110X"},
-    {"gfx1101", "gfx110X"},
-    {"gfx1102", "gfx110X"},
-    {"gfx1103", "gfx110X"},
-
-    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
-    {"gfx1150", "gfx1150"},  // Maps to exact binary name
-    {"gfx1151", "gfx1151"},  // Maps to exact binary name
-
-    // RDNA4 family (gfx120X)
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
-};
-
 #ifdef __linux__
 namespace {
 
@@ -1824,21 +1795,13 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
 }
 
 // Helper to identify ROCm architecture from GPU name.
-// Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
-// If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
     std::smatch gfx_match;
     if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
-        std::string arch = gfx_match[1].str();
-        auto it = ROCM_ARCH_MAPPING.find(arch);
-        if (it != ROCM_ARCH_MAPPING.end()) {
-            return it->second;
-        }
-
-        return arch;
+        return gfx_match[1].str();
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
@@ -1852,16 +1815,7 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
             int revision_int = std::stoi(device_lower.substr(4, 2));
             std::string revision = std::to_string(revision_int);
 
-            std::string arch = "gfx" + major + minor + revision;
-
-            // Apply architecture family mapping if available
-            // Otherwise return the detected arch for unsupported GPUs
-            auto it = ROCM_ARCH_MAPPING.find(arch);
-            if (it != ROCM_ARCH_MAPPING.end()) {
-                return it->second;
-            }
-
-            return arch;  // Return the detected arch even if unsupported
+            return "gfx" + major + minor + revision;
         }
     }
 
@@ -1870,35 +1824,23 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "";
     }
 
-    // STX Halo iGPUs (gfx1151 architecture)
-    // Radeon 8050S Graphics / Radeon 8060S Graphics
     if (device_lower.find("8050s") != std::string::npos ||
         device_lower.find("8060s") != std::string::npos ||
         device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
 
-    // STX Point iGPUs (gfx1150 architecture)
-    // Radeon 880M / 890M Graphics
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
 
-    // RDNA4 GPUs (gfx120X architecture)
-    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
-    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
     if (device_lower.find("r9700") != std::string::npos ||
         device_lower.find("9060") != std::string::npos ||
         device_lower.find("9070") != std::string::npos) {
         return "gfx120X";
     }
 
-    // RDNA3 GPUs (gfx110X architecture)
-    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
-    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
-    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
-    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
     if (device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
@@ -1906,10 +1848,6 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx110X";
     }
 
-    // RDNA2 GPUs (gfx103X architecture)
-    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
-    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
-    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
     if (device_lower.find("6800") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
         device_lower.find("6600") != std::string::npos ||
