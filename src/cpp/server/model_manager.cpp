@@ -35,6 +35,7 @@ using namespace lemon::utils;
 
 #ifdef _WIN32
 #include <windows.h>
+#include <Shlobj.h>
 // MSVC's std::filesystem refuses to traverse reparse points it considers
 // "untrusted" when the process token lacks symlink privileges (e.g., when
 // launched from an MSI installer custom action). The Win32 API has no such
@@ -50,9 +51,55 @@ static bool safe_is_directory(const fs::path& p) {
 // fs::recursive_directory_iterator also throws on these reparse points.
 // skip_permission_denied tells it to skip inaccessible entries instead of throwing.
 static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
+// MSVC's create_directories also fails on symlinks crossing volume boundaries
+// ("untrusted mount point"). SHCreateDirectoryExW does not have this restriction.
+// Throws on failure to preserve the fail-fast semantics of fs::create_directories.
+static void ensure_create_directories(const fs::path& p) {
+    if (p.empty()) return;
+    if (safe_is_directory(p)) return;
+    if (safe_exists(p)) {
+        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
+                                 path_to_utf8(p) + "'");
+    }
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    if (!ec) return;
+    // Fall back to Win32 API which handles cross-volume symlinks gracefully
+    std::wstring wpath = p.wstring();
+    DWORD result = SHCreateDirectoryExW(NULL, wpath.c_str(), NULL);
+    if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
+        char error_msg[256];
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            result,
+            0,
+            error_msg,
+            sizeof(error_msg),
+            nullptr
+        );
+        std::string desc = error_msg[0] ? error_msg : "unknown error";
+        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                 "': " + desc);
+    }
+}
 #else
 static bool safe_exists(const fs::path& p) { return fs::exists(p); }
 static bool safe_is_directory(const fs::path& p) { return fs::is_directory(p); }
+static void ensure_create_directories(const fs::path& p) {
+    if (p.empty()) return;
+    if (safe_is_directory(p)) return;
+    if (safe_exists(p)) {
+        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
+                                 path_to_utf8(p) + "'");
+    }
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                 "': " + ec.message());
+    }
+}
 static constexpr auto safe_dir_options = fs::directory_options::none;
 #endif
 
@@ -422,7 +469,7 @@ static void write_hf_ref_main(const fs::path& model_cache_path, const std::strin
     }
 
     fs::path refs_dir = model_cache_path / "refs";
-    fs::create_directories(refs_dir);
+    ensure_create_directories(refs_dir);
     std::ofstream refs_file(refs_dir / "main");
     if (refs_file.is_open()) {
         refs_file << commit_hash;
@@ -927,7 +974,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
             recipe_options_ = std::move(migrated_options);
             try {
                 fs::path dir = fs::path(get_recipe_options_file()).parent_path();
-                fs::create_directories(dir);
+                ensure_create_directories(dir);
                 JsonUtils::save_to_file(recipe_options_, get_recipe_options_file());
                 LOG(INFO, "ModelManager") << "migrated " << migrated
                           << " legacy recipe_options keys to builtin. prefix" << std::endl;
@@ -1560,7 +1607,7 @@ static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
     fs::path target = path_from_utf8(save_path);
     fs::path dir = target.parent_path();
-    fs::create_directories(dir);
+    ensure_create_directories(dir);
 
     LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
 
@@ -3255,7 +3302,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         std::string output_path = file_download_path + "/" + filename;
 
         // Create parent directory for file (handles folders in filenames)
-        fs::create_directories(fs::path(output_path).parent_path());
+        ensure_create_directories(fs::path(output_path).parent_path());
 
         LOG(INFO, "ModelManager") << "Downloading: " << filename << "..." << std::endl;
 
@@ -3492,10 +3539,10 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     fs::path hf_cache_path = path_from_utf8(hf_cache);
 
     // Create cache directory structure
-    fs::create_directories(hf_cache_path);
+    ensure_create_directories(hf_cache_path);
 
     fs::path model_cache_path = hf_cache_path / repo_id_to_cache_dir_name(main_repo_id);
-    fs::create_directories(model_cache_path);
+    ensure_create_directories(model_cache_path);
 
     std::map<std::string, fs::path> repo_cache_paths;
     std::map<std::string, std::string> repo_previous_refs;
@@ -3546,7 +3593,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Create snapshot directory using commit hash
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
-    fs::create_directories(snapshot_path);
+    ensure_create_directories(snapshot_path);
 
     // refs/main is advanced only after the selected files are successfully
     // downloaded, or an unchanged previous snapshot is selected. This keeps Lemonade on the previous active
@@ -3689,7 +3736,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         repo_cache_paths[repo_id] = other_cache_path;
         repo_previous_refs[repo_id] = read_hf_ref_main(other_cache_path);
         fs::path other_snapshot = other_cache_path / "snapshots" / other_hash;
-        fs::create_directories(other_snapshot);
+        ensure_create_directories(other_snapshot);
 
         // refs/main for auxiliary repos is advanced only after successful
         // download, matching the main repo behavior.

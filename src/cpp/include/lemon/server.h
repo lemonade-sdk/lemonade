@@ -22,8 +22,12 @@
 #include "upgradable_http_server.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
+#include "lemon/system_metrics_platform.h"
 
 namespace lemon {
+
+// Forward declaration
+class SystemMetricsPlatform;
 
 class Server {
 public:
@@ -249,6 +253,9 @@ private:
     CpuStats last_cpu_stats_;
     std::mutex cpu_stats_mutex_;
 #endif
+
+    // Platform-specific system metrics
+    std::unique_ptr<SystemMetricsPlatform> metrics_platform_;
 };
 
 } // namespace lemon
