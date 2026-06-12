@@ -4,7 +4,7 @@
     "vulkan": "b9585",
     "rocm-stable": "b9586",
     "rocm-nightly": "b1292",
-    "cuda": "b9586",
+    "cuda": "b9602",
     "metal": "b9585",
     "cpu": "b9585"
   },
@@ -19,7 +19,7 @@
     "cpu": "master-672-1f9ee88",
     "rocm-stable": "master-672-1f9ee88",
     "vulkan": "master-672-1f9ee88",
-    "cuda": "master-672-b638fe9",
+    "cuda": "master-685-db48014",
     "metal": "master-672-1f9ee88"
   },
   "therock": {
