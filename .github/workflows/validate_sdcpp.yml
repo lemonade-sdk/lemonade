@@ -158,15 +158,17 @@ jobs:
 
           missing = []
           for backend, patterns in checks.items():
-              if not any(re.match(pattern, asset) for pattern in patterns for asset in assets):
-                  missing.append(f"{backend}: {' OR '.join(patterns)}")
-
+              for pattern in patterns:
+                  if not any(re.match(pattern, asset) for asset in assets):
+                      missing.append(f"{backend}: {pattern}")
           cuda_patterns = [
               rf'^sd-{re.escape(short)}-windows-cuda-sm_[0-9]+-x64\.zip$',
               rf'^sd-{re.escape(short)}-ubuntu-cuda-sm_[0-9]+-x64\.tar\.xz$',
           ]
-          if cuda_assets and not any(re.match(pattern, asset) for pattern in cuda_patterns for asset in cuda_assets):
-              missing.append(f"cuda: {' OR '.join(cuda_patterns)}")
+          if cuda_assets:
+              for pattern in cuda_patterns:
+                  if not any(re.match(pattern, asset) for asset in cuda_assets):
+                      missing.append(f"cuda: {pattern}")
 
           if missing:
               print('Missing expected release assets:', file=sys.stderr)
