@@ -1,0 +1,296 @@
+/* Backend Manager Component */
+.backend-manager {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    padding: 10px 12px 12px;
+    container-type: inline-size;
+    background: var(--backend-manager-surface);
+}
+
+.backend-manager-header {
+    margin-bottom: 8px;
+    padding: 2px 2px 7px;
+    border-bottom: 1px solid var(--border-alpha-05);
+}
+
+.backend-manager-header-top {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.backend-manager-back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--border-alpha-1);
+    background: var(--bg-alpha-04);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.backend-manager-back-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-alpha-1);
+    border-color: var(--border-alpha-2);
+}
+
+.backend-manager-header h3 {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+
+.backend-manager-header p {
+    font-size: 0.73rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.backend-manager-content {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+    grid-auto-rows: min-content;
+}
+
+.backend-manager-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--text-quaternary);
+    font-size: 0.85rem;
+}
+
+.backend-recipe-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid var(--border-alpha-05);
+    border-radius: 9px;
+    background: var(--bg-alpha-01);
+    height: 100%;
+}
+
+@container (max-width: 500px) {
+    .backend-manager-content {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .backend-recipe-section {
+        height: auto;
+    }
+}
+
+.backend-recipe-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 2px 0 3px;
+    border-bottom: 1px solid var(--border-alpha-05);
+}
+
+.backend-recipe-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.backend-recipe-desc {
+    font-size: 0.67rem;
+    color: var(--color-7);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.backend-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.backend-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 8px;
+    background: var(--bg-alpha-01);
+    border: 1px solid var(--border-alpha-05);
+    border-radius: 7px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.backend-card:hover {
+    background: var(--bg-alpha-03);
+    border-color: var(--border-alpha-08);
+}
+
+.backend-card.installed {
+    border-color: var(--border-alpha-08);
+}
+
+.backend-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+}
+
+.backend-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.backend-card-name {
+    font-weight: 600;
+    color: var(--text-tertiary);
+}
+
+.backend-card-separator {
+    color: var(--text-secondary);
+    font-size: 0.6rem;
+}
+
+.backend-status-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.backend-status-dot.installed {
+    background: var(--btn-bg-primary);
+}
+
+.backend-status-dot.not-installed {
+    background: var(--color-4);
+}
+
+.backend-card-desc {
+    display: none;
+}
+
+.backend-version {
+    color: var(--text-secondary);
+    font-size: 0.6rem;
+    line-height: 1.2;
+}
+
+.backend-version-link {
+    color: var(--text-link);
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 0.6rem;
+    line-height: 1.2;
+    padding: 0;
+    border: none;
+    background: transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+}
+
+.backend-version-link:hover {
+    color: var(--text-link-hover);
+    text-decoration: none;
+}
+
+.backend-size {
+    color: var(--text-secondary);
+    font-size: 0.6rem;
+    line-height: 1.2;
+}
+
+.backend-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+}
+
+.backend-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-9);
+}
+
+.backend-action-btn:hover {
+    background: var(--bg-alpha-07);
+    color: var(--text-primary);
+    border-color: var(--border-alpha-1);
+}
+
+.backend-action-btn.install {
+    color: #6ba3d6;
+}
+
+.backend-action-btn.install:hover {
+    background: rgba(94, 147, 192, 0.16);
+    color: #8bc0ed;
+}
+
+.backend-action-btn.uninstall:hover {
+    background: rgba(244, 67, 54, 0.12);
+    color: #f44336;
+}
+
+.backend-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.backend-install-spinner {
+    width: 10px;
+    height: 10px;
+    border: 2px solid rgba(107, 163, 214, 0.3);
+    border-top-color: #6ba3d6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.image-timing {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}

@@ -1,0 +1,127 @@
+/* Syntax Highlighting for Code Blocks */
+.chat-message .hljs,
+.markdown-content .hljs {
+    display: block;
+    overflow-x: auto;
+    background: transparent;
+    color: var(--text-code);
+}
+
+.chat-message .hljs-comment,
+.chat-message .hljs-quote,
+.markdown-content .hljs-comment,
+.markdown-content .hljs-quote {
+    color: var(--markdown-hljs-quote);
+    font-style: italic;
+}
+
+.chat-message .hljs-keyword,
+.chat-message .hljs-selector-tag,
+.chat-message .hljs-literal,
+.chat-message .hljs-type,
+.markdown-content .hljs-keyword,
+.markdown-content .hljs-selector-tag,
+.markdown-content .hljs-literal,
+.markdown-content .hljs-type {
+    color: var(--markdown-hljs-type);
+}
+
+.chat-message .hljs-number,
+.chat-message .hljs-selector-id,
+.markdown-content .hljs-number,
+.markdown-content .hljs-selector-id {
+    color: var(--markdown-hljs-selector);
+}
+
+.chat-message .hljs-string,
+.chat-message .hljs-selector-attr,
+.chat-message .hljs-selector-pseudo,
+.chat-message .hljs-template-tag,
+.chat-message .hljs-template-variable,
+.markdown-content .hljs-string,
+.markdown-content .hljs-selector-attr,
+.markdown-content .hljs-selector-pseudo,
+.markdown-content .hljs-template-tag,
+.markdown-content .hljs-template-variable {
+    color: var(--markdown-hljs-template-variable);
+}
+
+.chat-message .hljs-attribute,
+.chat-message .hljs-variable,
+.markdown-content .hljs-attribute,
+.markdown-content .hljs-variable {
+    color: var(--markdown-hljs-variable);
+}
+
+.chat-message .hljs-built_in,
+.chat-message .hljs-class .hljs-title,
+.chat-message .hljs-title.class_,
+.chat-message .hljs-title.function_,
+.markdown-content .hljs-built_in,
+.markdown-content .hljs-class .hljs-title,
+.markdown-content .hljs-title.class_,
+.markdown-content .hljs-title.function_ {
+    color: var(--markdown-hljs-title);
+}
+
+.chat-message .hljs-attr,
+.chat-message .hljs-property,
+.markdown-content .hljs-attr,
+.markdown-content .hljs-property {
+    color: var(--markdown-hljs-property);
+}
+
+.chat-message .hljs-regexp,
+.chat-message .hljs-link,
+.markdown-content .hljs-regexp,
+.markdown-content .hljs-link {
+    color: var(--markdown-hljs-link);
+}
+
+.chat-message .hljs-symbol,
+.chat-message .hljs-bullet,
+.markdown-content .hljs-symbol,
+.markdown-content .hljs-bullet {
+    color: var(--markdown-hljs-bullet);
+}
+
+.chat-message .hljs-meta,
+.markdown-content .hljs-meta {
+    color: var(--markdown-hljs-meta);
+}
+
+.chat-message .hljs-tag,
+.markdown-content .hljs-tag {
+    color: var(--markdown-hljs-tag);
+}
+
+.chat-message .hljs-name,
+.markdown-content .hljs-name {
+    color: var(--markdown-hljs-name);
+}
+
+.chat-message .hljs-section,
+.markdown-content .hljs-section {
+    color: var(--markdown-hljs-section);
+}
+
+.chat-message .hljs-emphasis,
+.markdown-content .hljs-emphasis {
+    font-style: italic;
+}
+
+.chat-message .hljs-strong,
+.markdown-content .hljs-strong {
+    font-weight: bold;
+}
+
+.chat-message .hljs-deletion,
+.markdown-content .hljs-deletion {
+    background: var(--markdown-hljs-deletion)
+}
+
+.chat-message .hljs-addition,
+.markdown-content .hljs-addition {
+    background: var(--markdown-hljs-addition);
+}
+

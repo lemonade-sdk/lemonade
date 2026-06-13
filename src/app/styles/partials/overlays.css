@@ -1,0 +1,321 @@
+.about-popover {
+    position: fixed;
+    top: 48px;
+    right: 20px;
+    width: 320px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-25);
+    border-radius: 14px;
+    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.8);
+    padding: 18px 20px 20px;
+    z-index: 1200;
+    animation: aboutPopIn 0.18s ease;
+    -webkit-app-region: no-drag;
+}
+
+@keyframes aboutPopIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.about-popover-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.about-popover-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.about-popover-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.about-popover-close {
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.about-popover-close:hover {
+    background: var(--bg-alpha-08);
+    color: var(--text-primary);
+}
+
+.about-popover-body {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.about-popover-version {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-alpha-03);
+    border: 1px solid var(--border-secondary);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.about-popover-version span:first-child {
+    letter-spacing: 0.08em;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.about-popover-info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--bg-alpha-03);
+    border: 1px solid var(--border-secondary);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.75rem;
+}
+
+.about-popover-info-label {
+    letter-spacing: 0.08em;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.about-popover-info-value {
+    color: var(--text-primary);
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10001;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+    cursor: pointer;
+    animation: toastSlideIn 0.2s ease;
+    max-width: 360px;
+    min-width: 280px;
+}
+
+.toast-exit {
+    animation: toastSlideOut 0.2s ease forwards;
+}
+
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes toastSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+.toast-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.toast-message {
+    flex: 1;
+    line-height: 1.4;
+}
+
+.toast-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-quaternary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.toast-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-alpha-1)
+}
+
+.toast-error {
+    border-color: var(--toast-error-border);
+    background: var(--toast-error-surface);
+}
+
+.toast-error .toast-icon {
+    color: var(--toast-error-text);
+}
+
+.toast-success {
+    border-color: var(--toast-success-border);
+    background: var(--toast-success-surface);
+}
+
+.toast-success .toast-icon {
+    color: var(--toast-success-text);
+}
+
+.toast-warning {
+    border-color: var(--toast-warning-border);
+    background: var(--toast-warning-surface);
+}
+
+.toast-warning .toast-icon {
+    color: var(--toast-warning-text);
+}
+
+.toast-info {
+    border-color: var(--toast-info-border);
+    background: var(--toast-info-surface);
+}
+
+.toast-info .toast-icon {
+    color: var(--toast-info-text);
+}
+
+.confirm-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-secondary-alpha-7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002;
+    animation: fadeIn 0.15s ease;
+}
+
+.confirm-dialog {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    animation: slideUp 0.15s ease;
+}
+
+.confirm-dialog-title {
+    margin: 0 0 12px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.confirm-dialog-message {
+    margin: 0 0 20px 0;
+    font-size: 0.9rem;
+    color: var(--text-aaa);
+    line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.confirm-dialog-btn {
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.confirm-dialog-btn-cancel {
+    background: transparent;
+    border: 1px solid var(--border-primary);
+    color: var(--text-secondary);
+}
+
+.confirm-dialog-btn-cancel:hover {
+    background: var(--color-25);
+    border-color: var(--border-4);
+    color: var(--text-primary);
+}
+
+.confirm-dialog-btn-confirm {
+    background: var(--btn-bg-primary);
+    border: none;
+    color: var(--btn-color);
+}
+
+.confirm-dialog-btn-confirm:hover {
+    background: var(--bg-hover);
+}
+
+.confirm-dialog-btn-danger {
+    background: var(--error-color);
+    border: none;
+    color: var(--text-primary);
+}
+
+.confirm-dialog-btn-danger:hover {
+    background: var(--error-hover);
+}
+

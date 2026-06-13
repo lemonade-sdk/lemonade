@@ -1,4 +1,46 @@
+/* =====================================================================
+   FOUNDATION — must come first. These define CSS custom properties and
+   global element defaults (resets, user-select, scrollbars) that every
+   component layer below depends on. Do not reorder this group.
+   ===================================================================== */
 @import url(variables-dark.css);
 @import url(variables-light.css);
-@import url(styles.css);
+@import url(partials/base.css);
+
+/* =====================================================================
+   COMPONENTS — order-independent. Each partial scopes its rules to its
+   own component's class namespace (e.g. .chat-*, .model-*, .settings-*),
+   so these do NOT rely on import order relative to one another. They are
+   listed alphabetically purely for findability; when you add a new
+   component partial, just drop it in alphabetical position. The only
+   global selectors any of these share (e.g. .chat-message, .model-name)
+   are the user-select rules in base.css above, which set different
+   properties and live in the foundation group.
+   ===================================================================== */
+@import url(partials/add-model-form.css);
+@import url(partials/backend-manager.css);
+@import url(partials/chat.css);
+@import url(partials/chat-message.css);
+@import url(partials/download-manager.css);
+@import url(partials/feature-panels.css);
+@import url(partials/image-generation.css);
+@import url(partials/launcher.css);
+@import url(partials/layout.css);
+@import url(partials/left-panel-rows.css);
+@import url(partials/logs.css);
+@import url(partials/marketplace.css);
+@import url(partials/markdown.css);
+@import url(partials/model-list.css);
+@import url(partials/model-manager.css);
+@import url(partials/overlays.css);
+@import url(partials/settings.css);
+@import url(partials/status-bar.css);
+@import url(partials/syntax-highlight.css);
+@import url(partials/titlebar.css);
+@import url(partials/transcription-live.css);
+
+/* =====================================================================
+   FEATURE SHEET — collection view, kept last (loaded after components so
+   its overrides win, matching the original styles.css ordering).
+   ===================================================================== */
 @import url(collection.css);
