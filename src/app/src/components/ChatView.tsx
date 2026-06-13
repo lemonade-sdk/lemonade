@@ -292,15 +292,17 @@ function partialImageSettingsFromSource(source?: Record<string, unknown> | null)
   return next;
 }
 
-function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null): ImageGenerationSettings {
+function imageDefaultsForModel(loadedModel: LoadedModel | null, modelInfo: ModelInfo | null, activePresetRecipeOptions?: Record<string, unknown> | null): ImageGenerationSettings {
   const modelImageDefaults = partialImageSettingsFromSource(modelInfo?.image_defaults as Record<string, unknown> | undefined);
   const modelRecipeOptions = partialImageSettingsFromSource(modelInfo?.recipe_options as Record<string, unknown> | undefined);
   const loadedRecipeOptions = partialImageSettingsFromSource(loadedModel?.recipe_options);
+  const presetDefaults = partialImageSettingsFromSource(activePresetRecipeOptions);
   return {
     ...DEFAULT_IMAGE_SETTINGS,
     ...modelImageDefaults,
     ...modelRecipeOptions,
     ...loadedRecipeOptions,
+    ...presetDefaults,
   };
 }
 
@@ -634,8 +636,12 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   );
 
   const defaultImageSettings = useMemo(
-    () => imageDefaultsForModel(currentLoadedModel, currentKnownModelInfo),
-    [currentLoadedModel, currentKnownModelInfo],
+    () => imageDefaultsForModel(
+      currentLoadedModel,
+      currentKnownModelInfo,
+      currentCapability === 'image' ? (currentPreset?.recipe_options as Record<string, unknown> | undefined) : undefined,
+    ),
+    [currentLoadedModel, currentKnownModelInfo, currentPreset, currentCapability],
   );
   const defaultImageSettingsKey = useMemo(() => JSON.stringify(defaultImageSettings), [defaultImageSettings]);
 
@@ -728,7 +734,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return filtered.slice(0, 80);
   }, [capabilityForLoaded, knownModelInfos, modelPickerQuery, selectableModels]);
 
-  const modeSupportsChatCompletions = currentLoadedModel ? canUseChatCompletions(currentLoadedModel) : (currentCapability === 'chat' || currentCapability === 'omni');
+  const modeSupportsChatCompletions = currentCapability === 'chat' || currentCapability === 'omni';
   const modeSupportsTools = modeSupportsChatCompletions;
   const canUseAudioInput = currentCapability === 'omni' || currentCapability === 'audio' || supportsRealtimeAudio;
 
