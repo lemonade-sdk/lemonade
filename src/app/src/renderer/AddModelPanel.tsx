@@ -77,7 +77,7 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     checkpoint: 'mikkoph/kokoro-onnx',
   },
   'vllm': {
-    name: 'Qwen3.5-0.8B-vLLM',
+    name: 'Qwen3.5-0.8B-FP16-vLLM',
     checkpoint: 'Qwen/Qwen3.5-0.8B',
   },
 };

@@ -1601,7 +1601,7 @@
         ],
         "size": 0.017
     },
-    "Qwen3.5-0.8B-vLLM": {
+    "Qwen3.5-0.8B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",
         "suggested": true,
@@ -1610,31 +1610,34 @@
         ],
         "size": 1.77
     },
-    "Qwen3.5-2B-vLLM": {
+    "Qwen3.5-2B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-2B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 4.57
     },
-    "Qwen3.5-4B-vLLM": {
+    "Qwen3.5-4B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-4B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
             "reasoning",
-            "hot"
+            "hot",
+            "tool-calling"
         ],
         "size": 9.34
     },
-    "Qwen3.5-9B-vLLM": {
+    "Qwen3.5-9B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-9B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 19.3
     }
