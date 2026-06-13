@@ -3,6 +3,7 @@
 #include "lemon_cli/recipe_import.h"
 #include "lemon_cli/hf_pull.h"
 #include "lemon_cli/bench.h"
+#include "lemon_cli/chat_repl.h"
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
@@ -165,6 +166,11 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+
+    // Chat REPL options
+    bool chat_cli = false;
+    bool chat_no_stream = false;
+    std::string chat_system_prompt;
 
     // Bench command options
     lemon_cli::BenchCliOptions bench;
@@ -404,6 +410,14 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     return client.load_model(config.model, config.recipe_options, config.save_options);
 }
 
+static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
+    lemon_cli::ChatOptions options;
+    options.initial_model = config.model;
+    options.system_prompt = config.chat_system_prompt;
+    options.stream = !config.chat_no_stream;
+    return lemon_cli::run_chat_repl(client, options);
+}
+
 static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& config) {
     if (!lemon_cli::resolve_model_if_missing(client, config.model, "run", true)) {
         return 1;
@@ -412,6 +426,10 @@ static int handle_run_command(lemonade::LemonadeClient& client, CliConfig& confi
     int load_result = handle_load_command(client, config);
     if (load_result != 0) {
         return load_result;
+    }
+
+    if (config.chat_cli) {
+        return handle_chat_command(client, config);
     }
 
     open_url(config.host, config.port);
@@ -1065,6 +1083,7 @@ int main(int argc, char* argv[]) {
     // Quick start commands
     CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
+    CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
 
     // Server commands
     CLI::App* backends_cmd = app.add_subcommand("backends", "List available recipes and backends")->group("Server");
@@ -1157,6 +1176,16 @@ int main(int argc, char* argv[]) {
     run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_cmd->add_flag("--chat-cli", config.chat_cli,
+        "After loading, open an interactive chat REPL in the terminal instead of the browser");
+
+    // Chat options
+    chat_cmd->add_option("model", config.model,
+        "Model to chat with (optional; uses currently loaded model if omitted)")->type_name("MODEL");
+    chat_cmd->add_option("--system", config.chat_system_prompt,
+        "System prompt to seed the conversation")->type_name("TEXT");
+    chat_cmd->add_flag("--no-stream", config.chat_no_stream,
+        "Disable streaming; print the full response when it is ready");
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
@@ -1283,6 +1312,8 @@ int main(int argc, char* argv[]) {
         return client.delete_model(config.model);
     } else if (run_cmd->count() > 0) {
         return handle_run_command(client, config);
+    } else if (chat_cmd->count() > 0) {
+        return handle_chat_command(client, config);
     } else if (load_cmd->count() > 0) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {

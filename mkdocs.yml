@@ -65,6 +65,7 @@ nav:
       - Docker: guide/install/docker.md
     - Local Server Concepts: guide/concepts.md
     - CLI: guide/cli.md
+    - Chat in your terminal: guide/cli-chat.md
     - Configuration:
       - Service: guide/configuration/README.md
       - Custom Models: guide/configuration/custom-models.md

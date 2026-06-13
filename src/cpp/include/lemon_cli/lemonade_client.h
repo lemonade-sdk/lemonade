@@ -105,11 +105,14 @@ public:
                              const std::string& body = "", const std::string& content_type = "",
                              time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
 
-    // Streaming request overload (timeouts are in milliseconds)
+    // Streaming request overload (timeouts are in milliseconds).
+    // `should_abort`, if set, is polled on every received chunk; returning
+    // true makes the client close the connection and return early.
     bool make_request(const std::string& path, const std::string& method,
                       const std::string& body, const std::string& content_type,
                       std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                      time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
+                      time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000,
+                      std::function<bool()> should_abort = nullptr) const;
 
 private:
     std::string host_;
