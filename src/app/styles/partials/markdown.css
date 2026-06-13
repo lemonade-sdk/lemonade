@@ -1,0 +1,448 @@
+.thinking-section {
+    margin-bottom: 12px;
+    border: 1px solid var(--border-alpha-1);
+    border-radius: 8px;
+    background: var(--bg-alpha-05);
+    overflow: hidden;
+}
+
+.thinking-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--thinking-toggle);
+    border: none;
+    color: var(--bg-alpha-7);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.thinking-toggle:hover {
+    background: var(--bg-alpha-05);
+    color: var(--bg-alpha-9);
+}
+
+.thinking-toggle svg {
+    flex-shrink: 0;
+}
+
+.thinking-content {
+    padding: 12px;
+    border-top: 1px solid var(--border-alpha-1);
+    background: var(--bg-secondary-alpha-2);
+    color: var(--bg-alpha-8);
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+.thinking-content .markdown-content {
+    opacity: 0.9;
+}
+
+.thinking-content code {
+    background: var(--bg-alpha-1);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+.thinking-content pre {
+    background: var(--bg-secondary-alpha-3);
+    padding: 8px;
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.chat-message .markdown-content > *:first-child {
+    margin-top: 0;
+}
+
+.chat-message .markdown-content > *:last-child {
+    margin-bottom: 0;
+}
+
+.chat-message p,
+.markdown-content p {
+    margin: 0.5em 0;
+}
+
+.chat-message p:first-child,
+.markdown-content p:first-child {
+    margin-top: 0;
+}
+
+.chat-message p:last-child,
+.markdown-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* Headers */
+.chat-message h1,
+.chat-message h2,
+.chat-message h3,
+.chat-message h4,
+.chat-message h5,
+.chat-message h6,
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    margin: 1em 0 0.5em 0;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--text-primary);
+}
+
+.chat-message h1:first-child,
+.chat-message h2:first-child,
+.chat-message h3:first-child,
+.chat-message h4:first-child,
+.chat-message h5:first-child,
+.chat-message h6:first-child,
+.markdown-content h1:first-child,
+.markdown-content h2:first-child,
+.markdown-content h3:first-child,
+.markdown-content h4:first-child,
+.markdown-content h5:first-child,
+.markdown-content h6:first-child {
+    margin-top: 0;
+}
+
+.chat-message h1,
+.markdown-content h1 {
+    font-size: 1.5em;
+    border-bottom: 1px solid var(--border-primary);
+    padding-bottom: 0.3em;
+}
+
+.chat-message h2,
+.markdown-content h2 {
+    font-size: 1.3em;
+    border-bottom: 1px solid var(--border-primary);
+    padding-bottom: 0.3em;
+}
+
+.chat-message h3,
+.markdown-content h3 {
+    font-size: 1.1em;
+}
+
+.chat-message h4,
+.markdown-content h4 {
+    font-size: 1em;
+}
+
+.chat-message h5,
+.markdown-content h5 {
+    font-size: 0.9em;
+}
+
+.chat-message h6,
+.markdown-content h6 {
+    font-size: 0.85em;
+    color: var(--text-aaa);
+}
+
+/* Code blocks */
+.chat-message pre,
+.markdown-content pre {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    margin: 0.8em 0;
+}
+
+.chat-message pre:first-child,
+.markdown-content pre:first-child {
+    margin-top: 0;
+}
+
+.chat-message pre:last-child,
+.markdown-content pre:last-child {
+    margin-bottom: 0;
+}
+
+.chat-message pre code,
+.markdown-content pre code {
+    background: none;
+    padding: 0;
+    border: none;
+    font-size: 0.85em;
+    line-height: 1.5;
+    color: var(--text-code);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* Code block wrapper with copy button */
+.code-block-wrapper {
+    position: relative;
+    margin: 0.8em 0;
+}
+
+.code-block-wrapper pre {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    padding-right: 3rem;
+    min-height: 60px;
+}
+
+.code-copy-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--btn-bg-secondary);
+    border: 1px solid var(--border-5);
+    border-radius: 4px;
+    padding: 3px;
+    cursor: pointer;
+    color: var(--text-aaa);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    z-index: 100;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.code-copy-button:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text-primary);
+}
+
+.code-copy-button.copied {
+    color: var(--success-color);
+    border-color: var(--success-border);
+}
+
+/* Inline code */
+.chat-message code.inline-code,
+.chat-message :not(pre) > code,
+.markdown-content :not(pre) > code {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 0.85em;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    color: var(--markdown-code);
+}
+
+/* Lists */
+.chat-message ul,
+.chat-message ol,
+.markdown-content ul,
+.markdown-content ol {
+    margin: 0.5em 0;
+    padding-left: 2em;
+}
+
+.chat-message ul,
+.markdown-content ul {
+    list-style-type: disc;
+}
+
+.chat-message ol,
+.markdown-content ol {
+    list-style-type: decimal;
+}
+
+.chat-message li,
+.markdown-content li {
+    margin: 0.25em 0;
+}
+
+.chat-message li > p,
+.markdown-content li > p {
+    margin: 0.25em 0;
+}
+
+.chat-message ul ul,
+.chat-message ol ul,
+.markdown-content ul ul,
+.markdown-content ol ul {
+    list-style-type: circle;
+}
+
+.chat-message ul ul ul,
+.chat-message ol ul ul,
+.chat-message ol ol ul,
+.markdown-content ul ul ul,
+.markdown-content ol ul ul,
+.markdown-content ol ol ul {
+    list-style-type: square;
+}
+
+/* Blockquotes */
+.chat-message blockquote,
+.markdown-content blockquote {
+    border-left: 4px solid var(--border-5);
+    padding-left: 1em;
+    margin: 0.8em 0;
+    color: var(--text-aaa);
+    font-style: italic;
+}
+
+.chat-message blockquote p,
+.markdown-content blockquote p {
+    margin: 0.5em 0;
+}
+
+/* Links */
+.chat-message a,
+.markdown-content a {
+    color: var(--markdown-link);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-bottom-color 0.2s ease;
+}
+
+.chat-message a:hover,
+.markdown-content a:hover {
+    border-bottom-color: var(--markdown-link);
+}
+
+/* Emphasis */
+.chat-message strong,
+.markdown-content strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.chat-message em,
+.markdown-content em {
+    font-style: italic;
+}
+
+/* Horizontal rules */
+.chat-message hr,
+.markdown-content hr {
+    border: none;
+    border-top: 1px solid var(--border-primary);
+    margin: 1.5em 0;
+}
+
+/* Tables */
+.chat-message table,
+.markdown-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.8em 0;
+    font-size: 0.9em;
+}
+
+.chat-message table thead,
+.markdown-content table thead {
+    background: var(--bg-secondary);
+}
+
+.chat-message table th,
+.chat-message table td,
+.markdown-content table th,
+.markdown-content table td {
+    border: 1px solid var(--border-primary);
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.chat-message table th,
+.markdown-content table th {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.chat-message table tr:nth-child(even),
+.markdown-content table tr:nth-child(even) {
+    background: var(--bg-alpha-02);
+}
+
+/* Task lists */
+.chat-message input[type="checkbox"],
+.markdown-content input[type="checkbox"] {
+    margin-right: 0.5em;
+}
+
+/* Images */
+.chat-message img,
+.markdown-content img {
+    max-width: 100%;
+    border-radius: 4px;
+    margin: 0.5em 0;
+}
+
+/* KaTeX Math Rendering - Prevent layout shifts */
+.markdown-content {
+    position: relative;
+    contain: layout;
+}
+
+.chat-message .katex,
+.markdown-content .katex {
+    font-size: 1.05em;
+    max-width: 100%;
+}
+
+/* Inline math - strict containment */
+.chat-message .katex-inline,
+.markdown-content .katex-inline,
+.chat-message span.katex,
+.markdown-content span.katex {
+    display: inline-block !important;
+    vertical-align: middle;
+    max-width: 100%;
+    position: relative;
+}
+
+/* Display/block math - strict containment */
+.chat-message .katex-display,
+.markdown-content .katex-display {
+    display: block !important;
+    margin: 0.8em 0;
+    text-align: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    position: relative;
+}
+
+/* Prevent any layout shifts from KaTeX internals */
+.chat-message .katex-html,
+.markdown-content .katex-html {
+    display: inline-block;
+    white-space: nowrap;
+    position: relative;
+}
+
+/* Ensure KaTeX display math stays inline */
+.chat-message .katex-display > .katex,
+.markdown-content .katex-display > .katex {
+    display: inline-block !important;
+    text-align: initial;
+}
+
+/* Prevent negative margins or absolute positioning issues */
+.chat-message .katex *,
+.markdown-content .katex * {
+    position: static;
+}
+
+.chat-message .katex .katex-html *,
+.markdown-content .katex .katex-html * {
+    position: relative;
+}
+
+/* Strikethrough */
+.chat-message del,
+.markdown-content del {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+}
+

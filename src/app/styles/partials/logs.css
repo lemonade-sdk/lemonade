@@ -1,0 +1,213 @@
+/* Horizontal Resizable Divider */
+.resizable-divider.horizontal {
+    width: 100%;
+    height: 4px;
+    background: transparent;
+    cursor: row-resize;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease;
+}
+
+.resizable-divider.horizontal:hover {
+    background: var(--bg-alpha-1)
+}
+
+.resizable-divider.horizontal:active {
+    background: var(--bg-alpha-2)
+}
+
+.logs-window {
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    /* When logs is the only child, it should take all available space */
+    flex-grow: 1;
+}
+
+.logs-header {
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--border-tertiary);
+    background: var(--header-bg-color);
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logs-header h3 {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--header-text);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.logs-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.logs-level-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.logs-level-control span {
+    color: var(--text-quaternary);
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    text-transform: none;
+}
+
+.logs-level-select {
+    width: auto;
+    min-width: 96px;
+    flex: 0 0 96px;
+    height: 28px;
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    border-color: var(--border-secondary);
+    font-size: 0.75rem;
+    padding-right: 28px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+.logs-level-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.connection-status {
+    font-size: 0.7rem;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.status-connecting {
+    color: var(--on-status-connecting);
+    background: var(--status-connecting);
+}
+
+.status-connected {
+    color: var(--on-status-connected);
+    background: var(--status-connected);
+}
+
+.status-error {
+    color: var(--on-status-error);
+    background: var(--status-error);
+}
+
+.status-disconnected {
+    color: var(--text-secondary);
+    background: rgba(136, 136, 136, 0.1);
+}
+
+.logs-control-btn {
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.logs-control-btn:hover {
+    background: var(--btn-bg-secondary);
+    border-color: var(--border-5);
+}
+
+.logs-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+}
+
+/* Scrollbar for logs-content - hidden by default, visible on hover */
+.logs-content::-webkit-scrollbar {
+    width: 7px;
+    display: block;
+}
+
+.logs-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.logs-content::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.logs-content:hover::-webkit-scrollbar-thumb {
+    background: var(--bg-alpha-2)
+}
+
+.logs-content::-webkit-scrollbar-thumb:hover {
+    background: var(--bg-alpha-3);
+}
+
+/* Firefox scrollbar support */
+.logs-content {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.logs-content:hover {
+    scrollbar-color: var(--bg-alpha-2) transparent;
+}
+
+.logs-text {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.log-line {
+    padding: 2px 0;
+    border-left: 2px solid transparent;
+    padding-left: 8px;
+}
+
+.log-line:hover {
+    background: var(--bg-alpha-02);
+    border-left-color: var(--border-5);
+}
+
+.logs-placeholder {
+    color: var(--text-quaternary);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 40px 20px;
+    font-style: italic;
+}
+
+.logs-error {
+    color: var(--error-color);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 40px 20px;
+    background: var(--logs-surface);
+    border-radius: 8px;
+    margin: 20px;
+}
+

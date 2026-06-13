@@ -1,0 +1,298 @@
+.model-item {
+    --catalog-status-indicator-width: 10px;
+    padding: 2px 12px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    border-left: 2px solid transparent;
+    min-height: 24px;
+}
+
+.model-item:hover {
+    background: var(--bg-alpha-04);
+    border-left-color: var(--border-6);
+}
+
+.model-family-group {
+    margin: 0;
+}
+
+.model-family-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+    user-select: none;
+}
+
+.model-family-header:hover {
+    background: var(--bg-alpha-03);
+}
+
+.family-chevron {
+    font-size: 0.56rem;
+    transition: transform 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    margin-left: -3.5px;
+    margin-right: -3.5px;
+    line-height: 1;
+    color: var(--icon-hover);
+    flex-shrink: 0;
+}
+
+.family-chevron.expanded {
+    transform: rotate(90deg);
+}
+
+.model-family-members-list {
+    padding-left: 6px;
+}
+
+.model-family-member-row {
+    padding-left: 28px;
+}
+
+.model-item-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    overflow: hidden;
+    min-height: 18px;
+}
+
+.model-actions {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 4px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.model-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.15s ease;
+    padding: 0;
+}
+
+.model-action-btn:hover {
+    background: var(--bg-alpha-06);
+    color: var(--text-tertiary);
+}
+
+.model-action-btn.download-btn:hover {
+    color: var(--success-color);
+}
+
+.model-action-btn.update-btn:hover {
+    color: var(--warning-color);
+}
+
+.model-action-btn.load-btn:hover {
+    color: var(--info-color);
+}
+
+.model-action-btn.unload-btn:hover {
+    color: var(--action-color);
+}
+
+.model-action-btn.delete-btn:hover {
+    color: var(--error-color);
+}
+
+.model-info-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.model-name {
+    font-size: 0.74rem;
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    display: block;
+    cursor: default;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.family-model-name {
+    font-weight: 560;
+    color: var(--text-primary);
+}
+
+/* Status indicators use a CSS circle instead of the Unicode ● character.
+ * WebKit (webkit2gtk, WKWebView) renders the ● glyph at a different size and
+ * baseline than Chromium, causing visual drift. A CSS circle with fixed
+ * width/height and border-radius: 50% renders identically on every engine.
+ * The text content is hidden via `font-size: 0` so the existing TSX markup
+ * doesn't need to change. */
+.model-status-indicator {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    font-size: 0;
+    line-height: 0;
+    flex-shrink: 0;
+    justify-self: center;
+    vertical-align: middle;
+}
+
+.model-catalog-item .model-status-indicator {
+    width: 5px;
+    height: 5px;
+}
+
+/* Model is currently loaded (green) */
+.model-status-indicator.loaded {
+    background-color: var(--success-color);
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.65);
+}
+
+/* Model is available locally but not loaded */
+.model-status-indicator.available {
+    background-color: var(--model-available);
+}
+
+/* Model is not downloaded (gray) */
+.model-status-indicator.not-downloaded {
+    background-color: var(--model-unavailable);
+}
+
+.model-status-indicator.update-required {
+    background-color: #ffb74d;
+    box-shadow: 0 0 4px rgba(255, 183, 77, 0.5);
+}
+
+/* Soft signal: backend is functional but a newer upstream release exists. */
+.model-status-indicator.update-available {
+    background-color: #6ea8fe;
+    box-shadow: 0 0 4px rgba(110, 168, 254, 0.45);
+}
+
+.model-status-indicator.unsupported {
+    background-color: var(--error-color);
+}
+
+/* Model is loading (pulsing animation) */
+.model-status-indicator.loading {
+    background-color: var(--success-color);
+    animation: pulse 1.5s ease-in-out infinite;
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.65);
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.4;
+        transform: scale(0.85);
+    }
+}
+
+.model-size {
+    font-size: 0.6rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.model-label {
+    opacity: 0.82;
+}
+
+.model-catalog-item .model-actions {
+    justify-content: flex-end;
+}
+
+.model-catalog-item .model-info-left {
+    width: auto;
+}
+
+.model-labels {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-right: 2px;
+}
+
+.model-label-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 16px;
+    cursor: help;
+    color: var(--text-secondary);
+    opacity: 0.86;
+    flex-shrink: 0;
+}
+
+.model-label-icon.label-reasoning {
+    color: var(--label-reasoning);
+}
+
+.model-label-icon.label-coding {
+    color: var(--label-coding);
+}
+
+.model-label-icon.label-vision {
+    color: var(--label-vision);
+}
+
+.model-label-icon.label-hot {
+    color: var(--label-hot);
+}
+
+.model-label-icon.label-embeddings {
+    color: var(--label-embeddings);
+}
+
+.model-label-icon.label-reranking {
+    color: var(--label-reranking);
+}
+
+.model-label-icon.label-tool-calling {
+    color: var(--label-tool-calling);
+}
+
+.model-label-icon.label-custom {
+    color: var(--label-custom);
+}
+
+.model-label-icon.label-experience {
+    color: #e2b757;
+}
+
+.model-manager-footer {
+    border-top: 1px solid var(--border-tertiary);
+    background: var(--header-bg-color);
+    flex-shrink: 0;
+    padding: 12px 15px;
+}
+

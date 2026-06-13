@@ -1,0 +1,51 @@
+.app-layout {
+    display: flex;
+    height: calc(100vh - 32px - 28px); /* 32px title bar + 28px status bar */
+    overflow: hidden;
+}
+
+/* Main Content Container - holds main content and logs vertically */
+.main-content-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    min-width: 400px;
+}
+
+.main-content {
+    flex: 1;
+    overflow: hidden;
+    transition: margin-left 0.3s ease;
+}
+
+.main-content.with-chat {
+    flex: 1;
+}
+
+.main-content.with-model-manager {
+    flex: 1;
+}
+
+.main-content.full-width {
+    width: 100%;
+}
+
+.resizable-divider {
+    width: 4px;
+    background: transparent;
+    border-right: var(--resizable-divider-border);
+    cursor: col-resize;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.2s ease;
+}
+
+.resizable-divider:hover {
+    background: var(--bg-alpha-1)
+}
+
+.resizable-divider:active {
+    background: var(--bg-alpha-2)
+}
+

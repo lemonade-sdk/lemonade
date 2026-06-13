@@ -1,0 +1,90 @@
+.status-bar {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    background: var(--header-bg-color);
+    border-top: 1px solid var(--border-tertiary);
+    padding: 0 12px;
+    gap: 20px;
+    flex-shrink: 0;
+    font-size: 12px;
+    user-select: none;
+}
+
+.status-bar-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-bar-label {
+    color: var(--color-5);
+    font-size: 11px;
+}
+
+.status-bar-label-short {
+    display: none;
+}
+
+.status-bar-value {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Connection status indicator styles */
+.connection-indicator {
+    font-size: 11px;
+    line-height: 1;
+    margin-right: 2px;
+}
+
+.connection-indicator.connection-connected {
+    color: #4ade80;
+}
+
+.connection-indicator.connection-connecting {
+    color: #fbbf24;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.connection-indicator.connection-disconnected {
+    color: var(--error-color);
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.status-bar-connection {
+    border-right: 1px solid var(--border-tertiary);
+    padding-right: 20px;
+}
+
+@media (max-width: 1000px) {
+    .status-bar {
+        gap: 10px;
+        padding: 0 8px;
+    }
+
+    .status-bar-item {
+        gap: 4px;
+    }
+
+    .status-bar-connection {
+        padding-right: 10px;
+    }
+
+    .status-bar-label-long {
+        display: none;
+    }
+
+    .status-bar-label-short {
+        display: inline;
+    }
+}
+

@@ -1,0 +1,301 @@
+.image-generation-item {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border-primary);
+}
+
+.image-prompt-display {
+    margin-bottom: 12px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.prompt-label {
+    font-weight: 600;
+    margin-right: 8px;
+    color: var(--text-quaternary);
+}
+
+.prompt-text {
+    color: var(--text-aaa);
+}
+
+.generated-images-row {
+    display: flex;
+    gap: 16px;
+}
+
+.generated-images-row.side-by-side {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.generated-images-row.side-by-side .generated-image-column {
+    flex: 1;
+    min-width: 0;
+}
+
+.generated-image-column {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.image-wrapper {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+}
+
+.image-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.generated-image {
+    max-width: 100%;
+    max-height: 512px;
+    border-radius: 8px;
+    display: block;
+}
+
+/* Chat-embedded generated images stay compact so multi-image responses
+   don't take over the scroll. Click opens the lightbox for full view.
+   Height is set inline from COLLECTION_IMAGE_HEIGHT. */
+.generated-image.in-chat {
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+    cursor: zoom-in;
+    transition: filter 0.15s ease;
+}
+
+.generated-image.in-chat:hover {
+    filter: brightness(1.08);
+}
+
+.collection-chat-image {
+    line-height: 0;
+}
+
+.image-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    animation: fadeIn 0.15s ease;
+    cursor: zoom-out;
+}
+
+.image-lightbox-img {
+    max-width: 92vw;
+    max-height: 92vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    cursor: default;
+}
+
+.image-lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.image-lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.save-image-button {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-secondary-alpha-7);
+    color: var(--text-primary);
+    border: 1px solid var(--border-alpha-2);
+    padding: 5px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.2s;
+    white-space: nowrap;
+}
+
+.save-image-button:hover {
+    background: var(--bg-secondary-alpha-9);
+}
+
+.upscale-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex: 1;
+    align-self: stretch;
+    min-height: 200px;
+    background: var(--bg-tertiary);
+    border: 1px dashed var(--border-4);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.image-generating-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
+    color: var(--text-secondary);
+}
+
+.generating-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-primary);
+    border-top-color: var(--border-8);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.image-settings-panel {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.image-setting {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.image-setting label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.image-setting input,
+.image-setting select {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 6px 8px;
+    font-size: 13px;
+    width: 80px;
+}
+
+/* Custom dropdown arrow — needed because `appearance: none` strips the
+   native indicator on webkit2gtk (Tauri/Linux). */
+.image-setting select {
+    padding-right: 22px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 10px 6px;
+    cursor: pointer;
+}
+
+.image-setting input:focus,
+.image-setting select:focus {
+    outline: none;
+    border-color: var(--border-5);
+}
+
+.image-setting input:disabled,
+.image-setting select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.image-setting input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+.image-setting input[type="number"]::-webkit-outer-spin-button,
+.image-setting input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Image Action Buttons (below generated images) */
+.image-action-buttons {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+/* Image Reference Upload */
+.image-reference-preview {
+    position: relative;
+    display: inline-block;
+    padding-bottom: 8px;
+}
+
+.image-reference-thumb {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border-primary);
+}
+
+.image-reference-dropzone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border: 1px dashed var(--border-4);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    margin-bottom: 8px;
+}
+
+.image-reference-dropzone:hover {
+    border-color: var(--border-6);
+    color: var(--text-tertiary);
+}
+
+/* ========================================
+   Streaming Transcription Styles
+   ======================================== */
+

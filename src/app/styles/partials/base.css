@@ -1,0 +1,154 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--header-bg-color);
+    min-height: 100vh;
+    height: 100vh;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+/* WebKit-friendly app-chrome selection reset.
+ *
+ * Tauri uses the OS's native webview (webkit2gtk on Linux, WKWebView on macOS,
+ * WebView2 on Windows). WebKit's default drag-selection is more aggressive
+ * than Chromium's: clicking and dragging on a flex container will select
+ * entire blocks of UI chrome instead of just the text spans inside. That
+ * also breaks the resize-divider drag flow because the in-progress text
+ * selection swallows mousemove events. Disable user-select everywhere by
+ * default and explicitly opt-in on classes that legitimately host
+ * copy/paste-able text.
+ */
+html,
+body {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.markdown-content,
+.markdown-content *,
+.chat-message,
+.chat-message *,
+.thinking-content,
+.thinking-content *,
+.log-line,
+.log-line *,
+.logs-window,
+.logs-window *,
+.about-modal-content,
+.about-modal-content *,
+.model-name,
+.model-size,
+code,
+pre {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Hide scrollbars globally */
+* {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
+/*
+ * Custom edge resize handles for the Tauri frameless window. webkit2gtk does
+ * not draw resize handles on borderless windows, so the renderer paints 8
+ * invisible regions on each edge and corner. The container is fixed-position
+ * with pointer-events: none so it never blocks normal clicks; only the child
+ * handles re-enable pointer-events. Z-index has to sit above the app layout
+ * but below modals — keep this in mind if you ever raise modal z-index.
+ */
+.window-resize-handles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9000;
+}
+
+.resize-handle {
+    position: absolute;
+    pointer-events: auto;
+}
+
+.resize-handle-top {
+    top: 0;
+    left: 6px;
+    right: 6px;
+    height: 4px;
+    cursor: n-resize;
+}
+
+.resize-handle-bottom {
+    bottom: 0;
+    left: 6px;
+    right: 6px;
+    height: 4px;
+    cursor: s-resize;
+}
+
+.resize-handle-left {
+    top: 6px;
+    bottom: 6px;
+    left: 0;
+    width: 4px;
+    cursor: w-resize;
+}
+
+.resize-handle-right {
+    top: 6px;
+    bottom: 6px;
+    right: 0;
+    width: 4px;
+    cursor: e-resize;
+}
+
+.resize-handle-top-left {
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    cursor: nw-resize;
+}
+
+.resize-handle-top-right {
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    cursor: ne-resize;
+}
+
+.resize-handle-bottom-left {
+    bottom: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    cursor: sw-resize;
+}
+
+.resize-handle-bottom-right {
+    bottom: 0;
+    right: 0;
+    width: 8px;
+    height: 8px;
+    cursor: se-resize;
+}
+

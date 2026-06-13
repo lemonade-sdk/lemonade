@@ -42,6 +42,7 @@ v1.3 renamed Recipes→Presets, rekeyed from engine-list to capability-list: `pr
 Discovered React port `PresetManager.tsx` drifted back toward backend recipes. Audited against v1.3 and identified 8 UX problems: technical terminology, missing compatibility guards, only loaded models first-class, sampling not applied.
 
 **v1.4 shipped per Kyle's answers to 7 open questions:**
+
 - Schema: `applies_to: Capability[]`, optional `engine_hint` (advanced), `recipe_options` for load flags
 - Staged bindings: apply stores local binding, shows "Will apply on next load" (does NOT call `api.loadModel()` immediately)
 - Sampling wired: `temperature`, `top_p`, `top_k`, `repeat_penalty` merged into `/api/v1/chat/completions`
