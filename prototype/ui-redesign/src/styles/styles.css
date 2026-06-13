@@ -1926,6 +1926,17 @@ input, textarea {
 
 /* ── Model Detail (expanded) ──────────────────────────────── */
 
+.row__load-error {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-xs);
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-top: 1px solid rgba(217, 122, 108, 0.24);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .row__detail {
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border-subtle);
