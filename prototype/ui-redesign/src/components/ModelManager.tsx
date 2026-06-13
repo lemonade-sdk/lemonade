@@ -582,6 +582,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [connectionStatus, setConnectionStatus] = useState(api.status);
   const [modelsLoading, setModelsLoading] = useState(api.isConnected && api.allModels.length === 0);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model → percent
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [expandedModel, setExpandedModel] = useState<string | null>(null);
@@ -850,6 +851,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const handleLoad = async (model: ModelInfo) => {
     if (loadingModel) return;
     const name = modelName(model);
+    setLoadError(null);
     setLoadingModel(name);
     try {
       await loadModelRuntime(model);
@@ -857,6 +859,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       onModelSelect(name);
     } catch (err) {
       console.error('Load failed:', err);
+      const message = friendlyErrorMessage(err);
+      setLoadError({ modelName: name, message });
+      window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
     }
     setLoadingModel(null);
   };
@@ -956,6 +961,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
           onModelSelect(name);
         } catch (err) {
           console.error('Load after pull failed:', err);
+          const message = friendlyErrorMessage(err);
+          setLoadError({ modelName: name, message });
+          window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
         }
         setLoadingModel(null);
       },
@@ -1601,6 +1609,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
         </div>
 
         {expandedModel === name && renderModelDetail(m)}
+        {loadError?.modelName === name && (
+          <div className="row__load-error">
+            <Icon name="alert" size={13} /> {loadError.message}
+          </div>
+        )}
       </div>
     );
   };

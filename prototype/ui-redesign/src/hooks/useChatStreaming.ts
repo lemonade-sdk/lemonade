@@ -184,83 +184,102 @@ export function useChatStreaming(
             setLiveStats(prev => ({ ...prev, [convoId]: stats }));
           },
           onToolCalls: async (toolCalls) => {
-            toolRound++;
-            if (toolRound > MAX_TOOL_ROUNDS) {
-              onError(convoId, 'Too many tool call rounds — stopping to prevent loops.');
-              cleanup(convoId);
-              resolve();
-              return;
-            }
-
-            // Show tool status in the stream and add running entries
-            const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
-            const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
-              let argsStr = '';
-              try { const a = JSON.parse(tc.function.arguments || '{}'); argsStr = Object.entries(a).map(([k,v]) => `${k}: ${v}`).join(', '); } catch {}
-              return { name: tc.function.name, args: argsStr, rawArgs: tc.function.arguments, result: '', status: 'running' as const };
-            });
-            allToolCalls.push(...runningEntries);
-            setActiveStreams(prev => ({
-              ...prev,
-              [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: `Calling ${toolNames}…`, toolCalls: [...allToolCalls] },
-            }));
-
-            // Append the assistant's tool_calls message
-            fullMessages = [
-              ...fullMessages,
-              { role: 'assistant' as const, content: '', tool_calls: toolCalls },
-            ];
-
-            // Execute all tool calls in parallel
-            const results = await Promise.all(
-              toolCalls.map(tc => runtime!.execute(tc as ToolCall))
-            );
-
-            // Update entries with results
-            for (let j = 0; j < runningEntries.length; j++) {
-              const r = results[j];
-              const entry = runningEntries[j];
-              entry.artifacts = r.artifacts;
-              if (r.displayResult) {
-                entry.result = r.displayResult;
-                entry.status = r.error ? 'error' : 'done';
-                continue;
+            try {
+              toolRound++;
+              if (toolRound > MAX_TOOL_ROUNDS) {
+                onError(convoId, 'Too many tool call rounds — stopping to prevent loops.');
+                cleanup(convoId);
+                resolve();
+                return;
               }
-              try {
-                const parsed = JSON.parse(r.content);
-                entry.result = parsed.error ? `Error: ${parsed.error}` : summarizeResult(entry.name, parsed);
-                entry.status = parsed.error ? 'error' : 'done';
-              } catch {
-                entry.result = r.content.slice(0, 200);
-                entry.status = r.error ? 'error' : 'done';
-              }
-            }
 
-            // Append tool results, then remind the model to produce a real final
-            // answer (or call a narrower tool) instead of echoing a broad count.
-            for (const result of results) {
+              // Show tool status in the stream and add running entries
+              const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
+              const runningEntries: ToolCallEntry[] = toolCalls.map(tc => {
+                let argsStr = '';
+                try { const a = JSON.parse(tc.function.arguments || '{}'); argsStr = Object.entries(a).map(([k,v]) => `${k}: ${v}`).join(', '); } catch {}
+                return { name: tc.function.name, args: argsStr, rawArgs: tc.function.arguments, result: '', status: 'running' as const };
+              });
+              allToolCalls.push(...runningEntries);
+              setActiveStreams(prev => ({
+                ...prev,
+                [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: `Calling ${toolNames}…`, toolCalls: [...allToolCalls] },
+              }));
+
+              // Append the assistant's tool_calls message
               fullMessages = [
                 ...fullMessages,
-                { role: 'tool' as const, content: result.content, tool_call_id: result.tool_call_id },
+                { role: 'assistant' as const, content: '', tool_calls: toolCalls },
               ];
-            }
-            fullMessages = [
-              ...fullMessages,
-              { role: 'user' as const, content: TOOL_FOLLOWUP_PROMPT },
-            ];
 
-            // Clear tool status, keep accumulated tool call entries
-            setActiveStreams(prev => ({
-              ...prev,
-              [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
-            }));
+              // Execute all tool calls in parallel
+              const results = await Promise.all(
+                toolCalls.map(tc => runtime!.execute(tc as ToolCall))
+              );
 
-            // Re-run completion with tool results
-            try {
-              await runCompletion();
+              // Update entries with results
+              for (let j = 0; j < runningEntries.length; j++) {
+                const r = results[j];
+                const entry = runningEntries[j];
+                entry.artifacts = r.artifacts;
+                if (r.displayResult) {
+                  entry.result = r.displayResult;
+                  entry.status = r.error ? 'error' : 'done';
+                  continue;
+                }
+                try {
+                  const parsed = JSON.parse(r.content);
+                  entry.result = parsed.error ? `Error: ${parsed.error}` : summarizeResult(entry.name, parsed);
+                  entry.status = parsed.error ? 'error' : 'done';
+                } catch {
+                  entry.result = r.content.slice(0, 200);
+                  entry.status = r.error ? 'error' : 'done';
+                }
+              }
+
+              // Append tool results, then remind the model to produce a real final
+              // answer (or call a narrower tool) instead of echoing a broad count.
+              for (const result of results) {
+                fullMessages = [
+                  ...fullMessages,
+                  { role: 'tool' as const, content: result.content, tool_call_id: result.tool_call_id },
+                ];
+              }
+              fullMessages = [
+                ...fullMessages,
+                { role: 'user' as const, content: TOOL_FOLLOWUP_PROMPT },
+              ];
+
+              // Clear tool status, keep accumulated tool call entries
+              setActiveStreams(prev => ({
+                ...prev,
+                [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
+              }));
+
+              // Re-run completion with tool results
+              try {
+                await runCompletion();
+                resolve();
+              } catch (err) {
+                reject(err);
+              }
+            } catch (err: unknown) {
+              // Mark any still-running tool call entries as errored so the user sees what happened.
+              const msg = err instanceof Error ? err.message : String(err);
+              for (const entry of allToolCalls) {
+                if (entry.status === 'running') {
+                  entry.result = `Error: ${msg}`;
+                  entry.status = 'error';
+                }
+              }
+              setActiveStreams(prev => ({
+                ...prev,
+                [convoId]: { ...(prev[convoId] || { content: '', thinking: '', toolCalls: [] }), toolStatus: undefined, toolCalls: [...allToolCalls] },
+              }));
+              delete tokenBufferRef.current[convoId];
+              onError(convoId, `Tool execution failed: ${msg}`);
+              cleanup(convoId);
               resolve();
-            } catch (err) {
-              reject(err);
             }
           },
           onDone: (stats) => {
