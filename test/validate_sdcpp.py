@@ -53,9 +53,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backend",
         required=True,
-        choices=["cpu", "vulkan", "rocm", "cuda", "metal"],
+        choices=["cpu", "vulkan", "rocm", "cuda"],
     )
-    parser.add_argument("--channel", choices=["stable", "nightly"], default=None)
+    parser.add_argument("--channel", choices=["stable"], default=None)
     parser.add_argument(
         "--model",
         action="append",
