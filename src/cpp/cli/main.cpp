@@ -163,6 +163,7 @@ struct CliConfig {
     bool codex_use_user_config = false;
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
+    std::string rocm_arch = "";
 
     // Bench command options
     lemon_cli::BenchCliOptions bench;
@@ -1024,6 +1025,16 @@ static int handle_scan_command(const CliConfig& config) {
     return 0;
 }
 
+static int handle_rocm_arch_command(lemonade::LemonadeClient& client,
+                                   const CliConfig& config,
+                                   bool set_requested) {
+    if (set_requested) {        
+        return client.set_rocm_arch(config.rocm_arch);
+    } else {
+        return client.list_rocm_archs();
+    }
+}
+
 int main(int argc, char* argv[]) {
     // CLI11 configuration
     CLI::App app{"Lemonade CLI - HTTP client for Lemonade Server"};
@@ -1059,6 +1070,14 @@ int main(int argc, char* argv[]) {
     status_cmd->add_flag("--json", config.json_output, "Output status as JSON");
     CLI::App* logs_cmd = app.add_subcommand("logs", "Open server logs in the web UI")->group("Server");
     CLI::App* scan_cmd = app.add_subcommand("scan", "Scan for network beacons")->group("Server");
+
+    // List rocm arch
+    CLI::App* rocm_arch_cmd = app.add_subcommand("rocm-arch", "View or modify ROCm architectures")->group("Server");
+    // We add the subcommand set
+    CLI::App* rocm_arch_set_cmd = rocm_arch_cmd->add_subcommand("set", "Set ROCm architecture to use (e.g. gfx1200, gfx1150, ...)")->group("Subcommands");
+    rocm_arch_set_cmd->add_option("rocm_arch", config.rocm_arch, "ROCm architecture to use")->required();    
+    rocm_arch_set_cmd->allow_extras(true);
+    rocm_arch_set_cmd->fallthrough(false);
 
     // Config commands
     CLI::App* config_cmd = app.add_subcommand("config", "View or modify server configuration")->group("Server");
@@ -1291,6 +1310,9 @@ int main(int argc, char* argv[]) {
         return handle_config_view(client);
     } else if (cleanup_cmd->count() > 0) {
         return client.cleanup_cache(config.dry_run);
+    } else if (rocm_arch_cmd->count() > 0) {
+         return handle_rocm_arch_command(client, config,
+                                       rocm_arch_set_cmd->count() > 0);
     } else if (bench_cmd->count() > 0) {
         auto bench_config = lemon_cli::build_bench_config(config.output_file, config.bench);
         return lemon_cli::handle_bench_command(client, bench_config);

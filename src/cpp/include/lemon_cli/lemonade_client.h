@@ -54,6 +54,14 @@ struct ModelInfo {
     std::string description;
 };
 
+//GPU information structure
+struct GpuInfo {
+    std::string manufacturer;
+    std::string family;
+    std::string name;
+    float vram_gb;
+};
+
 // Recipe backend status structure
 struct BackendStatus {
     std::string name;
@@ -96,6 +104,10 @@ public:
     int list_recipes() const;
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
+
+    // Gpu selector commands
+    int list_rocm_archs() const;
+    int set_rocm_arch(const std::string& rocm_arch) const;
 
     // Cache management
     int cleanup_cache(bool dry_run) const;

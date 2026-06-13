@@ -2085,6 +2085,13 @@ std::string identify_npu_arch() {
 
 std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the best available AMD GPU on this system
+        // Check if user has defined gpu config var.
+    if (auto* cfg = RuntimeConfig::global()) {
+        std::string rocm_arch = cfg->rocm_arch(); 
+        if (!rocm_arch.empty() && rocm_arch != "auto") {
+            return cfg->rocm_arch();
+        }
+    }
     // Checks iGPU first, then dGPUs. Returns empty string if no compatible GPU found.
     try {
         // Use cached system info to avoid re-detecting GPUs
@@ -2115,6 +2122,7 @@ std::string SystemInfo::get_rocm_arch() {
     }
 
     return "";  // No supported architecture found
+
 }
 
 static int cuda_sm_value(const std::string& arch) {

@@ -39,6 +39,7 @@ public:
     bool enable_dgpu_gtt() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;
+    std::string rocm_arch() const;
 
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
@@ -96,6 +97,8 @@ public:
     static void validate_bin_path(const std::string& config_section,
                                   const std::string& key,
                                   const std::string& value);
+
+    static void validate_rocm_arch(const std::string& rocm_arch);
 
 private:
     // Validate a single key/value pair. Throws std::invalid_argument on failure.
