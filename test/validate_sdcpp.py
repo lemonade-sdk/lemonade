@@ -50,7 +50,11 @@ def parse_size(value: str) -> tuple[int, int]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", required=True, choices=["cpu", "vulkan", "rocm", "cuda"])
+    parser.add_argument(
+        "--backend",
+        required=True,
+        choices=["cpu", "vulkan", "rocm", "cuda", "metal"],
+    )
     parser.add_argument("--channel", choices=["stable", "nightly"], default=None)
     parser.add_argument(
         "--model",
