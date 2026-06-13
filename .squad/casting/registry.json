@@ -1,0 +1,68 @@
+{
+  "agents": {
+    "lovell": {
+      "persistent_name": "Lovell",
+      "universe": "Apollo 13",
+      "role": "Lead",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "liebergot": {
+      "persistent_name": "Liebergot",
+      "universe": "Apollo 13",
+      "role": "C++ Server Core",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "aaron": {
+      "persistent_name": "Aaron",
+      "universe": "Apollo 13",
+      "role": "Backend Integrator",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "kranz": {
+      "persistent_name": "Kranz",
+      "universe": "Apollo 13",
+      "role": "Build & Release",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "haise": {
+      "persistent_name": "Haise",
+      "universe": "Apollo 13",
+      "role": "QA / Integration",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "mattingly": {
+      "persistent_name": "Mattingly",
+      "universe": "Apollo 13",
+      "role": "UI / Frontend",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "scribe": {
+      "persistent_name": "Scribe",
+      "universe": "(exempt)",
+      "role": "Session Logger",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "ralph": {
+      "persistent_name": "Ralph",
+      "universe": "(exempt)",
+      "role": "Work Monitor",
+      "created_at": "2026-05-15T00:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    }
+  }
+}

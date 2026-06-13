@@ -1,0 +1,26 @@
+{
+  "universe_usage_history": [
+    {
+      "universe": "Apollo 13",
+      "assigned_at": "2026-05-15T00:00:00Z",
+      "project": "lemonade"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "2026-05-15-initial": {
+      "assignment_id": "2026-05-15-initial",
+      "universe": "Apollo 13",
+      "assigned_at": "2026-05-15T00:00:00Z",
+      "project_description": "C++ HTTP server (lemond) with multiple LLM/audio/image backends as subprocesses; cross-platform desktop + web app on Tauri/React; integration tests in Python.",
+      "shape": "Multi-component systems project: server core, backend integrations, packaging, QA, UI",
+      "cast": {
+        "lovell": "Lead",
+        "liebergot": "C++ Server Core",
+        "aaron": "Backend Integrator",
+        "kranz": "Build & Release",
+        "haise": "QA / Integration",
+        "mattingly": "UI / Frontend"
+      }
+    }
+  }
+}

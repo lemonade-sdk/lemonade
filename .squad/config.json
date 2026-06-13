@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "defaultModel": "claude-sonnet-4.6",
+  "agentModelOverrides": {
+    "scribe": "claude-haiku-4.5"
+  }
+}
