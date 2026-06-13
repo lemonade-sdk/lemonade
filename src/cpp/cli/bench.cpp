@@ -1498,7 +1498,10 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
     cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
     cmd->add_flag("--no-reload", opts.no_reload, "Skip model reload between scenarios (faster but prompt cache may skew results)");
-    cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
+    cmd->add_option("--llamacpp-args", opts.llamacpp_args,
+                    "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). "
+                    "Use -ngl, --gpu-layers, or --n-gpu-layers to override the default GPU layer count. "
+                    "Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--flm-args", opts.flm_args, "Custom args for flm serve. Repeat for multiple.")

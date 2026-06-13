@@ -230,7 +230,7 @@ static const json CLI_OPTIONS = {
     {"--merge-args", {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"help", "Merge global and model arguments when loading the model"}, {"group", "General Options"}}},
     {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"help", "LlamaCpp backend to use"}, {"group", "Llama.cpp Backend Options"}}},
     {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}, {"group", "Llama.cpp Backend Options"}}},
-    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to llama-server"}, {"group", "Llama.cpp Backend Options"}}},
+    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to llama-server (use -ngl, --gpu-layers, or --n-gpu-layers here to override Lemonade's default GPU layer count)"}, {"group", "Llama.cpp Backend Options"}}},
     {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"help", "SD.cpp backend to use"}, {"group", "Stable Diffusion Options"}}},
     {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}, {"group", "Stable Diffusion Options"}}},
     {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"help", "WhisperCpp backend to use"}, {"group", "Whisper.cpp Options"}}},

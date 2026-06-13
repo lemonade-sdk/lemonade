@@ -90,6 +90,30 @@ inline std::string validate_custom_args(const std::string& custom_args_str, cons
     return "";
 }
 
+// True if @p custom_args_str contains any flag token from @p candidate_flags after
+// parse_custom_args(). Handles `--flag=value` by comparing only the portion before `=`.
+inline bool custom_args_contains_any_flag(const std::string& custom_args_str,
+                                           const std::vector<std::string>& candidate_flags) {
+    if (custom_args_str.empty() || candidate_flags.empty()) {
+        return false;
+    }
+    std::set<std::string> candidates(candidate_flags.begin(), candidate_flags.end());
+    for (const auto& token : parse_custom_args(custom_args_str)) {
+        if (token.empty() || token[0] != '-') {
+            continue;
+        }
+        std::string flag = token;
+        const size_t eq_pos = flag.find('=');
+        if (eq_pos != std::string::npos) {
+            flag = flag.substr(0, eq_pos);
+        }
+        if (candidates.count(flag) != 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline std::string map_to_args_string(const std::map<std::string, std::vector<std::string>>& m) {
     std::string result;
     bool first = true;

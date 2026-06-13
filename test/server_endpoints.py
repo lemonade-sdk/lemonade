@@ -458,6 +458,42 @@ class EndpointTests(ServerTestBase):
 
         print(f"[OK] Loaded model with ctx_size={custom_ctx_size}")
 
+    def test_010b_load_model_llamacpp_gpu_layer_override_args(self):
+        """llamacpp_args may set -ngl / --gpu-layers / --n-gpu-layers (not reserved)."""
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        for llamacpp_args in ("-ngl 35", "--gpu-layers=40", "--n-gpu-layers 20"):
+            with self.subTest(llamacpp_args=llamacpp_args):
+                response = requests.post(
+                    f"{self.base_url}/load",
+                    json={
+                        "model_name": ENDPOINT_TEST_MODEL,
+                        "llamacpp_args": llamacpp_args,
+                        "ctx_size": 2048,
+                    },
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f"load with llamacpp_args={llamacpp_args!r}: {response.text}",
+                )
+                loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded)
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+
+        print(
+            "[OK] load accepts llamacpp_args GPU layer overrides (-ngl / --gpu-layers / --n-gpu-layers)"
+        )
+
     def test_011_load_model_save_options(self):
         """Test save_options=true saves settings to recipe_options.json."""
         custom_ctx_size = 4096

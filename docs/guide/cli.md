@@ -315,7 +315,7 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | `4096` |
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-device DEVICE` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | (empty) |
-| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with managed args) | `""` |
+| `--llamacpp-args ARGS` | Custom arguments to pass to llama-server (must not conflict with other managed args; use `-ngl` / `--gpu-layers` / `--n-gpu-layers` here to override the default GPU layer count) | `""` |
 
 #### FLM (`flm` recipe)
 
@@ -586,7 +586,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
-| `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
+| `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Use `-ngl`, `--gpu-layers`, or `--n-gpu-layers` to override the default GPU layer count. Repeat for multiple arg sets. | — |
 | `--flm-args ARGS` | Custom args for flm serve. Repeat for multiple. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 

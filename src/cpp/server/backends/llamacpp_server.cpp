@@ -397,10 +397,19 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
 
-    // Configure GPU layers
-    std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
-    LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
-    push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
+    // Configure GPU layers. If the user already passes -ngl / --gpu-layers / --n-gpu-layers
+    // in llamacpp_args, skip Lemonade's default so those tokens are not reserved.
+    static const std::vector<std::string> k_gpu_layer_flags = {
+        "-ngl", "--gpu-layers", "--n-gpu-layers"};
+    if (!custom_args_contains_any_flag(llamacpp_args, k_gpu_layer_flags)) {
+        std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
+        LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
+        push_arg(args, reserved_flags, "-ngl", gpu_layers,
+                 std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
+    } else {
+        LOG(DEBUG, "LlamaCpp")
+            << "User llamacpp_args sets GPU layer flags; skipping default -ngl" << std::endl;
+    }
 
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {
