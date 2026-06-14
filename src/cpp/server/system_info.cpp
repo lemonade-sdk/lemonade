@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <regex>
@@ -82,35 +83,7 @@ const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
     "sm_90",   // Hopper       (H100, H200)
     "sm_100",  // Blackwell DC (B100, B200)
     "sm_120",  // Blackwell    (RTX 50)
-};
-
-// ROCm architecture mapping - maps specific gfx architectures to their family (download target).
-// Empty string means "no ROCm binary for this ISA" — skip for get_rocm_arch / install filenames.
-const std::map<std::string, std::string> ROCM_ARCH_MAPPING = {
-    // RDNA2 family (gfx103X)
-    {"gfx1030", "gfx103X"},
-    {"gfx1031", "gfx103X"},
-    {"gfx1032", "gfx103X"},
-    {"gfx1034", "gfx103X"},
-    // Note: gfx1033, gfx1035, gfx1036 are NOT included (not confirmed as supported)
-    // map to "" so get_rocm_arch skips them
-    {"gfx1033", ""},
-    {"gfx1035", ""},
-    {"gfx1036", ""},
-
-    // RDNA3 family (gfx110X)
-    {"gfx1100", "gfx110X"},
-    {"gfx1101", "gfx110X"},
-    {"gfx1102", "gfx110X"},
-    {"gfx1103", "gfx110X"},
-
-    // RDNA3.5 iGPUs - explicit binary names (no family mapping)
-    {"gfx1150", "gfx1150"},  // Maps to exact binary name
-    {"gfx1151", "gfx1151"},  // Maps to exact binary name
-
-    // RDNA4 family (gfx120X)
-    {"gfx1200", "gfx120X"},
-    {"gfx1201", "gfx120X"},
+    "sm_121",  // Blackwell    (GB10 / Thor SoC)
 };
 
 #ifdef __linux__
@@ -459,14 +432,14 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"metal", {}},
     }},
     {"llamacpp", "cuda", {"windows", "linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
     {"llamacpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -497,14 +470,14 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1150", "gfx1151", "gfx1152",
+            "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
     // stable-diffusion.cpp - CUDA backend for NVIDIA GPUs (Linux)
     {"sd-cpp", "cuda", {"linux"}, {
-        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120"}},
+        {"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}},
     }},
 
     // stable-diffusion.cpp - Vulkan backend (Windows/Linux x86_64)
@@ -539,9 +512,17 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
 
-    // Moonshine - CPU-only streaming STT (Windows/Linux/macOS)
-    {"moonshine", "cpu", {"windows", "linux", "macos"}, {
+    // Moonshine - CPU-only streaming STT. Platforms match the published
+    // moonshine-server-rocm bundles (moonshine-voice wheels): Windows x64,
+    // Linux x64/arm64, macOS arm64. No Intel macOS or Windows-arm64 wheel.
+    {"moonshine", "cpu", {"windows"}, {
+        {"cpu", {"x86_64"}},
+    }},
+    {"moonshine", "cpu", {"linux"}, {
         {"cpu", {"x86_64", "arm64"}},
+    }},
+    {"moonshine", "cpu", {"macos"}, {
+        {"cpu", {"arm64"}},
     }},
 };
 
@@ -559,6 +540,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
@@ -571,6 +553,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"sm_90",  "NVIDIA H100 / H200 (Hopper)"},
     {"sm_100", "NVIDIA B100 / B200 (Blackwell)"},
     {"sm_120", "GeForce RTX 50 series (Blackwell)"},
+    {"sm_121", "NVIDIA GB10 (Blackwell)"},
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
@@ -1235,6 +1218,42 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // Some recipe/backend pairs are defined multiple times for OS-specific
+    // support, e.g. moonshine/cpu has separate Windows, Linux, and macOS
+    // entries. Keep the most useful status for the current system:
+    // non-unsupported states beat current-OS unsupported states, which beat
+    // unsupported fallback entries from other OS definitions.
+    static constexpr int kOtherOsUnsupportedPriority = 0;
+    static constexpr int kCurrentOsUnsupportedPriority = 1;
+    static constexpr int kNonUnsupportedPriority = 2;
+
+    std::map<std::pair<std::string, std::string>, int> backend_status_priority;
+
+    auto set_backend_status = [&recipes, &backend_status_priority](
+                                const std::string& recipe,
+                                const std::string& backend_name,
+                                const json& backend_status,
+                                int unsupported_priority) {
+        const std::string state = backend_status.value("state", "unsupported");
+        const int priority = (state == "unsupported")
+            ? unsupported_priority
+            : kNonUnsupportedPriority;
+        const auto key = std::make_pair(recipe, backend_name);
+
+        auto existing_priority = backend_status_priority.find(key);
+        if (existing_priority != backend_status_priority.end()
+            && priority <= existing_priority->second) {
+            return;
+        }
+
+        if (!recipes.contains(recipe)) {
+            recipes[recipe] = {{"backends", json::object()}};
+        }
+
+        recipes[recipe]["backends"][backend_name] = backend_status;
+        backend_status_priority[key] = priority;
+    };
+
     // Default to preferring system llamacpp on Linux AMD systems.
     // Can be set via config.json: {"llamacpp": {"prefer_system": true}}
     bool prefer_llamacpp_system = false;
@@ -1278,12 +1297,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"can_uninstall", true},
             };
 
-            // Add to the appropriate recipe/backend structure
-            if (recipes.contains(def.recipe)) {
-                recipes[def.recipe]["backends"][def.backend] = backend;
-            } else {
-                recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
-            }
+            set_backend_status(def.recipe, def.backend, backend, kOtherOsUnsupportedPriority);
             continue;
         }
 
@@ -1560,11 +1574,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
         // using BackendManager as the single source of truth for repo/version mappings.
 
-        // Add to the appropriate recipe/backend structure
-        if (!recipes.contains(def.recipe)) {
-            recipes[def.recipe] = {{"backends", json::object()}};
-        }
-        recipes[def.recipe]["backends"][def.backend] = backend;
+        set_backend_status(def.recipe, def.backend, backend, kCurrentOsUnsupportedPriority);
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
@@ -1644,6 +1654,13 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 }
 
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
+    // Cloud offload has no local hardware/OS requirements; availability is
+    // gated by the CloudProviderRegistry (config.json "cloud_providers") and
+    // a resolvable API key (env var or runtime auth), checked elsewhere in
+    // filter_models_by_backend / CloudServer::load.
+    if (recipe == "cloud") {
+        return "";
+    }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
 }
@@ -1772,7 +1789,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     // Quick guard: require at least one NVIDIA identifier substring
     static const std::vector<std::string> NVIDIA_IDS = {
         "nvidia", "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
-        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40",
+        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40", "gb10",
     };
     bool is_nvidia = false;
     for (const auto& id : NVIDIA_IDS) {
@@ -1793,6 +1810,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     // sm_100 is listed first as a belt-and-suspenders fallback (the early guard
     // above already returns before this table is reached for B100/B200).
     static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
+        {"sm_121", {"gb10"}},
         {"sm_100", {"b100", "b200"}},
         {"sm_120", {"blackwell", "rtx 50", "rtx50", "5090", "5080", "5070", "5060",
                     "rtx pro 6000", "rtx pro 5000", "rtx pro 4500", "rtx pro 4000",
@@ -1816,45 +1834,33 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
 }
 
 // Helper to identify ROCm architecture from GPU name.
-// Returns the mapped family (or exact gfx115x target); map value may be "" to skip ROCm for that ISA.
-// If not in ROCM_ARCH_MAPPING, returns the raw detected arch for other unsupported GPUs.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
     std::smatch gfx_match;
-    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
-        std::string arch = gfx_match[1].str();
-        auto it = ROCM_ARCH_MAPPING.find(arch);
-        if (it != ROCM_ARCH_MAPPING.end()) {
-            return it->second;
-        }
-
-        return arch;
+    // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
+    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
+        return gfx_match[1].str();
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
-    if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
-        if (device_lower.length() >= 4) {
-            std::string major = device_lower.substr(0, 2);
-
-            int minor_int = std::stoi(device_lower.substr(2, 2));
-            std::string minor = std::to_string(minor_int);
-
-            int revision_int = std::stoi(device_lower.substr(4, 2));
-            std::string revision = std::to_string(revision_int);
-
-            std::string arch = "gfx" + major + minor + revision;
-
-            // Apply architecture family mapping if available
-            // Otherwise return the detected arch for unsupported GPUs
-            auto it = ROCM_ARCH_MAPPING.find(arch);
-            if (it != ROCM_ARCH_MAPPING.end()) {
-                return it->second;
-            }
-
-            return arch;  // Return the detected arch even if unsupported
+    if (!device_lower.empty() &&
+        std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
+        int v;
+        try {
+            v = std::stoi(device_lower);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to parse gfx_target_version '" + device_lower + "': " + e.what());
         }
+        int major = v / 10000;
+        int minor = (v / 100) % 100;
+        int step  = v % 100;
+
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
+        return std::string(buf);
     }
 
     if (device_lower.find("radeon") == std::string::npos &&
@@ -1862,35 +1868,28 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "";
     }
 
-    // STX Halo iGPUs (gfx1151 architecture)
-    // Radeon 8050S Graphics / Radeon 8060S Graphics
     if (device_lower.find("8050s") != std::string::npos ||
         device_lower.find("8060s") != std::string::npos ||
         device_lower.find("device 1586") != std::string::npos) {
         return "gfx1151";
     }
 
-    // STX Point iGPUs (gfx1150 architecture)
-    // Radeon 880M / 890M Graphics
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
     }
 
-    // RDNA4 GPUs (gfx120X architecture)
-    // AMD Radeon AI PRO R9700, AMD Radeon RX 9070 XT, AMD Radeon RX 9070 GRE,
-    // AMD Radeon RX 9070, AMD Radeon RX 9060 XT
+    if (device_lower.find("840m") != std::string::npos ||
+        device_lower.find("860m") != std::string::npos) {
+        return "gfx1152";
+    }
+
     if (device_lower.find("r9700") != std::string::npos ||
         device_lower.find("9060") != std::string::npos ||
         device_lower.find("9070") != std::string::npos) {
         return "gfx120X";
     }
 
-    // RDNA3 GPUs (gfx110X architecture)
-    // AMD Radeon PRO V710, AMD Radeon PRO W7900 Dual Slot, AMD Radeon PRO W7900,
-    // AMD Radeon PRO W7800 48GB, AMD Radeon PRO W7800, AMD Radeon PRO W7700,
-    // AMD Radeon RX 7900 XTX, AMD Radeon RX 7900 XT, AMD Radeon RX 7900 GRE,
-    // AMD Radeon RX 7800 XT, AMD Radeon RX 7700 XT
     if (device_lower.find("7700") != std::string::npos ||
         device_lower.find("7800") != std::string::npos ||
         device_lower.find("7900") != std::string::npos ||
@@ -1898,10 +1897,6 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
         return "gfx110X";
     }
 
-    // RDNA2 GPUs (gfx103X architecture)
-    // AMD Radeon RX 6800 XT, AMD Radeon RX 6800, AMD Radeon RX 6700 XT,
-    // AMD Radeon RX 6700, AMD Radeon RX 6600 XT, AMD Radeon RX 6600,
-    // AMD Radeon RX 6500 XT, AMD Radeon RX 6500
     if (device_lower.find("6800") != std::string::npos ||
         device_lower.find("6700") != std::string::npos ||
         device_lower.find("6600") != std::string::npos ||

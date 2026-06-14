@@ -2,6 +2,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -36,6 +37,12 @@ json ConfigFile::get_defaults() {
         defaults = utils::JsonUtils::merge(defaults, load_json_file(distro_defaults));
     }
 #endif
+
+    // Packagers on non-FHS distros (Nix, Guix) can't write the /usr/share
+    // file above; this seeds the same defaults from any path.
+    if (const char* env = std::getenv("LEMONADE_DEFAULTS_PATH"); env && *env && fs::exists(env)) {
+        defaults = utils::JsonUtils::merge(defaults, load_json_file(env));
+    }
 
     return defaults;
 }

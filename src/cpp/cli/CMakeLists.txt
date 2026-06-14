@@ -87,6 +87,7 @@ set(COMMON_SOURCES
     recipe_import.cpp
     hf_pull.cpp
     bench.cpp
+    chat_repl.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp
@@ -95,7 +96,26 @@ set(COMMON_SOURCES
     agent_launcher.cpp
     agent_config_file.cpp
     opencode_profile.cpp
+    pi_profile.cpp
 )
+
+# Add platform-specific sources
+if(WIN32)
+    list(APPEND COMMON_SOURCES
+        ../server/utils/platform/path_windows.cpp
+        ../server/utils/platform/process_windows.cpp
+    )
+elseif(APPLE)
+    list(APPEND COMMON_SOURCES
+        ../server/utils/platform/path_macos.cpp
+        ../server/utils/platform/process_macos.cpp
+    )
+elseif(UNIX)
+    list(APPEND COMMON_SOURCES
+        ../server/utils/platform/path_linux.cpp
+        ../server/utils/platform/process_unix.cpp
+    )
+endif()
 
 # ============================================================
 # lemonade - HTTP client CLI
