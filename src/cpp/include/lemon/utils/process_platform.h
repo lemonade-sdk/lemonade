@@ -27,6 +27,16 @@ public:
     virtual int wait_for_exit(ProcessHandle handle, int timeout_seconds) = 0;
     virtual void kill(ProcessHandle handle) = 0;
 
+    // Explicit lifecycle cleanup for watchdog/reset paths.
+    //
+    // Default implementations keep older platform files source-compatible while
+    // updated platform implementations provide the correct OS-specific behavior.
+    virtual int reap(ProcessHandle handle) {
+        return get_exit_code(handle);
+    }
+
+    virtual void terminate_without_cleanup(ProcessHandle handle) = 0;
+
     // Process with output callback
     virtual int run_with_output(
         const std::string& executable,
