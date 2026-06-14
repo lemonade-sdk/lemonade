@@ -794,6 +794,18 @@ class LemonadeAPI {
     return this._json<Record<string, unknown>>('/internal/config');
   }
 
+  /**
+   * Update server-wide runtime configuration via POST /internal/set. Accepts a
+   * partial { key: value } map and applies it immediately on the server (no
+   * restart). When the server enforces an admin API key, an unauthorized response
+   * surfaces as a LemonadeRequestError with `.status` 401/403 so callers can point
+   * the user at LEMONADE_ADMIN_API_KEY. Uses _fetch rather than _json because
+   * /internal/set may return an empty body.
+   */
+  async setRuntimeConfig(updates: Record<string, unknown>): Promise<void> {
+    await this._fetch('/internal/set', { method: 'POST', body: updates });
+  }
+
   async getDefaultContextSize(): Promise<number | undefined> {
     const data = await this.getRuntimeConfig();
     const n = Number(data.ctx_size);

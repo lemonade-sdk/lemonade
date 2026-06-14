@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api, { ConnectionStatus, friendlyErrorMessage, normalizeBaseUrl } from '../api';
 import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
+import ServerSettings from './ServerSettings';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -162,6 +163,8 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
           </span>
         </div>
       </form>
+
+      {status === 'connected' && <ServerSettings />}
     </div>
   );
 };

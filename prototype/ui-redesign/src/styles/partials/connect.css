@@ -67,3 +67,52 @@
 .connect__status-dot--connected { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
 .connect__status-dot--connecting { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
 
+/* ---------- Server configuration (model folders) ---------- */
+.server-settings {
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.server-settings__title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  margin: 0;
+}
+
+.server-settings__intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.server-settings__field { gap: var(--space-2); }
+
+.server-settings__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.server-settings__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.server-settings__row input { flex: 1; }
+
+.server-settings__status {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.server-settings__status--error { color: var(--danger); }
+
