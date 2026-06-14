@@ -16,15 +16,18 @@ import unittest
 # Python replica of system_info.cpp::identify_rocm_arch_from_name()
 # ---------------------------------------------------------------------------
 
-ROCM_SUPPORTED_ARCHS = {
-    "gfx908",   # CDNA1 (MI100)
-    "gfx90a",   # CDNA2 (MI200/MI210/MI250)
-    "gfx1150",  # Strix Point iGPU
-    "gfx1151",  # Strix Halo iGPU
-    "gfx1152",  # Krackan Point iGPU
-    "gfx103X",  # RDNA2 dGPUs
-    "gfx110X",  # RDNA3 dGPUs
-    "gfx120X",  # RDNA4 dGPUs
+# Family/constraint tokens as used in RECIPE_DEFS. CDNA entries are concrete arch
+# strings; RDNA entries are wildcard family tokens (gfx103X etc.) matched by the
+# name-based fallback, not by the KFD path which produces exact arches (gfx1030).
+ROCM_SUPPORTED_FAMILIES = {
+    "gfx908",   # CDNA1 (MI100) — exact arch
+    "gfx90a",   # CDNA2 (MI200/MI210/MI250) — exact arch
+    "gfx1150",  # Strix Point iGPU — exact arch
+    "gfx1151",  # Strix Halo iGPU — exact arch
+    "gfx1152",  # Krackan Point iGPU — exact arch
+    "gfx103X",  # RDNA2 dGPUs — family token (name-based detection only)
+    "gfx110X",  # RDNA3 dGPUs — family token
+    "gfx120X",  # RDNA4 dGPUs — family token
 }
 
 _GFX_RE = re.compile(r"(gfx[0-9a-f]{3,4})")
@@ -222,7 +225,7 @@ class TestIdentifyRocmArchFromName(unittest.TestCase):
     def test_cdna_in_supported_set(self):
         for name in ("AMD Instinct MI100", "AMD Instinct MI250X", "90008", "90010"):
             arch = identify_rocm_arch_from_name(name)
-            self.assertIn(arch, ROCM_SUPPORTED_ARCHS, f"{name!r} -> {arch!r} not in supported set")
+            self.assertIn(arch, ROCM_SUPPORTED_FAMILIES, f"{name!r} -> {arch!r} not in supported families")
 
 
 if __name__ == "__main__":
