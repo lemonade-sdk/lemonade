@@ -54,14 +54,6 @@ struct ModelInfo {
     std::string description;
 };
 
-//GPU information structure
-struct GpuInfo {
-    std::string manufacturer;
-    std::string family;
-    std::string name;
-    float vram_gb;
-};
-
 // Recipe backend status structure
 struct BackendStatus {
     std::string name;

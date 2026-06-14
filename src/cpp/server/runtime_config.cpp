@@ -133,34 +133,28 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 }
 
 void RuntimeConfig::validate_rocm_arch(const std::string& rocm_arch) {
+    std::vector<ROCmDevInfo> rocm_devs;
+    bool rocm_arch_found = false;
 
     // We check if rocm_arch has the correct format and if we have an active gpu with that architecture.
-
-    if (rocm_arch != "auto" && !rocm_arch_is_valid_gfx(rocm_arch)) {
+    if (!rocm_arch.empty() && rocm_arch != "auto" ) {
+        return ;
+    }
+    if (!rocm_arch_is_valid_gfx(rocm_arch)) {
         throw std::invalid_argument("'rocm_arch' has NOT valid format");
     }
-    if (rocm_arch != "auto") {
-        bool rocm_arch_found = false;
-        json system_info = SystemInfoCache::get_system_info_with_cache();
-        if (system_info.contains("devices")) {
-            const auto& device = system_info["devices"];
-            // AMD
-            if (device.contains("amd_gpu")) {
-                if (device["amd_gpu"].is_array()) {
-                    for (const auto& amd_gpu : device["amd_gpu"]) {
-                        if (amd_gpu.contains("available") && amd_gpu["available"].is_boolean() && amd_gpu["available"]) {
-                            if (rocm_arch == rocm_arch_numeric_to_gfx(amd_gpu["name"])) {
-                                rocm_arch_found = true;
-                                break;
-                            }
-                        }
-                    }
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+    if (system_info.contains("devices")) {
+            rocm_devs = lemon::ROCmArchUtils::rocm_arch_get_active_devices(system_info["devices"]); 
+            for (const auto& rocm_dev : rocm_devs) {
+                if (rocm_arch == rocm_dev.name) {
+                    rocm_arch_found = true;
+                    break;
                 }
             }
-        }
-        if (!rocm_arch_found) {
-            throw std::invalid_argument("There is NOT active GPU with selected 'rocm_arch'");
-        }
+    }
+    if (!rocm_arch_found) {
+        throw std::invalid_argument("There is NOT active GPU with selected 'rocm_arch'");
     }
 }
 
@@ -471,13 +465,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_string()) {
             throw std::invalid_argument("'rocm_arch' must be a string");
         }
-        if (value != "auto" && !rocm_arch_is_valid_gfx(value)) {
-            throw std::invalid_argument("'rocm_arch' has NOT valid format");
-        }
-        if (value != "auto") {
-
-        }
-        //Opcional check si el sistema tiene activa esa arquitectura.
+        validate_rocm_arch(value);
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");

@@ -4,15 +4,15 @@
 
 namespace lemon{
 
-
-bool rocm_arch_is_valid_gfx(const std::string& gfx_arch) {
-   std::smatch gfx_match;
-   return std::regex_search(gfx_arch, gfx_match, std::regex(R"((gfx\d{4}))"));
+bool ROCmArchUtils::rocm_arch_is_valid_gfx(const std::string& gfx_arch) {
+    std::smatch gfx_match;
+    return std::regex_search(gfx_arch, gfx_match, std::regex(R"((gfx\d{4}))"));
 }
 
 // In this function we tranform the rocm archictecture from numeric format to gfx format.
-std::string rocm_arch_numeric_to_gfx(const std::string& numeric_arch) {
-    try {
+std::string ROCmArchUtils::rocm_arch_numeric_to_gfx(const std::string& numeric_arch) {
+    if rocm_arch_is_valid_gfx(const std::string& gfx_arch)
+     try {
         // We convert the string with numeric version to long long number
         long long num = std::stoll(numeric_arch);
         
@@ -33,5 +33,24 @@ std::string rocm_arch_numeric_to_gfx(const std::string& numeric_arch) {
         throw std::invalid_argument("The numeric version is not a valid number");
     }
 }
+
+std::vector<ROCmDeviceInfo> ROCmArchUtils::rocm_arch_get_active_devices(const json& devices) {
+    std::vector<ROCmDeviceInfo> active_devs;
+
+    if (device.contains("amd_gpu")) {
+        if (device["amd_gpu"].is_array()) {
+            for (const auto& amd_gpu : device["amd_gpu"]) {
+                ROCmDeviceInfo dev;
+                if (amd_gpu.contains("available") && amd_gpu["available"].is_boolean() && amd_gpu["available"]) {
+                    dev.name = lemon::ROCmArchUtils::rocm_arch_numeric_to_gfx(amd_gpu["name"]);
+                    dev.vram_gb = amd_gpu["vram_gb"];
+                    active_devs.push_back(dev);
+                }
+            }
+        }
+    }
+    return active_devs;
+}
+
 
 } // namespace lemon

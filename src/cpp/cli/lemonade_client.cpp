@@ -458,11 +458,7 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
 }
 
 int LemonadeClient::set_rocm_arch(const std::string& rocm_arch) const{
-
-    if (rocm_arch.empty()) {
-        std::cerr << "Error Rocm arch value is empty" << std::endl;
-        return 1;
-    }
+    std::vector<ROCmDevInfo> rocm_devs;
 
     // Check if the rocm_arch var exists at server config.json
     try {
@@ -481,24 +477,18 @@ int LemonadeClient::set_rocm_arch(const std::string& rocm_arch) const{
     }
 
     // Check if an active  gpu with Rocm arch exists at server. We only check if it is NOT auto.
-    if (rocm_arch != "auto") {
+    if (!rocm_arch.empty() && rocm_arch != "auto") {
         bool rocm_arch_found = false;
         try {
             std::string response = make_request("/api/v1/system-info");
             auto json_response = json::parse(response);
+
             if (json_response.contains("devices")) {
-                const auto& device = json_response["devices"];
-                // AMD
-                if (device.contains("amd_gpu")) {
-                    if (device["amd_gpu"].is_array()) {
-                        for (const auto& amd_gpu : device["amd_gpu"]) {
-                            if (amd_gpu.contains("available") && amd_gpu["available"].is_boolean() && amd_gpu["available"]) {
-                                if (rocm_arch == lemon::rocm_arch_numeric_to_gfx(amd_gpu["name"])) {
-                                    rocm_arch_found = true;
-                                    break;
-                                }
-                            }
-                        }
+                rocm_devs = lemon::ROCmArchUtils::rocm_arch_get_active_devices(json_response["devices"]); 
+                for (const auto& rocm_dev : rocm_devs) {
+                    if (rocm_arch == rocm_dev.name) {
+                        rocm_arch_found = true;
+                        break;
                     }
                 }
             }
@@ -545,6 +535,8 @@ int LemonadeClient::set_rocm_arch(const std::string& rocm_arch) const{
 
 int LemonadeClient::list_rocm_archs() const {
 
+    std::vector<ROCmDevInfo> rocm_devs;
+
     // Check if rocm_archs config var exists at server.
     try {
         std::string config_response = make_request("/internal/config");
@@ -562,41 +554,18 @@ int LemonadeClient::list_rocm_archs() const {
         return 1;
     }
 
-    std::cout << "List of avaible ROCm architectures." << std::endl;
-    std::cout << "---------------------" << std::endl;
-    std::vector<GpuInfo> gpus_amd;
-    std::vector<GpuInfo> gpus_nvidia;
-
     try {
+        std::cout << "List of avaible ROCm architectures." << std::endl;
+        std::cout << "----------------------------------------------" << std::endl;
         std::string response = make_request("/api/v1/system-info");
         auto json_response = json::parse(response);
         if (json_response.contains("devices")) {
-            GpuInfo gpu;
-            const auto& device = json_response["devices"];
-
-            // AMD
-            if (device.contains("amd_gpu")) {
-                if (device["amd_gpu"].is_array()) {
-                    for (const auto& amd_gpu : device["amd_gpu"]) {
-                        if (amd_gpu.contains("available") && amd_gpu["available"].is_boolean() && amd_gpu["available"]) {
-                            gpu.manufacturer = "AMD";
-                            gpu.family = amd_gpu["family"];
-                            gpu.name = lemon::rocm_arch_numeric_to_gfx(amd_gpu["name"]);
-                            gpu.vram_gb = amd_gpu["vram_gb"];
-                            gpus_amd.push_back(gpu);
-                        }
-                    }
-                }
-
-            }
-        }
-
-        std::cout << "Active AMD GPUs detected" << std::endl;
-        std::cout << "----------------------------------------------" << std::endl;
+            rocm_devs = lemon::ROCmArchUtils::rocm_arch_get_active_devices(json_response["devices"]); 
+        }        
         std::cout << "architecture\t| vram (GB)\t|" << std::endl;
-        for (const auto& gpu : gpus_amd) {
+        for (const auto& rocm_dev : rocm_devs) {
 
-            std::cout << " " << gpu.name << "\t" << "  " << gpu.vram_gb << std::endl;
+            std::cout << " " << rocm_dev.name << "\t" << "  " << rocm_dev.vram_gb << std::endl;
         }
         std::cout << "----------------------------------------------" << std::endl << std::endl;
         return 0;
