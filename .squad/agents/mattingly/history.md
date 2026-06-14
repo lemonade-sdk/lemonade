@@ -15,6 +15,39 @@ Leading UI POC on `feat/ui-testing`. React stays (ROI analysis showed ~300 LOC s
 
 ## Active Learnings
 
+### 2026-06-14: Accessibility test suite — a11y.spec.ts (branch kpoin/ui-accessibility)
+
+Wrote `prototype/ui-redesign/tests/a11y.spec.ts` — 34 Playwright tests covering all Phase 1 + Phase 2 a11y items shipped earlier on this branch. Also installed `@axe-core/playwright` (not previously in devDeps) and added `npm run test:a11y` script.
+
+**Test groups:**
+
+- **A01–A05 — axe-core WCAG 2.1 AA scans:** `new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze()` on Chat, Models, Presets, Connect, Dashboard. Filters to `critical | serious` violations only — moderate/minor are noise in a POC. Failure message includes the violation ID, description, and impact level for fast triage.
+
+- **A06–A09 — Skip link:** Tab-once-from-load test; off-screen bounding box check (top: -40px → `box.y + box.height ≤ 0`); focus ring present when tabbed; Enter moves focus to `#main-content`. One subtle gotcha: `.skip-link:focus { top: var(--space-2) }` uses `:focus` not `:focus-visible`, so both keyboard and (theoretical) mouse focus make it visible — intentional for a skip link.
+
+- **A10–A13 — Landmarks:** Simple count/attribute assertions. These are the cheapest tests and catch regressions from DOM refactors.
+
+- **A14–A16 — Keyboard nav:** Tab counting is inherently fragile so I used generous thresholds (12 Tabs for nav, 40 for textarea) rather than exact counts. This avoids test rot when new interactive elements are added upstream.
+
+- **A17–A20 — Bottom sheet focus trap (mobile):** Requires `page.setViewportSize({ width: 390, height: 844 })` because `.bottom-sheet { display: none }` at desktop widths. Uses `.evaluateAll()` with the same FOCUSABLE selector as `useFocusTrap.ts` to count trapped elements, excluding `aria-hidden="true"` ancestors. In the empty state there's only 1 focusable element (`bottom-sheet__new`), so the Tab-wrap test does 1 press and confirms focus stays inside (wraps to itself). The ESC + focus-return test relies on `sheetTriggerRef.current?.focus()` in `closeMobileSheet` — I verified this in the source before writing the test.
+
+- **A21–A24 — Preset slideover focus trap:** Opened by clicking `.recipe-card`. The `triggerRef` in PresetManager stores `document.activeElement` at open time (the clicked article element), then calls `requestAnimationFrame(() => triggerRef.current?.focus())` on close. A24 waits 200ms for the rAF. Closeness check: `el.classList.contains('recipe-card') || el.closest('.recipe-card') !== null` to handle both the article and any focused child inside it.
+
+- **A25–A27 — aria-live regions:** Both regions exist in DOM at page load (ChatView renders them unconditionally outside of any conditional branch). Both are `.sr-only` (1×1 px bounding box). **Streaming content verification (debounced content in polite region, 'Assistant is responding' in assertive) is a TODO** — it needs a `page.route()` SSE mock for `POST /api/v1/chat/completions`. That mock is non-trivial and was left for a follow-up task.
+
+- **A28–A30 — :focus-visible rings:** Key insight: `:focus-visible` fires on keyboard Tab for `<button>` but NOT on `page.mouse.click()`. After removing the global `outline: none` reset in Phase 1, the only outline source is the `:focus-visible { outline: 2px solid var(--accent) }` rule. Mouse-click on a button → `outlineWidth === '0px'`. Tab to same button → `outlineWidth === '2px'`.
+
+- **A31–A34 — prefers-reduced-motion:** `page.emulateMedia({ reducedMotion: 'reduce' })` before `goto`. `getComputedStyle` on `.bottom-sheet` for `transitionDuration` at 480px viewport — expect `< 0.01s` (the rule sets `0.01ms !important`). Normal mode expects `> 0.1s` (280ms = 0.28s). A34 checks `transform: none` on the sheet (the explicit bottom-sheet rule in the reduce block, separate from the wildcard transition rule). Normalised duration helper handles both `'0.28s'` and `'280ms'` string formats from `getComputedStyle`.
+
+**Commits:**
+1. `79db3bd5` — dep + script (package.json only; package-lock.json is gitignored in this repo)
+2. `f6f6b75a` — a11y.spec.ts + ACCESSIBILITY.md "Running the tests" section
+
+**Files changed:**
+- `prototype/ui-redesign/tests/a11y.spec.ts` — new, 34 tests
+- `prototype/ui-redesign/package.json` — @axe-core/playwright devDep + test:a11y script
+- `prototype/ui-redesign/ACCESSIBILITY.md` — "Running the Accessibility Tests" section appended
+
 ### 2026-06-13: Mobile API/logs connectivity + choice feedback (branch kpoin/ui-mobile-layout)
 
 **Task 1 — Mobile URL fix (api.ts `baseUrl` getter, lines ~341-355)**
@@ -294,3 +327,70 @@ Chose option 3.
 - `prototype/ui-redesign/src/components/ChatView.tsx` — `mobileSheetOpen` state, `handleRailToggle` with width check, `closeMobileSheet`, ESC effect, drag-to-close effect, mobile trigger button JSX, bottom sheet JSX with conversation list
 - `prototype/ui-redesign/src/styles/styles.css` — `.chat__mobile-rail-trigger` (hidden by default, shown at 480px), `.bottom-sheet-backdrop`, `.bottom-sheet` + `.bottom-sheet--open`, `.bottom-sheet__handle`, `.bottom-sheet__handle-pill`, `.bottom-sheet__new`, `.bottom-sheet__list` (all inside `@media (max-width: 480px)`)
 - `prototype/ui-redesign/scripts/screenshot-bottom-sheet.mjs` — new; Playwright script for bottom sheet verification screenshots
+
+### 2026-06-14: Phase 1 + Phase 2 accessibility implemented (branch kpoin/ui-accessibility)
+
+**All Phase 1 items shipped. Phase 2 items 11–15 shipped; items 16–18 deferred to Phase 3.**
+
+#### Phase 1 — what shipped
+
+1. **Skip link** (`App.tsx`, `styles.css`) — `<a href="#main-content" class="skip-link">` as first child of root; visible on `:focus` via `top: var(--space-2)` transition; hidden otherwise (`top: -40px`).
+2. **`<main>` landmark** (`App.tsx`) — `<div className="view-container">` replaced with `<main id="main-content" className="view-container">`. App return now wrapped in fragment to accommodate the skip link sibling.
+3. **Focus rings** (`styles.css`) — Removed `outline: none` from the `input, textarea` reset block. Added global `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }`. Added `.slider:focus-visible { outline: none; }` exception since sliders use thumb box-shadow instead.
+4. **Composer textarea `aria-label`** (`ChatView.tsx`) — `aria-label="Message"` on the main textarea.
+5. **Persistence checkbox** — Already had implicit `<label>` wrapping (`<label className="rail__privacy-toggle">` wraps both the `<input>` and the `<span>` text). No change needed; confirmed compliant.
+6. **Preset slideover input labels** (`PresetManager.tsx`) — `aria-label="Preset name"` on title input, `aria-label="Description"` on description textarea.
+7. **Preset slideover dialog semantics** (`PresetManager.tsx`) — Added `role="dialog" aria-modal="true" aria-label="Preset details"` to the `<aside>`. ESC closes via `useEffect` keydown listener that fires when `selectedPreset` is truthy.
+8. **Prefers-reduced-motion** (`styles.css`) — `@media (prefers-reduced-motion: reduce)` block at end of file: sets all `animation-duration`, `animation-iteration-count`, `transition-duration` to `0.01ms !important`; adds `scroll-behavior: auto !important`; adds `.bottom-sheet { transform: none !important }` so sheet snaps open/closed without the slide animation.
+9. **Status dot ARIA** (`App.tsx`) — Added `role="status"` and `aria-label` (matching the `title` value) to `<span className="titlebar__status-dot">`.
+
+#### Phase 2 — what shipped
+
+10. **`useFocusTrap` hook** (`src/hooks/useFocusTrap.ts`) — New file. Custom hook; no new npm dep. Collects all focusable children, focuses first on activation, traps Tab/Shift+Tab at boundaries. Filters out children inside `aria-hidden="true"` ancestors to avoid focusing screen-reader-hidden elements.
+11. **Bottom sheet focus trap** (`ChatView.tsx`) — `useRef<HTMLDivElement>(null)` on the `.bottom-sheet` div; `useFocusTrap(bottomSheetRef, mobileSheetOpen)` activates when sheet opens.
+12. **Preset slideover focus trap + focus return** (`PresetManager.tsx`) — `useRef<HTMLElement>(null)` on the slideover `<aside>`; `useFocusTrap(slideoverRef, !!selectedPreset)`. Added `triggerRef` that captures `document.activeElement` before `setSelectedPreset` is called; `closeSlideover()` calls `requestAnimationFrame(() => triggerRef.current?.focus())` so focus returns to the card that opened the panel.
+13. **div→button conversions** (`ModelManager.tsx`) — Three `div.row__content` elements with `onClick` converted to `<button type="button" className="row__content">` with `aria-expanded`. Interactive children (`CopyInlineButton`) moved outside the button to avoid nesting interactive elements. Added `.row__summary` wrapper div and CSS so the copy button renders inline beside the button. BackendManager's `div.cell__actions` left as-is — it is a non-interactive container that only calls `e.stopPropagation()`.
+14. **`aria-live` for streaming** (`ChatView.tsx`) — Two hidden `<div aria-live>` regions appended inside the fragment wrapper. `aria-live="assertive"` announces "Assistant is responding" on stream start and "Response complete" on stream end. `aria-live="polite"` receives debounced flush of `streamingContent` (400ms default; 100ms on sentence/clause boundary detection via `[.!?\n]` on last 2 chars). Both use `.sr-only` class for visual hiding. Timer cleaned up on unmount.
+15. **Color contrast fixes** (`tokens.css`, `styles.css`) — `--text-disabled` dark: `#5C594F` → `#7A776E` (~4.6:1 on `--surface-base`). `--text-disabled` light: `#999999` → `#767676` (exactly 4.5:1 on white). New `--accent-fg` token: `var(--accent)` in dark (yellow on dark surface = passes), `var(--accent-deep)` in light (avoids yellow-on-white 1.4:1 failure). All `color: var(--accent)` and `border-color: var(--accent)` foreground uses in styles.css migrated to `var(--accent-fg)` to gate light-theme contrast automatically.
+
+#### Phase 2 — what was deferred to Phase 3
+
+- **Item 16 — Keyboard shortcut system** (`2.7`): Scope exceeded Phase 2 budget; requires global hotkey registry, cheat sheet modal, and guard logic for input focus. Deferred.
+- **Item 17 — Font scale control** (`2.1`): Requires settings panel + `--font-scale` token + A−/A+ UI. Deferred.
+- **Item 18 — Message article/ol structure** (`1.1.3`): Large ChatView refactor affecting message rendering across 5+ components. Deferred.
+- **Partial: focus trap scope** (`1.4.2`): Traps implemented for bottom sheet and preset slideover. Composer model-search menu and AccountMenu dialog still lack focus traps — noted as remaining in ACCESSIBILITY.md.
+- **Partial: ESC coverage** (`1.3.2`): Preset slideover has ESC. Composer model-search menu and AccountMenu still need ESC handlers.
+
+#### Tricky bits
+
+- **aria-live debounce vs token spam:** Token-by-token `aria-live` updates would interrupt screen readers on every token. The 400ms debounce with sentence-boundary fast-path (100ms) gives a good balance — screen reader hears complete phrases rather than individual tokens or one giant dump at the end.
+- **Focus trap + aria-hidden:** The useFocusTrap FOCUSABLE selector alone would match elements inside `aria-hidden="true"` regions (e.g. the backdrop). Added `.filter(element => !element.closest('[aria-hidden="true"]'))` to exclude them.
+- **row__content div→button:** Converting the expandable row trigger to a `<button>` required extracting `CopyInlineButton` (itself a button) out of the row content to avoid a button-inside-button HTML violation. Added a `.row__summary` wrapper grid to lay them side by side cleanly.
+- **--accent-fg token strategy:** Rather than a `[data-theme="light"]` one-off override on each failing rule, introduced `--accent-fg` as a semantic alias that resolves to `--accent` in dark and `--accent-deep` in light. One token swap, all instances fixed at once.
+
+**Files changed:**
+- `prototype/ui-redesign/src/App.tsx` — skip link, `<main>`, status dot ARIA
+- `prototype/ui-redesign/src/components/ChatView.tsx` — textarea label, aria-live regions, bottom-sheet focus trap
+- `prototype/ui-redesign/src/components/ModelManager.tsx` — div→button row conversions
+- `prototype/ui-redesign/src/components/PresetManager.tsx` — dialog semantics, ESC, focus trap, focus return, input labels
+- `prototype/ui-redesign/src/hooks/useFocusTrap.ts` — new file
+- `prototype/ui-redesign/src/styles/styles.css` — focus rings, skip link, sr-only, reduced motion, accent-fg migration, row__summary
+- `prototype/ui-redesign/src/styles/tokens.css` — --text-disabled fixes, --accent-fg token
+- `prototype/ui-redesign/ACCESSIBILITY.md` — status updated, Phase 1/2 items marked ✅ DONE
+
+### 2026-06-14: Accessibility plan drafted (branch kpoin/ui-accessibility)
+
+**Document created:** `prototype/ui-redesign/ACCESSIBILITY.md` — planning/roadmap doc, no code changed.
+
+**Current a11y state assessment (as of HEAD on kpoin/ui-accessibility):**
+
+The prototype has a mixed accessibility posture. Several good patterns are in place — `<nav aria-label="Primary">`, `<aside>` for rail/logs panels, nav button `aria-label` (added Round 2), bottom sheet with `role="dialog" aria-modal="true"` and ESC/focus-return, `ConnectView` with explicit `htmlFor` label associations. However there are significant gaps:
+
+- **P0 gaps:** No `<main>` landmark; no skip link; global `outline: none` suppresses all focus rings (except sliders); composer textarea has no `aria-label`; preset slideover lacks `role="dialog"` and focus trap; `div.onClick` elements in AccountMenu, BackendManager, ModelManager, PresetManager have no keyboard activation; **zero `aria-live` regions** — streaming output is completely inaccessible to screen readers; no `@media (prefers-reduced-motion)` guard on any animation or transition.
+- **P1 gaps:** `--text-disabled` tokens in both themes estimated below 4.5:1; yellow accent as foreground text on light theme may fail; preset slideover name/desc inputs have no label; persistence checkbox in bottom sheet has no label; LogViewer search input unconfirmed.
+- **Good news:** The token system (`tokens.css`) makes a `--font-scale` multiplier straightforward to add. The `[data-theme]` attribute pattern makes a high-contrast theme slot-in easy. Existing motion tokens (`--duration-*`) make `prefers-reduced-motion` a single override block.
+
+**Plan summary (19 items across 3 phases):**
+- Phase 1 (S-effort quick wins): 10 items — landmarks, skip link, focus ring, aria-labels, reduced motion block
+- Phase 2 (M-effort structural): 8 items — div→button conversion, focus traps, aria-live streaming, contrast audit, shortcuts, font scale
+- Phase 3 (L-effort enhancements): 4 items — high-contrast theme, Lexend font, verbosity settings, message role polish
