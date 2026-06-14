@@ -277,6 +277,74 @@ jobs:
           path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
 
+  build-lemonade-debian13:
+    name: Build Lemonade .deb Package (Debian 13)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    container:
+      image: debian:stable
+    steps:
+      - name: Enable Trixie backports
+        run: |
+          echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
+      - name: Install git
+        run: |
+          set -e
+          apt-get update
+          apt-get install -y git
+      - name: Install from backports
+        run: |
+          set -e
+          apt-get install -y -t trixie-backports libcpp-httplib-dev node-markdown-it-texmath
+
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: '13'
+          codename: 'trixie'
+
+      - name: Build Debian package
+        id: build_deb
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
+
+      - name: Rename server .deb for release
+        id: rename
+        shell: bash
+        run: |
+          set -e
+          VERSION="${{ steps.get_version.outputs.version }}"
+          OUTPUT_DIR="${{ steps.build_deb.outputs.output-dir }}"
+          SRC=$(ls "$OUTPUT_DIR"/lemonade-server_*_amd64.deb | head -n1)
+          if [ -z "$SRC" ]; then
+            echo "ERROR: server .deb not found in $OUTPUT_DIR"
+            ls -la "$OUTPUT_DIR"
+            exit 1
+          fi
+          DEST="$OUTPUT_DIR/lemonade-server_${VERSION}-debian13_amd64.deb"
+          mv "$SRC" "$DEST"
+          echo "Renamed $SRC -> $DEST"
+          echo "deb-path=$DEST" >> $GITHUB_OUTPUT
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-debian13
+          path: ${{ steps.rename.outputs.deb-path }}
+          retention-days: 7
+
   build-lemonade-rpm:
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}
     runs-on: ubuntu-latest
@@ -2040,6 +2108,7 @@ jobs:
     needs:
       - sign-msi-installers
       - build-lemonade-rpm
+      - build-lemonade-debian13
       - build-lemonade-macos-dmg
       - build-lemonade-embeddable-linux
       - build-lemonade-embeddable-windows
@@ -2069,6 +2138,12 @@ jobs:
           pattern: lemonade-rpm-fedora-*
           path: .
           merge-multiple: true
+
+      - name: Download Lemonade .deb (Debian 13)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13
+          path: .
 
       - name: Download Lemonade macOS .pkg Package
         uses: actions/download-artifact@v7
@@ -2100,6 +2175,7 @@ jobs:
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
           ls -lh lemonade-server-*.x86_64.rpm
+          ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
           ls -lh *.pkg
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
@@ -2122,6 +2198,7 @@ jobs:
             lemonade-server-minimal.msi
             lemonade.msi
             lemonade-server-*.x86_64.rpm
+            lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
             *.pkg
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
