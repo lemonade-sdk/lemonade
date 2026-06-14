@@ -151,7 +151,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #ifdef _WIN32
         params.filename = "sd-" + short_version + "-windows-cuda-" + target_arch + "-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
+#else
         params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#endif
 #else
         throw std::runtime_error("CUDA sd.cpp is currently supported on Windows and Linux only");
 #endif

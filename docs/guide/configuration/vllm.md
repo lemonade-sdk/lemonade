@@ -35,7 +35,9 @@ The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`)
 
 ## Use
 
-Models registered with the `vllm` recipe in [`server_models.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json) load automatically on first request. To register your own:
+Models registered with the `vllm` recipe in [`server_models.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/server_models.json) load automatically on first request. Built-in `vllm` entries serve the upstream Hugging Face weights as-is in **FP16** — there is no quantization step in the load path — so their model IDs carry an explicit `-FP16-` segment (e.g. `Qwen3.5-4B-FP16-vLLM`). This mirrors the `-Hybrid` / `-CPU` suffix convention used by `ryzenai-llm` and makes the data type obvious next to `llamacpp` (GGUF, typically Q4_K_M) and `flm` (4-bit) entries in the same list. Pointing a `user.*` `vllm` registration at a pre-quantized checkpoint (FP8, AWQ, GPTQ, etc.) is still supported.
+
+To register your own:
 
 ```bash
 lemonade pull user.MyModel \
