@@ -8,6 +8,8 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_utils.h>
+#include <lemon/backends/cloud_server.h>
+#include <lemon/cloud_provider_registry.h>
 #include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
@@ -1215,6 +1217,12 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return "";
     }
 
+    // Cloud-offloaded models have no local artifacts; checkpoint is the
+    // upstream provider's model id, used directly when forwarding requests.
+    if (info.recipe == "cloud") {
+        return "";
+    }
+
     // FLM models use checkpoint as-is (e.g., "gemma3:4b")
     if (info.recipe == "flm") {
         return checkpoint;
@@ -1832,6 +1840,7 @@ void ModelManager::build_cache() {
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
@@ -1872,6 +1881,7 @@ void ModelManager::build_cache() {
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
         if (value.contains("labels") && value["labels"].is_array()) {
@@ -1926,6 +1936,41 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Cloud-offload discovery is server-side and automatic. For each
+    // installed cloud provider with a resolvable credential (env var or
+    // runtime-auth POST), call discover_models and merge the results into
+    // all_models. Per AGENTS.md invariant #11, the registry persists only
+    // {provider, base_url} pairs — API keys live in env vars or process
+    // memory, never on disk. Failures are logged, never propagated, so a
+    // single offline provider can't block the rest of cache build.
+    if (cloud_registry_ != nullptr) {
+        auto installed = cloud_registry_->list_installed();
+        for (const auto& rec : installed) {
+            const std::string api_key = cloud_registry_->resolve_key(rec.name);
+            if (api_key.empty() || rec.base_url.empty()) {
+                LOG(INFO, "ModelManager") << "Skipping cloud discovery for '"
+                                           << rec.name << "': no API key resolvable"
+                                           << " (set " << CloudProviderRegistry::env_var_name(rec.name)
+                                           << " or POST /v1/cloud/auth)" << std::endl;
+                continue;
+            }
+            std::vector<ModelInfo> discovered;
+            try {
+                discovered = backends::CloudServer::discover_models(rec.name, api_key, rec.base_url);
+            } catch (const std::exception& e) {
+                LOG(WARNING, "ModelManager") << "Cloud discovery threw for '"
+                                              << rec.name << "': " << e.what()
+                                              << std::endl;
+                continue;
+            }
+            for (auto& m : discovered) {
+                if (m.recipe != "cloud" || m.model_name.empty()) continue;
+                // Same merge precedence as FLM: emplace, don't overwrite.
+                all_models.emplace(m.model_name, std::move(m));
+            }
+        }
+    }
+
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
     // we translate before lookup.
@@ -1948,6 +1993,8 @@ void ModelManager::build_cache() {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
+        } else if (info.recipe == "cloud") {
+            info.downloaded = true;  // Cloud-offloaded models have no local artifacts
         } else {
             info.downloaded = are_required_checkpoints_complete(info);
         }
@@ -2014,6 +2061,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     load_checkpoints(info, *model_json);
     parse_components(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.cloud_provider = JsonUtils::get_or_default<std::string>(*model_json, "cloud_provider", "");
 
     parse_image_defaults(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
@@ -2051,6 +2099,8 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
+    } else if (info.recipe == "cloud") {
+        info.downloaded = true;  // Cloud-offloaded models have no local artifacts
     } else {
         info.downloaded = are_required_checkpoints_complete(info);
     }
@@ -2393,6 +2443,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             continue;
         }
 
+        // Cloud-offloaded models bypass local backend/RAM checks (the model
+        // executes on a remote provider). Discovery is server-side and runs
+        // at every cache build, so this branch normally sees the full set
+        // of discovered cloud entries plus anything a user pinned into
+        // user_models.json.
+        if (recipe == "cloud") {
+            filtered[name] = info;
+            continue;
+        }
+
         const bool user_controlled_model = is_user_model_name(name) ||
                                            is_extra_model_name(name) ||
                                            info.source == "local_upload";
@@ -2444,6 +2504,120 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     }
 
     return filtered;
+}
+
+void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
+    cloud_registry_ = registry;
+}
+
+size_t ModelManager::refresh_cloud_models(const std::string& provider) {
+    if (provider.empty() || cloud_registry_ == nullptr) {
+        return 0;
+    }
+
+    // Resolve creds outside the cache lock — resolve_key takes a shared
+    // lock on the registry's mutex internally; holding the cache lock here
+    // doesn't matter but keeping it tight is cheaper.
+    const std::string api_key = cloud_registry_->resolve_key(provider);
+    const std::string base_url = cloud_registry_->base_url_for(provider);
+    if (api_key.empty() || base_url.empty()) {
+        // Drop any stale entries for this provider but don't try to discover —
+        // there's nothing to discover with. The contract is "models present
+        // after refresh", so return 0 (not the evicted count).
+        evict_cloud_models(provider);
+        return 0;
+    }
+
+    // discover_models() is best-effort; it logs upstream failures and
+    // returns an empty list rather than throwing, so we can keep going for
+    // other providers regardless of network state. This call happens
+    // outside the cache lock because it can take up to 15 s on a slow
+    // provider and we don't want to block /models on it.
+    std::vector<ModelInfo> models;
+    try {
+        models = backends::CloudServer::discover_models(provider, api_key, base_url);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
+                                      << provider << "': " << e.what() << std::endl;
+        // Same contract: evict stale entries, report 0 present after refresh.
+        evict_cloud_models(provider);
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
+    // Reseed: drop this provider's previously-registered entries before
+    // inserting the fresh list, so a model the provider stopped exposing
+    // disappears. Other providers' entries are untouched.
+    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+            it = models_cache_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    size_t added = 0;
+    for (const auto& m : models) {
+        if (m.recipe != "cloud" || m.model_name.empty()) continue;
+        // Match build_cache()'s precedence exactly: emplace, don't overwrite.
+        // Any pre-existing entry under the same bare cache key wins — whether
+        // it's an FLM model, another cloud provider that discovered first, or
+        // a builtin/extra/user record. This provider's previously-registered
+        // entries are already cleared above, so emplace here is symmetric
+        // with build_cache and immune to a fast /cloud/auth racing past an
+        // already-populated cache.
+        ModelInfo info = m;
+        // discover_models() populates name/checkpoint/labels/context/cost but
+        // not recipe_options; Router needs it to construct CloudServer.
+        info.recipe_options = RecipeOptions("cloud", json::object());
+        auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
+        if (!inserted) {
+            LOG(INFO, "ModelManager")
+                << "Cloud discovery for '" << provider << "' skipping '"
+                << it->first << "': name already held (recipe="
+                << it->second.recipe << ")" << std::endl;
+            continue;
+        }
+        ++added;
+    }
+
+    rebuild_public_model_aliases_locked();
+
+    LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
+                               << provider << "': " << added << " model(s)"
+                               << std::endl;
+    return added;
+}
+
+size_t ModelManager::evict_cloud_models(const std::string& provider) {
+    if (provider.empty()) return 0;
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    size_t removed = 0;
+    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+            it = models_cache_.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    if (removed > 0) {
+        rebuild_public_model_aliases_locked();
+        LOG(DEBUG, "ModelManager") << "Evicted " << removed
+                                    << " cloud model(s) for provider '"
+                                    << provider << "'" << std::endl;
+    }
+    return removed;
+}
+
+size_t ModelManager::count_cloud_models(const std::string& provider) const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return std::count_if(models_cache_.begin(), models_cache_.end(),
+                         [&](const auto& kv) {
+                             return kv.second.recipe == "cloud" &&
+                                    kv.second.cloud_provider == provider;
+                         });
 }
 
 void ModelManager::register_user_model(const std::string& model_name,
@@ -2721,6 +2895,12 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    // Cloud models have no local artifacts; "downloading" is a no-op.
+    if (info.recipe == "cloud") {
+        update_model_in_cache(info.model_name, true);
+        return;
+    }
+
     // Use recipe-specific download paths
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);

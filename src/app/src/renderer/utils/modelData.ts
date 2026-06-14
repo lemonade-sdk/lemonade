@@ -21,6 +21,9 @@ export interface ModelInfo {
   components?: string[];
   max_prompt_length?: number;
   max_context_window?: number;
+  // Cloud models only: USD per 1M tokens, when the provider reports it.
+  cost_input_per_million?: number;
+  cost_output_per_million?: number;
   mmproj?: string;
   source?: string;
   model_name?: string;
@@ -216,6 +219,13 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.vision = model.vision;
       }
 
+      // cloud_provider distinguishes per-provider buckets in the Model
+      // Manager grouping (recipe="cloud" alone collapses all providers
+      // into a single sub-heading).
+      if (typeof model.cloud_provider === 'string' && model.cloud_provider) {
+        modelInfo.cloud_provider = model.cloud_provider;
+      }
+
       // Parse image_defaults if present (for sd-cpp models)
       if (model.image_defaults && typeof model.image_defaults === 'object') {
         modelInfo.image_defaults = {
@@ -238,7 +248,9 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
 };
 
 export const fetchSupportedModelsData = async (): Promise<ModelsData> => {
-  // Server is the source of truth for all models (including user models)
-  // The /models?show_all=true endpoint returns both built-in and user models
+  // Cloud models are now served by lemond through /v1/models like every other
+  // recipe — the server discovers them from each installed provider as soon
+  // as an API key is resolvable (env var or POST /v1/cloud/auth). No
+  // client-side discovery, no per-client mirroring.
   return fetchBuiltInModelsFromAPI();
 };

@@ -145,6 +145,8 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
         res = cli.Get(path);
     } else if (method == "POST") {
         res = cli.Post(path, body, content_type);
+    } else if (method == "DELETE") {
+        res = cli.Delete(path);
     } else {
         throw std::runtime_error("Unsupported HTTP method: " + method);
     }
@@ -970,6 +972,164 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error uninstalling backend: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::install_cloud_provider(const std::string& provider,
+                                            const std::string& base_url,
+                                            const std::string& api_key) {
+    std::cout << "Installing cloud provider: " << provider
+              << " (" << base_url << ")" << std::endl;
+    try {
+        json body = {
+            {"backend", "cloud"},
+            {"provider", provider},
+            {"base_url", base_url}
+        };
+        if (!api_key.empty()) {
+            body["api_key"] = api_key;
+        }
+        std::string response = make_request("/api/v1/install", "POST",
+                                             body.dump(), "application/json");
+        auto response_json = json::parse(response);
+        if (response_json.value("status", "") != "success") {
+            std::cerr << "Install failed: " << response << std::endl;
+            return 1;
+        }
+        std::cout << "Cloud provider installed: " << provider << std::endl;
+        if (response_json.contains("auth_state")) {
+            const auto& s = response_json["auth_state"];
+            bool env = s.value("env_var_set", false);
+            bool rt = s.value("runtime_key_set", false);
+            std::cout << "  env var set: " << (env ? "yes" : "no")
+                      << ", runtime key set: " << (rt ? "yes" : "no")
+                      << std::endl;
+        }
+        if (response_json.contains("models_discovered")) {
+            std::cout << "  models discovered: "
+                      << response_json["models_discovered"].get<size_t>()
+                      << std::endl;
+        }
+        if (response_json.contains("warning")) {
+            std::cout << "Warning: "
+                      << response_json["warning"].get<std::string>()
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error installing cloud provider: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error installing cloud provider: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::uninstall_cloud_provider(const std::string& provider) {
+    std::cout << "Uninstalling cloud provider: " << provider << std::endl;
+    try {
+        json body = {{"backend", "cloud"}, {"provider", provider}};
+        std::string response = make_request("/api/v1/uninstall", "POST",
+                                             body.dump(), "application/json");
+        auto response_json = json::parse(response);
+        if (response_json.value("status", "") != "success") {
+            std::cerr << "Uninstall failed: " << response << std::endl;
+            return 1;
+        }
+        std::cout << "Cloud provider uninstalled: " << provider
+                  << " (evicted "
+                  << response_json.value("models_evicted", size_t{0})
+                  << " models)" << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error uninstalling cloud provider: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error uninstalling cloud provider: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cloud_auth(const std::string& provider, const std::string& api_key) {
+    try {
+        json body = {{"provider", provider}, {"api_key", api_key}};
+        std::string response = make_request("/api/v1/cloud/auth", "POST",
+                                             body.dump(), "application/json");
+        auto response_json = json::parse(response);
+        std::cout << "Cloud auth set for: " << provider << std::endl;
+        if (response_json.contains("models_discovered")) {
+            std::cout << "  models discovered: "
+                      << response_json["models_discovered"].get<size_t>()
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        // 409 (env conflict) and 404 (not installed) come through here with
+        // a structured error body — extract_server_error_message pulls the
+        // message field out.
+        std::cerr << "Error setting cloud auth: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error setting cloud auth: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cloud_auth_clear(const std::string& provider) {
+    try {
+        std::string response = make_request("/api/v1/cloud/auth/" + provider,
+                                             "DELETE", "", "");
+        auto response_json = json::parse(response);
+        bool cleared = response_json.value("cleared_runtime_key", false);
+        std::cout << "Cloud auth cleared for: " << provider
+                  << (cleared ? "" : " (no runtime key was set)") << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error clearing cloud auth: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error clearing cloud auth: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cloud_list() const {
+    try {
+        std::string response = make_request("/api/v1/system-info", "GET");
+        auto info = json::parse(response);
+        if (!info.contains("cloud") || !info["cloud"].contains("providers")) {
+            std::cout << "No cloud providers installed." << std::endl;
+            return 0;
+        }
+        const auto& providers = info["cloud"]["providers"];
+        if (providers.empty()) {
+            std::cout << "No cloud providers installed." << std::endl;
+            return 0;
+        }
+        std::cout << "Cloud providers:" << std::endl;
+        for (const auto& p : providers) {
+            std::cout << "  " << p.value("name", "")
+                      << "  " << p.value("base_url", "")
+                      << "  [env_var=" << p.value("env_var", "") << "]"
+                      << std::endl;
+            std::cout << "    auth: "
+                      << "env_var_set=" << (p.value("env_var_set", false) ? "yes" : "no")
+                      << ", runtime_key_set=" << (p.value("runtime_key_set", false) ? "yes" : "no")
+                      << ", models_discovered=" << p.value("models_discovered", size_t{0})
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing cloud providers: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing cloud providers: " << e.what() << std::endl;
         return 1;
     }
 }

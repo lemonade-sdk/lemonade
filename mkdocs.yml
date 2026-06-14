@@ -73,6 +73,7 @@ nav:
       - llama.cpp: guide/configuration/llamacpp.md
       - vLLM: guide/configuration/vllm.md
       - Moonshine: guide/configuration/moonshine.md
+      - Cloud Offload: guide/configuration/cloud.md
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md

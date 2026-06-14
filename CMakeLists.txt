@@ -584,6 +584,7 @@ set(SOURCES_CORE
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
+    src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/hf_variants.cpp
@@ -603,6 +604,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
+    src/cpp/server/backends/cloud_server.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
