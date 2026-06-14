@@ -19,10 +19,6 @@ namespace lemon_cli {
 using json = nlohmann::json;
 using namespace std::chrono;
 
-// ============================================================
-// Utility
-// ============================================================
-
 std::string get_timestamp_iso() {
     auto now = system_clock::now();
     auto time_t_now = system_clock::to_time_t(now);
@@ -36,10 +32,6 @@ std::string get_timestamp_iso() {
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
     return std::string(buf);
 }
-
-// ============================================================
-// Statistics helpers
-// ============================================================
 
 static double percentile(std::vector<double> values, double p) {
     if (values.empty()) return 0.0;
@@ -150,9 +142,6 @@ std::string BenchBackendResult::label() const {
     return s;
 }
 
-// ============================================================
-// Scenario Loading
-// ============================================================
 
 static std::string extract_user_content(const std::vector<json>& messages) {
     for (const auto& msg : messages) {
@@ -177,7 +166,6 @@ std::string expand_context(const json& context_block, const std::vector<json>& m
     size_t filler_len = filler.size();
     if (filler_len == 0) return "";
 
-    // Repeat filler to reach target
     std::string expanded;
     expanded.reserve(target_chars);
     size_t reps = (target_chars + filler_len - 1) / filler_len;
@@ -185,7 +173,6 @@ std::string expand_context(const json& context_block, const std::vector<json>& m
         expanded += filler;
     }
 
-    // Extract the question content
     std::string question = extract_user_content(messages);
 
     if (position == "start") {
@@ -194,7 +181,6 @@ std::string expand_context(const json& context_block, const std::vector<json>& m
         size_t mid = expanded.size() / 2;
         return expanded.substr(0, mid) + "\n\n" + question + "\n\n" + expanded.substr(mid);
     } else {
-        // "end" (default)
         return expanded + "\n\n" + question;
     }
 }
@@ -236,10 +222,8 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         scenario.warmup_runs = item.value("warmup_runs", 0);
         scenario.measurement_runs = item.value("measurement_runs", 3);
 
-        // Handle context expansion for long-context scenarios
         if (item.contains("context") && item["context"].is_object()) {
             std::string expanded = expand_context(item["context"], scenario.messages);
-            // Replace the user message content with the expanded text
             for (auto& msg : scenario.messages) {
                 if (msg.contains("role") && msg["role"] == "user") {
                     if (msg.contains("content") && msg["content"].is_string()) {
@@ -347,9 +331,6 @@ static std::vector<BenchScenario> exclude_category(const std::vector<BenchScenar
     return filtered;
 }
 
-// ============================================================
-// Backend Discovery
-// ============================================================
 
 std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client,
                                                 const std::string& model,
@@ -405,9 +386,6 @@ std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client
     return result;
 }
 
-// ============================================================
-// Model Load/Unload
-// ============================================================
 
 // Map recipe name to the recipe_options key for custom args
 static const std::map<std::string, std::string> RECIPE_ARGS_KEY = {
@@ -481,9 +459,6 @@ bool unload_all_models(lemonade::LemonadeClient& client) {
     }
 }
 
-// ============================================================
-// Memory Tracking
-// ============================================================
 
 static void query_system_stats(lemonade::LemonadeClient& client, double& vram_gb, double& memory_gb) {
     vram_gb = -1.0;
@@ -502,11 +477,6 @@ static void query_system_stats(lemonade::LemonadeClient& client, double& vram_gb
     }
 }
 
-// ============================================================
-// Benchmark Execution
-// ============================================================
-
-// Extract common timing/token fields from a server "usage" JSON object.
 static void extract_usage_into_result(const json& usage, BenchRunResult& result) {
     if (usage.contains("prompt_tokens")) {
         result.input_tokens = usage["prompt_tokens"].get<int>();
@@ -522,7 +492,6 @@ static void extract_usage_into_result(const json& usage, BenchRunResult& result)
     }
 }
 
-// Extract timing fields from llama.cpp-style "timings" JSON object.
 static void extract_timings_into_result(const json& timings, BenchRunResult& result) {
     if (timings.contains("prompt_ms")) {
         result.ttft_ms = timings["prompt_ms"].get<double>();
@@ -551,7 +520,6 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
         query_system_stats(client, _vram, _mem);
     }
 
-    // Build request body
     json request_body;
     request_body["model"] = model;
     request_body["messages"] = scenario.messages;
@@ -672,9 +640,6 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
     return result;
 }
 
-// ============================================================
-// Output Formatting
-// ============================================================
 
 // Write JSON to file. Returns true on success, false on error (with stderr message).
 // If error_fatal is true, the error message says "Error"; otherwise "Warning".
@@ -865,9 +830,6 @@ json to_json(const std::vector<BenchBackendResult>& results,
     return output;
 }
 
-// ============================================================
-// Comparison
-// ============================================================
 
 json load_previous_results(const std::string& file_path) {
     std::ifstream file(file_path);
@@ -1137,9 +1099,6 @@ json build_comparison_json(const std::vector<BenchBackendResult>& results,
     return output;
 }
 
-// ============================================================
-// Main Bench Handler
-// ============================================================
 
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config) {
     if (config.models.empty()) {
@@ -1508,9 +1467,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     return 0;
 }
 
-// ============================================================
-// CLI helpers
-// ============================================================
 
 CLI::App* register_bench_command(CLI::App& parent,
                                  std::string& output_file,

@@ -154,15 +154,22 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
 
 }
 
-// Helper function to handle SSE streaming response
+// Helper function to handle SSE streaming response. If `should_abort` is
+// non-null and returns true, the content receiver returns `false`, which makes
+// httplib close the connection and return immediately — used to stop streaming
+// responses on Ctrl-C without waiting for the next chunk.
 static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
-                              std::function<void(const std::string& event_type, const std::string& event_data)> callback) {
+                              std::function<void(const std::string& event_type, const std::string& event_data)> callback,
+                              std::function<bool()> should_abort = nullptr) {
     std::string buffer;
     std::string raw_response_body;
     bool saw_sse_event = false;
 
     auto res = cli.Post(path, httplib::Headers(), body, content_type,
         [&](const char* data, size_t len) {
+            if (should_abort && should_abort()) {
+                return false;
+            }
             raw_response_body.append(data, len);
             buffer.append(data, len);
 
@@ -193,6 +200,9 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
                 if (!event_data.empty()) {
                     saw_sse_event = true;
                     callback(event_type, event_data);
+                    if (should_abort && should_abort()) {
+                        return false;
+                    }
                 }
             }
 
@@ -210,12 +220,18 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
 bool LemonadeClient::make_request(const std::string& path, const std::string& method,
                                    const std::string& body, const std::string& content_type,
                                    std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                                   time_t connection_timeout_ms, time_t read_timeout_ms) const {
+                                   time_t connection_timeout_ms, time_t read_timeout_ms,
+                                   std::function<bool()> should_abort) const {
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
     if (method == "POST") {
-        auto res = handle_sse_stream(cli, path, body, content_type, callback);
+        auto res = handle_sse_stream(cli, path, body, content_type, callback, should_abort);
+        // If we deliberately aborted, suppress the "connection closed"-style
+        // error that httplib reports — the caller asked for this.
+        if (should_abort && should_abort()) {
+            return false;
+        }
         assert_http_ok(res);
 
         return true;

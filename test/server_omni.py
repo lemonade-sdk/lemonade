@@ -33,6 +33,7 @@ from utils.server_base import (
     run_server_tests,
     requests,
     PORT,
+    pull_model_with_retry,
 )
 from utils.capabilities import (
     skip_if_unsupported,
@@ -102,16 +103,9 @@ class OmniTests(ServerTestBase):
 
         model = get_test_model("omni")
         print(f"\n[SETUP] Ensuring {model} and its components are pulled...")
-        response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull",
-            json={"model_name": model},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        if response.status_code == 200:
-            print(f"[SETUP] {model} is ready")
-            cls._model_pulled = True
-        else:
-            print(f"[SETUP] Warning: pull returned {response.status_code}")
+        pull_model_with_retry(model)
+        print(f"[SETUP] {model} is ready")
+        cls._model_pulled = True
 
     @staticmethod
     def _solid_color_png_data_uri(r, g, b, size=256):

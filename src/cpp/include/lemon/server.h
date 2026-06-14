@@ -19,10 +19,15 @@
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "upgradable_http_server.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
+#include "lemon/system_metrics_platform.h"
 
 namespace lemon {
+
+// Forward declaration
+class SystemMetricsPlatform;
 
 class Server {
 public:
@@ -56,6 +61,9 @@ private:
 
     // Setup HTTP servers (create httplib::Server instances, routes, CORS, thread pool)
     void setup_http_servers();
+
+    // Stop the main-port listeners (fronts) and detach the routed servers
+    void stop_http_listeners();
 
     // Unified config endpoints
     void handle_config_set(const httplib::Request& req, httplib::Response& res);
@@ -212,8 +220,12 @@ private:
     std::thread model_cache_warmup_thread_;
 
 
-    std::unique_ptr<httplib::Server> http_server_;
-    std::unique_ptr<httplib::Server> http_server_v6_;
+    // Routed servers (all routes/handlers; never listen) and the main-port
+    // front listeners that feed them — see upgradable_http_server.h
+    std::unique_ptr<RoutedHttpServer> http_server_;
+    std::unique_ptr<RoutedHttpServer> http_server_v6_;
+    std::unique_ptr<UpgradableFrontServer> http_front_;
+    std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
@@ -241,6 +253,9 @@ private:
     CpuStats last_cpu_stats_;
     std::mutex cpu_stats_mutex_;
 #endif
+
+    // Platform-specific system metrics
+    std::unique_ptr<SystemMetricsPlatform> metrics_platform_;
 };
 
 } // namespace lemon

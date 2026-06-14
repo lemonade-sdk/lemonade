@@ -52,32 +52,28 @@ public:
                                 httplib::DataSink& sink);
 
 private:
-    // A piece of media produced by a tool this turn.
     struct Artifact {
         std::string type;  // "image" | "audio"
-        std::string data;  // base64 payload
-        std::string mime;  // e.g. "image/png", "audio/mpeg"
+        std::string data;
+        std::string mime;
     };
 
-    // Resolved tools + planner for a collection.
     struct ToolSet {
-        json tools = json::array();                       // merged: omni tools + app tools
-        std::string system_prompt;                        // omni prompt, {tool_list} substituted
-        std::map<std::string, std::string> tool_models;   // omni tool name -> component model
-                                                          // (its keys are the server-executed tools)
-        std::string chat_model;                           // planner / chat component
-        bool chat_supports_vision = false;                // planner carries the "vision" label
+        json tools = json::array();
+        std::string system_prompt;
+        std::map<std::string, std::string> tool_models;  // omni tool name -> component model
+        std::string chat_model;
+        bool chat_supports_vision = false;
     };
 
-    // Outcome of the internal loop, formatted by each public entry point.
     struct LoopResult {
         bool ok = true;
-        json error = nullptr;                  // set when ok == false
-        std::string final_text;                // terminal assistant text
-        std::vector<Artifact> artifacts;       // media produced this turn, in order
-        json app_tool_calls = nullptr;         // non-null array => passthrough to caller
-        std::string finish_reason = "stop";    // "stop" | "tool_calls"
-        json base_response = json::object();   // last component response (id/created/usage)
+        json error = nullptr;
+        std::string final_text;
+        std::vector<Artifact> artifacts;
+        json app_tool_calls = nullptr;  // non-null array => passthrough to caller
+        std::string finish_reason = "stop";
+        json base_response = json::object();
     };
 
     ToolSet build_tools(const ModelInfo& collection_info, const json& request);

@@ -10,6 +10,7 @@ export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
   'llamacpp': 'Llama.cpp GPU',
   'ryzenai-llm': 'Ryzen AI LLM',
   'whispercpp': 'Whisper.cpp',
+  'moonshine': 'Moonshine',
   'sd-cpp': 'StableDiffusion.cpp',
   'kokoro': 'Kokoro',
   'vllm': 'vLLM ROCm (experimental)',

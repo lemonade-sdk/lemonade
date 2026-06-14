@@ -201,7 +201,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-windows-cuda-" + target_arch + "-x64.7z";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
+#else
         params.filename = "llama-" + version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#endif
 #else
         throw std::runtime_error("CUDA llamacpp is currently supported on Windows and Linux only");
 #endif
@@ -217,7 +221,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-ubuntu-arm64.tar.gz";
+#else
         params.filename = "llama-" + version + "-bin-ubuntu-x64.tar.gz";
+#endif
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
@@ -226,7 +234,11 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-vulkan-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "llama-" + version + "-bin-ubuntu-vulkan-arm64.tar.gz";
+#else
         params.filename = "llama-" + version + "-bin-ubuntu-vulkan-x64.tar.gz";
+#endif
 #else
         throw std::runtime_error("Vulkan llamacpp only supported on Windows and Linux");
 #endif
@@ -472,9 +484,9 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         std::string arch = lemon::SystemInfo::get_rocm_arch();
-        if (arch == "gfx1151") {
+        if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
-            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151 (enables loading larger models)" << std::endl;
+            LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;
         }
     } else if (is_llamacpp_cuda_backend(llamacpp_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to

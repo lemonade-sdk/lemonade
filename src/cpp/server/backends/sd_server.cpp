@@ -77,6 +77,10 @@ std::string get_therock_version() {
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
 }
+
+int generate_random_seed() {
+    return static_cast<int>(std::random_device{}() & 0x7fffffffU);
+}
 }
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -84,20 +88,33 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     params.repo = "leejet/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
-    // Transform version for URL (master-NNN-HASH -> master-HASH)
+    // Transform generated sd.cpp versions for asset names:
+    // e.g. master-672-1f9ee88 -> master-1f9ee88
     std::string short_version = version;
     size_t first_dash = version.find('-');
-    if (first_dash != std::string::npos) {
-        size_t second_dash = version.find('-', first_dash + 1);
-        if (second_dash != std::string::npos) {
+    size_t second_dash = first_dash == std::string::npos
+        ? std::string::npos
+        : version.find('-', first_dash + 1);
+
+    if (first_dash != std::string::npos && second_dash != std::string::npos) {
+        std::string middle = version.substr(first_dash + 1, second_dash - first_dash - 1);
+        bool middle_is_number = !middle.empty();
+        for (char ch : middle) {
+            if (!std::isdigit(static_cast<unsigned char>(ch))) {
+                middle_is_number = false;
+                break;
+            }
+        }
+
+        if (middle_is_number) {
             short_version = version.substr(0, first_dash) + "-" +
-                           version.substr(second_dash + 1);
+                            version.substr(second_dash + 1);
         }
     }
 
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
-        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.7-arm64.zip";
+        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-*-arm64.zip";
 #endif
     } else if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
@@ -134,7 +151,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
 #ifdef _WIN32
         params.filename = "sd-" + short_version + "-windows-cuda-" + target_arch + "-x64.zip";
 #elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
+#else
         params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#endif
 #else
         throw std::runtime_error("CUDA sd.cpp is currently supported on Windows and Linux only");
 #endif
@@ -464,9 +485,12 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         extra_args["sample_params"] = sample_params;
     }
 
-    // seed stays top-level in from_json_str; preserve if the caller supplied one.
+    // seed stays top-level in from_json_str. Negative seeds mean "random" for
+    // Lemonade, so generate a concrete seed instead of letting sd-server fall
+    // back to its deterministic default.
     if (request.contains("seed") && request["seed"].is_number_integer()) {
-        extra_args["seed"] = request["seed"].get<int>();
+        int seed = request["seed"].get<int>();
+        extra_args["seed"] = seed >= 0 ? seed : generate_random_seed();
     }
 
     return extra_args;
@@ -535,8 +559,8 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models -- use global timeout
-    return forward_request("/v1/images/generations", sd_request, utils::HttpClient::get_default_timeout());
+    // Image generation can take 20+ minutes for large models; avoid timeout.
+    return forward_request("/v1/images/generations", sd_request, 0);
 }
 
 json SDServer::image_edits(const json& request) {
@@ -576,7 +600,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 json SDServer::image_variations(const json& request) {
@@ -609,7 +633,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 std::string SDServer::upscale_via_cli(
