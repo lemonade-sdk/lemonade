@@ -8,8 +8,10 @@
 #include <vector>
 #include <mutex>
 #include <functional>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
+#include "directory_watcher.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -90,6 +92,15 @@ struct ModelInfo {
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
 
+    // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
+    // (e.g., "fireworks"). Empty for non-cloud recipes.
+    std::string cloud_provider;
+    // Per-token price in USD per 1,000,000 tokens, when the provider reports it
+    // (OpenRouter, Together). <0 means unknown (e.g. Fireworks doesn't publish
+    // pricing in /v1/models). Used for display only — never affects routing.
+    double cost_input_per_million = -1.0;
+    double cost_output_per_million = -1.0;
+
     // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
     int moonshine_arch = -1;
 
@@ -100,9 +111,31 @@ struct ModelInfo {
     std::string mmproj() const { return checkpoint("mmproj"); }
 };
 
+class CloudProviderRegistry;
+
 class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
+
+    // Wires the cloud provider registry. ModelManager uses it to look up
+    // {base_url, api_key} per provider when refreshing cloud models during
+    // build_cache(). Pointer (not ownership) — Server owns the registry.
+    // Must be called before the first build_cache() / get_supported_models().
+    void set_cloud_registry(CloudProviderRegistry* registry);
+
+    // Refresh discovered models for one provider. Looks up creds via the
+    // registry, calls CloudServer::discover_models, and re-seeds the
+    // provider's entries (drop-then-add semantics). No-op + warning if the
+    // provider has no resolvable key. Returns the number of models present
+    // after refresh. Throws never — errors logged, empty result returned.
+    size_t refresh_cloud_models(const std::string& provider);
+
+    // Drop every cached model for one provider (used by uninstall). Returns
+    // the count removed. Doesn't touch the registry — caller already did.
+    size_t evict_cloud_models(const std::string& provider);
+
+    // Count of currently-cached cloud models for a provider. For system-info.
+    size_t count_cloud_models(const std::string& provider) const;
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
@@ -181,10 +214,15 @@ public:
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
-    // Set extra models directory for GGUF discovery
+    // Set extra models directory for GGUF discovery.
+    // Starts/stops an inotify (Linux) / kqueue (macOS) watcher that
+    // automatically refreshes the model cache when files are added or
+    // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
 
     void save_model_options(const ModelInfo& info);
+
+    void start_directory_watcher();
 
 private:
     // Cycle-detecting overload used by the collection fan-out in download_model.
@@ -233,6 +271,8 @@ private:
     json user_models_;
     json recipe_options_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
+    CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
+    std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

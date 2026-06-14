@@ -584,7 +584,9 @@ set(SOURCES_CORE
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
     src/cpp/server/cli_parser.cpp
+    src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
+    src/cpp/server/directory_watcher.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
@@ -603,6 +605,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
+    src/cpp/server/backends/cloud_server.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
@@ -622,9 +625,23 @@ set(SOURCES_CORE
 )
 
 # Add platform-specific source files to core
-if(APPLE)
+if(WIN32)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_windows.cpp)
+elseif(APPLE)
     list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_macos.cpp)
     set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
+elseif(UNIX)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_unix.cpp)
 endif()
 
 # ============================================================
@@ -1653,3 +1670,31 @@ add_custom_target(embeddable
 
 message(STATUS "Embeddable archive target available: cmake --build . --target embeddable")
 message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
+
+# ============================================================
+# C++ Unit Tests
+# ============================================================
+set(_DIR_WATCHER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
+)
+set(_DIR_WATCHER_LIB_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/directory_watcher.cpp"
+)
+if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
+    add_executable(test_directory_watcher
+        test/cpp/test_directory_watcher.cpp
+        src/cpp/server/directory_watcher.cpp
+    )
+    target_include_directories(test_directory_watcher PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    if(UNIX)
+        target_link_libraries(test_directory_watcher PRIVATE pthread)
+        target_link_options(test_directory_watcher PRIVATE -pthread)
+    endif()
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME DirectoryWatcherTest COMMAND test_directory_watcher)
+endif()

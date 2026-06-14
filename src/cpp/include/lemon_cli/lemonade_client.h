@@ -97,6 +97,17 @@ public:
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
+    // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,
+    // uninstall} request. api_key is optional on install — when omitted the
+    // server relies on env var or a later /v1/cloud/auth POST.
+    int install_cloud_provider(const std::string& provider,
+                                const std::string& base_url,
+                                const std::string& api_key = "");
+    int uninstall_cloud_provider(const std::string& provider);
+    int cloud_auth(const std::string& provider, const std::string& api_key);
+    int cloud_auth_clear(const std::string& provider);
+    int cloud_list() const;
+
     // Cache management
     int cleanup_cache(bool dry_run) const;
 
@@ -105,11 +116,14 @@ public:
                              const std::string& body = "", const std::string& content_type = "",
                              time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
 
-    // Streaming request overload (timeouts are in milliseconds)
+    // Streaming request overload (timeouts are in milliseconds).
+    // `should_abort`, if set, is polled on every received chunk; returning
+    // true makes the client close the connection and return early.
     bool make_request(const std::string& path, const std::string& method,
                       const std::string& body, const std::string& content_type,
                       std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                      time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000) const;
+                      time_t connection_timeout_ms = 30000, time_t read_timeout_ms = 30000,
+                      std::function<bool()> should_abort = nullptr) const;
 
 private:
     std::string host_;

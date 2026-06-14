@@ -1,6 +1,7 @@
 #include "lemon_cli/model_selection.h"
 #include "lemon_cli/recipe_import.h"
 
+#include "lemon/model_types.h"
 #include "lemon/utils/aixlog.hpp"
 
 #include <algorithm>
@@ -97,8 +98,26 @@ bool has_label(const lemonade::ModelInfo& model, const std::string& label) {
     return std::find(model.labels.begin(), model.labels.end(), label) != model.labels.end();
 }
 
+bool is_agent_launch_recipe(const std::string& recipe) {
+    static const std::unordered_set<std::string> kAgentLaunchRecipes = {
+        "flm",
+        "llamacpp",
+        "vllm",
+    };
+    return kAgentLaunchRecipes.find(recipe) != kAgentLaunchRecipes.end();
+}
+
+bool is_agent_launch_llm(const lemonade::ModelInfo& model) {
+    return is_agent_launch_recipe(model.recipe) &&
+           lemon::get_model_type_from_labels(model.labels) == lemon::ModelType::LLM;
+}
+
+bool is_tool_calling_agent_launch_llm(const lemonade::ModelInfo& model) {
+    return is_agent_launch_llm(model) && has_label(model, "tool-calling");
+}
+
 bool is_recommended_for_launch(const lemonade::ModelInfo& model) {
-    return model.recipe == "llamacpp" && has_label(model, "hot") && has_label(model, "tool-calling");
+    return is_tool_calling_agent_launch_llm(model) && has_label(model, "hot");
 }
 
 bool is_recommended_for_run(const lemonade::ModelInfo& model) {
@@ -404,11 +423,11 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             if (!fetch_models_from_endpoint(client, false, downloaded_models)) {
                 return false;
             }
-            std::vector<const lemonade::ModelInfo*> downloaded_llamacpp_models;
-            downloaded_llamacpp_models.reserve(downloaded_models.size());
+            std::vector<const lemonade::ModelInfo*> downloaded_llm_models;
+            downloaded_llm_models.reserve(downloaded_models.size());
             for (const auto& model : downloaded_models) {
-                if (model.recipe == "llamacpp") {
-                    downloaded_llamacpp_models.push_back(&model);
+                if (is_tool_calling_agent_launch_llm(model)) {
+                    downloaded_llm_models.push_back(&model);
                 }
             }
 
@@ -420,16 +439,16 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                     << std::endl;
             }
 
-            std::cout << "Browse downloaded llamacpp models:" << std::endl;
+            std::cout << "Browse downloaded tool-calling LLMs:" << std::endl;
             std::cout << "  0) Browse recommended models (download may be required)" << std::endl;
-            for (size_t i = 0; i < downloaded_llamacpp_models.size(); ++i) {
-                const auto& model = *downloaded_llamacpp_models[i];
+            for (size_t i = 0; i < downloaded_llm_models.size(); ++i) {
+                const auto& model = *downloaded_llm_models[i];
                 std::cout << "  " << (i + 1) << ") " << model.id
                           << " [downloaded]"
                           << " (" << (model.recipe.empty() ? "-" : model.recipe) << ")"
                           << std::endl;
             }
-            const int back_to_recipe_dirs = static_cast<int>(downloaded_llamacpp_models.size()) + 1;
+            const int back_to_recipe_dirs = static_cast<int>(downloaded_llm_models.size()) + 1;
             if (use_preferred_recipe_dir) {
                 std::cout << "  " << back_to_recipe_dirs << ") Back to recipes" << std::endl;
             } else {
@@ -437,8 +456,8 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                           << std::endl;
             }
 
-            if (downloaded_llamacpp_models.empty()) {
-                std::cout << "No downloaded llamacpp models found." << std::endl;
+            if (downloaded_llm_models.empty()) {
+                std::cout << "No downloaded tool-calling LLMs found." << std::endl;
             }
 
             int selected = 0;
@@ -454,12 +473,12 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
                 state = MenuState::RecipeDirectories;
                 continue;
             }
-            if (selected < 1 || static_cast<size_t>(selected) > downloaded_llamacpp_models.size()) {
+            if (selected < 1 || static_cast<size_t>(selected) > downloaded_llm_models.size()) {
                 LOG(ERROR, "ModelSelector") << "Error: Selection out of range." << std::endl;
                 return false;
             }
 
-            model_out = downloaded_llamacpp_models[static_cast<size_t>(selected - 1)]->id;
+            model_out = downloaded_llm_models[static_cast<size_t>(selected - 1)]->id;
             std::cout << "Selected model: " << model_out << std::endl;
             return true;
         }
@@ -473,7 +492,7 @@ bool prompt_launch_recipe_first(lemonade::LemonadeClient& client,
             std::vector<const lemonade::ModelInfo*> recommended_all =
                 filter_recommended_launch_models(all_models, agent_name);
 
-            std::cout << "Browse recommended models (llamacpp + hot + tool-calling):" << std::endl;
+            std::cout << "Browse recommended LLMs (hot + tool-calling):" << std::endl;
             std::cout << "  0) Back to downloaded models" << std::endl;
             for (size_t i = 0; i < recommended_all.size(); ++i) {
                 const auto& model = *recommended_all[i];
@@ -527,7 +546,7 @@ bool prompt_model_selection(lemonade::LemonadeClient& client,
     std::vector<const lemonade::ModelInfo*> display_models;
     display_models.reserve(models.size());
     for (const auto& model : models) {
-        if (!show_all && model.recipe != "llamacpp") {
+        if (!show_all && !is_agent_launch_llm(model)) {
             continue;
         }
         display_models.push_back(&model);

@@ -36,7 +36,11 @@ static const json DEFAULTS = {
     {"flm_args", ""},       // Custom arguments to pass to flm serve
     // vLLM-specific options
     {"vllm_backend", ""},  // "" means auto-detect
-    {"vllm_args", ""}      // Custom arguments to pass to vllm-server
+    {"vllm_args", ""},     // Custom arguments to pass to vllm-server
+    // Cloud recipe has no backend variants (provider selection lives on the
+    // per-model cloud_provider field). The empty string satisfies Router's
+    // per-backend-args lookup; cloud reads no backend-specific config.
+    {"cloud_backend", ""}
 };
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
