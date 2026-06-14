@@ -122,6 +122,18 @@
   --composer-min:       96px;
   --max-content-width:  860px;
   --slide-over-width:   420px;
+
+  /* ---------- Responsive breakpoints ----------
+   * Note: CSS custom properties cannot be used inside @media queries.
+   * These values are documented here for reference; use the raw px
+   * values in media query expressions.
+   *   @media (max-width: 480px)  → phone
+   *   @media (max-width: 768px)  → tablet (already used throughout)
+   *   @media (max-width: 1024px) → desktop narrow
+   */
+  --breakpoint-mobile:  480px;
+  --breakpoint-tablet:  768px;
+  --breakpoint-desktop: 1024px;
 }
 
 /* ---------- Light theme overrides ---------- */
