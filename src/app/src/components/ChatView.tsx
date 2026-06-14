@@ -187,27 +187,6 @@ function isPersistableAssistantMessage(m: Message): boolean {
   return !(m.isError || /^Error:/i.test(m.content));
 }
 
-
-function formatDurationMs(ms: number | null | undefined): string | null {
-  if (!Number.isFinite(Number(ms)) || Number(ms) <= 0) return null;
-  const value = Number(ms);
-  if (value < 1000) return `${Math.round(value)}ms`;
-  const seconds = value / 1000;
-  if (seconds < 10) return `${seconds.toFixed(2)}s`;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = Math.round(seconds % 60);
-  return `${minutes}m ${remainder}s`;
-}
-
-function reasoningSummary(stats: Pick<ChatCompletionStats, 'reasoningTokens' | 'reasoningElapsedMs'> | null | undefined): string {
-  const parts: string[] = [];
-  if (stats?.reasoningTokens) parts.push(`${stats.reasoningTokens} tokens`);
-  const duration = formatDurationMs(stats?.reasoningElapsedMs);
-  if (duration) parts.push(duration);
-  return parts.length ? ` · ${parts.join(' · ')}` : '';
-}
-
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
   if (diff < 60000) return 'just now';
@@ -566,6 +545,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [capabilityBusy, setCapabilityBusy] = useState(false);
   const [presetVersion, setPresetVersion] = useState(0);
   const [railExpanded, setRailExpanded] = useState(true);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const sheetHandleRef = useRef<HTMLDivElement>(null);
+  const sheetTriggerRef = useRef<HTMLButtonElement>(null);
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
   });
@@ -934,6 +916,71 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     setConversations(prev => prev.filter(c => c.id !== id));
     if (activeId === id) setActiveId(null);
   }, [activeId]);
+
+  // --- Mobile bottom sheet logic ---
+  const handleRailToggle = useCallback(() => {
+    if (window.innerWidth <= 480) {
+      setMobileSheetOpen(prev => !prev);
+    } else {
+      setRailExpanded(prev => !prev);
+    }
+  }, []);
+
+  const closeMobileSheet = useCallback(() => {
+    setMobileSheetOpen(false);
+    sheetTriggerRef.current?.focus();
+  }, []);
+
+  // ESC closes mobile sheet
+  useEffect(() => {
+    if (!mobileSheetOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { closeMobileSheet(); }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [mobileSheetOpen, closeMobileSheet]);
+
+  // Drag-to-close on the sheet handle
+  useEffect(() => {
+    if (!mobileSheetOpen) return;
+    const handle = sheetHandleRef.current;
+    if (!handle) return;
+    let startY = 0;
+    let deltaY = 0;
+    let dragging = false;
+    const sheetEl = handle.closest('.bottom-sheet') as HTMLElement | null;
+
+    const onDown = (e: PointerEvent) => {
+      dragging = true;
+      startY = e.clientY;
+      deltaY = 0;
+      handle.setPointerCapture(e.pointerId);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      deltaY = Math.max(0, e.clientY - startY);
+      if (sheetEl) sheetEl.style.transform = `translateY(${deltaY}px)`;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      handle.releasePointerCapture(e.pointerId);
+      if (deltaY > 100) {
+        closeMobileSheet();
+      }
+      if (sheetEl) sheetEl.style.transform = '';
+    };
+    handle.addEventListener('pointerdown', onDown);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    return () => {
+      handle.removeEventListener('pointerdown', onDown);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+    };
+  }, [mobileSheetOpen, closeMobileSheet]);
+  // --- End mobile bottom sheet logic ---
 
   const handleStop = useCallback(() => {
     if (!activeId) return;
@@ -1613,7 +1660,7 @@ ${finalText}`
         <div className="rail__head">
           <button
             className="rail__toggle"
-            onClick={() => setRailExpanded(!railExpanded)}
+            onClick={handleRailToggle}
             aria-label="Toggle conversations"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
@@ -1682,8 +1729,80 @@ ${finalText}`
         </div>
       </aside>
 
+      {/* Mobile bottom sheet for conversations */}
+      {mobileSheetOpen && (
+        <div className="bottom-sheet-backdrop" onClick={closeMobileSheet} aria-hidden="true" />
+      )}
+      <div
+        className={`bottom-sheet ${mobileSheetOpen ? 'bottom-sheet--open' : ''}`}
+        role="dialog"
+        aria-label="Conversations"
+        aria-modal="true"
+      >
+        <div className="bottom-sheet__handle" ref={sheetHandleRef} aria-hidden="true">
+          <div className="bottom-sheet__handle-pill" />
+        </div>
+        <button className="bottom-sheet__new" onClick={() => { handleNewChat(); closeMobileSheet(); }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <line x1="7" y1="2.5" x2="7" y2="11.5" />
+            <line x1="2.5" y1="7" x2="11.5" y2="7" />
+          </svg>
+          New Chat
+        </button>
+        <ul className="bottom-sheet__list rail__list" role="listbox">
+          {conversations.map(c => {
+            const badge = capabilityBadge(c.model?.capability || 'chat');
+            return (
+              <li
+                className={`rail__item ${c.id === activeId ? 'is-active' : ''}`}
+                key={c.id}
+                role="option"
+                onClick={() => { handleSelectConversation(c.id); closeMobileSheet(); }}
+              >
+                <span className="rail__item-title">
+                  {c.title || deriveTitle(c.messages)}
+                </span>
+                <span className="rail__item-meta">
+                  {streaming.streamingConvoIds.has(c.id) && (
+                    <span className="rail__streaming-badge">● generating</span>
+                  )}
+                  <span className={`rail__model-badge rail__model-badge--${badge}`}>
+                    {badge}
+                  </span>
+                  <span>{timeAgo(c.updatedAt)}</span>
+                </span>
+                <button
+                  className="rail__item-delete"
+                  onClick={(e) => handleDeleteConversation(e, c.id)}
+                  aria-label="Delete conversation"
+                  title="Delete"
+                >×</button>
+              </li>
+            );
+          })}
+          {conversations.length === 0 && (
+            <li className="rail__empty">No conversations yet</li>
+          )}
+        </ul>
+      </div>
+
       {/* Main pane */}
       <div className="chat__main" ref={threadRef}>
+        {/* Mobile-only conversations trigger */}
+        <button
+          className="chat__mobile-rail-trigger"
+          ref={sheetTriggerRef}
+          onClick={() => setMobileSheetOpen(true)}
+          aria-label="Open conversations"
+          title="Conversations"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+            <line x1="3" y1="4" x2="13" y2="4" />
+            <line x1="3" y1="8" x2="13" y2="8" />
+            <line x1="3" y1="12" x2="13" y2="12" />
+          </svg>
+          <span>Conversations</span>
+        </button>
         <div className="chat__inner">
           {!hasMessages ? (
             <EmptyState
@@ -2160,6 +2279,9 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (text: string) => void }> = ({ calls, onOptionSelect }) => {
+  // Track which choice was selected per call index. Map key is the call's position in the array.
+  const [selections, setSelections] = useState<Map<number, string>>(() => new Map());
+
   if (calls.length === 0) return null;
   return (
     <div className="message__tool-calls">
@@ -2171,21 +2293,38 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
             const question = parsed.question || '';
             const choices: string[] = parsed.choices || [];
             const allowCustom = parsed.allowCustom !== false;
+            const selectedChoice = selections.get(i);
+            const handleSelect = (choice: string) => {
+              if (selectedChoice) return;
+              setSelections(prev => new Map(prev).set(i, choice));
+              onOptionSelect?.(choice);
+            };
             return (
               <div key={i} className="options-block">
                 {question && <div className="options-block__question">{question}</div>}
                 <div className="options-block__choices">
                   {choices.map((choice: string, ci: number) => (
-                    <button key={ci} className="options-block__btn" onClick={() => onOptionSelect?.(choice)}>{choice}</button>
+                    <button
+                      key={ci}
+                      className={`options-block__btn${selectedChoice === choice ? ' options-block__btn--selected' : ''}`}
+                      disabled={!!selectedChoice && selectedChoice !== choice}
+                      aria-pressed={selectedChoice === choice}
+                      onClick={() => handleSelect(choice)}
+                    >
+                      {selectedChoice === choice ? '\u2713 ' : ''}{choice}
+                    </button>
                   ))}
                 </div>
-                {allowCustom && (
+                {selectedChoice && (
+                  <div className="options-block__confirmation">\u2713 You chose: {selectedChoice}</div>
+                )}
+                {!selectedChoice && allowCustom && (
                   <div className="options-block__custom">
                     <input className="options-block__input" placeholder="Or type your own\u2026"
-                      onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { onOptionSelect?.((e.target as HTMLInputElement).value.trim()); } }} />
+                      onKeyDown={e => { if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) { handleSelect((e.target as HTMLInputElement).value.trim()); } }} />
                     <button className="options-block__submit" onClick={e => {
                       const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
-                      if (input?.value.trim()) onOptionSelect?.(input.value.trim());
+                      if (input?.value.trim()) handleSelect(input.value.trim());
                     }}>Send</button>
                   </div>
                 )}
@@ -2291,7 +2430,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             open={thinkingOpen}
             onToggle={e => setThinkingOpen((e.target as HTMLDetailsElement).open)}
           >
-            <summary>Reasoning{reasoningSummary(message.stats)}</summary>
+            <summary>Reasoning {message.stats?.reasoningTokens ? `· ${message.stats.reasoningTokens} tokens` : ''}</summary>
             <div className="message__thinking-content">
               <MarkdownMessage content={message.thinking} />
             </div>

@@ -259,13 +259,24 @@ const App: React.FC = () => {
         </div>
 
         <nav className="titlebar__nav" aria-label="Primary">
-          {(['chat', 'models', 'presets', 'backends', 'dashboard', 'logs', 'connect'] as View[]).map(v => (
+          {([
+            { id: 'chat',      label: 'Chat',      icon: 'chat'               },
+            { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
+            { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
+            { id: 'backends',  label: 'Backends',  icon: 'box'                },
+            { id: 'dashboard', label: 'Dash',      icon: 'gauge'              },
+            { id: 'logs',      label: 'Logs',      icon: 'logs'               },
+            { id: 'connect',   label: 'Connect',   icon: 'plug'               },
+          ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
             <button
-              key={v}
-              className={view === v ? 'is-active' : ''}
-              onClick={() => setView(v)}
+              key={id}
+              className={view === id ? 'is-active' : ''}
+              onClick={() => setView(id)}
+              title={label}
+              aria-label={label}
             >
-              {v.charAt(0).toUpperCase() + v.slice(1)}
+              <Icon name={icon} size={14} aria-hidden="true" />
+              <span className="nav-label">{label}</span>
             </button>
           ))}
         </nav>

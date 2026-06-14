@@ -68,5 +68,6 @@ module.exports = (env, argv) => ({
     hot: true,
     open: false,
     historyApiFallback: true,
+    headers: { 'Cache-Control': 'no-store' },
   },
 });
