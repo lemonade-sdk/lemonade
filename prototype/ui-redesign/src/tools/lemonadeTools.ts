@@ -3,8 +3,6 @@
  * Exposes lemonade server management as OpenAI-compatible function calling tools.
  */
 import api, { searchHuggingFace, HFModelResult, PullVariantsResult } from '../api';
-import { allStoredPresets, isCompatible, loadApplied, saveApplied, type Preset } from '../presetStore';
-import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 
 /* ── Tool schemas (OpenAI function calling format) ─────────────── */
 
@@ -53,7 +51,7 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
     type: 'function',
     function: {
       name: 'load_model',
-      description: 'Load a downloaded/local model into the server for inference. Use this when the user asks to load/start/use a model. It can also assign a preset before loading via preset, preset_id, or preset_name. A recipe defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (hybrid NPU). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a backend. If the user asks for CPU, pass backend/device=cpu. If multiple recipes are available and the user did not choose, call get_model_info and ask_question first.',
+      description: 'Load a downloaded/local model into the server for inference. Use this when the user asks to load/start/use a model. A recipe defines the inference backend: llamacpp (GPU/CPU via llama.cpp — backends: vulkan, rocm, metal, cpu), flm (NPU via FastFlowLM), ryzenai-llm (hybrid NPU). Combined forms like "llamacpp-vulkan" or "llamacpp-cpu" select a backend. If the user asks for CPU, pass backend/device=cpu. If multiple recipes are available and the user did not choose, call get_model_info and ask_question first.',
       parameters: {
         type: 'object',
         properties: {
@@ -63,9 +61,6 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
           device: { type: 'string', description: 'Alias for backend. Examples: "cpu", "gpu", "npu".' },
           n_ctx: { type: 'number', description: 'Context window size (e.g. 4096, 8192, 32768). Higher uses more memory.' },
           n_gpu_layers: { type: 'number', description: 'Number of layers to offload to GPU. Higher = faster but uses more VRAM.' },
-          preset: { type: 'string', description: 'Optional preset id or preset name to assign to this model before loading. Examples: Default, Balanced, Quality, Fast, Creative, Long Context, Code, Sharp, Quick.' },
-          preset_id: { type: 'string', description: 'Optional exact preset id to assign before loading.' },
-          preset_name: { type: 'string', description: 'Optional exact preset name to assign before loading.' },
         },
         required: ['model_name'],
       },
@@ -217,25 +212,6 @@ function asString(value: unknown): string {
 function asNumber(value: unknown): number | undefined {
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
-}
-
-function presetSpecifier(args: Record<string, unknown>): string {
-  return asString(args.preset_id) || asString(args.preset_name) || asString(args.preset);
-}
-
-function resolvePreset(specifier: string): Preset | null {
-  const needle = specifier.trim().toLowerCase();
-  if (!needle) return null;
-  const presets = allStoredPresets();
-  return presets.find(preset => preset.id.toLowerCase() === needle)
-    || presets.find(preset => preset.name.toLowerCase() === needle)
-    || presets.find(preset => preset.name.toLowerCase().includes(needle))
-    || null;
-}
-
-function applyPresetBinding(model: string, preset: Preset): void {
-  const current = loadApplied();
-  saveApplied({ ...current, [model]: preset.id });
 }
 
 function modelName(model: AnyModel | null | undefined): string {
@@ -639,23 +615,6 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const detail = await api.modelDetail(modelName(resolved)).catch(() => resolved);
         const loadedItem = loadedFor(resolved, loaded);
         const summary = modelSummary(detail as AnyModel, loadedItem);
-        const detailComponentNames = getCollectionComponents(detail as any);
-        const componentNames = detailComponentNames.length > 0 ? detailComponentNames : getCollectionComponents(resolved as any);
-        const componentSummaries: Array<Record<string, unknown>> = await Promise.all(componentNames.map(async componentName => {
-          const component = resolveModel(data.data as AnyModel[], loaded, componentName);
-          const componentLoaded = component
-            ? loadedFor(component, loaded)
-            : loaded.find(item => asString(item.model_name).toLowerCase() === componentName.toLowerCase()) || null;
-          const componentDetail = component ? await api.modelDetail(modelName(component)).catch(() => component) : { id: componentName, name: componentName };
-          return {
-            ...modelSummary(componentDetail as AnyModel, componentLoaded),
-            raw_name: modelName(componentDetail as AnyModel) || componentName,
-            downloaded: isDownloaded(componentDetail as AnyModel),
-            loaded: Boolean(componentLoaded),
-            checkpoint: (componentDetail as AnyModel).checkpoint,
-          };
-        }));
-        const componentCapabilities = Array.from(new Set(componentSummaries.map(component => String(component.capability || '')).filter(Boolean)));
         const result = {
           ...summary,
           raw_name: modelName(detail as AnyModel),
@@ -664,12 +623,7 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           checkpoint: (detail as AnyModel).checkpoint,
           context_window: (detail as AnyModel).max_context_window || (detail as AnyModel).context_length || (detail as AnyModel).n_ctx,
           recipe_options: extractRecipeBackendOptions(detail as AnyModel),
-          is_collection: isCollectionModel(detail as any) || componentSummaries.length > 0,
-          collection_components: componentSummaries.length > 0 ? componentSummaries : undefined,
-          collection_capabilities: componentCapabilities.length > 0 ? componentCapabilities : undefined,
-          answer_instruction: componentSummaries.length > 0
-            ? 'Answer the user with the collection status and list every involved component model with each component capability/status. If they asked to load it, call load_model next.'
-            : 'Answer the user with the model status, capability, size/context, checkpoint, and recipe/backend options. If they asked to load it, call load_model next.',
+          answer_instruction: 'Answer the user with the model status, capability, size/context, checkpoint, and recipe/backend options. If they asked to load it, call load_model next.',
         };
         const display = [
           `${summary.name || summary.id} — ${summary.status}, ${summary.capability}`,
@@ -677,7 +631,6 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
           result.context_window ? `Context: ${result.context_window}` : '',
           result.checkpoint ? `Checkpoint: ${result.checkpoint}` : '',
           Array.isArray(summary.recipes) && summary.recipes.length ? `Recipes: ${summary.recipes.join(', ')}` : '',
-          componentSummaries.length ? `Components:\n${componentSummaries.map(component => `- ${component.name || component.id} — ${component.status}, ${component.capability}`).join('\n')}` : '',
         ].filter(Boolean).join('\n');
         return toolPayload(call, result, display || 'Model info retrieved');
       }
@@ -690,28 +643,6 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const targetModelName = resolved ? modelName(resolved) : asString(args.model_name);
         if (!targetModelName) {
           return toolPayload(call, { error: 'Missing model_name. Use list_models with a query to resolve a downloaded model first.' }, 'Error: missing model name', true);
-        }
-        const requestedPreset = presetSpecifier(args);
-        let appliedPreset: Preset | null = null;
-        if (requestedPreset) {
-          appliedPreset = resolvePreset(requestedPreset);
-          if (!appliedPreset) {
-            const choices = allStoredPresets().map(preset => `${preset.name} (${preset.id})`).slice(0, 12);
-            return toolPayload(call, {
-              error: `Preset not found: ${requestedPreset}`,
-              available_presets: choices,
-              answer_instruction: 'Tell the user the requested preset was not found and ask them to choose one of the available presets.',
-            }, `Preset not found: ${requestedPreset}`, true);
-          }
-          if (resolved && !isCompatible(appliedPreset, resolved as any)) {
-            return toolPayload(call, {
-              error: `Preset ${appliedPreset.name} is not compatible with ${targetModelName}`,
-              preset: { id: appliedPreset.id, name: appliedPreset.name, applies_to: appliedPreset.applies_to },
-              model: modelSummary(resolved, loadedFor(resolved, loaded)),
-              answer_instruction: 'Tell the user the preset is incompatible with the selected model and ask for a compatible preset.',
-            }, `Preset ${appliedPreset.name} is not compatible with ${targetModelName}`, true);
-          }
-          applyPresetBinding(targetModelName, appliedPreset);
         }
         const opts: Record<string, unknown> = {};
         const recipeArg = typeof args.recipe === 'string' ? args.recipe.trim().toLowerCase() : '';
@@ -748,15 +679,11 @@ export async function executeTool(call: ToolCall): Promise<ToolResult> {
         const result = {
           status: 'loaded',
           model: targetModelName,
-          preset: appliedPreset ? { id: appliedPreset.id, name: appliedPreset.name, applies_to: appliedPreset.applies_to } : undefined,
           options: opts,
           response,
-          answer_instruction: appliedPreset
-            ? 'Tell the user the preset was assigned and the model was loaded, including the model name and selected recipe/backend if any.'
-            : 'Tell the user the model was loaded, including the model name and selected recipe/backend if any.',
+          answer_instruction: 'Tell the user the model was loaded, including the model name and selected recipe/backend if any.',
         };
-        const presetText = appliedPreset ? ` using preset ${appliedPreset.name}` : '';
-        return toolPayload(call, result, `Loaded ${targetModelName}${presetText}${Object.keys(opts).length ? ` with ${shortJson(opts, 120)}` : ''}`);
+        return toolPayload(call, result, `Loaded ${targetModelName}${Object.keys(opts).length ? ` with ${shortJson(opts, 120)}` : ''}`);
       }
 
       case 'unload_model': {
