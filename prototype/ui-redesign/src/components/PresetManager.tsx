@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { LoadedModel, ModelInfo } from '../api';
-import { capabilityIcon } from '../modelCapabilities';
-import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   CAPABILITY_LABELS,
   DEFAULT_PRESET,
@@ -23,7 +21,8 @@ import {
   saveApplied,
   saveUserPresets,
 } from '../presetStore';
-import { PresetIcon } from './Icon';
+import { CapabilityIcon, PresetIcon } from './Icon';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 const ENGINE_LABELS: Record<PresetRecipe, string> = {
   auto: 'Auto — server decides',
@@ -248,7 +247,7 @@ function hasManualArgs(preset: Pick<Preset, 'recipe_options'>): boolean {
 
 const CapabilityChip: React.FC<{ cap: Capability; small?: boolean; on?: boolean; off?: boolean }> = ({ cap, small, on, off }) => (
   <span className={`cap-chip ${capChipClass(cap)}${small ? ' cap-chip--sm' : ''}${on ? ' is-on' : ''}${off ? ' is-off' : ''}`}>
-    <span className="cap-chip__icon" aria-hidden="true">{capabilityIcon(cap)}</span>
+    <span className="cap-chip__icon" aria-hidden="true"><CapabilityIcon capability={cap} size={12} /></span>
     {CAPABILITY_LABELS[cap] || cap}
   </span>
 );

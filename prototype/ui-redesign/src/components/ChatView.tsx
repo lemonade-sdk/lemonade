@@ -188,6 +188,27 @@ function isPersistableAssistantMessage(m: Message): boolean {
   return !(m.isError || /^Error:/i.test(m.content));
 }
 
+
+function formatDurationMs(ms: number | null | undefined): string | null {
+  if (!Number.isFinite(Number(ms)) || Number(ms) <= 0) return null;
+  const value = Number(ms);
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  if (seconds < 10) return `${seconds.toFixed(2)}s`;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m ${remainder}s`;
+}
+
+function reasoningSummary(stats: Pick<ChatCompletionStats, 'reasoningTokens' | 'reasoningElapsedMs'> | null | undefined): string {
+  const parts: string[] = [];
+  if (stats?.reasoningTokens) parts.push(`${stats.reasoningTokens} tokens`);
+  const duration = formatDurationMs(stats?.reasoningElapsedMs);
+  if (duration) parts.push(duration);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
   if (diff < 60000) return 'just now';
@@ -2495,7 +2516,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             open={thinkingOpen}
             onToggle={e => setThinkingOpen((e.target as HTMLDetailsElement).open)}
           >
-            <summary>Reasoning {message.stats?.reasoningTokens ? `· ${message.stats.reasoningTokens} tokens` : ''}</summary>
+            <summary>Reasoning{reasoningSummary(message.stats)}</summary>
             <div className="message__thinking-content">
               <MarkdownMessage content={message.thinking} />
             </div>

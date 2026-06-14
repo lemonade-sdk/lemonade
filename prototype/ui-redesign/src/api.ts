@@ -142,12 +142,14 @@ export interface ChatCompletionStats {
   ttft: string | null;
   tokens: number;
   reasoningTokens: number;
+  reasoningElapsedMs: number | null;
 }
 
 export interface LiveStreamStats {
   tps: number;
   tokens: number;
   reasoningTokens: number;
+  reasoningElapsedMs: number | null;
   elapsed: number;
   ttft: number | null;
 }
@@ -1071,6 +1073,33 @@ class LemonadeAPI {
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
     let reasoningTokenCount = 0;
+    let reasoningStartTime: number | null = null;
+    let reasoningEndTime: number | null = null;
+    let reasoningClosed = false;
+
+    const reasoningElapsedMs = (now: number): number | null => {
+      if (reasoningStartTime == null) return null;
+      return Math.max(0, (reasoningEndTime ?? now) - reasoningStartTime);
+    };
+
+    const buildDoneStats = (now: number, full: string, reasoning: string, respId: string | null): ChatCompletionStats => {
+      if (reasoningStartTime != null && !reasoningClosed) {
+        reasoningEndTime = now;
+        reasoningClosed = true;
+      }
+      const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
+      const totalTokens = tokenCount + reasoningTokenCount;
+      return {
+        content: full,
+        reasoning,
+        id: respId,
+        tps: totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0',
+        ttft: firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null,
+        tokens: tokenCount,
+        reasoningTokens: reasoningTokenCount,
+        reasoningElapsedMs: reasoningElapsedMs(now),
+      };
+    };
 
     const emitStats = () => {
       const now = performance.now();
@@ -1082,6 +1111,7 @@ class LemonadeAPI {
         tps: total > 0 && decodeTime > 0 ? total / decodeTime : 0,
         tokens: tokenCount,
         reasoningTokens: reasoningTokenCount,
+        reasoningElapsedMs: reasoningElapsedMs(now),
         elapsed,
         ttft: firstTokenTime ? firstTokenTime - t0 : null,
       });
@@ -1126,11 +1156,7 @@ class LemonadeAPI {
               return;
             }
             const now = performance.now();
-            const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
-            const totalTokens = tokenCount + reasoningTokenCount;
-            const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
-            const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
-            onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
+            onDone?.(buildDoneStats(now, full, reasoning, respId));
             return;
           }
           try {
@@ -1145,13 +1171,22 @@ class LemonadeAPI {
             const delta = chunk.choices?.[0]?.delta;
             // Handle reasoning/thinking tokens (Qwen3.5, etc.)
             if (delta?.reasoning_content) {
-              if (!firstTokenTime) firstTokenTime = performance.now();
+              const now = performance.now();
+              if (!firstTokenTime) firstTokenTime = now;
+              if (reasoningStartTime == null) reasoningStartTime = now;
+              reasoningEndTime = now;
+              reasoningClosed = false;
               reasoningTokenCount++;
               reasoning += delta.reasoning_content;
               onReasoning?.(delta.reasoning_content, reasoning);
             }
             if (delta?.content) {
-              if (!firstTokenTime) firstTokenTime = performance.now();
+              const now = performance.now();
+              if (!firstTokenTime) firstTokenTime = now;
+              if (reasoningStartTime != null && !reasoningClosed) {
+                reasoningEndTime = now;
+                reasoningClosed = true;
+              }
               tokenCount++;
               full += delta.content;
               onToken?.(delta.content, full);
@@ -1182,11 +1217,7 @@ class LemonadeAPI {
         onToolCalls?.(Array.from(pendingToolCalls.values()));
       } else {
         const now = performance.now();
-        const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
-        const totalTokens = tokenCount + reasoningTokenCount;
-        const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
-        const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
-        onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
+        onDone?.(buildDoneStats(now, full, reasoning, respId));
       }
     } catch (err) {
       clearInterval(statsInterval);
