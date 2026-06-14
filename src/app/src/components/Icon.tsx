@@ -9,7 +9,7 @@ export type IconName =
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
   | 'search' | 'edit' | 'download' | 'play' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
-  | 'hard-drive' | 'sliders-horizontal';
+  | 'hard-drive' | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket';
 
 interface IconProps {
   name: IconName;
@@ -68,6 +68,10 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'library': return <><path d="M4 19.5V5a2 2 0 012-2h12v16H6a2 2 0 00-2 2" /><path d="M8 7h6" /><path d="M8 11h6" /><path d="M8 15h4" /></>;
       case 'hard-drive': return <><path d="M4 12l2-7h12l2 7" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M7 16h.01" /><path d="M17 16h.01" /></>;
       case 'sliders-horizontal': return <><path d="M4 6h7" /><path d="M15 6h5" /><circle cx="13" cy="6" r="2" /><path d="M4 12h3" /><path d="M11 12h9" /><circle cx="9" cy="12" r="2" /><path d="M4 18h10" /><path d="M18 18h2" /><circle cx="16" cy="18" r="2" /></>;
+      case 'flame': return <><path d="M8.5 14.5A4 4 0 0012 21a5.5 5.5 0 005.5-5.5c0-3.5-2.5-5.2-3.1-8.5-1.5 1.1-2.2 2.4-2.4 4.2C10.6 9.8 10.2 7.4 10.5 5 8.2 6.6 6.5 9.2 6.5 12.5c0 .8.3 1.5.7 2.1" /><path d="M12 21a2.7 2.7 0 002.7-2.7c0-1.4-.8-2.3-1.7-3.3-.2 1-.7 1.7-1.3 2.2-.6-.8-.8-1.7-.7-2.6-1 .8-1.7 2-1.7 3.3A2.7 2.7 0 0012 21z" /></>;
+      case 'wrench': return <><path d="M14.7 6.3a4 4 0 01-5 5L4.5 16.5a2.1 2.1 0 103 3l5.2-5.2a4 4 0 005-5l-2.5 2.5-3-3 2.5-2.5z" /></>;
+      case 'brain': return <><path d="M9 4a3 3 0 00-3 3v.4A3.5 3.5 0 003.5 11 3.5 3.5 0 006 14.4V17a3 3 0 003 3" /><path d="M15 4a3 3 0 013 3v.4a3.5 3.5 0 012.5 3.6 3.5 3.5 0 01-2.5 3.4V17a3 3 0 01-3 3" /><path d="M9 4v16M15 4v16M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2" /></>;
+      case 'rocket': return <><path d="M5 19c1.5-.4 2.8-1.2 3.8-2.2" /><path d="M15 14l-5-5c1.8-3.2 4.8-5.3 9-6 0 4.2-2 7.2-5.2 9" /><path d="M9 15l-3 3" /><path d="M14 9h.01" /><path d="M7 11l-3 1 2-4 4-2" /><path d="M13 17l-1 3 4-2 2-4" /></>;
       default: return <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 9h6v6H9z" /></>;
     }
   })();
@@ -80,9 +84,15 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
   );
 };
 
-export function capabilityIconName(capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'): IconName {
+export type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'popular' | 'tools' | 'reasoning' | 'mtp';
+
+export function capabilityIconName(capability: CapabilityIconTarget): IconName {
   switch (capability) {
     case 'all': return 'globe';
+    case 'popular': return 'flame';
+    case 'tools': return 'wrench';
+    case 'reasoning': return 'brain';
+    case 'mtp': return 'rocket';
     case 'chat': return 'chat';
     case 'omni': return 'omni';
     case 'image': return 'image';
@@ -97,7 +107,7 @@ export function capabilityIconName(capability: ModelCapability | 'all' | 'vision
   }
 }
 
-export const CapabilityIcon: React.FC<{ capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'; size?: number; className?: string; title?: string }> = ({ capability, size, className, title }) => (
+export const CapabilityIcon: React.FC<{ capability: CapabilityIconTarget; size?: number; className?: string; title?: string }> = ({ capability, size, className, title }) => (
   <Icon name={capabilityIconName(capability)} size={size} className={className} title={title} />
 );
 

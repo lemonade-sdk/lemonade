@@ -143,27 +143,121 @@ function modelType(m: ModelInfo): string {
 
 function labelDisplay(label: string): string {
   const map: Record<string, string> = {
+    'chat': 'Chat',
+    'llm': 'Chat',
     'tool-calling': 'Tools',
+    'tools': 'Tools',
     'vision': 'Vision',
+    'image-input': 'Vision',
+    'vlm': 'VLM',
     'omni': 'Omni',
     'multimodal': 'Multimodal',
+    'multi-modal': 'Multimodal',
     'vision-language': 'Vision Language',
     'reasoning': 'Reasoning',
     'coding': 'Code',
+    'code': 'Code',
     'hot': 'Popular',
+    'popular': 'Popular',
     'mtp': 'MTP',
+    'embedding': 'Embedding',
     'embeddings': 'Embeddings',
+    'reranker': 'Reranking',
     'reranking': 'Reranking',
+    'audio': 'Audio',
+    'asr': 'ASR',
+    'stt': 'STT',
+    'speech-to-text': 'Speech to Text',
     'transcription': 'Transcription',
     'realtime-transcription': 'Realtime',
     'chat-transcription': 'Chat ASR',
     'tts': 'TTS',
+    'speech': 'Speech',
+    'text-to-speech': 'Text to Speech',
     'image': 'Image',
+    'image-generation': 'Image',
+    'diffusion': 'Image',
     'edit': 'Edit',
+    'image-edit': 'Edit',
+    'image-editing': 'Edit',
     'upscaling': 'Upscale',
     'custom': 'Custom',
   };
-  return map[label] || label;
+  const key = String(label || '').toLowerCase();
+  return map[key] || label;
+}
+
+type CapabilityIconTarget = ModelCapability | 'all' | 'vision' | 'code' | 'transcription' | 'popular' | 'tools' | 'reasoning' | 'mtp';
+
+function iconForCapabilityLabel(label: string): CapabilityIconTarget {
+  const key = String(label || '').toLowerCase().trim();
+  if (['all'].includes(key)) return 'all';
+  if (['hot', 'popular'].includes(key)) return 'popular';
+  if (['tool-calling', 'tools'].includes(key)) return 'tools';
+  if (['reasoning'].includes(key)) return 'reasoning';
+  if (['mtp'].includes(key)) return 'mtp';
+  if (['chat', 'llm'].includes(key)) return 'chat';
+  if (['omni', 'multimodal', 'multi-modal'].includes(key)) return 'omni';
+  if (['vision', 'image-input', 'vlm', 'vision-language'].includes(key)) return 'vision';
+  if (['coding', 'code'].includes(key)) return 'code';
+  if (['image', 'image-generation', 'diffusion', 'edit', 'image-edit', 'image-editing', 'upscaling'].includes(key)) return 'image';
+  if (['audio', 'transcription', 'realtime-transcription', 'chat-transcription', 'asr', 'stt', 'speech-to-text'].includes(key)) return 'transcription';
+  if (['tts', 'speech', 'text-to-speech'].includes(key)) return 'tts';
+  if (['embedding', 'embeddings'].includes(key)) return 'embedding';
+  if (['reranking', 'reranker', 'rerank'].includes(key)) return 'reranking';
+  return 'unknown';
+}
+
+function labelFromCapability(capability: ModelCapability): string | null {
+  switch (capability) {
+    case 'chat': return 'chat';
+    case 'omni': return 'omni';
+    case 'image': return 'image';
+    case 'audio': return 'transcription';
+    case 'tts': return 'tts';
+    case 'embedding': return 'embedding';
+    case 'reranking': return 'reranking';
+    default: return null;
+  }
+}
+
+function findModelInfoByDisplayName(models: ModelInfo[], name: string): ModelInfo | null {
+  const needle = String(name || '').trim().toLowerCase();
+  if (!needle) return null;
+  return models.find(model => modelName(model).toLowerCase() === needle
+    || String(model.display_name || '').trim().toLowerCase() === needle
+    || String(model.id || '').trim().toLowerCase() === needle) || null;
+}
+
+function capabilityLabelsForModel(model: ModelInfo | null | undefined, allModels: ModelInfo[]): string[] {
+  const labels: string[] = [];
+  const addLabel = (raw: unknown) => {
+    const label = String(raw || '').trim().toLowerCase();
+    if (!label || ['llamacpp', 'custom'].includes(label)) return;
+    labels.push(label);
+  };
+
+  modelLabels(model).forEach(addLabel);
+
+  if (model && isCollectionModel(model)) {
+    for (const componentName of getCollectionComponents(model)) {
+      const component = findModelInfoByDisplayName(allModels, componentName);
+      if (component) {
+        modelLabels(component).forEach(addLabel);
+        addLabel(labelFromCapability(capabilityFromModelInfo(component)));
+      }
+    }
+  }
+
+  if (model) addLabel(labelFromCapability(capabilityFromModelInfo(model)));
+
+  const unique = new Map<string, string>();
+  for (const label of labels) {
+    const display = labelDisplay(label);
+    const key = display.toLowerCase();
+    if (!unique.has(key)) unique.set(key, label);
+  }
+  return [...unique.values()];
 }
 
 function hfUrl(checkpoint: string): string | null {
@@ -1299,15 +1393,19 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   /* ── Render helpers ──────────────────────────────────────── */
 
   const renderLabels = (labels: string[]) => {
-    const normalizedLabels = labels.map(label => String(label).trim()).filter(Boolean);
+    const normalizedLabels = labels.map(label => String(label).trim().toLowerCase()).filter(Boolean);
     if (normalizedLabels.length === 0) return null;
-    // Filter out the 'llamacpp' label since it's redundant with recipe
-    const displayLabels = normalizedLabels.filter(l => l !== 'llamacpp' && l !== 'custom');
+    const displayLabels = [...new Map(normalizedLabels
+      .filter(l => l !== 'llamacpp' && l !== 'custom')
+      .map(l => [labelDisplay(l).toLowerCase(), l] as const)).values()];
     if (displayLabels.length === 0) return null;
     return (
       <div className="row__labels">
         {displayLabels.map(l => (
-          <span key={l} className="row__label">{labelDisplay(l)}</span>
+          <span key={l} className="row__label row__label--with-icon">
+            <CapabilityIcon capability={iconForCapabilityLabel(l)} size={10} />
+            {labelDisplay(l)}
+          </span>
         ))}
       </div>
     );
@@ -1327,6 +1425,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const showContext = Boolean(displayCtx);
     const compositeModels = Array.isArray((m as any).composite_models) ? (m as any).composite_models : [];
     const collectionComponents = getCollectionComponents(m);
+    const detailCapabilityLabels = capabilityLabelsForModel(m, allModels);
     const url = hfUrl(checkpoint);
     const exportData = {
       ...m,
@@ -1364,12 +1463,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 <span className="detail__value">{contextLabel(displayCtx!)} tokens</span>
               </div>
             )}
-            {modelLabels(m).length > 0 && (
+            {detailCapabilityLabels.length > 0 && (
               <div className="detail__field">
                 <span className="detail__label">Capabilities</span>
                 <div className="detail__caps">
-                  {modelLabels(m).filter(l => l !== 'llamacpp').map(l => (
-                    <span key={l} className="detail__cap">{labelDisplay(l)}</span>
+                  {detailCapabilityLabels.map(l => (
+                    <span key={l} className="detail__cap detail__cap--with-icon">
+                      <CapabilityIcon capability={iconForCapabilityLabel(l)} size={12} />
+                      {labelDisplay(l)}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -1554,7 +1656,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   {m.size ? ` · ${formatSize(m.size)}` : ''}
                   {rowCtx ? ` · ${contextLabel(rowCtx)} ctx` : ''}
                 </span>
-                {renderLabels(modelLabels(m))}
+                {renderLabels(capabilityLabelsForModel(m, allModels))}
                 <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
               </div>
             </div>
@@ -1582,7 +1684,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                   onClick={(e) => { e.stopPropagation(); handleLoad(m); }}
                   disabled={isLoading}
                 >
-                  {isLoading ? 'Loading…' : <> <Icon name="play" size={13} /> Load</>}
+                  {isLoading ? 'Loading…' : <><Icon name="play" size={13} /> Load</>}
                 </button>
                 <button
                   className="row__action row__action--delete"
