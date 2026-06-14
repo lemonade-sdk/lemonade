@@ -1447,21 +1447,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
       && (info ? canShowPresetHighlight(info) : !loadedIsVirtualOmniCollection(m)));
     return (
       <div className={`row row--running${isActive ? ' row--active' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={m.model_name}>
-        <div className="row__content" onClick={() => toggleDetail(m.model_name)}>
-          <div className="row__main">
-            <BackendBadge recipe={m.recipe} running />
-            <div className="row__text">
-              <span className="row__name-wrap"><span className="row__name">{m.model_name}</span><CopyInlineButton text={m.model_name} />{info && (info as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
-              <span className="row__sub">
-                {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
-                {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
-                {runningCtx ? ` · ${contextLabel(runningCtx)} ctx` : ''}
-                {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
-              </span>
-              <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
+        <div className="row__summary">
+          <button type="button" className="row__content" onClick={() => toggleDetail(m.model_name)} aria-expanded={expandedModel === m.model_name}>
+            <div className="row__main">
+              <BackendBadge recipe={m.recipe} running />
+              <div className="row__text">
+                <span className="row__name-wrap"><span className="row__name">{m.model_name}</span>{info && (info as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
+                <span className="row__sub">
+                  {recipeLabel(m.recipe)} · {(m.device || 'device').toUpperCase()}
+                  {` · ${capabilityIcon(cap)} ${capabilityLabel(cap)}`}
+                  {runningCtx ? ` · ${contextLabel(runningCtx)} ctx` : ''}
+                  {componentCount > 0 ? ` · ${componentCount} components loaded` : ''}
+                </span>
+                <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
+              </div>
             </div>
-          </div>
+            <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
+          </button>
           <div className="row__right">
+            <CopyInlineButton text={m.model_name} />
             <span className="row__status-pill row__status-pill--running">
               <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
             </span>
@@ -1489,7 +1493,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             >
               <Icon name="x" size={14} />
             </button>
-            <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
           </div>
         </div>
 
@@ -1539,22 +1542,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
     return (
       <div className={`row${expandedModel === name ? ' row--expanded' : ''}${isPresetHighlighted ? ' row--preset-highlight' : ''}`} key={name}>
-        <div className="row__content" onClick={() => toggleDetail(name)}>
-          <div className="row__main">
-            <BackendBadge recipe={String((m as any).recipe || '')} />
-            <div className="row__text">
-              <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span><CopyInlineButton text={name} />{(m as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
-              <span className="row__sub">
-                {recipeLabel((m as any).recipe || '')}
-                {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
-                {m.size ? ` · ${formatSize(m.size)}` : ''}
-                {rowCtx ? ` · ${contextLabel(rowCtx)} ctx` : ''}
-              </span>
-              {renderLabels(modelLabels(m))}
-              <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
+        <div className="row__summary">
+          <button type="button" className="row__content" onClick={() => toggleDetail(name)} aria-expanded={expandedModel === name}>
+            <div className="row__main">
+              <BackendBadge recipe={String((m as any).recipe || '')} />
+              <div className="row__text">
+                <span className="row__name-wrap"><span className="row__name">{m.display_name || name}</span>{(m as any).custom && <span className="row__label row__label--custom">Custom</span>}</span>
+                <span className="row__sub">
+                  {recipeLabel((m as any).recipe || '')}
+                  {isCollection ? ` · ${collectionComponentLabel(m)}` : ''}
+                  {m.size ? ` · ${formatSize(m.size)}` : ''}
+                  {rowCtx ? ` · ${contextLabel(rowCtx)} ctx` : ''}
+                </span>
+                {renderLabels(modelLabels(m))}
+                <span className="row__preset-pill"><PresetIcon preset={activePreset} /> {activePreset.name}</span>
+              </div>
             </div>
-          </div>
+            <span className="row__expand">{expandedModel === name ? '▾' : '▸'}</span>
+          </button>
           <div className="row__right">
+            <CopyInlineButton text={name} />
             {isPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
@@ -1604,7 +1611,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </button>
               </>
             )}
-            <span className="row__expand">{expandedModel === name ? '▾' : '▸'}</span>
           </div>
         </div>
 
@@ -1640,25 +1646,29 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
     return (
       <div className={`row row--hf${isExpanded ? ' row--expanded' : ''}`} key={r.id}>
-        <div className="row__content" onClick={handleExpand}>
-          <div className="row__main">
-            <div className="row__icon row__icon--hf"><Icon name="download" size={18} /></div>
-            <div className="row__text">
-              <span className="row__name-wrap"><span className="row__name">{r.id}</span><CopyInlineButton text={r.id} title="Copy repository name" /></span>
-              <span className="row__sub">
-                {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
-                {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
-              </span>
-              {displayTags.length > 0 && (
-                <div className="row__labels">
-                  {displayTags.map(t => (
-                    <span key={t} className="row__label row__label--hf">{t}</span>
-                  ))}
-                </div>
-              )}
+        <div className="row__summary">
+          <button type="button" className="row__content" onClick={handleExpand} aria-expanded={isExpanded}>
+            <div className="row__main">
+              <div className="row__icon row__icon--hf"><Icon name="download" size={18} /></div>
+              <div className="row__text">
+                <span className="row__name-wrap"><span className="row__name">{r.id}</span></span>
+                <span className="row__sub">
+                  {recipeBadge ? `${recipeBadge} · ` : ''}{pipelineTag && `${pipelineTag} · `}
+                  {formatDownloads(r.downloads)} downloads · {formatDownloads(r.likes)} likes
+                </span>
+                {displayTags.length > 0 && (
+                  <div className="row__labels">
+                    {displayTags.map(t => (
+                      <span key={t} className="row__label row__label--hf">{t}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+            <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
+          </button>
           <div className="row__right">
+            <CopyInlineButton text={r.id} title="Copy repository name" />
             {isHfPulling ? (
               <div className="row__progress">
                 <div className="row__progress-bar">
@@ -1689,7 +1699,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             >
               View
             </a>
-            <span className="row__expand">{isExpanded ? '▾' : '▸'}</span>
           </div>
         </div>
 
