@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <regex>
@@ -438,7 +439,7 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_gpu", {}},      // all AMD GPU families
     }},
     {"llamacpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}},  // STX iGPUs + RDNA2/3/4 dGPUs
     }},
     {"llamacpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64", "arm64"}},
@@ -469,8 +470,8 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {
-            "gfx1150",
-            "gfx1151", "gfx103X", "gfx110X", "gfx120X"
+            "gfx1150", "gfx1151", "gfx1152",
+            "gfx103X", "gfx110X", "gfx120X"
         }},
     }},
 
@@ -539,6 +540,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     // AMD GPU architectures (ROCm)
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
+    {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
     {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
     {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
@@ -1216,6 +1218,42 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    // Some recipe/backend pairs are defined multiple times for OS-specific
+    // support, e.g. moonshine/cpu has separate Windows, Linux, and macOS
+    // entries. Keep the most useful status for the current system:
+    // non-unsupported states beat current-OS unsupported states, which beat
+    // unsupported fallback entries from other OS definitions.
+    static constexpr int kOtherOsUnsupportedPriority = 0;
+    static constexpr int kCurrentOsUnsupportedPriority = 1;
+    static constexpr int kNonUnsupportedPriority = 2;
+
+    std::map<std::pair<std::string, std::string>, int> backend_status_priority;
+
+    auto set_backend_status = [&recipes, &backend_status_priority](
+                                const std::string& recipe,
+                                const std::string& backend_name,
+                                const json& backend_status,
+                                int unsupported_priority) {
+        const std::string state = backend_status.value("state", "unsupported");
+        const int priority = (state == "unsupported")
+            ? unsupported_priority
+            : kNonUnsupportedPriority;
+        const auto key = std::make_pair(recipe, backend_name);
+
+        auto existing_priority = backend_status_priority.find(key);
+        if (existing_priority != backend_status_priority.end()
+            && priority <= existing_priority->second) {
+            return;
+        }
+
+        if (!recipes.contains(recipe)) {
+            recipes[recipe] = {{"backends", json::object()}};
+        }
+
+        recipes[recipe]["backends"][backend_name] = backend_status;
+        backend_status_priority[key] = priority;
+    };
+
     // Default to preferring system llamacpp on Linux AMD systems.
     // Can be set via config.json: {"llamacpp": {"prefer_system": true}}
     bool prefer_llamacpp_system = false;
@@ -1259,12 +1297,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 {"can_uninstall", true},
             };
 
-            // Add to the appropriate recipe/backend structure
-            if (recipes.contains(def.recipe)) {
-                recipes[def.recipe]["backends"][def.backend] = backend;
-            } else {
-                recipes[def.recipe] = {{"backends", {{def.backend, backend}}}};
-            }
+            set_backend_status(def.recipe, def.backend, backend, kOtherOsUnsupportedPriority);
             continue;
         }
 
@@ -1541,11 +1574,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         // Note: release_url and download_size_mb are added by Server::handle_system_info()
         // using BackendManager as the single source of truth for repo/version mappings.
 
-        // Add to the appropriate recipe/backend structure
-        if (!recipes.contains(def.recipe)) {
-            recipes[def.recipe] = {{"backends", json::object()}};
-        }
-        recipes[def.recipe]["backends"][def.backend] = backend;
+        set_backend_status(def.recipe, def.backend, backend, kCurrentOsUnsupportedPriority);
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
@@ -1625,6 +1654,13 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
 }
 
 std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
+    // Cloud offload has no local hardware/OS requirements; availability is
+    // gated by the CloudProviderRegistry (config.json "cloud_providers") and
+    // a resolvable API key (env var or runtime auth), checked elsewhere in
+    // filter_models_by_backend / CloudServer::load.
+    if (recipe == "cloud") {
+        return "";
+    }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
 }
@@ -1803,23 +1839,28 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
     std::smatch gfx_match;
-    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx\d{4}))"))) {
+    // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
+    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
         return gfx_match[1].str();
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
-    if (std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
-        if (device_lower.length() >= 4) {
-            std::string major = device_lower.substr(0, 2);
-
-            int minor_int = std::stoi(device_lower.substr(2, 2));
-            std::string minor = std::to_string(minor_int);
-
-            int revision_int = std::stoi(device_lower.substr(4, 2));
-            std::string revision = std::to_string(revision_int);
-
-            return "gfx" + major + minor + revision;
+    if (!device_lower.empty() &&
+        std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
+        int v;
+        try {
+            v = std::stoi(device_lower);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to parse gfx_target_version '" + device_lower + "': " + e.what());
         }
+        int major = v / 10000;
+        int minor = (v / 100) % 100;
+        int step  = v % 100;
+
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
+        return std::string(buf);
     }
 
     if (device_lower.find("radeon") == std::string::npos &&
@@ -1836,6 +1877,11 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     if (device_lower.find("880m") != std::string::npos ||
         device_lower.find("890m") != std::string::npos) {
         return "gfx1150";
+    }
+
+    if (device_lower.find("840m") != std::string::npos ||
+        device_lower.find("860m") != std::string::npos) {
+        return "gfx1152";
     }
 
     if (device_lower.find("r9700") != std::string::npos ||

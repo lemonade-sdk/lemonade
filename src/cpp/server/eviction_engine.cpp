@@ -116,10 +116,11 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
                 break;
             }
 
-            // 2. Time-based soft idle (downsize) — mark here; call downsize() outside the lock
+            // 2. Time-based soft idle (downsize) — collect the candidate only. The
+            // model is not claimed here; try_begin_downsize() below atomically
+            // re-checks that it is still idle and transitions it to DOWNSIZING.
             if (idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {
-                LOG(INFO) << "Model " << server->get_model_name() << " reached downsize idle timeout (" << downsize_timeout_sec << "s). Downsizing." << std::endl;
-                server->set_state(ModelState::DOWNSIZING);
+                LOG(INFO) << "Model " << server->get_model_name() << " reached downsize idle timeout (" << downsize_timeout_sec << "s). Marking for downsize." << std::endl;
                 models_to_downsize.push_back(server->get_model_name());
             }
 
@@ -139,16 +140,28 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
         }
     } // release lock
 
-    // Perform downsizes outside the lock so they don't block the router
+    // Perform downsizes outside the lock so they don't block the router. Each
+    // downsize is an owned maintenance operation: try_begin_downsize() (under the
+    // router lock) atomically claims the model and marks it busy, so a concurrent
+    // evict_server() waits in wait_until_not_busy() instead of unloading and
+    // destroying the server while we still hold a raw pointer to it. The matching
+    // finish_downsize() releases that guard and records success/failure.
     for (const auto& name : models_to_downsize) {
         WrappedServer* s = nullptr;
         {
             std::lock_guard<std::mutex> lk(router_->load_mutex_);
             s = router_->find_server_by_model_name(name);
+            if (!s || !s->try_begin_downsize()) {
+                continue;  // gone, busy, or no longer idle since phase 1
+            }
         }
-        if (s && s->get_state() == ModelState::DOWNSIZING) {
-            s->downsize();
-            s->set_state(ModelState::DOWNSIZED);
+        // s is kept alive by the maintenance guard set in try_begin_downsize().
+        bool ok = s->downsize();
+        s->finish_downsize(ok);
+        if (ok) {
+            LOG(INFO) << "Model " << name << " downsized." << std::endl;
+        } else {
+            LOG(WARNING) << "Downsize of " << name << " failed; left ready." << std::endl;
         }
     }
 

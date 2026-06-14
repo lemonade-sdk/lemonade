@@ -35,7 +35,7 @@ public:
     void unload() override;
 
     // Downsize the model on soft idle
-    void downsize() override;
+    bool downsize() override;
 
     // ICompletionServer implementation
     json chat_completion(const json& request) override;

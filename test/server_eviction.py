@@ -1,4 +1,5 @@
 import os
+import threading
 import unittest
 import requests
 import time
@@ -201,6 +202,68 @@ class EvictionTests(ServerTestBase):
             self._get_loaded_model_info(ENDPOINT_TEST_MODEL),
             "Heavily-weighted model should be protected",
         )
+
+    def test_concurrent_unload_during_downsize_is_safe(self):
+        """Stress the unload-vs-downsize lifetime race: while the eviction engine
+        is downsizing an idle model, a concurrent unload must wait for the
+        maintenance operation to finish rather than destroying the server out from
+        under the engine. Regression test for the dangling-pointer race in the
+        downsize path. The pass condition is simply that the server survives the
+        churn (stays responsive, no crash/hang)."""
+        admin_key = os.getenv("LEMONADE_ADMIN_API_KEY", "")
+        headers = {}
+        if admin_key:
+            headers["Authorization"] = f"Bearer {admin_key}"
+
+        # Very short downsize timeout so the engine is constantly trying to
+        # downsize the model while we churn it underneath.
+        requests.post(
+            f"{self.base_url}/internal/set",
+            json={"auto_evict": True},
+            headers=headers,
+        )
+
+        stop = threading.Event()
+        errors = []
+
+        def load_model():
+            requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "auto_evict": True,
+                    "downsize_idle_timeout": 1,
+                    "evict_idle_timeout": 300,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        def churn():
+            try:
+                while not stop.is_set():
+                    load_model()
+                    # Give the eviction engine a chance to begin a downsize.
+                    time.sleep(1.5)
+                    requests.post(
+                        f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT
+                    )
+            except Exception as exc:  # noqa: BLE001 - surfaced via errors list
+                errors.append(exc)
+
+        threads = [threading.Thread(target=churn) for _ in range(3)]
+        for t in threads:
+            t.start()
+        # Run the churn long enough to span several eviction-engine cycles (5s each).
+        time.sleep(20)
+        stop.set()
+        for t in threads:
+            t.join(timeout=TIMEOUT_MODEL_OPERATION)
+
+        self.assertEqual(errors, [], f"Concurrent churn raised errors: {errors}")
+
+        # The server must still be alive and responsive after the churn.
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(health.status_code, 200, "Server should survive the churn")
 
 
 if __name__ == "__main__":

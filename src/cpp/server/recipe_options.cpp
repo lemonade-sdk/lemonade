@@ -37,7 +37,11 @@ static const json DEFAULTS = {
     // vLLM-specific options
     {"vllm_backend", ""},  // "" means auto-detect
     {"vllm_args", ""},     // Custom arguments to pass to vllm-server
-    
+    // Cloud recipe has no backend variants (provider selection lives on the
+    // per-model cloud_provider field). The empty string satisfies Router's
+    // per-backend-args lookup; cloud reads no backend-specific config.
+    {"cloud_backend", ""},
+
     // Auto-eviction options
     {"auto_evict", nullptr},          // nullptr means fallback to global config
     {"evict_idle_timeout", 300},      // Default hard idle timeout (5 mins)
