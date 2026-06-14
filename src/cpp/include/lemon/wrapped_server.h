@@ -149,13 +149,13 @@ public:
 
     // Cheap liveness gate used by the router. On POSIX this relies on
     // ProcessManager::is_running(), which intentionally checks without reaping.
-    bool is_backend_alive() const;
+    virtual bool is_backend_alive() const;
 
     // True once the backend watchdog force-reset the child process.
     bool was_watchdog_triggered() const { return watchdog_triggered_.load(std::memory_order_acquire); }
 
     // Human-readable state for /health and debugging endpoints.
-    std::string get_backend_health_state() const;
+    virtual std::string get_backend_health_state() const;
     std::string get_watchdog_reset_reason() const;
 
     // Load a model and start the server

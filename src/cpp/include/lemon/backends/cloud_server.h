@@ -59,6 +59,9 @@ public:
 
     void unload() override;
 
+    bool is_backend_alive() const override;
+    std::string get_backend_health_state() const override;
+
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
