@@ -21,6 +21,8 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+class CloudProviderRegistry;
+
 struct ModelTelemetryIdentity {
     std::string model_name;
     std::string checkpoint;
@@ -45,6 +47,11 @@ public:
            BackendManager* backend_manager);
 
     ~Router();
+
+    // Wires the cloud provider registry so the Router can construct
+    // CloudServer instances with a credential source. Pointer (not
+    // ownership) — Server owns the registry.
+    void set_cloud_registry(CloudProviderRegistry* registry);
 
     // Load a model with the appropriate backend
     // Optional per-model settings override the defaults
@@ -136,6 +143,8 @@ private:
     RuntimeConfig* config_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
+    CloudProviderRegistry* cloud_registry_ = nullptr;  // Non-owning
+
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
     std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;

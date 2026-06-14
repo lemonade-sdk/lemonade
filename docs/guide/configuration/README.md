@@ -153,6 +153,15 @@ Backend-specific settings are nested under their backend name:
 |-----|---------|-------------|
 | `cpu_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
+**cloud_providers** — Cloud OpenAI-compatible providers (see [Cloud Offload](./cloud.md)). Array, one object per installed provider:
+
+| Key | Description |
+|-----|-------------|
+| `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+
+API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
+
 ### Backend binary selection
 
 Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm_bin`) accepts the same set of values:

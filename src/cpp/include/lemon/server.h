@@ -19,6 +19,7 @@
 #include "router.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "cloud_provider_registry.h"
 #include "upgradable_http_server.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
@@ -104,6 +105,19 @@ private:
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
+
+    // Cloud auth (public, all four prefixes).
+    //   POST /v1/cloud/auth   body: {provider, api_key}
+    //     -> store key in process memory for that provider, refresh the
+    //        provider's discovered model list. Returns 409 if the
+    //        provider's env var is set (env wins).
+    //   DELETE /v1/cloud/auth/{provider}
+    //     -> clear the in-memory runtime key (env var unaffected).
+    // Admin-gated only when LEMONADE_ADMIN_API_KEY is explicitly set, same
+    // gate as /internal/shutdown — matches the existing pattern so dev
+    // loops without any keys still work.
+    void handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res);
+    void handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res);
     void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
@@ -193,6 +207,13 @@ private:
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
+    // Helper: persist the registry's installed-providers list into config.json
+    // by overlaying onto the current runtime-config snapshot. Called after
+    // install/uninstall. Errors are logged and swallowed — a failure to
+    // persist must not prevent the in-memory state change that already
+    // happened.
+    void persist_cloud_providers();
+
     // Load every component of a collection (Omni) model, downloading any that are
     // missing. Shared by handle_load and auto_load_model_if_needed.
     void ensure_collection_loaded(const ModelInfo& info);
@@ -230,6 +251,7 @@ private:
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
+    std::unique_ptr<CloudProviderRegistry> cloud_registry_;
     std::unique_ptr<WebSocketServer> websocket_server_;
 
     std::mutex downloads_mutex_;

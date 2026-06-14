@@ -97,10 +97,13 @@ void configure_claude_agent(const std::string& base_url,
                             AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
-    config.binary_name = "claude";
 #ifdef _WIN32
-    config.binary_alternatives = {"claude.cmd", "claude.exe"};
+    // npm puts a Unix shell script named just "claude" next to claude.cmd.
+    // Windows cannot run the shell script, so look for .cmd/.exe first.
+    config.binary_name = "claude.cmd";
+    config.binary_alternatives = {"claude.exe", "claude"};
 #else
+    config.binary_name = "claude";
     config.binary_alternatives = {};
 #endif
     config.fallback_paths = {

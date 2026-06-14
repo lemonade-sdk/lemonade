@@ -3,6 +3,7 @@
 #include <string>
 #include <shared_mutex>
 #include <functional>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace lemon {
