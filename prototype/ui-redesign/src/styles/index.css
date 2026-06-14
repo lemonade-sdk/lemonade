@@ -1,0 +1,26 @@
+/* =====================================================================
+   styles/index.css — barrel for the lemonade UI redesign prototype.
+
+   Tokens load FIRST (every partial below depends on the custom properties
+   defined in tokens.css). The 11 component partials then load in their
+   ORIGINAL source order — they are NOT alphabetized.
+
+   Order is preserved on purpose: unlike src/app/styles, this sheet ends
+   with cascade-sensitive layers. responsive.css carries the media-query
+   overrides and polish.css carries trailing "polish"/override rules whose
+   position in the cascade matters. Reordering (or alphabetizing) these
+   would change which declarations win. Keep this list in source order;
+   when adding a partial, insert it at its real position in the cascade.
+   ===================================================================== */
+@import url(tokens.css);
+@import url(partials/base.css);
+@import url(partials/titlebar.css);
+@import url(partials/chat.css);
+@import url(partials/model-manager.css);
+@import url(partials/connect.css);
+@import url(partials/buttons.css);
+@import url(partials/presets.css);
+@import url(partials/form-controls.css);
+@import url(partials/context-rails.css);
+@import url(partials/responsive.css);
+@import url(partials/polish.css);
