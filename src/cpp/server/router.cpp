@@ -1,8 +1,11 @@
 #include "lemon/router.h"
+#include "lemon/cloud_provider_registry.h"
+#include "lemon/backends/cloud_server.h"
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/fastflowlm_server.h"
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/whisper_server.h"
+#include "lemon/backends/moonshine_server.h"
 #include "lemon/backends/kokoro_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/vllm_server.h"
@@ -29,6 +32,10 @@ Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManage
 Router::~Router() {
     LOG(DEBUG, "Router") << "Destructor: unloading all models" << std::endl;
     unload_model("");  // Unload all
+}
+
+void Router::set_cloud_registry(CloudProviderRegistry* registry) {
+    cloud_registry_ = registry;
 }
 
 WrappedServer* Router::find_server_by_model_name(const std::string& model_name) const {
@@ -61,6 +68,11 @@ WrappedServer* Router::get_most_recent_server() const {
 int Router::count_servers_by_type(ModelType type) const {
     int count = 0;
     for (const auto& server : loaded_servers_) {
+        // Cloud servers consume no local memory and stay loaded for free, so
+        // they are excluded from the slot accounting that drives LRU eviction.
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
         if (server->get_model_type() == type) {
             count++;
         }
@@ -72,6 +84,12 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
     WrappedServer* lru = nullptr;
 
     for (const auto& server : loaded_servers_) {
+        // Cloud servers are not eviction candidates; they have no memory cost
+        // and reloading them is essentially free, but evicting them throws
+        // away the cached api key/upstream-id binding for no benefit.
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
         if (server->get_model_type() == type) {
             if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
                 lru = server.get();
@@ -183,9 +201,18 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     std::unique_ptr<WrappedServer> new_server;
     std::string log_level = config_->log_level();
 
-    if (model_info.recipe == "whispercpp") {
+    if (model_info.recipe == "cloud") {
+        LOG(DEBUG, "Router") << "Creating CloudServer backend (provider: "
+                             << model_info.cloud_provider << ")" << std::endl;
+        new_server = std::make_unique<backends::CloudServer>(model_info.cloud_provider, log_level,
+                                                              model_manager_, backend_manager_,
+                                                              cloud_registry_);
+    } else if (model_info.recipe == "whispercpp") {
         LOG(DEBUG, "Router") << "Creating WhisperServer backend" << std::endl;
         new_server = std::make_unique<backends::WhisperServer>(log_level, model_manager_, backend_manager_);
+    } else if (model_info.recipe == "moonshine") {
+        LOG(DEBUG, "Router") << "Creating MoonshineServer backend" << std::endl;
+        new_server = std::make_unique<backends::MoonshineServer>(log_level, model_manager_, backend_manager_);
     } else if (model_info.recipe == "kokoro") {
         LOG(DEBUG, "Router") << "Creating Kokoro backend" << std::endl;
         new_server = std::make_unique<backends::KokoroServer>(log_level, model_manager_, backend_manager_);
@@ -226,7 +253,8 @@ void Router::load_model(const std::string& model_name,
 
     RecipeOptions tentative = options.inherit(model_info.recipe_options.inherit(
     RecipeOptions(model_info.recipe, config_->recipe_options(""))));
-    const std::string backend = tentative.get_option(backend_option).get<std::string>();
+    json backend_json = tentative.get_option(backend_option);
+    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
     // Second pass: rebuild defaults using the resolved backend
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
@@ -317,9 +345,12 @@ void Router::load_model(const std::string& model_name,
         }
 
         // LRU EVICTION CHECK (from spec: Least Recently Used Cache)
-        // Skip eviction if unlimited (-1)
+        // Skip eviction if unlimited (-1). Cloud-recipe loads also skip the
+        // check entirely: they consume no local resources, so they have no
+        // business kicking a warm local model out of memory.
+        bool is_cloud_load = (model_info.recipe == "cloud");
         int current_count = count_servers_by_type(model_type);
-        if (max_models != -1 && current_count >= max_models) {
+        if (!is_cloud_load && max_models != -1 && current_count >= max_models) {
             WrappedServer* lru = find_lru_server_by_type(model_type);
             if (lru) {
                 LOG(INFO, "Router") << "Slot limit reached for type "
@@ -487,6 +518,25 @@ json Router::get_all_loaded_models() const {
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
 
+        // Static metadata from the registry entry. Cloud models carry the
+        // provider-reported context window + per-million-token cost (recorded
+        // at discovery by ModelManager::refresh_cloud_models); local models
+        // surface their runtime context via recipe_options instead.
+        try {
+            const ModelInfo reg_info = model_manager_->get_model_info(server->get_model_name());
+            if (reg_info.max_context_window > 0) {
+                model_info["max_context_window"] = reg_info.max_context_window;
+            }
+            if (reg_info.cost_input_per_million >= 0) {
+                model_info["cost_input_per_million"] = reg_info.cost_input_per_million;
+            }
+            if (reg_info.cost_output_per_million >= 0) {
+                model_info["cost_output_per_million"] = reg_info.cost_output_per_million;
+            }
+        } catch (...) {
+            // Registry entry not found (raced with a delete) — skip static metadata.
+        }
+
         // Convert timestamp to milliseconds since epoch
         auto time_point = server->get_last_access_time();
         auto duration = time_point.time_since_epoch();
@@ -540,6 +590,24 @@ std::string Router::get_backend_address() const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = get_most_recent_server();
     return server ? server->get_address() : "";
+}
+
+std::string Router::get_streaming_transcription_address(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = nullptr;
+    if (!model_name.empty()) {
+        // Route by the session's requested model, like the normal inference
+        // path — most-recent would misroute multi-model setups (e.g. a
+        // Whisper session connecting to Moonshine's stream)
+        server = find_server_by_model_name(resolve_model_name(model_name));
+    } else {
+        server = get_most_recent_server();
+    }
+    if (!server) {
+        return "";
+    }
+    auto* streaming = dynamic_cast<IStreamingTranscriptionServer*>(server);
+    return streaming ? streaming->get_streaming_address() : "";
 }
 
 // Template method for generic inference execution

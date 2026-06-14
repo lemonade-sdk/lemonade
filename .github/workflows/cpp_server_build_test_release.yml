@@ -133,9 +133,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build/_deps
-          key: fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
+          # vs2026 marker: VS 2022-built _deps are generator-incompatible with the
+          # VS 2026 configure, so they must not be restored across the toolchain bump.
+          key: fetchcontent-windows-vs2026-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            fetchcontent-windows-
+            fetchcontent-windows-vs2026-
 
       - name: Run setup.ps1 to configure environment
         shell: PowerShell
@@ -151,8 +153,10 @@ jobs:
           Write-Host "Building C++ server, Tauri app, web app, and MSI installers..." -ForegroundColor Cyan
 
           # Single build command: wix_installers depends on all C++ targets,
-          # tauri-app, and web-app via CMake dependency graph
-          cmake --build --preset windows --target wix_installers
+          # tauri-app, and web-app via CMake dependency graph.
+          # Build by directory (not --preset) so we follow whichever generator
+          # setup.ps1 auto-detected for the installed Visual Studio version.
+          cmake --build build --config Release --target wix_installers
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Verify outputs
@@ -511,6 +515,20 @@ jobs:
           .venv/bin/python test/server_webapp.py --cli-binary ./build/lemonade
           echo "Web-app tests PASSED!"
 
+      - name: Run model name normalization tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          HF_HOME: ${{ github.workspace }}/hf-cache
+          GGML_METAL_NO_RESIDENCY: "1"
+        run: |
+          set -e
+          echo "Running model name normalization tests (:latest suffix)..."
+          .venv/bin/python test/test_model_name_normalization.py --cli-binary ./build/lemonade
+          echo "Model name normalization tests PASSED!"
+
       - name: Run Ollama API tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
@@ -590,6 +608,20 @@ jobs:
           echo "Running whisper Metal inference tests..."
           .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary ./build/lemonade
           echo "Whisper Metal inference tests PASSED!"
+
+      - name: Run moonshine inference tests (unsigned path)
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          HF_HOME: ${{ github.workspace }}/hf-cache
+        run: |
+          set -e
+          echo "Running moonshine inference tests..."
+          .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary ./build/lemonade
+          echo "Moonshine inference tests PASSED!"
 
       - name: Ensure binaries are executable before upload (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
@@ -750,18 +782,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: fetchcontent-windows-embeddable-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-windows-embeddable-
+          # vs2026 marker: see installer job — VS 2022-built _deps cannot be
+          # reused by the VS 2026 configure.
+          key: fetchcontent-windows-embeddable-vs2026-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-windows-embeddable-vs2026-
 
       - name: Build embeddable archive
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          cmake --preset windows -DBUILD_WEB_APP=OFF
+          cmake --preset vs18 -DBUILD_WEB_APP=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          cmake --build --preset windows --target embeddable
+          cmake --build build --config Release --target embeddable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $archive = "build\lemonade-embeddable-$($env:LEMONADE_VERSION)-windows-x64.zip"
@@ -868,6 +902,11 @@ jobs:
             extra_args: "--wrapped-server flm"
             backends: "npu"
             runner: [Windows, xdna2]
+          - name: moonshine
+            script: server_moonshine.py
+            extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Windows]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
@@ -986,6 +1025,11 @@ jobs:
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan"
             runner: [Linux, vulkan]
+          - name: moonshine
+            script: server_moonshine.py
+            extra_args: "--wrapped-server moonshine"
+            backends: "cpu"
+            runner: [self-hosted, Linux]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
@@ -1553,6 +1597,11 @@ jobs:
         shell: bash
         run: .venv/bin/python test/server_webapp.py --cli-binary lemonade
 
+      - name: Test model name normalization
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/test_model_name_normalization.py --cli-binary lemonade
+
       - name: Test ollama
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
@@ -1872,9 +1921,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          # CLI commands should work because LEMONADE_API_KEY is in the env
-          # and the CLI client reads it automatically
-          .venv/bin/python test/server_cli2.py --cli-binary lemonade
+          # Keep this job focused on API-key propagation. The full CLI suite
+          # runs elsewhere and includes model-pull/delete coverage unrelated to auth.
+          .venv/bin/python test/server_cli_apikey.py --cli-binary lemonade
 
       - name: Capture and upload server logs
         if: always()
@@ -1971,7 +2020,9 @@ jobs:
           HF_HOME: ${{ env.HF_HOME }}
         run: |
           set -e
-          $VENV_PYTHON test/server_cli2.py --cli-binary "$CLI_BINARY"
+          # Keep this job focused on API-key propagation. The full CLI suite
+          # runs elsewhere and includes model-pull/delete coverage unrelated to auth.
+          "$VENV_PYTHON" test/server_cli_apikey.py --cli-binary "$CLI_BINARY"
 
       - name: Capture and upload server logs
         if: always()

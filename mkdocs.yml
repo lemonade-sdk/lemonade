@@ -65,12 +65,15 @@ nav:
       - Docker: guide/install/docker.md
     - Local Server Concepts: guide/concepts.md
     - CLI: guide/cli.md
+    - Chat in your terminal: guide/cli-chat.md
     - Configuration:
       - Service: guide/configuration/README.md
       - Custom Models: guide/configuration/custom-models.md
       - Running Many Models: guide/configuration/multi-model.md
       - llama.cpp: guide/configuration/llamacpp.md
       - vLLM: guide/configuration/vllm.md
+      - Moonshine: guide/configuration/moonshine.md
+      - Cloud Offload: guide/configuration/cloud.md
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md
@@ -82,6 +85,19 @@ nav:
     - Web UI: dev/web-ui.md
     - Lemonade Omni Models: dev/lemonade-omni.md
     - Infrastructure: dev/self-hosted-runners.md
+  - App Integrations:
+    - Overview: integrations/README.md
+    - AI Toolkit: integrations/ai-toolkit.md
+    - AnythingLLM: integrations/anythingLLM.md
+    - Claude Code: integrations/claude-code.md
+    - CodeGPT: integrations/codeGPT.md
+    - Continue: integrations/continue.md
+    - LangChain: integrations/langchain.md
+    - Lemon Zest: integrations/lemon-zest.md
+    - Mindcraft: integrations/mindcraft.md
+    - Open Hands: integrations/open-hands.md
+    - Open WebUI: integrations/open-webui.md
+    - Wut: integrations/wut.md
   - API Spec:
       - Overview: api/README.md
       - OpenAI Compatible: api/openai.md

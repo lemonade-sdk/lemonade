@@ -8,7 +8,11 @@ Lemonade Server starts automatically with the OS after installation. Configurati
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux (systemd):** `/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+
+  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+
 - **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
 - **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
 
@@ -149,6 +153,15 @@ Backend-specific settings are nested under their backend name:
 |-----|---------|-------------|
 | `cpu_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
 
+**cloud_providers** — Cloud OpenAI-compatible providers (see [Cloud Offload](./cloud.md)). Array, one object per installed provider:
+
+| Key | Description |
+|-----|-------------|
+| `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+
+API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
+
 ### Backend binary selection
 
 Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm_bin`) accepts the same set of values:
@@ -243,8 +256,12 @@ lemond --port 9000 --host 0.0.0.0
 If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux
+# Linux (Debian/Ubuntu)
 sudo nano /var/lib/lemonade/.cache/lemonade/config.json
+
+# Linux (Fedora/Red Hat)
+sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
