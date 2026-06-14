@@ -756,6 +756,9 @@ input, textarea {
   border-collapse: collapse;
   margin: var(--space-3) 0;
   font-size: var(--text-sm);
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
 }
 
 .message__content th, .message__content td {
@@ -3664,6 +3667,68 @@ input, textarea {
   .matrix th, .matrix td { padding: var(--space-3); }
 }
 
+/* ---------- 480px — phone --------------------------------- */
+@media (max-width: 480px) {
+
+  /* ── Nav: allow horizontal scroll so all 7 items remain
+        reachable without overflowing the titlebar ── */
+  .titlebar__nav {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;           /* Firefox */
+    -webkit-overflow-scrolling: touch;
+  }
+  .titlebar__nav::-webkit-scrollbar { display: none; }
+  /* Prevent buttons from shrinking — they must stay full-width */
+  .titlebar__nav button { flex-shrink: 0; }
+
+  /* ── Tighten titlebar brand area ── */
+  .titlebar { gap: var(--space-1); padding: 0 var(--space-2); }
+
+  /* ── Composer: increase send/stop to 44 px touch targets ── */
+  .composer__send,
+  .composer__stop {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+
+  /* ── Composer toolbar: allow wrapping on very narrow screens ── */
+  .composer__toolbar {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  /* ── Composer: tighten padding so the bar uses full width ── */
+  .composer { padding: var(--space-2) var(--space-3) var(--space-3); }
+
+  /* ── ModelManager: tighten head/body padding ── */
+  .manager__head { padding: var(--space-4) var(--space-3) var(--space-3); }
+  .manager__body { padding: var(--space-3) var(--space-3) var(--space-6); }
+
+  /* ── PresetManager: tighten similarly ── */
+  .recipes__head { padding: var(--space-4) var(--space-3) var(--space-3); }
+  .recipes__body { padding: var(--space-3) var(--space-3) var(--space-6); }
+
+  /* ── BackendManager: tighten ── */
+  .backends__head { padding: var(--space-4) var(--space-3) var(--space-3); }
+
+  /* ── Connect view: reduce horizontal padding on phone ── */
+  .connect { padding: 0 var(--space-4); }
+
+  /* ── Slide-over: full-width on phone ── */
+  .slideover { width: 100vw; max-width: 100vw; }
+
+  /* ── Hero greeting: tighten vertical space ── */
+  .hero { padding: var(--space-6) 0 var(--space-4); }
+
+  /* ── Filter chips: allow wrapping in ModelManager toolbar ── */
+  .manager__filters { flex-wrap: wrap; }
+
+  /* ── Chat inner: use smaller padding ── */
+  .chat__inner { padding: var(--space-4) var(--space-3); }
+}
+
 /* ─────────────────────────────────────────────────────────
    DASHBOARD v2
    ───────────────────────────────────────────────────────── */
@@ -4751,6 +4816,11 @@ input, textarea {
   .logs-line { padding: 1px var(--space-2); }
   .logs-line__time { width: 70px; font-size: 0.7rem; }
   .logs-line__tag { display: none; }
+}
+
+@media (max-width: 480px) {
+  .logs-toolbar__left, .logs-toolbar__right { gap: var(--space-2); }
+  .logs-line__time { width: 56px; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -6143,5 +6213,22 @@ input, textarea {
 
   .composer__model-button {
     max-width: 72vw;
+  }
+}
+
+@media (max-width: 480px) {
+  /* With-logs layout: collapse rail on phone */
+  .chat--with-logs,
+  .chat--with-logs.rail-expanded {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "logs"
+      "composer";
+  }
+
+  /* Composer model button: tighter on phone */
+  .composer__model-button {
+    max-width: 55vw;
   }
 }
