@@ -82,3 +82,16 @@ Open question for production: where do capability labels come from? Must align w
 - Import policy: v1.4 requires `applies_to`; legacy rejected ✓
 
 **No lemond changes required.** Wall intact. Build green, 2 tests passing. Ready for production trial.
+
+### 2026-06-13 — PR review session: PRs #2223, #2224 from boclifton-MSFT
+
+**PR #2223 (style refactor):** Merged. Clean split of monolithic `styles.css` into 22 partials. Well-documented import order. No regressions.
+
+**PR #2224 (server settings / model folders):** Changes requested. Three blocking issues:
+1. Merge conflict — adds to `styles.css` which #2223 just deleted. Needs rebase into `partials/settings.css`.
+2. Web-app incompatibility — direct `import { open } from '@tauri-apps/plugin-dialog'` in shared renderer (`ServerSettings.tsx`) will break `src/web-app/` build. Needs runtime guard or lazy import.
+3. CI failures (.deb, .rpm, macOS dmg) — likely cascading from #2.
+
+**Key learning:** When the shared renderer (`src/app/src/`) imports Tauri-only plugins directly (not through `tauriShim.ts`), the web-app build breaks because it uses its own constrained `package.json`. Any Tauri-native API must be gated behind `window.__TAURI__` checks or routed through the shim layer. This is a recurring architectural constraint to enforce in reviews.
+
+**Repo note:** GitHub disallows merge commits on this repo — squash merge is required even on feature branches.

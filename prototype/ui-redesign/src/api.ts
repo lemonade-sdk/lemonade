@@ -142,14 +142,12 @@ export interface ChatCompletionStats {
   ttft: string | null;
   tokens: number;
   reasoningTokens: number;
-  reasoningElapsedMs: number | null;
 }
 
 export interface LiveStreamStats {
   tps: number;
   tokens: number;
   reasoningTokens: number;
-  reasoningElapsedMs: number | null;
   elapsed: number;
   ttft: number | null;
 }
@@ -342,7 +340,15 @@ class LemonadeAPI {
 
   get baseUrl(): string {
     try {
-      return normalizeBaseUrl(localStorage.getItem(LS_BASE_URL) || DEFAULT_BASE_URL);
+      const raw = normalizeBaseUrl(localStorage.getItem(LS_BASE_URL) || DEFAULT_BASE_URL);
+      // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35).
+      // Substitute it when the configured host is localhost/127.0.0.1 so that all
+      // API calls and WebSocket connections resolve to the serving machine, not the phone.
+      const parsed = new URL(raw);
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+        parsed.hostname = window.location.hostname;
+      }
+      return parsed.toString().replace(/\/+$/, '');
     } catch {
       return DEFAULT_BASE_URL;
     }
@@ -822,10 +828,26 @@ class LemonadeAPI {
     let closed = false;
     let socket: WebSocket | null = null;
 
-    // Logs belong to the configured Lemonade API origin. Do not use
-    // health.websocket_port here: on current Lemonade builds that port is used
-    // by realtime audio, so subscribing to logs there creates noisy background
-    // connections without ever receiving log entries.
+    const tryFallback = () => {
+      // Fall back to the dedicated websocket_port from /health (legacy port ~9000).
+      // This handles stale-binary scenarios where the main port doesn't yet support
+      // WebSocket upgrades. /logs/stream is served on both the main port and this port.
+      const fallbackPort = this._healthData?.websocket_port;
+      if (!fallbackPort) {
+        if (!closed) callbacks.onError?.('Could not connect to log stream.');
+        return;
+      }
+      const fallbackUrl = this._buildWebSocketUrl('/logs/stream', fallbackPort);
+      this._openLogSocket(fallbackUrl, callbacks, afterSeq)
+        .then(openedSocket => {
+          if (closed) { openedSocket.close(1000, 'OK'); return; }
+          socket = openedSocket;
+        })
+        .catch(() => {
+          if (!closed) callbacks.onError?.('Could not connect to log stream.');
+        });
+    };
+
     const wsUrl = this._buildWebSocketUrl('/logs/stream');
     this._openLogSocket(wsUrl, callbacks, afterSeq, true)
       .then(openedSocket => {
@@ -836,7 +858,7 @@ class LemonadeAPI {
         socket = openedSocket;
       })
       .catch(() => {
-        if (!closed) callbacks.onError?.('Could not connect to log stream on the Lemonade API port.');
+        if (!closed) tryFallback();
       });
 
     return {
@@ -1049,33 +1071,6 @@ class LemonadeAPI {
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
     let reasoningTokenCount = 0;
-    let reasoningStartTime: number | null = null;
-    let reasoningEndTime: number | null = null;
-    let reasoningClosed = false;
-
-    const reasoningElapsedMs = (now: number): number | null => {
-      if (reasoningStartTime == null) return null;
-      return Math.max(0, (reasoningEndTime ?? now) - reasoningStartTime);
-    };
-
-    const buildDoneStats = (now: number, full: string, reasoning: string, respId: string | null): ChatCompletionStats => {
-      if (reasoningStartTime != null && !reasoningClosed) {
-        reasoningEndTime = now;
-        reasoningClosed = true;
-      }
-      const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
-      const totalTokens = tokenCount + reasoningTokenCount;
-      return {
-        content: full,
-        reasoning,
-        id: respId,
-        tps: totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0',
-        ttft: firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null,
-        tokens: tokenCount,
-        reasoningTokens: reasoningTokenCount,
-        reasoningElapsedMs: reasoningElapsedMs(now),
-      };
-    };
 
     const emitStats = () => {
       const now = performance.now();
@@ -1087,7 +1082,6 @@ class LemonadeAPI {
         tps: total > 0 && decodeTime > 0 ? total / decodeTime : 0,
         tokens: tokenCount,
         reasoningTokens: reasoningTokenCount,
-        reasoningElapsedMs: reasoningElapsedMs(now),
         elapsed,
         ttft: firstTokenTime ? firstTokenTime - t0 : null,
       });
@@ -1132,7 +1126,11 @@ class LemonadeAPI {
               return;
             }
             const now = performance.now();
-            onDone?.(buildDoneStats(now, full, reasoning, respId));
+            const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
+            const totalTokens = tokenCount + reasoningTokenCount;
+            const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
+            const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
+            onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
             return;
           }
           try {
@@ -1147,22 +1145,13 @@ class LemonadeAPI {
             const delta = chunk.choices?.[0]?.delta;
             // Handle reasoning/thinking tokens (Qwen3.5, etc.)
             if (delta?.reasoning_content) {
-              const now = performance.now();
-              if (!firstTokenTime) firstTokenTime = now;
-              if (reasoningStartTime == null) reasoningStartTime = now;
-              reasoningEndTime = now;
-              reasoningClosed = false;
+              if (!firstTokenTime) firstTokenTime = performance.now();
               reasoningTokenCount++;
               reasoning += delta.reasoning_content;
               onReasoning?.(delta.reasoning_content, reasoning);
             }
             if (delta?.content) {
-              const now = performance.now();
-              if (!firstTokenTime) firstTokenTime = now;
-              if (reasoningStartTime != null && !reasoningClosed) {
-                reasoningEndTime = now;
-                reasoningClosed = true;
-              }
+              if (!firstTokenTime) firstTokenTime = performance.now();
               tokenCount++;
               full += delta.content;
               onToken?.(delta.content, full);
@@ -1193,7 +1182,11 @@ class LemonadeAPI {
         onToolCalls?.(Array.from(pendingToolCalls.values()));
       } else {
         const now = performance.now();
-        onDone?.(buildDoneStats(now, full, reasoning, respId));
+        const decodeTime = firstTokenTime ? (now - firstTokenTime) / 1000 : 0;
+        const totalTokens = tokenCount + reasoningTokenCount;
+        const tps = totalTokens > 0 && decodeTime > 0 ? (totalTokens / decodeTime).toFixed(1) : '0';
+        const ttft = firstTokenTime ? (firstTokenTime - t0).toFixed(0) : null;
+        onDone?.({ content: full, reasoning, id: respId, tps, ttft, tokens: tokenCount, reasoningTokens: reasoningTokenCount });
       }
     } catch (err) {
       clearInterval(statsInterval);

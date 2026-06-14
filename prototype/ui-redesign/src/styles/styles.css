@@ -9,6 +9,9 @@ html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background: var(--surface-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -50,7 +53,8 @@ input, textarea {
   display: grid;
   grid-template-rows: var(--titlebar-height) 1fr;
   height: 100vh;
-  width: 100vw;
+  width: 100%;
+  max-width: 100vw;
   overflow: hidden;
   background:
     radial-gradient(1200px 600px at 75% -10%,
@@ -101,6 +105,9 @@ input, textarea {
 }
 
 .titlebar__nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: 6px var(--space-3);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -123,6 +130,7 @@ input, textarea {
   justify-content: flex-end;
   align-items: center;
   gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 .titlebar__theme-toggle {
@@ -3670,20 +3678,41 @@ input, textarea {
 /* ---------- 480px — phone --------------------------------- */
 @media (max-width: 480px) {
 
-  /* ── Nav: allow horizontal scroll so all 7 items remain
-        reachable without overflowing the titlebar ── */
-  .titlebar__nav {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;           /* Firefox */
-    -webkit-overflow-scrolling: touch;
+  /* ── Titlebar: switch to row with nav taking full second row ── */
+  .titlebar {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: var(--titlebar-height) auto;
+    grid-template-areas:
+      "brand right"
+      "nav nav";
+    height: auto;
+    padding: 0 var(--space-3);
+    gap: 0;
   }
-  .titlebar__nav::-webkit-scrollbar { display: none; }
-  /* Prevent buttons from shrinking — they must stay full-width */
-  .titlebar__nav button { flex-shrink: 0; }
-
-  /* ── Tighten titlebar brand area ── */
-  .titlebar { gap: var(--space-1); padding: 0 var(--space-2); }
+  .app {
+    grid-template-rows: auto 1fr;
+  }
+  .titlebar__brand { grid-area: brand; }
+  .titlebar__right { grid-area: right; }
+  .titlebar__nav {
+    grid-area: nav;
+    justify-content: space-around;
+    border-top: 1px solid var(--border-subtle);
+    padding: 2px 0 4px;
+    overflow-x: hidden;
+    overflow-y: visible;
+    width: 100%;
+  }
+  .titlebar__nav .nav-label { display: none; }
+  /* Icon-only buttons: equal spacing */
+  .titlebar__nav button {
+    flex: 1;
+    flex-shrink: 0;
+    padding: 6px 4px;
+    gap: 0;
+    min-width: 0;
+    justify-content: center;
+  }
 
   /* ── Composer: increase send/stop to 44 px touch targets ── */
   .composer__send,
@@ -3699,8 +3728,29 @@ input, textarea {
     gap: var(--space-2);
   }
 
-  /* ── Composer: tighten padding so the bar uses full width ── */
-  .composer { padding: var(--space-2) var(--space-3) var(--space-3); }
+  /* ── Composer: safe-area padding so it clears iPhone home indicator ── */
+  .composer {
+    padding: var(--space-2) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* ── Composer bar: full width, no max-width constraint ── */
+  .composer__bar { max-width: 100%; }
+  .composer__toolbar { max-width: 100%; }
+
+  /* ── Model selector: truncate aggressively so bar doesn't overflow ── */
+  .composer__model-button {
+    max-width: 40vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Prevent iOS Safari auto-zoom on input focus (requires font-size >= 16px) ── */
+  .composer__model-search input,
+  .composer__input,
+  input, textarea, select {
+    font-size: 16px !important;
+  }
 
   /* ── ModelManager: tighten head/body padding ── */
   .manager__head { padding: var(--space-4) var(--space-3) var(--space-3); }
@@ -3720,13 +3770,82 @@ input, textarea {
   .slideover { width: 100vw; max-width: 100vw; }
 
   /* ── Hero greeting: tighten vertical space ── */
-  .hero { padding: var(--space-6) 0 var(--space-4); }
+  .hero { padding: var(--space-3) 0 var(--space-2); }
 
   /* ── Filter chips: allow wrapping in ModelManager toolbar ── */
   .manager__filters { flex-wrap: wrap; }
 
+  /* ── Model card: stack vertically on phone ────────────────
+        Row-level grid switches from side-by-side to column;
+        actions move to a full-width strip at the bottom.    ── */
+  .row__content {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .row__main {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .row__backend-badge {
+    width: auto;
+    min-width: unset;
+    flex: 0 0 auto;
+    height: 28px;
+    padding: 0 var(--space-2);
+  }
+  .row__text { min-width: 0; flex: 1 1 0; }
+  .row__name { white-space: normal; overflow-wrap: anywhere; }
+  .row__right {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .row__action { flex: 1 1 auto; justify-content: center; }
+
+  /* ── Chat: collapse rail column so full width is usable ── */
+  .chat,
+  .chat.rail-expanded {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "main"
+      "composer";
+  }
+  .rail { display: none; }
+
   /* ── Chat inner: use smaller padding ── */
   .chat__inner { padding: var(--space-4) var(--space-3); }
+
+  /* ── Active-model cards in hero: more compact on phone ── */
+  .active-card { padding: var(--space-3); gap: var(--space-2); }
+  .active-card__name { font-size: var(--text-sm); }
+
+  /* ── Hero title/subtitle: tighten for mobile ── */
+  .hero__title { font-size: var(--text-xl); }
+  .hero__subtitle { font-size: var(--text-sm); }
+
+  /* ── Section labels (e.g. "LOADED RIGHT NOW"): smaller ── */
+  .section-label { font-size: 10px; margin-bottom: var(--space-2); }
+
+  /* ── Composer pills row: smaller font + tighter padding to reduce chrome ── */
+  .composer__toolbar .btn,
+  .composer__toolbar .chip,
+  .composer__toolbar button {
+    font-size: var(--text-xs);
+    padding: 4px var(--space-2);
+  }
+
+  /* ── Model selector in composer: cap width more aggressively ── */
+  .composer__model-button {
+    max-width: 50vw;
+  }
+
+  /* ── Right controls: slightly tighter gap on phone ── */
+  .titlebar__right { gap: var(--space-1); }
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -5023,6 +5142,30 @@ input, textarea {
   transform: scale(0.97);
 }
 
+.options-block__btn--selected {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+  cursor: default;
+}
+
+.options-block__btn--selected:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.options-block__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.options-block__confirmation {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
 .options-block__custom {
   display: flex;
   gap: var(--space-2);
@@ -6229,34 +6372,128 @@ input, textarea {
 
   /* Composer model button: tighter on phone */
   .composer__model-button {
-    max-width: 55vw;
+    max-width: 50vw;
   }
 }
 
-/* Fix model action icon vertical alignment and bind capability icons to labels. */
-.row__action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  line-height: 1;
+/* ===== Mobile bottom sheet for conversations ===== */
+.chat__mobile-rail-trigger {
+  display: none;
 }
 
-.row__action svg {
-  display: block;
-  flex: 0 0 auto;
+.bottom-sheet-backdrop {
+  display: none;
 }
 
-.row__label--with-icon,
-.detail__cap--with-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.bottom-sheet {
+  display: none;
 }
 
-.row__label--with-icon svg,
-.detail__cap--with-icon svg,
-.cap-chip__icon svg {
-  display: block;
-  flex: 0 0 auto;
+@media (max-width: 480px) {
+  .chat__mobile-rail-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    text-align: left;
+  }
+
+  .chat__mobile-rail-trigger:hover {
+    color: var(--text-primary);
+    background: var(--surface-2);
+  }
+
+  .bottom-sheet-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 900;
+    animation: fadeIn 200ms ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .bottom-sheet {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 80vh;
+    background: var(--surface-1);
+    border-radius: 16px 16px 0 0;
+    z-index: 901;
+    transform: translateY(100%);
+    transition: transform 280ms ease-out;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+  }
+
+  .bottom-sheet--open {
+    transform: translateY(0);
+  }
+
+  .bottom-sheet__handle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px 0 8px;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .bottom-sheet__handle-pill {
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-tertiary);
+    opacity: 0.5;
+  }
+
+  .bottom-sheet__new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    margin: 0 var(--space-3) var(--space-2);
+    padding: var(--space-3);
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+
+  .bottom-sheet__new:hover {
+    background: var(--accent-hover, var(--accent));
+    filter: brightness(1.1);
+  }
+
+  .bottom-sheet__list {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 var(--space-2) var(--space-4);
+    margin: 0;
+    list-style: none;
+  }
 }
