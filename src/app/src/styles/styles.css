@@ -6231,4 +6231,30 @@ input, textarea {
   .composer__model-button {
     max-width: 55vw;
   }
+/* Fix model action icon vertical alignment and bind capability icons to labels. */
+.row__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  line-height: 1;
+}
+
+.row__action svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.row__label--with-icon,
+.detail__cap--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.row__label--with-icon svg,
+.detail__cap--with-icon svg,
+.cap-chip__icon svg {
+  display: block;
+  flex: 0 0 auto;
 }
