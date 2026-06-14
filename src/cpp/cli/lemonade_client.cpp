@@ -458,7 +458,7 @@ int LemonadeClient::list_models(bool show_all, const std::string& name_filter) c
 }
 
 int LemonadeClient::set_rocm_arch(const std::string& rocm_arch) const{
-    std::vector<ROCmDevInfo> rocm_devs;
+    std::vector<lemon::ROCmDeviceInfo> rocm_devs;
 
     if (rocm_arch.empty()) {
         std::cerr << "Error Rocm arch value is empty" << std::endl;
@@ -540,7 +540,7 @@ int LemonadeClient::set_rocm_arch(const std::string& rocm_arch) const{
 
 int LemonadeClient::list_rocm_archs() const {
 
-    std::vector<ROCmDevInfo> rocm_devs;
+    std::vector<lemon::ROCmDeviceInfo> rocm_devs;
 
     // Check if rocm_archs config var exists at server.
     try {

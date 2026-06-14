@@ -133,14 +133,14 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 }
 
 void RuntimeConfig::validate_rocm_arch(const std::string& rocm_arch) {
-    std::vector<ROCmDevInfo> rocm_devs;
+    std::vector<ROCmDeviceInfo> rocm_devs;
     bool rocm_arch_found = false;
 
     // We check if rocm_arch has the correct format and if we have an active gpu with that architecture.
-    if (!rocm_arch.empty() && rocm_arch != "auto" ) {
+    if (rocm_arch.empty() || rocm_arch == "auto" ) {
         return ;
     }
-    if (!rocm_arch_is_valid_gfx(rocm_arch)) {
+    if (!lemon::ROCmArchUtils::rocm_arch_is_valid_gfx(rocm_arch)) {
         throw std::invalid_argument("'rocm_arch' has NOT valid format");
     }
     json system_info = SystemInfoCache::get_system_info_with_cache();
