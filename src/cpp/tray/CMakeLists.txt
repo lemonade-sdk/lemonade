@@ -138,6 +138,16 @@ if(NOT WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/json_utils.cpp
     )
+    # Add platform-specific path implementation
+    if(APPLE)
+        list(APPEND TRAY_UI_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/platform/path_macos.cpp
+        )
+    else()
+        list(APPEND TRAY_UI_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/platform/path_linux.cpp
+        )
+    endif()
 endif()
 
 # Helper function: apply lightweight tray deps (httplib, json, CLI11) to a target

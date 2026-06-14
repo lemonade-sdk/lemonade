@@ -135,6 +135,8 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_CPU;
     } else if (is_collection_recipe(recipe)) {
         return DEVICE_NONE;
+    } else if (recipe == "cloud") {
+        return DEVICE_NONE;  // Cloud-offloaded models execute on a remote provider
     }
     return DEVICE_NONE;
 }

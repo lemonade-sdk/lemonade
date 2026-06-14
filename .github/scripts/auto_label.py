@@ -48,6 +48,7 @@ Engine — apply AT MOST ONE total. This is a hard rule: even if multiple seem r
 - engine::whispercpp — whisper.cpp; audio transcription
 - engine::sd         — stable-diffusion.cpp; image generation/edit/variations
 - engine::kokoro     — Kokoro TTS
+- engine::moonshine  — Moonshine; fast on-device audio transcription (ASR)
 
 Area — apply AT MOST ONE total. Same hard rule as engines. Skip if not clearly in one area:
 - area::cli       — `lemonade` CLI client (src/cpp/cli)
@@ -177,6 +178,7 @@ KNOWN_LABELS = {
     "engine::whispercpp",
     "engine::sd",
     "engine::kokoro",
+    "engine::moonshine",
     "area::cli",
     "area::installer",
     "area::api",

@@ -1,0 +1,19 @@
+{
+  "_comment": "Single source of truth for self-hosted runners monitored by runner_heartbeat.yml and monitor_selfhosted_runners.yml. Each entry is the runner's label/name as registered with GitHub Actions.",
+  "runners": [
+    "jfowers-stx-01",
+    "jfowers-stx-02",
+    "jfowers-phx-rtx-00",
+    "jfowers-stx-rtx-00",
+    "sjlab-stx-0",
+    "sjlab-stx-halo-06",
+    "sjlab-stx-halo-07",
+    "sjlab-stx-halo-08",
+    "sjlab-stx-halo-09",
+    "sjlab-stx-halo-10",
+    "sjlab-stx-halo-11",
+    "sjlab-stx-halo-12",
+    "sjlab-stx-halo-13",
+    "sjlab-stx-halo-17"
+  ]
+}

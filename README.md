@@ -104,6 +104,8 @@ To see the backends available on your PC:
 lemonade backends
 ```
 
+For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, …) alongside local models — see [Cloud Offload](./docs/guide/configuration/cloud.md). *(Experimental.)*
+
 
 ## Model Library
 
@@ -183,7 +185,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Linux</td>
     </tr>
     <tr>
-      <td rowspan="3"><strong>Speech-to-text</strong></td>
+      <td rowspan="4"><strong>Speech-to-text</strong></td>
       <td rowspan="3"><code>whispercpp</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
@@ -198,6 +200,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>moonshine</code></td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code>/<code>arm64</code> CPU</td>
+      <td>Windows, Linux, macOS</td>
     </tr>
     <tr>
       <td><strong>Text-to-speech</strong></td>

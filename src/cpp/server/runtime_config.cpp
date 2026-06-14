@@ -4,6 +4,7 @@
 #include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>

@@ -26,6 +26,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | Command             | Description                         |
 |---------------------|-------------------------------------|
 | `run MODEL_NAME`    | Load a model for inference and open the web app in the browser. See command options [below](#options-for-run). |
+| `chat [MODEL_NAME]` | Open an interactive chat REPL in the terminal. See the [chat guide](../server/cli-chat.md). |
 | `launch AGENT`      | Launch an agent with a model. See command options [below](#options-for-launch). |
 
 ### Server
@@ -35,6 +36,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
 | `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
 ### Model Management
@@ -138,6 +140,9 @@ lemonade load Qwen3-0.6B-GGUF --ctx-size 8192
 
 # Install a backend for a recipe
 lemonade backends install llamacpp:vulkan
+
+# Register a cloud OpenAI-compatible provider (see `lemonade cloud --help`)
+lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
 
 # Export model info to JSON file
 lemonade export Qwen3-0.6B-GGUF --output model-info.json
@@ -476,7 +481,7 @@ lemonade launch [AGENT] [--model MODEL_NAME] [options]
 
 | Option/Argument | Description | Required |
 |-----------------|-------------|----------|
-| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`. If omitted, you will be prompted to select one. | No |
+| `AGENT` | Agent name to launch. Supported agents: `claude`, `codex`, `opencode`, `pi`. If omitted, you will be prompted to select one. | No |
 | `--model MODEL_NAME` | Model name to launch with. If omitted, you will be prompted to select one. | No |
 | `--directory DIR` | Remote recipes directory used only if you choose recipe import at prompt | No |
 | `--recipe-file FILE` | Remote recipe JSON filename used only if you choose recipe import at prompt | No |
@@ -498,9 +503,10 @@ Codex-only option:
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
 - Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
 - `--agent-args` is parsed and appended to the launched agent command.
-- Supported agents: `claude`, `codex`, `opencode`
+- Supported agents: `claude`, `codex`, `opencode`, `pi`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
-- When no `--api-key` is provided, the generated opencode provider uses a default `apiKey` value of `lemonade`.
+- `pi` uses auto-managed config files at `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`.
+- When no `--api-key` is provided, the generated `opencode` and `pi` providers use a default `apiKey` value of `lemonade`.
 
 **Examples:**
 
@@ -524,6 +530,73 @@ lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_
 
 # Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
+```
+
+## Options for cloud
+
+The `cloud` command manages OpenAI-compatible cloud providers (Fireworks, OpenAI, OpenRouter, Together, etc.). Provider URLs persist in `lemond`'s `config.json`; API keys live in env vars (preferred) or `lemond`'s process memory and are never written to disk. See the [Cloud Offload guide](./configuration/cloud.md) for the full workflow.
+
+```bash
+lemonade cloud [install|uninstall|auth|clear|list]
+```
+
+### `cloud install`
+
+Register a new cloud provider. Optional `--api-key` stores the key in process memory for the lifetime of the running `lemond`; for persistence across restarts, set `LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.
+
+```bash
+lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `PROVIDER` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `--base-url URL` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `--api-key KEY` | No | Optional. Stored in `lemond` process memory only. |
+
+Example:
+
+```bash
+lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
+```
+
+### `cloud uninstall`
+
+Remove a provider record and drop its discovered models from the catalog. The provider's env-var-based key (if any) is unaffected — only the persisted URL and any in-memory runtime key are cleared.
+
+```bash
+lemonade cloud uninstall PROVIDER
+```
+
+### `cloud auth`
+
+Supply an API key for an installed provider at runtime. The key lives in `lemond`'s process memory only and is cleared on restart. If `LEMONADE_<PROVIDER>_API_KEY` is already set in `lemond`'s environment, this command refuses with a conflict error (env vars take precedence).
+
+```bash
+lemonade cloud auth PROVIDER [--api-key KEY]
+```
+
+With no `--api-key`, the command prompts for the key interactively (TTY only).
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `PROVIDER` | Yes | Installed provider name. |
+| `--api-key KEY` | No | API key. If omitted, prompted on TTY. |
+
+### `cloud clear`
+
+Clear the in-memory runtime key for a provider. Any env-var key remains in effect.
+
+```bash
+lemonade cloud clear PROVIDER
+```
+
+### `cloud list`
+
+Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered.
+
+```bash
+lemonade cloud list
 ```
 
 ## Options for scan

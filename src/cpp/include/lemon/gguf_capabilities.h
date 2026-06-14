@@ -14,6 +14,7 @@ namespace lemon {
 struct GgufCapabilities {
     bool vision = false;
     bool tool_calling = false;
+    bool mtp = false;
 };
 
 namespace gguf_capabilities_detail {
@@ -169,7 +170,13 @@ inline GgufCapabilities read_gguf_capabilities(std::istream& in) {
         if (!read_string(in, key) || !read_le(in, type)) break;
         inspect_string(key, "", caps);
 
-        if (type == 8) {
+        if (type == 4) {
+            uint32_t val = 0;
+            if (read_le(in, val) && contains(to_lower(key), "nextn_predict_layers") && val > 0) {
+                caps.mtp = true;
+            }
+            if (!in) break;
+        } else if (type == 8) {
             std::string value;
             if (!read_string(in, value)) break;
             inspect_string(key, value, caps);
@@ -195,6 +202,7 @@ inline bool apply_gguf_capability_labels(std::vector<std::string>& labels, const
     bool changed = false;
     if (caps.vision) changed = add_label_once(labels, "vision") || changed;
     if (caps.tool_calling) changed = add_label_once(labels, "tool-calling") || changed;
+    if (caps.mtp) changed = add_label_once(labels, "mtp") || changed;
     return changed;
 }
 
