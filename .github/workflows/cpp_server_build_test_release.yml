@@ -283,7 +283,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     container:
-      image: debian:stable
+      image: debian:trixie
     steps:
       - name: Enable Trixie backports
         run: |
