@@ -480,4 +480,54 @@ Do these first. All are small changes with high compliance impact.
 
 ---
 
+## Running the Accessibility Tests
+
+The test suite lives in `prototype/ui-redesign/tests/a11y.spec.ts`.  
+It uses **Playwright** (already a dev dependency) plus **@axe-core/playwright** for automated WCAG scans.
+
+### Prerequisites
+
+```bash
+cd prototype/ui-redesign
+npm install          # installs @axe-core/playwright if not already present
+```
+
+### Commands
+
+```bash
+# Run only a11y tests (headless, auto-starts dev server on port 8080)
+npm run test:a11y
+
+# Same via npx
+npx playwright test tests/a11y.spec.ts
+
+# Headed (visual browser)
+npx playwright test tests/a11y.spec.ts --headed
+
+# All tests (a11y + features)
+npm test
+```
+
+> Playwright's `webServer` config in `playwright.config.ts` starts `npm run dev` automatically if nothing is already listening on port 8080. If you already have the dev server running, it reuses it (`reuseExistingServer: true`).
+
+### Test groups (34 tests)
+
+| Group | Tests | What it checks |
+|-------|-------|----------------|
+| axe-core scans | A01–A05 | WCAG 2.1 AA on Chat, Models, Presets, Connect, Dashboard — no serious/critical violations |
+| Skip link | A06–A09 | Off-screen until focused; Tab once = skip link; Enter = focus `<main>`; visible ring |
+| Landmarks | A10–A13 | `<main>` unique; `<nav aria-label="Primary">`; `role="status"` on status dot; aria-label values |
+| Keyboard nav | A14–A16 | Nav buttons reachable; Tab reaches composer; Shift+Tab reverses |
+| Focus trap — bottom sheet | A17–A20 | 390px mobile; opens with focus inside; Tab wraps; Esc closes; focus returns to trigger |
+| Focus trap — slideover | A21–A24 | Preset slideover; focus moves in; Tab wraps; Esc closes; focus returns to card |
+| aria-live regions | A25–A27 | Assertive + polite regions in DOM at load; both are `.sr-only` |
+| :focus-visible rings | A28–A30 | Keyboard = outline present; mouse click = no ring; textarea keyboard ring present |
+| prefers-reduced-motion | A31–A34 | Bottom sheet transition near-zero; normal = 280ms; all transitions; `transform: none` snap |
+
+### Known limitation
+
+Tests A25–A27 only verify that the aria-live regions **exist**. Verifying that the polite region receives debounced content during streaming requires mocking `POST /api/v1/chat/completions` with a chunked SSE response via `page.route()`. That mock infrastructure is tracked as a TODO in the test file.
+
+---
+
 *Last updated: 2026-06-14 by Mattingly*
