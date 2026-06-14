@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { LoadedModel, ModelInfo } from '../api';
 import { capabilityIcon } from '../modelCapabilities';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   CAPABILITY_LABELS,
   DEFAULT_PRESET,
@@ -280,6 +281,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const [applySuccess, setApplySuccess] = useState<string | null>(null);
   const [autoRailCollapsed, setAutoRailCollapsed] = useState(false);
   const [selectedAutoRunId, setSelectedAutoRunId] = useState(AUTO_OPT_RUNS[0]?.id || '');
+  const slideoverRef = useRef<HTMLElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => { saveUserPresets(userPresets); }, [userPresets]);
   useEffect(() => { saveApplied(appliedPresets); }, [appliedPresets]);
@@ -305,11 +308,28 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
 
   const appliedModelNames = useMemo(() => Object.keys(appliedPresets), [appliedPresets]);
 
+  const closeSlideover = useCallback(() => {
+    setSelectedPreset(null);
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
+
   const openSlideover = useCallback((preset: Preset) => {
+    triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelectedPreset(preset);
     setApplyTarget('');
     setApplySuccess(null);
   }, []);
+
+  useFocusTrap(slideoverRef, !!selectedPreset);
+
+  useEffect(() => {
+    if (!selectedPreset) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSlideover();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectedPreset, closeSlideover]);
 
   const handleNewPreset = useCallback(() => {
     const newPreset: Preset = {
@@ -399,8 +419,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
   const handleDelete = useCallback((preset: Preset) => {
     setUserPresets(prev => prev.filter(p => p.id !== preset.id));
     setAppliedPresets(prev => Object.fromEntries(Object.entries(prev).filter(([, pid]) => pid !== preset.id)));
-    setSelectedPreset(null);
-  }, []);
+    closeSlideover();
+  }, [closeSlideover]);
 
   const handleApply = useCallback((presetId: string, model: ModelInfo) => {
     const preset = allPresets.find(p => p.id === presetId);
@@ -574,8 +594,15 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
         </div>
       </section>
 
-      <div className={`scrim${selectedPreset ? ' is-open' : ''}`} onClick={() => setSelectedPreset(null)} />
-      <aside className={`slideover slideover--recipe${selectedPreset ? ' is-open' : ''}`} aria-hidden={!selectedPreset}>
+      <div className={`scrim${selectedPreset ? ' is-open' : ''}`} onClick={closeSlideover} />
+      <aside
+        ref={slideoverRef}
+        className={`slideover slideover--recipe${selectedPreset ? ' is-open' : ''}`}
+        aria-hidden={!selectedPreset}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Preset details"
+      >
         {selectedPreset && (
           <SlideoverContent
             preset={selectedPreset}
@@ -588,7 +615,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
             onClone={handleClone}
             onExport={handleExport}
             onDelete={handleDelete}
-            onClose={() => setSelectedPreset(null)}
+            onClose={closeSlideover}
             autoRuns={AUTO_OPT_RUNS}
           />
         )}
@@ -759,7 +786,7 @@ const SlideoverContent: React.FC<{
             <div className="slideover__title-with-icon">
               <PresetIcon preset={preset} className="preset-icon preset-icon--lg" />
               {isReadOnly ? <h2 className="slideover__title" data-recipe-name>{preset.name}</h2> : (
-                <input className="slideover__title-input" value={name} onChange={e => setName(e.target.value)} placeholder="Preset name" data-recipe-name />
+                <input className="slideover__title-input" value={name} onChange={e => setName(e.target.value)} placeholder="Preset name" data-recipe-name aria-label="Preset name" />
               )}
             </div>
           </div>
@@ -770,7 +797,7 @@ const SlideoverContent: React.FC<{
           {preset.starter && <span className="recipe-badge recipe-badge--starter" data-recipe-starter-badge>Starter</span>}
         </div>
         {isReadOnly ? <p className="slideover__desc" data-recipe-desc>{preset.description}</p> : (
-          <textarea className="slideover__desc-input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc />
+          <textarea className="slideover__desc-input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" rows={2} data-recipe-desc aria-label="Description" />
         )}
       </div>
 
