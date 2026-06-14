@@ -5,6 +5,7 @@ import LogViewer from './LogViewer';
 import { Icon, CapabilityIcon, PresetIcon } from './Icon';
 import { useChatStreaming, ToolCallEntry, ChatToolRuntime, ToolArtifact } from '../hooks/useChatStreaming';
 import { useAudioCapture } from '../hooks/useAudioCapture';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   canSelectInComposer,
   canUseChatCompletions,
@@ -548,6 +549,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const sheetHandleRef = useRef<HTMLDivElement>(null);
   const sheetTriggerRef = useRef<HTMLButtonElement>(null);
+  const bottomSheetRef = useRef<HTMLDivElement>(null);
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
   });
@@ -563,6 +565,11 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const thinkingContentRef = useRef<HTMLDivElement>(null);
   const thinkingSticky = useRef(true);
   const scrollRafRef = useRef<number>(0);
+  const [liveText, setLiveText] = useState('');
+  const [streamStatus, setStreamStatus] = useState('');
+  const liveBufferRef = useRef('');
+  const liveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasStreamingRef = useRef(false);
   const streamModelsRef = useRef<Record<string, ModelSnapshot | null>>({});
   const realtimeRef = useRef<RealtimeTranscriptionHandle | null>(null);
   const isLiveRecordingRef = useRef(false);
@@ -854,6 +861,54 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+
+  useFocusTrap(bottomSheetRef, mobileSheetOpen);
+
+  useEffect(() => {
+    if (isStreaming) {
+      if (!wasStreamingRef.current) {
+        setStreamStatus('Assistant is responding');
+        liveBufferRef.current = '';
+        setLiveText('');
+      }
+      wasStreamingRef.current = true;
+      return;
+    }
+
+    if (!wasStreamingRef.current) return;
+
+    if (liveTimerRef.current) {
+      clearTimeout(liveTimerRef.current);
+      liveTimerRef.current = null;
+    }
+
+    setStreamStatus('Response complete');
+    wasStreamingRef.current = false;
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      if (liveBufferRef.current.trim()) {
+        setLiveText(liveBufferRef.current);
+        liveBufferRef.current = '';
+      }
+      return;
+    }
+
+    liveBufferRef.current = streamingContent;
+    if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+    const hasBoundary = /[.!?\n]/.test(streamingContent.slice(-2));
+    const delay = hasBoundary ? 100 : 400;
+    liveTimerRef.current = setTimeout(() => {
+      setLiveText(streamingContent);
+    }, delay);
+  }, [streamingContent, isStreaming]);
+
+  useEffect(() => {
+    return () => {
+      if (liveTimerRef.current) clearTimeout(liveTimerRef.current);
+    };
+  }, []);
 
   // Persist conversations to localStorage only when the user explicitly opted in.
   useEffect(() => {
@@ -1654,7 +1709,8 @@ ${finalText}`
   );
 
   return (
-    <div className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}>
+    <>
+      <div className={`chat ${railExpanded ? 'rail-expanded' : ''}${showInlineLogs ? ' chat--with-logs' : ''}`}>
       {/* Conversation rail */}
       <aside className="rail">
         <div className="rail__head">
@@ -1734,6 +1790,7 @@ ${finalText}`
         <div className="bottom-sheet-backdrop" onClick={closeMobileSheet} aria-hidden="true" />
       )}
       <div
+        ref={bottomSheetRef}
         className={`bottom-sheet ${mobileSheetOpen ? 'bottom-sheet--open' : ''}`}
         role="dialog"
         aria-label="Conversations"
@@ -2156,6 +2213,7 @@ ${finalText}`
             onPaste={handlePaste}
             disabled={isBusy}
             rows={1}
+            aria-label="Message"
           />
           {isStreaming ? (
             <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
@@ -2170,7 +2228,14 @@ ${finalText}`
         </div>
         <div className="composer__hint">{composerHint}</div>
       </div>
-    </div>
+      </div>
+      <div aria-live="assertive" aria-atomic="true" className="sr-only">
+        {streamStatus}
+      </div>
+      <div aria-live="polite" aria-atomic="false" className="sr-only">
+        {liveText}
+      </div>
+    </>
   );
 };
 
