@@ -15,6 +15,39 @@ Leading UI POC on `feat/ui-testing`. React stays (ROI analysis showed ~300 LOC s
 
 ## Active Learnings
 
+### 2026-06-14: Accessibility test suite — a11y.spec.ts (branch kpoin/ui-accessibility)
+
+Wrote `prototype/ui-redesign/tests/a11y.spec.ts` — 34 Playwright tests covering all Phase 1 + Phase 2 a11y items shipped earlier on this branch. Also installed `@axe-core/playwright` (not previously in devDeps) and added `npm run test:a11y` script.
+
+**Test groups:**
+
+- **A01–A05 — axe-core WCAG 2.1 AA scans:** `new AxeBuilder({ page }).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze()` on Chat, Models, Presets, Connect, Dashboard. Filters to `critical | serious` violations only — moderate/minor are noise in a POC. Failure message includes the violation ID, description, and impact level for fast triage.
+
+- **A06–A09 — Skip link:** Tab-once-from-load test; off-screen bounding box check (top: -40px → `box.y + box.height ≤ 0`); focus ring present when tabbed; Enter moves focus to `#main-content`. One subtle gotcha: `.skip-link:focus { top: var(--space-2) }` uses `:focus` not `:focus-visible`, so both keyboard and (theoretical) mouse focus make it visible — intentional for a skip link.
+
+- **A10–A13 — Landmarks:** Simple count/attribute assertions. These are the cheapest tests and catch regressions from DOM refactors.
+
+- **A14–A16 — Keyboard nav:** Tab counting is inherently fragile so I used generous thresholds (12 Tabs for nav, 40 for textarea) rather than exact counts. This avoids test rot when new interactive elements are added upstream.
+
+- **A17–A20 — Bottom sheet focus trap (mobile):** Requires `page.setViewportSize({ width: 390, height: 844 })` because `.bottom-sheet { display: none }` at desktop widths. Uses `.evaluateAll()` with the same FOCUSABLE selector as `useFocusTrap.ts` to count trapped elements, excluding `aria-hidden="true"` ancestors. In the empty state there's only 1 focusable element (`bottom-sheet__new`), so the Tab-wrap test does 1 press and confirms focus stays inside (wraps to itself). The ESC + focus-return test relies on `sheetTriggerRef.current?.focus()` in `closeMobileSheet` — I verified this in the source before writing the test.
+
+- **A21–A24 — Preset slideover focus trap:** Opened by clicking `.recipe-card`. The `triggerRef` in PresetManager stores `document.activeElement` at open time (the clicked article element), then calls `requestAnimationFrame(() => triggerRef.current?.focus())` on close. A24 waits 200ms for the rAF. Closeness check: `el.classList.contains('recipe-card') || el.closest('.recipe-card') !== null` to handle both the article and any focused child inside it.
+
+- **A25–A27 — aria-live regions:** Both regions exist in DOM at page load (ChatView renders them unconditionally outside of any conditional branch). Both are `.sr-only` (1×1 px bounding box). **Streaming content verification (debounced content in polite region, 'Assistant is responding' in assertive) is a TODO** — it needs a `page.route()` SSE mock for `POST /api/v1/chat/completions`. That mock is non-trivial and was left for a follow-up task.
+
+- **A28–A30 — :focus-visible rings:** Key insight: `:focus-visible` fires on keyboard Tab for `<button>` but NOT on `page.mouse.click()`. After removing the global `outline: none` reset in Phase 1, the only outline source is the `:focus-visible { outline: 2px solid var(--accent) }` rule. Mouse-click on a button → `outlineWidth === '0px'`. Tab to same button → `outlineWidth === '2px'`.
+
+- **A31–A34 — prefers-reduced-motion:** `page.emulateMedia({ reducedMotion: 'reduce' })` before `goto`. `getComputedStyle` on `.bottom-sheet` for `transitionDuration` at 480px viewport — expect `< 0.01s` (the rule sets `0.01ms !important`). Normal mode expects `> 0.1s` (280ms = 0.28s). A34 checks `transform: none` on the sheet (the explicit bottom-sheet rule in the reduce block, separate from the wildcard transition rule). Normalised duration helper handles both `'0.28s'` and `'280ms'` string formats from `getComputedStyle`.
+
+**Commits:**
+1. `79db3bd5` — dep + script (package.json only; package-lock.json is gitignored in this repo)
+2. `f6f6b75a` — a11y.spec.ts + ACCESSIBILITY.md "Running the tests" section
+
+**Files changed:**
+- `prototype/ui-redesign/tests/a11y.spec.ts` — new, 34 tests
+- `prototype/ui-redesign/package.json` — @axe-core/playwright devDep + test:a11y script
+- `prototype/ui-redesign/ACCESSIBILITY.md` — "Running the Accessibility Tests" section appended
+
 ### 2026-06-13: Mobile API/logs connectivity + choice feedback (branch kpoin/ui-mobile-layout)
 
 **Task 1 — Mobile URL fix (api.ts `baseUrl` getter, lines ~341-355)**
