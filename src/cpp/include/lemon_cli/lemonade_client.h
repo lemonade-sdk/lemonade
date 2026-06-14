@@ -97,7 +97,7 @@ public:
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
 
-    // Gpu selector commands
+    // Rocm-arch selector commands
     int list_rocm_archs() const;
     int set_rocm_arch(const std::string& rocm_arch) const;
 

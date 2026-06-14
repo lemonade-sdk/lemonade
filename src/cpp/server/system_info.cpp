@@ -2085,7 +2085,7 @@ std::string identify_npu_arch() {
 
 std::string SystemInfo::get_rocm_arch() {
     // Returns the ROCm architecture for the best available AMD GPU on this system
-        // Check if user has defined gpu config var.
+    // Check if user has defined rocm_arch config var.
     if (auto* cfg = RuntimeConfig::global()) {
         std::string rocm_arch = cfg->rocm_arch(); 
         if (!rocm_arch.empty() && rocm_arch != "auto") {
