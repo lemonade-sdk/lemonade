@@ -1738,8 +1738,10 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
@@ -3182,6 +3184,37 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     }
 }
 
+// ---------------------------------------------------------------------------
+// parse_required_json_body
+//
+// Shared helper for handlers that require a non-empty JSON request body.
+// Returns true and populates |out| on success.
+// Returns false and writes a 400 response on failure so the caller can
+// return immediately.  This ensures that an empty or malformed body always
+// produces a 400 (client error) rather than a 500 (server error), which
+// previously occurred because nlohmann::json::parse("") throws an exception
+// that was caught by the generic std::exception handler and mapped to 500.
+// ---------------------------------------------------------------------------
+bool Server::parse_required_json_body(const httplib::Request& req,
+                                      httplib::Response& res,
+                                      nlohmann::json& out) {
+    if (req.body.empty()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "Request body is required but was empty"}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+    try {
+        out = nlohmann::json::parse(req.body);
+        return true;
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", std::string("Invalid JSON in request body: ") + e.what()}};
+        res.set_content(error.dump(), "application/json");
+        return false;
+    }
+}
+
 void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
     auto bad_request = [&res](const std::string& message) {
         res.status = 400;
@@ -3189,8 +3222,10 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         res.set_content(error.dump(), "application/json");
     };
 
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
         std::string model_name = request_json.contains("model") ?
             request_json["model"].get<std::string>() :
@@ -3358,8 +3393,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     // Declare model_name outside try block so it's available in catch block
     std::string model_name;
 
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
 
         // Get model info
@@ -3503,8 +3540,10 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
 }
 
 void Server::handle_delete(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
     try {
-        auto request_json = nlohmann::json::parse(req.body);
         // Accept both "model" and "model_name" for compatibility
         std::string model_name = request_json.contains("model") ?
             request_json["model"].get<std::string>() :
