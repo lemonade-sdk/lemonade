@@ -6231,6 +6231,8 @@ input, textarea {
   .composer__model-button {
     max-width: 55vw;
   }
+}
+
 /* Fix model action icon vertical alignment and bind capability icons to labels. */
 .row__action {
   display: inline-flex;
