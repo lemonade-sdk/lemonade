@@ -163,6 +163,7 @@ struct BenchCliOptions {
     std::string scenario_dir;
     bool json_output = false;
     bool auto_pull = false;
+    bool add_system_info = false;
     bool no_memory = false;
     bool no_reload = false;  // disable reload between runs
     std::string compare_file;
@@ -190,6 +191,7 @@ struct BenchConfig {
     std::string scenario_file;
     std::string scenario_dir;
     bool auto_pull = false;
+    bool add_system_info = false;
     bool memory_tracking = true;
     bool reload = true;  // unload+reload model between runs to clear prompt cache
     std::string compare_file;

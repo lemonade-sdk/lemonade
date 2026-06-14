@@ -656,6 +656,7 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--output FILE` | Write results to file (in addition to stdout) | — |
 | `--compare FILE` | Compare results against a previously saved JSON file | — |
 | `--auto-pull` | Automatically pull the model if not downloaded | False |
+| `--add-system-info` | Include output from the system-info endpoint in the JSON file, for CPU/GPU type, and backend version. | False |
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
@@ -732,6 +733,9 @@ code-short          46.1    44.3    47.8    168.9   162.3   175.4   1.2
 With `--json`, results are emitted as structured JSON. Use `--output FILE` to save them for later comparison with `--compare`.
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
+
+If `--add-system-info` is given, the output from `/v1/system-info` will be included at the top level of the JSON file. This
+information includes, among other things, CPU and GPU types, and backend versions.
 
 ### Comparison Mode
 
