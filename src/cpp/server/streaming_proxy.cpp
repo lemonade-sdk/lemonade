@@ -24,7 +24,6 @@ void StreamingProxy::forward_sse_stream(
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
 
-    // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
@@ -34,10 +33,8 @@ void StreamingProxy::forward_sse_stream(
                 on_chunk();
             }
 
-            // Buffer for telemetry parsing
             telemetry_buffer.append(data, length);
 
-            // Check if this chunk contains [DONE]
             std::string chunk(data, length);
             if (!has_first_token && chunk.find("data: ") != std::string::npos) {
                 has_first_token = true;
@@ -49,14 +46,13 @@ void StreamingProxy::forward_sse_stream(
                 has_done_marker = true;
             }
 
-            // Forward chunk to client immediately
             if (!sink.write(data, length)) {
-                return false; // Client disconnected
+                return false;
             }
 
             return true;
         },
-        {}, // Empty headers map
+        {},
         timeout_seconds
     );
 
@@ -89,12 +85,10 @@ void StreamingProxy::forward_sse_stream(
             sink.write(done_marker, strlen(done_marker));
         }
 
-        // Explicitly flush and signal completion
         sink.done();
 
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
 
-        // Parse telemetry from buffered data
         auto telemetry = parse_telemetry(telemetry_buffer);
         if (telemetry.time_to_first_token <= 0.0) {
             telemetry.time_to_first_token = time_to_first_token;
@@ -105,7 +99,6 @@ void StreamingProxy::forward_sse_stream(
             on_complete(telemetry);
         }
     } else {
-        // Properly terminate the chunked response even on error
         sink.done();
     }
 }
@@ -119,7 +112,6 @@ void StreamingProxy::forward_byte_stream(
 
     bool stream_error = false;
 
-    // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
@@ -128,14 +120,13 @@ void StreamingProxy::forward_byte_stream(
                 on_chunk();
             }
 
-            // Forward chunk to client immediately
             if (!sink.write(data, length)) {
-                return false; // Client disconnected
+                return false;
             }
 
-            return true; // Continue streaming
+            return true;
         },
-        {}, // Empty headers map
+        {},
         timeout_seconds
     );
 
@@ -158,11 +149,9 @@ void StreamingProxy::forward_byte_stream(
     }
 
     if (!stream_error) {
-        // Explicitly flush and signal completion
         sink.done();
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
     } else {
-        // Properly terminate the chunked response even on error
         sink.done();
     }
 }

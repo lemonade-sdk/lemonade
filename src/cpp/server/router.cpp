@@ -172,7 +172,6 @@ WrappedServer* Router::find_npu_server() const {
     return nullptr;
 }
 
-// Helper: Find NPU server with a specific recipe
 WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
@@ -184,7 +183,6 @@ WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) cons
     return nullptr;
 }
 
-// Helper: Find FLM server of a specific model type
 WrappedServer* Router::find_flm_server_by_type(ModelType type) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
@@ -210,7 +208,6 @@ void Router::evict_all_npu_servers() {
     }
 }
 
-// Helper: Evict a specific server
 void Router::evict_server(WrappedServer* server, int timeout_seconds) {
     if (!server) return;
 
@@ -233,7 +230,6 @@ void Router::evict_server(WrappedServer* server, int timeout_seconds) {
         return;
     }
 
-    // Unload the server
     server->unload();
 
     // Remove from vector
@@ -712,7 +708,6 @@ std::string Router::get_streaming_transcription_address(const std::string& model
     return streaming ? streaming->get_streaming_address() : "";
 }
 
-// Template method for generic inference execution
 template<typename Func>
 auto Router::execute_inference(const json& request, Func&& inference_func) -> decltype(inference_func(nullptr)) {
     std::string requested_model;

@@ -72,7 +72,6 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
-    // Set default timeout for all requests
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }

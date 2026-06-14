@@ -82,10 +82,8 @@ public:
     virtual ~WrappedServer();
 
 
-    // Set log level
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
 
-    // Check if debug logging is enabled
     bool is_debug() const { return log_level_ == "debug" || log_level_ == "trace"; }
 
     // Multi-model support: Track last access time (for LRU eviction)
@@ -191,7 +189,6 @@ public:
         return get_base_url() + "/v1";
     }
 
-    // Get telemetry data
     Telemetry get_telemetry() const { return telemetry_; }
 
     // Mark observable backend progress. Streaming proxies call this for every
@@ -199,7 +196,6 @@ public:
     // the watchdog observes a healthy out-of-band probe.
     void note_backend_activity();
 
-    // Set telemetry data (for non-streaming requests)
     void set_telemetry(int input_tokens, int output_tokens,
                       double time_to_first_token, double tokens_per_second) {
         telemetry_.input_tokens = input_tokens;
@@ -208,7 +204,6 @@ public:
         telemetry_.tokens_per_second = tokens_per_second;
     }
 
-    // Set prompt_tokens field from usage
     void set_prompt_tokens(int prompt_tokens) {
         telemetry_.prompt_tokens = prompt_tokens;
     }
@@ -259,7 +254,6 @@ protected:
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
 
-    // Common method to forward GET requests to the wrapped server
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
@@ -270,7 +264,6 @@ protected:
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
 
-    // Get the base URL for the wrapped server
     std::string get_base_url() const {
         return "http://127.0.0.1:" + std::to_string(get_backend_port());
     }

@@ -34,7 +34,6 @@ public:
         }
     };
 
-    // Stream a request to backend and forward SSE chunks to client
     static void forward_sse_stream(
         const std::string& backend_url,
         const std::string& request_body,
@@ -53,7 +52,6 @@ public:
     );
 
 private:
-    // Parse telemetry from SSE chunks
     static TelemetryData parse_telemetry(const std::string& buffer);
 };
 
