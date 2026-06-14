@@ -747,47 +747,42 @@ class LLMTests(ServerTestBase):
         model2 = MULTI_MODEL_SECONDARY
         model3 = MULTI_MODEL_TERTIARY
 
+        def load_model(model_name):
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": model_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            response.raise_for_status()
+            return response
+
         # Load first two models (fills the limit)
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model1},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        load_model(model1)
         time.sleep(1)
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model2},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        load_model(model2)
         time.sleep(1)
 
         # Verify both are loaded
         response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        response.raise_for_status()
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 2)
 
-        # Access model2 to make it more recent than model1
-        requests.post(
-            f"{self.base_url}/chat/completions",
-            json={
-                "model": model2,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "max_tokens": 5,
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        # Touch model2 again to make it more recent than model1.
+        #
+        # Use /load instead of inference here: this test validates LRU bookkeeping,
+        # not backend generation. Re-loading an already loaded model updates the
+        # router access time without depending on model-specific inference behavior.
+        load_model(model2)
         time.sleep(1)
 
         # Load third model (should evict model1 as it's LRU)
-        requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model3},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
+        load_model(model3)
         time.sleep(1)
 
         # Verify only 2 models loaded and model1 was evicted
         response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        response.raise_for_status()
         data = response.json()
         self.assertEqual(len(data["all_models_loaded"]), 2)
 

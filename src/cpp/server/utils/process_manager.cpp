@@ -12,10 +12,8 @@ ProcessHandle ProcessManager::start_process(
     bool filter_health_logs,
     const std::vector<std::pair<std::string, std::string>>& env_vars) {
 
-    // Use platform abstraction on all platforms
     auto platform = create_process_platform();
     return platform->spawn(executable, args, working_dir, inherit_output, filter_health_logs, env_vars);
-
 }
 
 void ProcessManager::stop_process(ProcessHandle handle) {
@@ -38,9 +36,14 @@ int ProcessManager::wait_for_exit(ProcessHandle handle, int timeout_seconds) {
     return platform->wait_for_exit(handle, timeout_seconds);
 }
 
+int ProcessManager::reap_process(ProcessHandle handle) {
+    auto platform = create_process_platform();
+    return platform->reap(handle);
+}
+
 std::string ProcessManager::read_output(ProcessHandle handle, int max_bytes) {
     // Note: This is a simplified version. Full implementation would need pipes
-    // for stdout/stderr capture during process creation
+    // for stdout/stderr capture during process creation.
     return "";
 }
 
@@ -55,10 +58,14 @@ int ProcessManager::run_process_with_output(
     return platform->run_with_output(executable, args, on_line, working_dir, timeout_seconds);
 }
 
-
 void ProcessManager::kill_process(ProcessHandle handle) {
     auto platform = create_process_platform();
     platform->kill(handle);
+}
+
+void ProcessManager::terminate_process(ProcessHandle handle) {
+    auto platform = create_process_platform();
+    platform->terminate_without_cleanup(handle);
 }
 
 int ProcessManager::find_free_port(int start_port) {

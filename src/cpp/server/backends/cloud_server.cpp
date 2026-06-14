@@ -377,6 +377,14 @@ void CloudServer::unload() {
     loaded_ = false;
 }
 
+bool CloudServer::is_backend_alive() const {
+    return loaded_;
+}
+
+std::string CloudServer::get_backend_health_state() const {
+    return loaded_ ? "ready" : "stopped";
+}
+
 CloudServer::ResolvedCreds CloudServer::resolve_creds() const {
     ResolvedCreds creds;
     if (registry_ == nullptr) {

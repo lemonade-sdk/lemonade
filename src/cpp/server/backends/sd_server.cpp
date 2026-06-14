@@ -363,7 +363,7 @@ void SDServer::load(const std::string& model_name,
     }
 
     // Launch the server process
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -371,12 +371,13 @@ void SDServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
+    set_process_handle(started_handle);
 
-    if (process_handle_.pid == 0) {
+    if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start sd-server process");
     }
 
-    LOG(INFO, "SDServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/")) {
@@ -384,15 +385,15 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("sd-server failed to start or become ready");
     }
 
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << port_ << std::endl;
+    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
 }
 
 void SDServer::unload() {
-    if (process_handle_.pid != 0) {
-        LOG(INFO, "SDServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+    stop_backend_watchdog();
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(handle);
     }
     image_defaults_ = ImageDefaults{};
 }
