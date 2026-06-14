@@ -402,17 +402,44 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
     push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
-    // Validate and append custom arguments
+    // Validate and append custom arguments using allow-list only
     if (!llamacpp_args.empty()) {
-        std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(
-                "Invalid custom llama-server arguments:\n" + validation_error
-            );
-        }
+        static const std::set<std::string> kAllowedFlags = {
+            "--threads", "-t",
+            "--ctx-size", "-c",
+            "--batch-size", "-b",
+            "--ubatch-size", "-ub",
+            "--n-gpu-layers", "-ngl",
+            "--flash-attn",
+            "--temp",
+            "--top-k",
+            "--top-p",
+            "--min-p",
+            "--repeat-penalty",
+            "--frequency-penalty",
+            "--presence-penalty",
+            "--mirostat",
+            "--mirostat-tau",
+            "--mirostat-eta",
+            "--seed",
+            "--penalize-nl"
+        };
 
         LOG(DEBUG, "LlamaCpp") << "Adding custom arguments: " << llamacpp_args << std::endl;
         std::vector<std::string> custom_args_vec = parse_custom_args(llamacpp_args);
+
+        for (const auto& token : custom_args_vec) {
+            std::string flag = token;
+            size_t eq_pos = token.find('=');
+            if (eq_pos != std::string::npos) {
+                flag = token.substr(0, eq_pos);
+            }
+
+            if (!flag.empty() && flag[0] == '-' && kAllowedFlags.find(flag) == kAllowedFlags.end()) {
+                throw std::invalid_argument("llamacpp.args: flag not in allow-list: " + flag);
+            }
+        }
+
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 

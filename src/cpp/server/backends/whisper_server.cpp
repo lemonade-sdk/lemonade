@@ -267,15 +267,27 @@ void WhisperServer::load(const std::string& model_name,
     };
 
     if (!whispercpp_args.empty()) {
-        std::string validation_error = validate_custom_args(whispercpp_args, reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument(
-                "Invalid custom whisper-server arguments:\n" + validation_error
-            );
-        }
+        static const std::set<std::string> kAllowedFlags = {
+            "--threads", "-t",
+            "--processor",
+            "--gpu-device"
+        };
 
         LOG(DEBUG, "WhisperServer") << "Adding custom arguments: " << whispercpp_args << std::endl;
         std::vector<std::string> custom_args_vec = parse_custom_args(whispercpp_args);
+
+        for (const auto& token : custom_args_vec) {
+            std::string flag = token;
+            size_t eq_pos = token.find('=');
+            if (eq_pos != std::string::npos) {
+                flag = token.substr(0, eq_pos);
+            }
+
+            if (!flag.empty() && flag[0] == '-' && kAllowedFlags.find(flag) == kAllowedFlags.end()) {
+                throw std::invalid_argument("whispercpp.args: flag not in allow-list: " + flag);
+            }
+        }
+
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
