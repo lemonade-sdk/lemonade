@@ -1246,6 +1246,42 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
+    def test_115_launch_claude_windows_prefers_cmd_over_npm_shim(self):
+        """On Windows, launch must run claude.cmd, not npm's extensionless shell script."""
+        if not IS_WINDOWS:
+            self.skipTest(
+                "Windows-only: npm shim vs .cmd resolution does not apply on Unix"
+            )
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_cmd_capture.txt")
+
+            # Recreate what 'npm install -g' leaves on PATH: a Unix shell
+            # script named just "claude" next to claude.cmd. Windows cannot
+            # run the shell script, so the launcher must pick the .cmd.
+            with open(os.path.join(temp_dir, "claude"), "w", encoding="utf-8") as f:
+                f.write('#!/bin/sh\nexec node "$(dirname "$0")/claude.js" "$@"\n')
+            with open(os.path.join(temp_dir, "claude.cmd"), "w", encoding="utf-8") as f:
+                f.write(f'@echo off\necho fake-agent-ok> "{capture_path}"\nexit /b 0\n')
+
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                ["launch", "claude", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                "launch failed; the extensionless npm shim was likely picked "
+                "instead of claude.cmd (Error 193)",
+            )
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "claude.cmd was not executed",
+            )
+
     def test_102c_launch_codex_provider_default(self):
         """Codex launch -p should select default provider without injecting provider config."""
         if IS_WINDOWS:
