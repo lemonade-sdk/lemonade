@@ -236,8 +236,10 @@ const App: React.FC = () => {
   }, [setView]);
 
   return (
-    <div className="app">
-      <header className="titlebar">
+    <>
+      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <div className="app">
+        <header className="titlebar">
         <div className="titlebar__brand">
           <svg className="titlebar__lemon" width="18" height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M7.036 2.492L2 5.01c.826 2.337 3.525 3.525 6.043 2.518l6.044-2.518C13.26 2.663 9.85 1.177 7.036 2.492Z" fill="url(#ll0)"/>
@@ -293,11 +295,15 @@ const App: React.FC = () => {
           <span className={`titlebar__status-dot ${
             status === 'connected' ? 'titlebar__status-dot--connected' :
             status === 'connecting' ? 'titlebar__status-dot--connecting' : ''
-          }`} title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'} />
+          }`}
+            role="status"
+            aria-label={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+            title={status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline'}
+          />
         </div>
       </header>
 
-      <div className="view-container">
+      <main id="main-content" className="view-container">
         <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="chat">
             <ChatView
@@ -349,8 +355,9 @@ const App: React.FC = () => {
             />
           </ViewErrorBoundary>
         </div>
+        </main>
       </div>
-    </div>
+    </>
   );
 };
 
