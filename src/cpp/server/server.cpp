@@ -261,6 +261,11 @@ void Server::start_model_cache_warmup() {
             LOG(DEBUG, "Server") << "Warming model list cache..." << std::endl;
             model_manager_->get_supported_models();
             LOG(DEBUG, "Server") << "Model list cache warmup complete" << std::endl;
+
+            LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
+            model_manager_->check_for_model_updates();
+            update_check_done_ = true;
+            LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
         } catch (const std::exception& e) {
             LOG(WARNING, "Server") << "Model list cache warmup failed: " << e.what() << std::endl;
         } catch (...) {
@@ -1605,6 +1610,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         response["websocket_port"] = websocket_server_->get_port();
     }
 
+    // Add update check status
+    response["update_check_done"] = update_check_done_.load();
+
     res.set_content(response.dump(), "application/json");
 }
 
@@ -1667,6 +1675,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
         {"downloaded", info.downloaded},
+        {"update_available", info.update_available},
         {"suggested", info.suggested},
         {"labels", info.labels},
         {"components", public_components},

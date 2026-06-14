@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ModelsData, ModelInfo, USER_MODEL_PREFIX, fetchSupportedModelsData } from '../utils/modelData';
-import { onServerPortChange } from '../utils/serverConfig';
+import { onServerPortChange, serverFetch } from '../utils/serverConfig';
 import { isModelEffectivelyDownloaded } from '../utils/collectionModels';
 
 // Default model to use when no models are downloaded (first-time user experience)
@@ -119,6 +119,30 @@ export const ModelsProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Poll until the server's background update check completes, then refresh
+  // once more to pick up update_available flags.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      for (let i = 0; active && i < 30; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        if (!active) break;
+        try {
+          const res = await serverFetch('/health');
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (data.update_check_done) {
+            refresh();
+            return;
+          }
+        } catch { /* retry */ }
+      }
+    })();
+    return () => { active = false; };
+  }, [refresh]);
+
+
 
   // Listen for modelsUpdated and backendsUpdated events
   // (backend installs/uninstalls can change which models are available)

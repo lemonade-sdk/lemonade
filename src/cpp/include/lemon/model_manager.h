@@ -74,6 +74,7 @@ struct ModelInfo {
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
+    bool update_available = false; // Whether a newer version exists on HuggingFace
     // When true, LlamaCppServer launches llama-server with `-hf <checkpoint>`
     // instead of `-m <gguf> [--mmproj <mmproj>]`. Required for models like
     // Qwen2.5-Omni where llama-server's manual-load path rejects audio content
@@ -202,6 +203,13 @@ public:
 
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
+
+    // Check all downloaded models for updates on HuggingFace.
+    // Fetches the latest commit SHA for each model's repo and compares it
+    // with the cached commit (refs/main). Sets update_available on models
+    // whose upstream repo has changed.
+    // Safe to call from a background thread — locks are internal.
+    void check_for_model_updates();
 
     // Get list of installed FLM models (for caching)
     std::vector<std::string> get_flm_installed_models();

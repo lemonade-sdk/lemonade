@@ -30,6 +30,7 @@ export interface ModelInfo {
   reasoning?: boolean;
   vision?: boolean;
   downloaded?: boolean;
+  update_available?: boolean;
   image_defaults?: ImageDefaults;
   [key: string]: unknown;
 }
@@ -163,6 +164,7 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         // Use the suggested field from the API response
         suggested: model.suggested === true,
         downloaded: model.downloaded || false,
+        update_available: model.update_available === true,
       };
 
       if (Array.isArray(model.labels)) {

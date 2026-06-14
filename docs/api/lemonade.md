@@ -659,7 +659,8 @@ curl http://localhost:13305/v1/health
     "llm":1,
     "reranking":1,
     "tts":1
-  }
+  },
+  "update_check_done": true
 }
 ```
 
@@ -668,6 +669,7 @@ curl http://localhost:13305/v1/health
 - `status` - Server health status, always `"ok"`
 - `version` - Version number of Lemonade Server
 - `model_loaded` - Model name of the most recently accessed model
+- `update_check_done` - Whether the background HuggingFace model update check has completed at startup. Poll this field after server start to know when `update_available` fields are ready.
 - `all_models_loaded` - Array of all currently loaded models with details:
   - `model_name` - Name of the loaded model
   - `checkpoint` - Full checkpoint identifier
