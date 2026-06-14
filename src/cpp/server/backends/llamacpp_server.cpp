@@ -1,5 +1,6 @@
 #include "lemon/backends/llamacpp_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/auto_tune.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/utils/custom_args.h"
@@ -37,7 +38,6 @@ namespace lemon {
 namespace backends {
 
 // Embedding model batch configuration set to 8192 as default
-static const int EMBEDDING_CTX_SIZE = 8192;
 static const int EMBEDDING_BATCH_SIZE = 8192;
 static const int EMBEDDING_UBATCH_SIZE = 8192;
 
@@ -269,7 +269,6 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_device = options.get_option("llamacpp_device");
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
-
     std::string llamacpp_args = options.get_option("llamacpp_args");
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
@@ -279,7 +278,6 @@ void LlamaCppServer::load(const std::string& model_name,
     bool use_gpu = (llamacpp_backend != "cpu");
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults llamacpp to GPU, but the cpu backend runs on CPU.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
     // Install llama-server if needed (use per-model backend)
@@ -355,16 +353,6 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
 
-    // Enable context shift for vulkan/rocm/cuda (not supported on Metal)
-    if (llamacpp_backend == "vulkan" || is_llamacpp_rocm_backend(llamacpp_backend) ||
-        is_llamacpp_cuda_backend(llamacpp_backend)) {
-        push_overridable_arg(args, llamacpp_args, "--context-shift");
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
-    } else {
-        // For Metal, just use keep without context-shift
-        push_overridable_arg(args, llamacpp_args, "--keep", "16");
-    }
-
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
 
@@ -396,11 +384,6 @@ void LlamaCppServer::load(const std::string& model_name,
         push_arg(args, reserved_flags, "--reranking");
     }
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
-
-    // Configure GPU layers
-    std::string gpu_layers = use_gpu ? "99" : "0";  // 99 for GPU, 0 for CPU-only
-    LOG(DEBUG, "LlamaCpp") << "ngl set to " << gpu_layers << std::endl;
-    push_arg(args, reserved_flags, "-ngl", gpu_layers, std::vector<std::string>{"--gpu-layers", "--n-gpu-layers"});
 
     // Validate and append custom arguments
     if (!llamacpp_args.empty()) {
