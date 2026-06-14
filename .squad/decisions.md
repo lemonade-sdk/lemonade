@@ -2,6 +2,100 @@
 
 ## Active Decisions
 
+### 2026-06-14T00:00:00Z: Finding — prototype/ui-redesign is React 19 + TypeScript SPA, surface-agnostic, no Tauri bridge today
+
+**By:** Mattingly (UI / Frontend)
+**Scope:** `prototype/ui-redesign/`
+**Status:** Finding (no action required unless team chooses to formalize Tauri integration)
+
+`prototype/ui-redesign/` is a fully self-contained **React 19 + TypeScript 5.3** single-page application, compiled by **webpack 5** via `ts-loader`. It is not Electron, not Vue, not Svelte, not vanilla JS.
+
+Key facts:
+- Framework: React 19 (`react`, `react-dom` in `package.json`)
+- Entry point: `src/index.tsx` — `ReactDOM.createRoot` on `<div id="root">`
+- API layer: `src/api.ts` — typed `fetch`-based calls to `/api/v1/...` lemond HTTP endpoints
+- State: `localStorage` + React state; **no `window.api`, no Tauri `invoke()`, no tauriShim**
+- Output: `dist/index.html` + split bundles (main, charts, markdown, vendors)
+- Dev server: webpack-dev-server, port 8080, HMR enabled
+- Tests: Playwright (`@playwright/test`)
+
+**What it is NOT:** Not Electron (no Electron dependency, no `contextBridge`, no `ipcRenderer`). The claim "Tauri is a builder for an Electron app" is incorrect — Tauri and Electron are competing native desktop hosts, and this prototype uses neither; it runs as a plain browser SPA.
+
+**How Tauri would consume it:** 
+1. Create a `src-tauri/` Rust host alongside the prototype.
+2. In `tauri.conf.json`, set `frontendDist` to `../dist` (production) or `devUrl` to `http://localhost:8080` (dev).
+3. Tauri's webview renders `dist/index.html` — the React app boots and calls lemond directly over HTTP. **No bridge or shim is required** because all communication is already HTTP-based.
+4. If desktop-specific features are later needed (custom titlebar, native file dialogs, tray events), a tauriShim-style `window.api` can be layered in without restructuring the React codebase — following the pattern in `src/app/src/renderer/tauriShim.ts`.
+
+**Implication for team:** The ui-redesign POC is already **surface-agnostic**: it runs in any browser and would run inside Tauri's webview without modification. Production integration decision (web-only vs. Tauri desktop) does not require any architectural change to the React code.
+
+---
+
+### 2026-06-14T00:00:00Z: Finding — prototype/ui-redesign Tauri wiring status
+
+**By:** Kranz (Build & Release)
+**Scope:** `prototype/ui-redesign/` (prototype-only; no impact on main build system)
+**Status:** Finding (no action taken; documenting wiring pattern for future reference)
+
+`prototype/ui-redesign/` is a standalone React/TypeScript web app built with Webpack 5. It has **NO Tauri wiring** — no `src-tauri/` directory, no `tauri.conf.json`, no Rust crate.
+
+Current state:
+- Bundler: Webpack 5 + ts-loader
+- Entry: `prototype/ui-redesign/src/index.tsx`
+- Webpack output dir: `prototype/ui-redesign/dist/`
+- Dev server port: 8080
+- Build script: `"build": "webpack --mode production"`
+- Dev script: `"dev": "webpack serve --mode development"`
+- **Tauri config:** None
+- **`src-tauri/`:** Does not exist
+
+**What Tauri wiring would require (if adding Tauri support):**
+
+Tauri does NOT build TypeScript — it delegates to the frontend bundler. The wiring pattern established in `src/app/src-tauri/tauri.conf.json` is the template. Three things would need to be created under `prototype/ui-redesign/`:
+1. `src-tauri/tauri.conf.json` with `build.frontendDist = "../dist"` and `beforeBuildCommand = "npm run build"`
+2. `src-tauri/Cargo.toml` + `src-tauri/src/main.rs` — the Rust host crate
+3. Add `@tauri-apps/cli` (devDep) and `@tauri-apps/api` (dep) to `package.json`
+
+No changes to `webpack.config.js` output path needed.
+
+**Comparison with existing `src/app` Tauri wiring:**
+- `src/app/src-tauri/tauri.conf.json` → `build.frontendDist = "../dist/renderer"` (matches `src/app/webpack.config.js` `output.path = dist/renderer`)
+- `src/app/src-tauri/tauri.conf.json` → `build.beforeBuildCommand = "npm run build:renderer:prod"`
+- `src/app/src-tauri/tauri.conf.json` → `build.devUrl = "http://localhost:9123"`
+- `src/app/webpack.config.js` → `devServer.port = 9123`
+
+The ui-redesign already matches this pattern structurally — only the Rust side and tauri.conf.json are missing.
+
+**Debian packaging invariant:** This prototype lives entirely under `prototype/` and is NOT wired into the Debian build. It does NOT conflict with invariant #12 (web-app/desktop-app package.json split).
+
+---
+
+### 2026-06-05T00:00:00Z: Recommendation — Tools toggle scoped-state migration
+
+**By:** Mattingly (UI / Frontend)
+**Scope:** `prototype/ui-redesign/`
+**Status:** Proposed / patched in POC
+
+The chat tools toggle was moved from the legacy global `localStorage` key `lemonade_use_tools` into scoped account storage (`lemonade:<scope>:use_tools`) when local accounts landed. This preserves the many-clients-one-server invariant (invariant #11), but legacy guest users see their previous tools preference reset because the old key is not read.
+
+**Recommendation:**
+Scoped UI preferences should stay client-local, but each preference moved behind `scopedStorageKey()` needs an explicit one-time legacy migration for the `guest:shared` scope and a React state refresh when `accountSession.storageScope` changes.
+
+**Important:** This is not a decision to make tools default ON. It is a migration rule: preserve an existing user's explicit local preference, otherwise keep the current OFF default.
+
+---
+
+### 2026-06-05T00:00:00Z: Recommendation — Tool runtime and Omni collection guardrails
+
+**By:** Mattingly (UI / Frontend)
+**Scope:** `prototype/ui-redesign/`
+**Status:** Proposed
+
+1. **Tool-call runtimes should never fail silently.** Invalid streamed tool chunks, executor exceptions, and backend tool failures should be surfaced in the chat UI and logged with tool name/model/conversation context, without API keys or local paths.
+2. **`collection.omni` should remain UI-only in the POC.** Load/Get & Load actions for Omni collections should operate on component models, not call `lemond` with the collection wrapper recipe.
+3. **Chat Tools toggle should distinguish Lemonade management tools from always-on Omni media tools,** or expose a separate "Omni tools" state if users are expected to disable them.
+
+---
 
 > Entries older than 2026-05-16 archived to `decisions/archive/2026-05-15.md`.
 

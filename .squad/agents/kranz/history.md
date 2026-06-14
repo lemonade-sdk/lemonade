@@ -57,6 +57,35 @@ Neither is on the current critical path; flagged here so the build/release/integ
 
 ---
 
+### 2026-06-14 — prototype/ui-redesign build wiring (Tauri investigation)
+
+**Files read:** `prototype/ui-redesign/package.json`, `webpack.config.js`, `tsconfig.json`, `src/app/src-tauri/tauri.conf.json`, `src/app/package.json`, `src/app/webpack.config.js`.
+
+**Bundler:** Webpack 5 + ts-loader. Entry: `./src/index.tsx`. Output dir: `prototype/ui-redesign/dist/` (`output.path = path.resolve(__dirname, 'dist')`). Dev server: port 8080. Build scripts: `"build": "webpack --mode production"`, `"dev": "webpack serve --mode development"`.
+
+**tsconfig.json:** `"outDir": "./dist"`, `"module": "commonjs"`, `"target": "ES2020"`, `"jsx": "react"`. Note: tsc alone doesn't run — webpack/ts-loader handles the TS→JS compilation.
+
+**Tauri wiring status: NONE.** No `src-tauri/` directory, no `tauri.conf.json` anywhere under `prototype/`. The ui-redesign is a standalone web app with zero Tauri host.
+
+**Existing Tauri pattern (src/app):** `src/app/src-tauri/tauri.conf.json` (Tauri v2 schema) declares:
+- `build.beforeBuildCommand`: `"npm run build:renderer:prod"` (shells out to webpack)
+- `build.beforeDevCommand`: `"npm run dev:renderer"` (starts webpack dev server on port 9123)
+- `build.frontendDist`: `"../dist/renderer"` (webpack `output.path` in `src/app/webpack.config.js`)
+- `build.devUrl`: `"http://localhost:9123"`
+
+**What would be needed to wire ui-redesign to Tauri:**
+1. Create `prototype/ui-redesign/src-tauri/` with a `tauri.conf.json` that sets:
+   - `build.beforeBuildCommand = "npm run build"` (already exists in package.json)
+   - `build.frontendDist = "../dist"` (webpack output.path already outputs here)
+   - `build.devUrl = "http://localhost:8080"` (webpack-dev-server port)
+   - `build.beforeDevCommand = "npm run dev"`
+2. Add `@tauri-apps/cli` and `@tauri-apps/api` to package.json devDependencies / dependencies.
+3. Initialize Rust crate (`src-tauri/Cargo.toml`, `src/main.rs`).
+4. Add `"build": "tauri build"` and `"dev": "tauri dev"` scripts (or keep them as separate `tauri:*` scripts alongside the existing webpack scripts).
+- No webpack output.path change needed — `dist/` is already the right target.
+
+---
+
 ### 2026-05-16 — Verified CLI command syntax (PR #1914 review fixes)
 
 While addressing review comments on the bug-report template, verified the current `lemonade` CLI surface against `src/cpp/cli/main.cpp`. Pinning these so future doc work doesn't re-research them:
