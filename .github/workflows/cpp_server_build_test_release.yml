@@ -345,6 +345,66 @@ jobs:
           path: ${{ steps.rename.outputs.deb-path }}
           retention-days: 7
 
+  test-lemonade-debian13-smoke:
+    name: Smoke test .deb (Debian 13)
+    runs-on: ubuntu-latest
+    needs: build-lemonade-debian13
+    container:
+      image: debian:trixie
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-debian13.outputs.version }}
+    steps:
+      - name: Download Lemonade .deb Package
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13
+          path: .
+
+      - name: Install and smoke test
+        shell: bash
+        run: |
+          set -e
+          DEB_FILE=$(ls lemonade-server_*-debian13_amd64.deb 2>/dev/null | head -n1)
+          if [ -z "$DEB_FILE" ]; then
+            echo "ERROR: .deb file not found"
+            ls -la *.deb 2>/dev/null || echo "No .deb files found in current directory"
+            exit 1
+          fi
+          echo "Debian 13 version: $(cat /etc/os-release | grep PRETTY_NAME)"
+          echo "Testing artifact: $DEB_FILE"
+
+          echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
+          apt-get update
+          apt-get install -y curl
+          apt-get install -y -t trixie-backports ./"$DEB_FILE"
+
+          /usr/bin/lemond --version
+          /usr/bin/lemonade --version
+          echo "Package installed successfully"
+
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          /usr/bin/lemond "$(pwd)" > "$RUNNER_TEMP/lemonade-server.log" 2>&1 &
+          SERVER_PID=$!
+          echo "Server started (PID $SERVER_PID)"
+
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1; then
+              echo "Server is running and healthy on port 13305"
+              break
+            fi
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              echo "ERROR: Server process exited prematurely"
+              echo "=== Server log ==="
+              cat "$RUNNER_TEMP/lemonade-server.log" 2>/dev/null || echo "(no log)"
+              exit 1
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+          kill $SERVER_PID 2>/dev/null || true
+
   build-lemonade-rpm:
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}
     runs-on: ubuntu-latest
@@ -2109,6 +2169,7 @@ jobs:
       - sign-msi-installers
       - build-lemonade-rpm
       - build-lemonade-debian13
+      - test-lemonade-debian13-smoke
       - build-lemonade-macos-dmg
       - build-lemonade-embeddable-linux
       - build-lemonade-embeddable-windows
