@@ -310,25 +310,25 @@ static bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
 
         // Architecture fields for KV cache estimation
         if (!out.architecture.empty()) {
-            if (key == out.architecture + ".block_count" && type <= 4) {
+            if (key == out.architecture + ".block_count") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.block_count = value;
                 continue;
             }
-            if (key == out.architecture + ".embedding_length" && type <= 4) {
+            if (key == out.architecture + ".embedding_length") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.embedding_length = value;
                 continue;
             }
-            if (key == out.architecture + ".attention.head_count_kv" && type <= 4) {
+            if (key == out.architecture + ".attention.head_count_kv") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.head_count_kv = value;
                 continue;
             }
-            if (key == out.architecture + ".attention.key_length" && type <= 4) {
+            if (key == out.architecture + ".attention.key_length") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
                     out.key_length = value;
@@ -372,9 +372,6 @@ static bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
         } else {
             if (!skip_gguf_value(in, type)) return false;
         }
-
-        // Early exit: all capabilities found
-        if (out.caps.vision && out.caps.tool_calling) break;
     }
 
     if (out.context_length == 0 && pending_context_length > 0) {
@@ -495,9 +492,7 @@ static void populate_model_metadata(ModelInfo& info) {
                 // tool-calling would reclassify the model away from its endpoint
                 // type and break /embeddings or /rerank.
                 if (info.type == ModelType::LLM) {
-                    if (meta.caps.vision) info.labels.push_back("vision");
-                    if (meta.caps.tool_calling) info.labels.push_back("tool-calling");
-                    if (meta.caps.mtp) info.labels.push_back("mtp");
+                    apply_gguf_capability_labels(info.labels, meta.caps);
                 }
             }
         }

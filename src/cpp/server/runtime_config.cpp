@@ -417,6 +417,9 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'ctx_size' must be an integer");
         }
+        if (value.get<int>() < -1) {
+            throw std::invalid_argument("'ctx_size' must be >= -1");
+        }
     } else if (key == "config_version") {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'config_version' must be an integer");
