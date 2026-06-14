@@ -342,6 +342,7 @@ private:
                 if (errno == EINTR) continue;
                 break;
             }
+            if (n == 0) continue;
 
             bool stop_detected = false;
             for (int i = 0; i < n; ++i) {
