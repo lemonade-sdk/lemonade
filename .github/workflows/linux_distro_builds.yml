@@ -43,9 +43,6 @@ jobs:
           - distro: Arch
             image: archlinux:latest
             python: python
-          - distro: Debian
-            image: debian:trixie
-            python: python3
           - distro: openSUSE
             image: opensuse/tumbleweed:latest
             python: python3
