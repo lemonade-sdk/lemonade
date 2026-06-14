@@ -270,6 +270,14 @@ jobs:
           package-type: binary
           deb-version: ${{ steps.get_version.outputs.version }}
 
+      - name: Run C++ unit tests
+        run: |
+          set -e
+          cmake --preset default
+          cmake --build --preset default --target test_directory_watcher
+          cd build
+          ctest --output-on-failure -R DirectoryWatcher
+
       - name: Upload .deb package
         uses: actions/upload-artifact@v7
         with:
@@ -520,6 +528,14 @@ jobs:
         with:
           include-tauri: 'true'
           skip-packaging: ${{ steps.check_signing.outputs.has_signing != 'true' }}
+
+      - name: Run C++ unit tests
+        if: steps.check_signing.outputs.has_signing != 'true'
+        shell: bash
+        run: |
+          cmake --build --preset default --target test_directory_watcher
+          cd build
+          ctest --output-on-failure -R DirectoryWatcher
 
       - name: Upload .pkg package
         if: steps.check_signing.outputs.has_signing == 'true'
