@@ -1,13 +1,14 @@
 #pragma once
 
-#include <stdexcept>
-#include <string>
+#include <filesystem>
+#include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
+#include <stdexcept>
+#include <string>
 #include <vector>
-#include <mutex>
-#include <functional>
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
 #include "model_types.h"
@@ -71,6 +72,7 @@ struct ModelInfo {
     std::string recipe;
     std::vector<std::string> labels;
     std::vector<std::string> components;
+    std::vector<std::string> input_aliases;  // Names accepted in requests but hidden from /models
     bool suggested = false;
     std::string source;  // "local_upload" for locally uploaded models
     bool downloaded = false;     // Whether model is downloaded and available
@@ -259,6 +261,14 @@ private:
 
     // Discover GGUF models from extra_models_dir
     std::map<std::string, ModelInfo> discover_extra_models() const;
+
+    ModelInfo init_extra_model_info(const std::string& name) const;
+
+    // Scan one extra_models_dir subfolder and add either one folder model or one model per variant.
+    void discover_extra_models_in_directory(
+        const std::filesystem::path& dir_path,
+        const std::vector<std::filesystem::path>& gguf_files,
+        std::map<std::string, ModelInfo>& discovered) const;
 
     json server_models_;
     json user_models_;
