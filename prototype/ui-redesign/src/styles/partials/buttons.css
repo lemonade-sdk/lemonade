@@ -1,0 +1,109 @@
+/* ---------- Buttons ---------- */
+.btn {
+  padding: 8px var(--space-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  transition: background var(--duration-fast) var(--ease-out);
+  border: none;
+  cursor: pointer;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+.btn--primary:hover { background: var(--accent-hover); }
+.btn--primary:disabled { opacity: 0.4; cursor: default; }
+
+.btn--ghost {
+  color: var(--text-secondary);
+  background: var(--surface-3);
+}
+
+.btn--ghost:hover { color: var(--text-primary); }
+
+/* ========== Presets (Recipes) ========== */
+
+.recipes {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.recipes__head {
+  padding: var(--space-6) var(--space-8) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.recipes__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.recipes__title h1 {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  margin: 0;
+}
+
+.recipes__title-sub {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.recipes__actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.recipes__body {
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-8) var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.recipes__lede {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+  max-width: 720px;
+}
+
+.recipes__lede em {
+  font-style: normal;
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+}
+
+/* ---------- Phase glyph ---------- */
+
+.phase-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.phase-glyph svg { display: block; }
+.phase-glyph--lg { width: 22px; height: 22px; }
+.phase-glyph--xl { width: 48px; height: 48px; color: var(--accent); }
+
