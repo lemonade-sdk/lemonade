@@ -153,6 +153,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
 // ============================================================
 
 struct BenchCliOptions {
+    std::vector<std::string> models;
     std::vector<std::string> backends;
     std::vector<int> ctx_sizes;
     int runs = 3;
@@ -167,7 +168,6 @@ struct BenchCliOptions {
     std::string compare_file;
     // Backend-specific custom args (repeatable for multiple comparisons)
     std::vector<std::string> llamacpp_args;
-    std::vector<std::string> flm_args;
     std::vector<std::string> vllm_args;
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;
@@ -178,7 +178,7 @@ struct BenchCliOptions {
 // ============================================================
 
 struct BenchConfig {
-    std::string model;
+    std::vector<std::string> models;
     std::vector<std::string> backends;
     std::vector<int> ctx_sizes;
     int warmup_runs = 0;
@@ -192,7 +192,7 @@ struct BenchConfig {
     bool memory_tracking = true;
     bool reload = true;  // unload+reload model between runs to clear prompt cache
     std::string compare_file;
-    // Backend-specific custom args (keyed by recipe name: "llamacpp", "flm", "vllm", "sd-cpp", "whispercpp")
+    // Backend-specific custom args (keyed by recipe name: "llamacpp", "vllm", "sd-cpp", "whispercpp")
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
 };
@@ -200,15 +200,14 @@ struct BenchConfig {
 // Main entry point for bench command
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config);
 
-// Build BenchConfig from raw CLI options and model name
-BenchConfig build_bench_config(const std::string& model,
+// Build BenchConfig from raw CLI options
+BenchConfig build_bench_config(
                                const std::string& output_file,
                                const BenchCliOptions& cli);
 
 // Register all bench subcommand options with CLI11.
 // Returns the created subcommand pointer.
 CLI::App* register_bench_command(CLI::App& parent,
-                                 std::string& model,
                                  std::string& output_file,
                                  BenchCliOptions& opts);
 
@@ -224,6 +223,7 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
 // Convert results to JSON for programmatic consumption
 json to_json(const std::vector<BenchBackendResult>& results,
              const std::string& model,
+             const std::string& timestamp,
              const BenchConfig& config);
 
 // ============================================================
@@ -257,6 +257,7 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
 // Build comparison JSON (for --json --compare)
 json build_comparison_json(const std::vector<BenchBackendResult>& results,
                            const std::string& model,
+                           const std::string& timestamp,
                            const BenchConfig& config,
                            const json& previous_results,
                            const std::vector<BenchComparisonDelta>& deltas);

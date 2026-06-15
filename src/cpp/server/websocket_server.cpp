@@ -9,6 +9,10 @@
 #include <sstream>
 #include <utility>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -137,6 +141,9 @@ bool WebSocketServer::start() {
     info.port = port_;
     info.protocols = protocols;
     info.user = this;
+    // Explicit vhost so we hold the vhost pointer for adopting upgrade
+    // sockets handed over by the main HTTP server (see adopt_socket()).
+    info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
 
     if (host_.empty() || host_ == "localhost") {
         info.iface = "127.0.0.1";
@@ -149,6 +156,14 @@ bool WebSocketServer::start() {
     context_ = lws_create_context(&info);
     if (!context_) {
         LOG(ERROR, "WebSocket") << "Failed to create context on port " << port_ << std::endl;
+        return false;
+    }
+
+    vhost_ = lws_create_vhost(context_, &info);
+    if (!vhost_) {
+        LOG(ERROR, "WebSocket") << "Failed to create vhost on port " << port_ << std::endl;
+        lws_context_destroy(context_);
+        context_ = nullptr;
         return false;
     }
 
@@ -174,34 +189,96 @@ void WebSocketServer::stop() {
         service_thread_.join();
     }
 
+    // Snapshot and clear under the lock, then close sessions outside it:
+    // closing a streaming session joins the backend TCP read thread, which
+    // may concurrently be forwarding an event through send_json() — that
+    // path takes connections_mutex_ (same pattern as handle_close()).
+    std::unordered_map<std::string, ConnectionState> states;
     {
         std::lock_guard<std::mutex> lock(connections_mutex_);
-        for (const auto& [_, state] : connection_states_) {
-            if (!state.realtime_session_id.empty()) {
-                session_manager_->close_session(state.realtime_session_id);
-            }
-            if (!state.log_subscriber_id.empty()) {
-                LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
-            }
-        }
-
+        states = std::move(connection_states_);
         connection_states_.clear();
         connection_websockets_.clear();
         message_queues_.clear();
         receive_buffers_.clear();
     }
+    for (const auto& [_, state] : states) {
+        if (!state.realtime_session_id.empty()) {
+            session_manager_->close_session(state.realtime_session_id);
+        }
+        if (!state.log_subscriber_id.empty()) {
+            LogStreamHub::instance().remove_subscriber(state.log_subscriber_id);
+        }
+    }
 
     if (context_) {
         lws_context_destroy(context_);
         context_ = nullptr;
+        vhost_ = nullptr;
+    }
+
+    // Close any sockets that were queued for adoption but never picked up
+    {
+        std::lock_guard<std::mutex> lock(adoption_mutex_);
+        while (!pending_adoptions_.empty()) {
+            intptr_t fd = pending_adoptions_.front();
+            pending_adoptions_.pop();
+#ifdef _WIN32
+            closesocket(static_cast<SOCKET>(fd));
+#else
+            ::close(static_cast<int>(fd));
+#endif
+        }
     }
 
     LOG(INFO, "WebSocket") << "Server stopped" << std::endl;
 }
 
+bool WebSocketServer::adopt_socket(intptr_t fd) {
+    if (!running_.load() || !context_) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(adoption_mutex_);
+        pending_adoptions_.push(fd);
+    }
+    // Wake the service thread; adoption happens there (lws is not thread-safe)
+    lws_cancel_service(context_);
+    return true;
+}
+
+void WebSocketServer::drain_pending_adoptions() {
+    std::queue<intptr_t> pending;
+    {
+        std::lock_guard<std::mutex> lock(adoption_mutex_);
+        std::swap(pending, pending_adoptions_);
+    }
+
+    while (!pending.empty()) {
+        intptr_t fd = pending.front();
+        pending.pop();
+
+        lws_sock_file_fd_type desc;
+        desc.sockfd = static_cast<lws_sockfd_type>(fd);
+        struct lws* wsi = lws_adopt_descriptor_vhost(
+            vhost_,
+            static_cast<lws_adoption_type>(LWS_ADOPT_SOCKET | LWS_ADOPT_HTTP),
+            desc, nullptr, nullptr);
+        if (!wsi) {
+            LOG(WARNING, "WebSocket") << "Failed to adopt upgraded socket" << std::endl;
+#ifdef _WIN32
+            closesocket(static_cast<SOCKET>(fd));
+#else
+            ::close(static_cast<int>(fd));
+#endif
+        }
+    }
+}
+
 void WebSocketServer::service_loop() {
     while (running_.load()) {
         lws_service(context_, 50);
+        drain_pending_adoptions();
         schedule_pending_writes();
     }
 }
@@ -444,10 +521,21 @@ std::string WebSocketServer::get_request_path(struct lws* wsi) {
 }
 
 WebSocketServer::ConnectionKind WebSocketServer::classify_path(const std::string& path) {
-    if (path == "/realtime") {
+    // Quad-prefix invariant: endpoints are reachable bare and under
+    // /api/v0, /api/v1, /v0, /v1. OpenAI Realtime SDK clients connect
+    // to /v1/realtime.
+    std::string stripped = path;
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        size_t len = std::strlen(prefix);
+        if (stripped.rfind(prefix, 0) == 0 && stripped.size() > len && stripped[len] == '/') {
+            stripped = stripped.substr(len);
+            break;
+        }
+    }
+    if (stripped == "/realtime") {
         return ConnectionKind::realtime;
     }
-    if (path == "/logs/stream") {
+    if (stripped == "/logs/stream") {
         return ConnectionKind::logs;
     }
     return ConnectionKind::invalid;

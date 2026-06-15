@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 10.6.0)
+project(lemon_cpp VERSION 10.7.0)
 
 # Export compile_commands.json for clangd/IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -347,6 +347,11 @@ if(NOT USE_SYSTEM_LWS)
         cmake_policy(SET CMP0148 OLD)
     endif()
     set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+    # pkg_check_modules(LWS ...) caches LWS_LIBRARIES even when the system lib
+    # is unused; libwebsockets' own CMake unsets the directory variable, which
+    # un-shadows the stale cache entry and duplicates the "websockets" target
+    # in its export set — a hard error on CMake >= 4. Clear it before the fetch.
+    unset(LWS_LIBRARIES CACHE)
     FetchContent_Declare(libwebsockets
         GIT_REPOSITORY https://github.com/warmcat/libwebsockets.git
         GIT_TAG v${MIN_LWS_VERSION}
@@ -578,8 +583,12 @@ set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
+    src/cpp/server/global_vram_monitor.cpp
+    src/cpp/server/eviction_engine.cpp
     src/cpp/server/cli_parser.cpp
+    src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp
+    src/cpp/server/directory_watcher.cpp
     src/cpp/server/model_manager.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
@@ -589,6 +598,7 @@ set(SOURCES_CORE
     src/cpp/server/runtime_config.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
+    src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -596,10 +606,13 @@ set(SOURCES_CORE
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
     src/cpp/server/utils/network_beacon.cpp
+    src/cpp/server/utils/tcp_jsonl_client.cpp
+    src/cpp/server/backends/cloud_server.cpp
     src/cpp/server/backends/llamacpp_server.cpp
     src/cpp/server/backends/fastflowlm_server.cpp
     src/cpp/server/backends/ryzenaiserver.cpp
     src/cpp/server/backends/whisper_server.cpp
+    src/cpp/server/backends/moonshine_server.cpp
     src/cpp/server/backends/kokoro_server.cpp
     src/cpp/server/backends/sd_server.cpp
     src/cpp/server/backends/vllm_server.cpp
@@ -614,9 +627,23 @@ set(SOURCES_CORE
 )
 
 # Add platform-specific source files to core
-if(APPLE)
+if(WIN32)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_windows.cpp)
+elseif(APPLE)
     list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_macos.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_macos.cpp)
     set_source_files_properties(src/cpp/server/macos_system_info.mm PROPERTIES LANGUAGE OBJCXX)
+elseif(UNIX)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/platform/metrics_linux.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_unix.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_unix.cpp)
 endif()
 
 # ============================================================
@@ -711,6 +738,7 @@ if(WIN32)
         wbemuuid
         ole32
         oleaut32
+        shell32
     )
 elseif(APPLE)
     target_link_libraries(lemonade-server-core PUBLIC
@@ -1644,3 +1672,31 @@ add_custom_target(embeddable
 
 message(STATUS "Embeddable archive target available: cmake --build . --target embeddable")
 message(STATUS "  Archive: ${EMBEDDABLE_ARCHIVE_NAME}")
+
+# ============================================================
+# C++ Unit Tests
+# ============================================================
+set(_DIR_WATCHER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_directory_watcher.cpp"
+)
+set(_DIR_WATCHER_LIB_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/directory_watcher.cpp"
+)
+if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
+    add_executable(test_directory_watcher
+        test/cpp/test_directory_watcher.cpp
+        src/cpp/server/directory_watcher.cpp
+    )
+    target_include_directories(test_directory_watcher PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    if(UNIX)
+        target_link_libraries(test_directory_watcher PRIVATE pthread)
+        target_link_options(test_directory_watcher PRIVATE -pthread)
+    endif()
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME DirectoryWatcherTest COMMAND test_directory_watcher)
+endif()

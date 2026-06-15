@@ -26,8 +26,17 @@ fn default_repeat_penalty() -> f64 {
     1.1
 }
 
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
+fn is_valid_theme(v: &str) -> bool {
+    matches!(v, "dark" | "light")
+}
+
 fn default_layout() -> LayoutSettings {
     LayoutSettings {
+        theme: default_theme(),
         is_chat_visible: true,
         is_model_manager_visible: true,
         left_panel_view: "models".to_string(),
@@ -89,6 +98,8 @@ pub struct TypedSetting {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutSettings {
+    #[serde(default = "default_theme")]
+    pub theme: String,
     pub is_chat_visible: bool,
     pub is_model_manager_visible: bool,
     // Renderer-side type is a string union: 'models' | 'marketplace' | 'backends' | 'settings'.
@@ -276,6 +287,12 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
                 *slot = v;
             }
         };
+        if let Some(theme) = raw_layout.get("theme").and_then(Value::as_str) {
+            if is_valid_theme(theme) {
+                s.layout.theme = theme.to_string();
+            }
+        }
+
         set_bool("isChatVisible", &mut s.layout.is_chat_visible);
         set_bool("isModelManagerVisible", &mut s.layout.is_model_manager_visible);
         set_bool("isLogsVisible", &mut s.layout.is_logs_visible);
@@ -428,6 +445,7 @@ mod tests {
                 "enableUserTTS": { "value": true, "useDefault": false },
             },
             "layout": {
+                "theme": "light",
                 "isChatVisible": true,
                 "isModelManagerVisible": true,
                 "leftPanelView": "marketplace",
@@ -462,6 +480,11 @@ mod tests {
             layout.get("leftPanelView").and_then(|v| v.as_str()),
             Some("marketplace"),
             "leftPanelView round-trip"
+        );
+        assert_eq!(
+            layout.get("theme").and_then(|v| v.as_str()),
+            Some("light"),
+            "theme round-trip"
         );
         assert!(
             !layout.contains_key("isMarketplaceVisible"),
@@ -506,5 +529,14 @@ mod tests {
             !invalid.model_manager.show_downloaded_only,
             "invalid showDownloadedOnly fell back to default"
         );
+    }
+
+    #[test]
+    fn theme_rejects_unknown_values() {
+        let incoming = json!({
+            "layout": { "theme": "neon-pink" }
+        });
+        let sanitized = sanitize_app_settings(&incoming);
+        assert_eq!(sanitized.layout.theme, "dark", "fell back to default");
     }
 }

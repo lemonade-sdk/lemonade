@@ -4,6 +4,7 @@
 #include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
@@ -30,7 +31,7 @@ RuntimeConfig* RuntimeConfig::global() {
 }
 
 static const std::vector<std::string> s_backend_names = {
-    "llamacpp", "whispercpp", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
+    "llamacpp", "whispercpp", "moonshine", "sdcpp", "flm", "vllm", "ryzenai", "kokoro"
 };
 
 static bool is_backend_name(const std::string& key) {
@@ -197,7 +198,26 @@ int RuntimeConfig::ctx_size() const {
     return config_["ctx_size"].get<int>();
 }
 
+bool RuntimeConfig::auto_evict() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_evict")) {
+        return config_["auto_evict"].get<bool>();
+    }
+    return false;
+}
+
+double RuntimeConfig::auto_evict_threshold_pct() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_evict_threshold_pct")) {
+        return config_["auto_evict_threshold_pct"].get<double>();
+    }
+    // Default: start yielding VRAM at 90% global usage so other GPU apps
+    // (ComfyUI, Blender, games) can coexist before memory is fully exhausted.
+    return 0.90;
+}
+
 bool RuntimeConfig::offline() const {
+
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
 }
@@ -309,6 +329,15 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         }
     }
 
+    if (config_.contains("moonshine")) {
+        const auto& ms = config_["moonshine"];
+        if (ms.contains(backend_args) && ms[backend_args] != "") {
+            result["moonshine_args"] = ms[backend_args];
+        } else if (ms.contains("args")) {
+            result["moonshine_args"] = ms["args"];
+        }
+    }
+
     if (config_.contains("sdcpp")) {
         const auto& sd = config_["sdcpp"];
         if (sd.contains("backend")) result["sd-cpp_backend"] = resolve_auto(sd["backend"]);
@@ -321,11 +350,6 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         if (sd.contains("cfg_scale")) result["cfg_scale"] = sd["cfg_scale"];
         if (sd.contains("width")) result["width"] = sd["width"];
         if (sd.contains("height")) result["height"] = sd["height"];
-    }
-
-    if (config_.contains("flm")) {
-        const auto& flm = config_["flm"];
-        if (flm.contains("args")) result["flm_args"] = flm["args"];
     }
 
     if (config_.contains("vllm")) {
@@ -410,6 +434,17 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<int>() <= 0) {
             throw std::invalid_argument("'ctx_size' must be positive");
+        }
+    } else if (key == "auto_evict") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'auto_evict' must be a boolean");
+        }
+    } else if (key == "auto_evict_threshold_pct") {
+        if (!value.is_number()) {
+            throw std::invalid_argument("'auto_evict_threshold_pct' must be a number");
+        }
+        if (value.get<double>() <= 0.0 || value.get<double>() > 1.0) {
+            throw std::invalid_argument("'auto_evict_threshold_pct' must be between 0.0 and 1.0");
         }
     } else if (key == "config_version") {
         if (!value.is_number_integer()) {

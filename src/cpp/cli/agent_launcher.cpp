@@ -97,10 +97,13 @@ void configure_claude_agent(const std::string& base_url,
                             AgentConfig& config) {
     const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
 
-    config.binary_name = "claude";
 #ifdef _WIN32
-    config.binary_alternatives = {"claude.cmd", "claude.exe"};
+    // npm puts a Unix shell script named just "claude" next to claude.cmd.
+    // Windows cannot run the shell script, so look for .cmd/.exe first.
+    config.binary_name = "claude.cmd";
+    config.binary_alternatives = {"claude.exe", "claude"};
 #else
+    config.binary_name = "claude";
     config.binary_alternatives = {};
 #endif
     config.fallback_paths = {
@@ -212,6 +215,36 @@ void configure_opencode_agent(const std::string& model,
         "  npm i -g opencode-ai";
 }
 
+void configure_pi_agent(const std::string& model,
+                        const std::string& api_key,
+                        AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+    config.binary_name = "pi";
+#ifdef _WIN32
+    config.binary_alternatives = {"pi.cmd", "pi.exe"};
+#else
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.npm-global/bin/pi",
+        "/usr/local/bin/pi",
+        "~/.local/bin/pi"
+    };
+    add_windows_npm_fallbacks(config.fallback_paths, "pi");
+
+    config.env_vars = {
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+    config.extra_args = {
+        "--provider", "Lemonade",
+        "--model", model
+    };
+    config.install_instructions =
+        "Install Pi coding agent:\n"
+        "  npm i -g @earendil-works/pi-coding-agent";
+}
+
 } // namespace
 
 std::string build_agent_server_base_url(const std::string& host, int port) {
@@ -222,7 +255,7 @@ std::string build_agent_server_base_url(const std::string& host, int port) {
 }
 
 bool agent_needs_config_sync(const std::string& agent) {
-    return agent == "opencode";
+    return agent == "opencode" || agent == "pi";
 }
 
 bool build_agent_config(const std::string& agent,
@@ -250,7 +283,12 @@ bool build_agent_config(const std::string& agent,
         return true;
     }
 
-    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode.";
+    if (agent == "pi") {
+        configure_pi_agent(model, api_key, config);
+        return true;
+    }
+
+    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi.";
     return false;
 }
 

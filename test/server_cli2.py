@@ -24,6 +24,7 @@ import glob
 import json
 import os
 import platform
+import re
 import requests
 import shutil
 import subprocess
@@ -124,6 +125,7 @@ def _resolve_hf_cache_root(repo_cache_dirs, checkpoint_specs=None):
 # Global configuration
 _config = {
     "cli_binary": None,
+    "cli_api_key": None,
 }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -144,10 +146,17 @@ def parse_cli_args():
         default=get_default_cli_binary(),
         help="Path to lemonade CLI binary (default: CMake build output)",
     )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=None,
+        help="API key to pass to all CLI invocations (for servers requiring auth)",
+    )
 
     args = parser.parse_args()
 
     _config["cli_binary"] = args.cli_binary
+    _config["cli_api_key"] = args.api_key
 
     return args
 
@@ -155,6 +164,9 @@ def parse_cli_args():
 def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     """
     Run a CLI command and return the result.
+
+    If --api-key was provided to the test runner, it is automatically prepended
+    to every CLI invocation so commands work against a server requiring auth.
 
     Args:
         args: List of command arguments (without the binary)
@@ -166,6 +178,9 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     Returns:
         subprocess.CompletedProcess result
     """
+    cli_args = list(args)
+    if _config["cli_api_key"]:
+        cli_args = ["--api-key", _config["cli_api_key"]] + cli_args
     cli_binary = get_cli_binary()
     if os.path.isabs(cli_binary):
         resolved_cli_binary = cli_binary
@@ -199,6 +214,61 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         )
 
     return result
+
+
+def _is_transient_cli_pull_failure(result):
+    """Return True when a failed CLI pull looks like a transient server/HF issue."""
+    if result.returncode == 0:
+        return False
+
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+    transient_statuses = {408, 409, 429, 500, 502, 503, 504}
+    observed_statuses = {
+        int(match) for match in re.findall(r"(?:status\s*[:=]|http\s*)(\d{3})", output)
+    }
+
+    if observed_statuses.intersection(transient_statuses):
+        return True
+
+    return (
+        "too many requests" in output
+        or "rate limit" in output
+        or "temporarily unavailable" in output
+        or "connection reset" in output
+        or "connection aborted" in output
+        or "connection refused" in output
+        or "timed out" in output
+        or "timeout" in output
+    )
+
+
+def run_cli_pull_command_with_retry(args, timeout=TIMEOUT_MODEL_OPERATION, attempts=3):
+    """Run a CLI pull command with bounded retry for transient setup failures.
+
+    The command still has to succeed with exit code 0. This only retries failures
+    that look transient, such as HF rate limits or temporary server/network errors.
+    """
+    last_result = None
+
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(min(30, 2 ** (attempt - 1)))
+
+        result = run_cli_command(args, timeout=timeout)
+        if result.returncode == 0:
+            return result
+
+        last_result = result
+        if _is_transient_cli_pull_failure(result) and attempt < attempts:
+            print(
+                f"Transient CLI pull failure, attempt {attempt}/{attempts}. "
+                "Retrying..."
+            )
+            continue
+
+        break
+
+    return last_result
 
 
 class PersistentServerCLIClientTests(unittest.TestCase):
@@ -575,7 +645,7 @@ sys.exit(0)
 
     def test_050_pull_with_checkpoint(self):
         """Test pull command with --checkpoint option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -591,7 +661,7 @@ sys.exit(0)
 
     def test_051_pull_with_labels(self):
         """Test pull command with --label option."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -634,7 +704,7 @@ sys.exit(0)
 
     def test_053_pull_with_multiple_checkpoints(self):
         """Test pull command with multiple checkpoints (e.g., main + mmproj)."""
-        result = run_cli_command(
+        result = run_cli_pull_command_with_retry(
             [
                 "pull",
                 USER_MODEL_NAME,
@@ -653,9 +723,14 @@ sys.exit(0)
 
     def test_054_pull_registered_name(self):
         """Test pull command with a registered model name (no flags)."""
-        result = self.assertCommandSucceeds(
+        result = run_cli_pull_command_with_retry(
             ["pull", ENDPOINT_TEST_MODEL],
             timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            f"Command failed with exit code {result.returncode}: {result.stderr}",
         )
         output = result.stdout.lower() + result.stderr.lower()
         self.assertFalse(
@@ -669,7 +744,7 @@ sys.exit(0)
         # Unique user.<name> entries surface under the bare public name.
         public_name = collection_name[5:]
         try:
-            result = self.assertCommandSucceeds(
+            result = run_cli_pull_command_with_retry(
                 [
                     "pull",
                     collection_name,
@@ -679,6 +754,11 @@ sys.exit(0)
                     ENDPOINT_TEST_MODEL,
                 ],
                 timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"Command failed with exit code {result.returncode}: {result.stderr}",
             )
             output = result.stdout.lower() + result.stderr.lower()
             self.assertFalse(
@@ -1166,6 +1246,42 @@ sys.exit(0)
                 payload["env"]["ANTHROPIC_BASE_URL"], f"http://localhost:{PORT}"
             )
 
+    def test_115_launch_claude_windows_prefers_cmd_over_npm_shim(self):
+        """On Windows, launch must run claude.cmd, not npm's extensionless shell script."""
+        if not IS_WINDOWS:
+            self.skipTest(
+                "Windows-only: npm shim vs .cmd resolution does not apply on Unix"
+            )
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "claude_cmd_capture.txt")
+
+            # Recreate what 'npm install -g' leaves on PATH: a Unix shell
+            # script named just "claude" next to claude.cmd. Windows cannot
+            # run the shell script, so the launcher must pick the .cmd.
+            with open(os.path.join(temp_dir, "claude"), "w", encoding="utf-8") as f:
+                f.write('#!/bin/sh\nexec node "$(dirname "$0")/claude.js" "$@"\n')
+            with open(os.path.join(temp_dir, "claude.cmd"), "w", encoding="utf-8") as f:
+                f.write(f'@echo off\necho fake-agent-ok> "{capture_path}"\nexit /b 0\n')
+
+            env = self._build_stubbed_agent_env(temp_dir)
+            result = run_cli_command(
+                ["launch", "claude", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                "launch failed; the extensionless npm shim was likely picked "
+                "instead of claude.cmd (Error 193)",
+            )
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "claude.cmd was not executed",
+            )
+
     def test_102c_launch_codex_provider_default(self):
         """Codex launch -p should select default provider without injecting provider config."""
         if IS_WINDOWS:
@@ -1359,65 +1475,6 @@ sys.exit(0)
             self.assertIn("never", argv)
             self.assertIn("--custom", argv)
             self.assertIn("a b", argv)
-
-    def test_102i_launch_recipe_env_var_bindings_preserved(self):
-        """Launch should continue honoring hidden recipe env vars like LEMONADE_CTX_SIZE."""
-        if IS_WINDOWS:
-            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
-
-        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
-            capture_path = os.path.join(temp_dir, "claude_capture_ctx_env.json")
-            self._write_fake_agent(temp_dir, "claude", capture_path)
-            env = self._build_stubbed_agent_env(temp_dir)
-            env["LEMONADE_CTX_SIZE"] = "2048"
-
-            result = run_cli_command(
-                [
-                    "launch",
-                    "claude",
-                    "--model",
-                    ENDPOINT_TEST_MODEL,
-                ],
-                timeout=TIMEOUT_DEFAULT,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 0)
-            self.assertTrue(
-                os.path.exists(capture_path),
-                "Fake claude binary was not executed",
-            )
-
-            deadline = time.time() + TIMEOUT_MODEL_OPERATION
-            loaded_model = None
-            while time.time() < deadline:
-                response = requests.get(
-                    f"http://127.0.0.1:{PORT}/api/v1/health",
-                    headers=_auth_headers(),
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(response.status_code, 200)
-                health_data = response.json()
-                loaded_model = next(
-                    (
-                        model
-                        for model in health_data.get("all_models_loaded", [])
-                        if model.get("model_name") == ENDPOINT_TEST_MODEL
-                    ),
-                    None,
-                )
-                recipe_options = (loaded_model or {}).get("recipe_options", {})
-                if recipe_options.get("ctx_size") == 2048:
-                    break
-                time.sleep(1)
-
-            self.assertIsNotNone(
-                loaded_model, f"Model {ENDPOINT_TEST_MODEL} should be loaded"
-            )
-            self.assertEqual(
-                loaded_model.get("recipe_options", {}).get("ctx_size"),
-                2048,
-            )
 
     def test_103_launch_explicit_model_with_repo_flags_is_deterministic(self):
         """Explicit model should skip import flow even when repo flags are present."""
@@ -1975,6 +2032,56 @@ sys.exit(0)
 class CLIHelpDocsConsistencyTests(unittest.TestCase):
     """Lightweight checks that compare CLI help semantics with docs text."""
 
+    def test_899_run_load_recipe_options_are_grouped(self):
+        """Run/load help should keep every recipe flag under the intended group."""
+        expected_groups = {
+            "General Options:": ["--ctx-size", "--merge-args"],
+            "Llama.cpp Backend Options:": [
+                "--llamacpp",
+                "--llamacpp-device",
+                "--llamacpp-args",
+            ],
+            "Stable Diffusion Options:": ["--sdcpp", "--sdcpp-args"],
+            "vLLM Options:": ["--vllm", "--vllm-args"],
+            "Whisper.cpp Options:": ["--whispercpp", "--whispercpp-args"],
+        }
+
+        for command in ("run", "load"):
+            with self.subTest(command=command):
+                result = run_cli_command([command, "--help"], timeout=TIMEOUT_DEFAULT)
+                self.assertEqual(result.returncode, 0)
+
+                help_output = result.stdout + result.stderr
+                group_positions = {
+                    group: help_output.find(group) for group in expected_groups
+                }
+                for group, position in group_positions.items():
+                    self.assertNotEqual(position, -1, f"Missing help group: {group}")
+
+                ordered_groups = sorted(
+                    group_positions.items(), key=lambda item: item[1]
+                )
+                for index, (group, start) in enumerate(ordered_groups):
+                    end = (
+                        ordered_groups[index + 1][1]
+                        if index + 1 < len(ordered_groups)
+                        else len(help_output)
+                    )
+                    section = help_output[start:end]
+
+                    for flag in expected_groups[group]:
+                        self.assertTrue(
+                            any(
+                                line.strip().startswith(flag)
+                                and (
+                                    len(line.strip()) == len(flag)
+                                    or line.strip()[len(flag)] in " ,"
+                                )
+                                for line in section.splitlines()
+                            ),
+                            f"{flag} missing from {group} in `{command} --help`",
+                        )
+
     def test_900_launch_docs_match_help_text(self):
         """The launch model-selection wording in docs should match actual CLI behavior/help."""
         result = run_cli_command(["launch", "--help"], timeout=TIMEOUT_DEFAULT)
@@ -2002,7 +2109,6 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--ctx-size", claude_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
         self.assertNotIn("--llamacpp", claude_help)
-        self.assertNotIn("--flm-args", claude_help)
 
         opencode_result = run_cli_command(
             ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT

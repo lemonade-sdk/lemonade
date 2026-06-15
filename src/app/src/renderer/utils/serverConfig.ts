@@ -158,16 +158,19 @@ class ServerConfig {
   }
 
   /**
-   * Build a WebSocket URL for an endpoint served on the websocket port
-   * advertised by /health. Going through URL rather than string concat is
-   * what makes this correct for IPv6 literals — URL.host preserves the
-   * brackets that hostname does not. The configured API key is appended
-   * automatically when set.
+   * Build a WebSocket URL. With wsPort, targets the dedicated websocket port
+   * advertised by /health; without it, targets the main HTTP port (which
+   * accepts WebSocket upgrades for /realtime and /logs/stream). Going through
+   * URL rather than string concat is what makes this correct for IPv6
+   * literals — URL.host preserves the brackets that hostname does not. The
+   * configured API key is appended automatically when set.
    */
-  buildWebSocketUrl(path: string, wsPort: number, query?: URLSearchParams): string {
+  buildWebSocketUrl(path: string, wsPort?: number, query?: URLSearchParams): string {
     const url = new URL(this.getServerBaseUrl());
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    url.port = String(wsPort);
+    if (wsPort !== undefined) {
+      url.port = String(wsPort);
+    }
     url.pathname = url.pathname.replace(/\/$/, '') + path;
 
     const params = new URLSearchParams(query);
@@ -364,7 +367,7 @@ export const getServerBaseUrl = () => serverConfig.getServerBaseUrl();
 export const getAPIKey = () => serverConfig.getAPIKey();
 export const getServerPort = () => serverConfig.getPort();
 export const discoverServerPort = () => serverConfig.discoverPort();
-export const buildWebSocketUrl = (path: string, wsPort: number, query?: URLSearchParams) =>
+export const buildWebSocketUrl = (path: string, wsPort?: number, query?: URLSearchParams) =>
   serverConfig.buildWebSocketUrl(path, wsPort, query);
 export const isRemoteServer = () => serverConfig.isRemoteServer();
 export const onServerPortChange = (listener: PortChangeListener) => serverConfig.onPortChange(listener);

@@ -301,7 +301,7 @@ void WhisperServer::load(const std::string& model_name,
 #endif
 
     // Launch the subprocess
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -309,12 +309,13 @@ void WhisperServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
+    set_process_handle(started_handle);
 
-    if (process_handle_.pid == 0) {
+    if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start whisper-server process");
     }
 
-    LOG(INFO, "WhisperServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
@@ -326,11 +327,11 @@ void WhisperServer::load(const std::string& model_name,
 }
 
 void WhisperServer::unload() {
-    if (process_handle_.pid != 0) {
-        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+    stop_backend_watchdog();
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(handle);
     }
 }
 
@@ -537,7 +538,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
         fields.push_back(translate_field);
     }
 
-    const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
+    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
     // Pass 0 so HttpClient falls back to its default timeout, which is kept in
@@ -628,7 +629,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
         fields.push_back(translate_field);
     }
 
-    const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
+    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
 
     // See the note on the file-path variant above: 0 inherits the configured

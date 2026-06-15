@@ -14,6 +14,9 @@ huggingface_hub
 # Process and system utilities
 psutil
 
+# Prometheus text format parser (required for /metrics endpoint tests)
+prometheus-client
+
 # Numerical computing (required for embedding similarity tests)
 numpy
 
