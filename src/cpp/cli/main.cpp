@@ -32,6 +32,8 @@
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <shellapi.h>
+    #include <io.h>
+    #include <windows.h>
     typedef int socklen_t;
 #else
     #include <arpa/inet.h>
@@ -40,6 +42,7 @@
     #include <sys/wait.h>
     #include <fcntl.h>
     #include <unistd.h>
+    #include <termios.h>
 #endif
 
 #include "lemon/utils/aixlog.hpp"
@@ -167,6 +170,11 @@ struct CliConfig {
     std::string codex_model_provider = "lemonade";
     std::string agent_args;
 
+    // Cloud provider commands
+    std::string cloud_provider;
+    std::string cloud_base_url;
+    std::string cloud_api_key;
+
     // Chat REPL options
     bool chat_cli = false;
     bool chat_no_stream = false;
@@ -175,6 +183,46 @@ struct CliConfig {
     // Bench command options
     lemon_cli::BenchCliOptions bench;
 };
+
+// Read a line from stdin with terminal echo disabled, so secrets (API keys,
+// passwords) don't linger in scrollback / screen-share. Returns the typed
+// line (without trailing newline). Falls back to plain getline if the
+// terminal can't be put into no-echo mode — better to keep the prompt
+// usable than to refuse it.
+static std::string read_secret_line() {
+    std::string out;
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    bool restored = false;
+    if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
+        SetConsoleMode(h, mode & ~ENABLE_ECHO_INPUT);
+        restored = true;
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        SetConsoleMode(h, mode);
+    }
+#else
+    struct termios old_tio{}, new_tio{};
+    bool restored = false;
+    if (tcgetattr(fileno(stdin), &old_tio) == 0) {
+        new_tio = old_tio;
+        new_tio.c_lflag &= ~ECHO;
+        if (tcsetattr(fileno(stdin), TCSANOW, &new_tio) == 0) {
+            restored = true;
+        }
+    }
+    std::getline(std::cin, out);
+    if (restored) {
+        tcsetattr(fileno(stdin), TCSANOW, &old_tio);
+    }
+#endif
+    // Echo a newline so the cursor advances — the user's Enter was swallowed
+    // along with the rest of the input when echo was off.
+    std::cout << std::endl;
+    return out;
+}
 
 // Open a URL via the OS without invoking a shell (avoids shell injection).
 // On Windows, ShellExecuteA is already shell-free.
@@ -1123,6 +1171,31 @@ int main(int argc, char* argv[]) {
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
+    // Cloud provider commands. `cloud` is a subcommand group with install /
+    // uninstall / auth / list. Mirrors the `backends` group shape on purpose
+    // so muscle memory transfers.
+    CLI::App* cloud_cmd = app.add_subcommand("cloud", "Manage cloud OpenAI-compatible providers")->group("Server");
+    CLI::App* cloud_install_cmd = cloud_cmd->add_subcommand("install", "Register a cloud provider")->group("Subcommands");
+    cloud_install_cmd->add_option("provider", config.cloud_provider, "Provider name (e.g. fireworks, openai)")->required()->type_name("PROVIDER");
+    cloud_install_cmd->add_option("--base-url", config.cloud_base_url, "OpenAI-compat base URL (must include /v1)")->required()->type_name("URL");
+    cloud_install_cmd->add_option("--api-key", config.cloud_api_key,
+        "Optional: store this key in process memory. Prefer setting LEMONADE_<PROVIDER>_API_KEY instead.")
+        ->type_name("KEY");
+
+    CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
+    cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_auth_cmd = cloud_cmd->add_subcommand("auth", "Set a runtime API key (in-memory only)")->group("Subcommands");
+    cloud_auth_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+    cloud_auth_cmd->add_option("--api-key", config.cloud_api_key,
+        "API key. If omitted you'll be prompted (TTY only).")
+        ->type_name("KEY");
+
+    CLI::App* cloud_clear_cmd = cloud_cmd->add_subcommand("clear", "Clear the runtime API key (env var unaffected)")->group("Subcommands");
+    cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
+
+    CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
+
     // Pull options
     pull_cmd->add_option("model", config.model,
         "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
@@ -1324,6 +1397,51 @@ int main(int argc, char* argv[]) {
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0);
+    } else if (cloud_cmd->count() > 0) {
+        if (cloud_install_cmd->count() > 0) {
+            return client.install_cloud_provider(config.cloud_provider,
+                                                  config.cloud_base_url,
+                                                  config.cloud_api_key);
+        }
+        if (cloud_uninstall_cmd->count() > 0) {
+            return client.uninstall_cloud_provider(config.cloud_provider);
+        }
+        if (cloud_auth_cmd->count() > 0) {
+            // Interactive prompt only when the user didn't pass --api-key and
+            // stdin is a TTY. In non-interactive contexts (CI, pipes) refuse
+            // rather than silently hang on getline.
+            std::string key = config.cloud_api_key;
+            if (key.empty()) {
+#ifdef _WIN32
+                bool is_tty = _isatty(_fileno(stdin)) != 0;
+#else
+                bool is_tty = isatty(fileno(stdin)) != 0;
+#endif
+                if (!is_tty) {
+                    std::cerr << "Error: --api-key is required when stdin is not a TTY"
+                              << std::endl;
+                    return 1;
+                }
+                std::cout << "API key for " << config.cloud_provider
+                          << " (input hidden): ";
+                std::cout.flush();
+                key = read_secret_line();
+                if (key.empty()) {
+                    std::cerr << "Error: empty API key" << std::endl;
+                    return 1;
+                }
+            }
+            return client.cloud_auth(config.cloud_provider, key);
+        }
+        if (cloud_clear_cmd->count() > 0) {
+            return client.cloud_auth_clear(config.cloud_provider);
+        }
+        if (cloud_list_cmd->count() > 0) {
+            return client.cloud_list();
+        }
+        // No subcommand specified: print help.
+        std::cout << cloud_cmd->help() << std::endl;
+        return 0;
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {

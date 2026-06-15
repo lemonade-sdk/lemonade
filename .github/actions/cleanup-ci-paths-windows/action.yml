@@ -1,0 +1,110 @@
+name: Cleanup Windows CI paths
+
+description: Remove Windows CI directories using long-path-safe deletion.
+
+inputs:
+  paths:
+    description: Newline-separated list of paths to remove, or roots to prune when prune-children-older-than-days is set.
+    required: true
+  expected-root:
+    description: Optional root that every deleted path must be under.
+    required: false
+    default: ''
+  prune-children-older-than-days:
+    description: Optional age threshold. When set, delete child directories under each path that are older than this many days instead of deleting the paths themselves.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Cleanup Windows CI paths
+      shell: powershell
+      env:
+        CLEANUP_PATHS: ${{ inputs.paths }}
+        EXPECTED_ROOT: ${{ inputs.expected-root }}
+        PRUNE_CHILDREN_OLDER_THAN_DAYS: ${{ inputs.prune-children-older-than-days }}
+      run: |
+        $ErrorActionPreference = "Continue"
+
+        function Get-NormalizedFullPath {
+          param([string]$Path)
+          return [System.IO.Path]::GetFullPath($Path)
+        }
+
+        function Test-PathUnderRoot {
+          param(
+            [string]$Path,
+            [string]$ExpectedRoot
+          )
+
+          if (-not $ExpectedRoot) { return $true }
+          if (-not $Path) { return $false }
+
+          $fullPath = Get-NormalizedFullPath $Path
+          $fullRoot = Get-NormalizedFullPath $ExpectedRoot
+
+          if (-not $fullPath.EndsWith("\")) { $fullPath = "$fullPath\" }
+          if (-not $fullRoot.EndsWith("\")) { $fullRoot = "$fullRoot\" }
+
+          return $fullPath.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)
+        }
+
+        function Remove-LongPathTree {
+          param([string]$Path)
+
+          if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+
+          $fullPath = Get-NormalizedFullPath $Path
+          if (-not (Test-PathUnderRoot -Path $fullPath -ExpectedRoot $env:EXPECTED_ROOT)) {
+            Write-Host "Skipping cleanup outside expected root: $fullPath" -ForegroundColor Yellow
+            return
+          }
+
+          if ($fullPath.StartsWith("\\")) {
+            $longPath = "\\?\UNC\" + $fullPath.Substring(2)
+          } else {
+            $longPath = "\\?\" + $fullPath
+          }
+
+          Write-Host "Removing path: $fullPath" -ForegroundColor Yellow
+          cmd /c rmdir /s /q "$longPath" 2>$null
+          if (Test-Path -LiteralPath $Path) {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+          }
+        }
+
+        $paths = @($env:CLEANUP_PATHS -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($paths.Count -eq 0) {
+          Write-Host "No paths provided for cleanup."
+          exit 0
+        }
+
+        $pruneDays = $null
+        if ($env:PRUNE_CHILDREN_OLDER_THAN_DAYS) {
+          try {
+            $pruneDays = [int]$env:PRUNE_CHILDREN_OLDER_THAN_DAYS
+          } catch {
+            Write-Host "Invalid prune-children-older-than-days value: $env:PRUNE_CHILDREN_OLDER_THAN_DAYS" -ForegroundColor Red
+            exit 1
+          }
+        }
+
+        if ($null -ne $pruneDays) {
+          $cutoff = (Get-Date).AddDays(-$pruneDays)
+          foreach ($root in $paths) {
+            if (-not (Test-Path -LiteralPath $root)) { continue }
+            if (-not (Test-PathUnderRoot -Path $root -ExpectedRoot $env:EXPECTED_ROOT)) {
+              Write-Host "Skipping prune root outside expected root: $root" -ForegroundColor Yellow
+              continue
+            }
+
+            Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.LastWriteTime -lt $cutoff } |
+              ForEach-Object { Remove-LongPathTree $_.FullName }
+          }
+        } else {
+          foreach ($path in $paths) {
+            Remove-LongPathTree $path
+          }
+        }

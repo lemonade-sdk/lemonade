@@ -36,6 +36,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `status`            | Check if server can be reached. If it is, prints server information. Use `--json` for machine-readable output. |
 | `logs`              | Open server logs in the web UI. |
 | `backends`          | List available recipes and backends. Use `install` or `uninstall` to manage backends. |
+| `cloud`             | Manage cloud OpenAI-compatible providers. See command options [below](#options-for-cloud). |
 | `scan`              | Scan for network beacons on the local network. See command options [below](#options-for-scan). |
 
 ### Model Management
@@ -139,6 +140,9 @@ lemonade load Qwen3-0.6B-GGUF --ctx-size 8192
 
 # Install a backend for a recipe
 lemonade backends install llamacpp:vulkan
+
+# Register a cloud OpenAI-compatible provider (see `lemonade cloud --help`)
+lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
 
 # Export model info to JSON file
 lemonade export Qwen3-0.6B-GGUF --output model-info.json
@@ -323,7 +327,6 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | `4096` |
-| `--flm-args ARGS` | Custom arguments to pass to flm serve (e.g., `"--socket 20 --q-len 15"`) | `""` |
 
 #### RyzenAI LLM (`ryzenai-llm` recipe)
 
@@ -528,6 +531,73 @@ lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
 ```
 
+## Options for cloud
+
+The `cloud` command manages OpenAI-compatible cloud providers (Fireworks, OpenAI, OpenRouter, Together, etc.). Provider URLs persist in `lemond`'s `config.json`; API keys live in env vars (preferred) or `lemond`'s process memory and are never written to disk. See the [Cloud Offload guide](./configuration/cloud.md) for the full workflow.
+
+```bash
+lemonade cloud [install|uninstall|auth|clear|list]
+```
+
+### `cloud install`
+
+Register a new cloud provider. Optional `--api-key` stores the key in process memory for the lifetime of the running `lemond`; for persistence across restarts, set `LEMONADE_<PROVIDER>_API_KEY` in `lemond`'s environment instead.
+
+```bash
+lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `PROVIDER` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `--base-url URL` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `--api-key KEY` | No | Optional. Stored in `lemond` process memory only. |
+
+Example:
+
+```bash
+lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
+```
+
+### `cloud uninstall`
+
+Remove a provider record and drop its discovered models from the catalog. The provider's env-var-based key (if any) is unaffected — only the persisted URL and any in-memory runtime key are cleared.
+
+```bash
+lemonade cloud uninstall PROVIDER
+```
+
+### `cloud auth`
+
+Supply an API key for an installed provider at runtime. The key lives in `lemond`'s process memory only and is cleared on restart. If `LEMONADE_<PROVIDER>_API_KEY` is already set in `lemond`'s environment, this command refuses with a conflict error (env vars take precedence).
+
+```bash
+lemonade cloud auth PROVIDER [--api-key KEY]
+```
+
+With no `--api-key`, the command prompts for the key interactively (TTY only).
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `PROVIDER` | Yes | Installed provider name. |
+| `--api-key KEY` | No | API key. If omitted, prompted on TTY. |
+
+### `cloud clear`
+
+Clear the in-memory runtime key for a provider. Any env-var key remains in effect.
+
+```bash
+lemonade cloud clear PROVIDER
+```
+
+### `cloud list`
+
+Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered.
+
+```bash
+lemonade cloud list
+```
+
 ## Options for scan
 
 The `scan` command scans for network beacons on the local network. Beacons are UDP broadcasts sent by Lemonade Server instances to announce their presence. This command listens for these beacons and displays any discovered servers:
@@ -588,7 +658,6 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
-| `--flm-args ARGS` | Custom args for flm serve. Repeat for multiple. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
 **Preflight behavior:**

@@ -168,7 +168,6 @@ struct BenchCliOptions {
     std::string compare_file;
     // Backend-specific custom args (repeatable for multiple comparisons)
     std::vector<std::string> llamacpp_args;
-    std::vector<std::string> flm_args;
     std::vector<std::string> vllm_args;
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;
@@ -193,7 +192,7 @@ struct BenchConfig {
     bool memory_tracking = true;
     bool reload = true;  // unload+reload model between runs to clear prompt cache
     std::string compare_file;
-    // Backend-specific custom args (keyed by recipe name: "llamacpp", "flm", "vllm", "sd-cpp", "whispercpp")
+    // Backend-specific custom args (keyed by recipe name: "llamacpp", "vllm", "sd-cpp", "whispercpp")
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
 };
