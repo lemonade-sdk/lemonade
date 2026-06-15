@@ -470,7 +470,7 @@ void LlamaCppServer::load(const std::string& model_name,
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
                 if (!therock_bin.empty()) {
-                    new_path = therock_bin;
+                    new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin)));
                 }
             }
         }
@@ -492,15 +492,15 @@ void LlamaCppServer::load(const std::string& model_name,
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
         // llama-server.exe. Prepend the executable directory to PATH so the loader
         // resolves them before any system-wide CUDA install.
-        fs::path exe_dir = fs::path(executable).parent_path();
-        std::string new_path = exe_dir.string();
+        fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();
+        std::string new_path = path_to_utf8(exe_dir);
 
         const char* existing_path = std::getenv("PATH");
         if (existing_path && strlen(existing_path) > 0) {
             new_path += ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
-        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
     }
 #endif
 
@@ -557,8 +557,18 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Start process (inherit output if debug logging enabled, filter health check spam)
     // Keep llama-server output visible at info log level.
+    std::string process_executable = executable;
+    std::string working_dir;
+#ifdef _WIN32
+    // Avoid inheriting a protected launcher cwd while keeping Linux/macOS behavior unchanged.
+    fs::path executable_path = fs::absolute(fs::path(executable));
+    process_executable = path_to_utf8(executable_path);
+    working_dir = path_to_utf8(executable_path.parent_path());
+#endif
+
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_llama_output, true, env_vars));
+    set_process_handle(ProcessManager::start_process(
+        process_executable, args, working_dir, inherit_llama_output, true, env_vars));
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
