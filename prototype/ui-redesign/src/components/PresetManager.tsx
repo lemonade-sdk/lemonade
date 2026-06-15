@@ -699,6 +699,7 @@ const SlideoverContent: React.FC<{
   const [topP, setTopP] = useState(sp.top_p ?? 0.9);
   const [topK, setTopK] = useState(sp.top_k ?? 40);
   const [repeatPenalty, setRepeatPenalty] = useState(sp.repeat_penalty ?? 1.05);
+  const [pinned, setPinned] = useState(ro.pinned ?? false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -722,6 +723,7 @@ const SlideoverContent: React.FC<{
     setTopP(nextSp.top_p ?? 0.9);
     setTopK(nextSp.top_k ?? 40);
     setRepeatPenalty(nextSp.repeat_penalty ?? 1.05);
+    setPinned(nextRo.pinned ?? false);
     setSaved(false);
   }, [preset, autoRuns]);
 
@@ -745,13 +747,13 @@ const SlideoverContent: React.FC<{
       description,
       applies_to: normalizePresetCapabilities(preset.id, appliesTo),
       engine_hint: engineHint,
-      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
+      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, pinned),
       sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
       starter: false,
       auto_opt_enabled: !manualArgsActive,
       auto_opt_run_id: manualArgsActive ? null : (autoOptRunId || autoRuns[0]?.id || null),
     };
-  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, manualArgsActive, autoOptRunId, autoRuns]);
+  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, pinned, manualArgsActive, autoOptRunId, autoRuns]);
 
   const selectedModel = models.find(m => modelName(m) === applyTarget);
   const selectedModelContextLimit = contextLimitForModel(selectedModel);
@@ -820,6 +822,19 @@ const SlideoverContent: React.FC<{
               <strong>No preset overrides</strong>
               <span>Lemonade uses the selected model's current defaults for sampling, context and image generation.</span>
               <span className="preset-param-lines">{presetParamPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
+            </div>
+          )}
+          {!isDefaultEmptyPreset && (
+            <div className="field">
+              <label className="backends__toggle">
+                <input
+                  type="checkbox"
+                  checked={pinned}
+                  disabled={isReadOnly}
+                  onChange={e => setPinned(e.target.checked)}
+                />
+                <span>Pin model (prevent eviction)</span>
+              </label>
             </div>
           )}
           {!isDefaultEmptyPreset && hasChat && (
@@ -927,6 +942,7 @@ function buildRecipeOptions(
   llamacppDevice: string,
   llamacppArgs: string,
   sdcppArgs: string,
+  pinned: boolean,
 ): RecipeOptions {
   const opts: RecipeOptions = {};
   const hasAll = appliesTo.includes('all');
@@ -944,6 +960,9 @@ function buildRecipeOptions(
     opts.width = imgWidth;
     opts.height = imgHeight;
     if (sdcppArgs) opts.sdcpp_args = sdcppArgs;
+  }
+  if (pinned) {
+    opts.pinned = true;
   }
   return opts;
 }

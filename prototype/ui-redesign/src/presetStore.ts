@@ -26,6 +26,7 @@ export interface RecipeOptions {
   vllm_args?: string;
   flm_args?: string;
   merge_args?: boolean;
+  pinned?: boolean;
 }
 
 export interface SamplingParams {
@@ -439,25 +440,34 @@ function pickRecipeOptions(options: RecipeOptions, keys: Array<keyof RecipeOptio
 export function recipeOptionsForCapability(options: RecipeOptions, capability: ModelCapability | 'all' | 'vision' | 'code' | 'transcription'): RecipeOptions {
   if (!options || Object.keys(options).length === 0) return {};
 
+  const baseOpts = pickRecipeOptions(options, ['pinned']);
+  let capOpts: RecipeOptions = {};
+
   switch (capability) {
     case 'image':
-      return pickRecipeOptions(options, ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+      capOpts = pickRecipeOptions(options, ['steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args', 'merge_args']);
+      break;
     case 'audio':
     case 'transcription':
-      return pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
+      capOpts = pickRecipeOptions(options, ['whispercpp_backend', 'whispercpp_args', 'moonshine_backend', 'moonshine_args', 'merge_args']);
+      break;
     case 'tts':
-      return pickRecipeOptions(options, ['merge_args']);
+      capOpts = pickRecipeOptions(options, ['merge_args']);
+      break;
     case 'embedding':
     case 'reranking':
     case 'chat':
     case 'omni':
     case 'vision':
     case 'code':
-      return pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
+      capOpts = pickRecipeOptions(options, ['ctx_size', 'llamacpp_backend', 'llamacpp_device', 'llamacpp_args', 'flm_args', 'vllm_backend', 'vllm_args', 'merge_args']);
+      break;
     case 'all':
     default:
       return { ...options };
   }
+
+  return { ...baseOpts, ...capOpts };
 }
 
 export function recipeOptionsForModel(modelName: string, model?: ModelInfo | null): RecipeOptions | undefined {

@@ -9,7 +9,7 @@ export type IconName =
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
   | 'search' | 'edit' | 'download' | 'play' | 'plug' | 'box' | 'alert' | 'clock'
   | 'citrus' | 'scale' | 'gem' | 'gauge' | 'timer' | 'pen-line' | 'library'
-  | 'hard-drive' | 'sliders-horizontal';
+  | 'hard-drive' | 'sliders-horizontal' | 'pin';
 
 interface IconProps {
   name: IconName;
@@ -67,7 +67,8 @@ export const Icon: React.FC<IconProps> = ({ name, size = 16, className, title })
       case 'pen-line': return <><path d="M4 20h4l11-11a2.1 2.1 0 00-3-3L5 17v3z" /><path d="M14 7l3 3" /><path d="M3 22h18" /></>;
       case 'library': return <><path d="M4 19.5V5a2 2 0 012-2h12v16H6a2 2 0 00-2 2" /><path d="M8 7h6" /><path d="M8 11h6" /><path d="M8 15h4" /></>;
       case 'hard-drive': return <><path d="M4 12l2-7h12l2 7" /><rect x="4" y="12" width="16" height="8" rx="2" /><path d="M7 16h.01" /><path d="M17 16h.01" /></>;
-      case 'sliders-horizontal': return <><path d="M4 6h7" /><path d="M15 6h5" /><circle cx="13" cy="6" r="2" /><path d="M4 12h3" /><path d="M11 12h9" /><circle cx="9" cy="12" r="2" /><path d="M4 18h10" /><path d="M18 18h2" /><circle cx="16" cy="18" r="2" /></>;
+       case 'sliders-horizontal': return <><path d="M4 6h7" /><path d="M15 6h5" /><circle cx="13" cy="6" r="2" /><path d="M4 12h3" /><path d="M11 12h9" /><circle cx="9" cy="12" r="2" /><path d="M4 18h10" /><path d="M18 18h2" /><circle cx="16" cy="18" r="2" /></>;
+      case 'pin': return <><line x1="12" y1="17" x2="12" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.48A2 2 0 0 1 15 9.28V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.28a2 2 0 0 1-.78 1.24l-2.78 3.48a2 2 0 0 0-.44 1.24Z" /></>;
       default: return <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 9h6v6H9z" /></>;
     }
   })();

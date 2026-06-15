@@ -57,6 +57,7 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
     type: String(model.type || 'unknown').toLowerCase(),
     last_use: Number(model.last_use || Date.now()),
     recipe_options: isObject(model.recipe_options) ? model.recipe_options : undefined,
+    pinned: Boolean(model.pinned),
   };
 }
 
@@ -118,6 +119,7 @@ export interface LoadedModel {
   type: string;
   last_use: number;
   recipe_options?: Record<string, unknown>;
+  pinned?: boolean;
 }
 
 export interface ModelInfo {
@@ -675,6 +677,15 @@ class LemonadeAPI {
   async unloadModel(modelName?: string): Promise<unknown> {
     const body = modelName ? { model_name: modelName } : {};
     const result = await this._json('/api/v1/unload', { method: 'POST', body });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  async pinModel(modelName: string, pinned: boolean): Promise<unknown> {
+    const result = await this._json('/internal/pin', {
+      method: 'POST',
+      body: { model_name: modelName, pinned },
+    });
     this._notifyModelsChanged();
     return result;
   }
