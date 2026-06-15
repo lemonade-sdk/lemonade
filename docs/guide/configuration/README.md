@@ -20,6 +20,15 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 
 > Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
 
+### Seeding defaults for packaged installs
+
+On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+
+1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+
+Values set in the user's `config.json` always take precedence over these seeded defaults.
+
 ### Example config.json
 
 ```json
@@ -152,6 +161,15 @@ Backend-specific settings are nested under their backend name:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `cpu_bin` | "builtin" | Backend binary selection — see [Backend binary selection](#backend-binary-selection) |
+
+**cloud_providers** — Cloud OpenAI-compatible providers (see [Cloud Offload](./cloud.md)). Array, one object per installed provider:
+
+| Key | Description |
+|-----|-------------|
+| `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
+| `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+
+API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
 ### Backend binary selection
 

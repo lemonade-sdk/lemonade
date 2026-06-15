@@ -320,11 +320,11 @@ public:
             if (stderr_write) CloseHandle(stderr_write);
             if (stdout_read) CloseHandle(stdout_read);
             if (stderr_read) CloseHandle(stderr_read);
+            if (nul_input && nul_input != INVALID_HANDLE_VALUE) CloseHandle(nul_input);
 
             std::string full_error = "Failed to start process '" + executable +
                                     "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
             LOG(ERROR, "ProcessManager") << full_error << std::endl;
-            if (nul_input && nul_input != INVALID_HANDLE_VALUE) CloseHandle(nul_input);
             throw std::runtime_error(full_error);
         }
 
@@ -366,6 +366,14 @@ public:
             return false;
         }
 
+        DWORD wait_result = WaitForSingleObject(handle.handle, 0);
+        if (wait_result == WAIT_OBJECT_0) {
+            return false;
+        }
+        if (wait_result == WAIT_TIMEOUT) {
+            return true;
+        }
+
         DWORD exit_code;
         if (!GetExitCodeProcess(handle.handle, &exit_code)) {
             return false;
@@ -385,7 +393,7 @@ public:
         }
 
         if (exit_code == STILL_ACTIVE) {
-            return -1;  // Still running
+            return -1;
         }
 
         return static_cast<int>(exit_code);
@@ -408,10 +416,36 @@ public:
         return exit_code;
     }
 
+    int reap(ProcessHandle handle) override {
+        if (!handle.handle) {
+            return -1;
+        }
+
+        DWORD wait_result = WaitForSingleObject(handle.handle, 0);
+        if (wait_result != WAIT_OBJECT_0) {
+            return -1;
+        }
+
+        DWORD exit_code = STILL_ACTIVE;
+        if (!GetExitCodeProcess(handle.handle, &exit_code)) {
+            CloseHandle(handle.handle);
+            return -1;
+        }
+
+        CloseHandle(handle.handle);
+        return exit_code == STILL_ACTIVE ? -1 : static_cast<int>(exit_code);
+    }
+
     void kill(ProcessHandle handle) override {
         if (handle.handle) {
             TerminateProcess(handle.handle, 1);
             CloseHandle(handle.handle);
+        }
+    }
+
+    void terminate_without_cleanup(ProcessHandle handle) override {
+        if (handle.handle) {
+            TerminateProcess(handle.handle, 1);
         }
     }
 
@@ -597,7 +631,7 @@ public:
         WSADATA wsa_data;
         WSAStartup(MAKEWORD(2, 2), &wsa_data);
 
-        for (int port = start_port; port < start_port + 1000; port++) {
+        for (int port = start_port; port < start_port + 1000; ++port) {
             // Test if port is free by attempting to bind to localhost
             int sock = socket(AF_INET, SOCK_STREAM, 0);
             if (sock < 0) {
@@ -619,7 +653,7 @@ public:
         }
 
         WSACleanup();
-        return -1;  // No free port found
+        return -1;
     }
 
     int run_command(const std::string& command, std::string& output, int timeout_seconds) override {

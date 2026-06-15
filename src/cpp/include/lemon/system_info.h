@@ -122,6 +122,10 @@ public:
 
     // Check if the process is running under systemd
     static bool is_running_under_systemd();
+
+    // Global GPU memory pressure across all processes (used/total in [0,1]),
+    // or -1.0 if no source is available. Used by the dynamic VRAM eviction engine.
+    static double get_global_vram_usage_pct();
 };
 
 // Windows implementation
