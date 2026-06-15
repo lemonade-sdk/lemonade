@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { serverConfig } from './utils/serverConfig';
 import { useModels } from './hooks/useModels';
@@ -403,6 +403,12 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
     { mode: 'install' } | { mode: 'edit'; row: CloudProviderRow } | null
   >(null);
 
+  // To avoid frequent, visually visiable reloads
+  const showErrorRef = useRef(showError);
+  useEffect(() => {
+    showErrorRef.current = showError;
+  }, [showError]);
+
   // Install / uninstall / edit on a cloud provider can change the set of
   // models visible in /v1/models (discovery adds the provider's chat-capable
   // ids, eviction removes them). The Backends tab doesn't re-fetch the
@@ -416,11 +422,11 @@ const CloudProvidersSection: React.FC<CloudProvidersSectionProps> = ({ searchQue
       const rows = await fetchCloudProviders();
       setProviders(rows);
     } catch (err) {
-      showError(`Failed to load cloud providers: ${err instanceof Error ? err.message : String(err)}`);
+      showErrorRef.current(`Failed to load cloud providers: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsLoading(false);
     }
-  }, [showError]);
+  }, []);
 
   const reloadAll = useCallback(async () => {
     await reload();
