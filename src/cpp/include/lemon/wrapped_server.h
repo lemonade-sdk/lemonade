@@ -5,6 +5,10 @@
 #include <functional>
 #include <chrono>
 #include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <atomic>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
@@ -18,6 +22,13 @@ namespace lemon {
 
 using json = nlohmann::json;
 using utils::ProcessHandle;
+
+class BackendStreamRetryableReset : public std::runtime_error {
+public:
+    explicit BackendStreamRetryableReset(const std::string& reason)
+        : std::runtime_error(reason) {}
+};
+
 
 struct Telemetry {
     int input_tokens = 0;
@@ -64,15 +75,17 @@ public:
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
           last_access_time_(std::chrono::steady_clock::now()),
-          is_busy_(false) {}
+          state_(ModelState::LOADING),
+          active_request_count_(0),
+          maintenance_in_progress_(false),
+          load_duration_ms_(0),
+          last_backend_activity_(std::chrono::steady_clock::now()) {}
 
-    virtual ~WrappedServer() = default;
+    virtual ~WrappedServer();
 
 
-    // Set log level
     void set_log_level(const std::string& log_level) { log_level_ = log_level; }
 
-    // Check if debug logging is enabled
     bool is_debug() const { return log_level_ == "debug" || log_level_ == "trace"; }
 
     // Multi-model support: Track last access time (for LRU eviction)
@@ -84,38 +97,158 @@ public:
         return last_access_time_;
     }
 
-    // Multi-model support: Track if server is currently processing a request
-    void set_busy(bool busy) {
-        std::lock_guard<std::mutex> lock(busy_mutex_);
-        is_busy_ = busy;
-        if (!busy) {
-            busy_cv_.notify_all();
+    // State management
+    ModelState get_state() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return state_;
+    }
+
+    void set_state(ModelState new_state) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        state_ = new_state;
+        state_cv_.notify_all();
+    }
+
+    void set_load_duration_ms(long ms) {
+        load_duration_ms_ = ms;
+    }
+
+    long get_load_duration_ms() const {
+        return load_duration_ms_;
+    }
+
+    // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
+    // Blocks if LOADING.
+    //
+    // Concurrency contract with the eviction engine (see try_commit_eviction):
+    //   - EVICTING is *tentative*. The engine marks the model EVICTING under
+    //     state_mutex_, then later calls try_commit_eviction() — also under
+    //     state_mutex_ — to atomically decide whether to physically unload.
+    //   - If a request arrives while still EVICTING (pre-commit), we "rescue" the
+    //     model here: flip back to IN_USE so try_commit_eviction() sees it is no
+    //     longer evictable and aborts the unload. No reload, no torn state.
+    //   - Once the engine commits, it sets UNLOADED before releasing state_mutex_,
+    //     so any later acquire observes UNLOADED and returns false (router reloads).
+    // Because both paths take state_mutex_, the rescue/commit decision is atomic.
+    bool acquire_for_inference() {
+        std::unique_lock<std::mutex> lock(state_mutex_);
+
+        // Wait out transient states: LOADING (initial load or an in-progress
+        // restore) and an in-flight maintenance downsize. Waiting for the latter
+        // ensures restore() below never races a concurrent downsize() on the same
+        // backend subprocess. Looped because the state can change while we wait.
+        while (state_ == ModelState::LOADING || maintenance_in_progress_) {
+            state_cv_.wait(lock);
         }
+
+        if (state_ == ModelState::UNLOADED) {
+            return false;
+        }
+
+        if (state_ == ModelState::DOWNSIZED) {
+            // Restore the model to full readiness before serving. (A downsize that
+            // failed leaves the model READY, so only DOWNSIZED needs restoring.)
+            state_ = ModelState::LOADING; // temporarily block others
+            lock.unlock();
+
+            this->restore();
+
+            lock.lock();
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+
+        // Covers READY, IN_USE, and EVICTING (rescue): claim the model.
+        active_request_count_++;
+        state_ = ModelState::IN_USE;
+        state_cv_.notify_all();
+        return true;
+    }
+
+    // Called by the eviction engine (under the router lock) to atomically decide
+    // whether a model marked EVICTING may actually be unloaded. Returns true only
+    // if the model is still idle and EVICTING (commit -> transition to UNLOADED so
+    // later acquires reload). Returns false if a request rescued it (state changed
+    // to IN_USE) or it is otherwise busy, reverting it to READY.
+    bool try_commit_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING && active_request_count_ == 0) {
+            state_ = ModelState::UNLOADED;
+            state_cv_.notify_all();
+            return true;
+        }
+        // Rescued or busy: abandon the eviction.
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+        return false;
+    }
+
+    void release_inference() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (--active_request_count_ == 0) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+    }
+
+    // Called by the eviction engine (under the router lock) to atomically claim an
+    // idle model for a maintenance downsize. Returns true only if the model is
+    // currently READY and idle, transitioning it to DOWNSIZING and marking
+    // maintenance in progress so wait_until_not_busy() — and therefore
+    // evict_server() — blocks until the matching finish_downsize() runs. This is
+    // what keeps the server alive while the engine performs downsize() outside the
+    // router lock with only a raw pointer to it.
+    bool try_begin_downsize() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::READY && active_request_count_ == 0) {
+            state_ = ModelState::DOWNSIZING;
+            maintenance_in_progress_ = true;
+            state_cv_.notify_all();
+            return true;
+        }
+        return false;
+    }
+
+    // Completes the maintenance downsize started by try_begin_downsize(). Clears
+    // the maintenance flag (releasing any waiters in wait_until_not_busy() /
+    // acquire_for_inference()) and, while still DOWNSIZING, transitions to
+    // DOWNSIZED on success or back to READY on failure so a failed backend
+    // operation never leaves a model falsely marked as downsized.
+    void finish_downsize(bool success) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        maintenance_in_progress_ = false;
+        if (state_ == ModelState::DOWNSIZING) {
+            state_ = success ? ModelState::DOWNSIZED : ModelState::READY;
+        }
+        state_cv_.notify_all();
     }
 
     bool is_busy() const {
-        std::lock_guard<std::mutex> lock(busy_mutex_);
-        return is_busy_;
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return active_request_count_ > 0 || maintenance_in_progress_;
     }
 
-    // Wait until the server is no longer busy processing a request.
-    // If timeout_seconds < 0, wait indefinitely (default behavior).
-    // If timeout_seconds >= 0, wait up to that many seconds before returning.
-    void wait_until_not_busy(int timeout_seconds = -1) const {
-        std::unique_lock<std::mutex> lock(busy_mutex_);
+    // Wait until the router no longer has active work using this object.
+    // Returns true when the server is idle. Returns false if a bounded wait
+    // timed out; callers must not destroy the WrappedServer in that case.
+    bool wait_until_not_busy(int timeout_seconds = -1) const {
+        std::unique_lock<std::mutex> lock(state_mutex_);
+        auto not_busy = [this] {
+            return active_request_count_ == 0 && !maintenance_in_progress_;
+        };
+
         if (timeout_seconds < 0) {
-            // Indefinite wait — original behavior
-            while (is_busy_) {
-                busy_cv_.wait(lock);
-            }
-        } else {
-            // Bounded wait with timeout
-            if (!busy_cv_.wait_for(lock, std::chrono::seconds(timeout_seconds),
-                                   [this] { return !is_busy_; })) {
-                // Timeout expired — server is still busy, proceed anyway
-                // The backend will be force-killed after SIGTERM timeout
-            }
+            state_cv_.wait(lock, not_busy);
+            return true;
         }
+
+        return state_cv_.wait_for(
+            lock,
+            std::chrono::seconds(timeout_seconds),
+            not_busy
+        );
     }
 
     // Multi-model support: Model metadata
@@ -133,7 +266,19 @@ public:
     ModelType get_model_type() const { return model_type_; }
     DeviceType get_device_type() const { return device_type_; }
     RecipeOptions get_recipe_options() const { return recipe_options_; }
-    int get_process_id() const { return process_handle_.pid; }
+    int get_process_id() const { return get_process_handle_snapshot().pid; }
+    int get_backend_port() const;
+
+    // Cheap liveness gate used by the router. On POSIX this relies on
+    // ProcessManager::is_running(), which intentionally checks without reaping.
+    virtual bool is_backend_alive() const;
+
+    // True once the backend watchdog force-reset the child process.
+    bool was_watchdog_triggered() const { return watchdog_triggered_.load(std::memory_order_acquire); }
+
+    // Human-readable state for /health and debugging endpoints.
+    virtual std::string get_backend_health_state() const;
+    std::string get_watchdog_reset_reason() const;
 
     // Load a model and start the server
     virtual void load(const std::string& model_name,
@@ -143,6 +288,20 @@ public:
 
     // Unload the model and stop the server
     virtual void unload() = 0;
+
+    // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
+    // downsize succeeded (or was a no-op), false if the backend operation failed.
+    // The default is a successful no-op: backends that cannot downsize transition
+    // to DOWNSIZED once and are not retried while idle.
+    virtual bool downsize() {
+        // No-op by default
+        return true;
+    }
+
+    // Restore the model from a downsized state
+    virtual void restore() {
+        // No-op by default
+    }
 
     // ICompletionServer implementation - forward requests to the wrapped server
     virtual json chat_completion(const json& request) override = 0;
@@ -168,15 +327,72 @@ public:
         return get_base_url() + "/v1";
     }
 
+    Telemetry get_telemetry() const { return telemetry_; }
+
+    // Mark observable backend progress. Streaming proxies call this for every
+    // delivered chunk; non-streaming requests call it on start/finish and when
+    // the watchdog observes a healthy out-of-band probe.
+    void note_backend_activity();
+
+    void set_telemetry(int input_tokens, int output_tokens,
+                      double time_to_first_token, double tokens_per_second) {
+        telemetry_.input_tokens = input_tokens;
+        telemetry_.output_tokens = output_tokens;
+        telemetry_.time_to_first_token = time_to_first_token;
+        telemetry_.tokens_per_second = tokens_per_second;
+    }
+
+    void set_prompt_tokens(int prompt_tokens) {
+        telemetry_.prompt_tokens = prompt_tokens;
+    }
+
 protected:
+    struct BackendWatchdogPolicy {
+        std::string health_endpoint = "/health";
+        bool enabled = true;
+        bool monitor_streaming_requests = true;
+    };
+
+    enum class BackendRequestKind {
+        NonStreaming,
+        Streaming
+    };
+
+    class BackendRequestScope {
+    public:
+        BackendRequestScope(WrappedServer& server, BackendRequestKind kind);
+        ~BackendRequestScope();
+        BackendRequestScope(const BackendRequestScope&) = delete;
+        BackendRequestScope& operator=(const BackendRequestScope&) = delete;
+    private:
+        WrappedServer& server_;
+        BackendRequestKind kind_;
+    };
+
+    static bool has_process_handle(const ProcessHandle& handle);
+    ProcessHandle get_process_handle_snapshot() const;
+    void set_process_handle(ProcessHandle handle);
+    ProcessHandle consume_process_handle_for_cleanup();
+
     // Choose an available port
     int choose_port();
 
     // Wait for server to be ready (can be overridden for custom health checks)
     virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
+    // Configure/start the generic backend watchdog. Non-streaming requests are
+    // always monitored so a hung backend becomes a reload+retry delay instead
+    // of a stuck user request. Streaming can still avoid replaying partial data.
+    void configure_backend_watchdog(const BackendWatchdogPolicy& policy);
+    void start_backend_watchdog(const std::string& health_endpoint);
+    void start_backend_watchdog(const BackendWatchdogPolicy& policy);
+    void stop_backend_watchdog();
+    void set_watchdog_health_endpoint(const std::string& endpoint);
+
     // Common method to forward requests to the wrapped server (non-streaming)
     json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
+
+    json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 
     // Forward multipart form data to the wrapped server
     json forward_multipart_request(const std::string& endpoint,
@@ -186,14 +402,17 @@ protected:
     // Validate that the process is running (platform-agnostic check)
     bool is_process_running() const;
 
-    // Get the base URL for the wrapped server
     std::string get_base_url() const {
-        return "http://127.0.0.1:" + std::to_string(port_);
+        return "http://127.0.0.1:" + std::to_string(get_backend_port());
     }
+
+    json create_watchdog_reset_response() const;
 
     std::string server_name_;
     int port_;
     ProcessHandle process_handle_;
+    mutable std::mutex process_mutex_;
+    Telemetry telemetry_;
     std::string log_level_;
     ModelManager* model_manager_;  // Non-owning pointer to ModelManager
     BackendManager* backend_manager_;  // Non-owning pointer to BackendManager
@@ -207,9 +426,37 @@ protected:
     RecipeOptions recipe_options_;
 
     // Busy state tracking (for safe eviction)
-    mutable std::mutex busy_mutex_;
-    mutable std::condition_variable busy_cv_;
-    bool is_busy_;
+    mutable std::mutex state_mutex_;
+    mutable std::condition_variable state_cv_;
+    ModelState state_;
+    int active_request_count_;
+
+    // True while the eviction engine is performing a maintenance downsize on this
+    // server. Counts as "busy" so wait_until_not_busy() (and therefore
+    // evict_server()) blocks until the operation completes, preventing the server
+    // from being unloaded/destroyed while the engine holds a raw pointer to it.
+    bool maintenance_in_progress_;
+    long load_duration_ms_;
+
+private:
+    void begin_backend_request(BackendRequestKind kind);
+    void end_backend_request(BackendRequestKind kind);
+    void backend_watchdog_loop();
+    bool has_backend_process_exited() const;
+    void request_backend_reset_from_watchdog(const std::string& reason);
+
+    mutable std::mutex watchdog_mutex_;
+    std::condition_variable watchdog_cv_;
+    std::thread watchdog_thread_;
+    BackendWatchdogPolicy watchdog_policy_;
+    std::chrono::steady_clock::time_point last_backend_activity_;
+    std::string watchdog_reset_reason_;
+    std::atomic<bool> watchdog_stop_requested_{false};
+    std::atomic<bool> watchdog_running_{false};
+    std::atomic<bool> watchdog_triggered_{false};
+    std::atomic<int> active_backend_requests_{0};
+    std::atomic<int> active_streaming_requests_{0};
+    std::atomic<int> active_non_streaming_requests_{0};
 };
 
 } // namespace lemon

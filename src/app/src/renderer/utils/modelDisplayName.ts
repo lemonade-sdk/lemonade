@@ -10,7 +10,19 @@ export const CANONICAL_PREFIXES: { prefix: string; suffix: string; sourceRank: n
 
 // Render a model id as a human-readable display name. Bare ids (winners) render
 // as-is; canonical-prefixed ids (shadowed sources) render as "NAME (source)".
-export const getModelDisplayName = (modelName: string): string => {
+//
+// Cloud models are namespaced "<provider>.<model>" (e.g. "fireworks.glm-5p1").
+// In the Model Manager they're grouped under their provider, so the provider
+// prefix is redundant — pass the model's info and we strip it, rendering just
+// the bare model name ("glm-5p1"). Non-cloud callers can omit `info`.
+export const getModelDisplayName = (
+  modelName: string,
+  info?: { recipe?: string; cloud_provider?: string },
+): string => {
+  if (info?.recipe === 'cloud' && info.cloud_provider) {
+    const prefix = info.cloud_provider + '.';
+    if (modelName.startsWith(prefix)) return modelName.slice(prefix.length);
+  }
   const match = CANONICAL_PREFIXES.find(p => modelName.startsWith(p.prefix));
   return match ? modelName.slice(match.prefix.length) + match.suffix : modelName;
 };

@@ -2,8 +2,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <cmath>
 #include <ctime>
 #include <map>
+#include <optional>
+#include <regex>
 #include <set>
 #include <string>
 
@@ -56,7 +60,7 @@ const json& tool_definitions() {
 
 // Fixed image size for collection-mode image tools, read from toolDefinitions.json
 // (the single source of truth shared with the desktop app's collectionImageConfig.ts;
-// both sides target SDServer::resolve_size). 2:1, 64-aligned. Falls back to a sane
+// both sides target SDServer::resolve_size). 2:1 and already 8-aligned. Falls back to a sane
 // default if the field is missing.
 const std::string& image_size() {
     static const std::string size = [] {
@@ -67,6 +71,149 @@ const std::string& image_size() {
         return std::string("512x256");
     }();
     return size;
+}
+
+constexpr int MAX_IMAGE_DIMENSION = 2048;
+constexpr int IMAGE_DIMENSION_STEP = 8;
+
+std::string trim_copy(std::string s) {
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
+    s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
+    return s;
+}
+
+std::string normalize_arg_string(const json& args, const std::string& key) {
+    if (!args.contains(key) || args[key].is_null()) return "";
+    if (args[key].is_string()) {
+        std::string s = trim_copy(args[key].get<std::string>());
+        std::string out;
+        out.reserve(s.size());
+        bool in_space = false;
+        for (unsigned char c : s) {
+            if (std::isspace(c)) {
+                if (!in_space) out.push_back(' ');
+                in_space = true;
+            } else {
+                out.push_back(static_cast<char>(std::tolower(c)));
+                in_space = false;
+            }
+        }
+        return out;
+    }
+    return args[key].dump();
+}
+
+std::optional<int> coerce_int(const json& value) {
+    if (value.is_number_integer()) return value.get<int>();
+    if (value.is_string()) {
+        const std::string s = trim_copy(value.get<std::string>());
+        if (!s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); })) {
+            try { return std::stoi(s); } catch (const std::exception&) { return std::nullopt; }
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<double> coerce_number(const json& value) {
+    if (value.is_number()) return value.get<double>();
+    if (value.is_string()) {
+        const std::string s = trim_copy(value.get<std::string>());
+        if (!s.empty()) {
+            try {
+                size_t idx = 0;
+                double parsed = std::stod(s, &idx);
+                if (idx == s.size()) return parsed;
+            } catch (const std::exception&) {}
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<int> normalize_image_dimension(int value) {
+    if (value <= 0) return std::nullopt;
+    int rounded = static_cast<int>(std::lround(
+        static_cast<double>(value) / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP);
+    rounded = std::max(IMAGE_DIMENSION_STEP, std::min(MAX_IMAGE_DIMENSION, rounded));
+    return rounded;
+}
+
+std::string format_image_size(int width, int height) {
+    const auto rounded_width = normalize_image_dimension(width);
+    const auto rounded_height = normalize_image_dimension(height);
+    if (rounded_width && rounded_height) {
+        return std::to_string(*rounded_width) + "x" + std::to_string(*rounded_height);
+    }
+    return "";
+}
+
+std::string parse_size_from_text(const std::string& text) {
+    if (text.empty()) return "";
+    // Mirror the desktop client's parser (lemonadeTools.ts): a WIDTHxHEIGHT token
+    // that is not embedded inside a longer number. std::regex (ECMAScript) lacks
+    // lookbehind, so the leading "not preceded by a digit" guard is emulated by
+    // consuming an optional non-digit boundary. "\xC3\x97" is UTF-8 for the '×'
+    // multiplication sign, matching the client's "×" alternative.
+    static const std::regex size_re("(?:^|[^\\d])(\\d{2,4})\\s*(?:x|by|\xC3\x97)\\s*(\\d{2,4})(?!\\d)",
+                                    std::regex::icase);
+    std::smatch match;
+    if (std::regex_search(text, match, size_re) && match.size() >= 3) {
+        try {
+            return format_image_size(std::stoi(match[1].str()), std::stoi(match[2].str()));
+        } catch (const std::exception&) { return ""; }
+    }
+    return "";
+}
+
+std::string resolve_image_size(const json& args) {
+    if (args.contains("size") && args["size"].is_string()) {
+        const std::string explicit_size = parse_size_from_text(args["size"].get<std::string>());
+        if (!explicit_size.empty()) return explicit_size;
+    }
+    // Be conservative: only the explicit size tool argument can change the
+    // output canvas. Prompt text is always image content, so dimensions that
+    // describe an object or visual detail inside the scene cannot hijack the
+    // canvas size.
+    return image_size();
+}
+
+std::string resolve_explicit_image_size(const json& args) {
+    if (args.contains("size") && args["size"].is_string()) {
+        return parse_size_from_text(args["size"].get<std::string>());
+    }
+    return "";
+}
+
+void copy_optional_image_args(const json& args, json& req) {
+    if (args.contains("steps")) {
+        const auto steps = coerce_int(args["steps"]);
+        if (steps && *steps > 0) req["steps"] = *steps;
+    }
+    if (args.contains("cfg_scale")) {
+        const auto cfg = coerce_number(args["cfg_scale"]);
+        if (cfg && *cfg > 0) req["cfg_scale"] = *cfg;
+    }
+    if (args.contains("seed")) {
+        const auto seed = coerce_int(args["seed"]);
+        if (seed) req["seed"] = *seed;
+    }
+    if (args.contains("sample_method") && args["sample_method"].is_string()) {
+        const std::string method = trim_copy(args["sample_method"].get<std::string>());
+        if (!method.empty()) req["sample_method"] = method;
+    }
+    if (args.contains("flow_shift")) {
+        const auto flow = coerce_number(args["flow_shift"]);
+        if (flow && *flow > 0) req["flow_shift"] = *flow;
+    }
+}
+
+std::string image_request_key(const json& args) {
+    json key = json::object();
+    for (const std::string& field : {"prompt", "size", "steps", "cfg_scale",
+                                     "seed", "sample_method", "flow_shift"}) {
+        key[field] = normalize_arg_string(args, field);
+    }
+    return key.dump();
 }
 
 std::string new_completion_id() {
@@ -289,7 +436,9 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
             result.tools.push_back(std::move(tool));
             result.tool_models[name] = match_model;
             const std::string guidance = def.value("prompt_guidance", "");
-            if (!guidance.empty()) tool_guidance += "\n" + guidance;
+            if (!guidance.empty()) {
+                tool_guidance += "\n" + replace_all(guidance, "{image_size}", image_size());
+            }
         }
     }
     if (!tool_list.empty() && tool_list.back() == '\n') tool_list.pop_back();
@@ -323,21 +472,7 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
     if (tool_name == "generate_image" || tool_name == "edit_image") {
         const std::string prompt = args.value("prompt", "");
 
-        bool want_edit = (tool_name == "edit_image");
-        const bool has_prev_image =
-            std::any_of(artifacts.begin(), artifacts.end(),
-                        [](const Artifact& a) { return a.type == "image"; });
-        // Auto-switch generate->edit when a prior image exists and the model can edit.
-        if (!want_edit && has_prev_image) {
-            try {
-                const auto info = model_manager_.get_model_info(model);
-                if (std::find(info.labels.begin(), info.labels.end(), "edit") != info.labels.end()) {
-                    want_edit = true;
-                }
-            } catch (const std::exception&) {}
-        }
-
-        if (want_edit) {
+        if (tool_name == "edit_image") {
             // Source: most recent generated image, else the seeded history image.
             std::string img_b64, img_mime;
             for (auto it = artifacts.rbegin(); it != artifacts.rend(); ++it) {
@@ -351,36 +486,41 @@ bool CollectionOrchestrator::execute_tool(const std::string& tool_name, const st
                 img_b64 = source_image_b64;
                 img_mime = source_image_mime.empty() ? "image/png" : source_image_mime;
             }
-            if (!img_b64.empty()) {
-                json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
-                            {"n", 1}, {"size", image_size()}, {"image_data", img_b64},
-                            {"image_filename", "image.png"}};
-                LOG(INFO, "Collection") << "image_edits: editing source image (" << img_b64.size()
-                                        << " b64 chars)" << std::endl;
-                json resp = router_.image_edits(req);
-                const std::string b64 = extract_b64(resp);
-                if (b64.empty()) throw std::runtime_error(backend_error_message(resp, "Image edit failed"));
-
-                // Replace the last generated image this turn, else append.
-                int last = -1;
-                for (int i = static_cast<int>(artifacts.size()) - 1; i >= 0; --i) {
-                    if (artifacts[i].type == "image") { last = i; break; }
-                }
-                if (last >= 0) {
-                    artifacts[last] = Artifact{"image", b64, "image/png"};
-                    produced_index = last;
-                } else {
-                    artifacts.push_back(Artifact{"image", b64, "image/png"});
-                    produced_index = static_cast<int>(artifacts.size()) - 1;
-                }
-                success_text = "Image edited successfully.";
-                return true;
+            if (img_b64.empty()) {
+                throw std::runtime_error("Image edit requested, but no previous image is available as a source.");
             }
-            // No source image available — fall through to a fresh generation.
+
+            json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
+                        {"n", 1}, {"image_data", img_b64}, {"image_filename", "image.png"}};
+            const std::string edit_size = resolve_explicit_image_size(args);
+            if (!edit_size.empty()) req["size"] = edit_size;
+            copy_optional_image_args(args, req);
+            LOG(INFO, "Collection") << "image_edits: editing source image (" << img_b64.size()
+                                    << " b64 chars)" << std::endl;
+            json resp = router_.image_edits(req);
+            const std::string b64 = extract_b64(resp);
+            if (b64.empty()) throw std::runtime_error(backend_error_message(resp, "Image edit failed"));
+
+            // Replace the last generated image this turn, else append.
+            int last = -1;
+            for (int i = static_cast<int>(artifacts.size()) - 1; i >= 0; --i) {
+                if (artifacts[i].type == "image") { last = i; break; }
+            }
+            if (last >= 0) {
+                artifacts[last] = Artifact{"image", b64, "image/png"};
+                produced_index = last;
+            } else {
+                artifacts.push_back(Artifact{"image", b64, "image/png"});
+                produced_index = static_cast<int>(artifacts.size()) - 1;
+            }
+            success_text = "Image edited successfully.";
+            return true;
         }
 
+        const std::string requested_size = resolve_image_size(args);
         json req = {{"model", model}, {"prompt", prompt}, {"response_format", "b64_json"},
-                    {"n", 1}, {"size", image_size()}};
+                    {"n", 1}, {"size", requested_size}};
+        copy_optional_image_args(args, req);
         LOG(INFO, "Collection") << "image_generations: fresh generation" << std::endl;
         json resp = router_.image_generations(req);
         const std::string b64 = extract_b64(resp);
@@ -542,6 +682,9 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
 
     json llm_messages = std::move(processed);
     std::vector<Artifact> artifacts;
+    // Skip only exact repeated generation requests in this run. Distinct image
+    // requests such as cat/dog or alternate camera angles remain allowed.
+    std::set<std::string> generated_image_request_keys;
     json base_response = json::object();
     constexpr int MAX_ITERATIONS = 5;
 
@@ -612,14 +755,20 @@ CollectionOrchestrator::LoopResult CollectionOrchestrator::run_loop(
 
             std::string success_text;
             int produced_index = -1;
+            const std::string gen_key = (name == "generate_image") ? image_request_key(args) : "";
             if (model.empty()) {
                 success_text = "Error: tool '" + name + "' has no available model";
+            } else if (name == "generate_image" && generated_image_request_keys.count(gen_key)) {
+                success_text = "Duplicate image generation skipped because this exact image request was already generated for this turn.";
             } else {
                 try {
                     LOG(INFO, "Collection") << "Tool call: " << name << " -> " << model << std::endl;
                     ensure_loaded_(model);
                     execute_tool(name, model, args, artifacts, source_image_b64, source_image_mime,
                                  produced_index, success_text);
+                    if (name == "generate_image" && produced_index >= 0) {
+                        generated_image_request_keys.insert(gen_key);
+                    }
                 } catch (const std::exception& e) {
                     success_text = std::string("Error: ") + e.what();
                     produced_index = -1;

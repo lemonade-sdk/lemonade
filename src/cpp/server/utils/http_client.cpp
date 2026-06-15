@@ -292,7 +292,8 @@ static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow
 }
 
 HttpResponse HttpClient::get(const std::string& url,
-                             const std::map<std::string, std::string>& headers) {
+                             const std::map<std::string, std::string>& headers,
+                             long timeout_seconds) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -305,7 +306,8 @@ HttpResponse HttpClient::get(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
+                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -508,20 +510,26 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     response.status_code = static_cast<int>(response_code);
+    response.curl_code = static_cast<int>(res);
+    response.curl_error = (res == CURLE_OK) ? std::string() : std::string(curl_easy_strerror(res));
 
-    // For streaming, CURLE_PARTIAL_FILE or CURLE_RECV_ERROR at the end is normal
-    // (backend closes connection after sending all data)
+    // For streaming, libcurl can report CURLE_PARTIAL_FILE or CURLE_RECV_ERROR
+    // after a backend closes the connection. Do not throw here because the SSE
+    // layer knows whether it saw the protocol-level [DONE] marker. It will treat
+    // the same transport code as success after [DONE] and as backend failure
+    // before [DONE]. Other CURL errors are still exceptional.
     if (res != CURLE_OK && res != CURLE_PARTIAL_FILE && res != CURLE_RECV_ERROR) {
-        std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
+        std::string error = "CURL error: " + response.curl_error;
         LOG(ERROR, "HttpClient") << "" << error << std::endl;
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
         throw std::runtime_error(error);
     }
 
-    // Log if we got a non-OK CURL code but continue (normal for streaming)
+    // Log if we got a non-OK CURL code but continue so the stream layer can make
+    // the protocol-aware decision.
     if (res != CURLE_OK) {
-        LOG(ERROR, "HttpClient") << "Stream ended with: " << curl_easy_strerror(res)
+        LOG(WARNING, "HttpClient") << "Stream ended with: " << response.curl_error
                   << " (response code: " << response_code << ")" << std::endl;
     }
 

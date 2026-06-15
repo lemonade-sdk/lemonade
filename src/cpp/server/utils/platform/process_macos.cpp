@@ -65,7 +65,9 @@ public:
     bool is_running(ProcessHandle handle) override;
     int get_exit_code(ProcessHandle handle) override;
     int wait_for_exit(ProcessHandle handle, int timeout_seconds) override;
+    int reap(ProcessHandle handle) override;
     void kill(ProcessHandle handle) override;
+    void terminate_without_cleanup(ProcessHandle handle) override;
 
     int run_with_output(
         const std::string& executable,
@@ -269,28 +271,62 @@ ProcessHandle MacOSProcessPlatform::spawn(
 
 // Reuse Unix implementations for other methods
 void MacOSProcessPlatform::terminate(ProcessHandle handle) {
-    if (handle.pid > 0) {
-        ::kill(handle.pid, SIGTERM);
+    if (handle.pid <= 0) {
+        return;
+    }
 
-        int status;
-        bool exited_gracefully = false;
-        for (int i = 0; i < 50; i++) {
-            if (waitpid(handle.pid, &status, WNOHANG) > 0) {
-                exited_gracefully = true;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+#ifdef WNOWAIT
+    siginfo_t info;
+    std::memset(&info, 0, sizeof(info));
+    if (waitid(P_PID, static_cast<id_t>(handle.pid), &info, WEXITED | WNOHANG | WNOWAIT) == 0) {
+        if (info.si_pid != 0) {
+            reap(handle);
+            LOG(INFO, "ProcessManager") << "Process already exited; reaped PID "
+                                        << handle.pid << std::endl;
+            LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            return;
         }
+    } else if (errno == ECHILD) {
+        LOG(WARNING, "ProcessManager") << "Process PID " << handle.pid
+                                       << " is no longer an owned child; skipping termination"
+                                       << std::endl;
+        return;
+    }
+#endif
 
-        if (!exited_gracefully) {
-            LOG(WARNING, "ProcessManager") << "Process did not respond to SIGTERM, using SIGKILL" << std::endl;
-            ::kill(handle.pid, SIGKILL);
+    errno = 0;
+    if (::kill(handle.pid, SIGTERM) != 0 && errno == ESRCH) {
+        LOG(INFO, "ProcessManager") << "Process PID " << handle.pid
+                                    << " was already gone before SIGTERM" << std::endl;
+        return;
+    }
+
+    int status = 0;
+    bool exited_gracefully = false;
+    for (int i = 0; i < 50; ++i) {
+        pid_t result = waitpid(handle.pid, &status, WNOHANG);
+        if (result > 0) {
+            exited_gracefully = true;
+            break;
+        }
+        if (result < 0 && errno == ECHILD) {
+            exited_gracefully = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    if (!exited_gracefully) {
+        LOG(WARNING, "ProcessManager") << "Process did not respond to SIGTERM, using SIGKILL" << std::endl;
+        errno = 0;
+        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
             waitpid(handle.pid, &status, 0);
         }
-
-        LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(2));
     }
+
+    LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
 bool MacOSProcessPlatform::is_running(ProcessHandle handle) {
@@ -298,9 +334,20 @@ bool MacOSProcessPlatform::is_running(ProcessHandle handle) {
         return false;
     }
 
-    int status;
-    pid_t result = waitpid(handle.pid, &status, WNOHANG);
-    return result == 0;
+#ifdef WNOWAIT
+    siginfo_t info;
+    std::memset(&info, 0, sizeof(info));
+    if (waitid(P_PID, static_cast<id_t>(handle.pid), &info, WEXITED | WNOHANG | WNOWAIT) == 0) {
+        return info.si_pid == 0;
+    }
+
+    if (errno == ECHILD) {
+        return false;
+    }
+#endif
+
+    errno = 0;
+    return ::kill(handle.pid, 0) == 0 || errno == EPERM;
 }
 
 int MacOSProcessPlatform::get_exit_code(ProcessHandle handle) {
@@ -308,15 +355,19 @@ int MacOSProcessPlatform::get_exit_code(ProcessHandle handle) {
         return -1;
     }
 
-    int status;
+    int status = 0;
     pid_t result = waitpid(handle.pid, &status, WNOHANG);
 
-    if (result == 0) {
+    if (result == 0 || result < 0) {
         return -1;
     }
 
     if (WIFEXITED(status)) {
         return WEXITSTATUS(status);
+    }
+
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
     }
 
     return -1;
@@ -327,16 +378,33 @@ int MacOSProcessPlatform::wait_for_exit(ProcessHandle handle, int timeout_second
         return -1;
     }
 
-    int status;
+    int status = 0;
     if (timeout_seconds < 0) {
-        waitpid(handle.pid, &status, 0);
-        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        if (waitpid(handle.pid, &status, 0) <= 0) {
+            return -1;
+        }
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status);
+        }
+        if (WIFSIGNALED(status)) {
+            return 128 + WTERMSIG(status);
+        }
+        return -1;
     }
 
-    for (int i = 0; i < timeout_seconds * 10; i++) {
+    for (int i = 0; i < timeout_seconds * 10; ++i) {
         pid_t result = waitpid(handle.pid, &status, WNOHANG);
         if (result > 0) {
-            return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            if (WIFEXITED(status)) {
+                return WEXITSTATUS(status);
+            }
+            if (WIFSIGNALED(status)) {
+                return 128 + WTERMSIG(status);
+            }
+            return -1;
+        }
+        if (result < 0) {
+            return -1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -344,11 +412,41 @@ int MacOSProcessPlatform::wait_for_exit(ProcessHandle handle, int timeout_second
     return -1;
 }
 
+int MacOSProcessPlatform::reap(ProcessHandle handle) {
+    if (handle.pid <= 0) {
+        return -1;
+    }
+
+    int status = 0;
+    pid_t result = waitpid(handle.pid, &status, WNOHANG);
+    if (result <= 0) {
+        return -1;
+    }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+
+    return -1;
+}
+
 void MacOSProcessPlatform::kill(ProcessHandle handle) {
     if (handle.pid > 0) {
+        errno = 0;
+        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
+            int status = 0;
+            waitpid(handle.pid, &status, 0);
+        }
+    }
+}
+
+void MacOSProcessPlatform::terminate_without_cleanup(ProcessHandle handle) {
+    if (handle.pid > 0) {
         ::kill(handle.pid, SIGKILL);
-        int status;
-        waitpid(handle.pid, &status, 0);
     }
 }
 
@@ -467,7 +565,7 @@ int MacOSProcessPlatform::run_with_output(
             break;
         } else {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                int status;
+                int status = 0;
                 pid_t result = waitpid(pid, &status, WNOHANG);
                 if (result > 0) {
                     fcntl(stdout_pipe[0], F_SETFL, flags);
@@ -491,7 +589,7 @@ int MacOSProcessPlatform::run_with_output(
 
     close(stdout_pipe[0]);
 
-    int status;
+    int status = 0;
     waitpid(pid, &status, 0);
 
     if (killed_by_callback) {
@@ -502,7 +600,7 @@ int MacOSProcessPlatform::run_with_output(
 }
 
 int MacOSProcessPlatform::find_free_port(int start_port) {
-    for (int port = start_port; port < start_port + 1000; port++) {
+    for (int port = start_port; port < start_port + 1000; ++port) {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
             continue;
@@ -528,12 +626,15 @@ int MacOSProcessPlatform::run_command(const std::string& command, std::string& o
     output.clear();
 
     FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) return -1;
+    if (!pipe) {
+        return -1;
+    }
 
     char buf[4096];
     while (fgets(buf, sizeof(buf), pipe)) {
         output += buf;
     }
+
     return pclose(pipe);
 }
 

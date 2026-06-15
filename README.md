@@ -104,6 +104,8 @@ To see the backends available on your PC:
 lemonade backends
 ```
 
+For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, …) alongside local models — see [Cloud Offload](./docs/guide/configuration/cloud.md). *(Experimental.)*
+
 
 ## Model Library
 
