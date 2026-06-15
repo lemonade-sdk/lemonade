@@ -1343,7 +1343,7 @@ jobs:
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan rocm"
-            runner: [Linux, vulkan, stx-halo]
+            runner: [Linux, rocm, xdna2]
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
