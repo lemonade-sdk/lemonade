@@ -125,7 +125,7 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
     };
 
     // Launch the subprocess
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -133,12 +133,13 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         false,
         env_vars
     );
+    set_process_handle(started_handle);
 
-    if (process_handle_.pid == 0) {
+    if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start koko process");
     }
 
-    LOG(INFO, "KokoroServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "KokoroServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/")) {
@@ -148,11 +149,11 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
 }
 
 void KokoroServer::unload() {
-    if (process_handle_.pid != 0) {
-        LOG(INFO, "KokoroServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(process_handle_);
-        port_ = 0;
-        process_handle_ = {nullptr, 0};
+    stop_backend_watchdog();
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "KokoroServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(handle);
     }
 }
 

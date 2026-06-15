@@ -48,12 +48,14 @@ Engine — apply AT MOST ONE total. This is a hard rule: even if multiple seem r
 - engine::whispercpp — whisper.cpp; audio transcription
 - engine::sd         — stable-diffusion.cpp; image generation/edit/variations
 - engine::kokoro     — Kokoro TTS
+- engine::moonshine  — Moonshine; fast on-device audio transcription (ASR)
 
 Area — apply AT MOST ONE total. Same hard rule as engines. Skip if not clearly in one area:
 - area::cli       — `lemonade` CLI client (src/cpp/cli)
 - area::installer — Windows MSI, macOS DMG, Debian / RPM packaging
 - area::api       — HTTP REST API surface, route handlers, Ollama/Anthropic/OpenAI compat
 - area::tray      — system tray app (LemonadeServer.exe, lemonade-tray)
+- area::ci        — CI / GitHub Actions workflows, self-hosted runner infrastructure, test infrastructure (e.g. fixtures, harness, CI cleanup)
 
 Runtime — apply AT MOST ONE total. Same hard rule. Skip if the item is not specific to a particular GPU/compute runtime. Runtime labels complement engine labels — e.g., a Vulkan-only llama.cpp bug gets both `engine::llamacpp` and `runtime::vulkan`:
 - runtime::vulkan — Vulkan path (typically llama.cpp on AMD/Intel/Nvidia GPUs)
@@ -77,6 +79,12 @@ Rules:
   endpoint, or mention multiple components — that's not enough to apply
   `area::cli`, `area::api`, `audio`, etc. Apply those only when the bug
   or feature is in that surface itself.
+- `documentation` is for human-readable docs only — READMEs, user
+  guides, installation instructions, doc-comments. Items about test
+  coverage, missing tests, test infrastructure, or test harness
+  changes are `enhancement` (or `bug` if the test itself is broken),
+  NEVER `documentation`. Same goes for items about adding examples
+  to the test suite vs adding examples to a user guide.
 - Be conservative. If unclear, omit the label. It is much better to
   under-label than to mislabel.
 - Skip labels the item already has.
@@ -87,7 +95,12 @@ Rules:
 
 def run(cmd):
     return subprocess.run(
-        cmd, check=True, capture_output=True, text=True, encoding="utf-8", errors="replace"
+        cmd,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     ).stdout
 
 
@@ -150,7 +163,9 @@ def classify(item, item_num):
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as exc:
-        sys.exit(f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}")
+        sys.exit(
+            f"Anthropic API error {exc.code}: {exc.read().decode(errors='replace')}"
+        )
 
     return data["content"][0]["text"].strip()
 
@@ -163,10 +178,12 @@ KNOWN_LABELS = {
     "engine::whispercpp",
     "engine::sd",
     "engine::kokoro",
+    "engine::moonshine",
     "area::cli",
     "area::installer",
     "area::api",
     "area::tray",
+    "area::ci",
     "runtime::vulkan",
     "runtime::rocm",
     "runtime::cuda",
@@ -343,7 +360,9 @@ def parse_decision(decision, existing):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("items", nargs="+", type=int, help="Issue or PR numbers")
-    p.add_argument("--dry-run", action="store_true", help="Print decisions; do not apply")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Print decisions; do not apply"
+    )
     p.add_argument("--repo", help="OWNER/REPO; defaults to current repo")
     p.add_argument(
         "--priority-only",

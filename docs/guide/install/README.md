@@ -14,7 +14,7 @@ Lemonade is available on a broad range of platforms.
 
     [Fedora instructions](./fedora.md).
 
-    Debian Trixie+: [build from source](../../dev/getting-started.md).
+    [Debian instructions](./debian.md).
 
 === "Docker"
 
