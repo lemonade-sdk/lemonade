@@ -39,6 +39,8 @@
 #else
     #include <sys/types.h>
     #include <sys/socket.h>
+    #include <netinet/in.h>  // sockaddr_in / sockaddr_in6
+    #include <arpa/inet.h>   // inet_pton, htons
     #include <netdb.h>  // Crucial for getaddrinfo and addrinfo struct
     #include <unistd.h>
 #endif
@@ -292,6 +294,30 @@ void Server::setup_http_servers() {
     };
     http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
     http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
+
+    // Bind exclusively so a second lemond instance on the same host:port fails
+    // to bind (instead of silently sharing the port).
+    // (cpp-httplib's default_socket_options sets SO_REUSEPORT (POSIX) / SO_REUSEADDR (Windows),
+    // both of which let a duplicate instance bind the same port: on Linux/macOS
+    // the kernel load-balances connections across both servers and on Windows
+    // the second socket can hijack the port.)
+    // Overriding these options makes the duplicate bind fail with EADDRINUSE.
+    auto exclusive_socket_options = [](socket_t sock) {
+        int opt = 1;
+#ifdef _WIN32
+        // On Windows, SO_REUSEADDR=1 (httplib's default) allows a second socket
+        // to take over the port. SO_EXCLUSIVEADDRUSE enforces true exclusivity.
+        setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                   reinterpret_cast<const char*>(&opt), sizeof(opt));
+#else
+        // Keep SO_REUSEADDR (so a quick restart isn't blocked by a TIME_WAIT
+        // socket) but deliberately do NOT set SO_REUSEPORT, which would let a
+        // second instance share the port.
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
+    };
+    http_front_->set_socket_options(exclusive_socket_options);
+    http_front_v6_->set_socket_options(exclusive_socket_options);
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -1144,6 +1170,61 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
+// Preflight bind probe: returns true if we can exclusively bind host_ip:port
+// (i.e. the port is free), false if it is already in use. This deliberately
+// does NOT set SO_REUSEADDR/SO_REUSEPORT (and uses SO_EXCLUSIVEADDRUSE on
+// Windows) so that a port already held by another process is reported as
+// unavailable rather than silently shared. The socket is closed immediately;
+// the real listeners bind moments later.
+static bool port_is_available(int family, const std::string& host_ip, int port) {
+    socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
+    if (sock == INVALID_SOCKET) {
+        // Can't probe — don't block startup; the real bind path will report any error.
+        return true;
+    }
+#ifdef _WIN32
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+               reinterpret_cast<const char*>(&opt), sizeof(opt));
+#endif
+
+    bool available = false;
+    if (family == AF_INET) {
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET, host_ip.c_str(), &addr.sin_addr) != 1) {
+#ifdef _WIN32
+            closesocket(sock);
+#else
+            close(sock);
+#endif
+            return true;  // Couldn't parse address — let the real bind path decide.
+        }
+        available = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    } else {
+        sockaddr_in6 addr{};
+        addr.sin6_family = AF_INET6;
+        addr.sin6_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET6, host_ip.c_str(), &addr.sin6_addr) != 1) {
+#ifdef _WIN32
+            closesocket(sock);
+#else
+            close(sock);
+#endif
+            return true;
+        }
+        available = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    }
+
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    close(sock);
+#endif
+    return available;
+}
+
 void Server::run() {
     std::string host = config_->host();
     LOG(INFO, "Server") << "Starting HTTP server on " << host << ":" << port_ << std::endl;
@@ -1157,6 +1238,35 @@ void Server::run() {
     if (ipv4.empty() && ipv6.empty()) {
         throw std::runtime_error("Failed to resolve host '" + host + "' to any address. "
                                  "Cannot start server.");
+    }
+
+    // Preflight: fail fast and loudly if the port is already taken (most often
+    // because another lemond is already running). Without this, startup would
+    // proceed far enough to start the WebSocket server, begin UDP broadcasting,
+    // and finish model-cache warmup before the bind failure surfaces deep in the
+    // run loop below — burying the real cause under unrelated shutdown logs.
+    {
+        std::string in_use_ip;
+        if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
+            in_use_ip = ipv4;
+        } else if (!ipv6.empty() && !port_is_available(AF_INET6, ipv6, port_)) {
+            in_use_ip = ipv6;
+        }
+        if (!in_use_ip.empty()) {
+            // Write straight to stderr (unbuffered) so the message is reliably
+            // visible in the user's terminal, then also log it for the log file.
+            std::cerr << "[Server] ERROR: Port " << port_ << " on " << in_use_ip
+                      << " is already in use. Another Lemonade server (lemond) is "
+                         "most likely already running on this port. This instance "
+                         "will now exit." << std::endl;
+            std::cerr.flush();
+            LOG(ERROR, "Server") << "Port " << port_ << " on " << in_use_ip
+                << " is already in use. Another Lemonade server (lemond) is most "
+                   "likely already running on this port. This instance will now "
+                   "exit." << std::endl;
+            startup_failed_ = true;
+            return;
+        }
     }
 
     // Operators binding beyond loopback should secure the server with an API
@@ -1286,9 +1396,22 @@ void Server::run() {
         // Wait for listener threads, but check periodically for shutdown or rebind signals.
         // The threads are blocked in listen_after_bind(), which only returns when
         // the server is stopped or an error occurs.
+        //
+        // Also stop waiting if a listener thread failed to bind (e.g. the port is
+        // already in use by another lemond instance). A thread that returned early
+        // after a failed bind is still joinable(), so without the listener_start_failed
+        // check this loop would spin forever and never reach the error-reporting code below
         while ((http_v4_thread_.joinable() || http_v6_thread_.joinable()) &&
-               !shutdown_requested_.load() && !rebind_requested_.load()) {
+               !shutdown_requested_.load() && !rebind_requested_.load() &&
+               !listener_start_failed.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
+        // If a listener failed to start (e.g. duplicate instance on the same
+        // port), stop() any sibling listener that did bind so its thread can
+        // unblock from listen_after_bind() before we join below.
+        if (listener_start_failed.load() && !shutdown_requested_.load() && !rebind_requested_.load()) {
+            stop();
         }
 
         // If shutdown was requested while the server was running, stop it now
@@ -1332,6 +1455,8 @@ void Server::run() {
             }
             std::cerr << "[Server] Another Lemonade router/server instance is already running on "
                       << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
+            LOG(ERROR, "Server") << "Another Lemonade router/server instance is already running on "
+                      << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
             stop();
             break;
         }
@@ -1362,6 +1487,10 @@ void Server::set_shutdown_requested(bool requested) {
 
 bool Server::is_running() const {
     return running_;
+}
+
+bool Server::startup_failed() const {
+    return startup_failed_;
 }
 
 void Server::stop() {
