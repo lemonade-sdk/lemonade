@@ -78,6 +78,26 @@ These can be set per model on `/api/v1/load` (or globally where noted):
 | `evict_idle_timeout` | per-model | `300` | Seconds idle before full eviction |
 | `evict_weight_factor` | per-model | `1.0` | Eviction-protection weight (higher = more protected) |
 
+## Model Pinning
+
+To prevent frequently used models from being auto-evicted by the LRU policy, you can "pin" them in memory. Pinned models are excluded from the eviction candidate search.
+
+### Pinning Behavior
+
+- **Load-time Pinning:** You can request a model to be pinned when loading it by passing the `--pinned` flag in the CLI:
+  ```bash
+  lemonade load Qwen3-0.6B-GGUF --pinned
+  ```
+  Or by setting `"pinned": true` in the POST request body to `/api/v1/load`.
+- **Dynamic Pinning/Unpinning:** Toggles the pinned status of a currently loaded model dynamically without needing a reload:
+  ```bash
+  lemonade pin Qwen3-0.6B-GGUF
+  lemonade unpin Qwen3-0.6B-GGUF
+  ```
+  Or via a POST request to `/internal/pin`.
+- **Pre-emptive Warnings:** The CLI checks `/api/v1/health` before loading a new model. If all slots for that model type are occupied by pinned models, the CLI will output a pre-emptive warning alerting you that loading will fail.
+- **Capacity Failures:** If all loaded models of a type are pinned and a request to load another model of that type is received, the load request fails with a `409 Conflict` HTTP status containing a `slots_pinned_error` code. You must unpin or unload at least one model of that type to free up a slot.
+
 ## Per-Model Settings
 
 Each model can be loaded with custom settings (context size, llamacpp backend, llamacpp args) via the `/api/v1/load` endpoint. These per-model settings override the default values set via CLI arguments or environment variables. See the [`/api/v1/load` endpoint documentation](../../api/lemonade.md#post-v1load) for details.

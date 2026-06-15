@@ -125,7 +125,15 @@ bool Router::reload_model_after_watchdog_reset(const std::string& requested_mode
         LOG(WARNING, "Router") << "Reloading model after backend watchdog reset: "
                                 << requested_model << std::endl;
         auto info = model_manager_->get_model_info(requested_model);
-        load_model(requested_model, info, options, true, false);
+        bool was_pinned = false;
+        {
+            std::lock_guard<std::mutex> lock(load_mutex_);
+            auto* existing = find_server_by_model_name(requested_model);
+            if (existing) {
+                was_pinned = existing->is_pinned();
+            }
+        }
+        load_model(requested_model, info, options, true, false, was_pinned);
         return true;
     } catch (const std::exception& e) {
         LOG(ERROR, "Router") << "Automatic reload after watchdog reset failed for "
@@ -160,6 +168,9 @@ WrappedServer* Router::find_lru_server_by_type(ModelType type) const {
             continue;
         }
         if (server->is_backend_alive() && server->get_model_type() == type) {
+            if (server->is_pinned()) {
+                continue;
+            }
             if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
                 lru = server.get();
             }
@@ -336,7 +347,8 @@ void Router::load_model(const std::string& model_name,
                        const ModelInfo& model_info,
                        RecipeOptions options,
                        bool do_not_upgrade,
-                       bool allow_reload_on_option_change) {
+                       bool allow_reload_on_option_change,
+                       std::optional<bool> pinned) {
     const std::string canonical_model_name = resolve_model_name(model_name);
     const std::string backend_option = model_info.recipe + "_backend";
 
@@ -370,6 +382,16 @@ void Router::load_model(const std::string& model_name,
             << ", device: " << device_type_to_string(model_info.device) << ")" << std::endl;
 
     try {
+        WrappedServer* existing_pre = find_server_by_model_name(canonical_model_name);
+        bool final_pinned = false;
+        if (pinned.has_value()) {
+            final_pinned = pinned.value();
+        } else if (existing_pre) {
+            final_pinned = existing_pre->is_pinned();
+        } else {
+            final_pinned = (effective_options.get_option("pinned").is_boolean() && effective_options.get_option("pinned").get<bool>());
+        }
+
         prune_unavailable_servers_locked();
 
         // Check if model is already loaded. Watchdog-reset or otherwise dead
@@ -390,7 +412,8 @@ void Router::load_model(const std::string& model_name,
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
-                LOG(INFO, "Router") << "Model already loaded, updating access time" << std::endl;
+                LOG(INFO, "Router") << "Model already loaded, updating access time and pinned status" << std::endl;
+                existing->set_pinned(final_pinned);
                 existing->update_access_time();
                 is_loading_ = false;
                 load_cv_.notify_all();
@@ -457,6 +480,10 @@ void Router::load_model(const std::string& model_name,
                           << model_type_to_string(model_type)
                           << ", evicting LRU: " << lru->get_model_name() << std::endl;
                 evict_server(lru);
+            } else {
+                is_loading_ = false;
+                load_cv_.notify_all();
+                throw SlotsPinnedException(model_type_to_string(model_type));
             }
         }
 
@@ -465,6 +492,7 @@ void Router::load_model(const std::string& model_name,
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_pinned(final_pinned);
         new_server->update_access_time();
 
         // CRITICAL: Release lock before slow backend startup
@@ -533,6 +561,7 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();
 
             lock.unlock();
@@ -656,6 +685,7 @@ json Router::get_all_loaded_models() const {
         if (!watchdog_reason.empty()) {
             model_info["watchdog_reset_reason"] = watchdog_reason;
         }
+        model_info["pinned"] = server->is_pinned();
         RecipeOptions recipe_options =  server->get_recipe_options();
         model_info["recipe"] = recipe_options.get_recipe();
         model_info["recipe_options"] = recipe_options.to_json();
@@ -1402,6 +1432,40 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
                 record_prompt_tokens_for_model(identity, input_tokens);
             });
     });
+}
+
+int Router::count_pinned_servers_by_type(ModelType type) const {
+    int count = 0;
+    for (const auto& server : loaded_servers_) {
+        if (server->get_recipe_options().get_recipe() == "cloud") {
+            continue;
+        }
+        if (server->is_backend_alive() && server->get_model_type() == type && server->is_pinned()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+json Router::get_pinned_model_counts() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return {
+        {"llm", count_pinned_servers_by_type(ModelType::LLM)},
+        {"embedding", count_pinned_servers_by_type(ModelType::EMBEDDING)},
+        {"reranking", count_pinned_servers_by_type(ModelType::RERANKING)},
+        {"transcription", count_pinned_servers_by_type(ModelType::TRANSCRIPTION)},
+        {"image", count_pinned_servers_by_type(ModelType::IMAGE)},
+        {"tts", count_pinned_servers_by_type(ModelType::TTS)}
+    };
+}
+
+void Router::set_model_pinned(const std::string& model_name, bool pinned) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    WrappedServer* server = find_server_by_model_name(model_name);
+    if (!server) {
+        throw std::runtime_error("Model not loaded: " + model_name);
+    }
+    server->set_pinned(pinned);
 }
 
 } // namespace lemon
