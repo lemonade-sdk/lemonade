@@ -366,7 +366,7 @@ void SDServer::load(const std::string& model_name,
     // Launch the server process from a dedicated temp working directory so
     // backend/Vulkan relative writes do not inherit a protected launcher
     // directory on Windows.
-    fs::path working_dir = fs::path(utils::get_runtime_dir()) / "lemonade" / "sd-cpp" / resolved_backend;
+    fs::path working_dir = fs::temp_directory_path() / "lemonade" / "sd-cpp" / resolved_backend;
     std::error_code working_dir_ec;
     fs::create_directories(working_dir, working_dir_ec);
     if (working_dir_ec) {

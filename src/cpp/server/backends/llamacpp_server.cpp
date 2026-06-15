@@ -560,7 +560,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // Keep llama-server output visible at info log level.
     // Use a dedicated temp working directory so backend/Vulkan relative writes do
     // not inherit a protected launcher directory on Windows.
-    fs::path working_dir = fs::path(utils::get_runtime_dir()) / "lemonade" / "llamacpp" / llamacpp_backend;
+    fs::path working_dir = fs::temp_directory_path() / "lemonade" / "llamacpp" / llamacpp_backend;
     std::error_code working_dir_ec;
     fs::create_directories(working_dir, working_dir_ec);
     if (working_dir_ec) {
