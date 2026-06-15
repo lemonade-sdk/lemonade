@@ -104,6 +104,11 @@ struct ModelInfo {
     // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
     int moonshine_arch = -1;
 
+    // Chatterbox-specific model variant ("english", "multilingual", "turbo").
+    // Selects which Chatterbox class chatterbox-server instantiates. Empty
+    // defaults to "english".
+    std::string chatterbox_variant;
+
     // Utility
     std::string checkpoint(const std::string& type = "main") const { return checkpoints.count(type) ? checkpoints.at(type) : ""; }
     std::string resolved_path(const std::string& type = "main") const { return resolved_paths.count(type) ? resolved_paths.at(type) : ""; }

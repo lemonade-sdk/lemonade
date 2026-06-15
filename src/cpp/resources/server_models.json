@@ -1581,6 +1581,34 @@
         ],
         "size": 0.354
     },
+    "Chatterbox": {
+        "checkpoint": "ResembleAI/chatterbox",
+        "recipe": "chatterbox",
+        "chatterbox_variant": "english",
+        "suggested": true,
+        "labels": [
+            "tts"
+        ],
+        "size": 3.2
+    },
+    "Chatterbox-Multilingual": {
+        "checkpoint": "ResembleAI/chatterbox",
+        "recipe": "chatterbox",
+        "chatterbox_variant": "multilingual",
+        "labels": [
+            "tts"
+        ],
+        "size": 3.2
+    },
+    "Chatterbox-Turbo": {
+        "checkpoint": "ResembleAI/chatterbox-turbo",
+        "recipe": "chatterbox",
+        "chatterbox_variant": "turbo",
+        "labels": [
+            "tts"
+        ],
+        "size": 3.0
+    },
     "RealESRGAN-x4plus": {
         "checkpoint": "amd/realesrgan-x4plus:RealESRGAN_x4plus.pth",
         "recipe": "sd-cpp",

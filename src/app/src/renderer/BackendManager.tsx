@@ -12,6 +12,7 @@ const RECIPE_ORDER = new Map([
   'moonshine',
   'sd-cpp',
   'kokoro',
+  'chatterbox',
   'flm',
   'ryzenai-llm',
   'vllm',

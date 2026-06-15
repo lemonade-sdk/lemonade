@@ -1298,6 +1298,12 @@ std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::s
         return model_cache_path;  // Return directory even if index not found
     }
 
+    // For chatterbox, chatterbox-server reads the whole HF snapshot directory
+    // (--ckpt-dir), so resolve to the model cache directory itself.
+    if (info.recipe == "chatterbox") {
+        return model_cache_path;
+    }
+
     // For whispercpp, find the .bin model file
     if (info.recipe == "whispercpp" && variant.empty()) {
         // No variant specified - use fallback logic to find any .bin file
@@ -1857,6 +1863,7 @@ void ModelManager::build_cache() {
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
+        info.chatterbox_variant = JsonUtils::get_or_default<std::string>(value, "chatterbox_variant", "");
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1898,6 +1905,7 @@ void ModelManager::build_cache() {
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
+        info.chatterbox_variant = JsonUtils::get_or_default<std::string>(value, "chatterbox_variant", "");
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -2683,6 +2691,9 @@ void ModelManager::register_user_model(const std::string& model_name,
     if (recipe == "moonshine") {
         labels.insert("transcription");
         labels.insert("realtime-transcription");
+    }
+    if (recipe == "chatterbox") {
+        labels.insert("tts");
     }
 
     model_entry["labels"] = labels;
@@ -3878,6 +3889,48 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
                 }
             }
         }
+    } else if (info.recipe == "chatterbox") {
+        // Chatterbox ships redundant weights in a single repo: both .pt and
+        // .safetensors copies, plus every t3 variant (English / multilingual /
+        // turbo). Downloading the whole repo would pull ~14 GB for a model that
+        // only needs ~3 GB. Select only the large weight files the chosen
+        // variant's from_local() actually loads; always keep small config and
+        // tokenizer files so the loader never misses a dependency.
+        const std::string variant = info.chatterbox_variant.empty() ? "english" : info.chatterbox_variant;
+
+        // All large, mutually-exclusive weight files across variants. Any of
+        // these is skipped unless it is in the selected variant's wanted set.
+        static const std::set<std::string> kLargeWeights = {
+            "ve.pt", "ve.safetensors",
+            "s3gen.pt", "s3gen.safetensors",
+            "s3gen_v3.pt", "s3gen_v3.safetensors", "s3gen_meanflow.safetensors",
+            "t3_cfg.pt", "t3_cfg.safetensors",
+            "t3_23lang.safetensors",
+            "t3_mtl23ls_v2.safetensors", "t3_mtl23ls_v3.safetensors",
+            "t3_turbo_v1.safetensors"
+        };
+
+        std::set<std::string> wanted;
+        if (variant == "multilingual") {
+            // ChatterboxMultilingualTTS.from_local: ve.pt, s3gen.pt, t3_mtl23ls_v2.safetensors
+            wanted = {"ve.pt", "s3gen.pt", "t3_mtl23ls_v2.safetensors"};
+        } else if (variant == "turbo") {
+            // ChatterboxTurboTTS.from_local: ve.safetensors, s3gen_meanflow.safetensors, t3_turbo_v1.safetensors
+            wanted = {"ve.safetensors", "s3gen_meanflow.safetensors", "t3_turbo_v1.safetensors"};
+        } else {
+            // ChatterboxTTS (english).from_local: ve.safetensors, s3gen.safetensors, t3_cfg.safetensors
+            wanted = {"ve.safetensors", "s3gen.safetensors", "t3_cfg.safetensors"};
+        }
+
+        for (const auto& file : repo_files) {
+            if (kLargeWeights.count(file) && !wanted.count(file)) {
+                continue;  // redundant weight not needed by this variant
+            }
+            files_to_download[main_repo_id].push_back(file);
+        }
+        LOG(INFO, "ModelManager") << "Chatterbox (" << variant << "): selected "
+                                  << files_to_download[main_repo_id].size() << " of "
+                                  << repo_files.size() << " repo files" << std::endl;
     } else {
         // Non-GGUF model (ONNX, etc.): Download all files in repository
         files_to_download[main_repo_id].insert(files_to_download[main_repo_id].end(), repo_files.begin(), repo_files.end());
@@ -4798,6 +4851,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
     // Parse moonshine_arch
     if (model_json->contains("moonshine_arch") && (*model_json)["moonshine_arch"].is_number_integer()) {
         info.moonshine_arch = (*model_json)["moonshine_arch"].get<int>();
+    }
+
+    // Parse chatterbox_variant
+    if (model_json->contains("chatterbox_variant") && (*model_json)["chatterbox_variant"].is_string()) {
+        info.chatterbox_variant = (*model_json)["chatterbox_variant"].get<std::string>();
     }
 
     return info;

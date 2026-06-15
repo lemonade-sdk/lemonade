@@ -92,5 +92,11 @@
   "moonshine": {
     "cpu": "moonshine0.0.62"
   },
+  "chatterbox": {
+    "cuda": "chatterbox0.1.7",
+    "rocm": "chatterbox0.1.7",
+    "metal": "chatterbox0.1.7",
+    "cpu": "chatterbox0.1.7"
+  },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

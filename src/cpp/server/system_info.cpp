@@ -467,6 +467,23 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"metal", {}},
     }},
 
+    // chatterbox - PyTorch TTS (Resemble AI). One torch wheel per device covers
+    // all GPU archs, so backends vary only by device, not sm_/gfx family.
+    // Preference order: GPU first (metal/cuda/rocm), CPU fallback. PyTorch's
+    // ROCm build is Linux-only, so chatterbox rocm is offered on Linux only.
+    {"chatterbox", "metal", {"macos"}, {
+        {"metal", {}},
+    }},
+    {"chatterbox", "cuda", {"windows", "linux"}, {
+        {"nvidia_gpu", {}},      // all NVIDIA GPU families (torch cuda wheel)
+    }},
+    {"chatterbox", "rocm", {"linux"}, {
+        {"amd_gpu", {}},         // all AMD GPU families (torch rocm wheel, Linux)
+    }},
+    {"chatterbox", "cpu", {"windows", "linux", "macos"}, {
+        {"cpu", {"x86_64", "arm64"}},
+    }},
+
     // stable-diffusion.cpp - ROCm backend for AMD GPUs
     {"sd-cpp", "rocm", {"windows", "linux"}, {
         {"amd_gpu", {

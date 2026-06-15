@@ -74,6 +74,7 @@ nav:
       - llama.cpp: guide/configuration/llamacpp.md
       - vLLM: guide/configuration/vllm.md
       - Moonshine: guide/configuration/moonshine.md
+      - Chatterbox: guide/configuration/chatterbox.md
       - Cloud Offload: guide/configuration/cloud.md
     - FAQ: guide/faq.md
   - Development:
