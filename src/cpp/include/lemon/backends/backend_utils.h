@@ -3,6 +3,8 @@
 #include <string>
 #include <functional>
 #include <filesystem>
+#include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -141,5 +143,22 @@ namespace lemon::backends {
                                          const std::string& backend,
                                          std::string& out_section,
                                          std::string& out_bin_key);
+
+        /**
+         * Append shared CUDA environment variables to env_vars.
+         *
+         * Sets CUDA_VISIBLE_DEVICES to device indices matching the installed CUDA arch
+         * (unless skip_visible_devices is true or the variable is already set in the
+         * environment). On Linux, always sets __NV_PRIME_RENDER_OFFLOAD=1 so the NVIDIA
+         * dGPU is activated on Optimus/PRIME systems in On-Demand mode.
+         *
+         * Call this for every CUDA backend subprocess launch. Pass
+         * skip_visible_devices=true when the caller provides an explicit device
+         * selection through a backend-specific mechanism (e.g. llama.cpp --device).
+         */
+        static void apply_cuda_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            bool skip_visible_devices = false);
     };
 } // namespace lemon::backends

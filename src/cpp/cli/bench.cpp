@@ -19,10 +19,6 @@ namespace lemon_cli {
 using json = nlohmann::json;
 using namespace std::chrono;
 
-// ============================================================
-// Utility
-// ============================================================
-
 std::string get_timestamp_iso() {
     auto now = system_clock::now();
     auto time_t_now = system_clock::to_time_t(now);
@@ -36,10 +32,6 @@ std::string get_timestamp_iso() {
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
     return std::string(buf);
 }
-
-// ============================================================
-// Statistics helpers
-// ============================================================
 
 static double percentile(std::vector<double> values, double p) {
     if (values.empty()) return 0.0;
@@ -150,9 +142,6 @@ std::string BenchBackendResult::label() const {
     return s;
 }
 
-// ============================================================
-// Scenario Loading
-// ============================================================
 
 static std::string extract_user_content(const std::vector<json>& messages) {
     for (const auto& msg : messages) {
@@ -177,7 +166,6 @@ std::string expand_context(const json& context_block, const std::vector<json>& m
     size_t filler_len = filler.size();
     if (filler_len == 0) return "";
 
-    // Repeat filler to reach target
     std::string expanded;
     expanded.reserve(target_chars);
     size_t reps = (target_chars + filler_len - 1) / filler_len;
@@ -185,7 +173,6 @@ std::string expand_context(const json& context_block, const std::vector<json>& m
         expanded += filler;
     }
 
-    // Extract the question content
     std::string question = extract_user_content(messages);
 
     if (position == "start") {
@@ -194,7 +181,6 @@ std::string expand_context(const json& context_block, const std::vector<json>& m
         size_t mid = expanded.size() / 2;
         return expanded.substr(0, mid) + "\n\n" + question + "\n\n" + expanded.substr(mid);
     } else {
-        // "end" (default)
         return expanded + "\n\n" + question;
     }
 }
@@ -236,10 +222,8 @@ static std::vector<BenchScenario> parse_scenario_file(const std::string& path) {
         scenario.warmup_runs = item.value("warmup_runs", 0);
         scenario.measurement_runs = item.value("measurement_runs", 3);
 
-        // Handle context expansion for long-context scenarios
         if (item.contains("context") && item["context"].is_object()) {
             std::string expanded = expand_context(item["context"], scenario.messages);
-            // Replace the user message content with the expanded text
             for (auto& msg : scenario.messages) {
                 if (msg.contains("role") && msg["role"] == "user") {
                     if (msg.contains("content") && msg["content"].is_string()) {
@@ -347,9 +331,6 @@ static std::vector<BenchScenario> exclude_category(const std::vector<BenchScenar
     return filtered;
 }
 
-// ============================================================
-// Backend Discovery
-// ============================================================
 
 std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client,
                                                 const std::string& model,
@@ -405,14 +386,10 @@ std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client
     return result;
 }
 
-// ============================================================
-// Model Load/Unload
-// ============================================================
 
 // Map recipe name to the recipe_options key for custom args
 static const std::map<std::string, std::string> RECIPE_ARGS_KEY = {
     {"llamacpp", "llamacpp_args"},
-    {"flm", "flm_args"},
     {"vllm", "vllm_args"},
     {"sd-cpp", "sdcpp_args"},
     {"whispercpp", "whispercpp_args"},
@@ -481,9 +458,6 @@ bool unload_all_models(lemonade::LemonadeClient& client) {
     }
 }
 
-// ============================================================
-// Memory Tracking
-// ============================================================
 
 static void query_system_stats(lemonade::LemonadeClient& client, double& vram_gb, double& memory_gb) {
     vram_gb = -1.0;
@@ -502,11 +476,6 @@ static void query_system_stats(lemonade::LemonadeClient& client, double& vram_gb
     }
 }
 
-// ============================================================
-// Benchmark Execution
-// ============================================================
-
-// Extract common timing/token fields from a server "usage" JSON object.
 static void extract_usage_into_result(const json& usage, BenchRunResult& result) {
     if (usage.contains("prompt_tokens")) {
         result.input_tokens = usage["prompt_tokens"].get<int>();
@@ -522,7 +491,6 @@ static void extract_usage_into_result(const json& usage, BenchRunResult& result)
     }
 }
 
-// Extract timing fields from llama.cpp-style "timings" JSON object.
 static void extract_timings_into_result(const json& timings, BenchRunResult& result) {
     if (timings.contains("prompt_ms")) {
         result.ttft_ms = timings["prompt_ms"].get<double>();
@@ -551,7 +519,6 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
         query_system_stats(client, _vram, _mem);
     }
 
-    // Build request body
     json request_body;
     request_body["model"] = model;
     request_body["messages"] = scenario.messages;
@@ -672,9 +639,6 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
     return result;
 }
 
-// ============================================================
-// Output Formatting
-// ============================================================
 
 // Write JSON to file. Returns true on success, false on error (with stderr message).
 // If error_fatal is true, the error message says "Error"; otherwise "Warning".
@@ -780,10 +744,11 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
 
 json to_json(const std::vector<BenchBackendResult>& results,
              const std::string& model,
+             const std::string& timestamp,
              const BenchConfig& config) {
     json output;
     output["model"] = model;
-    output["timestamp"] = get_timestamp_iso();
+    output["timestamp"] = timestamp;
 
     json config_json;
     config_json["warmup_runs"] = config.warmup_runs;
@@ -820,6 +785,25 @@ json to_json(const std::vector<BenchBackendResult>& results,
                 ttft_stats["p95"] = scenario.ttft_p95_ms();
                 s_json["ttft_ms"] = ttft_stats;
 
+                std::vector<double> duration_vals;
+                duration_vals.reserve(scenario.runs.size());
+                double duration_sum = 0.0;
+                double duration_min = scenario.runs[0].total_time_ms;
+                double duration_max = scenario.runs[0].total_time_ms;
+                for (const auto& run : scenario.runs) {
+                    duration_vals.push_back(run.total_time_ms);
+                    duration_sum += run.total_time_ms;
+                    if (run.total_time_ms < duration_min) duration_min = run.total_time_ms;
+                    if (run.total_time_ms > duration_max) duration_max = run.total_time_ms;
+                }
+                json duration_stats;
+                duration_stats["mean"] = duration_sum / static_cast<double>(scenario.runs.size());
+                duration_stats["min"] = duration_min;
+                duration_stats["max"] = duration_max;
+                duration_stats["p50"] = percentile(duration_vals, 50.0);
+                duration_stats["p95"] = percentile(duration_vals, 95.0);
+                s_json["duration_ms"] = duration_stats;
+
                 json tps_stats;
                 tps_stats["mean"] = scenario.tps_mean();
                 tps_stats["min"] = scenario.tps_min();
@@ -845,9 +829,6 @@ json to_json(const std::vector<BenchBackendResult>& results,
     return output;
 }
 
-// ============================================================
-// Comparison
-// ============================================================
 
 json load_previous_results(const std::string& file_path) {
     std::ifstream file(file_path);
@@ -862,6 +843,48 @@ json load_previous_results(const std::string& file_path) {
         std::cerr << "Error: Failed to parse comparison file: " << e.what() << std::endl;
         return json::object();
     }
+}
+
+// Normalize benchmark JSON into a model->result-object map.
+// Supports both legacy single-model files and multi-model files.
+static std::map<std::string, json> extract_models_from_results(const json& root) {
+    std::map<std::string, json> by_model;
+
+    if (root.contains("models") && root["models"].is_array()) {
+        for (const auto& model_entry : root["models"]) {
+            if (model_entry.contains("model") && model_entry["model"].is_string()) {
+                by_model[model_entry["model"].get<std::string>()] = model_entry;
+            }
+        }
+        return by_model;
+    }
+
+    if (root.contains("model") && root["model"].is_string()) {
+        by_model[root["model"].get<std::string>()] = root;
+    }
+
+    return by_model;
+}
+
+static std::string extract_results_timestamp(const json& root) {
+    if (root.contains("timestamp") && root["timestamp"].is_string()) {
+        return root["timestamp"].get<std::string>();
+    }
+    return "";
+}
+
+static bool vector_contains(const std::vector<std::string>& items, const std::string& needle) {
+    return std::find(items.begin(), items.end(), needle) != items.end();
+}
+
+static std::string join_list(const std::vector<std::string>& values) {
+    if (values.empty()) return "-";
+    std::ostringstream oss;
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << values[i];
+    }
+    return oss.str();
 }
 
 std::vector<BenchComparisonDelta> compute_deltas(const std::vector<BenchBackendResult>& current,
@@ -1041,16 +1064,20 @@ void print_comparison(const std::vector<BenchComparisonDelta>& deltas,
 
 json build_comparison_json(const std::vector<BenchBackendResult>& results,
                            const std::string& model,
+                           const std::string& timestamp,
                            const BenchConfig& config,
                            const json& previous_results,
                            const std::vector<BenchComparisonDelta>& deltas) {
-    json output = to_json(results, model, config);
+    json output = to_json(results, model, timestamp, config);
 
     output["compare_file"] = config.compare_file;
     if (previous_results.contains("timestamp")) {
         output["previous_timestamp"] = previous_results["timestamp"];
     }
-    output["previous_results"] = previous_results["results"];
+    output["previous_results"] =
+        (previous_results.contains("results") && previous_results["results"].is_array())
+            ? previous_results["results"]
+            : json::array();
 
     json comparison_json = json::array();
     for (const auto& d : deltas) {
@@ -1071,47 +1098,85 @@ json build_comparison_json(const std::vector<BenchBackendResult>& results,
     return output;
 }
 
-// ============================================================
-// Main Bench Handler
-// ============================================================
 
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config) {
-    // 1. Validate model exists
-    json model_info = client.get_model_info(config.model);
-    if (model_info.empty()) {
-        std::cerr << "Error: Model '" << config.model << "' not found." << std::endl;
-        if (config.auto_pull) {
-            std::cout << "Auto-pulling model..." << std::endl;
-            json pull_req;
-            pull_req["model_name"] = config.model;
-            if (client.pull_model(pull_req) != 0) {
-                std::cerr << "Error: Failed to pull model." << std::endl;
-                return 1;
-            }
-        } else {
-            std::cerr << "Use --auto-pull to download it automatically." << std::endl;
-            return 1;
-        }
-    } else {
-        // Check if downloaded
-        if (model_info.contains("downloaded") && !model_info["downloaded"].get<bool>()) {
-            std::cerr << "Error: Model '" << config.model << "' is not downloaded." << std::endl;
-            if (config.auto_pull) {
-                std::cout << "Auto-pulling model..." << std::endl;
-                json pull_req;
-                pull_req["model_name"] = config.model;
-                if (client.pull_model(pull_req) != 0) {
-                    std::cerr << "Error: Failed to pull model." << std::endl;
-                    return 1;
-                }
-            } else {
-                std::cerr << "Run 'lemonade pull " << config.model << "' first, or use --auto-pull." << std::endl;
-                return 1;
-            }
+    if (config.models.empty()) {
+        std::cerr << "Error: At least one model must be provided." << std::endl;
+        return 1;
+    }
+
+    // Deduplicate models while preserving order (first occurrence wins).
+    std::vector<std::string> unique_models;
+    std::unordered_set<std::string> seen_models;
+    for (const auto& model : config.models) {
+        if (seen_models.find(model) == seen_models.end()) {
+            unique_models.push_back(model);
+            seen_models.insert(model);
         }
     }
 
-    // 2. Load scenarios
+    if (unique_models.size() < config.models.size()) {
+        std::cout << "Note: Removed " << (config.models.size() - unique_models.size())
+                  << " duplicate model(s). Testing " << unique_models.size()
+                  << " unique model(s)." << std::endl;
+    }
+
+    const std::string command_timestamp = get_timestamp_iso();
+
+    // Preflight: ensure all requested models are available before any benchmark starts.
+    // If --auto-pull is enabled, pull missing/not-downloaded models during this phase.
+    std::map<std::string, json> model_info_by_name;
+    for (const auto& model : unique_models) {
+        json model_info = client.get_model_info(model);
+
+        if (model_info.empty()) {
+            if (!config.auto_pull) {
+                std::cerr << "Error: Model '" << model << "' not found." << std::endl;
+                std::cerr << "Use --auto-pull to download missing models before benchmarking." << std::endl;
+                return 1;
+            }
+
+            std::cout << "Preflight: model '" << model << "' not found. Auto-pulling..." << std::endl;
+            json pull_req;
+            pull_req["model_name"] = model;
+            if (client.pull_model(pull_req) != 0) {
+                std::cerr << "Error: Failed to pull model '" << model << "'." << std::endl;
+                return 1;
+            }
+
+            model_info = client.get_model_info(model);
+            if (model_info.empty()) {
+                std::cerr << "Error: Model '" << model << "' is still unavailable after auto-pull." << std::endl;
+                return 1;
+            }
+        }
+
+        if (model_info.contains("downloaded") && !model_info["downloaded"].get<bool>()) {
+            if (!config.auto_pull) {
+                std::cerr << "Error: Model '" << model << "' is not downloaded." << std::endl;
+                std::cerr << "Run 'lemonade pull " << model << "' first, or use --auto-pull." << std::endl;
+                return 1;
+            }
+
+            std::cout << "Preflight: model '" << model << "' is not downloaded. Auto-pulling..." << std::endl;
+            json pull_req;
+            pull_req["model_name"] = model;
+            if (client.pull_model(pull_req) != 0) {
+                std::cerr << "Error: Failed to pull model '" << model << "'." << std::endl;
+                return 1;
+            }
+
+            model_info = client.get_model_info(model);
+            if (model_info.empty() || (model_info.contains("downloaded") && !model_info["downloaded"].get<bool>())) {
+                std::cerr << "Error: Model '" << model << "' is not downloaded after auto-pull." << std::endl;
+                return 1;
+            }
+        }
+
+        model_info_by_name[model] = std::move(model_info);
+    }
+
+    // 1. Load scenarios (shared across models)
     std::vector<BenchScenario> scenarios;
     if (!config.scenario_file.empty()) {
         scenarios = load_scenarios_from_file(config.scenario_file);
@@ -1141,90 +1206,118 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         return 1;
     }
 
-    // 3. Discover backends
-    auto backends = discover_backends(client, config.model, config.backends);
-    if (backends.empty()) {
-        std::cerr << "Error: No suitable backends found for model '" << config.model << "'." << std::endl;
-        return 1;
-    }
+    struct ModelBenchResult {
+        std::string model;
+        std::string timestamp;
+        std::vector<BenchBackendResult> results;
+    };
 
-    // 4. Determine context sizes
-    std::vector<int> ctx_sizes = config.ctx_sizes;
-    if (ctx_sizes.empty()) {
-        // Use model's default context size from info, or a reasonable default
-        int default_ctx = 4096;
-        if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
-            auto& opts = model_info["recipe_options"];
-            if (opts.contains("ctx_size") && opts["ctx_size"].is_number()) {
-                default_ctx = opts["ctx_size"].get<int>();
-            }
+    std::vector<ModelBenchResult> by_model;
+
+    // 2. Execute benchmark workflow for each model
+    for (const auto& model : unique_models) {
+        const auto model_it = model_info_by_name.find(model);
+        if (model_it == model_info_by_name.end()) {
+            std::cerr << "Error: Missing preflight model info for '" << model << "'." << std::endl;
+            return 1;
         }
-        ctx_sizes = {default_ctx};
-    }
+        const json& model_info = model_it->second;
+        const std::string model_timestamp = get_timestamp_iso();
 
-    // 5. Run benchmarks
-    std::vector<BenchBackendResult> all_results;
-
-    for (const auto& [recipe, backend] : backends) {
-        // Look up backend-specific args for this recipe
-        // If none specified, use a single empty-string entry so we still iterate once
-        std::vector<std::string> recipe_args_list;
-        auto args_it = config.backend_args.find(recipe);
-        if (args_it != config.backend_args.end() && !args_it->second.empty()) {
-            recipe_args_list = args_it->second;
-        } else {
-            recipe_args_list = {""};  // default: no extra args
+        // Discover backends for this model
+        auto backends = discover_backends(client, model, config.backends);
+        if (backends.empty()) {
+            std::cerr << "Error: No suitable backends found for model '" << model << "'." << std::endl;
+            return 1;
         }
 
-        // Iterate all combinations of ctx_size × backend_args
-        for (int ctx_size : ctx_sizes) {
-            for (const auto& recipe_args : recipe_args_list) {
-                BenchBackendResult tmp;
-                tmp.recipe = recipe;
-                tmp.backend = backend;
-                tmp.ctx_size = ctx_size;
-                tmp.backend_args = recipe_args;
-                std::cout << "\n=== " << tmp.label() << " ===" << std::endl;
-
-                BenchBackendResult backend_result;
-                backend_result.recipe = recipe;
-                backend_result.backend = backend;
-                backend_result.ctx_size = ctx_size;
-                backend_result.backend_args = recipe_args;
-
-                for (const auto& scenario : scenarios) {
-                    std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
-
-                    int warmup = scenario.warmup_runs;
-                    int runs = scenario.measurement_runs;
-
-                    // Allow config overrides
-                    if (config.warmup_runs > 0) warmup = config.warmup_runs;
-                    if (config.measurement_runs > 0) runs = config.measurement_runs;
-
-                    auto scenario_result = run_scenario(client, config.model, scenario, warmup, runs,
-                                                        config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args);
-                    backend_result.scenarios.push_back(scenario_result);
-                }
-
-                // Only add results if at least one scenario ran
-                if (!backend_result.scenarios.empty()) {
-                    all_results.push_back(backend_result);
+        // Determine context sizes for this model
+        std::vector<int> ctx_sizes = config.ctx_sizes;
+        if (ctx_sizes.empty()) {
+            // Use model's default context size from info, or a reasonable default
+            int default_ctx = 4096;
+            if (model_info.contains("recipe_options") && model_info["recipe_options"].is_object()) {
+                auto& opts = model_info["recipe_options"];
+                if (opts.contains("ctx_size") && opts["ctx_size"].is_number()) {
+                    default_ctx = opts["ctx_size"].get<int>();
                 }
             }
+            ctx_sizes = {default_ctx};
         }
+
+        std::vector<BenchBackendResult> all_results;
+
+        for (const auto& [recipe, backend] : backends) {
+            // Look up backend-specific args for this recipe
+            // If none specified, use a single empty-string entry so we still iterate once
+            std::vector<std::string> recipe_args_list;
+            auto args_it = config.backend_args.find(recipe);
+            if (args_it != config.backend_args.end() && !args_it->second.empty()) {
+                recipe_args_list = args_it->second;
+            } else {
+                recipe_args_list = {""};  // default: no extra args
+            }
+
+            // Iterate all combinations of ctx_size × backend_args
+            for (int ctx_size : ctx_sizes) {
+                for (const auto& recipe_args : recipe_args_list) {
+                    BenchBackendResult tmp;
+                    tmp.recipe = recipe;
+                    tmp.backend = backend;
+                    tmp.ctx_size = ctx_size;
+                    tmp.backend_args = recipe_args;
+                    std::cout << "\n=== [" << model << "] " << tmp.label() << " ===" << std::endl;
+
+                    BenchBackendResult backend_result;
+                    backend_result.recipe = recipe;
+                    backend_result.backend = backend;
+                    backend_result.ctx_size = ctx_size;
+                    backend_result.backend_args = recipe_args;
+
+                    for (const auto& scenario : scenarios) {
+                        std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
+
+                        int warmup = scenario.warmup_runs;
+                        int runs = scenario.measurement_runs;
+
+                        // Allow config overrides
+                        if (config.warmup_runs > 0) warmup = config.warmup_runs;
+                        if (config.measurement_runs > 0) runs = config.measurement_runs;
+
+                        auto scenario_result = run_scenario(client, model, scenario, warmup, runs,
+                                                            config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args);
+                        backend_result.scenarios.push_back(scenario_result);
+                    }
+
+                    // Only add results if at least one scenario ran
+                    if (!backend_result.scenarios.empty()) {
+                        all_results.push_back(backend_result);
+                    }
+                }
+            }
+        }
+
+        if (all_results.empty()) {
+            std::cerr << "Error: No benchmark results for model '" << model << "' (all backends failed to load)." << std::endl;
+            return 1;
+        }
+
+        by_model.push_back({model, model_timestamp, std::move(all_results)});
     }
 
-    if (all_results.empty()) {
-        std::cerr << "Error: No benchmark results (all backends failed to load)." << std::endl;
-        return 1;
-    }
-
-    // 6. Output results
+    // 3. Output results
     if (config.compare_file.empty()) {
-        // Normal output
+        // Normal output (single- or multi-model)
         if (config.json_output) {
-            json output = to_json(all_results, config.model, config);
+            json output;
+            output["timestamp"] = command_timestamp;
+            output["models"] = json::array();
+            for (const auto& model_result : by_model) {
+                output["models"].push_back(
+                    to_json(model_result.results, model_result.model,
+                            model_result.timestamp, config));
+            }
+
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
                 if (!write_json_file(config.output_file, json_str, true)) return 1;
@@ -1233,9 +1326,19 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 std::cout << json_str << std::endl;
             }
         } else {
-            print_table(all_results, config.model, config.measurement_runs >= 10);
+            for (const auto& model_result : by_model) {
+                print_table(model_result.results, model_result.model, config.measurement_runs >= 10);
+            }
+
             if (!config.output_file.empty()) {
-                json output = to_json(all_results, config.model, config);
+                json output;
+                output["timestamp"] = command_timestamp;
+                output["models"] = json::array();
+                for (const auto& model_result : by_model) {
+                    output["models"].push_back(
+                        to_json(model_result.results, model_result.model,
+                                model_result.timestamp, config));
+                }
                 if (write_json_file(config.output_file, output.dump(2), false)) {
                     std::cout << "JSON results also written to " << config.output_file << std::endl;
                 }
@@ -1249,11 +1352,87 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             return 1;
         }
 
-        auto deltas = compute_deltas(all_results, previous_results);
+        const std::map<std::string, json> previous_by_model = extract_models_from_results(previous_results);
+        const std::string previous_timestamp = extract_results_timestamp(previous_results);
+
+        std::vector<std::string> current_models;
+        current_models.reserve(by_model.size());
+        for (const auto& model_result : by_model) {
+            current_models.push_back(model_result.model);
+        }
+
+        std::vector<std::string> previous_models;
+        previous_models.reserve(previous_by_model.size());
+        for (const auto& [model_name, _] : previous_by_model) {
+            previous_models.push_back(model_name);
+        }
+
+        std::vector<std::string> matched_models;
+        std::vector<std::string> new_models;
+        std::vector<std::string> removed_models;
+
+        for (const auto& model_name : current_models) {
+            if (previous_by_model.find(model_name) != previous_by_model.end()) {
+                matched_models.push_back(model_name);
+            } else {
+                new_models.push_back(model_name);
+            }
+        }
+        for (const auto& model_name : previous_models) {
+            if (!vector_contains(current_models, model_name)) {
+                removed_models.push_back(model_name);
+            }
+        }
+
+        struct ModelComparisonResult {
+            std::string model;
+            std::string timestamp;
+            json previous_for_model;
+            std::vector<BenchComparisonDelta> deltas;
+            const std::vector<BenchBackendResult>* results = nullptr;
+        };
+
+        std::vector<ModelComparisonResult> comparison_results;
+        comparison_results.reserve(by_model.size());
+
+        for (const auto& model_result : by_model) {
+            json prev_for_model = json::object();
+            auto it = previous_by_model.find(model_result.model);
+            if (it != previous_by_model.end()) {
+                prev_for_model = it->second;
+            }
+
+            comparison_results.emplace_back(ModelComparisonResult{
+                model_result.model,
+                model_result.timestamp,
+                prev_for_model,
+                compute_deltas(model_result.results, prev_for_model),
+                &model_result.results
+            });
+        }
 
         if (config.json_output) {
-            json output = build_comparison_json(all_results, config.model, config,
-                                                 previous_results, deltas);
+            json output;
+
+            output["timestamp"] = command_timestamp;
+            output["compare_file"] = config.compare_file;
+            if (!previous_timestamp.empty()) {
+                output["previous_timestamp"] = previous_timestamp;
+            }
+            output["model_summary"] = {
+                {"current_models", current_models},
+                {"previous_models", previous_models},
+                {"matched_models", matched_models},
+                {"new_models", new_models},
+                {"removed_models", removed_models}
+            };
+            output["models"] = json::array();
+            for (const auto& c : comparison_results) {
+                output["models"].push_back(
+                    build_comparison_json(*c.results, c.model, c.timestamp, config,
+                                          c.previous_for_model, c.deltas));
+            }
+
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
                 if (!write_json_file(config.output_file, json_str, true)) return 1;
@@ -1262,10 +1441,22 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 std::cout << json_str << std::endl;
             }
         } else {
-            // Print normal table first, then comparison
-            print_table(all_results, config.model, config.measurement_runs >= 10);
-            print_comparison(deltas, config.model, config.compare_file,
-                           previous_results.value("timestamp", ""));
+            std::cout << "\nModel set comparison" << std::endl;
+            std::cout << std::string(100, '=') << std::endl;
+            std::cout << "Current models (" << current_models.size() << "):  "
+                      << join_list(current_models) << std::endl;
+            std::cout << "Previous models (" << previous_models.size() << "): "
+                      << join_list(previous_models) << std::endl;
+            std::cout << "Matched: " << join_list(matched_models) << std::endl;
+            std::cout << "New:     " << join_list(new_models) << std::endl;
+            std::cout << "Removed: " << join_list(removed_models) << std::endl;
+
+            for (const auto& c : comparison_results) {
+                // Print normal table first, then comparison
+                print_table(*c.results, c.model, config.measurement_runs >= 10);
+                print_comparison(c.deltas, c.model, config.compare_file,
+                                 previous_timestamp);
+            }
         }
     }
 
@@ -1275,16 +1466,15 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     return 0;
 }
 
-// ============================================================
-// CLI helpers
-// ============================================================
 
 CLI::App* register_bench_command(CLI::App& parent,
-                                 std::string& model,
                                  std::string& output_file,
                                  BenchCliOptions& opts) {
     CLI::App* cmd = parent.add_subcommand("bench", "Benchmark a model's chat completion performance")->group("Model management");
-    cmd->add_option("model", model, "Model name to benchmark")->required()->type_name("MODEL");
+    cmd->add_option("models", opts.models, "One or more model names to benchmark")
+        ->required()
+        ->type_name("MODEL")
+        ->expected(1, -1);
     cmd->add_option("--backend", opts.backends, "Backend to test (e.g., vulkan, metal, cpu). Repeat for multiple.")
         ->type_name("BACKEND")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1310,9 +1500,6 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    cmd->add_option("--flm-args", opts.flm_args, "Custom args for flm serve. Repeat for multiple.")
-        ->type_name("ARGS")
-        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--vllm-args", opts.vllm_args, "Custom args for vllm-server. Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1325,11 +1512,10 @@ CLI::App* register_bench_command(CLI::App& parent,
     return cmd;
 }
 
-BenchConfig build_bench_config(const std::string& model,
-                               const std::string& output_file,
+BenchConfig build_bench_config(const std::string& output_file,
                                const BenchCliOptions& cli) {
     BenchConfig config;
-    config.model = model;
+    config.models = cli.models;
     config.backends = cli.backends;
     config.ctx_sizes = cli.ctx_sizes;
     config.warmup_runs = cli.warmup;
@@ -1345,7 +1531,6 @@ BenchConfig build_bench_config(const std::string& model,
     config.scenario_names = cli.scenario_names;
     // Populate backend-specific args map (only non-empty values)
     if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
-    if (!cli.flm_args.empty()) config.backend_args["flm"] = cli.flm_args;
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;

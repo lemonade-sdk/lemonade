@@ -11,6 +11,7 @@ Usage:
 
 import base64
 import json
+import platform
 import sys
 import uuid
 import requests
@@ -44,7 +45,7 @@ class OllamaTests(ServerTestBase):
 
     # Pin sd-cpp to CPU for this no-GPU API compatibility suite.
     additional_server_args = ["--sdcpp", "cpu"]
-    
+
     _model_pulled = False
 
     @classmethod
@@ -559,6 +560,8 @@ class OllamaTests(ServerTestBase):
         """Test /api/generate with an image generation model."""
         if sys.platform == "darwin":
             self.skipTest("sd-cpp not supported on macOS")
+        if sys.platform == "linux" and platform.machine() == "aarch64":
+            self.skipTest("sd-cpp not supported on Linux ARM64")
         # Pull the SD model first
         response = requests.post(
             f"{self.base_url}/pull",

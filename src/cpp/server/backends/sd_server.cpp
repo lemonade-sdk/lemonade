@@ -31,6 +31,10 @@ bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
 }
 
+bool is_cuda_backend(const std::string& backend) {
+    return backend == "cuda";
+}
+
 std::string resolve_sdcpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         std::string channel = "stable";
@@ -73,6 +77,10 @@ std::string get_therock_version() {
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
 }
+
+int generate_random_seed() {
+    return static_cast<int>(std::random_device{}() & 0x7fffffffU);
+}
 }
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -80,20 +88,33 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     params.repo = "leejet/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
-    // Transform version for URL (master-NNN-HASH -> master-HASH)
+    // Transform generated sd.cpp versions for asset names:
+    // e.g. master-672-1f9ee88 -> master-1f9ee88
     std::string short_version = version;
     size_t first_dash = version.find('-');
-    if (first_dash != std::string::npos) {
-        size_t second_dash = version.find('-', first_dash + 1);
-        if (second_dash != std::string::npos) {
+    size_t second_dash = first_dash == std::string::npos
+        ? std::string::npos
+        : version.find('-', first_dash + 1);
+
+    if (first_dash != std::string::npos && second_dash != std::string::npos) {
+        std::string middle = version.substr(first_dash + 1, second_dash - first_dash - 1);
+        bool middle_is_number = !middle.empty();
+        for (char ch : middle) {
+            if (!std::isdigit(static_cast<unsigned char>(ch))) {
+                middle_is_number = false;
+                break;
+            }
+        }
+
+        if (middle_is_number) {
             short_version = version.substr(0, first_dash) + "-" +
-                           version.substr(second_dash + 1);
+                            version.substr(second_dash + 1);
         }
     }
 
     if (resolved_backend == "metal") {
 #if defined(__APPLE__)
-        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-15.7.7-arm64.zip";
+        params.filename = "sd-" + short_version + "-bin-Darwin-macOS-*-arm64.zip";
 #endif
     } else if (is_rocm_backend(resolved_backend)) {
         std::string target_arch = SystemInfo::get_rocm_arch();
@@ -119,7 +140,26 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     #else
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
-        } else {
+    } else if (is_cuda_backend(resolved_backend)) {
+        params.repo = "lemonade-sdk/stable-diffusion.cpp";
+        std::string target_arch = SystemInfo::get_cuda_arch();
+        if (target_arch.empty()) {
+            throw std::runtime_error(
+                SystemInfo::get_unsupported_backend_error("sd-cpp", "cuda")
+            );
+        }
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-windows-cuda-" + target_arch + "-x64.zip";
+#elif defined(__linux__)
+#if defined(__aarch64__)
+        params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-arm64.tar.xz";
+#else
+        params.filename = "sd-" + short_version + "-ubuntu-cuda-" + target_arch + "-x64.tar.xz";
+#endif
+#else
+        throw std::runtime_error("CUDA sd.cpp is currently supported on Windows and Linux only");
+#endif
+    } else {
         // CPU build (default)
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
@@ -152,14 +192,18 @@ void SDServer::load(const std::string& model_name,
     image_defaults_ = model_info.image_defaults;
 
     std::string backend = options.get_option("sd-cpp_backend");
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("sd-cpp");
+        backend = supported.backends.empty() ? "cpu" : supported.backends[0];
+    }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.get_option("sdcpp_args");
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
     // Update device type based on the actual backend selected.
-    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan/metal are GPU backends.
-    if (backend == "rocm" || backend == "vulkan" || backend == "metal") {
+    // get_device_type_from_recipe() defaults sd-cpp to CPU, but rocm/vulkan/metal/cuda are GPU backends.
+    if (backend == "rocm" || backend == "vulkan" || backend == "metal" || backend == "cuda") {
         device_type_ = DEVICE_GPU;
     } else {
         device_type_ = DEVICE_CPU;
@@ -299,11 +343,27 @@ void SDServer::load(const std::string& model_name,
         env_vars.push_back({"PATH", new_path});
 
         LOG(INFO, "SDServer") << "ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
+    } else if (is_cuda_backend(resolved_backend)) {
+        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
+        // sd-server.exe. Prepend the executable directory to PATH so the loader
+        // resolves them before any system-wide CUDA install.
+        std::string new_path = exe_dir.string();
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
     }
 #endif
 
+    if (is_cuda_backend(resolved_backend)) {
+        BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
+    }
+
     // Launch the server process
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -311,12 +371,13 @@ void SDServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
+    set_process_handle(started_handle);
 
-    if (process_handle_.pid == 0) {
+    if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start sd-server process");
     }
 
-    LOG(INFO, "SDServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/")) {
@@ -324,15 +385,15 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("sd-server failed to start or become ready");
     }
 
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << port_ << std::endl;
+    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
 }
 
 void SDServer::unload() {
-    if (process_handle_.pid != 0) {
-        LOG(INFO, "SDServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+    stop_backend_watchdog();
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(handle);
     }
     image_defaults_ = ImageDefaults{};
 }
@@ -425,9 +486,12 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         extra_args["sample_params"] = sample_params;
     }
 
-    // seed stays top-level in from_json_str; preserve if the caller supplied one.
+    // seed stays top-level in from_json_str. Negative seeds mean "random" for
+    // Lemonade, so generate a concrete seed instead of letting sd-server fall
+    // back to its deterministic default.
     if (request.contains("seed") && request["seed"].is_number_integer()) {
-        extra_args["seed"] = request["seed"].get<int>();
+        int seed = request["seed"].get<int>();
+        extra_args["seed"] = seed >= 0 ? seed : generate_random_seed();
     }
 
     return extra_args;
@@ -496,8 +560,8 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models -- use global timeout
-    return forward_request("/v1/images/generations", sd_request, utils::HttpClient::get_default_timeout());
+    // Image generation can take 20+ minutes for large models; avoid timeout.
+    return forward_request("/v1/images/generations", sd_request, 0);
 }
 
 json SDServer::image_edits(const json& request) {
@@ -537,7 +601,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 json SDServer::image_variations(const json& request) {
@@ -570,7 +634,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, utils::HttpClient::get_default_timeout());
+    return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
 std::string SDServer::upscale_via_cli(
