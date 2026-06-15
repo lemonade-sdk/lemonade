@@ -467,7 +467,7 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
 
-        for llamacpp_args in ("-ngl 35", "--gpu-layers=40", "--n-gpu-layers 20"):
+        for llamacpp_args in ("-ngl 35", "--gpu-layers 40", "--n-gpu-layers 20"):
             with self.subTest(llamacpp_args=llamacpp_args):
                 response = requests.post(
                     f"{self.base_url}/load",
