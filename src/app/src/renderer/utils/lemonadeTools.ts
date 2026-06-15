@@ -120,8 +120,7 @@ export function buildLemonadeTools(
   const toolGuidance = guidance.length ? `\n${guidance.join('\n')}` : '';
   const systemPrompt = toolDefinitions.system_prompt
     .replace('{tool_list}', toolList)
-    .replace('{tool_guidance}', toolGuidance)
-    .replace('{tool_instructions}', toolGuidance);
+    .replace('{tool_guidance}', toolGuidance);
 
   return { tools, systemPrompt, models };
 }

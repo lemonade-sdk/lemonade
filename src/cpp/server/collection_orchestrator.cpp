@@ -149,11 +149,17 @@ std::string format_image_size(int width, int height) {
 
 std::string parse_size_from_text(const std::string& text) {
     if (text.empty()) return "";
-    static const std::regex size_re(R"((\d{2,4})\s*(x|X|by|BY)\s*(\d{2,4}))");
+    // Mirror the desktop client's parser (lemonadeTools.ts): a WIDTHxHEIGHT token
+    // that is not embedded inside a longer number. std::regex (ECMAScript) lacks
+    // lookbehind, so the leading "not preceded by a digit" guard is emulated by
+    // consuming an optional non-digit boundary. "\xC3\x97" is UTF-8 for the '×'
+    // multiplication sign, matching the client's "×" alternative.
+    static const std::regex size_re("(?:^|[^\\d])(\\d{2,4})\\s*(?:x|by|\xC3\x97)\\s*(\\d{2,4})(?!\\d)",
+                                    std::regex::icase);
     std::smatch match;
-    if (std::regex_search(text, match, size_re) && match.size() >= 4) {
+    if (std::regex_search(text, match, size_re) && match.size() >= 3) {
         try {
-            return format_image_size(std::stoi(match[1].str()), std::stoi(match[3].str()));
+            return format_image_size(std::stoi(match[1].str()), std::stoi(match[2].str()));
         } catch (const std::exception&) { return ""; }
     }
     return "";
@@ -441,8 +447,7 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
     if (defs.contains("system_prompt") && defs["system_prompt"].is_string()) {
         std::string prompt = replace_all(defs["system_prompt"].get<std::string>(),
                                          "{tool_list}", tool_list);
-        prompt = replace_all(prompt, "{tool_guidance}", tool_guidance);
-        result.system_prompt = replace_all(prompt, "{tool_instructions}", tool_guidance);
+        result.system_prompt = replace_all(prompt, "{tool_guidance}", tool_guidance);
     }
 
     // Merge app-provided tools (omni tools win on name collision).
