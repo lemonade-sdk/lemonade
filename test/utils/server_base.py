@@ -339,6 +339,7 @@ def ensure_rocm_runtime():
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/install",
             json={"recipe": recipe, "backend": "rocm", "stream": False},
+            headers=_auth_headers(),
             timeout=TIMEOUT_ROCM_INSTALL,
         )
         response.raise_for_status()
