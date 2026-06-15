@@ -55,8 +55,12 @@ InstallParams ChatterboxServer::get_install_params(const std::string& backend, c
     //   windows x64  : cuda, cpu
     //   linux   x64  : cuda, rocm, cpu
     //   macos   arm64: metal, cpu
+    //
+    // All platforms use .tar.gz (extracted via native tar on Windows too) so the
+    // split-archive path can serve the multi-GB GPU bundles that exceed GitHub's
+    // 2 GiB per-asset release limit.
 #ifdef _WIN32
-    params.filename = "chatterbox-server-" + version + "-windows-x64-" + backend + ".zip";
+    params.filename = "chatterbox-server-" + version + "-windows-x64-" + backend + ".tar.gz";
 #elif defined(__APPLE__)
     params.filename = "chatterbox-server-" + version + "-macos-arm64-" + backend + ".tar.gz";
 #else

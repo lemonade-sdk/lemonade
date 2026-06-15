@@ -26,6 +26,7 @@ public:
         "chatterbox-server"
 #endif
         , get_install_params
+        , true  // supports_split_archive: GPU bundles exceed GitHub's 2 GiB asset limit
     );
 
     explicit ChatterboxServer(const std::string& log_level,
