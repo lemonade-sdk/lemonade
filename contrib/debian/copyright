@@ -14,6 +14,19 @@ Copyright: Microsoft Corporation
 License: Expat
 Comment: Script from Microsoft's devcontainer templates
 
+Files: src/app/*
+       src/cpp/installer/installer_banner_wix.bmp
+       src/cpp/installer/top_banner.bmp
+Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
+License: Apache-2.0
+Comment: Tauri application and installer artwork with dependencies:
+ - axios (MIT)
+ - highlight.js (BSD-3-Clause)
+ - katex (MIT)
+ - markdown-it (MIT)
+ - markdown-it-texmath (MIT)
+ - react and react-dom (MIT)
+
 Files: docs/assets/favicon.ico
        docs/assets/logo.png
        docs/assets/logo_512.png
@@ -29,19 +42,6 @@ Copyright: Microsoft Corporation
 License: Expat
 Comment: Icons derived from Microsoft Fluent Emoji (lemon emoji)
  Source: https://github.com/microsoft/fluentui-emoji
-
-Files: src/app/*
-       src/cpp/installer/installer_banner_wix.bmp
-       src/cpp/installer/top_banner.bmp
-Copyright: 2024-2025 Advanced Micro Devices, Inc. (AMD)
-License: Apache-2.0
-Comment: Tauri application and installer artwork with dependencies:
- - axios (MIT)
- - highlight.js (BSD-3-Clause)
- - katex (MIT)
- - markdown-it (MIT)
- - markdown-it-texmath (MIT)
- - react and react-dom (MIT)
 
 Files: src/cpp/server/backends/fastflowlm_server.cpp
        src/cpp/include/lemon/backends/fastflowlm_server.h
@@ -61,7 +61,7 @@ License: Expat
 
 Files: src/cpp/include/lemon/amdxdna_accel.h
 Copyright: 2022-2024, Advanced Micro Devices, Inc.
-License: GPL-2.0
+License: GPL-2.0-with-linux-syscall-note
 
 Files: debian/*
 Copyright: 2025 Mario Limonciello <superm1@debian.org>
@@ -199,3 +199,32 @@ License: BSD-3-clause
  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: GPL-2.0-with-linux-syscall-note
+ This package is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; version 2 of the License.
+ .
+ This package is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <http://www.gnu.org/licenses/>
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+ .
+ NOTE! This copyright does *not* cover user programs that use kernel
+ services by normal system calls - this is merely considered normal use
+ of the kernel, and does *not* fall under the heading of "derived work".
+ Also note that the GPL below is copyrighted by the Free Software
+ Foundation, but the instance of code that it refers to (the Linux
+ kernel) is copyrighted by me and others who actually wrote it.
+ .
+ Also note that the only valid version of the GPL as far as the kernel
+ is concerned is _this_ particular version of the license (ie v2, not
+ v2.2 or v3.x or whatever), unless explicitly otherwise stated.
+ .
+ Linus Torvalds
