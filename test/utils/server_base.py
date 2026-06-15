@@ -45,6 +45,7 @@ from .test_models import (
     STANDARD_MESSAGES,
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
+    TIMEOUT_ROCM_INSTALL,
     get_default_cli_binary,
 )
 
@@ -300,6 +301,57 @@ def _build_runtime_config(additional_server_args=None):
     return config
 
 
+# Recipes whose "rocm" backend resolves to the rocm-stable channel and therefore
+# trigger a TheRock runtime download on a cold cache (see will_install_therock in
+# backend_manager.cpp). Other rocm consumers (vllm, llamacpp rocm-nightly) bundle
+# their own runtime and do not need this.
+_THEROCK_RECIPES = ("llamacpp", "sd-cpp")
+
+
+def ensure_rocm_runtime():
+    """
+    Pre-warm the ROCm (TheRock) runtime before running rocm-backend tests.
+
+    On a cold cache, loading a rocm-stable model triggers a ~4.5 GB TheRock
+    download inside the first inference request, which can exceed the tighter
+    per-request inference timeout. Doing it here, as an explicit setup step with
+    a generous timeout, keeps that cost out of the test body and surfaces a
+    download/runtime failure as a clear, distinct setup error rather than a
+    confusing inference timeout.
+
+    No-op unless the active backend is "rocm" and the recipe is one that uses
+    the TheRock runtime. Idempotent: the server skips the download when TheRock
+    is already installed, so this is a fast check on a warm cache.
+    """
+    if _config.get("backend") != "rocm":
+        return
+    recipe = _config.get("wrapped_server")
+    if recipe not in _THEROCK_RECIPES:
+        return
+    if requests is None:
+        raise RuntimeError(
+            "ROCM_INSTALL_FAILED: the `requests` package is required to pre-warm "
+            "the ROCm (TheRock) runtime; install it with `pip install requests`."
+        )
+
+    print(f"\n=== Ensuring ROCm (TheRock) runtime for {recipe}:rocm ===")
+    try:
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/install",
+            json={"recipe": recipe, "backend": "rocm", "stream": False},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_ROCM_INSTALL,
+        )
+        response.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"ROCM_INSTALL_FAILED: ROCm runtime (TheRock) install failed for "
+            f"{recipe}:rocm. This is an environment/setup failure, not a test "
+            f"failure. Detail: {e}"
+        ) from e
+    print(f"ROCm (TheRock) runtime ready for {recipe}:rocm")
+
+
 class ServerTestBase(unittest.TestCase):
     """
     Base class for server tests.
@@ -340,6 +392,10 @@ class ServerTestBase(unittest.TestCase):
                 "(e.g., install the package or run lemond manually)." % PORT
             )
         print("Server is reachable on port %d" % PORT)
+
+        # Pre-warm the ROCm (TheRock) runtime so its cold-cache download does not
+        # blow the per-request inference timeout inside the first test.
+        ensure_rocm_runtime()
 
         # Build and apply runtime config from CLI args + class-level args
         runtime_config = _build_runtime_config(cls.additional_server_args)
