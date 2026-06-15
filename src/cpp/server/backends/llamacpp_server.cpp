@@ -299,16 +299,6 @@ void LlamaCppServer::load(const std::string& model_name,
     // Get mmproj path for vision models
     std::string mmproj_path = model_info.resolved_path("mmproj");
 
-#ifdef _WIN32
-    // Child CWD changes on Windows require absolute file paths.
-    if (!gguf_path.empty()) {
-        gguf_path = path_to_utf8(fs::absolute(fs::path(gguf_path)));
-    }
-    if (!mmproj_path.empty()) {
-        mmproj_path = path_to_utf8(fs::absolute(fs::path(mmproj_path)));
-    }
-#endif
-
     // Choose port
     port_ = choose_port();
 
@@ -480,7 +470,7 @@ void LlamaCppServer::load(const std::string& model_name,
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
                 if (!therock_bin.empty()) {
-                    new_path = therock_bin;
+                    new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin)));
                 }
             }
         }
@@ -502,15 +492,15 @@ void LlamaCppServer::load(const std::string& model_name,
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
         // llama-server.exe. Prepend the executable directory to PATH so the loader
         // resolves them before any system-wide CUDA install.
-        fs::path exe_dir = fs::path(executable).parent_path();
-        std::string new_path = exe_dir.string();
+        fs::path exe_dir = fs::absolute(fs::path(executable)).parent_path();
+        std::string new_path = path_to_utf8(exe_dir);
 
         const char* existing_path = std::getenv("PATH");
         if (existing_path && strlen(existing_path) > 0) {
             new_path += ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
-        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
+        LOG(DEBUG, "LlamaCpp") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
     }
 #endif
 
@@ -570,6 +560,7 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string process_executable = executable;
     std::string working_dir;
 #ifdef _WIN32
+    // Avoid inheriting a protected launcher cwd while keeping Linux/macOS behavior unchanged.
     fs::path executable_path = fs::absolute(fs::path(executable));
     process_executable = path_to_utf8(executable_path);
     working_dir = path_to_utf8(executable_path.parent_path());

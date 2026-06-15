@@ -229,17 +229,6 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Model file does not exist: " + model_path);
     }
 
-#ifdef _WIN32
-    // Child CWD changes on Windows require absolute file paths.
-    model_path = path_to_utf8(fs::absolute(fs::path(model_path)));
-    if (!llm_path.empty()) {
-        llm_path = path_to_utf8(fs::absolute(fs::path(llm_path)));
-    }
-    if (!vae_path.empty()) {
-        vae_path = path_to_utf8(fs::absolute(fs::path(vae_path)));
-    }
-#endif
-
     LOG(DEBUG, "SDServer") << "Using model: " << model_path << std::endl;
 
     // Get sd-server executable path
@@ -307,6 +296,10 @@ void SDServer::load(const std::string& model_name,
     // Set up environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
+#ifdef _WIN32
+    fs::path executable_path = fs::absolute(fs::path(exe_path));
+    exe_dir = executable_path.parent_path();
+#endif
 
 #ifndef _WIN32
     // For Linux, always set LD_LIBRARY_PATH to include executable directory
@@ -335,14 +328,14 @@ void SDServer::load(const std::string& model_name,
     if (is_rocm_backend(resolved_backend)) {
         // Add executable directory to PATH for ROCm runtime DLLs
         // This allows the sd-server.exe to find required HIP/ROCm libraries at runtime
-        std::string new_path = exe_dir.string();
+        std::string new_path = path_to_utf8(exe_dir);
 
         if (resolved_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
                 if (!therock_bin.empty()) {
-                    new_path = therock_bin + ";" + new_path;
+                    new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin))) + ";" + new_path;
                 }
             }
         }
@@ -353,19 +346,19 @@ void SDServer::load(const std::string& model_name,
         }
         env_vars.push_back({"PATH", new_path});
 
-        LOG(INFO, "SDServer") << "ROCm backend: added " << exe_dir.string() << " to PATH" << std::endl;
+        LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
     } else if (is_cuda_backend(resolved_backend)) {
         // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
         // sd-server.exe. Prepend the executable directory to PATH so the loader
         // resolves them before any system-wide CUDA install.
-        std::string new_path = exe_dir.string();
+        std::string new_path = path_to_utf8(exe_dir);
 
         const char* existing_path = std::getenv("PATH");
         if (existing_path && strlen(existing_path) > 0) {
             new_path += ";" + std::string(existing_path);
         }
         env_vars.push_back({"PATH", new_path});
-        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << exe_dir.string() << std::endl;
+        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
     }
 #endif
 
@@ -377,7 +370,6 @@ void SDServer::load(const std::string& model_name,
     std::string process_exe_path = exe_path;
     std::string working_dir;
 #ifdef _WIN32
-    fs::path executable_path = fs::absolute(fs::path(exe_path));
     process_exe_path = path_to_utf8(executable_path);
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
