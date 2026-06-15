@@ -1322,7 +1322,7 @@
             "transcription",
             "realtime-transcription"
         ],
-        "size": 0.034
+        "size": 0.202
     },
     "Moonshine-Small-Streaming": {
         "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
@@ -1333,7 +1333,7 @@
             "transcription",
             "realtime-transcription"
         ],
-        "size": 0.123
+        "size": 0.431
     },
     "Moonshine-Medium-Streaming": {
         "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
@@ -1345,7 +1345,7 @@
             "realtime-transcription",
             "hot"
         ],
-        "size": 0.245
+        "size": 1.08
     },
     "SD-Turbo": {
         "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",

@@ -636,6 +636,84 @@ static void cleanup_empty_parents(const fs::path& file_path, const fs::path& sto
     }
 }
 
+// Return the on-disk size of a resolved model path. Some recipes (for
+// example Moonshine streaming) resolve to a directory of artifacts rather than
+// to a single model file. std::filesystem::file_size() fails on directories
+static uintmax_t resolved_path_size_bytes(const fs::path& path) {
+    std::error_code ec;
+    if (!safe_exists(path)) {
+        return 0;
+    }
+
+    if (!safe_is_directory(path)) {
+        auto size = fs::file_size(path, ec);
+        return ec ? 0 : size;
+    }
+
+    uintmax_t total = 0;
+    for (const auto& entry : fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
+        if (ec) {
+            ec.clear();
+            break;
+        }
+        if (!entry.is_regular_file(ec)) {
+            ec.clear();
+            continue;
+        }
+
+        auto size = fs::file_size(entry.path(), ec);
+        if (!ec) {
+            total += size;
+        } else {
+            ec.clear();
+        }
+    }
+    return total;
+}
+
+static void cleanup_orphaned_blobs_under(const fs::path& path,
+                                         const fs::path& models_dir) {
+    if (!safe_exists(path)) {
+        return;
+    }
+
+    if (!safe_is_directory(path)) {
+        cleanup_orphaned_blob(path, models_dir);
+        return;
+    }
+
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
+        if (ec) {
+            ec.clear();
+            break;
+        }
+        cleanup_orphaned_blob(entry.path(), models_dir);
+    }
+}
+
+static void remove_resolved_path_or_throw(const fs::path& path,
+                                          const std::string& description) {
+    if (!safe_exists(path)) {
+        return;
+    }
+
+    LOG(INFO, "ModelManager") << "Removing " << description << ": "
+                              << path_to_utf8(path) << std::endl;
+
+    std::error_code ec;
+    if (safe_is_directory(path)) {
+        fs::remove_all(path, ec);
+    } else {
+        fs::remove(path, ec);
+    }
+
+    if (ec) {
+        throw std::runtime_error("Failed to remove " + description + " '" +
+                                 path_to_utf8(path) + "': " + ec.message());
+    }
+}
+
 
 static std::string normalized_relative_path(const fs::path& path, const fs::path& root) {
     std::string rel = path_to_utf8(path.lexically_relative(root));
@@ -2174,11 +2252,8 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // Calculate size in GB
         uintmax_t total_size = 0;
         for (auto& [type, path] : it->second.resolved_paths) {
-            try {
-                total_size += fs::file_size(path);
-            } catch (...) {
-                // skip inaccessible entries
-            }
+            (void)type;
+            total_size += resolved_path_size_bytes(path_from_utf8(path));
         }
         double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
         if (file_size_gb < 1.0)
@@ -4448,17 +4523,18 @@ void ModelManager::delete_model(const std::string& model_name) {
             LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
         }
     } else {
-        // Shared repo — only delete this model's specific variant file
+        // Shared repo — only delete this model's specific resolved variant path
         LOG(INFO, "ModelManager") << "Main repo " << main_repo
-                    << " is shared with other models, deleting variant file only" << std::endl;
+                    << " is shared with other models, deleting variant path only" << std::endl;
         std::string rpath = info.resolved_path("main");
         if (!rpath.empty()) {
-            fs::path file_path = path_from_utf8(rpath);
-            if (fs::exists(file_path)) {
-                cleanup_orphaned_blob(file_path, model_cache_path_fs);
-                LOG(INFO, "ModelManager") << "Removing variant file: " << rpath << std::endl;
-                fs::remove(file_path);
-                cleanup_empty_parents(file_path, model_cache_path_fs);
+            fs::path variant_path = path_from_utf8(rpath);
+            if (safe_exists(variant_path)) {
+                // Delete the whole resolved path, not just regular files
+                // and clean any HF symlink blobs before removing the snapshot entries.
+                cleanup_orphaned_blobs_under(variant_path, model_cache_path_fs);
+                remove_resolved_path_or_throw(variant_path, "variant path");
+                cleanup_empty_parents(variant_path, model_cache_path_fs);
             }
         }
         LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
