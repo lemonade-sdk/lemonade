@@ -51,7 +51,7 @@ runs:
         fi
 
         echo "Extracting .deb package: $DEB_FILE"
-        
+
         # This action extracts the .deb instead of installing it system-wide.
         # Install the package's declared runtime dependencies first, otherwise
         # newly linked shared libraries such as mbedcrypto are missing when the

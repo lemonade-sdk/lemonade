@@ -461,7 +461,9 @@ const LLMChatPanel: React.FC<LLMChatPanelProps> = ({
 
   const buildChatRequestBody = (messageHistory: Message[]) => ({
     model: chatModelName,
-    messages: messageHistory,
+    // Strip UI-only fields (e.g. `thinking`) so strict providers like
+    // Fireworks don't 400 on unknown keys in the assistant turn.
+    messages: messageHistory.map(({ role, content }) => ({ role, content })),
     stream: true,
     ...buildChatRequestOverrides(appSettings),
   });

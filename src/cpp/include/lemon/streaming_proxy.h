@@ -34,24 +34,24 @@ public:
         }
     };
 
-    // Stream a request to backend and forward SSE chunks to client
     static void forward_sse_stream(
         const std::string& backend_url,
         const std::string& request_body,
         httplib::DataSink& sink,
         std::function<void(const TelemetryData&)> on_complete = nullptr,
-        long timeout_seconds = 300
+        long timeout_seconds = 300,
+        std::function<void()> on_chunk = nullptr
     );
 
     static void forward_byte_stream(
         const std::string& backend_url,
         const std::string& request_body,
         httplib::DataSink& sink,
-        long timeout_seconds = 300
+        long timeout_seconds = 300,
+        std::function<void()> on_chunk = nullptr
     );
 
 private:
-    // Parse telemetry from SSE chunks
     static TelemetryData parse_telemetry(const std::string& buffer);
 };
 

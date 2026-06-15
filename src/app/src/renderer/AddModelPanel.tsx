@@ -62,6 +62,10 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     name: 'Whisper-Tiny',
     checkpoint: 'ggerganov/whisper.cpp:ggml-tiny.bin',
   },
+  'moonshine': {
+    name: 'Moonshine-Tiny-Streaming',
+    checkpoint: 'UsefulSensors/moonshine-streaming:onnx/tiny',
+  },
   'sd-cpp': {
     name: 'Z-Image-Turbo',
     checkpoint: 'Comfy-Org/z_image_turbo:split_files/diffusion_models/z_image_turbo_bf16.safetensors',
@@ -73,7 +77,7 @@ const RECIPE_EXAMPLES: Record<string, RecipeExample> = {
     checkpoint: 'mikkoph/kokoro-onnx',
   },
   'vllm': {
-    name: 'Qwen3.5-0.8B-vLLM',
+    name: 'Qwen3.5-0.8B-FP16-vLLM',
     checkpoint: 'Qwen/Qwen3.5-0.8B',
   },
 };

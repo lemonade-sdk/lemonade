@@ -121,10 +121,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   }, [isVisible]);
 
   const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.min(
+      Math.max(Math.floor(Math.log(bytes) / Math.log(k)), 0),
+      sizes.length - 1,
+    );
     return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
   };
 
@@ -136,6 +139,8 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   };
 
   const formatSpeed = (bytesPerSecond: number): string => {
+    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '--';
+    if (bytesPerSecond < 1) return '<1 B/s';
     return `${formatBytes(bytesPerSecond)}/s`;
   };
 
@@ -166,7 +171,7 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     }
 
     const speed = calculateSpeed(download);
-    if (speed === 0) return '--';
+    if (!Number.isFinite(speed) || speed < 1) return '--';
 
     const remainingBytes = download.bytesTotal - download.bytesDownloaded;
 
@@ -182,6 +187,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     } else {
       return `${Math.round(remainingSeconds / 3600)}h`;
     }
+  };
+
+  const isFinalizingDownload = (download: DownloadItem): boolean => {
+    return download.status === 'downloading' &&
+      !download.bytesTotalIsLowerBound &&
+      download.bytesTotal > 0 &&
+      download.bytesDownloaded >= download.bytesTotal;
   };
 
   const isServerDownloadId = (downloadId?: string): boolean =>
@@ -578,8 +590,9 @@ Partial files may remain on disk.`);
             <div className="download-list">
               {downloads.map(download => {
                 const isExpanded = expandedDownloads.has(download.id);
+                const isFinalizing = isFinalizingDownload(download);
                 const speed = calculateSpeed(download);
-                const eta = calculateETA(download);
+                const eta = isFinalizing ? 'finalizing...' : calculateETA(download);
 
                 return (
                   <div
@@ -649,7 +662,9 @@ Partial files may remain on disk.`);
                       <div className="download-item-actions">
                         {download.status === 'downloading' && (
                           <>
-                            <span className="download-speed">{formatSpeed(speed)}</span>
+                            {!isFinalizing && (
+                              <span className="download-speed">{formatSpeed(speed)}</span>
+                            )}
                             <span className="download-eta">{eta}</span>
                             <button
                               className="download-action-btn pause-btn"
@@ -807,10 +822,12 @@ Partial files may remain on disk.`);
                               <span className="download-detail-label">Total Size:</span>
                               <span className="download-detail-value">{formatTotalBytes(download)}</span>
                             </div>
-                            <div className="download-detail-row">
-                              <span className="download-detail-label">Speed:</span>
-                              <span className="download-detail-value">{formatSpeed(speed)}</span>
-                            </div>
+                            {!isFinalizing && (
+                              <div className="download-detail-row">
+                                <span className="download-detail-label">Speed:</span>
+                                <span className="download-detail-value">{formatSpeed(speed)}</span>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
