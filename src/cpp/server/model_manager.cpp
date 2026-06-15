@@ -1858,11 +1858,16 @@ void ModelManager::build_cache() {
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
 
-        // HF-backed collections store their components on Hugging Face. When the
-        // manifest has already been pulled into the HF cache, populate the
-        // component list from it (offline, no registration) so the collection
-        // keeps its identity and download status across restarts.
-        if (is_collection_recipe(info.recipe) && info.components.empty()) {
+        // HF-backed collections store their components on Hugging Face — the
+        // cached manifest is the single source of truth. Rebuild the component
+        // list from it on every cache build whenever a repo pointer is present,
+        // so a refreshed manifest is always reflected (and any stale components
+        // a previous version may have persisted are ignored/self-healed). A
+        // pure inline collection has no checkpoint pointer; it keeps its
+        // authored components and only falls back to the cache when empty.
+        if (is_collection_recipe(info.recipe) &&
+            (info.components.empty() || !info.checkpoint().empty())) {
+            info.components.clear();
             populate_collection_components_from_cache_locked(info);
         }
 
@@ -1906,6 +1911,18 @@ void ModelManager::build_cache() {
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
+
+        // HF-backed user collections (created by `lemonade pull <org>/<repo>`)
+        // keep only a repo pointer in user_models.json; their components live in
+        // the cached manifest. Rebuild them from it whenever a pointer is present
+        // so a refreshed manifest is reflected and no stale list can shadow it.
+        // A pure inline user collection has no checkpoint pointer and keeps its
+        // authored components, falling back to the cache only when empty.
+        if (is_collection_recipe(info.recipe) &&
+            (info.components.empty() || !info.checkpoint().empty())) {
+            info.components.clear();
+            populate_collection_components_from_cache_locked(info);
+        }
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -2700,6 +2717,22 @@ void ModelManager::register_user_model(const std::string& model_name,
         model_entry["source"] = source;
     }
 
+    // Single source of truth for HF-backed collections: the component list lives
+    // in the cached Hugging Face manifest, so the registry entry stores only the
+    // repo pointer (checkpoint). Persisting `components` here would let a stale
+    // local copy shadow a refreshed manifest. A pure inline collection has no
+    // checkpoint pointer and keeps its authored components.
+    if (is_collection_recipe(recipe)) {
+        std::string pointer = model_entry.value("checkpoint", std::string());
+        if (pointer.empty() && model_entry.contains("checkpoints") &&
+            model_entry["checkpoints"].is_object()) {
+            pointer = model_entry["checkpoints"].value("main", std::string());
+        }
+        if (!pointer.empty()) {
+            model_entry.erase("components");
+        }
+    }
+
     // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
     // can otherwise both start from the same registry snapshot and the later
     // save can drop the first model, producing a hard "Model not found" on the
@@ -3019,9 +3052,11 @@ static std::string collection_component_drift(const ModelInfo& local, const json
 }
 
 // Locate a collection manifest in a cached HF snapshot: any *.json file whose
-// content is an object with recipe == "collection.omni". Export flows name the
-// file <CollectionName>.json, but discovery is content-based so the filename is
-// not load-bearing. Returns an empty json when no manifest is cached.
+// content is an object with recipe == "collection.omni". Note the two halves use
+// different discovery rules by design: the *initial* fetch from Hugging Face is
+// filename-keyed on <RepoName>.json (see fetch_pull_variants in hf_variants.cpp),
+// but once the snapshot is cached this reader is content-based, so the filename is
+// not load-bearing here. Returns an empty json when no manifest is cached.
 static json read_cached_collection_manifest(const fs::path& cache_dir) {
     fs::path snap = active_hf_snapshot_path(cache_dir);
     if (snap.empty()) return json();
@@ -3049,6 +3084,38 @@ static json read_cached_collection_manifest(const fs::path& cache_dir) {
 // definitions may carry a `user.` prefix from the export transform.
 static std::string bare_component_name(const std::string& name) {
     return is_user_model_name(name) ? strip_user_model_prefix(name) : name;
+}
+
+// A collection component's inline definition must satisfy the same minimum a
+// regular model registration does before it can be registered as a user model:
+// a non-empty recipe plus, for a leaf model, at least one non-empty checkpoint
+// (or, for a nested collection, a non-empty components array). Used to fail an
+// inline import closed instead of persisting a half-defined component that only
+// blows up later during download.
+static bool collection_component_def_is_valid(const json& def) {
+    if (!def.is_object() || !def.contains("recipe") || !def["recipe"].is_string()) {
+        return false;
+    }
+    std::string recipe = def["recipe"].get<std::string>();
+    if (recipe.empty()) {
+        return false;
+    }
+    if (is_collection_recipe(recipe)) {
+        return def.contains("components") && def["components"].is_array() &&
+               !def["components"].empty();
+    }
+    if (def.contains("checkpoint") && def["checkpoint"].is_string() &&
+        !def["checkpoint"].get<std::string>().empty()) {
+        return true;
+    }
+    if (def.contains("checkpoints") && def["checkpoints"].is_object()) {
+        for (const auto& [_, value] : def["checkpoints"].items()) {
+            if (value.is_string() && !value.get<std::string>().empty()) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade) {
@@ -3114,7 +3181,12 @@ std::vector<std::string> ModelManager::register_components(const json& component
         return "";
     };
 
+    // Two passes so register_components is atomic: validate every unknown
+    // component's inline definition first, and only register them once the whole
+    // list is known good. A half-defined component therefore never persists a
+    // stray user.* entry that a later failure would have to roll back.
     std::vector<std::string> components;
+    std::vector<std::pair<std::string, json>> pending_registrations;  // canonical, def
     for (const auto& entry : component_names) {
         if (!entry.is_string()) continue;
         std::string name = bare_component_name(entry.get<std::string>());
@@ -3159,14 +3231,26 @@ std::vector<std::string> ModelManager::register_components(const json& component
                     << "reserved name: " << name << std::endl;
                 continue;
             }
-            LOG(INFO, "ModelManager") << "Registering collection component as user model: "
-                << canonical << std::endl;
-            register_user_model(canonical, def);
+            // Fail closed on a half-defined component (missing recipe/checkpoint)
+            // rather than registering it and failing later mid-download. The
+            // throw aborts before any registration in the second pass runs.
+            if (!collection_component_def_is_valid(def)) {
+                throw std::runtime_error(
+                    "Collection component '" + name + "' has an incomplete inline "
+                    "definition (a recipe and at least one checkpoint are required).");
+            }
+            pending_registrations.emplace_back(canonical, def);
             components.push_back(canonical);
         } else {
             LOG(WARNING, "ModelManager") << "Skipping unknown collection component with no "
                 << "inline definition: " << name << std::endl;
         }
+    }
+
+    for (const auto& [canonical, def] : pending_registrations) {
+        LOG(INFO, "ModelManager") << "Registering collection component as user model: "
+            << canonical << std::endl;
+        register_user_model(canonical, def);
     }
     return components;
 }
@@ -3390,7 +3474,10 @@ void ModelManager::download_model(const std::string& model_name,
                 // The early registration above persisted the raw component names from
                 // the file; re-register with the canonical list so cache lookups
                 // (check_component_downloaded, update_model_in_cache) match after a
-                // rebuild. register_user_model drops the bulky `models` array.
+                // rebuild. register_user_model drops the bulky `models` array and,
+                // for an HF-backed collection (one with a checkpoint pointer), also
+                // drops `components` so the cached manifest stays the sole source of
+                // truth — only a pure inline collection persists its component list.
                 if (is_user_model_name(model_name) && !components.empty()) {
                     json reg = model_data;
                     reg["components"] = components;
@@ -4997,29 +5084,43 @@ std::optional<std::string> ModelManager::validate_collection_request(
         }
         return "";
     };
-    auto has_inline_def = [&](const std::string& bare) -> bool {
-        if (!has_models_array) return false;
+    auto find_inline_def = [&](const std::string& bare) -> const json* {
+        if (!has_models_array) return nullptr;
         for (const auto& candidate : model_data["models"]) {
-            if (inline_def_name(candidate) == bare) return true;
+            if (inline_def_name(candidate) == bare) return &candidate;
         }
-        return false;
+        return nullptr;
     };
+    const std::string bare_collection = bare_component_name(model_name);
     for (const auto& component : model_data["components"]) {
         if (!component.is_string()) {
             return std::string("components entries must be strings");
         }
         std::string component_name = component.get<std::string>();
-        if (component_name == model_name) {
+        std::string bare = bare_component_name(component_name);
+        // Self-reference: compare bare forms so a collection `user.MyCol` with
+        // `components: ["MyCol"]` is rejected too, not only the exact-string case.
+        if (bare == bare_collection) {
             return "Collection cannot reference itself: " + component_name;
         }
-        std::string bare = bare_component_name(component_name);
         if (has_models_array) {
-            if (!model_exists(bare) && !has_inline_def(bare)) {
+            const json* def = find_inline_def(bare);
+            if (!model_exists(bare) && def == nullptr) {
                 return "Inline collection component '" + component_name +
                        "' has no matching definition in 'models' and is not a "
                        "registered model. Every component must be defined inline "
                        "(matching 'model_name') or reference an already-registered "
                        "model.";
+            }
+            // A component that resolves to its inline definition (rather than an
+            // already-registered model) must be a usable registration. Reject a
+            // half-defined component here instead of registering it and failing
+            // later mid-download.
+            if (!model_exists(bare) && def != nullptr &&
+                !collection_component_def_is_valid(*def)) {
+                return "Inline collection component '" + component_name +
+                       "' has an incomplete definition in 'models' (a recipe and "
+                       "at least one checkpoint are required).";
             }
         } else if (!model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
