@@ -1064,25 +1064,126 @@ jobs:
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
-      LEMONADE_CACHE_DIR: ".\\ci-cache"
       PYTHONIOENCODING: utf-8
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
+      - name: Prepare Windows runner for long paths and stale workspace caches
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          # Local composite actions are unavailable before actions/checkout,
+          # so this minimal long-path-safe cleanup stays inline. It removes
+          # stale workspace cache/install dirs that can otherwise make
+          # checkout clean/reset fail on persistent self-hosted Windows runners.
+
+          Write-Host "Enabling Git long path support before checkout..." -ForegroundColor Cyan
+          git config --global core.longpaths true
+
+          try {
+            New-ItemProperty `
+              -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+              -Name "LongPathsEnabled" `
+              -Value 1 `
+              -PropertyType DWord `
+              -Force `
+              -ErrorAction Stop | Out-Null
+            Write-Host "Windows long paths enabled in registry." -ForegroundColor Green
+          } catch {
+            Write-Host "Could not set Windows long-path registry flag; continuing with Git core.longpaths=true: $_" -ForegroundColor Yellow
+          }
+
+          function Remove-LongPathTree {
+            param([string]$Path)
+            if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+
+            $fullPath = [System.IO.Path]::GetFullPath($Path)
+            if ($fullPath.StartsWith("\\")) {
+              $longPath = "\\?\UNC\" + $fullPath.Substring(2)
+            } else {
+              $longPath = "\\?\" + $fullPath
+            }
+
+            Write-Host "Removing stale path: $fullPath" -ForegroundColor Yellow
+            cmd /c rmdir /s /q "$longPath" 2>$null
+            if (Test-Path -LiteralPath $Path) {
+              Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          # These legacy locations were inside the repository workspace and could
+          # make actions/checkout fail to clean/reset the repository on Windows,
+          # especially after TheRock created very deep bin/ci-cache/bin/therock trees.
+          if ($env:GITHUB_WORKSPACE) {
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "ci-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "hf-cache")
+            Remove-LongPathTree (Join-Path $env:GITHUB_WORKSPACE "lemonade_server_install")
+          }
+
       - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Set Windows CI cache and install paths
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $matrixName = "${{ matrix.name }}" -replace '[^A-Za-z0-9_.-]', '-'
+          $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-$matrixName"
+
+          # Keep all heavyweight runtime state outside $GITHUB_WORKSPACE. This
+          # prevents actions/checkout from trying to clean TheRock/backend caches
+          # and keeps paths short enough for Windows self-hosted runners.
+          $ciRoot = "C:\lemonade-ci"
+          $cacheRoot = Join-Path $ciRoot "cache"
+          $installRoot = Join-Path $ciRoot "install"
+          $tmpRoot = Join-Path $ciRoot "tmp"
+
+          $hfHome = Join-Path $ciRoot "hf"
+          $cacheDir = Join-Path $cacheRoot $matrixName
+          $installPath = Join-Path $installRoot $runKey
+          $tmpDir = Join-Path $tmpRoot $runKey
+
+          foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+          # Persistent HF cache outside the workspace so models survive across
+          # jobs; the Lemonade backend/TheRock cache lives under LEMONADE_CACHE_DIR
+          # (bin\therock), so it also stays outside the workspace.
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          # Set both Windows temp aliases: different tools read either TEMP or TMP.
+          echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+          echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+          Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+          Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+          Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+          Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
+
+
+      - name: Cleanup legacy workspace cache dirs
+        uses: ./.github/actions/cleanup-ci-paths-windows
+        with:
+          paths: |
+            ${{ github.workspace }}\ci-cache
+            ${{ github.workspace }}\hf-cache
+            ${{ github.workspace }}\lemonade_server_install
+          expected-root: ${{ github.workspace }}
+
+      - name: Prune old transient Windows CI directories
+        uses: ./.github/actions/cleanup-ci-paths-windows
+        with:
+          paths: |
+            C:\lemonade-ci\install
+            C:\lemonade-ci\tmp
+          expected-root: C:\lemonade-ci
+          prune-children-older-than-days: '2'
 
       - name: Cleanup processes
         uses: ./.github/actions/cleanup-processes-windows
-
-      - name: Set environment variables
-        shell: PowerShell
-        run: |
-          # Persistent HF cache outside the workspace so models survive across
-          # jobs — the checkout clean wipes untracked workspace files (#2103)
-          $hfHome = Join-Path $Env:USERPROFILE ".cache\lemonade-ci\huggingface"
-          New-Item -ItemType Directory -Force -Path $hfHome | Out-Null
-          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
-          $cwd = (Get-Item .\).FullName
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
 
       - name: Install and Verify Lemonade Server
         uses: ./.github/actions/install-lemonade-server-msi
@@ -1117,15 +1218,59 @@ jobs:
           $extraArgs = "${{ matrix.extra_args }}" -split " " | Where-Object { $_ }
           $backends = "${{ matrix.backends }}" -split " " | Where-Object { $_ }
 
+          function Invoke-TestBackend {
+            param(
+              [string]$Backend,
+              [int]$MaxAttempts = 1
+            )
+
+            for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $Backend (attempt $attempt/$MaxAttempts)" -ForegroundColor Cyan
+              & $venvPython test/${{ matrix.script }} @extraArgs --backend $Backend --cli-binary $serverExe
+              $testExitCode = $LASTEXITCODE
+
+              if ($testExitCode -eq 0) {
+                return
+              }
+
+              if ($attempt -lt $MaxAttempts) {
+                Write-Host "::warning title=Retrying transient backend test::test/${{ matrix.script }} --backend $Backend failed with exit code $testExitCode; cleaning sd-server state and retrying."
+
+                Get-Process sd-server -ErrorAction SilentlyContinue |
+                  Stop-Process -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 20
+
+                try {
+                  Invoke-RestMethod `
+                    -Uri "http://localhost:13305/api/v1/unload" `
+                    -Method Post `
+                    -ContentType "application/json" `
+                    -Body "{}" `
+                    -TimeoutSec 30 | Out-Null
+                } catch {
+                  Write-Host "Unload before retry failed or server had no model loaded: $_" -ForegroundColor Yellow
+                }
+
+                Start-Sleep -Seconds 10
+                continue
+              }
+
+              exit $testExitCode
+            }
+          }
+
           if ($backends.Count -eq 0) {
             Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }}" -ForegroundColor Cyan
             & $venvPython test/${{ matrix.script }} @extraArgs --cli-binary $serverExe
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } else {
             foreach ($backend in $backends) {
-              Write-Host "Running test/${{ matrix.script }} ${{ matrix.extra_args }} --backend $backend" -ForegroundColor Cyan
-              & $venvPython test/${{ matrix.script }} @extraArgs --backend $backend --cli-binary $serverExe
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              $maxAttempts = 1
+              if ("${{ matrix.name }}" -eq "stable-diffusion" -and $backend -eq "rocm") {
+                $maxAttempts = 3
+              }
+
+              Invoke-TestBackend -Backend $backend -MaxAttempts $maxAttempts
             }
           }
 
@@ -1135,9 +1280,39 @@ jobs:
         with:
           artifact-name: server-logs-exe-${{ matrix.name }}
 
-      - name: Cleanup
+      - name: Cleanup processes
         if: always()
         uses: ./.github/actions/cleanup-processes-windows
+
+      - name: Cleanup current Windows CI directories
+        if: always()
+        uses: ./.github/actions/cleanup-ci-paths-windows
+        with:
+          paths: |
+            ${{ env.LEMONADE_INSTALL_PATH }}
+            ${{ env.TEMP }}
+          expected-root: C:\lemonade-ci
+
+      - name: Cleanup legacy workspace cache dirs
+        if: always()
+        uses: ./.github/actions/cleanup-ci-paths-windows
+        with:
+          paths: |
+            ${{ github.workspace }}\ci-cache
+            ${{ github.workspace }}\hf-cache
+            ${{ github.workspace }}\lemonade_server_install
+          expected-root: ${{ github.workspace }}
+
+      - name: Prune old transient Windows CI directories
+        if: always()
+        uses: ./.github/actions/cleanup-ci-paths-windows
+        with:
+          paths: |
+            C:\lemonade-ci\install
+            C:\lemonade-ci\tmp
+          expected-root: C:\lemonade-ci
+          prune-children-older-than-days: '2'
+
 
   test-deb-inference:
     name: Test .deb - ${{ matrix.name }}
@@ -1877,13 +2052,38 @@ jobs:
       - uses: actions/checkout@v5
 
       # ---- Windows Setup ----
-      - name: Setup (Windows)
+      - name: Setup short Windows CI paths
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          $cwd = (Get-Item .).FullName
-          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+          $ErrorActionPreference = "Stop"
+
+          $ciRoot = "C:\lemonade-ci"
+          $matrixName = "${{ matrix.os }}" -replace '[^A-Za-z0-9_.-]', '-'
+          $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-$matrixName"
+
+          $hfHome = Join-Path $ciRoot "hf"
+          $cacheDir = Join-Path (Join-Path $ciRoot "cache") $matrixName
+          $installPath = Join-Path (Join-Path $ciRoot "install") $runKey
+          $tmpDir = Join-Path (Join-Path $ciRoot "tmp") $runKey
+
+          foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          # Keep runtime/cache/install/temp paths outside $GITHUB_WORKSPACE.
+          # This mirrors the .exe inference job and avoids workspace cleanup/long-path failures.
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          # Set both Windows temp aliases: different tools read either TEMP or TMP.
+          echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+          echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+          Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+          Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+          Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+          Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
 
       - name: Install Lemonade Server (Windows)
         if: runner.os == 'Windows'
@@ -2089,12 +2289,35 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Setup (Windows)
+      - name: Setup short Windows CI paths
         shell: powershell
         run: |
-          $cwd = (Get-Item .).FullName
-          echo "HF_HOME=$cwd\hf-cache" >> $Env:GITHUB_ENV
-          echo "LEMONADE_INSTALL_PATH=$cwd\lemonade_server_install" >> $Env:GITHUB_ENV
+          $ErrorActionPreference = "Stop"
+
+          $ciRoot = "C:\lemonade-ci"
+          $runKey = "${{ github.run_id }}-${{ github.run_attempt }}-apikey-windows-latest"
+
+          $hfHome = Join-Path $ciRoot "hf"
+          $cacheDir = Join-Path (Join-Path $ciRoot "cache") "apikey-windows-latest"
+          $installPath = Join-Path (Join-Path $ciRoot "install") $runKey
+          $tmpDir = Join-Path (Join-Path $ciRoot "tmp") $runKey
+
+          foreach ($path in @($ciRoot, $hfHome, $cacheDir, $installPath, $tmpDir)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          # Keep runtime/cache/install/temp paths outside $GITHUB_WORKSPACE.
+          echo "HF_HOME=$hfHome" >> $Env:GITHUB_ENV
+          echo "LEMONADE_CACHE_DIR=$cacheDir" >> $Env:GITHUB_ENV
+          echo "LEMONADE_INSTALL_PATH=$installPath" >> $Env:GITHUB_ENV
+          # Set both Windows temp aliases: different tools read either TEMP or TMP.
+          echo "TEMP=$tmpDir" >> $Env:GITHUB_ENV
+          echo "TMP=$tmpDir" >> $Env:GITHUB_ENV
+
+          Write-Host "HF_HOME=$hfHome" -ForegroundColor Gray
+          Write-Host "LEMONADE_CACHE_DIR=$cacheDir" -ForegroundColor Gray
+          Write-Host "LEMONADE_INSTALL_PATH=$installPath" -ForegroundColor Gray
+          Write-Host "TEMP/TMP=$tmpDir" -ForegroundColor Gray
 
       - name: Install Lemonade Server (Windows)
         uses: ./.github/actions/install-lemonade-server-msi

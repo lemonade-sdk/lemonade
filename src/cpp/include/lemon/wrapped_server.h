@@ -75,8 +75,10 @@ public:
         : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
           last_access_time_(std::chrono::steady_clock::now()),
-          is_busy_(false),
-          busy_count_(0),
+          state_(ModelState::LOADING),
+          active_request_count_(0),
+          maintenance_in_progress_(false),
+          load_duration_ms_(0),
           last_backend_activity_(std::chrono::steady_clock::now()) {}
 
     virtual ~WrappedServer();
@@ -95,36 +97,158 @@ public:
         return last_access_time_;
     }
 
-    // Multi-model support: Track if server is currently processing a request
-    void set_busy(bool busy) {
-        std::lock_guard<std::mutex> lock(busy_mutex_);
-        if (busy) {
-            ++busy_count_;
-        } else if (busy_count_ > 0) {
-            --busy_count_;
+    // State management
+    ModelState get_state() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return state_;
+    }
+
+    void set_state(ModelState new_state) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        state_ = new_state;
+        state_cv_.notify_all();
+    }
+
+    void set_load_duration_ms(long ms) {
+        load_duration_ms_ = ms;
+    }
+
+    long get_load_duration_ms() const {
+        return load_duration_ms_;
+    }
+
+    // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
+    // Blocks if LOADING.
+    //
+    // Concurrency contract with the eviction engine (see try_commit_eviction):
+    //   - EVICTING is *tentative*. The engine marks the model EVICTING under
+    //     state_mutex_, then later calls try_commit_eviction() — also under
+    //     state_mutex_ — to atomically decide whether to physically unload.
+    //   - If a request arrives while still EVICTING (pre-commit), we "rescue" the
+    //     model here: flip back to IN_USE so try_commit_eviction() sees it is no
+    //     longer evictable and aborts the unload. No reload, no torn state.
+    //   - Once the engine commits, it sets UNLOADED before releasing state_mutex_,
+    //     so any later acquire observes UNLOADED and returns false (router reloads).
+    // Because both paths take state_mutex_, the rescue/commit decision is atomic.
+    bool acquire_for_inference() {
+        std::unique_lock<std::mutex> lock(state_mutex_);
+
+        // Wait out transient states: LOADING (initial load or an in-progress
+        // restore) and an in-flight maintenance downsize. Waiting for the latter
+        // ensures restore() below never races a concurrent downsize() on the same
+        // backend subprocess. Looped because the state can change while we wait.
+        while (state_ == ModelState::LOADING || maintenance_in_progress_) {
+            state_cv_.wait(lock);
         }
-        is_busy_ = busy_count_ > 0;
-        if (!is_busy_) {
-            busy_cv_.notify_all();
+
+        if (state_ == ModelState::UNLOADED) {
+            return false;
+        }
+
+        if (state_ == ModelState::DOWNSIZED) {
+            // Restore the model to full readiness before serving. (A downsize that
+            // failed leaves the model READY, so only DOWNSIZED needs restoring.)
+            state_ = ModelState::LOADING; // temporarily block others
+            lock.unlock();
+
+            this->restore();
+
+            lock.lock();
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+
+        // Covers READY, IN_USE, and EVICTING (rescue): claim the model.
+        active_request_count_++;
+        state_ = ModelState::IN_USE;
+        state_cv_.notify_all();
+        return true;
+    }
+
+    // Called by the eviction engine (under the router lock) to atomically decide
+    // whether a model marked EVICTING may actually be unloaded. Returns true only
+    // if the model is still idle and EVICTING (commit -> transition to UNLOADED so
+    // later acquires reload). Returns false if a request rescued it (state changed
+    // to IN_USE) or it is otherwise busy, reverting it to READY.
+    bool try_commit_eviction() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::EVICTING && active_request_count_ == 0) {
+            state_ = ModelState::UNLOADED;
+            state_cv_.notify_all();
+            return true;
+        }
+        // Rescued or busy: abandon the eviction.
+        if (state_ == ModelState::EVICTING) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
+        }
+        return false;
+    }
+
+    void release_inference() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (--active_request_count_ == 0) {
+            state_ = ModelState::READY;
+            state_cv_.notify_all();
         }
     }
 
+    // Called by the eviction engine (under the router lock) to atomically claim an
+    // idle model for a maintenance downsize. Returns true only if the model is
+    // currently READY and idle, transitioning it to DOWNSIZING and marking
+    // maintenance in progress so wait_until_not_busy() — and therefore
+    // evict_server() — blocks until the matching finish_downsize() runs. This is
+    // what keeps the server alive while the engine performs downsize() outside the
+    // router lock with only a raw pointer to it.
+    bool try_begin_downsize() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (state_ == ModelState::READY && active_request_count_ == 0) {
+            state_ = ModelState::DOWNSIZING;
+            maintenance_in_progress_ = true;
+            state_cv_.notify_all();
+            return true;
+        }
+        return false;
+    }
+
+    // Completes the maintenance downsize started by try_begin_downsize(). Clears
+    // the maintenance flag (releasing any waiters in wait_until_not_busy() /
+    // acquire_for_inference()) and, while still DOWNSIZING, transitions to
+    // DOWNSIZED on success or back to READY on failure so a failed backend
+    // operation never leaves a model falsely marked as downsized.
+    void finish_downsize(bool success) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        maintenance_in_progress_ = false;
+        if (state_ == ModelState::DOWNSIZING) {
+            state_ = success ? ModelState::DOWNSIZED : ModelState::READY;
+        }
+        state_cv_.notify_all();
+    }
+
     bool is_busy() const {
-        std::lock_guard<std::mutex> lock(busy_mutex_);
-        return is_busy_;
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return active_request_count_ > 0 || maintenance_in_progress_;
     }
 
     // Wait until the router no longer has active work using this object.
     // Returns true when the server is idle. Returns false if a bounded wait
     // timed out; callers must not destroy the WrappedServer in that case.
     bool wait_until_not_busy(int timeout_seconds = -1) const {
-        std::unique_lock<std::mutex> lock(busy_mutex_);
+        std::unique_lock<std::mutex> lock(state_mutex_);
+        auto not_busy = [this] {
+            return active_request_count_ == 0 && !maintenance_in_progress_;
+        };
+
         if (timeout_seconds < 0) {
-            busy_cv_.wait(lock, [this] { return !is_busy_; });
+            state_cv_.wait(lock, not_busy);
             return true;
         }
-        return busy_cv_.wait_for(lock, std::chrono::seconds(timeout_seconds),
-                                 [this] { return !is_busy_; });
+
+        return state_cv_.wait_for(
+            lock,
+            std::chrono::seconds(timeout_seconds),
+            not_busy
+        );
     }
 
     // Multi-model support: Model metadata
@@ -164,6 +288,20 @@ public:
 
     // Unload the model and stop the server
     virtual void unload() = 0;
+
+    // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
+    // downsize succeeded (or was a no-op), false if the backend operation failed.
+    // The default is a successful no-op: backends that cannot downsize transition
+    // to DOWNSIZED once and are not retried while idle.
+    virtual bool downsize() {
+        // No-op by default
+        return true;
+    }
+
+    // Restore the model from a downsized state
+    virtual void restore() {
+        // No-op by default
+    }
 
     // ICompletionServer implementation - forward requests to the wrapped server
     virtual json chat_completion(const json& request) override = 0;
@@ -288,10 +426,17 @@ protected:
     RecipeOptions recipe_options_;
 
     // Busy state tracking (for safe eviction)
-    mutable std::mutex busy_mutex_;
-    mutable std::condition_variable busy_cv_;
-    bool is_busy_;
-    int busy_count_;
+    mutable std::mutex state_mutex_;
+    mutable std::condition_variable state_cv_;
+    ModelState state_;
+    int active_request_count_;
+
+    // True while the eviction engine is performing a maintenance downsize on this
+    // server. Counts as "busy" so wait_until_not_busy() (and therefore
+    // evict_server()) blocks until the operation completes, preventing the server
+    // from being unloaded/destroyed while the engine holds a raw pointer to it.
+    bool maintenance_in_progress_;
+    long load_duration_ms_;
 
 private:
     void begin_backend_request(BackendRequestKind kind);

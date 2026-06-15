@@ -583,6 +583,8 @@ set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/router.cpp
+    src/cpp/server/global_vram_monitor.cpp
+    src/cpp/server/eviction_engine.cpp
     src/cpp/server/cli_parser.cpp
     src/cpp/server/cloud_provider_registry.cpp
     src/cpp/server/config_file.cpp

@@ -327,7 +327,6 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | `4096` |
-| `--flm-args ARGS` | Custom arguments to pass to flm serve (e.g., `"--socket 20 --q-len 15"`) | `""` |
 
 #### RyzenAI LLM (`ryzenai-llm` recipe)
 
@@ -659,7 +658,6 @@ lemonade bench [options] MODEL_NAME [MODEL_NAME ...]
 | `--no-memory` | Disable VRAM/RAM tracking | Tracking enabled |
 | `--no-reload` | Skip model reload between scenarios (faster, but prompt cache may skew results) | Model reloaded |
 | `--llamacpp-args ARGS` | Custom args for llama-server (e.g. `"-b 2048 -ub 1024"`). Repeat for multiple arg sets. | — |
-| `--flm-args ARGS` | Custom args for flm serve. Repeat for multiple. | — |
 | `--vllm-args ARGS` | Custom args for vllm-server. Repeat for multiple. | — |
 
 **Preflight behavior:**

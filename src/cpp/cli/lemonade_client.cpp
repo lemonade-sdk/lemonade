@@ -631,7 +631,7 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
             } else {
                 parse_sse_progress(event_data, state);
             }
-        }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
+        }, LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
 
         if (!state.success) {
             // Wire-protocol constant; server-side definition and contract live in
@@ -928,7 +928,7 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             } else {
                 parse_sse_progress(event_data, state);
             }
-        }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
+        }, LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
         if (!state.success) {
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);

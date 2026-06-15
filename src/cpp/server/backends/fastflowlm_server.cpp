@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <thread>
 #include <chrono>
-#include <sstream>
 #include <fstream>
 #include <algorithm>
 #include <lemon/utils/aixlog.hpp>
@@ -154,13 +153,8 @@ void FastFlowLMServer::load(const std::string& model_name,
 
     // Get FLM-specific options from RecipeOptions
     int ctx_size = options.get_option("ctx_size");
-    std::string flm_args = options.get_option("flm_args");
 
-    std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size;
-    if (!flm_args.empty()) {
-        std::cout << ", flm_args=\"" << flm_args << "\"";
-    }
-    std::cout << std::endl;
+    std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size << std::endl;
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
@@ -214,15 +208,6 @@ void FastFlowLMServer::load(const std::string& model_name,
             "--host", "127.0.0.1",
             "--quiet"
         };
-    }
-
-    // Parse and append custom flm_args if provided
-    if (!flm_args.empty()) {
-        std::istringstream iss(flm_args);
-        std::string token;
-        while (iss >> token) {
-            args.push_back(token);
-        }
     }
 
     LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;

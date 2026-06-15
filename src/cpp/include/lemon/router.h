@@ -40,9 +40,14 @@ struct ModelTelemetryRecord {
     Telemetry telemetry;
 };
 
+class EvictionEngine;
+class GlobalVramMonitor;
+
 class Router {
 public:
+    friend class EvictionEngine;
     Router(RuntimeConfig* config,
+
            ModelManager* model_manager,
            BackendManager* backend_manager);
 
@@ -117,6 +122,9 @@ public:
 
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
+    // Test hooks
+    void simulate_vram_pressure(double pct);
+
 private:
     // Multi-model support: Manage multiple WrappedServers
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
@@ -136,6 +144,10 @@ private:
     bool is_loading_ = false;                    // True when a load operation is in progress
     std::condition_variable load_cv_;            // Signals when load completes
 
+    std::unique_ptr<GlobalVramMonitor> vram_monitor_;
+    std::unique_ptr<EvictionEngine> eviction_engine_;
+
+    // Helper methods for multi-model management
     WrappedServer* find_server_by_model_name(const std::string& model_name) const;
     WrappedServer* get_most_recent_server() const;
     void prune_unavailable_servers_locked();
@@ -150,6 +162,10 @@ private:
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
+    // Eviction-engine entry point: physically unload a model previously marked
+    // EVICTING, but only if it has not been rescued by an in-flight request
+    // (see WrappedServer::try_commit_eviction). Safe against request races.
+    void evict_if_committed(const std::string& model_name);
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
     std::string resolve_model_name(const std::string& model_name) const;
     ModelTelemetryIdentity get_telemetry_identity(WrappedServer* server) const;

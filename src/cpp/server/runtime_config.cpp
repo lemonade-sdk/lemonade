@@ -198,7 +198,26 @@ int RuntimeConfig::ctx_size() const {
     return config_["ctx_size"].get<int>();
 }
 
+bool RuntimeConfig::auto_evict() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_evict")) {
+        return config_["auto_evict"].get<bool>();
+    }
+    return false;
+}
+
+double RuntimeConfig::auto_evict_threshold_pct() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_evict_threshold_pct")) {
+        return config_["auto_evict_threshold_pct"].get<double>();
+    }
+    // Default: start yielding VRAM at 90% global usage so other GPU apps
+    // (ComfyUI, Blender, games) can coexist before memory is fully exhausted.
+    return 0.90;
+}
+
 bool RuntimeConfig::offline() const {
+
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
 }
@@ -333,11 +352,6 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         if (sd.contains("height")) result["height"] = sd["height"];
     }
 
-    if (config_.contains("flm")) {
-        const auto& flm = config_["flm"];
-        if (flm.contains("args")) result["flm_args"] = flm["args"];
-    }
-
     if (config_.contains("vllm")) {
         const auto& vl = config_["vllm"];
         if (vl.contains("backend")) result["vllm_backend"] = resolve_auto(vl["backend"]);
@@ -420,6 +434,17 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<int>() <= 0) {
             throw std::invalid_argument("'ctx_size' must be positive");
+        }
+    } else if (key == "auto_evict") {
+        if (!value.is_boolean()) {
+            throw std::invalid_argument("'auto_evict' must be a boolean");
+        }
+    } else if (key == "auto_evict_threshold_pct") {
+        if (!value.is_number()) {
+            throw std::invalid_argument("'auto_evict_threshold_pct' must be a number");
+        }
+        if (value.get<double>() <= 0.0 || value.get<double>() > 1.0) {
+            throw std::invalid_argument("'auto_evict_threshold_pct' must be between 0.0 and 1.0");
         }
     } else if (key == "config_version") {
         if (!value.is_number_integer()) {
