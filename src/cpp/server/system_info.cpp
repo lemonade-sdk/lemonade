@@ -1833,42 +1833,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     }
     return "";
 }
-/*
-std::string transform_isakfd_to_gfx(const std::string& isa) {
-    if (!isa.empty() &&
-        std::all_of(isa.begin(), isa.end(), ::isdigit)) {
-        int v;
-        try {
-            v = std::stoi(isa);
-        } catch (const std::exception& e) {
-            throw std::runtime_error(
-                "Failed to parse gfx_target_version '" + isa + "': " + e.what());
-        }
-        int major = v / 10000;
-        int minor = (v / 100) % 100;
-        int step  = v % 100;
 
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
-        return std::string(buf);
-    } else {
-        return "";
-    }
-}
-
-std::string get_gfx_from_device_name(const std::string& device_name) {
-    std::string device_lower = device_name;
-    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
-
-    std::smatch gfx_match;
-    // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
-    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
-        return gfx_match[1].str();
-    }
-    return "";
-
-} 
-*/
 // Helper to identify ROCm architecture from GPU name.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;

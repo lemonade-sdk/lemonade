@@ -38,27 +38,12 @@ std::string ROCmArchUtils::get_gfx_from_device_name(const std::string& device_na
         return gfx_match[1].str();
     }
     return "";
-
 } 
 
 
 bool ROCmArchUtils::rocm_arch_is_valid_gfx(const std::string& gfx_arch) {
-    
-    
     std::string gfx = ROCmArchUtils::get_gfx_from_device_name(gfx_arch);
     return !gfx.empty();
-
-    /*
-    std::smatch gfx_match;
-    return std::regex_search(gfx_arch, gfx_match, std::regex(R"((gfx\d{4}))"));
-    */
-}
-
-// In this function we tranform the rocm archictecture from numeric format to gfx format.
-std::string ROCmArchUtils::rocm_arch_numeric_to_gfx(const std::string& numeric_arch) {
-
-    std::string gfx = ROCmArchUtils::transform_isakfd_to_gfx(numeric_arch);
-    return gfx;
 }
 
 std::vector<ROCmDeviceInfo> ROCmArchUtils::rocm_arch_get_active_devices(const json& devices) {
@@ -69,7 +54,7 @@ std::vector<ROCmDeviceInfo> ROCmArchUtils::rocm_arch_get_active_devices(const js
             for (const auto& amd_gpu : devices["amd_gpu"]) {
                 ROCmDeviceInfo dev;
                 if (amd_gpu.contains("available") && amd_gpu["available"].is_boolean() && amd_gpu["available"]) {
-                    dev.name = lemon::ROCmArchUtils::rocm_arch_numeric_to_gfx(amd_gpu["name"]);
+                    dev.name = ROCmArchUtils::transform_isakfd_to_gfx(amd_gpu["name"]);
                     dev.vram_gb = amd_gpu["vram_gb"];
                     active_devs.push_back(dev);
                 }
@@ -78,6 +63,5 @@ std::vector<ROCmDeviceInfo> ROCmArchUtils::rocm_arch_get_active_devices(const js
     }
     return active_devs;
 }
-
 
 } // namespace lemon
