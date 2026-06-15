@@ -1475,6 +1475,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
               </button>
             )}
             <button
+              className={`row__action row__action--pin${m.pinned ? ' row__action--pinned' : ''}`}
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  await api.pinModel(m.model_name, !m.pinned);
+                  await refresh();
+                } catch (err) {
+                  console.error('Failed to pin/unpin model:', err);
+                }
+              }}
+              disabled={loadingModel === m.model_name}
+              title={m.pinned ? 'Unpin model' : 'Pin model to prevent eviction'}
+            >
+              <Icon name="pin" size={13} /> {m.pinned ? 'Pinned' : 'Pin'}
+            </button>
+            <button
               className="row__action row__action--unload"
               onClick={(e) => { e.stopPropagation(); handleUnload(m); }}
               disabled={loadingModel === m.model_name}

@@ -1901,6 +1901,31 @@ input, textarea {
   border-color: var(--border-strong);
 }
 
+.row__action--pin {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.row__action--pin:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.row__action--pinned {
+  background: var(--info-soft) !important;
+  color: var(--info) !important;
+  border-color: color-mix(in srgb, var(--info) 45%, transparent) !important;
+}
+
+.row__action--pinned svg {
+  fill: currentColor;
+}
+
 .row__action--delete {
   background: transparent;
   color: var(--text-tertiary);

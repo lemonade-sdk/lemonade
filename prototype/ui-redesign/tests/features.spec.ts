@@ -918,4 +918,137 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.screenshot({ path: 'screenshots/22-backends-update.png', fullPage: true });
   });
+
+  test('23 — Model Pinning UI interaction', async ({ page }) => {
+    let pinnedState = false;
+    let pinCallBody: any = null;
+
+    // Mock models endpoint
+    await page.route('**/api/v1/models**', async route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [
+          { id: 'llama-chat', name: 'llama-chat', labels: ['llm'], recipe: 'llamacpp' },
+        ],
+      }),
+    }));
+
+    // Mock health endpoint to dynamically return the pinned state
+    await page.route('**/api/v1/health', async route => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          version: '1.0.0',
+          model_loaded: 'llama-chat',
+          websocket_port: 9000,
+          all_models_loaded: [
+            {
+              model_name: 'llama-chat',
+              checkpoint: 'llama-chat',
+              recipe: 'llamacpp-llm',
+              device: 'gpu',
+              backend_url: 'http://127.0.0.1:1234',
+              pid: 12345,
+              type: 'llm',
+              last_use: 1718462400000,
+              pinned: pinnedState
+            }
+          ],
+          max_models: {}
+        }),
+      });
+    });
+
+    // Mock pin endpoint
+    await page.route('**/internal/pin', async route => {
+      const request = route.request();
+      if (request.method() === 'POST') {
+        pinCallBody = request.postDataJSON();
+        pinnedState = pinCallBody.pinned;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+    });
+
+    // Clear preset storage
+    await page.addInitScript(() => {
+      localStorage.removeItem('lemonade_user_presets');
+      localStorage.removeItem('lemonade_applied_presets');
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // 1. Check Model manager loaded models UI
+    // Navigate to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+
+    // Wait for the running model row to appear
+    const pinBtn = page.locator('.row__action--pin');
+    await expect(pinBtn).toBeVisible();
+    await expect(pinBtn).toContainText('Pin');
+    await expect(pinBtn).not.toHaveClass(/row__action--pinned/);
+
+    // Click the Pin button and wait for the pin request/response
+    const pinPromise = page.waitForResponse(response =>
+      response.url().includes('/internal/pin') && response.request().method() === 'POST'
+    );
+    await pinBtn.click();
+    const pinResponse = await pinPromise;
+    expect(pinResponse.request().postDataJSON()).toEqual({ model_name: 'llama-chat', pinned: true });
+
+    // The button class/text should update dynamically because of the refresh call
+    await expect(pinBtn).toHaveClass(/row__action--pinned/);
+    await expect(pinBtn).toContainText('Pinned');
+
+    // Click it again to unpin and wait for request/response
+    const unpinPromise = page.waitForResponse(response =>
+      response.url().includes('/internal/pin') && response.request().method() === 'POST'
+    );
+    await pinBtn.click();
+    const unpinResponse = await unpinPromise;
+    expect(unpinResponse.request().postDataJSON()).toEqual({ model_name: 'llama-chat', pinned: false });
+    await expect(pinBtn).not.toHaveClass(/row__action--pinned/);
+    await expect(pinBtn).toContainText('Pin');
+
+    // 2. Check Presets "Pin model" checkbox UI
+    // Navigate to Presets
+    await page.locator('.titlebar__nav').getByText('Presets').click();
+    await page.waitForSelector('.recipes');
+
+    // Click "+ New Preset" button
+    await page.locator('.recipes__actions').getByText('New Preset').click();
+    await page.waitForSelector('.slideover.is-open');
+
+    // "Pin model (prevent eviction)" checkbox should be visible and not checked
+    const pinCheckbox = page.locator('.slideover .backends__toggle input[type="checkbox"]');
+    await expect(pinCheckbox).toBeVisible();
+    await expect(pinCheckbox).not.toBeChecked();
+
+    // Toggle it on
+    await pinCheckbox.check();
+    await expect(pinCheckbox).toBeChecked();
+
+    // Save the preset
+    await page.locator('.slideover__foot').getByText('Save').click();
+
+    // Apply the preset to llama-chat
+    await page.locator('[data-recipe-apply-target]').selectOption('llama-chat');
+    await page.locator('.slideover .btn--primary').getByText('Apply').click();
+    await expect(page.locator('.preset-success')).toContainText('Will apply on next load');
+
+    // Close the slideover
+    await page.locator('.slideover__close').click();
+
+    // Verify the preset is added under 'Your presets' list
+    const userPresetCard = page.locator('[data-recipe-grid="yours"] .recipe-card');
+    await expect(userPresetCard).toBeVisible();
+    await expect(userPresetCard.locator('.recipe-card__name')).toContainText('New Preset');
+
+    await page.screenshot({ path: 'screenshots/23-model-pinning.png', fullPage: true });
+  });
 });
