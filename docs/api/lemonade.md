@@ -430,6 +430,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
+| `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
 | `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
 | `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
@@ -599,6 +600,8 @@ Error response (model not found):
 
 In case of an error, the status will be `error` and the message will contain the error message.
 
+
+
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -629,6 +632,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123456.789,
       "type": "llm",
       "device": "gpu npu",
+      "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
       "recipe_options": {
@@ -642,6 +646,7 @@ curl http://localhost:13305/v1/health
       "last_use": 1732123450.123,
       "type": "embedding",
       "device": "gpu",
+      "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
       "recipe_options": {
@@ -652,6 +657,14 @@ curl http://localhost:13305/v1/health
       "backend_url": "http://127.0.0.1:8002/v1"
     }
   ],
+  "pinned_models": {
+    "transcription":0,
+    "embedding":0,
+    "image":0,
+    "llm":1,
+    "reranking":0,
+    "tts":0
+  },
   "max_models": {
     "transcription":1,
     "embedding":1,
@@ -674,10 +687,12 @@ curl http://localhost:13305/v1/health
   - `last_use` - Unix timestamp of last access (load or inference)
   - `type` - Model type: `"llm"`, `"embedding"`, `"reranking"`, `"transcription"`, `"image"`, or `"tts"`
   - `device` - Space-separated device list: `"cpu"`, `"gpu"`, `"npu"`, or combinations like `"gpu npu"`
+  - `pinned` - Boolean indicating if the model is currently pinned to prevent auto-eviction
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
+- `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
   - `llm` - Maximum LLM/chat models
   - `embedding` - Maximum embedding models

@@ -1495,7 +1495,7 @@ footer {
 
 .loaded-model-info {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 22px;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
     margin-bottom: 0;
@@ -1602,6 +1602,27 @@ footer {
     flex-shrink: 0;
     width: 14px;
     height: 14px;
+}
+
+.active-model-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-right: 2px;
+}
+
+.active-model-actions svg {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+}
+
+.model-action-btn.pin-btn.pinned {
+    color: var(--info-color);
+}
+
+.model-action-btn.pin-btn:hover {
+    color: var(--info-color);
 }
 
 .downloaded-filter {

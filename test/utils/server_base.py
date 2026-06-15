@@ -424,6 +424,7 @@ class ServerTestBase(unittest.TestCase):
         print(f"\n=== Starting test: {self._testMethodName} ===")
 
         self.base_url = f"http://localhost:{PORT}/api/v1"
+        self.internal_url = f"http://localhost:{PORT}/internal"
         self.messages = STANDARD_MESSAGES.copy()
 
     def tearDown(self):
