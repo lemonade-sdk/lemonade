@@ -435,6 +435,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (channel != "stable" && channel != "nightly") {
             throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
         }
+    } else if (key == "cloud_providers") {
+        // Deprecated: cloud provider support was removed in PR #2235.
+        // Silently ignore to avoid errors from old admin UI clients.
+        // The field is stripped during config migration on load.
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");
