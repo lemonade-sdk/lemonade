@@ -14,6 +14,7 @@
 #include "lemon/recipe_options.h"
 #include <iostream>
 #include <algorithm>
+#include <sstream>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -910,7 +911,9 @@ json Router::image_variations(const json& request) {
 
 json Router::get_stats() const {
     std::lock_guard<std::mutex> lock(telemetry_mutex_);
-    return aggregate_telemetry_.to_json();
+    json stats = aggregate_telemetry_.to_json();
+    stats["routing"] = get_routing_stats_locked();
+    return stats;
 }
 
 json Router::get_metrics_snapshot() const {
@@ -979,9 +982,51 @@ json Router::get_metrics_snapshot() const {
         result["totals"]["input_tokens"] = aggregate_telemetry_.input_tokens_total;
         result["totals"]["output_tokens"] = aggregate_telemetry_.output_tokens_total;
         result["totals"]["prompt_tokens"] = aggregate_telemetry_.prompt_tokens_total;
+        result["routing"] = get_routing_stats_locked();
     }
 
     return result;
+}
+
+std::string Router::routing_key(const std::vector<std::string>& parts) {
+    std::ostringstream oss;
+    bool first = true;
+    for (const auto& part : parts) {
+        if (!first) oss << '\n';
+        first = false;
+        oss << part;
+    }
+    return oss.str();
+}
+
+json Router::get_routing_stats_locked() const {
+    json routing = {
+        {"decisions_total", routing_decisions_total_},
+        {"fallbacks_total", routing_fallbacks_total_},
+        {"by_router", json::array()},
+        {"by_selected_model", json::array()},
+        {"by_rule", json::array()}
+    };
+
+    for (const auto& [_, record] : routing_by_router_) {
+        json item = record.decision.to_json();
+        item["count"] = record.count;
+        routing["by_router"].push_back(item);
+    }
+
+    for (const auto& [_, record] : routing_by_selected_model_) {
+        json item = record.decision.to_json();
+        item["count"] = record.count;
+        routing["by_selected_model"].push_back(item);
+    }
+
+    for (const auto& [_, record] : routing_by_rule_) {
+        json item = record.decision.to_json();
+        item["count"] = record.count;
+        routing["by_rule"].push_back(item);
+    }
+
+    return routing;
 }
 
 ModelTelemetryIdentity Router::get_telemetry_identity(WrappedServer* server) const {
@@ -1048,6 +1093,40 @@ void Router::record_prompt_tokens_for_model(const ModelTelemetryIdentity& identi
     if (prompt_tokens > 0) {
         model_telemetry.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
         aggregate_telemetry_.prompt_tokens_total += static_cast<uint64_t>(prompt_tokens);
+    }
+}
+
+void Router::record_routing_decision(const RoutingDecision& decision) {
+    if (!decision.routed || decision.router_id.empty() || decision.selected_model.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(telemetry_mutex_);
+    routing_decisions_total_++;
+    if (decision.fallback) {
+        routing_fallbacks_total_++;
+    }
+
+    auto bump = [](std::map<std::string, RoutingTelemetryRecord>& records,
+                   const std::string& key,
+                   const RoutingDecision& decision) {
+        auto& record = records[key];
+        record.decision = decision;
+        record.count++;
+    };
+
+    bump(routing_by_router_,
+         routing_key({decision.router_id, decision.router_type}),
+         decision);
+
+    bump(routing_by_selected_model_,
+         routing_key({decision.router_id, decision.router_type, decision.selected_model}),
+         decision);
+
+    if (!decision.rule_id.empty() || decision.fallback) {
+        bump(routing_by_rule_,
+             routing_key({decision.router_id, decision.router_type, decision.rule_id, decision.selected_model}),
+             decision);
     }
 }
 

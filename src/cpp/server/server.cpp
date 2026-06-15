@@ -1617,6 +1617,7 @@ RoutingDecision Server::resolve_agentic_route(const RoutingPolicy& policy,
         if (policy.on_failure == "error") {
             throw std::runtime_error("Agentic router '" + policy.id + "' failed: " + reason);
         }
+        decision.fallback = true;
         decision.selected_model = policy.default_model;
         decision.reason = "agentic router failed; using default_model: " + reason;
         return decision;
@@ -2141,6 +2142,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             return;
         }
 
+        if (route_decision) {
+            router_->record_routing_decision(*route_decision);
+        }
+
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
@@ -2383,6 +2388,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             res.status = 400;
             res.set_content(R"({"error": {"message": "This model does not support completion. Only LLM models support this endpoint.", "type": "invalid_request_error"}})", "application/json");
             return;
+        }
+
+        if (route_decision) {
+            router_->record_routing_decision(*route_decision);
         }
 
         // Check if streaming is requested
@@ -3514,6 +3523,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             res.status = 400;
             res.set_content("{\"error\": \"No model loaded and no model specified in request\"}", "application/json");
             return;
+        }
+
+        if (route_decision) {
+            router_->record_routing_decision(*route_decision);
         }
 
         // Check if streaming is requested

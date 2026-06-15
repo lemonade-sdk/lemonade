@@ -18,7 +18,7 @@ Each router appears in `/v1/models` as a synthetic model:
 
 ```json
 {
-  "id": "router.example.heuristic-qwen35",
+  "id": "router.example.heuristic-qwen35-fireworks",
   "object": "model",
   "owned_by": "lemonade",
   "recipe": "router",
@@ -33,7 +33,7 @@ Use the router ID anywhere you would normally use a model name:
 curl -X POST http://localhost:13305/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "router.example.heuristic-qwen35",
+    "model": "router.example.heuristic-qwen35-fireworks",
     "messages": [{"role": "user", "content": "Debug this CMake error"}]
   }'
 ```
@@ -48,6 +48,11 @@ Lemonade adds route metadata headers to routed responses:
 | `X-Lemonade-Route-Rule` | Heuristic rule ID, when applicable |
 | `X-Lemonade-Route-Reason` | Short routing reason |
 
+Lemonade also records routed traffic in its serving telemetry:
+
+- `GET /v1/stats` includes a nested `routing` object with totals and breakdowns.
+- `GET /metrics` exports Prometheus counters with the `lemonade_router_` prefix.
+
 ## Dry Run
 
 Use `/v1/router/evaluate` to test a routing decision without loading the selected target model:
@@ -56,7 +61,7 @@ Use `/v1/router/evaluate` to test a routing decision without loading the selecte
 curl -X POST http://localhost:13305/v1/router/evaluate \
   -H "Content-Type: application/json" \
   -d '{
-    "router": "router.example.heuristic-qwen35",
+    "router": "router.example.heuristic-qwen35-fireworks",
     "endpoint": "chat.completions",
     "request": {
       "messages": [{"role": "user", "content": "Debug this Python stack trace"}]
@@ -69,13 +74,13 @@ Example response:
 ```json
 {
   "object": "router.evaluation",
-  "resolved_model": "Qwen3.5-35B-A3B-GGUF",
+  "resolved_model": "fireworks.kimi-k2p6",
   "decision": {
     "routed": true,
-    "router": "router.example.heuristic-qwen35",
+    "router": "router.example.heuristic-qwen35-fireworks",
     "type": "heuristic",
-    "original_model": "router.example.heuristic-qwen35",
-    "selected_model": "Qwen3.5-35B-A3B-GGUF",
+    "original_model": "router.example.heuristic-qwen35-fireworks",
+    "selected_model": "fireworks.kimi-k2p6",
     "rule": "coding",
     "reason": "matched heuristic rule: coding"
   }
@@ -91,20 +96,20 @@ Heuristic routers evaluate rules in order. The first matching rule wins. If no r
   "version": 1,
   "routers": [
     {
-      "id": "router.example.heuristic-qwen35",
+      "id": "router.example.heuristic-qwen35-fireworks",
       "type": "heuristic",
-      "description": "Routes simple requests to 4B and harder requests to 35B-A3B.",
+      "description": "Routes ordinary requests to local Qwen3.5 35B-A3B and escalates harder cloud-appropriate requests to Fireworks Kimi K2.6.",
       "endpoints": ["chat.completions", "completions", "responses"],
-      "default_model": "Qwen3.5-4B-GGUF",
+      "default_model": "Qwen3.5-35B-A3B-GGUF",
       "recommended_max_loaded_models": 1,
       "candidates": [
         {
-          "model": "Qwen3.5-4B-GGUF",
-          "description": "Fast local default for short chat and ordinary requests."
+          "model": "Qwen3.5-35B-A3B-GGUF",
+          "description": "Local default for ordinary requests and privacy-sensitive work."
         },
         {
-          "model": "Qwen3.5-35B-A3B-GGUF",
-          "description": "Larger model for coding, debugging, difficult reasoning, tools, and longer prompts."
+          "model": "fireworks.kimi-k2p6",
+          "description": "Remote Fireworks target for harder reasoning, tool-heavy work, vision, or very long context."
         }
       ],
       "rules": [
@@ -113,14 +118,14 @@ Heuristic routers evaluate rules in order. The first matching rule wins. If no r
           "match": {
             "regex": "\\b(code|debug|stack trace|compile|cmake|python|c\\+\\+)\\b"
           },
-          "route_to": "Qwen3.5-35B-A3B-GGUF"
+          "route_to": "fireworks.kimi-k2p6"
         },
         {
           "id": "long-context",
           "match": {
             "min_chars": 4000
           },
-          "route_to": "Qwen3.5-35B-A3B-GGUF"
+          "route_to": "fireworks.kimi-k2p6"
         }
       ]
     }
@@ -154,43 +159,42 @@ Lemonade disables thinking for the internal router decision call so the router r
   "version": 1,
   "routers": [
     {
-      "id": "router.example.agentic-qwen35",
+      "id": "router.example.agentic-qwen35-fireworks",
       "type": "agentic",
-      "description": "Uses Qwen3.5 35B-A3B as a router model and routes simple work down to 4B.",
+      "description": "Uses local Qwen3.5 35B-A3B as a router model and escalates cloud-appropriate work to Fireworks Kimi K2.6.",
       "endpoints": ["chat.completions", "completions", "responses"],
       "router_model": "Qwen3.5-35B-A3B-GGUF",
       "default_model": "Qwen3.5-35B-A3B-GGUF",
-      "recommended_max_loaded_models": 2,
+      "recommended_max_loaded_models": 1,
       "max_decision_tokens": 128,
       "temperature": 0,
       "on_failure": "default",
       "candidates": [
         {
-          "model": "Qwen3.5-4B-GGUF",
-          "description": "Fast local target for short chat, direct questions, summaries, and routine tasks."
+          "model": "Qwen3.5-35B-A3B-GGUF",
+          "description": "Local default for ordinary requests and privacy-sensitive work."
         },
         {
-          "model": "Qwen3.5-35B-A3B-GGUF",
-          "description": "Router and high-quality target for coding, debugging, tool use, architecture, hard reasoning, long context, or high-value answers."
+          "model": "fireworks.kimi-k2p6",
+          "description": "Remote Fireworks target for harder reasoning, tool-heavy work, vision, or very long context."
         }
       ],
-      "system_prompt": "You are a routing classifier for Lemonade. Choose exactly one model from the candidate list. Route to Qwen3.5-4B-GGUF only for clearly simple, short, routine, low-risk requests where latency matters more than quality. Keep Qwen3.5-35B-A3B-GGUF for coding, debugging, tool use, hard reasoning, architecture, long context, ambiguous requests, or requests where quality matters more than latency. Return only JSON with keys model and reason."
+      "system_prompt": "You are a routing classifier for Lemonade. Choose exactly one model from the candidate list. Prefer Qwen3.5-35B-A3B-GGUF for ordinary requests, local/private work, and tasks that do not clearly need cloud offload. Choose fireworks.kimi-k2p6 for harder reasoning, very long context, tool-heavy work, vision requests, or requests where the user explicitly allows or benefits from remote cloud quality. Return only JSON with keys model and reason."
     }
   ]
 }
 ```
 
-This pattern keeps the routing decision high quality: the larger model decides whether the request is simple enough to route down to the 4B target. If the agentic router fails and `on_failure` is `default`, Lemonade uses the larger model rather than accidentally routing a hard request to the smaller model.
+This pattern keeps the routing decision local and high quality: Qwen3.5 35B-A3B decides whether the request should stay local or escalate to the Fireworks cloud model. If the agentic router fails and `on_failure` is `default`, Lemonade uses the local 35B model rather than accidentally sending a request to the cloud.
 
-For local agentic routing, set:
+For this local-plus-cloud agentic example, `recommended_max_loaded_models` is `1`: the local Qwen3.5 35B-A3B router/default model is the only local model, and Fireworks cloud models do not count against local loaded-model slots. For routers with two local models, use `max_loaded_models=2` so the router model and selected target model can stay loaded together.
+
+Before using a Fireworks target, install and authenticate the provider:
 
 ```bash
-lemonade config set max_loaded_models=2
+export LEMONADE_FIREWORKS_API_KEY=fw-...
+lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
 ```
-
-This lets the router model and selected target model stay loaded at the same time. If `max_loaded_models=1`, routing still works, but the target model can evict the router model and the next routed request may need to reload it.
-
-Cloud target models do not count against local loaded-model slots.
 
 ## Failure Behavior
 

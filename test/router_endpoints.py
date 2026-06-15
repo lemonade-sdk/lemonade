@@ -27,10 +27,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TIMEOUT = 10
 
-QWEN_SMALL = "Qwen3.5-4B-GGUF"
-QWEN_LARGE = "Qwen3.5-35B-A3B-GGUF"
-HEURISTIC_ROUTER = "router.test.heuristic-qwen35"
-AGENTIC_ROUTER = "router.test.agentic-qwen35"
+LOCAL_MODEL = "Qwen3.5-35B-A3B-GGUF"
+REMOTE_MODEL = "fireworks.kimi-k2p6"
+HEURISTIC_ROUTER = "router.test.heuristic-qwen35-fireworks"
+AGENTIC_ROUTER = "router.test.agentic-qwen35-fireworks"
 
 
 def _free_port():
@@ -89,22 +89,22 @@ def _heuristic_config():
                 "type": "heuristic",
                 "description": "Test heuristic router",
                 "endpoints": ["chat.completions", "completions", "responses"],
-                "default_model": QWEN_SMALL,
+                "default_model": LOCAL_MODEL,
                 "recommended_max_loaded_models": 1,
                 "candidates": [
-                    {"model": QWEN_SMALL, "description": "small"},
-                    {"model": QWEN_LARGE, "description": "large"},
+                    {"model": LOCAL_MODEL, "description": "local"},
+                    {"model": REMOTE_MODEL, "description": "remote"},
                 ],
                 "rules": [
                     {
                         "id": "coding",
                         "match": {"regex": "\\b(debug|stack trace|python|cmake|compile)\\b"},
-                        "route_to": QWEN_LARGE,
+                        "route_to": REMOTE_MODEL,
                     },
                     {
                         "id": "long",
                         "match": {"min_chars": 2000},
-                        "route_to": QWEN_LARGE,
+                        "route_to": REMOTE_MODEL,
                     },
                 ],
             }
@@ -121,15 +121,15 @@ def _agentic_config():
                 "type": "agentic",
                 "description": "Test agentic router",
                 "endpoints": ["chat.completions", "completions", "responses"],
-                "router_model": QWEN_LARGE,
-                "default_model": QWEN_LARGE,
-                "recommended_max_loaded_models": 2,
+                "router_model": LOCAL_MODEL,
+                "default_model": LOCAL_MODEL,
+                "recommended_max_loaded_models": 1,
                 "max_decision_tokens": 128,
                 "temperature": 0,
                 "on_failure": "default",
                 "candidates": [
-                    {"model": QWEN_SMALL, "description": "small"},
-                    {"model": QWEN_LARGE, "description": "large"},
+                    {"model": LOCAL_MODEL, "description": "local"},
+                    {"model": REMOTE_MODEL, "description": "remote"},
                 ],
                 "system_prompt": "Return only JSON with model and reason.",
             }
@@ -217,7 +217,7 @@ class RouterEndpointTests(unittest.TestCase):
         self.assertEqual(model["recipe"], "router")
         self.assertEqual(model["router"]["type"], "heuristic")
         self.assertEqual(model["router"]["recommended_max_loaded_models"], 1)
-        self.assertEqual(model["router"]["default_model"], QWEN_SMALL)
+        self.assertEqual(model["router"]["default_model"], LOCAL_MODEL)
 
     def test_002_router_model_by_id(self):
         status, _headers, body = _http_get(f"{self.base_url}/models/{HEURISTIC_ROUTER}")
@@ -241,7 +241,7 @@ class RouterEndpointTests(unittest.TestCase):
         )
         self.assertEqual(status, 200, body)
         coding = json.loads(body)
-        self.assertEqual(coding["decision"]["selected_model"], QWEN_LARGE)
+        self.assertEqual(coding["decision"]["selected_model"], REMOTE_MODEL)
         self.assertEqual(coding["decision"]["rule"], "coding")
 
         status, _headers, body = _http_post_json(
@@ -254,7 +254,7 @@ class RouterEndpointTests(unittest.TestCase):
         )
         self.assertEqual(status, 200, body)
         simple = json.loads(body)
-        self.assertEqual(simple["decision"]["selected_model"], QWEN_SMALL)
+        self.assertEqual(simple["decision"]["selected_model"], LOCAL_MODEL)
         self.assertEqual(simple["decision"]["reason"], "default_model")
 
     def test_004_concrete_model_is_not_a_router(self):
@@ -263,7 +263,7 @@ class RouterEndpointTests(unittest.TestCase):
             {
                 "endpoint": "chat.completions",
                 "request": {
-                    "model": QWEN_SMALL,
+                    "model": LOCAL_MODEL,
                     "messages": [{"role": "user", "content": "hello"}],
                 },
             },
@@ -285,9 +285,25 @@ class RouterEndpointTests(unittest.TestCase):
         self.write_routers(_agentic_config())
         model = self._router_by_id(AGENTIC_ROUTER)
         self.assertEqual(model["router"]["type"], "agentic")
-        self.assertEqual(model["router"]["router_model"], QWEN_LARGE)
-        self.assertEqual(model["router"]["recommended_max_loaded_models"], 2)
-        self.assertEqual(model["router"]["default_model"], QWEN_LARGE)
+        self.assertEqual(model["router"]["router_model"], LOCAL_MODEL)
+        self.assertEqual(model["router"]["recommended_max_loaded_models"], 1)
+        self.assertEqual(model["router"]["default_model"], LOCAL_MODEL)
+
+    def test_007_routing_stats_and_metrics_exist(self):
+        status, _headers, body = _http_get(f"{self.base_url}/stats")
+        self.assertEqual(status, 200, body)
+        stats = json.loads(body)
+        self.assertIn("routing", stats)
+        self.assertEqual(stats["routing"]["decisions_total"], 0)
+        self.assertEqual(stats["routing"]["fallbacks_total"], 0)
+        self.assertIn("by_router", stats["routing"])
+        self.assertIn("by_selected_model", stats["routing"])
+        self.assertIn("by_rule", stats["routing"])
+
+        status, _headers, body = _http_get(f"http://127.0.0.1:{self.port}/metrics")
+        self.assertEqual(status, 200, body)
+        self.assertIn("lemonade_router_decisions_total", body)
+        self.assertIn("lemonade_router_fallbacks_total", body)
 
 
 if __name__ == "__main__":

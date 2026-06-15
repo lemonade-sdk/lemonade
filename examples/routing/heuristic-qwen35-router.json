@@ -2,24 +2,24 @@
   "version": 1,
   "routers": [
     {
-      "id": "router.example.heuristic-qwen35",
+      "id": "router.example.heuristic-qwen35-fireworks",
       "type": "heuristic",
-      "description": "Routes simple requests to Qwen3.5 4B and harder coding/reasoning/long-context requests to Qwen3.5 35B-A3B.",
+      "description": "Routes ordinary requests to local Qwen3.5 35B-A3B and escalates harder cloud-appropriate requests to Fireworks Kimi K2.6.",
       "endpoints": [
         "chat.completions",
         "completions",
         "responses"
       ],
-      "default_model": "Qwen3.5-4B-GGUF",
+      "default_model": "Qwen3.5-35B-A3B-GGUF",
       "recommended_max_loaded_models": 1,
       "candidates": [
         {
-          "model": "Qwen3.5-4B-GGUF",
-          "description": "Fast local default for short chat and ordinary requests."
+          "model": "Qwen3.5-35B-A3B-GGUF",
+          "description": "Local default for ordinary requests and privacy-sensitive work."
         },
         {
-          "model": "Qwen3.5-35B-A3B-GGUF",
-          "description": "Larger model for coding, debugging, difficult reasoning, tools, and longer prompts."
+          "model": "fireworks.kimi-k2p6",
+          "description": "Remote Fireworks target for harder reasoning, tool-heavy work, vision, or very long context."
         }
       ],
       "rules": [
@@ -28,7 +28,7 @@
           "match": {
             "has_tools": true
           },
-          "route_to": "Qwen3.5-35B-A3B-GGUF"
+          "route_to": "fireworks.kimi-k2p6"
         },
         {
           "id": "coding",
@@ -48,21 +48,21 @@
               }
             ]
           },
-          "route_to": "Qwen3.5-35B-A3B-GGUF"
+          "route_to": "fireworks.kimi-k2p6"
         },
         {
           "id": "hard-reasoning",
           "match": {
             "regex": "\\b(prove|derive|analyze|architecture|tradeoff|multi-step|root cause|deep dive|strategy)\\b"
           },
-          "route_to": "Qwen3.5-35B-A3B-GGUF"
+          "route_to": "fireworks.kimi-k2p6"
         },
         {
           "id": "long-context",
           "match": {
             "min_chars": 4000
           },
-          "route_to": "Qwen3.5-35B-A3B-GGUF"
+          "route_to": "fireworks.kimi-k2p6"
         }
       ]
     }

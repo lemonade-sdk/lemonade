@@ -193,6 +193,7 @@ std::vector<RoutingCandidate> parse_candidates(const json& value) {
 json RoutingDecision::to_json() const {
     return {
         {"routed", routed},
+        {"fallback", fallback},
         {"router", router_id},
         {"type", router_type},
         {"original_model", original_model},

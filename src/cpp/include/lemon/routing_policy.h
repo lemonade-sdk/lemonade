@@ -18,6 +18,7 @@ struct RoutingCandidate {
 
 struct RoutingDecision {
     bool routed = false;
+    bool fallback = false;
     std::string router_id;
     std::string router_type;
     std::string original_model;

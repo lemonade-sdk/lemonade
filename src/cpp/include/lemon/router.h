@@ -11,6 +11,7 @@
 #include "wrapped_server.h"
 #include "model_manager.h"
 #include "backend_manager.h"
+#include "routing_policy.h"
 #include "runtime_config.h"
 
 // 5 seconds is generous enough for inference to complete but prevents
@@ -38,6 +39,11 @@ struct ModelTelemetryIdentity {
 struct ModelTelemetryRecord {
     ModelTelemetryIdentity identity;
     Telemetry telemetry;
+};
+
+struct RoutingTelemetryRecord {
+    RoutingDecision decision;
+    uint64_t count = 0;
 };
 
 class Router {
@@ -135,6 +141,10 @@ public:
     // Update prompt_tokens field from usage
     void update_prompt_tokens(const std::string& model_name, int prompt_tokens);
 
+    // Record a model-router decision for serving metrics. Dry-run evaluations
+    // should not call this; only real routed requests should be counted.
+    void record_routing_decision(const RoutingDecision& decision);
+
 private:
     // Multi-model support: Manage multiple WrappedServers
     std::vector<std::unique_ptr<WrappedServer>> loaded_servers_;
@@ -148,6 +158,11 @@ private:
     mutable std::mutex telemetry_mutex_;
     Telemetry aggregate_telemetry_;
     std::map<std::string, ModelTelemetryRecord> telemetry_by_model_;
+    uint64_t routing_decisions_total_ = 0;
+    uint64_t routing_fallbacks_total_ = 0;
+    std::map<std::string, RoutingTelemetryRecord> routing_by_router_;
+    std::map<std::string, RoutingTelemetryRecord> routing_by_selected_model_;
+    std::map<std::string, RoutingTelemetryRecord> routing_by_rule_;
 
     // Concurrency control for load operations
     mutable std::mutex load_mutex_;              // Protects loading state and loaded_servers_
@@ -175,6 +190,8 @@ private:
                                     double time_to_first_token,
                                     double tokens_per_second);
     void record_prompt_tokens_for_model(const ModelTelemetryIdentity& identity, int prompt_tokens);
+    static std::string routing_key(const std::vector<std::string>& parts);
+    json get_routing_stats_locked() const;
 
     // Generic inference wrapper that handles locking and busy state
     template<typename Func>

@@ -2,9 +2,9 @@
   "version": 1,
   "routers": [
     {
-      "id": "router.example.agentic-qwen35",
+      "id": "router.example.agentic-qwen35-fireworks",
       "type": "agentic",
-      "description": "Uses Qwen3.5 35B-A3B as a router model and routes simple work down to Qwen3.5 4B.",
+      "description": "Uses local Qwen3.5 35B-A3B as a router model and escalates cloud-appropriate work to Fireworks Kimi K2.6.",
       "endpoints": [
         "chat.completions",
         "completions",
@@ -12,21 +12,21 @@
       ],
       "router_model": "Qwen3.5-35B-A3B-GGUF",
       "default_model": "Qwen3.5-35B-A3B-GGUF",
-      "recommended_max_loaded_models": 2,
+      "recommended_max_loaded_models": 1,
       "max_decision_tokens": 128,
       "temperature": 0,
       "on_failure": "default",
       "candidates": [
         {
-          "model": "Qwen3.5-4B-GGUF",
-          "description": "Fast local target for short chat, direct questions, summaries, and routine tasks."
+          "model": "Qwen3.5-35B-A3B-GGUF",
+          "description": "Local default for ordinary requests and privacy-sensitive work."
         },
         {
-          "model": "Qwen3.5-35B-A3B-GGUF",
-          "description": "Router and high-quality target for coding, debugging, tool use, architecture, hard reasoning, long context, or high-value answers."
+          "model": "fireworks.kimi-k2p6",
+          "description": "Remote Fireworks target for harder reasoning, tool-heavy work, vision, or very long context."
         }
       ],
-      "system_prompt": "You are a routing classifier for Lemonade. Choose exactly one model from the candidate list. Route to Qwen3.5-4B-GGUF only for clearly simple, short, routine, low-risk requests where latency matters more than quality. Keep Qwen3.5-35B-A3B-GGUF for coding, debugging, tool use, hard reasoning, architecture, long context, ambiguous requests, or requests where quality matters more than latency. Return only JSON with keys model and reason."
+      "system_prompt": "You are a routing classifier for Lemonade. Choose exactly one model from the candidate list. Prefer Qwen3.5-35B-A3B-GGUF for ordinary requests, local/private work, and tasks that do not clearly need cloud offload. Choose fireworks.kimi-k2p6 for harder reasoning, very long context, tool-heavy work, vision requests, or requests where the user explicitly allows or benefits from remote cloud quality. Return only JSON with keys model and reason."
     }
   ]
 }

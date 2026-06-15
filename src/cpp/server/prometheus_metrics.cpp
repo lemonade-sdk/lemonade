@@ -324,6 +324,7 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     json snapshot = router.get_metrics_snapshot();
     const json loaded_models = snapshot.value("loaded_models", json::array());
     const json model_metrics = snapshot.value("model_metrics", json::array());
+    const json routing = snapshot.value("routing", json::object());
 
     metrics.describe("lemonade_loaded_models", "Number of models currently loaded in Lemonade.", "gauge");
     metrics.sample("lemonade_loaded_models", {}, static_cast<double>(loaded_models.size()));
@@ -410,6 +411,52 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     metrics.sample_uint("lemonade_input_tokens_total", {}, totals.value("input_tokens", 0ULL));
     metrics.sample_uint("lemonade_output_tokens_total", {}, totals.value("output_tokens", 0ULL));
     metrics.sample_uint("lemonade_prompt_tokens_total", {}, totals.value("prompt_tokens", 0ULL));
+
+    metrics.describe("lemonade_router_decisions_total", "Cumulative routed requests observed by Lemonade.", "counter");
+    metrics.describe("lemonade_router_fallbacks_total", "Cumulative routed requests that used a router fallback.", "counter");
+    metrics.describe("lemonade_router_decisions_by_router_total", "Cumulative routed requests by router alias.", "counter");
+    metrics.describe("lemonade_router_decisions_by_selected_model_total", "Cumulative routed requests by router alias and selected target model.", "counter");
+    metrics.describe("lemonade_router_decisions_by_rule_total", "Cumulative routed requests by heuristic rule or fallback bucket.", "counter");
+
+    metrics.sample_uint("lemonade_router_decisions_total", {},
+                        routing.value("decisions_total", 0ULL));
+    metrics.sample_uint("lemonade_router_fallbacks_total", {},
+                        routing.value("fallbacks_total", 0ULL));
+
+    for (const auto& item : routing.value("by_router", json::array())) {
+        metrics.sample_uint(
+            "lemonade_router_decisions_by_router_total",
+            {
+                {"router", item.value("router", "")},
+                {"router_type", item.value("type", "")}
+            },
+            item.value("count", 0ULL));
+    }
+
+    for (const auto& item : routing.value("by_selected_model", json::array())) {
+        metrics.sample_uint(
+            "lemonade_router_decisions_by_selected_model_total",
+            {
+                {"router", item.value("router", "")},
+                {"router_type", item.value("type", "")},
+                {"selected_model", item.value("selected_model", "")}
+            },
+            item.value("count", 0ULL));
+    }
+
+    for (const auto& item : routing.value("by_rule", json::array())) {
+        const bool fallback = item.value("fallback", false);
+        metrics.sample_uint(
+            "lemonade_router_decisions_by_rule_total",
+            {
+                {"router", item.value("router", "")},
+                {"router_type", item.value("type", "")},
+                {"rule", fallback ? "__fallback__" : item.value("rule", "")},
+                {"selected_model", item.value("selected_model", "")},
+                {"fallback", fallback ? "true" : "false"}
+            },
+            item.value("count", 0ULL));
+    }
 
     metrics.describe("lemonade_cpu_usage_percent", "System CPU utilization percentage.", "gauge");
     if (system_metrics.cpu_percent >= 0 && std::isfinite(system_metrics.cpu_percent)) {
