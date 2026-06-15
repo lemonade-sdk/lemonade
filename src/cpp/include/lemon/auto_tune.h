@@ -133,12 +133,18 @@ inline double get_available_memory_gb(DeviceType device_type) {
             }
         }
 
-        // Metal (macOS — unified memory, reported via get_amd_igpu_device on macOS)
-        auto amd_igpu_mac = si->get_amd_igpu_device();
-        if (amd_igpu_mac.available && amd_igpu_mac.vram_gb > 0) {
-            double available = std::max(0.0, amd_igpu_mac.vram_gb - used_gb);
-            LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (Metal) total="
-                                   << std::fixed << std::setprecision(2) << amd_igpu_mac.vram_gb
+        // Metal (macOS — Apple Silicon unified memory). CPU and GPU share one pool:
+        //   vram_gb    = Metal's recommended GPU working-set budget (a soft ceiling)
+        //   virtual_gb = total unified RAM
+        // Available to the GPU = the free unified RAM (total − used), capped at the
+        // working-set budget so we don't push the system into swap.
+        auto apple = si->get_apple_silicon_device();
+        if (apple.available && apple.vram_gb > 0) {
+            double free_unified = std::max(0.0, apple.virtual_gb - used_gb);
+            double available = std::min(apple.vram_gb, free_unified);
+            LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (Metal) budget="
+                                   << std::fixed << std::setprecision(2) << apple.vram_gb
+                                   << " GB, unified=" << apple.virtual_gb
                                    << " GB, used=" << used_gb
                                    << " GB → " << available << " GB available"  << " ";
             return available;
@@ -146,6 +152,18 @@ inline double get_available_memory_gb(DeviceType device_type) {
     }
 
     // CPU / NPU: use system RAM
+    // Apple Silicon: the full unified-memory pool (total physical RAM) is reported
+    // as virtual_gb on the Apple Silicon device.
+    auto apple = si->get_apple_silicon_device();
+    if (apple.available && apple.virtual_gb > 0) {
+        double available = std::max(0.0, apple.virtual_gb - used_gb);
+        LOG(DEBUG, "AutoTune") << "get_available_memory_gb: CPU/NPU (Apple Silicon unified) total="
+                               << std::fixed << std::setprecision(2) << apple.virtual_gb
+                               << " GB, used=" << used_gb
+                               << " GB → " << available << " GB available"  << " ";
+        return available;
+    }
+
     // On unified-memory systems (APU), the iGPU vram_gb + virtual_gb approximates system RAM
     auto amd_igpu = si->get_amd_igpu_device();
     if (amd_igpu.available && amd_igpu.vram_gb > 0) {
