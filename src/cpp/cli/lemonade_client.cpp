@@ -801,7 +801,7 @@ nlohmann::json LemonadeClient::get_model_info(const std::string& model_name) con
     }
 }
 
-int LemonadeClient::list_recipes() const {
+int LemonadeClient::list_recipes(bool backends_supported) const {
     try {
         std::string response = make_request("/api/v1/system-info");
         auto json_response = json::parse(response);
@@ -862,7 +862,7 @@ int LemonadeClient::list_recipes() const {
                           << std::setw(46) << "No backend definitions"
                           << "-" << std::endl;
             } else {
-                for (const auto& backend : recipe.backends) {
+                for (const auto& backend : recipe.backends) {                    
                     std::string recipe_col = first_backend ? recipe.name : "";
                     std::string status_str = backend.state.empty() ? "unsupported" : backend.state;
 
@@ -875,14 +875,15 @@ int LemonadeClient::list_recipes() const {
                         info_col = "-";
                     }
                     std::string action_col = backend.action.empty() ? "-" : backend.action;
+                    if (!backends_supported  || status_str != "unsupported") {
+                        std::cout << std::left << std::setw(20) << recipe_col
+                                << std::setw(12) << backend.name
+                                << std::setw(16) << status_str
+                                << std::setw(46) << info_col
+                                << " " << action_col << std::endl;
 
-                    std::cout << std::left << std::setw(20) << recipe_col
-                              << std::setw(12) << backend.name
-                              << std::setw(16) << status_str
-                              << std::setw(46) << info_col
-                              << " " << action_col << std::endl;
-
-                    first_backend = false;
+                        first_backend = false;
+                    }
                 }
             }
         }
