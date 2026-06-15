@@ -6,6 +6,7 @@
 #include "lemon/utils/version_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/rocm_arch_utils.h"
 #include "lemon/backends/backend_utils.h"
 #include <filesystem>
 #include <fstream>
@@ -1832,7 +1833,7 @@ std::string identify_cuda_arch_from_name(const std::string& device_name) {
     }
     return "";
 }
-
+/*
 std::string transform_isakfd_to_gfx(const std::string& isa) {
     if (!isa.empty() &&
         std::all_of(isa.begin(), isa.end(), ::isdigit)) {
@@ -1855,7 +1856,7 @@ std::string transform_isakfd_to_gfx(const std::string& isa) {
     }
 }
 
-std::string get_gfx_from_device_name(const std::string device_name) {
+std::string get_gfx_from_device_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
@@ -1867,20 +1868,20 @@ std::string get_gfx_from_device_name(const std::string device_name) {
     return "";
 
 } 
-
+*/
 // Helper to identify ROCm architecture from GPU name.
 std::string identify_rocm_arch_from_name(const std::string& device_name) {
     std::string device_lower = device_name;
     std::string gfx;
     std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
 
-    gfx = get_gfx_from_device_name(device_lower);
+    gfx = ROCmArchUtils::get_gfx_from_device_name(device_lower);
     if (!gfx.empty()) {
         return gfx;
     }
 
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
-    gfx = transform_isakfd_to_gfx(device_lower);
+    gfx = ROCmArchUtils::transform_isakfd_to_gfx(device_lower);
     if (!gfx.empty()) {
         return gfx;
     }

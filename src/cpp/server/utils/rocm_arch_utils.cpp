@@ -5,33 +5,60 @@
 
 namespace lemon{
 
+
+std::string ROCmArchUtils::transform_isakfd_to_gfx(const std::string& isa) {
+    if (!isa.empty() &&
+        std::all_of(isa.begin(), isa.end(), ::isdigit)) {
+        int v;
+        try {
+            v = std::stoi(isa);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(
+                "Failed to parse gfx_target_version '" + isa + "': " + e.what());
+        }
+        int major = v / 10000;
+        int minor = (v / 100) % 100;
+        int step  = v % 100;
+
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
+        return std::string(buf);
+    } else {
+        return "";
+    }
+}
+
+std::string ROCmArchUtils::get_gfx_from_device_name(const std::string& device_name) {
+    std::string device_lower = device_name;
+    std::transform(device_lower.begin(), device_lower.end(), device_lower.begin(), ::tolower);
+
+    std::smatch gfx_match;
+    // Match 3- or 4-digit gfx tokens; the trailing nibble can be hex (e.g. gfx90a).
+    if (std::regex_search(device_lower, gfx_match, std::regex(R"((gfx[0-9a-f]{3,4}))"))) {
+        return gfx_match[1].str();
+    }
+    return "";
+
+} 
+
+
 bool ROCmArchUtils::rocm_arch_is_valid_gfx(const std::string& gfx_arch) {
+    
+    
+    std::string gfx = ROCmArchUtils::get_gfx_from_device_name(gfx_arch);
+    return !gfx.empty();
+
+    /*
     std::smatch gfx_match;
     return std::regex_search(gfx_arch, gfx_match, std::regex(R"((gfx\d{4}))"));
+    */
 }
 
 // In this function we tranform the rocm archictecture from numeric format to gfx format.
 std::string ROCmArchUtils::rocm_arch_numeric_to_gfx(const std::string& numeric_arch) {
-    try {
-        // We convert the string with numeric version to long long number
-        long long num = std::stoll(numeric_arch);
-        
-        // We get the differents components of version.
-        long long major = num / 10000;
-        long long minor = (num / 100) % 100;
-        long long stepping = num % 100;
-        
-        // We build the gfx version with the previous components.
-        return "gfx" + std::to_string(major) + std::to_string(minor) + std::to_string(stepping);
-    } 
-    catch (const std::invalid_argument& e) {
-        // The case that the conversion of stoll cannot be done.
-        throw std::invalid_argument("The numeric version is not a valid number");
-    } 
-    catch (const std::out_of_range& e) {
-        // The case that the conversion is bigger than long long limits.
-        throw std::invalid_argument("The numeric version is not a valid number");
-    }
+
+    std::string gfx = ROCmArchUtils::transform_isakfd_to_gfx(numeric_arch);
+    return gfx;
 }
 
 std::vector<ROCmDeviceInfo> ROCmArchUtils::rocm_arch_get_active_devices(const json& devices) {

@@ -17,9 +17,12 @@ struct ROCmDeviceInfo {
 class ROCmArchUtils {
 
 public:
+    static std::string transform_isakfd_to_gfx(const std::string& isa);
+    static std::string get_gfx_from_device_name(const std::string& device_name);
     static std::string rocm_arch_numeric_to_gfx(const std::string& numeric_version);
     static bool rocm_arch_is_valid_gfx(const std::string& gfx_arch);
     static std::vector<ROCmDeviceInfo> rocm_arch_get_active_devices(const json& json_devices);
+    
 };
 
 }  // namespace lemon
