@@ -70,6 +70,7 @@ nav:
       - Service: guide/configuration/README.md
       - Custom Models: guide/configuration/custom-models.md
       - Running Many Models: guide/configuration/multi-model.md
+      - Model Routing: guide/configuration/routing.md
       - llama.cpp: guide/configuration/llamacpp.md
       - vLLM: guide/configuration/vllm.md
       - Moonshine: guide/configuration/moonshine.md

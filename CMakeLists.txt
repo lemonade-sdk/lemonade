@@ -593,6 +593,7 @@ set(SOURCES_CORE
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
     src/cpp/server/runtime_config.cpp
+    src/cpp/server/routing_policy.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
     src/cpp/server/prometheus_metrics.cpp

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "routers": [
+    {
+      "id": "router.example.agentic-qwen35",
+      "type": "agentic",
+      "description": "Uses Qwen3.5 35B-A3B as a router model and routes simple work down to Qwen3.5 4B.",
+      "endpoints": [
+        "chat.completions",
+        "completions",
+        "responses"
+      ],
+      "router_model": "Qwen3.5-35B-A3B-GGUF",
+      "default_model": "Qwen3.5-35B-A3B-GGUF",
+      "recommended_max_loaded_models": 2,
+      "max_decision_tokens": 128,
+      "temperature": 0,
+      "on_failure": "default",
+      "candidates": [
+        {
+          "model": "Qwen3.5-4B-GGUF",
+          "description": "Fast local target for short chat, direct questions, summaries, and routine tasks."
+        },
+        {
+          "model": "Qwen3.5-35B-A3B-GGUF",
+          "description": "Router and high-quality target for coding, debugging, tool use, architecture, hard reasoning, long context, or high-value answers."
+        }
+      ],
+      "system_prompt": "You are a routing classifier for Lemonade. Choose exactly one model from the candidate list. Route to Qwen3.5-4B-GGUF only for clearly simple, short, routine, low-risk requests where latency matters more than quality. Keep Qwen3.5-35B-A3B-GGUF for coding, debugging, tool use, hard reasoning, architecture, long context, ambiguous requests, or requests where quality matters more than latency. Return only JSON with keys model and reason."
+    }
+  ]
+}

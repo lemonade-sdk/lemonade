@@ -13,6 +13,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <vector>
 #include <httplib.h>
 #include "runtime_config.h"
@@ -20,6 +21,7 @@
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
+#include "routing_policy.h"
 #include "upgradable_http_server.h"
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
@@ -99,6 +101,7 @@ private:
     void handle_slots_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_tokenize(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
+    void handle_router_evaluate(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
@@ -207,6 +210,17 @@ private:
     // Helper function for auto-loading models (eliminates code duplication and race conditions)
     void auto_load_model_if_needed(const std::string& model_name);
 
+    // Helper function for model-router aliases. Returns nullopt when the
+    // request model is a concrete model, otherwise rewrites request_json.model
+    // to the selected target model or throws on routing failure.
+    std::optional<RoutingDecision> resolve_routed_model(const std::string& endpoint,
+                                                        nlohmann::json& request_json);
+    RoutingDecision resolve_agentic_route(const RoutingPolicy& policy,
+                                          const std::string& endpoint,
+                                          const nlohmann::json& request_json);
+    void apply_route_headers(const std::optional<RoutingDecision>& decision,
+                             httplib::Response& res);
+
     // Helper: persist the registry's installed-providers list into config.json
     // by overlaying onto the current runtime-config snapshot. Called after
     // install/uninstall. Errors are logged and swallowed — a failure to
@@ -252,6 +266,7 @@ private:
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;
+    std::unique_ptr<RoutingPolicyEngine> routing_policy_engine_;
     std::unique_ptr<WebSocketServer> websocket_server_;
 
     std::mutex downloads_mutex_;

@@ -162,6 +162,8 @@ Backend-specific settings are nested under their backend name:
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
+**routers.json** — Model router aliases live in a separate `routers.json` file next to `config.json`. Routers can use deterministic JSON rules or an agentic router model to choose a target model for `/chat/completions`, `/completions`, and `/responses`. See [Model Routing](./routing.md).
+
 ### Backend binary selection
 
 Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm_bin`) accepts the same set of values:

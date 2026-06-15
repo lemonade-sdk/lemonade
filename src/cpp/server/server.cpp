@@ -13,6 +13,7 @@
 #include "lemon/logging_config.h"
 #include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
+#include "lemon/routing_policy.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
@@ -29,6 +30,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <lemon/utils/aixlog.hpp>
 
@@ -61,29 +63,33 @@ namespace lemon {
 
 namespace {
 
-bool should_disable_thinking(const json& request_json) {
+std::optional<bool> requested_thinking_enabled(const json& request_json) {
     // enable_thinking takes precedence over thinking when both are present.
     if (request_json.contains("enable_thinking") && request_json["enable_thinking"].is_boolean()) {
-        return request_json["enable_thinking"].get<bool>() == false;
+        return request_json["enable_thinking"].get<bool>();
     }
 
     if (request_json.contains("thinking")) {
         const auto& thinking = request_json["thinking"];
         if (thinking.is_boolean()) {
-            return thinking.get<bool>() == false;
+            return thinking.get<bool>();
         }
         if (thinking.is_object()) {
             const std::string type = thinking.value("type", "");
-            if (type == "disabled") {
-                return true;
-            }
-            if (type == "enabled") {
-                return false;
-            }
+            if (type == "enabled") return true;
+            if (type == "disabled") return false;
         }
     }
 
-    return false;
+    return std::nullopt;
+}
+
+void set_chat_template_thinking(json& request_json, bool enabled) {
+    if (!request_json.contains("chat_template_kwargs") ||
+        !request_json["chat_template_kwargs"].is_object()) {
+        request_json["chat_template_kwargs"] = json::object();
+    }
+    request_json["chat_template_kwargs"]["enable_thinking"] = enabled;
 }
 
 bool strip_handled_thinking_fields(json& request_json) {
@@ -226,6 +232,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                                        model_manager_.get(),
                                        backend_manager_.get());
     router_->set_cloud_registry(cloud_registry_.get());
+
+    routing_policy_engine_ = std::make_unique<RoutingPolicyEngine>(cache_dir_);
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -483,6 +491,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Chat completions (OpenAI compatible)
     register_post("chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_chat_completions(req, res);
+    });
+
+    // Model router dry-run/evaluation endpoint
+    register_post("router/evaluate", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_router_evaluate(req, res);
     });
 
     // Completions
@@ -1550,6 +1563,198 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
 }
 
+std::optional<RoutingDecision> Server::resolve_routed_model(const std::string& endpoint,
+                                                            nlohmann::json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return std::nullopt;
+    }
+
+    const std::string original_model = request_json["model"].get<std::string>();
+    auto policy = routing_policy_engine_->get_router(original_model);
+    if (!policy) {
+        return std::nullopt;
+    }
+
+    RoutingDecision decision;
+    if (policy->type == "heuristic") {
+        decision = routing_policy_engine_->route_heuristic(*policy, endpoint, request_json);
+    } else if (policy->type == "agentic") {
+        decision = resolve_agentic_route(*policy, endpoint, request_json);
+    } else {
+        throw std::runtime_error("Unsupported router type: " + policy->type);
+    }
+
+    if (decision.selected_model.empty()) {
+        throw std::runtime_error("Router '" + original_model + "' did not select a model: " + decision.reason);
+    }
+    if (!policy->has_candidate(decision.selected_model)) {
+        throw std::runtime_error("Router '" + original_model + "' selected a model outside its candidates: " +
+                                 decision.selected_model);
+    }
+    if (routing_policy_engine_->has_router(decision.selected_model)) {
+        throw std::runtime_error("Router '" + original_model + "' selected another router alias; router chaining is not supported yet");
+    }
+
+    LOG(INFO, "Routing") << "Router '" << original_model << "' selected '"
+                         << decision.selected_model << "' for " << endpoint
+                         << " (" << decision.reason << ")" << std::endl;
+    request_json["model"] = decision.selected_model;
+    return decision;
+}
+
+RoutingDecision Server::resolve_agentic_route(const RoutingPolicy& policy,
+                                              const std::string& endpoint,
+                                              const nlohmann::json& request_json) {
+    RoutingDecision decision;
+    decision.routed = true;
+    decision.router_id = policy.id;
+    decision.router_type = policy.type;
+    decision.original_model = request_json.value("model", "");
+    decision.selected_model = policy.default_model;
+    decision.reason = "default_model";
+
+    auto fallback_or_throw = [&](const std::string& reason) {
+        if (policy.on_failure == "error") {
+            throw std::runtime_error("Agentic router '" + policy.id + "' failed: " + reason);
+        }
+        decision.selected_model = policy.default_model;
+        decision.reason = "agentic router failed; using default_model: " + reason;
+        return decision;
+    };
+
+    if (!policy.supports_endpoint(endpoint)) {
+        return fallback_or_throw("router does not support endpoint: " + endpoint);
+    }
+    int max_loaded = config_->max_loaded_models();
+    if (max_loaded != -1 && max_loaded < policy.recommended_max_loaded_models) {
+        LOG(WARNING, "Routing") << "Agentic router '" << policy.id
+                                << "' recommends max_loaded_models >= "
+                                << policy.recommended_max_loaded_models
+                                << " so the router model and target model can stay loaded; current value is "
+                                << max_loaded << std::endl;
+    }
+    if (routing_policy_engine_->has_router(policy.router_model)) {
+        return fallback_or_throw("router_model cannot be another router alias");
+    }
+
+    std::string router_model_recipe;
+    try {
+        if (model_manager_->model_exists(policy.router_model)) {
+            router_model_recipe = model_manager_->get_model_info(policy.router_model).recipe;
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "Routing") << "Could not inspect router_model recipe for '"
+                              << policy.router_model << "': " << e.what() << std::endl;
+    }
+
+    try {
+        auto_load_model_if_needed(policy.router_model);
+    } catch (const std::exception& e) {
+        return fallback_or_throw("failed to load router_model '" + policy.router_model + "': " + e.what());
+    }
+
+    json candidates = json::array();
+    for (const auto& candidate : policy.candidates) {
+        json item = {{"model", candidate.model}};
+        if (!candidate.description.empty()) item["description"] = candidate.description;
+        candidates.push_back(item);
+    }
+
+    json routing_context = {
+        {"endpoint", endpoint},
+        {"router", policy.id},
+        {"default_model", policy.default_model},
+        {"candidate_models", candidates},
+        {"request_text", routing_request_text(endpoint, request_json)}
+    };
+
+    std::string system_prompt = policy.system_prompt.empty()
+        ? "You are a routing classifier. Choose exactly one model from the candidate list. Return only JSON with keys model and reason."
+        : policy.system_prompt;
+
+    json router_request = {
+        {"model", policy.router_model},
+        {"temperature", policy.temperature},
+        {"max_tokens", policy.max_decision_tokens},
+        {"response_format", {{"type", "json_object"}}},
+        {"messages", json::array({
+            {{"role", "system"}, {"content", system_prompt}},
+            {{"role", "user"}, {"content",
+                "Choose the best target model for this request. Do not include reasoning, markdown, or prose. "
+                "Return only a JSON object like "
+                "{\"model\":\"<candidate model>\",\"reason\":\"short reason\"}.\n\n" +
+                routing_context.dump(2)}}
+        })}
+    };
+    if (router_model_recipe == "llamacpp") {
+        // This is internal-only: never let the router's decision call emit a
+        // thinking trace, while preserving the user's thinking/reasoning fields
+        // on the final request routed to the selected target model.
+        router_request["chat_template_kwargs"] = {{"enable_thinking", false}};
+    }
+
+    json response;
+    try {
+        response = router_->chat_completion(router_request);
+    } catch (const std::exception& e) {
+        return fallback_or_throw(std::string("router_model inference failed: ") + e.what());
+    }
+
+    if (response.contains("error")) {
+        return fallback_or_throw("router_model returned error: " + response["error"].dump());
+    }
+
+    std::string content;
+    try {
+        if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
+            const auto& choice = response["choices"][0];
+            if (choice.contains("message") && choice["message"].is_object() &&
+                choice["message"].contains("content") && choice["message"]["content"].is_string()) {
+                content = choice["message"]["content"].get<std::string>();
+            } else if (choice.contains("text") && choice["text"].is_string()) {
+                content = choice["text"].get<std::string>();
+            }
+        }
+    } catch (const std::exception& e) {
+        return fallback_or_throw(std::string("failed to read router_model response: ") + e.what());
+    }
+
+    std::string json_text = extract_json_object_text(content);
+    if (json_text.empty()) {
+        return fallback_or_throw("router_model did not return a JSON object");
+    }
+
+    try {
+        json parsed = json::parse(json_text);
+        std::string selected = parsed.value("model", "");
+        if (selected.empty()) {
+            return fallback_or_throw("router_model JSON missing model");
+        }
+        if (!policy.has_candidate(selected)) {
+            return fallback_or_throw("router_model selected non-candidate model: " + selected);
+        }
+        decision.selected_model = selected;
+        decision.reason = parsed.value("reason", "agentic router selected candidate");
+        return decision;
+    } catch (const std::exception& e) {
+        return fallback_or_throw(std::string("failed to parse router_model JSON: ") + e.what());
+    }
+}
+
+void Server::apply_route_headers(const std::optional<RoutingDecision>& decision,
+                                 httplib::Response& res) {
+    if (!decision || !decision->routed) return;
+    res.set_header("X-Lemonade-Router", decision->router_id);
+    res.set_header("X-Lemonade-Router-Type", decision->router_type);
+    res.set_header("X-Lemonade-Routed-Model", decision->selected_model);
+    if (!decision->rule_id.empty()) {
+        res.set_header("X-Lemonade-Route-Rule", decision->rule_id);
+    }
+    if (!decision->reason.empty()) {
+        res.set_header("X-Lemonade-Route-Reason", decision->reason);
+    }
+}
+
 void Server::ensure_collection_loaded(const ModelInfo& info) {
     LOG(INFO, "Server") << "Loading collection components for: " << info.model_name << std::endl;
     for (const auto& component : info.components) {
@@ -1649,6 +1854,12 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         response["data"].push_back(model_info_to_json(model_id, model_info));
     }
 
+    // Model router aliases are synthetic models. Surface them in both OpenAI
+    // mode and show_all mode so clients can select a router like any model.
+    for (const auto& policy : routing_policy_engine_->routers()) {
+        response["data"].push_back(policy.to_model_json());
+    }
+
     res.set_content(response.dump(), "application/json");
 }
 
@@ -1721,7 +1932,9 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
     std::string model_id = req.matches[1];
 
-    if (model_manager_->model_exists(model_id)) {
+    if (auto policy = routing_policy_engine_->get_router(model_id)) {
+        res.set_content(policy->to_model_json().dump(), "application/json");
+    } else if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
         // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
         // for shadowed sources), regardless of which form the client requested.
@@ -1732,6 +1945,55 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_router_evaluate(const httplib::Request& req, httplib::Response& res) {
+    try {
+        json body = json::parse(req.body.empty() ? "{}" : req.body);
+        std::string endpoint = body.value("endpoint", "chat.completions");
+
+        json request_json;
+        if (body.contains("request") && body["request"].is_object()) {
+            request_json = body["request"];
+        } else {
+            request_json = body;
+        }
+
+        if (body.contains("router") && body["router"].is_string()) {
+            request_json["model"] = body["router"].get<std::string>();
+        }
+
+        normalize_client_model_name(request_json);
+
+        auto decision = resolve_routed_model(endpoint, request_json);
+        if (!decision) {
+            res.status = 400;
+            json error = {{"error", {
+                {"message", "Request model is not a configured router alias"},
+                {"type", "invalid_request_error"},
+                {"param", "model"},
+                {"code", "not_a_router"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        json response = {
+            {"object", "router.evaluation"},
+            {"decision", decision->to_json()},
+            {"resolved_model", request_json.value("model", "")}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Routing") << "Router evaluation failed: " << e.what() << std::endl;
+        res.status = 400;
+        json error = {{"error", {
+            {"message", e.what()},
+            {"type", "routing_error"},
+            {"code", "routing_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     }
 }
 
@@ -1799,6 +2061,22 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
+
+        std::optional<RoutingDecision> route_decision;
+        try {
+            route_decision = resolve_routed_model("chat.completions", request_json);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Routing") << "Chat routing failed: " << e.what() << std::endl;
+            res.status = 400;
+            json error = {{"error", {
+                {"message", e.what()},
+                {"type", "routing_error"},
+                {"param", "model"},
+                {"code", "routing_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -1873,8 +2151,24 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
-        if (should_disable_thinking(request_json)) {
+        const auto thinking_enabled = requested_thinking_enabled(request_json);
+        if (thinking_enabled.has_value() && !*thinking_enabled) {
             request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
+        }
+        if (thinking_enabled.has_value()) {
+            bool model_uses_llamacpp = false;
+            try {
+                if (!model_to_check.empty() && model_manager_->model_exists(model_to_check)) {
+                    model_uses_llamacpp = model_manager_->get_model_info(model_to_check).recipe == "llamacpp";
+                }
+            } catch (const std::exception& e) {
+                LOG(DEBUG, "Server") << "Could not inspect model recipe for thinking controls: "
+                                     << e.what() << std::endl;
+            }
+            if (model_uses_llamacpp) {
+                set_chat_template_thinking(request_json, *thinking_enabled);
+                request_modified = true;
+            }
         }
         request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
@@ -1892,6 +2186,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no"); // Disable nginx buffering
+                apply_route_headers(route_decision, res);
 
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
@@ -1942,6 +2237,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 }
             }
 
+            apply_route_headers(route_decision, res);
             res.set_content(response.dump(), "application/json");
 
             // Print and save telemetry for non-streaming
@@ -2039,6 +2335,22 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
 
+        std::optional<RoutingDecision> route_decision;
+        try {
+            route_decision = resolve_routed_model("completions", request_json);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Routing") << "Completion routing failed: " << e.what() << std::endl;
+            res.status = 400;
+            json error = {{"error", {
+                {"message", e.what()},
+                {"type", "routing_error"},
+                {"param", "model"},
+                {"code", "routing_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -2088,6 +2400,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
+                apply_route_headers(route_decision, res);
 
                 res.set_chunked_content_provider(
                     "text/event-stream",
@@ -2132,6 +2445,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 return;
             }
 
+            apply_route_headers(route_decision, res);
             res.set_content(response.dump(), "application/json");
 
             // Print and save telemetry for non-streaming completions
@@ -3164,6 +3478,24 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        normalize_client_model_name(request_json);
+
+        std::optional<RoutingDecision> route_decision;
+        try {
+            route_decision = resolve_routed_model("responses", request_json);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Routing") << "Responses routing failed: " << e.what() << std::endl;
+            res.status = 400;
+            json error = {{"error", {
+                {"message", e.what()},
+                {"type", "routing_error"},
+                {"param", "model"},
+                {"code", "routing_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
         // Handle model loading/switching using helper function
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -3187,7 +3519,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        std::string request_body = req.body;
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -3197,6 +3529,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 res.set_header("Cache-Control", "no-cache");
                 res.set_header("Connection", "keep-alive");
                 res.set_header("X-Accel-Buffering", "no");
+                apply_route_headers(route_decision, res);
 
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
@@ -3229,6 +3562,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             }
 
             LOG(INFO, "Server") << "200 OK" << std::endl;
+            apply_route_headers(route_decision, res);
             res.set_content(response.dump(), "application/json");
         }
 

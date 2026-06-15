@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "routers": [
+    {
+      "id": "router.example.heuristic-qwen35",
+      "type": "heuristic",
+      "description": "Routes simple requests to Qwen3.5 4B and harder coding/reasoning/long-context requests to Qwen3.5 35B-A3B.",
+      "endpoints": [
+        "chat.completions",
+        "completions",
+        "responses"
+      ],
+      "default_model": "Qwen3.5-4B-GGUF",
+      "recommended_max_loaded_models": 1,
+      "candidates": [
+        {
+          "model": "Qwen3.5-4B-GGUF",
+          "description": "Fast local default for short chat and ordinary requests."
+        },
+        {
+          "model": "Qwen3.5-35B-A3B-GGUF",
+          "description": "Larger model for coding, debugging, difficult reasoning, tools, and longer prompts."
+        }
+      ],
+      "rules": [
+        {
+          "id": "tools",
+          "match": {
+            "has_tools": true
+          },
+          "route_to": "Qwen3.5-35B-A3B-GGUF"
+        },
+        {
+          "id": "coding",
+          "match": {
+            "any": [
+              {
+                "regex": "\\b(code|coding|debug|stack trace|exception|compile|compiler|cmake|typescript|python|c\\+\\+|rust|javascript|unit test|refactor)\\b"
+              },
+              {
+                "keywords_any": [
+                  "function",
+                  "class",
+                  "segfault",
+                  "regression",
+                  "pull request"
+                ]
+              }
+            ]
+          },
+          "route_to": "Qwen3.5-35B-A3B-GGUF"
+        },
+        {
+          "id": "hard-reasoning",
+          "match": {
+            "regex": "\\b(prove|derive|analyze|architecture|tradeoff|multi-step|root cause|deep dive|strategy)\\b"
+          },
+          "route_to": "Qwen3.5-35B-A3B-GGUF"
+        },
+        {
+          "id": "long-context",
+          "match": {
+            "min_chars": 4000
+          },
+          "route_to": "Qwen3.5-35B-A3B-GGUF"
+        }
+      ]
+    }
+  ]
+}
