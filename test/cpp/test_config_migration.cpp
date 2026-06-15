@@ -1,5 +1,6 @@
 // Standalone unit tests for lemon::config_get_version(),
 // lemon::config_migrate_v1_to_v2(), and lemon::config_migrate().
+// Tests cover ctx_size migration (4096 → -1) and version bumping.
 //
 // Compile with:
 //   g++ -std=c++17 -I src/cpp/include -I src/cpp/build/_deps/json-src/single_include \
@@ -39,11 +40,13 @@ static json deep_merge(const json& base, const json& overlay) {
 // Test helpers
 // ============================================================================
 
+static int passed = 0;
 static int failures = 0;
 
 static void check(bool cond, const char* desc) {
     if (cond) {
         std::printf("[PASS] %s\n", desc);
+        ++passed;
     } else {
         std::printf("[FAIL] %s\n", desc);
         ++failures;
@@ -89,34 +92,18 @@ static void test_config_get_version() {
 // config_migrate_v1_to_v2
 // ============================================================================
 
-static void test_migrate_v1_v2_remove_cloud_providers() {
-    std::puts("\n--- config_migrate_v1_to_v2: cloud_providers removal ---");
+static void test_migrate_v1_v2_basic() {
+    std::puts("\n--- config_migrate_v1_to_v2: basic migration ---");
 
-    // With cloud_providers → removed, returns true
+    // Basic v1 config → v2, version bumped, other fields preserved
     json cfg;
     cfg["config_version"] = 1;
     cfg["port"] = 13305;
-    cfg["cloud_providers"] = json::array({{"provider", "openrouter"}});
     cfg["ctx_size"] = 4096;
 
-    check(config_migrate_v1_to_v2(cfg) == true, "has cloud_providers → returns true");
-    check(!cfg.contains("cloud_providers"), "cloud_providers field removed");
+    check(config_migrate_v1_to_v2(cfg) == true, "returns true");
     check(cfg["config_version"] == 2, "config_version bumped to 2");
     check(cfg["port"] == 13305, "other fields preserved");
-}
-
-static void test_migrate_v1_v2_without_cloud_providers() {
-    std::puts("\n--- config_migrate_v1_to_v2: no cloud_providers ---");
-
-    // Without cloud_providers → still bumps version, returns true
-    json cfg;
-    cfg["config_version"] = 1;
-    cfg["port"] = 13305;
-    cfg["ctx_size"] = 4096;
-
-    check(config_migrate_v1_to_v2(cfg) == true, "no cloud_providers → returns true");
-    check(!cfg.contains("cloud_providers"), "no cloud_providers added");
-    check(cfg["config_version"] == 2, "config_version bumped to 2");
 }
 
 static void test_migrate_v1_v2_ctx_size_default() {
@@ -230,7 +217,6 @@ static void test_migrate_v0_via_merge() {
     json user_cfg;
     user_cfg["port"] = 13305;
     user_cfg["host"] = "localhost";
-    user_cfg["cloud_providers"] = json::array();
     user_cfg["ctx_size"] = 4096;
 
     json defaults;
@@ -245,18 +231,16 @@ static void test_migrate_v0_via_merge() {
     // merged has config_version = 2 from defaults, but original user cfg had none.
     bool changed = config_migrate(merged, defaults, 0);  // 0 = no version = v0
     check(changed == true, "v0 → v2 migration triggers");
-    check(!merged.contains("cloud_providers"), "cloud_providers removed");
     check(merged["ctx_size"] == -1, "ctx_size 4096 → -1");
     check(merged["config_version"] == 2, "config_version = 2");
     check(merged["port"] == 13305, "port preserved");
 }
 
 static void test_migrate_v1_partial_fields() {
-    std::puts("\n--- config_migrate: v1 with only version and cloud_providers ---");
+    std::puts("\n--- config_migrate: v1 with only version and port ---");
 
     json cfg;
     cfg["config_version"] = 1;
-    cfg["cloud_providers"] = json::array({{"provider", "openrouter"}});
     cfg["port"] = 13305;
 
     json defaults;
@@ -264,7 +248,6 @@ static void test_migrate_v1_partial_fields() {
 
     bool changed = config_migrate(cfg, defaults, 1);  // original version = 1
     check(changed == true, "v1 → v2 triggers");
-    check(!cfg.contains("cloud_providers"), "cloud_providers removed");
     check(cfg["config_version"] == 2, "config_version = 2");
     check(cfg["port"] == 13305, "port preserved");
 }
@@ -283,7 +266,6 @@ static void test_migrate_v1_no_ctx_change() {
     bool changed = config_migrate(cfg, defaults, 1);  // original version = 1
     check(changed == true, "v1 → v2 still triggers (version bump)");
     check(cfg["ctx_size"] == 8192, "ctx_size 8192 not changed");
-    check(!cfg.contains("cloud_providers"), "no cloud_providers to remove");
     check(cfg["config_version"] == 2, "config_version = 2");
 }
 
@@ -325,7 +307,6 @@ static void test_migrate_preserves_user_override() {
     json cfg;
     cfg["config_version"] = 1;
     cfg["ctx_size"] = 16384;  // user explicitly set a different value
-    cfg["cloud_providers"] = json::array();
 
     json defaults;
     defaults["config_version"] = 2;
@@ -350,7 +331,6 @@ static void test_round_trip() {
     old_user_cfg["config_version"] = 1;
     old_user_cfg["port"] = 9999;
     old_user_cfg["host"] = "0.0.0.0";
-    old_user_cfg["cloud_providers"] = json::array({{"provider", "together"}});
     old_user_cfg["ctx_size"] = 4096;
     old_user_cfg["llamacpp"] = json{{"backend", "auto"}};
 
@@ -366,7 +346,6 @@ static void test_round_trip() {
     check(changed == true, "migration applied after merge");
     check(merged["port"] == 9999, "user port 9999 preserved (user value wins merge)");
     check(merged["host"] == "0.0.0.0", "user host preserved");
-    check(!merged.contains("cloud_providers"), "cloud_providers stripped by migration");
     check(merged["ctx_size"] == -1, "ctx_size migrated from 4096 to -1");
     check(merged["config_version"] == 2, "version = 2");
     check(merged["llamacpp"]["backend"] == "auto", "backend config preserved");
@@ -384,8 +363,7 @@ int main() {
     std::puts("=== Config Migration Unit Tests ===\n");
 
     test_config_get_version();
-    test_migrate_v1_v2_remove_cloud_providers();
-    test_migrate_v1_v2_without_cloud_providers();
+    test_migrate_v1_v2_basic();
     test_migrate_v1_v2_ctx_size_default();
     test_migrate_v1_v2_ctx_size_user_tuned();
     test_migrate_v1_v2_no_ctx_size();
@@ -399,7 +377,6 @@ int main() {
     test_migrate_preserves_user_override();
     test_round_trip();
 
-    int total = 1 + 6 + 10;
-    std::printf("\n%d test cases passed, %d failures\n", total, failures);
+    std::printf("\n%d passed, %d failures\n", passed, failures);
     return failures == 0 ? 0 : 1;
 }

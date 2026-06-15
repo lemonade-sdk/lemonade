@@ -22,20 +22,13 @@ static inline int config_get_version(const json& config) {
 }
 
 /// Migrate a v1 config to v2:
-///   - Remove deprecated "cloud_providers" field
 ///   - Upgrade ctx_size 4096 -> -1 (only if user never changed it)
 ///   - Bump config_version to 2
 /// Returns true if the config was modified.
 static inline bool config_migrate_v1_to_v2(json& config) {
     bool changed = false;
 
-    // 1. Remove deprecated cloud_providers field.
-    if (config.contains("cloud_providers")) {
-        config.erase("cloud_providers");
-        changed = true;
-    }
-
-    // 2. Upgrade ctx_size 4096 -> -1 only when it is exactly the old default.
+    // 1. Upgrade ctx_size 4096 -> -1 only when it is exactly the old default.
     if (config.contains("ctx_size") && config["ctx_size"].is_number_integer()) {
         int ctx_val = config["ctx_size"].get<int>();
         if (ctx_val == 4096) {
@@ -44,7 +37,7 @@ static inline bool config_migrate_v1_to_v2(json& config) {
         }
     }
 
-    // 3. Bump the version marker.
+    // 2. Bump the version marker.
     config["config_version"] = 2;
     changed = true;
 

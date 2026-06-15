@@ -120,10 +120,6 @@ json ConfigFile::load(const std::string& cache_dir) {
     if (migrated) {
         // Log migration details for user visibility.
         if (original_version < config_get_version(defaults)) {
-            if (loaded.contains("cloud_providers")) {
-                LOG(WARNING) << "Migrating config: removed deprecated 'cloud_providers' field "
-                             << "(cloud provider support was removed)" << std::endl;
-            }
             if (loaded.contains("ctx_size") && loaded["ctx_size"].is_number_integer()
                 && loaded["ctx_size"].get<int>() == 4096) {
                 LOG(INFO) << "Migrating config: ctx_size 4096 -> -1 (auto-tune enabled)"
