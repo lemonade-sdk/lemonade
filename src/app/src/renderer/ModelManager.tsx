@@ -267,6 +267,11 @@ function buildModelList(
     const members: { label: string; name: string; info: ModelInfo }[] = [];
     for (const m of models) {
       if (consumed.has(m.name)) continue;
+      // Cloud models are grouped under their provider and rendered with the
+      // provider prefix stripped; keep them as flat individual rows rather
+      // than folding them into local model families (whose labels assume the
+      // bare/canonical-prefixed local naming, not "<provider>.<model>").
+      if (m.info.recipe === 'cloud') continue;
       if (family.recipe && m.info.recipe !== family.recipe) continue;
       const match = family.regex.exec(stripCanonicalPrefix(m.name));
       if (match) {
@@ -508,16 +513,30 @@ const [searchQuery, setSearchQuery] = useState('');
     return filtered;
   };
 
+  // Cloud models all share recipe='cloud', but each configured provider
+  // should get its own bucket so adding a second provider produces a
+  // second sub-heading rather than mixing into one. The bucket key for
+  // a cloud model is `<provider>-cloud` (e.g. "fireworks-cloud"); falls
+  // back to plain "cloud" if cloud_provider isn't on the entry yet.
+  const recipeBucketKey = (info: ModelInfo): string => {
+    const recipe = info.recipe || 'other';
+    if (recipe !== 'cloud') return recipe;
+    const provider = (info as { cloud_provider?: unknown }).cloud_provider;
+    return typeof provider === 'string' && provider.length > 0
+      ? `${provider}-cloud`
+      : 'cloud';
+  };
+
   const groupModelsByRecipe = () => {
     const grouped: { [key: string]: Array<{ name: string; info: ModelInfo }> } = {};
     const filteredModels = getFilteredModels();
 
     filteredModels.forEach(model => {
-      const recipe = model.info.recipe || 'other';
-      if (!grouped[recipe]) {
-        grouped[recipe] = [];
+      const bucket = recipeBucketKey(model.info);
+      if (!grouped[bucket]) {
+        grouped[bucket] = [];
       }
-      grouped[recipe].push(model);
+      grouped[bucket].push(model);
     });
 
     // Inject empty categories for supported recipes that have no models
@@ -668,8 +687,35 @@ const [searchQuery, setSearchQuery] = useState('');
     return expandedCategories.has(category);
   };
 
+  // Proper-cased display names for known cloud providers. The provider
+  // name in config is constrained to lowercase (so we have a single
+  // canonical id used for env-var lookup, model prefix, etc.); this map
+  // is the one place we restore camel/acronym casing for the UI.
+  const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+    'openai':     'OpenAI',
+    'fireworks':  'Fireworks',
+    'together':   'Together',
+    'openrouter': 'OpenRouter',
+    'groq':       'Groq',
+    'deepinfra':  'DeepInfra',
+    'mistral':    'Mistral',
+    'mistralai':  'MistralAI',
+    'anthropic':  'Anthropic',
+    'cohere':     'Cohere',
+  };
+
   const getDisplayLabel = (key: string): string => {
     if (organizationMode === 'recipe') {
+      // Per-provider cloud buckets ("fireworks-cloud" -> "Fireworks") are
+      // synthesised in recipeBucketKey and won't be in RECIPE_DISPLAY_NAMES,
+      // so format them here. The bucket is labelled with the provider's
+      // registered name (with camel/acronym casing restored) — no " Cloud"
+      // suffix, matching how the model names themselves are prefixed.
+      if (key.endsWith('-cloud') && key !== 'cloud') {
+        const provider = key.slice(0, -'-cloud'.length);
+        return PROVIDER_DISPLAY_NAMES[provider]
+          ?? `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`;
+      }
       return RECIPE_DISPLAY_NAMES[key] || key;
     } else {
       return getCategoryLabel(key);
@@ -1404,6 +1450,11 @@ const [searchQuery, setSearchQuery] = useState('');
     const info = modelsData[modelName];
     const isUpscaling = info?.labels?.includes('upscaling');
     const isCollection = isCollectionModel(info);
+    // Cloud-recipe rows have no local artifact (Delete is meaningless and
+    // dynamic discovery would re-add anyway) and no per-model knobs the
+    // ModelOptionsModal can edit (provider config lives in the Backends
+    // panel). Show Load / Unload only.
+    const isCloud = info?.recipe === 'cloud';
     const isEditableCollection = isCollectionEditableAsCustom(info);
     const isBuiltInCollection = isCollection && info?.suggested === true &&
       !(info?.labels ?? []).includes('custom') &&
@@ -1445,9 +1496,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 <polygon points="5 3 19 12 5 21" fill="currentColor" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {canDeleteFromRow && !isCloud && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {!isCloud && !isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
         {isLoaded && (
@@ -1463,9 +1514,9 @@ const [searchQuery, setSearchQuery] = useState('');
                 <path d="M5 20H19" />
               </svg>
             </button>
-            {canDeleteFromRow && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+            {canDeleteFromRow && !isCloud && renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
             {isEditableCollection && renderCustomCollectionOptionsButton(modelName)}
-            {!isCollection && renderLoadOptionsButton(modelName)}
+            {!isCloud && !isCollection && renderLoadOptionsButton(modelName)}
           </>
         )}
       </>
@@ -1498,7 +1549,7 @@ const [searchQuery, setSearchQuery] = useState('');
         return s ? `• ${c} (${s.toFixed(1)} GB)` : `• ${c}`;
       });
       nameTooltip = `Omni Model with ${components.length} component models:\n${lines.join('\n')}`;
-    } else if (displayName || getModelDisplayName(modelName) !== modelName) {
+    } else if (displayName || getModelDisplayName(modelName, modelInfo) !== modelName) {
       nameTooltip = modelName;
     }
 
@@ -1512,8 +1563,10 @@ const [searchQuery, setSearchQuery] = useState('');
         <div className="model-item-content">
           <div className="model-info-left">
             <span className={`model-status-indicator ${statusClass}`} title={statusTitle}>●</span>
-            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName))}</span>
-            <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
+            <span className="model-name" title={nameTooltip}>{displayName ?? (isCollectionModel(modelInfo) ? getCollectionDisplayName(modelName) : getModelDisplayName(modelName, modelInfo))}</span>
+            {modelInfo.recipe !== 'cloud' && (
+              <span className="model-size">{formatSize(getModelSize(modelName, modelInfo))}</span>
+            )}
             {renderActionButtons(modelName, isHovered)}
           </div>
           {modelInfo.labels && modelInfo.labels.length > 0 && (

@@ -13,5 +13,6 @@ export const RECIPE_DISPLAY_NAMES: Record<string, string> = {
   'moonshine': 'Moonshine',
   'sd-cpp': 'StableDiffusion.cpp',
   'kokoro': 'Kokoro',
+  'cloud': 'Cloud',
   'vllm': 'vLLM ROCm (experimental)',
 };

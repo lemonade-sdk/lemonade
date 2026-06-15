@@ -1615,7 +1615,8 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 4.57
     },
@@ -1625,7 +1626,8 @@
         "suggested": true,
         "labels": [
             "reasoning",
-            "hot"
+            "hot",
+            "tool-calling"
         ],
         "size": 9.34
     },
@@ -1634,7 +1636,8 @@
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 19.3
     }

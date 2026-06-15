@@ -958,6 +958,8 @@ Returns a list of models available on the server in an OpenAI-compatible format.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
+When `lemond` is configured with cloud providers, cloud-routed models appear here alongside local ones with `recipe: "cloud"` and a `cloud_provider` field. They are dot-namespaced by provider (e.g. `fireworks.kimi-k2p5`) and accept the standard chat-completions / completions requests below — see [Cloud Offload](../guide/configuration/cloud.md).
+
 ### Parameters
 
 | Parameter | Required | Description |

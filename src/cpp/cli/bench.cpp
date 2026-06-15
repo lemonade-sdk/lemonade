@@ -390,7 +390,6 @@ std::vector<BackendDiscovery> discover_backends(lemonade::LemonadeClient& client
 // Map recipe name to the recipe_options key for custom args
 static const std::map<std::string, std::string> RECIPE_ARGS_KEY = {
     {"llamacpp", "llamacpp_args"},
-    {"flm", "flm_args"},
     {"vllm", "vllm_args"},
     {"sd-cpp", "sdcpp_args"},
     {"whispercpp", "whispercpp_args"},
@@ -1501,9 +1500,6 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--llamacpp-args", opts.llamacpp_args, "Custom args for llama-server (e.g. \"-b 2048 -ub 1024\"). Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
-    cmd->add_option("--flm-args", opts.flm_args, "Custom args for flm serve. Repeat for multiple.")
-        ->type_name("ARGS")
-        ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--vllm-args", opts.vllm_args, "Custom args for vllm-server. Repeat for multiple.")
         ->type_name("ARGS")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
@@ -1535,7 +1531,6 @@ BenchConfig build_bench_config(const std::string& output_file,
     config.scenario_names = cli.scenario_names;
     // Populate backend-specific args map (only non-empty values)
     if (!cli.llamacpp_args.empty()) config.backend_args["llamacpp"] = cli.llamacpp_args;
-    if (!cli.flm_args.empty()) config.backend_args["flm"] = cli.flm_args;
     if (!cli.vllm_args.empty()) config.backend_args["vllm"] = cli.vllm_args;
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;

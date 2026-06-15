@@ -5,6 +5,12 @@ import { getCollectionComponents } from './collectionModels';
 import { COLLECTION_IMAGE_SIZE } from './collectionImageConfig';
 import toolDefinitions from './toolDefinitions.json';
 
+// Fallback used for actual image API requests when the planner does not pass
+// a size. Keep it shared with collection image hints so defaults stay in sync.
+const DEFAULT_IMAGE_SIZE = COLLECTION_IMAGE_SIZE;
+const MAX_IMAGE_DIMENSION = 2048;
+const IMAGE_DIMENSION_STEP = 8;
+
 // Types
 export interface LemonadeToolDef {
   type: 'function';
@@ -57,13 +63,17 @@ export function buildLemonadeTools(
   const tools: LemonadeToolDef[] = [];
   const models: Record<string, string> = {};
 
+  const substituteImageSize = (text: string): string => (
+    text.replace(/\{image_size\}/g, COLLECTION_IMAGE_SIZE)
+  );
+
   const substituteParams = (params: Record<string, any>): Record<string, any> => {
     const props = params?.properties as Record<string, any> | undefined;
     if (!props) return params;
     const newProps: Record<string, any> = {};
     for (const [key, prop] of Object.entries(props)) {
       newProps[key] = typeof prop?.description === 'string' && prop.description.includes('{image_size}')
-        ? { ...prop, description: prop.description.replaceAll('{image_size}', COLLECTION_IMAGE_SIZE) }
+        ? { ...prop, description: substituteImageSize(prop.description) }
         : prop;
     }
     return { ...params, properties: newProps };
@@ -80,7 +90,7 @@ export function buildLemonadeTools(
   const include = (def: ToolDefinitionEntry, model: string) => {
     tools.push(materialize(def));
     models[def.function.name] = model;
-    if (def.prompt_guidance) guidance.push(def.prompt_guidance);
+    if (def.prompt_guidance) guidance.push(substituteImageSize(def.prompt_guidance));
   };
 
   for (const def of (toolDefinitions.tools as ToolDefinitionEntry[])) {
@@ -134,21 +144,23 @@ export async function executeLemonadeTool(
     args = {};
   }
 
-  const hasPreviousImage = context.previousArtifacts.some(a => a.type === 'image');
   const modelLabels = modelsData?.[model]?.labels ?? [];
   const modelSupportsEdit = modelLabels.includes('edit');
-  const effectiveName = (funcName === 'generate_image' && hasPreviousImage && modelSupportsEdit) ? 'edit_image' : funcName;
 
-  if (effectiveName === 'generate_image' || effectiveName === 'edit_image') {
-    return executeImageTool(effectiveName, args, model, context, signal);
+  if (funcName === 'edit_image' && modelsData && !modelSupportsEdit) {
+    return { type: 'text', text: `Image editing is not available for model: ${model}` };
   }
-  if (effectiveName === 'text_to_speech') {
+
+  if (funcName === 'generate_image' || funcName === 'edit_image') {
+    return executeImageTool(funcName, args, model, context, signal);
+  }
+  if (funcName === 'text_to_speech') {
     return executeTTSTool(args, model, signal);
   }
-  if (effectiveName === 'transcribe_audio') {
+  if (funcName === 'transcribe_audio') {
     return executeTranscriptionTool(args, model, context, signal);
   }
-  if (effectiveName === 'analyze_image') {
+  if (funcName === 'analyze_image') {
     return executeVisionTool(args, model, context, signal);
   }
 
@@ -171,18 +183,21 @@ async function executeImageTool(
     formData.append('prompt', args.prompt || '');
     formData.append('response_format', 'b64_json');
     formData.append('n', '1');
-    formData.append('size', COLLECTION_IMAGE_SIZE);
+    const imageSize = resolveExplicitImageSize(args);
+    if (imageSize) formData.append('size', imageSize);
+    appendOptionalImageFormArgs(args, formData);
 
     // Attach the most recent image as the source file
     const lastImage = [...context.previousArtifacts].reverse().find(a => a.type === 'image');
-    if (lastImage) {
-      const binaryStr = atob(lastImage.data);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      formData.append('image', new Blob([bytes], { type: lastImage.mime || 'image/png' }), 'image.png');
+    if (!lastImage) {
+      throw new Error('Image edit requested, but no previous image is available as a source.');
     }
+    const binaryStr = atob(lastImage.data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    formData.append('image', new Blob([bytes], { type: lastImage.mime || 'image/png' }), 'image.png');
 
     const response = await serverFetch('/images/edits', {
       method: 'POST',
@@ -197,14 +212,17 @@ async function executeImageTool(
     throw new Error(data.error?.message || 'Image edit failed');
   }
 
+  const imageSize = resolveImageSize(args);
+
   // /images/generations accepts JSON
   const body: Record<string, any> = {
     model,
     prompt: args.prompt || '',
     response_format: 'b64_json',
     n: 1,
-    size: COLLECTION_IMAGE_SIZE,
+    size: imageSize,
   };
+  copyOptionalImageArgs(args, body);
 
   const response = await serverFetch('/images/generations', {
     method: 'POST',
@@ -218,6 +236,86 @@ async function executeImageTool(
     return { type: 'image', data: data.data[0].b64_json, mime: 'image/png' };
   }
   throw new Error(data.error?.message || 'Image generation failed');
+}
+
+function resolveImageSize(args: Record<string, any>): string {
+  const explicitSize = parseSizeFromText(typeof args.size === 'string' ? args.size : '');
+  if (explicitSize) return explicitSize;
+
+  // Be conservative: only the explicit size tool argument can change the output
+  // canvas. Prompt text is always image content, so dimensions that describe an
+  // object or visual detail inside the scene cannot hijack the canvas size.
+  return DEFAULT_IMAGE_SIZE;
+}
+
+function resolveExplicitImageSize(args: Record<string, any>): string {
+  return parseSizeFromText(typeof args.size === 'string' ? args.size : '');
+}
+
+function parseSizeFromText(text: string): string {
+  if (!text) return '';
+  const match = text.match(/(?<!\d)(\d{2,4})\s*(?:x|×|by)\s*(\d{2,4})(?!\d)/i);
+  if (match) {
+    return formatImageSize(Number(match[1]), Number(match[2]));
+  }
+
+  return '';
+}
+
+function formatImageSize(width: number, height: number): string {
+  const roundedWidth = normalizeImageDimension(width);
+  const roundedHeight = normalizeImageDimension(height);
+  if (roundedWidth !== null && roundedHeight !== null) {
+    return `${roundedWidth}x${roundedHeight}`;
+  }
+  return '';
+}
+
+function normalizeImageDimension(value: number): number | null {
+  if (!Number.isInteger(value) || value <= 0) return null;
+  const rounded = Math.round(value / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP;
+  return Math.min(MAX_IMAGE_DIMENSION, Math.max(IMAGE_DIMENSION_STEP, rounded));
+}
+
+function coerceInteger(value: any): number | null {
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
+  return null;
+}
+
+function coerceNumber(value: any): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function copyOptionalImageArgs(args: Record<string, any>, body: Record<string, any>): void {
+  const steps = coerceInteger(args.steps);
+  if (steps !== null && steps > 0) body.steps = steps;
+
+  const cfgScale = coerceNumber(args.cfg_scale);
+  if (cfgScale !== null && cfgScale > 0) body.cfg_scale = cfgScale;
+
+  const seed = coerceInteger(args.seed);
+  if (seed !== null) body.seed = seed;
+
+  if (typeof args.sample_method === 'string' && args.sample_method.trim()) {
+    body.sample_method = args.sample_method.trim();
+  }
+
+  const flowShift = coerceNumber(args.flow_shift);
+  if (flowShift !== null && flowShift > 0) body.flow_shift = flowShift;
+}
+
+function appendOptionalImageFormArgs(args: Record<string, any>, formData: FormData): void {
+  const body: Record<string, any> = {};
+  copyOptionalImageArgs(args, body);
+  for (const [key, value] of Object.entries(body)) {
+    formData.append(key, String(value));
+  }
 }
 
 async function executeTTSTool(

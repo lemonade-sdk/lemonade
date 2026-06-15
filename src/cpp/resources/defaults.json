@@ -66,5 +66,6 @@
     "args": "",
     "cpu_args": "",
     "cpu_bin": "builtin"
-  }
+  },
+  "cloud_providers": []
 }
