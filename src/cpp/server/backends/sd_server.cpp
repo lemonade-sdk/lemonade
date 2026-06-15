@@ -12,7 +12,6 @@
 #include <httplib.h>
 #include <iostream>
 #include <filesystem>
-#include <system_error>
 #include <fstream>
 #include <chrono>
 #include <random>
@@ -363,22 +362,20 @@ void SDServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
     }
 
-    // Launch the server process from a dedicated temp working directory so
-    // backend/Vulkan relative writes do not inherit a protected launcher
-    // directory on Windows.
-    fs::path working_dir = fs::temp_directory_path() / "lemonade" / "sd-cpp" / resolved_backend;
-    std::error_code working_dir_ec;
-    fs::create_directories(working_dir, working_dir_ec);
-    if (working_dir_ec) {
-        throw std::runtime_error("Failed to create sd-server working directory '" +
-                                 utils::path_to_utf8(working_dir) + "': " +
-                                 working_dir_ec.message());
-    }
+    // Launch the server process
+    std::string process_exe_path = exe_path;
+    std::string working_dir;
+#ifdef _WIN32
+    // Avoid inheriting a protected launcher cwd while preserving backend-relative files.
+    fs::path executable_path = fs::absolute(fs::path(exe_path));
+    process_exe_path = path_to_utf8(executable_path);
+    working_dir = path_to_utf8(executable_path.parent_path());
+#endif
 
     ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
+        process_exe_path,
         args,
-        utils::path_to_utf8(working_dir),
+        working_dir,
         is_debug(),  // inherit_output
         false,  // filter_health_logs
         env_vars

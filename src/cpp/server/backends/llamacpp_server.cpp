@@ -12,7 +12,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <system_error>
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <set>
@@ -558,20 +557,18 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // Start process (inherit output if debug logging enabled, filter health check spam)
     // Keep llama-server output visible at info log level.
-    // Use a dedicated temp working directory so backend/Vulkan relative writes do
-    // not inherit a protected launcher directory on Windows.
-    fs::path working_dir = fs::temp_directory_path() / "lemonade" / "llamacpp" / llamacpp_backend;
-    std::error_code working_dir_ec;
-    fs::create_directories(working_dir, working_dir_ec);
-    if (working_dir_ec) {
-        throw std::runtime_error("Failed to create llama-server working directory '" +
-                                 utils::path_to_utf8(working_dir) + "': " +
-                                 working_dir_ec.message());
-    }
+    std::string process_executable = executable;
+    std::string working_dir;
+#ifdef _WIN32
+    // Avoid inheriting a protected launcher cwd while preserving backend-relative files.
+    fs::path executable_path = fs::absolute(fs::path(executable));
+    process_executable = path_to_utf8(executable_path);
+    working_dir = path_to_utf8(executable_path.parent_path());
+#endif
 
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
     set_process_handle(ProcessManager::start_process(
-        executable, args, utils::path_to_utf8(working_dir), inherit_llama_output, true, env_vars));
+        process_executable, args, working_dir, inherit_llama_output, true, env_vars));
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
