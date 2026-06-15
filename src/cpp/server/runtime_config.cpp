@@ -352,11 +352,6 @@ json RuntimeConfig::recipe_options(const std::string& backend) const {
         if (sd.contains("height")) result["height"] = sd["height"];
     }
 
-    if (config_.contains("flm")) {
-        const auto& flm = config_["flm"];
-        if (flm.contains("args")) result["flm_args"] = flm["args"];
-    }
-
     if (config_.contains("vllm")) {
         const auto& vl = config_["vllm"];
         if (vl.contains("backend")) result["vllm_backend"] = resolve_auto(vl["backend"]);

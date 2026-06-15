@@ -32,8 +32,6 @@ static const json DEFAULTS = {
     {"height", 512},
     {"sampling_method", ""},
     {"flow_shift", 0.0},
-    // FLM-specific options
-    {"flm_args", ""},       // Custom arguments to pass to flm serve
     // vLLM-specific options
     {"vllm_backend", ""},  // "" means auto-detect
     {"vllm_args", ""},     // Custom arguments to pass to vllm-server
@@ -65,7 +63,6 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
     {"moonshine_args", "--moonshine-args"},
-    {"flm_args", "--flm-args"},
     {"vllm_backend", "--vllm"},
     {"vllm_args", "--vllm-args"}
 };
@@ -79,7 +76,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "moonshine") {
         keys = {"moonshine_args", "merge_args"};
     } else if (recipe == "flm") {
-        keys = {"ctx_size", "flm_args", "merge_args"};
+        return {"ctx_size", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
         keys = {"ctx_size"};
     } else if (recipe == "sd-cpp") {
@@ -260,7 +257,6 @@ static const json CLI_OPTIONS = {
     {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to vllm-server"}, {"group", "vLLM Options"}}},
     // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
     // Runtime options (--diffusion-fa, --offload-to-cpu) go through --sdcpp-args.
-    {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to flm serve"}, {"group", "FastFlowLM Options"}}}
 };
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
