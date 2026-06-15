@@ -2412,6 +2412,72 @@ class EndpointTests(ServerTestBase):
             if repo_dir and os.path.isdir(repo_dir):
                 shutil.rmtree(repo_dir, ignore_errors=True)
 
+    def test_021x_reject_nested_collection_by_name(self):
+        """Nested collections are not supported: a collection whose component
+        names an already-registered collection (here the built-in
+        LMX-Omni-5.5B-Lite) must be rejected — components must be leaf models."""
+        collection_name = f"user.NestByName-{uuid.uuid4().hex[:8]}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                "components": ["LMX-Omni-5.5B-Lite"],  # a built-in collection
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("not collections", response.json().get("error", "").lower())
+        ids = {
+            m["id"]
+            for m in requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            ).json()["data"]
+        }
+        self.assertNotIn(
+            collection_name[5:], ids, "Rejected collection must not persist"
+        )
+        print("[OK] Nested collection (component is a registered collection) rejected")
+
+    def test_021y_reject_nested_collection_inline_def(self):
+        """Nested collections are not supported: a component whose inline `models`
+        definition is itself a collection (recipe collection.omni) must be
+        rejected, not registered."""
+        suffix = uuid.uuid4().hex[:8]
+        collection_name = f"user.NestInline-{suffix}"
+        child = f"NestChild-{suffix}"
+        response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": collection_name,
+                "recipe": "collection.omni",
+                "components": [child],
+                "models": [
+                    {
+                        "model_name": child,
+                        "recipe": "collection.omni",  # nested → must be rejected
+                        "components": [ENDPOINT_TEST_MODEL],
+                    }
+                ],
+                "stream": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("not collections", response.json().get("error", "").lower())
+        ids = {
+            m["id"]
+            for m in requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            ).json()["data"]
+        }
+        self.assertNotIn(
+            collection_name[5:], ids, "Rejected collection must not persist"
+        )
+        self.assertNotIn(child, ids, "Nested child collection must not be registered")
+        print("[OK] Nested collection (inline collection component def) rejected")
+
     def test_021o_load_collection_routes_through_component_branch(self):
         """POST /load on a collection must not route the collection itself
         through the generic HF download path (collections have no checkpoint).

@@ -3086,23 +3086,16 @@ static std::string bare_component_name(const std::string& name) {
     return is_user_model_name(name) ? strip_user_model_prefix(name) : name;
 }
 
-// A collection component's inline definition must satisfy the same minimum a
-// regular model registration does before it can be registered as a user model:
-// a non-empty recipe plus, for a leaf model, at least one non-empty checkpoint
-// (or, for a nested collection, a non-empty components array). Used to fail an
-// inline import closed instead of persisting a half-defined component that only
-// blows up later during download.
+// A collection component's inline definition must be a usable model
+// registration before we register it: a non-empty recipe plus at least one
+// non-empty checkpoint. Fails an inline import closed instead of persisting a
+// half-defined component that only blows up later during download.
 static bool collection_component_def_is_valid(const json& def) {
     if (!def.is_object() || !def.contains("recipe") || !def["recipe"].is_string()) {
         return false;
     }
-    std::string recipe = def["recipe"].get<std::string>();
-    if (recipe.empty()) {
+    if (def["recipe"].get<std::string>().empty()) {
         return false;
-    }
-    if (is_collection_recipe(recipe)) {
-        return def.contains("components") && def["components"].is_array() &&
-               !def["components"].empty();
     }
     if (def.contains("checkpoint") && def["checkpoint"].is_string() &&
         !def["checkpoint"].get<std::string>().empty()) {
@@ -3205,6 +3198,16 @@ std::vector<std::string> ModelManager::register_components(const json& component
                     break;
                 }
             }
+        }
+
+        // Components must be regular models, not collections (backstop for the
+        // HF-manifest path, which does not go through validate_collection_request).
+        bool def_is_collection =
+            def.is_object() && is_collection_recipe(def.value("recipe", std::string()));
+        if (def_is_collection ||
+            (model_exists(name) && is_collection_recipe(get_model_info(name).recipe))) {
+            throw std::runtime_error(
+                "Collection components must be regular models, not collections: '" + name + "'");
         }
 
         if (model_exists(name)) {
@@ -5116,8 +5119,17 @@ std::optional<std::string> ModelManager::validate_collection_request(
         if (bare == bare_collection) {
             return "Collection cannot reference itself: " + component_name;
         }
+        // Components must be regular models, not collections.
+        const json* def = find_inline_def(bare);
+        bool is_collection_component =
+            (def != nullptr && def->is_object() &&
+             is_collection_recipe(def->value("recipe", std::string()))) ||
+            (model_exists(bare) && is_collection_recipe(get_model_info(bare).recipe));
+        if (is_collection_component) {
+            return "Collection components must be regular models, not collections: '" +
+                   component_name + "'";
+        }
         if (has_models_array) {
-            const json* def = find_inline_def(bare);
             if (!model_exists(bare) && def == nullptr) {
                 return "Inline collection component '" + component_name +
                        "' has no matching definition in 'models' and is not a "

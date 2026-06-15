@@ -120,7 +120,7 @@ An omni collection is a collection type that bundles several models into a singl
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
 | `recipe` | Yes | Must be `"collection.omni"`. |
-| `components` | Yes | Ordered, non-empty array of model names. |
+| `components` | Yes | Ordered, non-empty array of model names. Each component must be a regular model. |
 | `models` | No | Ordered array of full model definitions, one per `components` entry (the same fields as single-model registration, keyed by `model_name`). When present, component names that are not yet registered are registered from these definitions; names that already exist keep their local definition. When absent, every `components` entry must already exist in the registry (built-in or a previously registered `user.*` model). |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
