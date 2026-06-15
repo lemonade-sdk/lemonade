@@ -8,8 +8,10 @@
 #include <vector>
 #include <mutex>
 #include <functional>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
+#include "directory_watcher.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -212,10 +214,15 @@ public:
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
-    // Set extra models directory for GGUF discovery
+    // Set extra models directory for GGUF discovery.
+    // Starts/stops an inotify (Linux) / kqueue (macOS) watcher that
+    // automatically refreshes the model cache when files are added or
+    // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
 
     void save_model_options(const ModelInfo& info);
+
+    void start_directory_watcher();
 
 private:
     // Cycle-detecting overload used by the collection fan-out in download_model.
@@ -265,6 +272,7 @@ private:
     json recipe_options_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
+    std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;

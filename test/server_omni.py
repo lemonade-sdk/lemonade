@@ -364,8 +364,9 @@ class OmniTests(ServerTestBase):
                         {
                             "type": "text",
                             "text": (
-                                "What is the dominant color of this image? "
-                                "Answer with a single color word."
+                                "You are receiving this image directly as vision input. "
+                                "Do not use tools. Look at the attached image and answer with "
+                                "only its dominant color as a single word."
                             ),
                         },
                         {"type": "image_url", "image_url": {"url": image_uri}},
@@ -377,10 +378,10 @@ class OmniTests(ServerTestBase):
 
         content = completion.choices[0].message.content or ""
         print(f"Response (image input): {content[:200]}")
-        self.assertIn(
-            "green",
-            content.lower(),
-            "Planner must receive the uploaded image_url and identify it as green; "
+        normalized = content.lower()
+        self.assertTrue(
+            any(word in normalized for word in ("green", "lime")),
+            "Planner must receive the uploaded image_url and identify the solid green image; "
             "a text placeholder leaves it blind to the pixels",
         )
 

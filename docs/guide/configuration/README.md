@@ -20,6 +20,15 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 
 > Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
 
+### Seeding defaults for packaged installs
+
+On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+
+1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+
+Values set in the user's `config.json` always take precedence over these seeded defaults.
+
 ### Example config.json
 
 ```json

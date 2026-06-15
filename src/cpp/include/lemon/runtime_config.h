@@ -32,6 +32,9 @@ public:
     int max_loaded_models() const;
     std::string models_dir() const;
     int ctx_size() const;
+    bool auto_evict() const;
+    double auto_evict_threshold_pct() const;
+
 
     // Feature flags
     bool offline() const;

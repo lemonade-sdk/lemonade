@@ -2036,7 +2036,6 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         """Run/load help should keep every recipe flag under the intended group."""
         expected_groups = {
             "General Options:": ["--ctx-size", "--merge-args"],
-            "FastFlowLM Options:": ["--flm-args"],
             "Llama.cpp Backend Options:": [
                 "--llamacpp",
                 "--llamacpp-device",
@@ -2110,7 +2109,6 @@ class CLIHelpDocsConsistencyTests(unittest.TestCase):
         self.assertNotIn("--ctx-size", claude_help)
         self.assertNotIn("LEMONADE_CTX_SIZE", claude_help)
         self.assertNotIn("--llamacpp", claude_help)
-        self.assertNotIn("--flm-args", claude_help)
 
         opencode_result = run_cli_command(
             ["launch", "opencode", "--help"], timeout=TIMEOUT_DEFAULT

@@ -989,6 +989,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
 
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
+        start_directory_watcher();
     }
 }
 
@@ -1054,13 +1055,27 @@ bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& m
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
-    // Invalidate cache so discovered models are included on next access
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    cache_valid_ = false;
+    directory_watcher_.reset();
 
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
+        start_directory_watcher();
     }
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    cache_valid_ = false;
+}
+
+void ModelManager::start_directory_watcher() {
+    directory_watcher_ = std::make_unique<DirectoryWatcher>(extra_models_dir_);
+    directory_watcher_->set_callback([this]() {
+        LOG(DEBUG, "ModelManager") << "Extra models directory changed, invalidating cache" << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            cache_valid_ = false;
+        }
+    });
+    directory_watcher_->start();
 }
 
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
@@ -2889,6 +2904,12 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
         : model_name;
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
+        if (it->second.downloaded) {
+            bool still_complete = are_required_checkpoints_complete(it->second);
+            if (!still_complete) {
+                it->second.downloaded = false;
+            }
+        }
         return it->second.downloaded;
     }
     return false;
