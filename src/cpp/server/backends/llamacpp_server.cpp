@@ -299,6 +299,16 @@ void LlamaCppServer::load(const std::string& model_name,
     // Get mmproj path for vision models
     std::string mmproj_path = model_info.resolved_path("mmproj");
 
+#ifdef _WIN32
+    // Child CWD changes on Windows require absolute file paths.
+    if (!gguf_path.empty()) {
+        gguf_path = path_to_utf8(fs::absolute(fs::path(gguf_path)));
+    }
+    if (!mmproj_path.empty()) {
+        mmproj_path = path_to_utf8(fs::absolute(fs::path(mmproj_path)));
+    }
+#endif
+
     // Choose port
     port_ = choose_port();
 
@@ -560,7 +570,6 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string process_executable = executable;
     std::string working_dir;
 #ifdef _WIN32
-    // Avoid inheriting a protected launcher cwd while preserving backend-relative files.
     fs::path executable_path = fs::absolute(fs::path(executable));
     process_executable = path_to_utf8(executable_path);
     working_dir = path_to_utf8(executable_path.parent_path());

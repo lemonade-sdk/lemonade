@@ -229,6 +229,17 @@ void SDServer::load(const std::string& model_name,
         throw std::runtime_error("Model file does not exist: " + model_path);
     }
 
+#ifdef _WIN32
+    // Child CWD changes on Windows require absolute file paths.
+    model_path = path_to_utf8(fs::absolute(fs::path(model_path)));
+    if (!llm_path.empty()) {
+        llm_path = path_to_utf8(fs::absolute(fs::path(llm_path)));
+    }
+    if (!vae_path.empty()) {
+        vae_path = path_to_utf8(fs::absolute(fs::path(vae_path)));
+    }
+#endif
+
     LOG(DEBUG, "SDServer") << "Using model: " << model_path << std::endl;
 
     // Get sd-server executable path
@@ -366,7 +377,6 @@ void SDServer::load(const std::string& model_name,
     std::string process_exe_path = exe_path;
     std::string working_dir;
 #ifdef _WIN32
-    // Avoid inheriting a protected launcher cwd while preserving backend-relative files.
     fs::path executable_path = fs::absolute(fs::path(exe_path));
     process_exe_path = path_to_utf8(executable_path);
     working_dir = path_to_utf8(executable_path.parent_path());
