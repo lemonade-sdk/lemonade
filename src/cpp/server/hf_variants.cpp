@@ -285,15 +285,19 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         return out;
     }
 
-    // Omni collection branch: a repo published from `lemonade export` carries
-    // its collection manifest as <RepoName>.json (see "Share a collection" in
-    // the custom models guide). The filename is the discovery key; the content
-    // is then validated — a same-named file that is not a manifest is an
-    // error, not a fall-through.
+    // Omni collection branch. This function only INSPECTS the repo and reports
+    // what it is — it never downloads anything to disk. A repo published from
+    // `lemonade export` carries its collection manifest as <RepoName>.json (see
+    // "Share a collection" in the custom models guide). The filename is the
+    // discovery key; the content is read here only to confirm it really is a
+    // collection manifest (a same-named file that is not a manifest is an error,
+    // not a fall-through). The manifest itself is NOT returned — /pull downloads
+    // it to disk as the actual pull step, exactly as the .gguf is pulled for a
+    // regular model.
     const std::string manifest_filename = suggested_name + ".json";
     if (!has_gguf &&
         std::find(repo_files.begin(), repo_files.end(), manifest_filename) != repo_files.end()) {
-        // Manifests are small (KBs); refuse to download absurdly large files.
+        // Manifests are small (KBs); refuse to inspect absurdly large files.
         static constexpr uint64_t kMaxManifestBytes = 5ull * 1024 * 1024;
         for (const auto& kv : file_sizes) {
             if (kv.first == manifest_filename && kv.second > kMaxManifestBytes) {
@@ -308,7 +312,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         auto manifest_response = HttpClient::get(manifest_url, headers);
         if (manifest_response.status_code != 200) {
             throw std::runtime_error(
-                "Failed to download '" + manifest_filename + "' from repository " + checkpoint +
+                "Failed to read '" + manifest_filename + "' from repository " + checkpoint +
                 " (HTTP " + std::to_string(manifest_response.status_code) + ")");
         }
 
@@ -331,6 +335,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
                 "array, and a 'models' array)");
         }
 
+        // Inspection result only: what it is, its name, and (for the CLI's
+        // display line) its size and component count. The manifest content is
+        // deliberately omitted — /pull re-downloads it to disk.
         nlohmann::json out;
         out["checkpoint"] = checkpoint;
         out["recipe"] = "collection.omni";
@@ -338,8 +345,11 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_foun
         out["suggested_name"] = suggested_name;
         out["suggested_labels"] = nlohmann::json::array();
         out["mmproj_files"] = nlohmann::json::array();
-        out["manifest"] = std::move(manifest);
         out["variants"] = nlohmann::json::array();
+        if (manifest.contains("size") && manifest["size"].is_number()) {
+            out["size"] = manifest["size"];
+        }
+        out["component_count"] = manifest["components"].size();
         return out;
     }
 

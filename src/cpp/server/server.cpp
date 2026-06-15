@@ -3328,10 +3328,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             // A body carrying a `models` array is a collection file import: its
             // components may not be registered yet (download_model registers them
             // from the embedded definitions and canonicalizes the list itself).
-            // Only pre-canonicalize when the components must already exist. The
-            // is_array check must match download_model's collection-file branch
-            // so a non-array `models` value still gets canonicalized here.
-            if (!request_json.contains("models") || !request_json["models"].is_array()) {
+            // A pointer body (HF-backed collection) has no `components` at all —
+            // they come from the downloaded manifest. Only pre-canonicalize an
+            // inline `components` list whose entries must already exist.
+            if (request_json.contains("components") && request_json["components"].is_array() &&
+                (!request_json.contains("models") || !request_json["models"].is_array())) {
                 // Canonicalize components so downstream cache lookups
                 // (check_component_downloaded, update_model_in_cache) succeed
                 // even when the client passed a public alias (bare name) rather

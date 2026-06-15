@@ -209,39 +209,38 @@ int hf_pull_flow(lemonade::LemonadeClient& client,
         return 1;
     }
 
-    // Omni collection repos: the manifest returned by the server is itself an
-    // import-ready /v1/pull body — register and download it as a single unit.
+    // Omni collection repos: /pull/variants only inspected the repo and told us
+    // it is a collection. Send a *pointer* /pull body — model name + recipe +
+    // the repo as the checkpoint. /pull does the actual downloading: it fetches
+    // <RepoName>.json to disk and then pulls each component's weights. (We do not
+    // forward the manifest content; /pull re-downloads it as the pull step, which
+    // keeps inspection and download cleanly separated and mirrors regular models,
+    // where the .gguf is downloaded by /pull rather than carried in the body.)
     if (variants_response.value("repo_kind", "") == "collection") {
         if (!variant.empty()) {
             std::cerr << "warning: variant '" << variant
                       << "' ignored for Omni collection repositories" << std::endl;
         }
 
-        json pull_body = variants_response.value("manifest", json::object());
-        std::string model_name = pull_body.value("model_name", std::string());
-        if (model_name.empty()) {
-            model_name = variants_response.value("suggested_name", checkpoint);
-        }
-        model_name = normalize_user_model_name(model_name);
-        pull_body["model_name"] = model_name;
+        std::string model_name = normalize_user_model_name(
+            variants_response.value("suggested_name", checkpoint));
 
-        // Tie the registration to the repo so a later `lemonade pull <name>`
-        // refreshes the collection definition from Hugging Face.
-        pull_body.erase("checkpoint");
-        if (!pull_body.contains("checkpoints") || !pull_body["checkpoints"].is_object()) {
-            pull_body["checkpoints"] = json::object();
-        }
+        json pull_body;
+        pull_body["model_name"] = model_name;
+        pull_body["recipe"] = "collection.omni";
+        // The repo is the checkpoint pointer; /pull resolves components from the
+        // manifest it downloads to disk, and a later `lemonade pull <name>`
+        // refreshes them from Hugging Face.
+        pull_body["checkpoints"] = json::object();
         pull_body["checkpoints"]["main"] = checkpoint;
 
         std::string display_name = model_name.substr(std::string("user.").size());
-        size_t component_count =
-            pull_body.contains("components") && pull_body["components"].is_array()
-                ? pull_body["components"].size() : 0;
+        size_t component_count = variants_response.value("component_count", static_cast<size_t>(0));
         std::cout << "Pulling Omni collection " << checkpoint << " as " << display_name
                   << " (" << component_count
                   << (component_count == 1 ? " component" : " components");
-        if (pull_body.contains("size") && pull_body["size"].is_number()) {
-            std::cout << ", ~" << pull_body["size"].get<double>() << " GB";
+        if (variants_response.contains("size") && variants_response["size"].is_number()) {
+            std::cout << ", ~" << variants_response["size"].get<double>() << " GB";
         }
         std::cout << ")" << std::endl;
 

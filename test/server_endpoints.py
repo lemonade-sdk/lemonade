@@ -2313,10 +2313,14 @@ class EndpointTests(ServerTestBase):
         return r.json().get("components", [])
 
     def test_021w_hf_backed_collection_refresh_is_pointer_only(self):
-        """HF-backed collections are pointer-only: components live in the cached
-        manifest, never persisted in user_models.json, so a changed manifest is
-        reflected on re-pull (the Codex/fl0rianr staleness scenario). Uses two
-        already-downloaded components so the refresh needs no network download."""
+        """HF-backed collections are pointer-only: the pull body is just a repo
+        pointer (the real `lemonade pull <org>/<repo>` shape — no inline
+        components/models), /pull resolves components from the manifest on disk,
+        nothing is persisted in user_models.json, and a changed manifest is
+        reflected on re-pull (the Codex/fl0rianr staleness scenario). The staged
+        manifest stands in for what /pull's own download step writes to disk;
+        the real network download of the manifest is exercised by server_omni.py.
+        Uses already-downloaded components so the refresh needs no network."""
         suffix = uuid.uuid4().hex[:8]
         repo_id = f"lemontest/RefreshKit-{suffix}"
         collection = f"user.RefreshKit-{suffix}"
@@ -2350,19 +2354,18 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(pull_b.status_code, 200, pull_b.text)
 
-            # Manifest v1: component A only.
+            # Manifest v1 on disk (stands in for /pull's own manifest download).
             repo_dir = self._write_collection_manifest(repo_id, [comp_a], [a_def])
 
-            # Register the HF-backed collection (mirrors the hf_pull body: a repo
-            # pointer plus the manifest's components/models inline).
+            # Register the HF-backed collection with the real hf_pull POINTER body:
+            # model name + recipe + the repo as the checkpoint. No inline
+            # components/models — /pull resolves them from the manifest on disk.
             reg = requests.post(
                 f"{self.base_url}/pull",
                 json={
                     "model_name": collection,
                     "recipe": "collection.omni",
                     "checkpoints": {"main": repo_id},
-                    "components": [comp_a],
-                    "models": [a_def],
                     "stream": False,
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,

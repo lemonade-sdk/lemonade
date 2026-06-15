@@ -5059,9 +5059,22 @@ bool ModelManager::model_exists(const std::string& model_name) {
 
 std::optional<std::string> ModelManager::validate_collection_request(
     const std::string& model_name, const json& model_data) {
-    if (!model_data.contains("components") ||
-        !model_data["components"].is_array() ||
-        model_data["components"].empty()) {
+    // An HF-backed collection is registered as a pointer: recipe + a checkpoint
+    // that names the HF repo, with no inline components. /pull downloads the
+    // repo's manifest to disk and resolves the components from it, so there is
+    // nothing to validate here — accept the pointer body.
+    std::string checkpoint_pointer = model_data.value("checkpoint", std::string());
+    if (checkpoint_pointer.empty() && model_data.contains("checkpoints") &&
+        model_data["checkpoints"].is_object()) {
+        checkpoint_pointer = model_data["checkpoints"].value("main", std::string());
+    }
+    const bool has_components =
+        model_data.contains("components") && model_data["components"].is_array() &&
+        !model_data["components"].empty();
+    if (!has_components) {
+        if (!checkpoint_pointer.empty()) {
+            return std::nullopt;  // pointer-only HF-backed collection
+        }
         return std::string("recipe='collection.omni' requires a non-empty 'components' array");
     }
     // An inline collection import carries its component definitions in a `models`
