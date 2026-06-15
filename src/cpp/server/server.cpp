@@ -631,6 +631,9 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
     });
+    web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_simulate_vram_pressure(req, res);
+    });
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -4096,6 +4099,18 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = json::parse(req.body);
+        double pct = req_json.value("pct", 0.0);
+        router_->simulate_vram_pressure(pct);
+        res.set_content(R"({"status": "ok"})", "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(json{{"error", e.what()}}.dump(), "application/json");
     }
 }
 

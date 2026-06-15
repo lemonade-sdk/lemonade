@@ -40,8 +40,15 @@ static const json DEFAULTS = {
     // Cloud recipe has no backend variants (provider selection lives on the
     // per-model cloud_provider field). The empty string satisfies Router's
     // per-backend-args lookup; cloud reads no backend-specific config.
-    {"cloud_backend", ""}
+    {"cloud_backend", ""},
+
+    // Auto-eviction options
+    {"auto_evict", nullptr},          // nullptr means fallback to global config
+    {"evict_idle_timeout", 300},      // Default hard idle timeout (5 mins)
+    {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
+    {"evict_weight_factor", 1.0}      // Eviction-protection weight (higher = more protected)
 };
+
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
 // Note: Image generation params (steps, cfg_scale, width, height, sampling_method,
@@ -64,29 +71,38 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
+    std::vector<std::string> keys;
     if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
+        keys = {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
     } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend", "whispercpp_args", "merge_args"};
+        keys = {"whispercpp_backend", "whispercpp_args", "merge_args"};
     } else if (recipe == "moonshine") {
-        return {"moonshine_args", "merge_args"};
+        keys = {"moonshine_args", "merge_args"};
     } else if (recipe == "flm") {
-        return {"ctx_size", "flm_args", "merge_args"};
+        keys = {"ctx_size", "flm_args", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
-        return {"ctx_size"};
+        keys = {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
+        keys = {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
     } else if (recipe == "vllm") {
-        return {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
-    } else {
-        return {};
+        keys = {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
     }
+    
+    // Add auto-eviction options for all recipes
+    keys.push_back("auto_evict");
+    keys.push_back("evict_idle_timeout");
+    keys.push_back("downsize_idle_timeout");
+    keys.push_back("evict_weight_factor");
+
+    return keys;
 }
 
 static bool is_empty_option(json option) {
-    return (option.is_number() && (option == -1)) ||
+    return option.is_null() || 
+           (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == "" || option == "auto"));
 }
+
 
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
