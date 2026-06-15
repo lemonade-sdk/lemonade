@@ -801,7 +801,7 @@ nlohmann::json LemonadeClient::get_model_info(const std::string& model_name) con
     }
 }
 
-int LemonadeClient::list_recipes(bool backends_supported) const {
+int LemonadeClient::list_recipes(bool show_all) const {
     try {
         std::string response = make_request("/api/v1/system-info");
         auto json_response = json::parse(response);
@@ -875,7 +875,7 @@ int LemonadeClient::list_recipes(bool backends_supported) const {
                         info_col = "-";
                     }
                     std::string action_col = backend.action.empty() ? "-" : backend.action;
-                    if (!backends_supported  || status_str != "unsupported") {
+                    if (show_all || status_str != "unsupported") {
                         std::cout << std::left << std::setw(20) << recipe_col
                                 << std::setw(12) << backend.name
                                 << std::setw(16) << status_str
