@@ -21,6 +21,8 @@ import { RECIPE_DISPLAY_NAMES } from './utils/recipeNames';
 import { EjectIcon, PinIcon } from './components/Icons';
 import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel, isModelEffectivelyDownloaded, isModelEffectivelyLoaded } from './utils/collectionModels';
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
+import { mergeWithDefaultSettings } from './utils/appSettings';
+import { tauriReady } from './tauriShim';
 
 interface ModelFamily {
   displayName: string;
@@ -378,6 +380,41 @@ const [searchQuery, setSearchQuery] = useState('');
 
   const { toasts, removeToast, showError, showSuccess, showWarning } = useToast();
   const { confirm, ConfirmDialog } = useConfirmDialog();
+
+  useEffect(() => {
+    const loadModelManagerSettings = async () => {
+      try {
+        await tauriReady;
+        if (!window.api?.getSettings) return;
+        const settings = mergeWithDefaultSettings(await window.api.getSettings());
+        setShowDownloadedOnly(settings.modelManager.showDownloadedOnly);
+      } catch (error) {
+        console.error('Failed to load model manager settings:', error);
+      }
+    };
+
+    loadModelManagerSettings();
+  }, []);
+
+  const updateShowDownloadedOnly = useCallback(async (checked: boolean) => {
+    setShowDownloadedOnly(checked);
+    setShowFilterPanel(false);
+
+    try {
+      await tauriReady;
+      if (!window.api?.getSettings || !window.api?.saveSettings) return;
+      const currentSettings = await window.api.getSettings();
+      await window.api.saveSettings({
+        ...currentSettings,
+        modelManager: {
+          ...currentSettings.modelManager,
+          showDownloadedOnly: checked,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to save model manager settings:', error);
+    }
+  }, []);
 
   const fetchCurrentLoadedModel = useCallback(async () => {
     try {
@@ -1865,8 +1902,7 @@ const [searchQuery, setSearchQuery] = useState('');
                     <span className="toggle-label-text">Downloaded only</span>
                     <div className="toggle-switch">
                       <input type="checkbox" checked={showDownloadedOnly} onChange={(e) => {
-                        setShowDownloadedOnly(e.target.checked);
-                        setShowFilterPanel(false);
+                        updateShowDownloadedOnly(e.target.checked);
                       }} />
                       <span className="toggle-slider"></span>
                     </div>
