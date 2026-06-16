@@ -23,6 +23,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Mark lemonade-manager as git safe directory
+        run: git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
+
       - name: Run repo-manager
         working-directory: /opt/lemonade-manager
         run: repo-manager all
