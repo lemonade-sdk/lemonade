@@ -120,7 +120,7 @@ git push origin vX.Y.Z --force
 
 ## Step 6: Update the Release Notes
 
-The release action auto-generates release notes that include the **Headline** and **Breaking Changes** sections pulled from the vNext release notes issue (the one tracked under the `documentation` label with `kind: release_notes` in its body). The result looks like this: https://github.com/lemonade-sdk/lemonade/releases/tag/v10.7.0
+The release action auto-generates release notes that include the **Headline** and **Breaking Changes** sections pulled from the open GitHub issue titled `vX.Y.Z release notes` (exact match on the tag name, e.g. `v10.8.0 release notes`). The result looks like this: https://github.com/lemonade-sdk/lemonade/releases/tag/v10.7.0
 
 You may need to manually edit the release to:
 - add co-author contributors who were missing

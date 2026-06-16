@@ -95,17 +95,17 @@ runs:
         # Extract unique contributors from the changelog (exclude bots)
         CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | grep -ivE '^@(copilot|claude)$' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
 
-        # Search for the vNext release notes issue to extract Headline and Breaking Changes
+        # Search for the release notes issue by exact title (e.g. "v10.8.0 release notes")
         RELEASE_NOTES_ISSUE_BODY=$(gh issue list --repo "$REPO" \
-          --label documentation \
-          --search "release notes in:title" \
-          --json title,body --limit 10 \
-          | jq -r '[.[] | select(.body | test("kind.*release_notes"))] | .[0].body' 2>/dev/null || echo "")
+          --state open \
+          --search "\"$TAG_NAME release notes\" in:title" \
+          --json body --limit 1 \
+          | jq -r '.[0].body // ""' 2>/dev/null || echo "")
 
         HEADLINE_SECTION=""
         BREAKING_CHANGES_SECTION=""
 
-        if [ -n "$RELEASE_NOTES_ISSUE_BODY" ] && [ "$RELEASE_NOTES_ISSUE_BODY" != "null" ]; then
+        if [ -n "$RELEASE_NOTES_ISSUE_BODY" ]; then
           echo "Found release notes issue, extracting Headline and Breaking Changes..."
           HEADLINE_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
             awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')

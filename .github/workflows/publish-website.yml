@@ -38,7 +38,7 @@ jobs:
         - name: Merge into website branch
           run: |
             git checkout website
-            git merge $RELEASE_COMMIT -X theirs
+            git merge "$RELEASE_COMMIT" -X theirs
         - name: Update README with marketplace apps
           run: |
             venvPython=".venv/bin/python"
