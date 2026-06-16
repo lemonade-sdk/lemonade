@@ -2282,12 +2282,15 @@ class EndpointTests(ServerTestBase):
 
     def _server_hf_cache_root(self, probe_repo_dir):
         """Return the HF cache root the *server* actually uses, verified by
-        locating a repo dir the server already downloaded (`probe_repo_dir`).
+        locating a repo dir the server already downloaded (`probe_repo_dir`), or
+        None if it can't be located from this process.
 
-        The server's cache can be a config.json `models_dir` override that the
-        test side does not compute (e.g. on the macOS .pkg install), so we probe
-        across candidates — config models_dir, then the env/platform defaults —
-        and pick the one that contains a known-downloaded repo."""
+        The server's cache may live somewhere the test process can't compute or
+        read — e.g. a config.json `models_dir` override, or a packaged server
+        (macOS .pkg) running under a different user/HOME. We probe candidates
+        (config models_dir, then env/platform defaults) for a known-downloaded
+        repo; if none match, the test can't stage a manifest where the server
+        will read it, so the caller should skip."""
         candidates = []
         try:
             cfg = requests.get(
@@ -2302,7 +2305,7 @@ class EndpointTests(ServerTestBase):
         for root in candidates:
             if os.path.isdir(os.path.join(root, probe_repo_dir)):
                 return root
-        return candidates[0] if candidates else get_hf_cache_dir()
+        return None
 
     def _write_collection_manifest(self, cache_root, repo_id, components, models):
         """Write a fake HF-cached collection manifest for `repo_id` into the HF
@@ -2385,6 +2388,12 @@ class EndpointTests(ServerTestBase):
                 "/", "--"
             )
             cache_root = self._server_hf_cache_root(b_repo_dir)
+            if cache_root is None:
+                self.skipTest(
+                    "Cannot locate the server's HF cache from the test process "
+                    "(e.g. packaged server under a different user); the HF-backed "
+                    "refresh path is covered end-to-end by server_omni.py."
+                )
 
             # Manifest v1 on disk (stands in for /pull's own manifest download).
             repo_dir = self._write_collection_manifest(
