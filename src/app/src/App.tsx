@@ -266,7 +266,7 @@ const App: React.FC = () => {
             { id: 'models',    label: 'Models',    icon: 'hard-drive'         },
             { id: 'presets',   label: 'Presets',   icon: 'sliders-horizontal' },
             { id: 'backends',  label: 'Backends',  icon: 'box'                },
-            { id: 'dashboard', label: 'Dash',      icon: 'gauge'              },
+            { id: 'dashboard', label: 'Dashboard',  icon: 'gauge'              },
             { id: 'logs',      label: 'Logs',      icon: 'logs'               },
             { id: 'connect',   label: 'Connect',   icon: 'plug'               },
           ] as { id: View; label: string; icon: Parameters<typeof Icon>[0]['name'] }[]).map(({ id, label, icon }) => (
@@ -303,7 +303,7 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main id="main-content" className="view-container">
+      <main id="main-content" tabIndex={-1} className="view-container">
         <div style={{ display: view === 'chat' ? 'contents' : 'none' }}>
           <ViewErrorBoundary view="chat">
             <ChatView
