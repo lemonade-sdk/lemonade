@@ -1039,8 +1039,8 @@ jobs:
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
-            backends: "cpu npu"
-            runner: [Windows, xdna2]
+            backends: "cpu npu rocm"
+            runner: [Windows, stx-halo]
           - name: flm-whisper
             script: server_whisper.py
             extra_args: "--wrapped-server flm"
@@ -1342,8 +1342,8 @@ jobs:
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
-            backends: "cpu vulkan"
-            runner: [Linux, vulkan]
+            backends: "cpu vulkan rocm"
+            runner: [Linux, rocm, xdna2]
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
