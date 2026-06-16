@@ -30,6 +30,7 @@ public:
 
         vm_size_t page_size = 0;
         if (host_page_size(host, &page_size) != KERN_SUCCESS || page_size == 0) {
+            mach_port_deallocate(mach_task_self(), host);
             return 0.0;
         }
 
@@ -38,8 +39,11 @@ public:
         if (host_statistics64(host, HOST_VM_INFO64,
                               reinterpret_cast<host_info64_t>(&vm_stats),
                               &count) != KERN_SUCCESS) {
+            mach_port_deallocate(mach_task_self(), host);
             return 0.0;
         }
+
+        mach_port_deallocate(mach_task_self(), host);
 
         uint64_t used_pages = static_cast<uint64_t>(vm_stats.active_count) +
                               static_cast<uint64_t>(vm_stats.wire_count) +
