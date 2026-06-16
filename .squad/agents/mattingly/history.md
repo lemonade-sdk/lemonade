@@ -15,7 +15,23 @@ Leading UI POC on `feat/ui-testing`. React stays (ROI analysis showed ~300 LOC s
 
 ## Active Learnings
 
-### 2026-06-14: Accessibility test suite — a11y.spec.ts (branch kpoin/ui-accessibility)
+### 2026-06-15: Regression — #2228 accidentally reverted by rebase linearization (c6529721)
+
+**What happened:** Commit `115d464f` (PR #2228) added capability badge icons (flame/wrench/brain/rocket), `reasoningElapsedMs` timing plumbing, and tool polish to `lemonadeTools.ts`. Hours after merge, a "rebase ui-mobile-layout onto ui-testing" linearization extracted prototype/ files from a merge tree that did NOT include #2228 and pushed them back onto `kpoin/ui-testing` via PR #2229 (commit `c6529721`). Result: 7 files silently reverted to a pre-#2228 state while keeping the a11y + mobile additions.
+
+**How it was detected:** Kyle reviewed the UI on 2026-06-15 and noticed capability badges had no icons, reasoning summary showed no timing, and lemonadeTools was missing preset/collection logic added in #2228.
+
+**Resolution:** Cherry-picked `115d464f` onto `kpoin/ui-testing` at `5c4ecdc2`, resolved all 7 whole-file conflicts by taking HEAD (a11y+mobile) as the base and applying each #2228 diff hunk manually. TypeScript passed; all content markers verified. Pushed as `2d8c45f0`.
+
+**How to detect earlier:** After any rebase/linearization or big merge that touches prototype/, immediately grep for known content markers from recent PRs:
+- `flame`, `wrench`, `brain`, `rocket` (Icon.tsx capability icons)
+- `reasoningElapsedMs` (api.ts reasoning timing)
+- `allStoredPresets` (lemonadeTools.ts preset integration)
+If any of these are missing, a regression occurred. A git-log check (`git log --oneline --diff-filter=M -- prototype/`) can also surface unexpected large changes to prototype files after a merge.
+
+**Downstream note:** `kpoin/ui-mobile-layout` and `kpoin/ui-accessibility` will need to be re-merged with `kpoin/ui-testing` to pick up the re-applied #2228 content. That merge decision belongs to Kranz/Kyle — not acted on here.
+
+
 
 Wrote `prototype/ui-redesign/tests/a11y.spec.ts` — 34 Playwright tests covering all Phase 1 + Phase 2 a11y items shipped earlier on this branch. Also installed `@axe-core/playwright` (not previously in devDeps) and added `npm run test:a11y` script.
 
@@ -394,3 +410,57 @@ The prototype has a mixed accessibility posture. Several good patterns are in pl
 - Phase 1 (S-effort quick wins): 10 items — landmarks, skip link, focus ring, aria-labels, reduced motion block
 - Phase 2 (M-effort structural): 8 items — div→button conversion, focus traps, aria-live streaming, contrast audit, shortcuts, font scale
 - Phase 3 (L-effort enhancements): 4 items — high-contrast theme, Lexend font, verbosity settings, message role polish
+
+
+### 2026-06-15: Test failures triage and fix (5 reported + 1 pre-existing)
+
+**Branch:** kpoin/ui-testing (commit range c225d4bd–c0101518)
+**Requested by:** Kyle (kpoin)
+
+External collaborator reported 5 test failures on the branch. Investigation found 6 total failures (A05 was also failing but not reported — confirmed by git-stash-and-run before fixing).
+
+#### Failure inventory and root causes
+
+**A01 (tests/a11y.spec.ts:75) — Chat view axe violations (3 violations):**
+- ria-input-field-name: <ul role="listbox"> in ChatView had no accessible name
+- ria-required-children: <li class="rail__empty"> (empty state, no role) inside listbox
+- listitem: <li> inside a listbox container (not a valid list parent)
+Root cause: empty-state element was rendered as <li> inside <ul role="listbox">. Listbox requires all children to be ole="option".
+Fix: added ria-label="Conversations" to both listbox elements (desktop rail + mobile bottom sheet); moved empty-state from <li> inside <ul> to <p> sibling after </ul>. Applied to both rail and mobile bottom-sheet variants.
+
+**A03 (tests/a11y.spec.ts:103) — Presets view axe violation + test selector bug:**
+- Test waitForSelector('.manager') was waiting for ModelManager's .manager div, which is display:none in the Presets view — timed out after 60s.
+- After fixing selector to [data-view="presets"], axe found: 
+ested-interactive — every <article role="button" tabIndex=0> preset card contained <button> children (Clone/Apply/Export actions). WCAG 4.1.2 forbids interactive controls nested inside other interactive controls.
+Fix: Updated waitForSelector to [data-view="presets"]. Replaced ole="button" tabIndex=0 on <article> with .recipe-card__overlay-btn — a real <button> positioned bsolute; inset: 0; z-index: 0 that covers the entire card. Card content + action buttons elevated to z-index: 1 so pointer events reach the correct target. ocus-within behavior (reveals actions) continues to work because focusing the overlay button fires :focus-within on the article parent.
+
+**A05 (tests/a11y.spec.ts:133) — Dashboard view color-contrast (pre-existing, not in report):**
+- dash2-slot-legend__item--idle { opacity: 0.5 } was compositing text colors against the dark background, dropping computed contrast to 1.93–3.44:1 (need 4.5:1 for 12px normal text).
+Fix: Removed opacity: 0.5. Added explicit color overrides: idle label → --text-tertiary; idle TPS → --text-tertiary; active TPS → --text-primary. --text-tertiary: #A8A39A and --text-secondary: #C7C2B5 both meet 4.5:1 against --surface-base: #1a1813 at full opacity.
+
+**A09 (tests/a11y.spec.ts:201) — Skip link Enter not moving focus to #main-content:**
+Root cause: <main id="main-content"> was not focusable. In-page anchor navigation moves focus to the target element only if it has a non-negative tabindex or is natively focusable. <main> is not natively focusable.
+Fix: Added 	abIndex={-1} to <main id="main-content"> in App.tsx. 	abIndex=-1 makes the element programmatically focusable without adding it to the tab order.
+
+**A29 (tests/a11y.spec.ts:547) — Mouse-clicked button shows 3px outline:**
+Diagnosis: utton {} reset did not include outline. Chromium UA stylesheet has utton:focus { outline: 3px ... } (pre-:focus-visible rule) which shows even on mouse clicks. Our outline: 2px solid var(--accent) was only set on :focus-visible. outline: none doesn't help because CSS sets outline-style: none but leaves outline-width at UA default (3px); getComputedStyle().outlineWidth returns 3px even with style:none.
+Fix: Changed button reset to outline: 0 (sets outline-width: 0 via shorthand). Mouse click → outline-width: 0px ✓. Keyboard Tab → :focus-visible { outline: 2px } overrides → 2px ✓.
+
+**features/15 (tests/features.spec.ts:557) — Dashboard nav button not found:**
+Root cause: nav label was 'Dash'; test called getByText('Dashboard').
+Fix: Changed label from 'Dash' to 'Dashboard' in App.tsx nav items array.
+
+#### Commit sequence
+1. c225d4bd — tabIndex=-1 on main + Dashboard nav label
+2. 1e14f3a7 — button outline:0 reset + Dashboard contrast + overlay button CSS
+3. 7860774d — ChatView rail listbox fixes
+4. 62391810 — PresetCard overlay button pattern
+5. c0101518 — test selector fix for A03
+
+#### Patterns to watch for
+- **opacity on text containers fails axe contrast.** Use explicit accessible color tokens instead. Opacity compositing is computed against the actual background color by axe — the rendered color may differ greatly from the token value.
+- **<ul role="listbox"> must only contain ole="option" children.** Empty states, separators, and headings must be outside the listbox element or use ole="presentation".
+- **outline: none vs outline: 0 are semantically different.** outline: none sets style to none but leaves width at the UA default; getComputedStyle().outlineWidth still returns 3px. outline: 0 zeroes the width.
+- **Interactive elements must not contain other interactive elements.** The "card as button" pattern (<div/article role="button"> with <button> actions inside) is a common and easy-to-miss WCAG 4.1.2 violation. Use the overlay-button pattern instead.
+- **	abIndex={-1} is required on non-interactive skip-link targets.** Without it, <main> cannot receive focus from anchor navigation.
+- **waitForSelector in tests should target the rendered view's root element, not a sibling view's class.** When Playwright reports locator resolved to hidden, the selector is finding the wrong element.
