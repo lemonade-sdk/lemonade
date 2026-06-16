@@ -760,7 +760,7 @@ With `--json`, results are emitted as structured JSON. Use `--output FILE` to sa
 The top-level JSON always includes a `models` array, even for single-model runs, so downstream tooling can handle a single schema for all benchmark results.
 Each scenario includes `duration_ms` stats (`mean`, `min`, `max`, `p50`, `p95`) representing end-to-end request time per run.
 
-With `--response-log FILE`, the actual model output will be saved to the name destination as JSONL (one JSON object per line),
+With `--response-log FILE`, the actual model output will be saved to the named destination as JSONL (one JSON object per line),
 along with test parameters such as backend, model, scenario, and context size.
 
 ### Comparison Mode
