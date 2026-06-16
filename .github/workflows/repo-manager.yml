@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   repo-manager:
-    runs-on: [self-hosted, linux, repo-manager]
+    runs-on: [self-hosted, linux, repo-manager, lemon-prod]
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
