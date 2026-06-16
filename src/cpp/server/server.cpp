@@ -308,29 +308,16 @@ void Server::setup_http_servers() {
     http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
     http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
 
-    // Bind exclusively so a second lemond instance on the same host:port fails
-    // to bind (instead of silently sharing the port).
-    // (cpp-httplib's default_socket_options sets SO_REUSEPORT (POSIX) / SO_REUSEADDR (Windows),
-    // both of which let a duplicate instance bind the same port: on Linux/macOS
-    // the kernel load-balances connections across both servers and on Windows
-    // the second socket can hijack the port.)
-    // Overriding these options makes the duplicate bind fail with EADDRINUSE.
-    auto exclusive_socket_options = [](socket_t sock) {
-        int opt = 1;
-#ifdef _WIN32
-        // On Windows, SO_REUSEADDR=1 (httplib's default) allows a second socket
-        // to take over the port. SO_EXCLUSIVEADDRUSE enforces true exclusivity.
-        setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-                   reinterpret_cast<const char*>(&opt), sizeof(opt));
-#else
-        // Keep SO_REUSEADDR (so a quick restart isn't blocked by a TIME_WAIT
-        // socket) but deliberately do NOT set SO_REUSEPORT, which would let a
-        // second instance share the port.
-        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-    };
-    http_front_->set_socket_options(exclusive_socket_options);
-    http_front_v6_->set_socket_options(exclusive_socket_options);
+    // Note: the real listeners intentionally keep cpp-httplib's default socket
+    // options (SO_REUSEPORT on POSIX / SO_REUSEADDR on Windows). Those defaults
+    // are required for correct dual-stack binding: httplib binds IPv6 with
+    // IPV6_V6ONLY=0 (see CPPHTTPLIB_IPV6_V6ONLY), so the IPv6 wildcard "::"
+    // overlaps the already-bound IPv4 wildcard "0.0.0.0"; only SO_REUSEPORT lets
+    // those two wildcard sockets coexist on the same port. Duplicate-instance
+    // detection is handled up front by port_is_available() in run(), which probes
+    // with an exclusive (non-SO_REUSEPORT) socket and refuses to start if another
+    // server is already listening — so we must NOT make the real listeners
+    // exclusive here, or a normal dual-stack startup would fail to bind IPv6.
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -1201,15 +1188,18 @@ void Server::setup_http_logger(httplib::Server &web_server) {
 }
 
 // Preflight bind probe: returns true if we can bind host_ip:port (i.e. the port
-// is free), false if it is already actively held by another listener. The probe
-// MUST use the same socket options as the real listeners (see
-// exclusive_socket_options in setup_http_servers): SO_EXCLUSIVEADDRUSE on
-// Windows, and SO_REUSEADDR (but NOT SO_REUSEPORT) on POSIX. This keeps the
-// probe's result identical to what the real bind would do, in particular it
-// must still succeed over a socket left in TIME_WAIT by a just-exited server
-// (common during fast restarts and under systemd Restart=), while failing
-// against another instance that is actively listening. The socket is closed
-// immediately; the real listeners bind moments later.
+// is free), false if it is already actively held by another listener (another
+// lemond). The probe binds an *exclusive* socket — SO_EXCLUSIVEADDRUSE on
+// Windows, and SO_REUSEADDR WITHOUT SO_REUSEPORT on POSIX — so that:
+//   - it fails if another instance is actively listening (the real listeners
+//     keep httplib's SO_REUSEPORT default, and a non-SO_REUSEPORT bind against a
+//     SO_REUSEPORT holder still returns EADDRINUSE), and
+//   - it still succeeds over a socket left in TIME_WAIT by a just-exited server
+//     (common during fast restarts and under systemd Restart=), thanks to
+//     SO_REUSEADDR.
+// Each address family is probed on its own short-lived socket that is closed
+// before the next, so the IPv4 and IPv6 probes never overlap. The socket is
+// closed immediately; the real listeners bind moments later.
 static bool port_is_available(int family, const std::string& host_ip, int port) {
     socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
@@ -1436,20 +1426,26 @@ void Server::run() {
         // The threads are blocked in listen_after_bind(), which only returns when
         // the server is stopped or an error occurs.
         //
-        // Also stop waiting if a listener thread failed to bind (e.g. the port is
-        // already in use by another lemond instance). A thread that returned early
-        // after a failed bind is still joinable(), so without the listener_start_failed
-        // check this loop would spin forever and never reach the error-reporting code below
+        // Also stop waiting if EVERY listener failed to bind (total failure, e.g.
+        // the port is held by something we can't share with). A thread that
+        // returned early after a failed bind is still joinable(), so without this
+        // check the loop would spin forever and never reach the error-reporting
+        // code below. We must only treat this as fatal when NOTHING bound: on a
+        // dual-stack host one family can legitimately fail (e.g. the IPv6 wildcard
+        // overlapping the IPv4 wildcard) while the other serves fine, and tearing
+        // the server down in that case would kill a working listener.
         while ((http_v4_thread_.joinable() || http_v6_thread_.joinable()) &&
                !shutdown_requested_.load() && !rebind_requested_.load() &&
-               !listener_start_failed.load()) {
+               !(listener_start_failed.load() && !listener_started.load())) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
-        // If a listener failed to start (e.g. duplicate instance on the same
-        // port), stop() any sibling listener that did bind so its thread can
-        // unblock from listen_after_bind() before we join below.
-        if (listener_start_failed.load() && !shutdown_requested_.load() && !rebind_requested_.load()) {
+        // If NO listener started (total bind failure), stop() so any thread that
+        // is mid-teardown unblocks before we join below, then fall through to the
+        // error-reporting block. A partial failure (one family bound, the other
+        // did not) is intentionally left running on the working family.
+        if (listener_start_failed.load() && !listener_started.load() &&
+            !shutdown_requested_.load() && !rebind_requested_.load()) {
             stop();
         }
 
