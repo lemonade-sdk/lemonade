@@ -633,12 +633,13 @@ const PresetCard: React.FC<{
   <article
     className={`recipe-card${hasManualArgs(preset) ? ' recipe-card--manual' : ''}`}
     data-recipe-id={preset.id}
-    tabIndex={0}
-    role="button"
-    aria-label={`Preset: ${preset.name}`}
-    onClick={onClick}
-    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
   >
+    {/* Overlay button covers the card for pointer/keyboard activation without nesting interactive roles */}
+    <button
+      className="recipe-card__overlay-btn"
+      onClick={onClick}
+      aria-label={`Open Preset: ${preset.name}`}
+    />
     {preset.starter && <span className="starter-badge">Starter</span>}
     <div className="recipe-card__head"><PresetIcon preset={preset} /><span className="recipe-card__name">{preset.name}</span></div>
     <p className="recipe-card__desc">{preset.description}</p>
