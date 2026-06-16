@@ -3,6 +3,7 @@
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
+#include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud_server.h"
 #include "lemon/backends/sd_server.h"
@@ -356,10 +357,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    // Check if path requires authentication (API routes and internal endpoints)
+    // Check if path requires authentication (API routes and internal endpoints).
+    // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
+    // gateway (Critical Invariant #10). It is the only API route outside the
+    // /api/, /v0/, /v1/ prefixes — see register_routes() in McpServer for why.
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
-                        (req.path.rfind("/v1/", 0) == 0);
+                        (req.path.rfind("/v1/", 0) == 0) ||
+                        (req.path == "/mcp");
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
     bool is_metrics_route = (req.path == "/metrics");
 
@@ -682,6 +687,15 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Register Ollama-compatible API routes
     auto ollama_api = std::make_shared<OllamaApi>(router_.get(), model_manager_.get());
     ollama_api->register_routes(web_server);
+
+    // Register MCP gateway (POST /mcp). NOTE: /mcp is an INTENTIONAL EXCEPTION
+    // to the quad-prefix invariant (AGENTS.md #1) — the MCP spec mandates a
+    // single endpoint URL.
+    auto mcp_server = std::make_shared<McpServer>(
+        router_.get(),
+        model_manager_.get(),
+        [this](const std::string& m) { auto_load_model_if_needed(m); });
+    mcp_server->register_routes(web_server);
 
     // Setup static file serving for web UI
     setup_static_files(web_server);

@@ -839,6 +839,29 @@ json CollectionOrchestrator::chat_completion(const json& request, const ModelInf
     return response;
 }
 
+CollectionOrchestrator::ChatParts CollectionOrchestrator::chat_completion_parts(
+    const json& request, const ModelInfo& collection_info) {
+    ChatParts parts;
+    LoopResult lr;
+    try {
+        lr = run_loop(request, collection_info, [](const Artifact&) {});
+    } catch (const std::exception& e) {
+        parts.ok = false;
+        parts.error_message = e.what();
+        return parts;
+    }
+    if (!lr.ok) {
+        parts.ok = false;
+        parts.error_message = backend_error_message(lr.error, "Collection chat failed");
+        return parts;
+    }
+    parts.final_text = std::move(lr.final_text);
+    parts.artifacts = std::move(lr.artifacts);
+    parts.app_tool_calls = std::move(lr.app_tool_calls);
+    parts.finish_reason = std::move(lr.finish_reason);
+    return parts;
+}
+
 void CollectionOrchestrator::chat_completion_stream(const json& request,
                                                     const ModelInfo& collection_info,
                                                     httplib::DataSink& sink) {
