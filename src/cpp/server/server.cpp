@@ -838,17 +838,26 @@ window.api = {
     },
     restartApp: () => window.location.reload(),
     writeClipboard: async (text) => {
+        if (navigator.clipboard) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return;
+            } catch {
+                // Ignore clipboard errors and fall back to legacy method
+            }
+        }
+        const ta = document.createElement('textarea');
+        ta.value = String(text);
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
         try {
-            await navigator.clipboard.writeText(text);
-        } catch {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            ta.style.pointerEvents = 'none';
-            document.body.appendChild(ta);
             ta.select();
-            document.execCommand('copy');
+            if (!document.execCommand('copy')) {
+                throw new Error('Legacy clipboard copy failed');
+            }
+        } finally {
             document.body.removeChild(ta);
         }
     }
