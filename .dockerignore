@@ -1,3 +1,10 @@
+# Local build output
+build
+
+# Node / Rust build artifacts (rebuilt inside the image)
+**/node_modules
+**/target
+
 # Git / repo metadata
 .git
 .github

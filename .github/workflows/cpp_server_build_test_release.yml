@@ -1039,8 +1039,8 @@ jobs:
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
-            backends: "cpu npu"
-            runner: [Windows, xdna2]
+            backends: "cpu npu rocm"
+            runner: [Windows, stx-halo]
           - name: flm-whisper
             script: server_whisper.py
             extra_args: "--wrapped-server flm"
@@ -1342,8 +1342,8 @@ jobs:
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
-            backends: "cpu vulkan"
-            runner: [Linux, vulkan]
+            backends: "cpu vulkan rocm"
+            runner: [Linux, rocm, xdna2]
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
@@ -1911,6 +1911,12 @@ jobs:
         shell: bash
         run: .venv/bin/python test/server_endpoints.py --cli-binary lemonade
 
+      # The full smoke test can be added to a different GPU equipped pipeline
+      # as well if needed, but it would significantly add to the pipeline runtime.
+      - name: Test mcp
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: .venv/bin/python test/server_mcp.py --cli-binary lemonade
       - name: Test web-app path traversal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash

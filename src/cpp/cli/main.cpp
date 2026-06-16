@@ -27,6 +27,7 @@
 #include <functional>
 #include <map>
 #include <vector>
+#include <optional>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -154,6 +155,7 @@ struct CliConfig {
     std::vector<std::string> components;
     nlohmann::json recipe_options;
     bool save_options = false;
+    std::optional<bool> pinned = std::nullopt;
     std::string backend_spec;  // Format: "recipe:backend"
     bool force = false;
     std::string output_file;
@@ -434,13 +436,37 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
         return 1;
     }
 
-    // Check if model is downloaded
-    if (!model_info.contains("downloaded") || !model_info["downloaded"].is_boolean()) {
-        std::cerr << "Error: Failed to determine download status for model '" << config.model << "'" << std::endl;
-        return 1;
+    // Pre-emptive capacity check
+    std::vector<std::string> labels;
+    if (model_info.contains("labels") && model_info["labels"].is_array()) {
+        for (const auto& label : model_info["labels"]) {
+            labels.push_back(label.get<std::string>());
+        }
+    }
+    lemon::ModelType model_type = lemon::get_model_type_from_labels(labels);
+    std::string type_str = lemon::model_type_to_string(model_type);
+
+    try {
+        std::string health_str = client.make_request("/api/v1/health", "GET", "", "", 2000, 2000);
+        auto health_json = nlohmann::json::parse(health_str);
+        if (health_json.contains("max_models") && health_json.contains("pinned_models")) {
+            auto max_models = health_json["max_models"];
+            auto pinned_models = health_json["pinned_models"];
+            int max = max_models.value(type_str, -1);
+            int pinned_count = pinned_models.value(type_str, 0);
+            if (max != -1 && pinned_count >= max) {
+                std::cerr << "Warning: All slots (" << max << ") for model type '" << type_str
+                          << "' are occupied by pinned models. Loading will fail." << std::endl;
+            }
+        }
+    } catch (...) {
+        // Ignore errors checking health status pre-emptively
     }
 
-    bool is_downloaded = model_info["downloaded"].get<bool>();
+    bool is_downloaded = false;
+    if (model_info.contains("downloaded") && model_info["downloaded"].is_boolean()) {
+        is_downloaded = model_info["downloaded"].get<bool>();
+    }
 
     if (!is_downloaded) {
         std::cout << "Model '" << config.model << "' is not downloaded. Pulling..." << std::endl;
@@ -455,7 +481,7 @@ static int handle_load_command(lemonade::LemonadeClient& client, const CliConfig
     }
 
     // Proceed with loading the model
-    return client.load_model(config.model, config.recipe_options, config.save_options);
+    return client.load_model(config.model, config.recipe_options, config.save_options, config.pinned);
 }
 
 static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -1156,6 +1182,8 @@ int main(int argc, char* argv[]) {
     CLI::App* delete_cmd = app.add_subcommand("delete", "Delete a model")->group("Model management");
     CLI::App* load_cmd = app.add_subcommand("load", "Load a model")->group("Model management");
     CLI::App* unload_cmd = app.add_subcommand("unload", "Unload a model (or all models)")->group("Model management");
+    CLI::App* pin_cmd = app.add_subcommand("pin", "Pin a loaded model to prevent eviction")->group("Model management");
+    CLI::App* unpin_cmd = app.add_subcommand("unpin", "Unpin a loaded model")->group("Model management");
     CLI::App* import_cmd = app.add_subcommand("import", "Import a model from JSON file")->group("Model management");
     CLI::App* export_cmd = app.add_subcommand("export", "Export model information to JSON")->group("Model management");
     CLI::App* cleanup_cmd = app.add_subcommand("cleanup-cache", "Clean up orphaned files in HuggingFace cache")->group("Model management");
@@ -1241,14 +1269,18 @@ int main(int argc, char* argv[]) {
     delete_cmd->add_option("model", config.model, "Model name to delete")->required()->type_name("MODEL");
 
     // Load options
+    static bool load_pinned_flag = false;
     load_cmd->add_option("model", config.model, "Model name to load")->required()->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*load_cmd, config.recipe_options);
     load_cmd->add_flag("--save-options", config.save_options, "Save model options for future loads");
+    load_cmd->add_flag("--pinned", load_pinned_flag, "Pin the model to prevent auto-eviction");
 
     // Run options (same as load)
+    static bool run_pinned_flag = false;
     run_cmd->add_option("model", config.model, "Model name to run")->type_name("MODEL");
     lemon::RecipeOptions::add_cli_options(*run_cmd, config.recipe_options);
     run_cmd->add_flag("--save-options", config.save_options, "Save model options for future runs");
+    run_cmd->add_flag("--pinned", run_pinned_flag, "Pin the model to prevent auto-eviction");
     run_cmd->add_flag("--chat-cli", config.chat_cli,
         "After loading, open an interactive chat REPL in the terminal instead of the browser");
 
@@ -1262,6 +1294,10 @@ int main(int argc, char* argv[]) {
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
+
+    // Pin/unpin options
+    pin_cmd->add_option("model", config.model, "Model name to pin")->required()->type_name("MODEL");
+    unpin_cmd->add_option("model", config.model, "Model name to unpin")->required()->type_name("MODEL");
 
     // Export options
     export_cmd->add_option("model", config.model, "Model name to export")->type_name("MODEL")->required();
@@ -1323,6 +1359,20 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         return app.exit(e);
+    }
+
+    if (load_cmd->count() > 0) {
+        if (load_cmd->count("--pinned") > 0) {
+            config.pinned = load_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
+    } else if (run_cmd->count() > 0) {
+        if (run_cmd->count("--pinned") > 0) {
+            config.pinned = run_pinned_flag;
+        } else {
+            config.pinned = std::nullopt;
+        }
     }
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
@@ -1391,6 +1441,10 @@ int main(int argc, char* argv[]) {
         return handle_load_command(client, config);
     } else if (unload_cmd->count() > 0) {
         return client.unload_model(config.model);
+    } else if (pin_cmd->count() > 0) {
+        return client.pin_model(config.model, true);
+    } else if (unpin_cmd->count() > 0) {
+        return client.pin_model(config.model, false);
     } else if (export_cmd->count() > 0) {
         return handle_export_command(client, config);
     } else if (backends_cmd->count() > 0) {

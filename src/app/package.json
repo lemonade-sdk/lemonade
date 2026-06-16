@@ -13,6 +13,7 @@
     "build:nobundle": "tauri build --no-bundle",
     "build:mac": "tauri build --bundles app",
     "test:custom-collections": "node ../../test/app/customCollections.test.cjs",
+    "test:downloaded-only-settings": "node ../../test/app/downloadedOnlySettings.test.cjs",
     "test:app-settings": "node ../../test/app/appSettings.test.cjs"
   },
   "keywords": [
