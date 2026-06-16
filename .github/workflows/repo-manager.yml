@@ -24,4 +24,5 @@ jobs:
           fetch-depth: 0
 
       - name: Run repo-manager
+        working-directory: /home/jfowers/lemonade-manager
         run: repo-manager all
