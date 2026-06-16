@@ -1761,7 +1761,7 @@ ${finalText}`
           </button>
         </div>
 
-        <ul className="rail__list" role="listbox">
+        <ul className="rail__list" role="listbox" aria-label="Conversations">
           {conversations.map(c => {
             const badge = capabilityBadge(c.model?.capability || 'chat');
             return (
@@ -1792,10 +1792,10 @@ ${finalText}`
               </li>
             );
           })}
-          {conversations.length === 0 && (
-            <li className="rail__empty">No conversations yet</li>
-          )}
         </ul>
+        {conversations.length === 0 && (
+          <p className="rail__empty">No conversations yet</p>
+        )}
 
         <div className="rail__privacy">
           <label className="rail__privacy-toggle">
@@ -1827,7 +1827,7 @@ ${finalText}`
           </svg>
           New Chat
         </button>
-        <ul className="bottom-sheet__list rail__list" role="listbox">
+        <ul className="bottom-sheet__list rail__list" role="listbox" aria-label="Conversations">
           {conversations.map(c => {
             const badge = capabilityBadge(c.model?.capability || 'chat');
             return (
@@ -1858,10 +1858,10 @@ ${finalText}`
               </li>
             );
           })}
-          {conversations.length === 0 && (
-            <li className="rail__empty">No conversations yet</li>
-          )}
         </ul>
+        {conversations.length === 0 && (
+          <p className="rail__empty">No conversations yet</p>
+        )}
       </div>
 
       {/* Main pane */}
