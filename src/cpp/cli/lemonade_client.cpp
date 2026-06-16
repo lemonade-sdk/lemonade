@@ -856,11 +856,13 @@ int LemonadeClient::list_recipes(bool show_all) const {
             bool first_backend = true;
 
             if (recipe.backends.empty()) {
-                std::cout << std::left << std::setw(20) << recipe.name
-                          << std::setw(12) << "-"
-                          << std::setw(16) << "unsupported"
-                          << std::setw(46) << "No backend definitions"
-                          << "-" << std::endl;
+                if (show_all) {
+                    std::cout << std::left << std::setw(20) << recipe.name
+                            << std::setw(12) << "-"
+                            << std::setw(16) << "unsupported"
+                            << std::setw(46) << "No backend definitions"
+                            << "-" << std::endl;
+                }
             } else {
                 for (const auto& backend : recipe.backends) {                    
                     std::string recipe_col = first_backend ? recipe.name : "";
