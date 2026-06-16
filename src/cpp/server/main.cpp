@@ -142,9 +142,8 @@ int main(int argc, char** argv) {
         server.run();
         g_server_instance = nullptr;
 
-        // If startup failed (e.g. the port was already in use by another lemond
-        // instance), exit non-zero immediately. Use std::_Exit to skip the
-        // Server/Router destructors
+        // Startup aborted (e.g. port already in use): exit non-zero now and skip
+        // destructors, whose teardown logging would bury the error message.
         if (server.startup_failed()) {
             std::cout.flush();
             std::cerr.flush();

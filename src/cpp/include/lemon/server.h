@@ -51,9 +51,8 @@ public:
     // Get server status
     bool is_running() const;
 
-    // True if run() returned because startup could not proceed (e.g. the
-    // configured port was already in use by another lemond instance). Lets
-    // main() report a clear failure and exit non-zero.
+    // True if run() aborted startup (e.g. the port was already in use), so
+    // main() can report failure and exit non-zero.
     bool startup_failed() const;
 
 private:

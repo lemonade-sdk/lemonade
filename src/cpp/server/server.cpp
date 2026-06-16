@@ -308,16 +308,10 @@ void Server::setup_http_servers() {
     http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
     http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
 
-    // Note: the real listeners intentionally keep cpp-httplib's default socket
-    // options (SO_REUSEPORT on POSIX / SO_REUSEADDR on Windows). Those defaults
-    // are required for correct dual-stack binding: httplib binds IPv6 with
-    // IPV6_V6ONLY=0 (see CPPHTTPLIB_IPV6_V6ONLY), so the IPv6 wildcard "::"
-    // overlaps the already-bound IPv4 wildcard "0.0.0.0"; only SO_REUSEPORT lets
-    // those two wildcard sockets coexist on the same port. Duplicate-instance
-    // detection is handled up front by port_is_available() in run(), which probes
-    // with an exclusive (non-SO_REUSEPORT) socket and refuses to start if another
-    // server is already listening — so we must NOT make the real listeners
-    // exclusive here, or a normal dual-stack startup would fail to bind IPv6.
+    // Keep cpp-httplib's default socket options here. httplib binds IPv6 with
+    // IPV6_V6ONLY=0, so "::" overlaps the IPv4 wildcard "0.0.0.0" and only the
+    // default SO_REUSEPORT lets the two coexist. Duplicate detection is done by
+    // port_is_available() in run(), not by making these listeners exclusive.
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -1187,70 +1181,49 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
-// Preflight bind probe: returns true if we can bind host_ip:port (i.e. the port
-// is free), false if it is already actively held by another listener (another
-// lemond). The probe binds an *exclusive* socket — SO_EXCLUSIVEADDRUSE on
-// Windows, and SO_REUSEADDR WITHOUT SO_REUSEPORT on POSIX — so that:
-//   - it fails if another instance is actively listening (the real listeners
-//     keep httplib's SO_REUSEPORT default, and a non-SO_REUSEPORT bind against a
-//     SO_REUSEPORT holder still returns EADDRINUSE), and
-//   - it still succeeds over a socket left in TIME_WAIT by a just-exited server
-//     (common during fast restarts and under systemd Restart=), thanks to
-//     SO_REUSEADDR.
-// Each address family is probed on its own short-lived socket that is closed
-// before the next, so the IPv4 and IPv6 probes never overlap. The socket is
-// closed immediately; the real listeners bind moments later.
+// Probe whether host_ip:port can be bound (i.e. the port is free). Uses an
+// exclusive socket (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR but NOT
+// SO_REUSEPORT on POSIX) so an actively-listening duplicate is detected, while a
+// socket left in TIME_WAIT by a just-exited server is still bindable.
 static bool port_is_available(int family, const std::string& host_ip, int port) {
     socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
-        // Can't probe — don't block startup; the real bind path will report any error.
-        return true;
+        return true;  // Can't probe; let the real bind path report any error.
     }
+    auto close_sock = [&]() {
+#ifdef _WIN32
+        closesocket(sock);
+#else
+        close(sock);
+#endif
+    };
+
     int opt = 1;
 #ifdef _WIN32
     setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
                reinterpret_cast<const char*>(&opt), sizeof(opt));
 #else
-    // Match the real listener: allow rebinding a TIME_WAIT socket so a fast
-    // restart isn't falsely reported as "port in use". Do NOT set SO_REUSEPORT,
-    // so an actively-listening duplicate still makes this bind fail.
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
 
-    bool available = false;
+    sockaddr_storage ss{};
+    socklen_t len;
     if (family == AF_INET) {
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET, host_ip.c_str(), &addr.sin_addr) != 1) {
-#ifdef _WIN32
-            closesocket(sock);
-#else
-            close(sock);
-#endif
-            return true;  // Couldn't parse address — let the real bind path decide.
-        }
-        available = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+        auto* a = reinterpret_cast<sockaddr_in*>(&ss);
+        a->sin_family = AF_INET;
+        a->sin_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET, host_ip.c_str(), &a->sin_addr) != 1) { close_sock(); return true; }
+        len = sizeof(sockaddr_in);
     } else {
-        sockaddr_in6 addr{};
-        addr.sin6_family = AF_INET6;
-        addr.sin6_port = htons(static_cast<uint16_t>(port));
-        if (inet_pton(AF_INET6, host_ip.c_str(), &addr.sin6_addr) != 1) {
-#ifdef _WIN32
-            closesocket(sock);
-#else
-            close(sock);
-#endif
-            return true;
-        }
-        available = bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+        auto* a = reinterpret_cast<sockaddr_in6*>(&ss);
+        a->sin6_family = AF_INET6;
+        a->sin6_port = htons(static_cast<uint16_t>(port));
+        if (inet_pton(AF_INET6, host_ip.c_str(), &a->sin6_addr) != 1) { close_sock(); return true; }
+        len = sizeof(sockaddr_in6);
     }
 
-#ifdef _WIN32
-    closesocket(sock);
-#else
-    close(sock);
-#endif
+    bool available = bind(sock, reinterpret_cast<sockaddr*>(&ss), len) == 0;
+    close_sock();
     return available;
 }
 
@@ -1269,11 +1242,8 @@ void Server::run() {
                                  "Cannot start server.");
     }
 
-    // Preflight: fail fast and loudly if the port is already taken (most often
-    // because another lemond is already running). Without this, startup would
-    // proceed far enough to start the WebSocket server, begin UDP broadcasting,
-    // and finish model-cache warmup before the bind failure surfaces deep in the
-    // run loop below — burying the real cause under unrelated shutdown logs.
+    // Fail fast if the port is already taken (usually another lemond). Detecting
+    // it here keeps the error from being buried under later startup logs.
     {
         std::string in_use_ip;
         if (!ipv4.empty() && !port_is_available(AF_INET, ipv4, port_)) {
@@ -1282,17 +1252,11 @@ void Server::run() {
             in_use_ip = ipv6;
         }
         if (!in_use_ip.empty()) {
-            // Write straight to stderr (unbuffered) so the message is reliably
-            // visible in the user's terminal, then also log it for the log file.
-            std::cerr << "[Server] ERROR: Port " << port_ << " on " << in_use_ip
-                      << " is already in use. Another Lemonade server (lemond) is "
-                         "most likely already running on this port. This instance "
-                         "will now exit." << std::endl;
-            std::cerr.flush();
-            LOG(ERROR, "Server") << "Port " << port_ << " on " << in_use_ip
-                << " is already in use. Another Lemonade server (lemond) is most "
-                   "likely already running on this port. This instance will now "
-                   "exit." << std::endl;
+            std::string msg = "Port " + std::to_string(port_) + " on " + in_use_ip +
+                " is already in use. Another Lemonade server (lemond) is likely "
+                "already running on this port. This instance will now exit.";
+            std::cerr << "[Server] ERROR: " << msg << std::endl;  // terminal visibility
+            LOG(ERROR, "Server") << msg << std::endl;
             startup_failed_ = true;
             return;
         }
@@ -1425,28 +1389,9 @@ void Server::run() {
         // Wait for listener threads, but check periodically for shutdown or rebind signals.
         // The threads are blocked in listen_after_bind(), which only returns when
         // the server is stopped or an error occurs.
-        //
-        // Also stop waiting if EVERY listener failed to bind (total failure, e.g.
-        // the port is held by something we can't share with). A thread that
-        // returned early after a failed bind is still joinable(), so without this
-        // check the loop would spin forever and never reach the error-reporting
-        // code below. We must only treat this as fatal when NOTHING bound: on a
-        // dual-stack host one family can legitimately fail (e.g. the IPv6 wildcard
-        // overlapping the IPv4 wildcard) while the other serves fine, and tearing
-        // the server down in that case would kill a working listener.
         while ((http_v4_thread_.joinable() || http_v6_thread_.joinable()) &&
-               !shutdown_requested_.load() && !rebind_requested_.load() &&
-               !(listener_start_failed.load() && !listener_started.load())) {
+               !shutdown_requested_.load() && !rebind_requested_.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        // If NO listener started (total bind failure), stop() so any thread that
-        // is mid-teardown unblocks before we join below, then fall through to the
-        // error-reporting block. A partial failure (one family bound, the other
-        // did not) is intentionally left running on the working family.
-        if (listener_start_failed.load() && !listener_started.load() &&
-            !shutdown_requested_.load() && !rebind_requested_.load()) {
-            stop();
         }
 
         // If shutdown was requested while the server was running, stop it now
@@ -1489,8 +1434,6 @@ void Server::run() {
                 break;
             }
             std::cerr << "[Server] Another Lemonade router/server instance is already running on "
-                      << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
-            LOG(ERROR, "Server") << "Another Lemonade router/server instance is already running on "
                       << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
             stop();
             break;
