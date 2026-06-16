@@ -138,8 +138,8 @@ Also, if someone else's laptop is misbehaving and causing Actions to fail unexpe
 There are three options:
 
 Option 1, which is available to anyone in the `lemonade-sdk` org: remove the runner's capability labels.
-- Workflows target runners by requesting capability labels like `xdna2`, `vulkan`, and `rocm` (see [Runner Labels](#runner-labels)). Removing every capability label **including `lemon-prod`** from a runner will drain it completely — no workflow will match.
-- To drain the runner for only one backend (e.g., take it out of ROCm jobs but keep it available for NPU jobs), remove just that one capability label (leave `lemon-prod` in place).
+- Removing `lemon-prod` from a runner will drain it completely — no production workflow will match, regardless of what other capability labels it carries.
+- To drain the runner for only one backend (e.g., take it out of ROCm jobs but keep it available for NPU jobs), remove just that capability label (e.g. `rocm`) while leaving `lemon-prod` in place.
 - Go to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the specific runner in question, click the gear icon in the Labels section, and uncheck the capability labels you want to drain.
 - To reverse this action later, go back to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the gear icon, and re-check the labels you removed.
 
