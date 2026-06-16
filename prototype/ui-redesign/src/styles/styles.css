@@ -29,6 +29,8 @@ button {
   border: 0;
   padding: 0;
   cursor: pointer;
+  /* Suppress UA focus ring; keyboard focus ring is restored by :focus-visible below */
+  outline: 0;
 }
 
 input, textarea {
@@ -2393,8 +2395,29 @@ input, textarea {
   color: var(--text-tertiary);
 }
 
-/* Hover card actions */
+/* Overlay button covers the full card for pointer/keyboard activation.
+ * This avoids the nested-interactive WCAG violation from role="button" + child buttons. */
+.recipe-card__overlay-btn {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+/* Card content and actions sit above the overlay button */
+.recipe-card__head,
+.recipe-card__desc,
+.cap-chip-list--card,
+.recipe-card__params,
+.starter-badge {
+  position: relative;
+  z-index: 1;
+}
+
 .recipe-card__actions {
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: var(--space-1);
   margin-top: var(--space-2);
@@ -4652,7 +4675,10 @@ input, textarea {
   align-items: center;
   gap: 8px;
 }
-.dash2-slot-legend__item--idle { opacity: 0.5; }
+/* Idle items: use explicit lower-contrast tokens instead of opacity (opacity compositing fails WCAG contrast) */
+.dash2-slot-legend__item--idle .dash2-slot-legend__label { color: var(--text-tertiary); }
+.dash2-slot-legend__tps--active { color: var(--text-primary); }
+.dash2-slot-legend__tps--idle   { color: var(--text-tertiary); }
 
 .dash2-slot-legend__dot {
   width: 8px;
@@ -4671,8 +4697,6 @@ input, textarea {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.dash2-slot-legend__tps--active { color: var(--text-primary); }
-.dash2-slot-legend__tps--idle   { color: var(--text-disabled); }
 
 .dash2-slot-legend__kv {
   font-size: 11px;
