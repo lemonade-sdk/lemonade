@@ -150,6 +150,32 @@ class EndpointTests(ServerTestBase):
 
         session.close()
 
+    def test_000a_malformed_json_body_returns_400(self):
+        """Empty or malformed JSON bodies must return 400, not 500 (issue #2231)."""
+        # POST endpoints that parse a JSON request body.
+        endpoints = ["chat/completions", "pull", "load", "delete"]
+        bad_bodies = [
+            ("", "empty body"),
+            ("not json", "malformed JSON"),
+            ("{", "truncated JSON"),
+        ]
+        for endpoint in endpoints:
+            url = f"{self.base_url}/{endpoint}"
+            for body, label in bad_bodies:
+                response = requests.post(
+                    url,
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    f"{endpoint} with {label} returned "
+                    f"{response.status_code}, expected 400",
+                )
+        print("[OK] malformed/empty JSON bodies return 400")
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(

@@ -2026,6 +2026,16 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             }
         }
 
+    } catch (const nlohmann::json::parse_error& e) {
+        // Empty or malformed JSON body is a client error (400), not a server fault (500).
+        LOG(WARNING, "Server") << "Invalid JSON in request body: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", std::string("Invalid JSON in request body: ") + e.what()},
+            {"type", "invalid_request_error"},
+            {"code", "invalid_request"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Chat completion failed: " << e.what() << std::endl;
         res.status = 500;
@@ -3365,6 +3375,16 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             res.set_content(response.dump(), "application/json");
         }
 
+    } catch (const nlohmann::json::parse_error& e) {
+        // Empty or malformed JSON body is a client error (400), not a server fault (500).
+        LOG(WARNING, "Server") << "Invalid JSON in request body: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", std::string("Invalid JSON in request body: ") + e.what()},
+            {"type", "invalid_request_error"},
+            {"code", "invalid_request"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const lemon::UnknownModelError& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 400;
@@ -3626,6 +3646,16 @@ void Server::handle_delete(const httplib::Request& req, httplib::Response& res) 
             }
         }
 
+    } catch (const nlohmann::json::parse_error& e) {
+        // Empty or malformed JSON body is a client error (400), not a server fault (500).
+        LOG(WARNING, "Server") << "Invalid JSON in request body: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", std::string("Invalid JSON in request body: ") + e.what()},
+            {"type", "invalid_request_error"},
+            {"code", "invalid_request"}
+        }}};
+        res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_delete: " << e.what() << std::endl;
 
