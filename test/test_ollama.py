@@ -708,6 +708,13 @@ class OllamaTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200)
 
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
         anthropic_tool = {
             "name": SAMPLE_TOOL["function"]["name"],
             "description": SAMPLE_TOOL["function"].get("description", ""),
