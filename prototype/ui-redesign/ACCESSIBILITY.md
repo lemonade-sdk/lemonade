@@ -3,7 +3,8 @@
 **Date:** 2026-06-14  
 **Branch:** `kpoin/ui-accessibility`  
 **Scope:** `prototype/ui-redesign/` only  
-**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3)
+**Status:** Phase 1 ✅ complete, Phase 2 ✅ mostly complete (items 16–18 deferred to Phase 3)  
+**Test status (2026-06-15):** All 50 automated tests passing, 7 skipped, 0 failed on `kpoin/ui-testing`
 
 ---
 
@@ -39,16 +40,15 @@
 
 ### 1.1 Semantic HTML
 
-#### 1.1.1 `<main>` landmark missing
+#### 1.1.1 `<main>` landmark + skip-link target
 
-- **What:** The primary page content area lacks a `<main>` landmark.
-- **Current state:** `App.tsx:300` renders `<div className="view-container">`. No `<main>` element exists anywhere in the app shell.
-- **Target:** Wrap `<div className="view-container">` in `<main id="main-content">` (or replace it). Screen readers will then expose the landmark; skip links can target `#main-content`.
-- **Effort:** S
-- **Priority:** P0 — required for WCAG 1.3.6 (Identify Purpose) and skip-link functionality
+- **Status:** ✅ **Fixed 2026-06-15** — `<main id="main-content" tabIndex={-1}>` in App.tsx. The `tabIndex={-1}` is required for in-page anchor focus (skip link Enter) to land on the landmark.
+- **What:** The primary page content area needed a `<main>` landmark with skip-link support.
+- **Priority:** P0 — WCAG 1.3.6 (Identify Purpose) and skip-link functionality
 
 #### 1.1.2 `div.onClick` / `span.onClick` used as interactive elements
 
+- **Status:** ✅ **Fixed 2026-06-15 for PresetCard** — `<article role="button">` replaced with overlay-button pattern (`<button class="recipe-card__overlay-btn">` at absolute inset:0, card content at z-index:1). Remaining `div.onClick` instances in AccountMenu, BackendManager, ModelManager are P1 deferred.
 - **What:** Clickable divs/spans without button semantics — no keyboard activation, no role, not focusable.
 - **Current state:**
   - `AccountMenu.tsx` — 2 `div.onClick` instances (account row items)
