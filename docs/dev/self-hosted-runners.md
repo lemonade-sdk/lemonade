@@ -23,6 +23,14 @@ You can read about all this here: [GitHub: About self-hosted runners](https://do
 
 Workflows target self-hosted runners by the labels the runner carries. We use two kinds of labels:
 
+### Pool membership label
+
+| Label | Meaning |
+|-------|---------|
+| `lemon-prod` | Runner is a production lemonade-sdk runner. **Every self-hosted runner job must include this label.** It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes or special-purpose runners like `repo-manager`) that happen to share capability labels. |
+
+Without `lemon-prod`, a job that requests only `[self-hosted, Linux]` could run on *any* self-hosted Linux machine registered to the org. All production runners carry this label; runners that are not part of the production inference pool must not have it.
+
 ### Capability labels
 
 These describe *what a runner can do*. A workflow should request only the capability labels it actually needs.
@@ -34,7 +42,7 @@ These describe *what a runner can do*. A workflow should request only the capabi
 | `cuda` | Runner can execute CUDA GPU workloads | TBD |
 | `xdna2` | Runner has a Ryzen AI 300/400 series NPU | `ryzenai` backend, `flm` (FastFlowLM) backend |
 
-A job that exercises more than one backend should request all the labels it needs (e.g., `[Windows, vulkan, rocm]` for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry *every* label in the `runs-on` list.
+A job that exercises more than one backend should request all the labels it needs (e.g., `[Windows, vulkan, rocm, lemon-prod]` for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry *every* label in the `runs-on` list.
 
 CPU-only jobs should target GitHub-hosted runners when possible.
 
@@ -56,8 +64,8 @@ Capability and hardware labels must be present on each runner for the workflow t
 
 | Hardware | Labels to apply |
 |----------|-----------------|
-| Ryzen AI 300-series laptop (NPU + Vulkan iGPU + ROCm iGPU) | `xdna2`, `vulkan`, `rocm` |
-| Strix Halo | `xdna2`, `rocm`, `stx-halo` |
+| Ryzen AI 300-series laptop (NPU + Vulkan iGPU + ROCm iGPU) | `lemon-prod`, `xdna2`, `vulkan`, `rocm` |
+| Strix Halo | `lemon-prod`, `xdna2`, `rocm`, `stx-halo` |
 
 ## New Runner Setup
 
@@ -85,7 +93,7 @@ These steps will place your machine into the production pool.
     - When running `./config.cmd` in step 2, make the following choices:
          - Name of the runner group = `stx`
          - For the runner name, call it `NAME-TYPE-NUMBER`, where NAME is your alias and NUMBER would tell you this is the Nth machine of TYPE you've added. TYPE examples include `stx`, `stx-halo`, `phx`, etc.
-         - Apply capability labels (`xdna2`, `vulkan`, `rocm`, etc. and any hardware labels like `stx-halo`).
+         - Apply `lemon-prod` plus any capability labels (`xdna2`, `vulkan`, `rocm`, etc.) and hardware labels like `stx-halo`.
          - Accept the default for the work folder
          - You want the runner to function as a service (respond Y)
          - User account to use for the service = `NT AUTHORITY\SYSTEM` (not the default of `NT AUTHORITY\NETWORK SERVICE`)
@@ -130,8 +138,8 @@ Also, if someone else's laptop is misbehaving and causing Actions to fail unexpe
 There are three options:
 
 Option 1, which is available to anyone in the `lemonade-sdk` org: remove the runner's capability labels.
-- Workflows target runners by requesting capability labels like `xdna2`, `vulkan`, and `rocm` (see [Runner Labels](#runner-labels)). Removing every capability label from a runner will drain it completely — no workflow will match.
-- To drain the runner for only one backend (e.g., take it out of ROCm jobs but keep it available for NPU jobs), remove just that one capability label.
+- Removing `lemon-prod` from a runner will drain it completely — no production workflow will match, regardless of what other capability labels it carries.
+- To drain the runner for only one backend (e.g., take it out of ROCm jobs but keep it available for NPU jobs), remove just that capability label (e.g. `rocm`) while leaving `lemon-prod` in place.
 - Go to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the specific runner in question, click the gear icon in the Labels section, and uncheck the capability labels you want to drain.
 - To reverse this action later, go back to the [runners page](https://github.com/organizations/lemonade-sdk/settings/actions/runners), click the gear icon, and re-check the labels you removed.
 
@@ -156,7 +164,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Place a 🌩️ emoji in the name of all of your self-host workflows, so that PR reviewers can see at a glance which workflows are using self-hosted resources.
     - Example: `name: Test Lemonade on NPU and Hybrid with OGA environment 🌩️`
 - Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include `on: pull request:` in your workflow until after a reviewer has signed off.
-- Request only the capability labels your job actually needs (see [Runner Labels](#runner-labels)). For example, `runs-on: [Windows, xdna2]` for NPU work, `runs-on: [Linux, vulkan, rocm]` for a job that exercises both GPU backends. Do not ask for `xdna2` or a GPU capability if your job is CPU-only — use `[self-hosted, Windows]` / `[self-hosted, Linux]`, or move the step to a GitHub-hosted runner like `runs-on: windows-latest` when possible.
+- **Always include `lemon-prod`** in every self-hosted `runs-on` list (see [Pool membership label](#pool-membership-label)). For example, `runs-on: [Windows, xdna2, lemon-prod]` for NPU work, `runs-on: [Linux, vulkan, rocm, lemon-prod]` for a job that exercises both GPU backends. CPU-only self-hosted jobs use `[self-hosted, Windows, lemon-prod]` / `[self-hosted, Linux, lemon-prod]`, but prefer GitHub-hosted runners (`windows-latest`, `ubuntu-latest`) for CPU-only work when possible.
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
     - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#new-runner-setup) section to see which software is already expected on the system.

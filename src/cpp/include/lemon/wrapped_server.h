@@ -117,6 +117,10 @@ public:
         return load_duration_ms_;
     }
 
+    // Pinned status for eviction prevention
+    bool is_pinned() const { return pinned_; }
+    void set_pinned(bool pinned) { pinned_ = pinned; }
+
     // Acquire model for inference, safely recovering from DOWNSIZING/EVICTING if necessary.
     // Blocks if LOADING.
     //
@@ -437,6 +441,7 @@ protected:
     // from being unloaded/destroyed while the engine holds a raw pointer to it.
     bool maintenance_in_progress_;
     long load_duration_ms_;
+    bool pinned_ = false;
 
 private:
     void begin_backend_request(BackendRequestKind kind);
