@@ -534,11 +534,25 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                                    300000, 300000);
         auto resp_json = json::parse(response);
 
-        if (capture_response && resp_json.contains("choices") && resp_json["choices"].is_array() &&
-            !resp_json["choices"].empty()) {
-            auto& choice = resp_json["choices"][0];
-            if (choice.contains("message") && choice["message"].contains("content")) {
-                result.response_text = choice["message"]["content"].get<std::string>();
+        if (capture_response) {
+            if (resp_json.contains("output")) {
+                // Preserve structured Responses API payloads for downstream analysis.
+                result.response_text = resp_json["output"].dump();
+            } else if (resp_json.contains("choices") && resp_json["choices"].is_array() &&
+                       !resp_json["choices"].empty()) {
+                const auto& choice = resp_json["choices"][0];
+                if (choice.contains("message") && choice["message"].contains("content")) {
+                    const auto& content = choice["message"]["content"];
+                    if (content.is_string()) {
+                        result.response_text = content.get<std::string>();
+                    } else {
+                        result.response_text = content.dump();
+                    }
+                } else {
+                    result.response_text = choice.dump();
+                }
+            } else {
+                result.response_text = "null";
             }
         }
 
@@ -644,7 +658,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
             continue;
         }
 
-        if (!response_log_path.empty() && !run_result.response_text.empty()) {
+        if (!response_log_path.empty()) {
             std::ofstream response_log(response_log_path, std::ios::app);
             if (!response_log.is_open()) {
                 std::cerr << "\nWarning: Could not open response log: " << response_log_path << std::endl;
