@@ -48,6 +48,7 @@ from utils.test_models import (
     USER_MODEL_TE_CHECKPOINT,
     USER_MODEL_VAE_CHECKPOINT,
     get_hf_cache_dir,
+    get_hf_cache_dir_candidates,
 )
 
 
@@ -2279,11 +2280,34 @@ class EndpointTests(ServerTestBase):
         self.assertNotIn(bare, ids, "Self-referential collection must not persist")
         print("[OK] Bare-name self-referential collection rejected with 400")
 
-    def _write_collection_manifest(self, repo_id, components, models):
+    def _server_hf_cache_root(self, probe_repo_dir):
+        """Return the HF cache root the *server* actually uses, verified by
+        locating a repo dir the server already downloaded (`probe_repo_dir`).
+
+        The server's cache can be a config.json `models_dir` override that the
+        test side does not compute (e.g. on the macOS .pkg install), so we probe
+        across candidates — config models_dir, then the env/platform defaults —
+        and pick the one that contains a known-downloaded repo."""
+        candidates = []
+        try:
+            cfg = requests.get(
+                f"http://localhost:{PORT}/internal/config", timeout=TIMEOUT_DEFAULT
+            ).json()
+            models_dir = cfg.get("models_dir", "") or ""
+            if models_dir and models_dir != "auto" and os.path.isabs(models_dir):
+                candidates.append(models_dir)
+        except Exception:
+            pass
+        candidates.extend(get_hf_cache_dir_candidates())
+        for root in candidates:
+            if os.path.isdir(os.path.join(root, probe_repo_dir)):
+                return root
+        return candidates[0] if candidates else get_hf_cache_dir()
+
+    def _write_collection_manifest(self, cache_root, repo_id, components, models):
         """Write a fake HF-cached collection manifest for `repo_id` into the HF
         cache (refs/main + a snapshot dir), mimicking a repo pulled by
-        `lemonade pull <org>/<repo>`. Returns the snapshot dir path."""
-        cache_root = get_hf_cache_dir()
+        `lemonade pull <org>/<repo>`. Returns the repo cache dir path."""
         repo_dir = os.path.join(cache_root, "models--" + repo_id.replace("/", "--"))
         snapshot = os.path.join(repo_dir, "snapshots", "rev1")
         os.makedirs(snapshot, exist_ok=True)
@@ -2354,8 +2378,18 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(pull_b.status_code, 200, pull_b.text)
 
+            # Discover the server's real HF cache root by locating the repo it
+            # just downloaded for component B (config models_dir overrides can put
+            # it where the test side wouldn't compute, e.g. macOS .pkg installs).
+            b_repo_dir = "models--" + USER_MODEL_MAIN_CHECKPOINT.split(":")[0].replace(
+                "/", "--"
+            )
+            cache_root = self._server_hf_cache_root(b_repo_dir)
+
             # Manifest v1 on disk (stands in for /pull's own manifest download).
-            repo_dir = self._write_collection_manifest(repo_id, [comp_a], [a_def])
+            repo_dir = self._write_collection_manifest(
+                cache_root, repo_id, [comp_a], [a_def]
+            )
 
             # Register the HF-backed collection with the real hf_pull POINTER body:
             # model name + recipe + the repo as the checkpoint. No inline
@@ -2380,7 +2414,9 @@ class EndpointTests(ServerTestBase):
             )
 
             # Manifest v2: add component B upstream, then refresh via re-pull.
-            self._write_collection_manifest(repo_id, [comp_a, comp_b], [a_def, b_def])
+            self._write_collection_manifest(
+                cache_root, repo_id, [comp_a, comp_b], [a_def, b_def]
+            )
             refresh = requests.post(
                 f"{self.base_url}/pull",
                 json={"model_name": collection, "stream": False},
