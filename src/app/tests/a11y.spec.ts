@@ -104,7 +104,7 @@ test.describe('Accessibility — axe-core automated scans', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToView(page, 'Presets');
-    await page.waitForSelector('.manager');
+    await page.waitForSelector('[data-view="presets"]');
 
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
