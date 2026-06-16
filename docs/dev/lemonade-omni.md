@@ -8,8 +8,8 @@ An **omni model** is a virtual model made up of components, registered with `rec
 
 | Omni model | LLM | Image | ASR | TTS |
 |-----------|-----|-------|-----|-----|
-| **LMX-Omni-52B-Halo** | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
-| **LMX-Omni-5.5B-Lite** | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
+| [**LMX-Omni-52B-Halo**](https://huggingface.co/lemonade-sdk/LMX-Omni-52B-Halo) | Qwen3.6-35B-A3B-MTP-GGUF | Flux-2-Klein-9B-GGUF (gen + edit) | Whisper-Large-v3-Turbo | kokoro-v1 |
+| [**LMX-Omni-5.5B-Lite**](https://huggingface.co/lemonade-sdk/LMX-Omni-5.5B-Lite) | Qwen3.5-4B-MTP-GGUF | SD-Turbo (gen only) | Whisper-Tiny | kokoro-v1 |
 
 Once all of an omni model's components are downloaded, it appears in the default `/v1/models` listing (and Ollama `/api/tags`) — because the server orchestrates `/chat/completions` for it, it behaves as a genuine OpenAI-compatible chat model. Not-yet-downloaded omni models surface with `?show_all=true`, and all of them appear in the Lemonade desktop app's Model Manager under the **Lemonade** category.
 
@@ -81,3 +81,5 @@ python examples/lemonade_tools.py "Say hello world out loud"
 ## Custom Omni Models
 
 You can build your own omni model from registered models — see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app) in the custom models guide. The planner LLM must carry the `tool-calling` label, and each modality must have a downloaded model whose `labels` include the matching entry from the [tools table](#available-tools).
+
+To distribute a custom omni model to other machines or via Hugging Face, see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).

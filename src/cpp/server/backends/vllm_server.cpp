@@ -194,7 +194,7 @@ void VLLMServer::load(const std::string& model_name,
         }
     }
 
-    LOG(INFO, "vLLM") << "Starting vllm-server on port " << port_ << "..." << std::endl;
+    LOG(INFO, "vLLM") << "Starting vllm-server on port " << get_backend_port() << "..." << std::endl;
 
     // Set environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -207,12 +207,14 @@ void VLLMServer::load(const std::string& model_name,
 
     // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars);
+    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 
     // vLLM can take longer to start (loading model, compiling kernels)
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
+        const ProcessHandle handle = consume_process_handle_for_cleanup();
+        if (has_process_handle(handle)) {
+            ProcessManager::stop_process(handle);
+        }
         std::string err = "vllm-server failed to start within timeout";
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
@@ -223,19 +225,16 @@ void VLLMServer::load(const std::string& model_name,
         throw std::runtime_error(err);
     }
 
-    LOG(DEBUG, "vLLM") << "Model loaded on port " << port_ << std::endl;
+    LOG(DEBUG, "vLLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void VLLMServer::unload() {
+    stop_backend_watchdog();
     LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
-#ifdef _WIN32
-    if (process_handle_.handle) {
-#else
-    if (process_handle_.pid > 0) {
-#endif
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        ProcessManager::stop_process(handle);
     }
 }
 

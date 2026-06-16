@@ -97,50 +97,45 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << std::endl;
 
     // Start the process (filter health check spam)
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         ryzenai_server_path,
         args,
         "",
         is_debug(),
         true
     );
+    set_process_handle(started_handle);
 
-    if (!utils::ProcessManager::is_running(process_handle_)) {
+    if (!utils::ProcessManager::is_running(started_handle)) {
         throw std::runtime_error("Failed to start ryzenai-server process");
     }
 
     LOG(DEBUG, "ProcessManager") << "Process started successfully, PID: "
-                << process_handle_.pid << std::endl;
+                << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
+        const ProcessHandle handle = consume_process_handle_for_cleanup();
+        if (has_process_handle(handle)) {
+            utils::ProcessManager::stop_process(handle);
+        }
         throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
     }
 
     is_loaded_ = true;
-    LOG(INFO, "RyzenAI") << "Model loaded on port " << port_ << std::endl;
+    LOG(INFO, "RyzenAI") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void RyzenAIServer::unload() {
-    if (!is_loaded_) {
-        return;
-    }
-
+    stop_backend_watchdog();
     LOG(DEBUG, "RyzenAI") << "Unloading model..." << std::endl;
 
-#ifdef _WIN32
-    if (process_handle_.handle) {
-#else
-    if (process_handle_.pid > 0) {
-#endif
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        utils::ProcessManager::stop_process(handle);
     }
 
     is_loaded_ = false;
-    port_ = 0;
     model_path_.clear();
 }
 

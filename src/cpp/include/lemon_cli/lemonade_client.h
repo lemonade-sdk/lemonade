@@ -6,6 +6,7 @@
 #include <functional>
 #include <cstdint>
 #include <chrono>
+#include <optional>
 #include <nlohmann/json.hpp>
 
 // Forward declaration for httplib
@@ -83,7 +84,8 @@ public:
     // should pass upgrade=true to force an HF update check.
     int pull_model(const nlohmann::json& model_data, const std::string& display_name = "", bool upgrade = false);
     int delete_model(const std::string& model_name) const;
-    int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false) const;
+    int load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options = false, std::optional<bool> pinned = std::nullopt) const;
+    int pin_model(const std::string& model_name, bool pinned) const;
     int unload_model(const std::string& model_name) const;
     nlohmann::json get_model_info(const std::string& model_name) const;
     int launch_model(const std::string& model_name, const nlohmann::json& recipe_options, const std::string& agent);
@@ -96,6 +98,17 @@ public:
     int list_recipes() const;
     int install_backend(const std::string& recipe, const std::string& backend, bool force = false);
     int uninstall_backend(const std::string& recipe, const std::string& backend);
+
+    // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,
+    // uninstall} request. api_key is optional on install — when omitted the
+    // server relies on env var or a later /v1/cloud/auth POST.
+    int install_cloud_provider(const std::string& provider,
+                                const std::string& base_url,
+                                const std::string& api_key = "");
+    int uninstall_cloud_provider(const std::string& provider);
+    int cloud_auth(const std::string& provider, const std::string& api_key);
+    int cloud_auth_clear(const std::string& provider);
+    int cloud_list() const;
 
     // Cache management
     int cleanup_cache(bool dry_run) const;

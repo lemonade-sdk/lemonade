@@ -1,8 +1,10 @@
 #include "lemon/server.h"
+#include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/cloud_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
@@ -174,6 +176,16 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+int get_http_status_from_error(const std::string& error_code) {
+    if (error_code == "slots_pinned_error") {
+        return 409;
+    } else if (error_code == "model_load_error") {
+        return 500;
+    } else {
+        return 404;
+    }
+}
+
 bool is_quiet_polling_path(const std::string& path) {
     return path == "/api/v0/downloads" || path == "/api/v1/downloads" ||
            path == "/v0/downloads" || path == "/v1/downloads" ||
@@ -204,7 +216,19 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
+    cloud_registry_ = std::make_unique<CloudProviderRegistry>();
+    // Seed installed providers from config.json. Runtime keys stay empty
+    // until either an env var resolves them per-request or a client POSTs
+    // /v1/cloud/auth — by design we never persist secrets to disk.
+    {
+        json snap = config_->snapshot();
+        if (snap.contains("cloud_providers")) {
+            cloud_registry_->load_from_config(snap["cloud_providers"]);
+        }
+    }
+
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
+    model_manager_->set_cloud_registry(cloud_registry_.get());
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -212,6 +236,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
+    router_->set_cloud_registry(cloud_registry_.get());
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -607,6 +632,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_shutdown(req, res);
     });
 
+    web_server.Post("/internal/pin", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_pin(req, res);
+    });
+
     // Unified config endpoints (not part of public API)
     web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_set(req, res);
@@ -616,6 +645,32 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
+    });
+    web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_simulate_vram_pressure(req, res);
+    });
+
+    // Cloud auth: register quad-prefix POST and a parameterized DELETE.
+    //   POST /v1/cloud/auth        body: {provider, api_key}
+    //   DELETE /v1/cloud/auth/{p}
+    // The runtime key lives in process memory only; env var
+    // LEMONADE_<PROVIDER>_API_KEY takes precedence (POST returns 409 if it
+    // is set). Both endpoints respect LEMONADE_ADMIN_API_KEY when configured
+    // via the standard authentication path applied to /v1/.
+    register_post("cloud/auth", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_set(req, res);
+    });
+    web_server.Delete(R"(/api/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/api/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -1440,7 +1495,18 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         return error_response;
     }
 
-    // Case 3: Model exists and is available, but failed to load (engine error)
+    // Case 3: Model exists and is available, but failed to load (engine error or pinned slots constraint)
+    if (exception_msg.find("are pinned") != std::string::npos) {
+        error_response["error"] = {
+            {"message", exception_msg},
+            {"type", "slots_pinned_error"},
+            {"param", "model"},
+            {"code", "slots_pinned_error"},
+            {"requested_model", requested_model}
+        };
+        return error_response;
+    }
+
     // Return the actual exception message so the user knows what went wrong
     std::string message = "Failed to load model '" + requested_model + "': " + exception_msg;
 
@@ -1563,6 +1629,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
+    // Add pinned model counts
+    response["pinned_models"] = router_->get_pinned_model_counts();
+
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
@@ -1615,7 +1684,14 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     res.set_content(response.dump(), "application/json");
 }
 
-nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+// Maximum collection-component nesting depth embedded in "models" arrays.
+// Collection components are normally leaf models, but nothing prevents
+// registering a collection as a component of another collection — including
+// cyclically — so the embedding recursion must be bounded.
+static constexpr int kMaxCollectionEmbedDepth = 3;
+
+nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info,
+                                          int depth) {
     std::vector<std::string> public_components;
     public_components.reserve(info.components.size());
     for (const auto& component : info.components) {
@@ -1636,6 +1712,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe_options", info.recipe_options.to_json()},
     };
 
+    // Surface the cloud provider on cloud entries so the Model Manager can
+    // bucket each provider into its own sub-heading. Omitted on local models
+    // so the field doesn't pollute every entry — and skipped for the Ollama
+    // serialization path (handle_ollama_show / tags) which builds its own
+    // payload.
+    if (!info.cloud_provider.empty()) {
+        model_json["cloud_provider"] = info.cloud_provider;
+    }
+
     // Add size if available
     if (info.size > 0.0) {
         model_json["size"] = info.size;
@@ -1643,6 +1728,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     if (info.max_context_window > 0) {
         model_json["max_context_window"] = info.max_context_window;
+    }
+
+    // Per-million-token pricing in USD, when the provider reported it (cloud
+    // models from OpenRouter/Together). Display only.
+    if (info.cost_input_per_million >= 0) {
+        model_json["cost_input_per_million"] = info.cost_input_per_million;
+    }
+    if (info.cost_output_per_million >= 0) {
+        model_json["cost_output_per_million"] = info.cost_output_per_million;
     }
 
     // Add image_defaults if present (for sd-cpp models)
@@ -1658,6 +1752,23 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         if (info.image_defaults.flow_shift > 0.0f)
             img_def["flow_shift"] = info.image_defaults.flow_shift;
         model_json["image_defaults"] = img_def;
+    }
+
+    // Collections (Omni) additionally embed each component's full model object,
+    // in component order, under "models". Embedding is bounded by
+    // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
+    // cannot recurse unboundedly.
+    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+        nlohmann::json component_models = nlohmann::json::array();
+        for (const auto& component : info.components) {
+            if (!model_manager_->model_exists(component)) {
+                continue;
+            }
+            auto comp_info = model_manager_->get_model_info(component);
+            component_models.push_back(model_info_to_json(
+                model_manager_->get_public_model_name(component), comp_info, depth + 1));
+        }
+        model_json["models"] = component_models;
     }
 
     return model_json;
@@ -1692,7 +1803,7 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
                              << "': " << e.what() << std::endl;
         auto error_response = create_model_error(collection_info.model_name, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.status = get_http_status_from_error(error_code);
         res.set_content(error_response.dump(), "application/json");
         return;
     }
@@ -1755,6 +1866,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
+        bool request_modified = false;
+
         // Omni "collection" models run a server-side tool-calling loop instead of a
         // plain completion. Branch before auto-load/LLM-type checks: the collection
         // recipe has no backend of its own; the orchestrator loads each component.
@@ -1784,11 +1897,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
-                    res.status = 500;  // Internal server error - model exists but failed to load
-                } else {
-                    res.status = 404;  // Not found - model doesn't exist or is filtered out
-                }
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1812,15 +1921,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
-        // model name transformation internally via their forward methods
+        // model name transformation internally via their forward methods.
         // Note: request_json was already normalized at the top of this function
         std::string request_body = req.body;
-        bool request_modified = false;
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
         if (should_disable_thinking(request_json)) {
-            request_modified = prepend_no_think_to_last_user_message(request_json);
+            request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
         }
         request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
@@ -1995,11 +2103,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
-                    res.status = 500;  // Internal server error - model exists but failed to load
-                } else {
-                    res.status = 404;  // Not found - model doesn't exist or is filtered out
-                }
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2178,7 +2282,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2214,7 +2318,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2443,7 +2547,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
                 LOG(ERROR, "Server") << "Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2491,7 +2595,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
                 LOG(ERROR, "Server") << "Failed to load text-to-speech model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2622,7 +2726,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = get_http_status_from_error(error_code);
             res.set_content(error_response.dump(), "application/json");
             return;
         }
@@ -2724,7 +2828,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
         LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
         auto error_response = create_model_error(requested_model, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.status = get_http_status_from_error(error_code);
         res.set_content(error_response.dump(), "application/json");
         return false;
     }
@@ -3119,7 +3223,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -3133,6 +3237,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        std::string request_body = req.body;
+
         if (is_streaming) {
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
@@ -3145,7 +3251,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
@@ -3275,12 +3381,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 bad_request(*err);
                 return;
             }
-            // Canonicalize components so downstream cache lookups
-            // (check_component_downloaded, update_model_in_cache) succeed
-            // even when the client passed a public alias (bare name) rather
-            // than the canonical `user.X` / `builtin.X` form.
-            for (auto& c : request_json["components"]) {
-                c = model_manager_->resolve_model_name(c.get<std::string>());
+            // A body carrying a `models` array is a collection file import: its
+            // components may not be registered yet (download_model registers them
+            // from the embedded definitions and canonicalizes the list itself).
+            // A pointer body (HF-backed collection) has no `components` at all —
+            // they come from the downloaded manifest. Only pre-canonicalize an
+            // inline `components` list whose entries must already exist.
+            if (request_json.contains("components") && request_json["components"].is_array() &&
+                (!request_json.contains("models") || !request_json["models"].is_array())) {
+                // Canonicalize components so downstream cache lookups
+                // (check_component_downloaded, update_model_in_cache) succeed
+                // even when the client passed a public alias (bare name) rather
+                // than the canonical `user.X` / `builtin.X` form.
+                for (auto& c : request_json["components"]) {
+                    c = model_manager_->resolve_model_name(c.get<std::string>());
+                }
             }
         }
 
@@ -3399,6 +3514,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
     try {
         model_name = request_json["model_name"];
 
+        // Cloud models are registered automatically at cache build / cloud-auth
+        // / install time, so a cloud model reaching /load is already in the
+        // cache. /load carries no creds payload; CloudServer reads the
+        // resolved key (env var or runtime POST) from CloudProviderRegistry
+        // when a request is actually forwarded.
+
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
             LOG(ERROR, "Server") << "Model not found: " << model_name << std::endl;
@@ -3413,6 +3534,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
+        std::optional<bool> pinned_opt = std::nullopt;
+        if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
+            pinned_opt = request_json["pinned"].get<bool>();
+        }
 
         LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
@@ -3424,10 +3549,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             model_manager_->save_model_options(info);
         }
 
-        // Download model if needed (first-time use). Collections have no
+        // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!info.downloaded && !is_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
@@ -3448,7 +3573,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             // if already loaded with matching options, reload only if options
             // differ)
             router_->load_model(model_name, info, options, true,
-                                /*allow_reload_on_option_change=*/true);
+                                /*allow_reload_on_option_change=*/true,
+                                pinned_opt);
 
             // Return success response
             nlohmann::json response = {
@@ -3467,7 +3593,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (!model_name.empty()) {
             auto error_response = create_model_error(model_name, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = get_http_status_from_error(error_code);
             res.set_content(error_response.dump(), "application/json");
         } else {
             // JSON parsing failed before we got model_name - return generic error
@@ -3535,6 +3661,64 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         }
 
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_pin(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const std::exception& parse_err) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Invalid JSON body: " + std::string(parse_err.what())},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("model") && !request_json.contains("model_name")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'model' or 'model_name' is required"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("pinned") || !request_json["pinned"].is_boolean()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'pinned' is required and must be a boolean"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        std::string model_name = request_json.contains("model") ?
+            request_json["model"].get<std::string>() :
+            request_json["model_name"].get<std::string>();
+        bool pinned = request_json["pinned"].get<bool>();
+
+        std::string canonical_name = model_manager_->resolve_model_name(model_name);
+        router_->set_model_pinned(canonical_name, pinned);
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"model_name", model_name},
+            {"pinned", pinned}
+        };
+        res.status = 200;
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Pin/unpin failed: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"}
+        }}};
         res.set_content(error.dump(), "application/json");
     }
 }
@@ -3627,6 +3811,133 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::persist_cloud_providers() {
+    if (cache_dir_.empty() || !cloud_registry_) return;
+    try {
+        json snap = config_->snapshot();
+        snap["cloud_providers"] = cloud_registry_->to_config_array();
+        ConfigFile::save(cache_dir_, snap);
+    } catch (const std::exception& e) {
+        // Persistence failure must not undo the in-memory change — the
+        // registry is already updated and the provider is usable until
+        // restart. Log so the operator can see why config.json is stale.
+        LOG(WARNING, "Server") << "Failed to persist cloud_providers to config.json: "
+                                << e.what() << std::endl;
+    }
+}
+
+void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        if (!body.contains("provider") || !body["provider"].is_string() ||
+            !body.contains("api_key") || !body["api_key"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Body must contain string fields: provider, api_key"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const auto provider = body["provider"].get<std::string>();
+        const auto api_key = body["api_key"].get<std::string>();
+        if (provider.empty() || api_key.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "provider and api_key must be non-empty"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!cloud_registry_->is_installed(provider)) {
+            res.status = 404;
+            nlohmann::json error = {{"error", {
+                {"message", "Cloud provider '" + provider + "' is not installed. "
+                            "Call POST /v1/install with backend=cloud, provider, "
+                            "and base_url first."},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // env-wins-over-runtime: if the env var is set, refuse the runtime
+        // key with 409 so the caller knows their POST had no effect.
+        if (!cloud_registry_->set_runtime_key(provider, api_key)) {
+            res.status = 409;
+            const auto env_name = CloudProviderRegistry::env_var_name(provider);
+            nlohmann::json error = {{"error", {
+                {"message", env_name + " is set in the lemond process; the env var "
+                            "takes precedence and the supplied API key was not stored."},
+                {"type", "auth_conflict"},
+                {"env_var", env_name}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Refresh the provider's discovered model list with the new key.
+        // Best-effort — refresh logs failures and returns 0. Either way the
+        // key is stored and the response reflects the auth state.
+        size_t models_after = model_manager_->refresh_cloud_models(provider);
+
+        const auto state = cloud_registry_->auth_state(provider);
+        nlohmann::json response = {
+            {"provider", provider},
+            {"auth_state", {
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set}
+            }},
+            {"models_discovered", models_after}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {{"message", "Invalid JSON: " + std::string(e.what())},
+                                            {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const std::string provider = req.matches[1].str();
+        if (provider.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {{"message", "Missing provider in URL"},
+                                                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        const bool cleared = cloud_registry_->clear_runtime_key(provider);
+        // If the env var is set, models stay discovered (env still authenticates);
+        // if not, the cache should reflect the now-unauthenticated state.
+        const auto state = cloud_registry_->auth_state(provider);
+        if (!state.env_var_set) {
+            model_manager_->evict_cloud_models(provider);
+        }
+
+        nlohmann::json response = {
+            {"provider", provider},
+            {"cleared_runtime_key", cleared},
+            {"auth_state", {
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set}
+            }}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_clear: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
     }
 }
 
@@ -3840,6 +4151,26 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
     }
 
+    // Cloud providers: per-provider {name, base_url, env_var_set,
+    // runtime_key_set, models_discovered}. Never includes the key itself.
+    // Clients use this to decide whether to prompt for an API key, show a
+    // "configured by env var" badge, or surface the model count to the user.
+    if (cloud_registry_) {
+        nlohmann::json providers = nlohmann::json::array();
+        for (const auto& rec : cloud_registry_->list_installed()) {
+            auto state = cloud_registry_->auth_state(rec.name);
+            providers.push_back({
+                {"name", rec.name},
+                {"base_url", rec.base_url},
+                {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set},
+                {"models_discovered", model_manager_->count_cloud_models(rec.name)}
+            });
+        }
+        system_info["cloud"] = {{"providers", providers}};
+    }
+
     res.set_content(system_info.dump(), "application/json");
 }
 
@@ -3924,6 +4255,18 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = json::parse(req.body);
+        double pct = req_json.value("pct", 0.0);
+        router_->simulate_vram_pressure(pct);
+        res.set_content(R"({"status": "ok"})", "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(json{{"error", e.what()}}.dump(), "application/json");
     }
 }
 
@@ -4636,6 +4979,81 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Cloud install branch. Cloud providers don't have a binary to fetch —
+        // "installing" one means registering its OpenAI-compat base URL with
+        // the in-process CloudProviderRegistry so that ModelManager can
+        // discover its catalog as soon as the matching API key is supplied
+        // (env var or POST /v1/cloud/auth). Shape:
+        //   {backend: "cloud", provider: "fireworks",
+        //    base_url: "https://api.fireworks.ai/inference/v1",
+        //    api_key: "..."}  // optional
+        if (request_json.value("backend", "") == "cloud") {
+            const std::string provider = request_json.value("provider", "");
+            const std::string base_url = request_json.value("base_url", "");
+            const std::string api_key = request_json.value("api_key", "");
+            if (provider.empty() || base_url.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", err},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", err},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            LOG(INFO, "Server") << "Installing cloud provider '" << provider
+                                  << "' with base_url " << base_url << std::endl;
+            cloud_registry_->install(provider, base_url);
+            persist_cloud_providers();
+
+            // Best-effort optional auth: if api_key was supplied, treat this
+            // as "install + auth in one shot". Honors the env-wins rule: if
+            // LEMONADE_<P>_API_KEY is set, we don't store the runtime key and
+            // we don't error — install still succeeds, env var still wins.
+            bool runtime_key_stored = false;
+            if (!api_key.empty()) {
+                runtime_key_stored = cloud_registry_->set_runtime_key(provider, api_key);
+            }
+
+            // Best-effort discovery. Empty result is fine — install means
+            // "registered", not "verified-and-non-empty". The client can
+            // call /v1/system-info later to see how many models showed up.
+            size_t models_after = model_manager_->refresh_cloud_models(provider);
+            const auto state = cloud_registry_->auth_state(provider);
+
+            nlohmann::json response = {
+                {"status", "success"},
+                {"backend", "cloud"},
+                {"provider", provider},
+                {"base_url", cloud_registry_->base_url_for(provider)},
+                {"models_discovered", models_after},
+                {"auth_state", {
+                    {"env_var_set", state.env_var_set},
+                    {"runtime_key_set", state.runtime_key_set}
+                }}
+            };
+            if (!api_key.empty() && !runtime_key_stored) {
+                response["warning"] = CloudProviderRegistry::env_var_name(provider) +
+                    " is set; supplied api_key was ignored.";
+            }
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
@@ -4736,6 +5154,53 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
 void Server::handle_uninstall(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+
+        // Cloud uninstall: drop the provider record + its runtime key +
+        // every discovered model. Idempotent — uninstalling an unknown
+        // provider returns 404 (matching the symmetric install error shape)
+        // rather than silently succeeding, so CI scripts can tell which
+        // case happened.
+        if (request_json.value("backend", "") == "cloud") {
+            const std::string provider = request_json.value("provider", "");
+            if (provider.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud uninstall requires 'provider' string field"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            // Unload any loaded cloud-recipe models for this provider before
+            // erasing them from the cache. Router::unload_model expects a
+            // model_name, not a recipe filter — walk the loaded list manually.
+            auto loaded = router_->get_all_loaded_models();
+            for (const auto& m : loaded) {
+                if (m.value("recipe", "") == "cloud" &&
+                    m.value("cloud_provider", "") == provider) {
+                    router_->unload_model(m.value("model_name", ""));
+                }
+            }
+            bool removed = cloud_registry_->uninstall(provider);
+            size_t evicted = model_manager_->evict_cloud_models(provider);
+            if (!removed) {
+                res.status = 404;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' is not installed"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            persist_cloud_providers();
+            nlohmann::json response = {
+                {"status", "success"},
+                {"backend", "cloud"},
+                {"provider", provider},
+                {"models_evicted", evicted}
+            };
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
 

@@ -105,6 +105,7 @@ runs:
           echo "|------------------|-----------|"
           echo "| **Windows** | [lemonade.msi](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade.msi) |"
           echo "| **Ubuntu 24.04+** | [Launchpad PPA](https://launchpad.net/~lemonade-team/+archive/ubuntu/stable) |"
+          echo "| **Debian 13** | [lemonade-server_${VERSION}-debian13_amd64.deb](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server_${VERSION}-debian13_amd64.deb) |"
           echo "| **Fedora 43** | [lemonade-server-${VERSION}-fc43.x86_64.rpm](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-${VERSION}-fc43.x86_64.rpm) |"
           echo "| **Fedora 44** | [lemonade-server-${VERSION}-fc44.x86_64.rpm](https://github.com/$REPO/releases/download/$TAG_NAME/lemonade-server-${VERSION}-fc44.x86_64.rpm) |"
           echo "| **macOS** | [Lemonade-${VERSION}-Darwin.pkg](https://github.com/$REPO/releases/download/$TAG_NAME/Lemonade-${VERSION}-Darwin.pkg) |"
