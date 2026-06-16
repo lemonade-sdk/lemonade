@@ -16,6 +16,7 @@
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <iomanip>
@@ -1170,22 +1171,31 @@ void Server::setup_http_logger(httplib::Server &web_server) {
     });
 }
 
-// Preflight bind probe: returns true if we can exclusively bind host_ip:port
-// (i.e. the port is free), false if it is already in use. This deliberately
-// does NOT set SO_REUSEADDR/SO_REUSEPORT (and uses SO_EXCLUSIVEADDRUSE on
-// Windows) so that a port already held by another process is reported as
-// unavailable rather than silently shared. The socket is closed immediately;
-// the real listeners bind moments later.
+// Preflight bind probe: returns true if we can bind host_ip:port (i.e. the port
+// is free), false if it is already actively held by another listener. The probe
+// MUST use the same socket options as the real listeners (see
+// exclusive_socket_options in setup_http_servers): SO_EXCLUSIVEADDRUSE on
+// Windows, and SO_REUSEADDR (but NOT SO_REUSEPORT) on POSIX. This keeps the
+// probe's result identical to what the real bind would do, in particular it
+// must still succeed over a socket left in TIME_WAIT by a just-exited server
+// (common during fast restarts and under systemd Restart=), while failing
+// against another instance that is actively listening. The socket is closed
+// immediately; the real listeners bind moments later.
 static bool port_is_available(int family, const std::string& host_ip, int port) {
     socket_t sock = socket(family, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
         // Can't probe — don't block startup; the real bind path will report any error.
         return true;
     }
-#ifdef _WIN32
     int opt = 1;
+#ifdef _WIN32
     setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
                reinterpret_cast<const char*>(&opt), sizeof(opt));
+#else
+    // Match the real listener: allow rebinding a TIME_WAIT socket so a fast
+    // restart isn't falsely reported as "port in use". Do NOT set SO_REUSEPORT,
+    // so an actively-listening duplicate still makes this bind fail.
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
 
     bool available = false;
