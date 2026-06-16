@@ -13,7 +13,7 @@ namespace lemon {
 using json = nlohmann::json;
 
 static const json DEFAULTS = {
-    {"ctx_size", 4096},
+    {"ctx_size", -1},  // -1 triggers auto-resolution (memory + arch metadata)
     {"merge_args", true},
     {"llamacpp_device", ""},
     {"llamacpp_backend", ""},  // Will be overridden dynamically
@@ -44,7 +44,8 @@ static const json DEFAULTS = {
     {"auto_evict", nullptr},          // nullptr means fallback to global config
     {"evict_idle_timeout", 300},      // Default hard idle timeout (5 mins)
     {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
-    {"evict_weight_factor", 1.0}      // Eviction-protection weight (higher = more protected)
+    {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
+    {"pinned", false}
 };
 
 
@@ -84,18 +85,19 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     } else if (recipe == "vllm") {
         keys = {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
     }
-    
+
     // Add auto-eviction options for all recipes
     keys.push_back("auto_evict");
     keys.push_back("evict_idle_timeout");
     keys.push_back("downsize_idle_timeout");
     keys.push_back("evict_weight_factor");
+    keys.push_back("pinned");
 
     return keys;
 }
 
 static bool is_empty_option(json option) {
-    return option.is_null() || 
+    return option.is_null() ||
            (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == "" || option == "auto"));
 }
@@ -238,6 +240,10 @@ json RecipeOptions::get_option(const std::string& opt) const {
     }
 #endif
     return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
+}
+
+void RecipeOptions::set_option(const std::string& opt, const json& value) {
+    options_[opt] = value;
 }
 
 #ifdef LEMONADE_CLI

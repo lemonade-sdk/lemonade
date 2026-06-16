@@ -298,6 +298,13 @@ private:
         fcntl(stop_pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
         flags = fcntl(stop_pipe_fds[1], F_GETFL);
         fcntl(stop_pipe_fds[1], F_SETFL, flags | O_NONBLOCK);
+        // Suppress SIGPIPE on the write end: if the read end is closed due to a
+        // race between stop() and run_loop cleanup, write() returns EPIPE instead
+        // of raising SIGPIPE and killing the process.
+        {
+            int nosig = 1;
+            fcntl(stop_pipe_fds[1], F_SETNOSIGPIPE, nosig);
+        }
         stop_pipe_read_ = stop_pipe_fds[0]; // read end for kqueue/drain
         stop_pipe_write_ = stop_pipe_fds[1]; // write end for signaling
 
@@ -318,11 +325,14 @@ private:
 
         struct kevent change_events[2] = { ev_dir, ev_stop };
         if (kevent(kq_, change_events, 2, nullptr, 0, nullptr) < 0) {
+            // Zero pipe members BEFORE any close so a concurrent stop() sees
+            // -1 and skips the pipe write, preventing SIGPIPE if the read end
+            // is closed while stop_pipe_write_ still looks valid.
+            stop_pipe_read_ = -1;
+            stop_pipe_write_ = -1;
             ::close(stop_pipe_fds[0]);
             ::close(stop_pipe_fds[1]);
             ::close(dir_fd_);
-            stop_pipe_read_ = -1;
-            stop_pipe_write_ = -1;
             dir_fd_ = -1;
             ::close(kq_);
             kq_ = -1;

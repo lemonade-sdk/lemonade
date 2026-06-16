@@ -42,7 +42,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "no_broadcast": false,
   "extra_models_dir": "",
   "models_dir": "auto",
-  "ctx_size": 4096,
+  "ctx_size": -1,
   "offline": false,
   "no_fetch_executables": false,
   "disable_model_filtering": false,
@@ -106,7 +106,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
-| `ctx_size` | int | 4096 | Default context size for LLM models |
+| `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `offline` | bool | false | Skip model downloads |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |

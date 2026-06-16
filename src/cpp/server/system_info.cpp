@@ -445,12 +445,16 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"cpu", {"x86_64", "arm64"}},
     }},
 
-    // whisper.cpp - Windows: NPU and CPU; Linux: CPU and Vulkan; macOS: Metal
+    // whisper.cpp - NPU, ROCm GPU, Vulkan, CPU, Metal
     {"whispercpp", "npu", {"windows"}, {
         {"amd_npu", {"XDNA2"}},
     }},
-    {"whispercpp", "vulkan", {"linux"}, {
+    {"whispercpp", "rocm", {"windows", "linux"}, {
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},
+    }},
+    {"whispercpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},
+        {"amd_gpu", {}},
     }},
     {"whispercpp", "cpu", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},

@@ -320,7 +320,9 @@ class ServerConfig {
 
     const fullUrl = endpoint.startsWith('http')
       ? endpoint
-      : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+      : endpoint.startsWith('/internal/')
+        ? `${this.getServerBaseUrl()}${endpoint}`
+        : `${this.getApiBaseUrl()}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
     const options = { ...opts };
 

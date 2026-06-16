@@ -114,6 +114,65 @@ The Omni Model editor only offers already-registered compatible models for each 
 
 If a component model is deleted later, the Omni Model entry remains registered but is hidden from the chat picker until every referenced component is available again.
 
+### Share a collection: export, import, and Hugging Face
+
+`lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
+collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
+an import-ready [`/v1/pull`](../../api/lemonade.md#post-v1pull) body. The file carries `model_name`,
+`recipe`, `components`, and a `models` array embedding each component's definition, so it is
+self-contained — the importing machine does not need any of the components registered beforehand.
+Exported files never contain the user-specific runtime fields `suggested`, `created`, or `downloaded` —
+the server regenerates those on import (`suggested` is set to `true` for registered models;
+`downloaded` is computed from local files).
+
+The same file works, verbatim, in three places:
+
+- `lemonade import <CollectionName>.json` on the CLI (or **File > New Omni Model > From JSON** in the
+  desktop app).
+- `POST /v1/pull` with the file contents as the request body.
+- Uploaded to a Hugging Face model repo **named after the collection**, so that the repo contains
+  `<RepoName>.json`. `lemonade pull <org>/<repo>` looks for the manifest named after the repo,
+  then registers and downloads everything in it. The built-in `LMX-Omni-*` collections are
+  distributed this way.
+
+On import, component names that are already registered keep their local definition (differences from
+the embedded definition are logged as warnings); unknown components are registered as `user.*` models
+from the embedded definitions.
+
+Example collection file:
+
+```json
+{
+    "model_name": "user.MyKit",
+    "recipe": "collection.omni",
+    "checkpoints": { "main": "" },
+    "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny"],
+    "models": [
+        {
+            "model_name": "Qwen3-0.6B-GGUF",
+            "recipe": "llamacpp",
+            "checkpoints": { "main": "unsloth/Qwen3-0.6B-GGUF:Q4_0" },
+            "labels": ["reasoning"],
+            "recipe_options": {},
+            "size": 0.38
+        },
+        {
+            "model_name": "Whisper-Tiny",
+            "recipe": "whispercpp",
+            "checkpoints": {
+                "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
+                "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+            },
+            "labels": ["transcription", "realtime-transcription"],
+            "recipe_options": {},
+            "size": 0.075
+        }
+    ],
+    "labels": [],
+    "recipe_options": {}
+}
+```
+
 ### Register via API
 
 The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Use this when integrating Lemonade into another app or script:
