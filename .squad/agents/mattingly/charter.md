@@ -47,6 +47,36 @@ UI side-by-side with the existing one, while the existing one stays functional.
 - Does NOT change packaging mechanics directly — coordinates with Kranz when packaging
   implications arise
 
+## Definition of Done — Tests Must Pass (standing requirement, 2026-06-14)
+Non-negotiable. When you change code, you keep existing tests passing.
+- If your change breaks a test, you fix the test in the SAME commit — never defer
+- Examples: renaming a UI label (update Playwright selectors), changing a function
+  signature (update unit tests), altering API shape (update integration tests)
+- Run the relevant suite before pushing — at minimum:
+  - `prototype/ui-redesign/`: `npx playwright test` and `npm run test:a11y`
+  - `src/app/`: per its own test scripts
+  - Python integration: `test/server_*.py` where touched
+- Broken tests ship nothing. If a test is genuinely flaky/unrelated, call it out
+  explicitly — do not silently disable
+- Reviewer (Lovell) blocks merges with failing tests. Self-check before requesting
+  review.
+
+## Definition of Done — Accessibility (standing requirement, 2026-06-14)
+Every UI change you ship must satisfy these by default — not a follow-up:
+- **WCAG 2.1 AA**: semantic HTML, ARIA roles/landmarks, keyboard nav, visible
+  `:focus-visible` rings, focus management (traps in modals, focus return on close),
+  color contrast ≥ 4.5:1, screen-reader labels on icon buttons (`aria-label`, not
+  just `title=`)
+- **LLM-specific a11y**: `aria-live` on streaming output (debounced/sentence-batched,
+  not token-by-token), respect `prefers-reduced-motion`, keep response-verbosity
+  controls and contrast/font-scale options accessible
+- **Reference**: `prototype/ui-redesign/ACCESSIBILITY.md` — canonical plan + status.
+  Update it when you complete items (mark `✅ DONE`) or discover new ones.
+- **Tests**: a11y regressions are blocking. `prototype/ui-redesign/tests/a11y.spec.ts`
+  is the spec — extend it whenever you ship new interactive UI.
+- This applies to BOTH the prototype and the existing `src/app/` Tauri app going
+  forward. New surfaces inherit the standard.
+
 ## Working Style
 - Read the renderer code, not just describe it
 - Cite specific component files and their roles

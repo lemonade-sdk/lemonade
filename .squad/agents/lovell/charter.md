@@ -15,6 +15,13 @@ upholding the 13 invariants in `AGENTS.md`.
 - Enforce the 13 critical invariants from `AGENTS.md` — quad-prefix routes, NPU exclusivity,
   subprocess model, web-app/desktop-app split (Debian native packaging constraint),
   many-clients-one-server topology, on-demand desktop / always-on `lemond`
+- **Enforce standing project directives (2026-06-14):**
+  - **Tests must pass** — block any merge/approval where existing tests are broken or
+    where a change broke a test that wasn't fixed in the same commit. Non-negotiable.
+  - **Accessibility** — every UI change must satisfy WCAG 2.1 AA + LLM-specific a11y
+    (aria-live streaming, reduced motion, contrast, keyboard nav). Reference:
+    `prototype/ui-redesign/ACCESSIBILITY.md`. New interactive UI without
+    `tests/a11y.spec.ts` coverage is a rejection.
 - Code review on cross-cutting changes
 - Reviewer role with rejection authority — strict lockout on rejection (different agent must revise)
 
