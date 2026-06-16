@@ -206,12 +206,6 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
-    // Parse req.body as JSON into |out|.  Returns true on success.
-    // On failure writes a 400 response and returns false — callers should
-    // return immediately when this returns false.
-    // Use this instead of nlohmann::json::parse(req.body) directly in any
-    // handler where a JSON body is required, so that an empty or malformed
-    // body produces a 400 (client error) rather than a 500 (server error).
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,
                                   nlohmann::json& out);

@@ -3289,18 +3289,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         res.set_content(error.dump(), "application/json");
     }
 }
-
-// ---------------------------------------------------------------------------
-// parse_required_json_body
-//
-// Shared helper for handlers that require a non-empty JSON request body.
-// Returns true and populates |out| on success.
-// Returns false and writes a 400 response on failure so the caller can
-// return immediately.  This ensures that an empty or malformed body always
-// produces a 400 (client error) rather than a 500 (server error), which
-// previously occurred because nlohmann::json::parse("") throws an exception
-// that was caught by the generic std::exception handler and mapped to 500.
-// ---------------------------------------------------------------------------
 bool Server::parse_required_json_body(const httplib::Request& req,
                                       httplib::Response& res,
                                       nlohmann::json& out) {
