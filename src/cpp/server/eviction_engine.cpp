@@ -69,6 +69,9 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
             WrappedServer* server = server_ptr.get();
             if (!server) continue;
 
+            // Pinned models must never be auto-evicted or downsized
+            if (server->is_pinned()) continue;
+
             // Check auto_evict config
             bool auto_evict = RuntimeConfig::global()->auto_evict();
             auto recipe_opts = server->get_recipe_options().to_json();
@@ -173,4 +176,3 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
 }
 
 } // namespace lemon
-

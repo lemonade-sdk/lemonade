@@ -6,6 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <optional>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "wrapped_server.h"
@@ -65,7 +66,8 @@ public:
                     const ModelInfo& model_info,
                     RecipeOptions options,
                     bool do_not_upgrade = true,
-                    bool allow_reload_on_option_change = false);
+                    bool allow_reload_on_option_change = false,
+                    std::optional<bool> pinned = std::nullopt);
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -75,6 +77,12 @@ public:
     json get_all_loaded_models() const;
 
     json get_max_model_limits() const;
+
+    // Get pinned model counts per type
+    json get_pinned_model_counts() const;
+
+    // Pin or unpin a model
+    void set_model_pinned(const std::string& model_name, bool pinned);
 
     bool is_model_loaded() const;
 
@@ -154,6 +162,7 @@ private:
     bool reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options);
     bool is_watchdog_reset_response(const json& response) const;
     int count_servers_by_type(ModelType type) const;
+    int count_pinned_servers_by_type(ModelType type) const;
     WrappedServer* find_lru_server_by_type(ModelType type) const;
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;

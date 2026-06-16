@@ -49,6 +49,8 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
+| `pin MODEL_NAME`    | Pin a loaded model to prevent auto-eviction. See options [below](#options-for-pin-and-unpin). |
+| `unpin MODEL_NAME`  | Unpin a loaded model to allow auto-eviction. See options [below](#options-for-pin-and-unpin). |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 
 ### Benchmarking
@@ -303,11 +305,21 @@ lemonade import model-with-id-alias.json
 
 ## Options for load
 
-The `load` command loads a model into memory for inference. It supports recipe-specific options that are passed to the backend server:
+The `load` command loads a model into memory for inference. It supports both general options and recipe-specific options that are passed to the backend server:
 
 ```bash
 lemonade load MODEL_NAME [options]
 ```
+
+### General Options
+
+The following options apply to all model loads:
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--pinned` | Pin the model in memory to prevent auto-eviction under capacity limits. | `false` |
+| `--save-options` | Persist the supplied recipe options in `recipe_options.json` for future loads. | `false` |
+| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model (if `false`, per-model replaces global entirely). | `true` |
 
 ### Recipe-Specific Options
 
@@ -350,13 +362,10 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--whispercpp BACKEND` | WhisperCpp backend to use | Auto-detected |
-| `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model | `true` |
 
 **Notes:**
-- Use `--save-options` to persist your configuration for the model
 - Unspecified options will use the backend's default values
 - Backend options (`--llamacpp`, `--sdcpp`, `--whispercpp`) are auto-detected based on system capabilities
-- `--merge-args` controls whether `*_args` from global config are merged with per-model args (default: merge). Use `--no-merge-args` to replace global args entirely with per-model args.
 
 **Examples:**
 
@@ -381,6 +390,25 @@ lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
 
 # Load an image generation model with custom settings
 lemonade load Z-Image-Turbo --sdcpp rocm --steps 8 --cfg-scale 1 --width 1024 --height 1024
+```
+
+## Options for pin and unpin
+
+The `pin` and `unpin` commands dynamically modify the pinned status of a currently loaded model. Pinned models are excluded from Least Recently Used (LRU) eviction.
+
+```bash
+lemonade pin MODEL_NAME
+lemonade unpin MODEL_NAME
+```
+
+**Examples:**
+
+```bash
+# Pin a loaded model to prevent it from being auto-evicted
+lemonade pin Qwen3-0.6B-GGUF
+
+# Unpin a model to allow it to be evicted when slots are full
+lemonade unpin Qwen3-0.6B-GGUF
 ```
 
 ## Options for run

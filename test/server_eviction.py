@@ -4,7 +4,11 @@ import unittest
 import requests
 import time
 from utils.server_base import ServerTestBase, pull_model_with_retry
-from utils.test_models import ENDPOINT_TEST_MODEL, TIMEOUT_MODEL_OPERATION, TIMEOUT_DEFAULT
+from utils.test_models import (
+    ENDPOINT_TEST_MODEL,
+    TIMEOUT_MODEL_OPERATION,
+    TIMEOUT_DEFAULT,
+)
 
 EVICTION_POLL_INTERVAL = 0.5
 EVICTION_POLL_TIMEOUT = 10
@@ -41,7 +45,9 @@ class EvictionTests(ServerTestBase):
                 return model
         return None
 
-    def _wait_for_model_status(self, model_name, target_statuses, timeout=EVICTION_POLL_TIMEOUT):
+    def _wait_for_model_status(
+        self, model_name, target_statuses, timeout=EVICTION_POLL_TIMEOUT
+    ):
         """Poll until the model reaches one of the target statuses, or timeout."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -59,12 +65,14 @@ class EvictionTests(ServerTestBase):
             headers["Authorization"] = f"Bearer {admin_key}"
 
         response = requests.post(
-            f"{self.base_url}/internal/simulate-vram-pressure",
+            f"{self.base_url.replace('/api/v1', '')}/internal/simulate-vram-pressure",
             json={"pct": pct},
             headers=headers,
             timeout=TIMEOUT_DEFAULT,
         )
-        self.assertEqual(response.status_code, 200, f"Simulate VRAM failed: {response.text}")
+        self.assertEqual(
+            response.status_code, 200, f"Simulate VRAM failed: {response.text}"
+        )
 
     def test_eviction_vram_pressure(self):
         """VRAM pressure evicts the least-recently-used model."""
@@ -74,7 +82,7 @@ class EvictionTests(ServerTestBase):
             headers["Authorization"] = f"Bearer {admin_key}"
 
         requests.post(
-            f"{self.base_url}/internal/set",
+            f"{self.base_url.replace('/api/v1', '')}/internal/set",
             json={"auto_evict": True, "auto_evict_threshold_pct": 0.90},
             headers=headers,
         )
@@ -146,7 +154,9 @@ class EvictionTests(ServerTestBase):
         )
 
         # Let it slip into the downsized (degraded) tier
-        info = self._wait_for_model_status(ENDPOINT_TEST_MODEL, {"downsized"}, timeout=15)
+        info = self._wait_for_model_status(
+            ENDPOINT_TEST_MODEL, {"downsized"}, timeout=15
+        )
         self.assertIsNotNone(info)
         self.assertEqual(info.get("status"), "downsized")
 
@@ -162,7 +172,9 @@ class EvictionTests(ServerTestBase):
 
         # After serving, the model should be resident again (ready/in_use), not downsized.
         info_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
-        self.assertIsNotNone(info_after, "Model should still be loaded after the request")
+        self.assertIsNotNone(
+            info_after, "Model should still be loaded after the request"
+        )
         self.assertIn(info_after.get("status"), ("ready", "in_use"))
 
     def test_weight_factor_protects_model(self):
@@ -174,7 +186,7 @@ class EvictionTests(ServerTestBase):
             headers["Authorization"] = f"Bearer {admin_key}"
 
         requests.post(
-            f"{self.base_url}/internal/set",
+            f"{self.base_url.replace('/api/v1', '')}/internal/set",
             json={"auto_evict": True, "auto_evict_threshold_pct": 0.90},
             headers=headers,
         )
@@ -218,7 +230,7 @@ class EvictionTests(ServerTestBase):
         # Very short downsize timeout so the engine is constantly trying to
         # downsize the model while we churn it underneath.
         requests.post(
-            f"{self.base_url}/internal/set",
+            f"{self.base_url.replace('/api/v1', '')}/internal/set",
             json={"auto_evict": True},
             headers=headers,
         )
