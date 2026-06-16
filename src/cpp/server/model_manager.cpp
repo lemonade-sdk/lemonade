@@ -250,51 +250,136 @@ static bool skip_gguf_value(std::istream& in, uint32_t type) {
     return size > 0 && skip_bytes(in, size);
 }
 
-static int64_t read_gguf_context_length(const std::string& path) {
+// All GGUF metadata extracted in a single pass over the KV header.
+// Replaces the previous three separate readers (context_length, arch_info, capabilities)
+// that each opened the file independently.
+struct GgufMetadata {
+    std::string architecture;
+    int64_t context_length = 0;
+    int64_t block_count = 0;
+    int64_t embedding_length = 0;
+    int64_t head_count_kv = 0;
+    int64_t key_length = 0;
+    GgufCapabilities caps;
+};
+
+static bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
     std::ifstream in(path_from_utf8(path), std::ios::binary);
-    if (!in) return 0;
+    if (!in) return false;
 
     char magic[4] = {};
     in.read(magic, sizeof(magic));
-    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return 0;
+    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return false;
 
     uint32_t version = 0;
     uint64_t tensor_count = 0;
     uint64_t kv_count = 0;
-    if (!read_le(in, version) || !read_le(in, tensor_count) || !read_le(in, kv_count)) return 0;
+    if (!read_le(in, version) || !read_le(in, tensor_count) || !read_le(in, kv_count)) return false;
     (void)version;
     (void)tensor_count;
 
-    std::string architecture;
     int64_t pending_context_length = 0;
 
     for (uint64_t i = 0; i < kv_count; ++i) {
         std::string key;
         uint32_t type = 0;
-        if (!read_gguf_string(in, key) || !read_le(in, type)) return 0;
+        if (!read_gguf_string(in, key) || !read_le(in, type)) return false;
 
+        // Read architecture
         if (key == "general.architecture" && type == 8) {
-            if (!read_gguf_string(in, architecture)) return 0;
-            if (pending_context_length > 0) return pending_context_length;
+            if (!read_gguf_string(in, out.architecture)) return false;
+            if (pending_context_length > 0) {
+                out.context_length = pending_context_length;
+            }
             continue;
         }
 
-        const bool context_key = !architecture.empty() && key == architecture + ".context_length";
-        const bool possible_context_key = architecture.empty() && key.size() > std::strlen(".context_length") &&
+        // Context length
+        const bool context_key = !out.architecture.empty() && key == out.architecture + ".context_length";
+        const bool possible_context_key = out.architecture.empty() && key.size() > std::strlen(".context_length") &&
                                           ends_with_ignore_case(key, ".context_length");
         if (context_key || possible_context_key) {
             int64_t value = 0;
-            if (!read_gguf_integer_value(in, type, value)) return 0;
-            if (value <= 0) return 0;
-            if (context_key) return value;
-            pending_context_length = value;
+            if (read_gguf_integer_value(in, type, value) && value > 0) {
+                if (context_key) {
+                    out.context_length = value;
+                } else {
+                    pending_context_length = value;
+                }
+            }
             continue;
         }
 
-        if (!skip_gguf_value(in, type)) return 0;
+        // Architecture fields for KV cache estimation
+        if (!out.architecture.empty()) {
+            if (key == out.architecture + ".block_count") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.block_count = value;
+                continue;
+            }
+            if (key == out.architecture + ".embedding_length") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.embedding_length = value;
+                continue;
+            }
+            if (key == out.architecture + ".attention.head_count_kv") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.head_count_kv = value;
+                continue;
+            }
+            if (key == out.architecture + ".attention.key_length") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.key_length = value;
+                continue;
+            }
+        }
+
+        // Capability detection (vision, tool-calling, MTP)
+        if (type == 4) {
+            uint32_t val = 0;
+            if (read_le(in, val)) {
+                if (contains_ignore_case(key, "nextn_predict_layers") && val > 0)
+                    out.caps.mtp = true;
+            }
+        } else if (type == 8) {
+            std::string value;
+            if (read_gguf_string(in, value)) {
+                inspect_gguf_string(key, value, out.caps);
+            }
+        } else if (type == 9) {
+            // Array — check string elements for capability hints
+            uint32_t elem_type = 0;
+            uint64_t count = 0;
+            if (read_le(in, elem_type) && read_le(in, count)) {
+                if (elem_type == 8) {
+                    for (uint64_t j = 0; j < count; ++j) {
+                        std::string value;
+                        if (!read_gguf_string(in, value)) return false;
+                        inspect_gguf_string(key, value, out.caps);
+                    }
+                } else if (elem_type != 9) {
+                    uint64_t elem_size = gguf_scalar_size(elem_type);
+                    if (elem_size == 0) return false;
+                    if (!skip_bytes(in, count * elem_size)) return false;
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            if (!skip_gguf_value(in, type)) return false;
+        }
     }
 
-    return pending_context_length;
+    if (out.context_length == 0 && pending_context_length > 0) {
+        out.context_length = pending_context_length;
+    }
+    return true;
 }
 
 // Candidate roots that FLM may use to store models. FLM resolves its model
@@ -389,23 +474,27 @@ static int64_t read_flm_max_context_window(const ModelInfo& info) {
     return 0;
 }
 
-static void populate_static_max_context_window(ModelInfo& info) {
+static void populate_model_metadata(ModelInfo& info) {
     info.max_context_window = 0;
     if (!info.downloaded) return;
 
     if (info.recipe == "llamacpp") {
         std::string gguf_path = info.resolved_path();
         if (!gguf_path.empty() && ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
-            info.max_context_window = read_gguf_context_length(gguf_path);
+            GgufMetadata meta;
+            if (read_gguf_metadata(meta, gguf_path)) {
+                info.max_context_window = meta.context_length;
+                info.gguf_block_count = meta.block_count;
+                info.gguf_embedding_length = meta.embedding_length;
+                info.gguf_head_count_kv = meta.head_count_kv;
+                info.gguf_key_length = meta.key_length;
 
-            // GGUF vision/tool metadata are LLM capabilities. Do not apply
-            // them to embedding/reranking models, otherwise labels such as
-            // tool-calling would reclassify the model away from its endpoint
-            // type and break /embeddings or /rerank.
-            if (info.type == ModelType::LLM) {
-                std::ifstream in(path_from_utf8(gguf_path), std::ios::binary);
-                if (in) {
-                    apply_gguf_capability_labels(info.labels, read_gguf_capabilities(in));
+                // GGUF vision/tool metadata are LLM capabilities. Do not apply
+                // them to embedding/reranking models, otherwise labels such as
+                // tool-calling would reclassify the model away from its endpoint
+                // type and break /embeddings or /rerank.
+                if (info.type == ModelType::LLM) {
+                    apply_gguf_capability_labels(info.labels, meta.caps);
                 }
             }
         }
@@ -2133,7 +2222,7 @@ void ModelManager::build_cache() {
     }
 
     for (auto& [name, info] : all_models) {
-        populate_static_max_context_window(info);
+        populate_model_metadata(info);
         models_cache_[name] = info;
     }
 
@@ -2223,7 +2312,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
         info.downloaded = are_required_checkpoints_complete(info);
     }
 
-    populate_static_max_context_window(info);
+    populate_model_metadata(info);
     models_cache_[model_name] = info;
     rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
@@ -2265,7 +2354,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
                           << model_name << "'" << std::endl;
                 return;
             }
-            populate_static_max_context_window(it->second);
+            populate_model_metadata(it->second);
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded
                       << ", resolved_path=" << it->second.resolved_path() << std::endl;

@@ -13,7 +13,7 @@ namespace lemon {
 using json = nlohmann::json;
 
 static const json DEFAULTS = {
-    {"ctx_size", 4096},
+    {"ctx_size", -1},  // -1 triggers auto-resolution (memory + arch metadata)
     {"merge_args", true},
     {"llamacpp_device", ""},
     {"llamacpp_backend", ""},  // Will be overridden dynamically
@@ -240,6 +240,10 @@ json RecipeOptions::get_option(const std::string& opt) const {
     }
 #endif
     return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
+}
+
+void RecipeOptions::set_option(const std::string& opt, const json& value) {
+    options_[opt] = value;
 }
 
 #ifdef LEMONADE_CLI

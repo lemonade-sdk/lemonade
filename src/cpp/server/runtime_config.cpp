@@ -4,7 +4,6 @@
 #include "lemon/utils/path_utils.h"
 #include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <mutex>
@@ -432,8 +431,8 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'ctx_size' must be an integer");
         }
-        if (value.get<int>() <= 0) {
-            throw std::invalid_argument("'ctx_size' must be positive");
+        if (value.get<int>() < -1) {
+            throw std::invalid_argument("'ctx_size' must be >= -1");
         }
     } else if (key == "auto_evict") {
         if (!value.is_boolean()) {

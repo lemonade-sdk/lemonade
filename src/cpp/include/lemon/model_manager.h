@@ -83,6 +83,12 @@ struct ModelInfo {
     bool hf_load = false;
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
+
+    // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
+    int64_t gguf_block_count = 0;       // number of transformer blocks (layers)
+    int64_t gguf_embedding_length = 0;  // hidden size
+    int64_t gguf_head_count_kv = 0;     // KV attention heads
+    int64_t gguf_key_length = 0;        // key head dimension
     RecipeOptions recipe_options;
 
     // Multi-model support fields

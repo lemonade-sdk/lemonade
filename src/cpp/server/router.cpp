@@ -12,6 +12,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/error_types.h"
 #include "lemon/recipe_options.h"
+#include "lemon/auto_tune.h"
 #include <iostream>
 #include <algorithm>
 #include "lemon/utils/aixlog.hpp"
@@ -361,8 +362,6 @@ void Router::load_model(const std::string& model_name,
     RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions effective_options = options.inherit(model_info.recipe_options.inherit(default_opt));
 
-    LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
-
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
@@ -486,6 +485,16 @@ void Router::load_model(const std::string& model_name,
                 throw SlotsPinnedException(model_type_to_string(model_type));
             }
         }
+
+        // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
+        // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
+        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        if (auto_ctx > 0) {
+            LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
+            effective_options.set_option("ctx_size", auto_ctx);
+        }
+
+        LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
         // Create new backend server
         std::unique_ptr<WrappedServer> new_server = create_backend_server(model_info);
