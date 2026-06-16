@@ -1049,6 +1049,8 @@ curl http://localhost:13305/v1/models?show_all=true
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
+  - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
+  - `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{model_id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
 
 
 ### Model Labels
@@ -1116,7 +1118,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF
 
 ### Response format
 
-Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above.
+Returns a single model object with the same fields as described in the [models list endpoint](#get-v1models) above. For Omni collections (`recipe: "collection.omni"`), the object additionally carries `components` (ordered component names) and `models` (each component's full model object) — see the [collection file documentation](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ```json
 {

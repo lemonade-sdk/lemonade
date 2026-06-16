@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { serverFetch } from "./utils/serverConfig";
-import { ModelInfo } from "./utils/modelData";
+import { ModelInfo, downloadModelExportFile } from "./utils/modelData";
 import { useSystem } from "./hooks/useSystem";
 import { writeClipboard } from "./utils/clipboardUtils";
 import {
@@ -93,10 +93,10 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModelNameCopied, setIsModelNameCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const exportModelBtn = useRef<HTMLAnchorElement | null>(null);
   const modelNameCopyTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch options when modal opens
@@ -110,6 +110,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       modelNameCopyTimeoutIdRef.current = null;
     }
     setLoadError(null);
+    setExportError(null);
     setModelInfo(undefined);
     setModelName(model ?? "");
     setModelUrl("");
@@ -313,30 +314,17 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     }
   };
 
-  const handleModelExport = () => {
-    let modelName = (modelInfo?.id as string).startsWith("user.") ? modelInfo?.id : `user.${modelInfo?.id}`;
-
-    let modelToExport = {
-      "model_name": modelName,
-      "downloaded": modelInfo?.downloaded,
-      "labels": modelInfo?.labels,
-      "recipe": modelInfo?.recipe,
-      "recipe_options": modelInfo?.recipe_options,
-      "size": modelInfo?.size,
-      "checkpoints": modelInfo?.checkpoints,
-      "image_defaults": modelInfo?.image_defaults
-    };
-
-    if(!modelInfo?.checkpoints) {
-      Object.assign(modelToExport, {checkpoint: modelInfo?.checkpoint});
+  const handleModelExport = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    // The shared helper fetches the live /models/{id} object and saves the
+    // normalized, import-ready file (same shape the CLI export produces).
+    event.preventDefault();
+    setExportError(null);
+    try {
+      await downloadModelExportFile(modelInfo?.id as string);
+    } catch (error) {
+      console.error('Failed to export model:', error);
+      setExportError(error instanceof Error ? error.message : 'Failed to export model.');
     }
-
-    const model = JSON.stringify(modelToExport);
-    const blob = new Blob([model], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    exportModelBtn!.current!.href = url;
-    exportModelBtn!.current!.download = modelToExport?.model_name ? `${modelToExport?.model_name}.json` as string: 'model.json';
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   const handleCancel = () => {
@@ -707,6 +695,9 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           </div>
         )}
 
+        {exportError && (
+          <div className="settings-export-error">{exportError}</div>
+        )}
         <div className="settings-footer">
           <button
             className="settings-reset-button"
@@ -715,7 +706,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           >
             Reset All
           </button>
-          <a className="settings-save-button" ref={exportModelBtn} onClick={handleModelExport} href="" download="">Export Model</a>
+          <a className="settings-save-button" onClick={handleModelExport} href="">Export Model</a>
           <button
             className="settings-save-button"
             onClick={handleCancel}
