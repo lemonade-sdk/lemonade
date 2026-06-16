@@ -1684,7 +1684,14 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     res.set_content(response.dump(), "application/json");
 }
 
-nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+// Maximum collection-component nesting depth embedded in "models" arrays.
+// Collection components are normally leaf models, but nothing prevents
+// registering a collection as a component of another collection — including
+// cyclically — so the embedding recursion must be bounded.
+static constexpr int kMaxCollectionEmbedDepth = 3;
+
+nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info,
+                                          int depth) {
     std::vector<std::string> public_components;
     public_components.reserve(info.components.size());
     for (const auto& component : info.components) {
@@ -1745,6 +1752,23 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         if (info.image_defaults.flow_shift > 0.0f)
             img_def["flow_shift"] = info.image_defaults.flow_shift;
         model_json["image_defaults"] = img_def;
+    }
+
+    // Collections (Omni) additionally embed each component's full model object,
+    // in component order, under "models". Embedding is bounded by
+    // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
+    // cannot recurse unboundedly.
+    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+        nlohmann::json component_models = nlohmann::json::array();
+        for (const auto& component : info.components) {
+            if (!model_manager_->model_exists(component)) {
+                continue;
+            }
+            auto comp_info = model_manager_->get_model_info(component);
+            component_models.push_back(model_info_to_json(
+                model_manager_->get_public_model_name(component), comp_info, depth + 1));
+        }
+        model_json["models"] = component_models;
     }
 
     return model_json;
@@ -3322,12 +3346,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 bad_request(*err);
                 return;
             }
-            // Canonicalize components so downstream cache lookups
-            // (check_component_downloaded, update_model_in_cache) succeed
-            // even when the client passed a public alias (bare name) rather
-            // than the canonical `user.X` / `builtin.X` form.
-            for (auto& c : request_json["components"]) {
-                c = model_manager_->resolve_model_name(c.get<std::string>());
+            // A body carrying a `models` array is a collection file import: its
+            // components may not be registered yet (download_model registers them
+            // from the embedded definitions and canonicalizes the list itself).
+            // A pointer body (HF-backed collection) has no `components` at all —
+            // they come from the downloaded manifest. Only pre-canonicalize an
+            // inline `components` list whose entries must already exist.
+            if (request_json.contains("components") && request_json["components"].is_array() &&
+                (!request_json.contains("models") || !request_json["models"].is_array())) {
+                // Canonicalize components so downstream cache lookups
+                // (check_component_downloaded, update_model_in_cache) succeed
+                // even when the client passed a public alias (bare name) rather
+                // than the canonical `user.X` / `builtin.X` form.
+                for (auto& c : request_json["components"]) {
+                    c = model_manager_->resolve_model_name(c.get<std::string>());
+                }
             }
         }
 

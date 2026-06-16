@@ -1529,26 +1529,16 @@
         }
     },
     "LMX-Omni-52B-Halo": {
-        "checkpoint": "",
+        "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
         "recipe": "collection.omni",
         "suggested": true,
-        "components": [
-            "Qwen3.6-35B-A3B-MTP-GGUF",
-            "Flux-2-Klein-9B-GGUF",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
+        "size": 44.77
     },
     "LMX-Omni-5.5B-Lite": {
-        "checkpoint": "",
+        "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
         "recipe": "collection.omni",
         "suggested": true,
-        "components": [
-            "Qwen3.5-4B-MTP-GGUF",
-            "SD-Turbo",
-            "Whisper-Tiny",
-            "kokoro-v1"
-        ]
+        "size": 9.30
     },
     "Ultra Collection": {
         "checkpoint": "",

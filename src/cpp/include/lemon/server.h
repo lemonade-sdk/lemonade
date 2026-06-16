@@ -220,8 +220,12 @@ private:
     // missing. Shared by handle_load and auto_load_model_if_needed.
     void ensure_collection_loaded(const ModelInfo& info);
 
-    // Helper function to convert ModelInfo to JSON (used by models endpoints)
-    nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info);
+    // Helper function to convert ModelInfo to JSON (used by models endpoints).
+    // `depth` tracks collection-component nesting; embedding stops past
+    // kMaxCollectionEmbedDepth so a cyclic collection registration cannot
+    // recurse unboundedly.
+    nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info,
+                                      int depth = 0);
 
     // Warm model list cache in the background after startup dependencies are initialized
     void start_model_cache_warmup();

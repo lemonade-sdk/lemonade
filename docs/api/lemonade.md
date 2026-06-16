@@ -114,13 +114,14 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register an Omni-Model**
 
-An omni collection is a collection type that bundles several already-registered models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
+An omni collection is a collection type that bundles several models into a single entry that can be loaded, pulled, or deleted as a unit. Use `recipe: "collection.omni"` with a `components` array instead of `checkpoint`.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `model_name` | Yes | Namespaced model name, e.g. `user.MyKit`. |
 | `recipe` | Yes | Must be `"collection.omni"`. |
-| `components` | Yes | Non-empty array of registered model names. Each entry must already exist in the registry (built-in or a previously registered `user.*` model). |
+| `components` | Yes | Ordered, non-empty array of model names. Each component must be a regular model. |
+| `models` | No | Ordered array of full model definitions, one per `components` entry (the same fields as single-model registration, keyed by `model_name`). When present, component names that are not yet registered are registered from these definitions; names that already exist keep their local definition. When absent, every `components` entry must already exist in the registry (built-in or a previously registered `user.*` model). |
 
 Components do not need to be downloaded already — any not-yet-downloaded components are pulled by the same call. Deleting the collection removes only the collection entry; components stay on disk.
 
@@ -135,6 +136,15 @@ curl -X POST http://localhost:13305/v1/pull \
     "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
   }'
 ```
+
+### Import an Exported Model File
+
+Files written by `lemonade export` (and the desktop app's Export button) are import-ready
+`/v1/pull` request bodies — POST the file contents verbatim to register and install the model.
+This works for regular models and collections alike; exported collection files additionally
+carry `components` plus a `models` array embedding each component's definition (see the
+`models` parameter above). For the file format and the export/import/Hugging Face workflows,
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
 
 ### Streaming Response (stream=true)
 

@@ -5316,6 +5316,14 @@ input::-webkit-calendar-picker-indicator {
     flex-shrink: 0;
 }
 
+.settings-export-error {
+    padding: 8px 24px;
+    color: var(--toast-error-text);
+    font-size: 13px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
 .settings-reset-button {
     padding: 8px 16px;
     background: transparent;

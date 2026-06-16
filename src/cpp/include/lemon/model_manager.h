@@ -238,8 +238,40 @@ private:
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
+    // Remove a user model entry from user_models.json (no file deletion).
+    // Used to roll back a collection registered earlier in the same call when
+    // its component resolution fails.
+    void unregister_user_model(const std::string& model_name);
+
     std::string get_user_models_file();
     std::string get_recipe_options_file();
+
+    // Collection manifests (recipe="collection.omni" with an HF-repo checkpoint):
+    // the full collection definition lives on Hugging Face as an exported
+    // collection JSON (conventionally <CollectionName>.json; discovered by
+    // content, not filename). fetch_collection_manifest downloads/refreshes it
+    // into the HF cache (honoring do_not_upgrade and offline mode) and returns
+    // the parsed manifest object.
+    nlohmann::json fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade);
+
+    // Resolve a collection's component list against the registry: known names
+    // keep the local definition (local-wins, drift logged); unknown names are
+    // registered as `user.` models from their inline definition in
+    // `component_defs` (the `models` array of a collection file/manifest).
+    // Returns the components as canonical cache names, preserving order.
+    std::vector<std::string> register_components(const nlohmann::json& component_names,
+                                                 const nlohmann::json& component_defs);
+
+    // Resolve an HF-backed collection's components at pull time: fetch the
+    // manifest, then register_components() against its components/models arrays.
+    std::vector<std::string> resolve_collection_components_from_manifest(
+        const std::string& repo_id, bool do_not_upgrade);
+
+    // Populate a collection's components from a manifest already cached on disk
+    // (offline, no registration). Used by build_cache so a pulled collection keeps
+    // its components across restarts. No-op if the manifest is not cached.
+    // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
+    void populate_collection_components_from_cache_locked(ModelInfo& info);
 
     // Cache management
     void build_cache();
