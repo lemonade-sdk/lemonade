@@ -63,6 +63,17 @@ def get_arg(flag, default):
     return default
 
 
+# lemond detects the system llama-server version by running
+# `llama-server --version` and reading one line of stdout (see
+# SystemInfo::get_system_llamacpp_version in src/cpp/server/system_info.cpp).
+# The real binary prints a version line and exits immediately. We must mirror
+# that: otherwise the probe blocks forever on our long-lived HTTP server and
+# /internal/set hangs until the client times out.
+if "--version" in sys.argv or "--help" in sys.argv:
+    print("version: 9999 (mock)")
+    sys.exit(0)
+
+
 class ReusableHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
@@ -406,7 +417,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         if cls._model_pulled:
             return
 
-        pull_model_with_retry(ENDPOINT_TEST_MODEL)
+        pull_model_with_retry(ENDPOINT_TEST_MODEL, port=PORT)
         cls._model_pulled = True
 
     @unittest.skipUnless(
