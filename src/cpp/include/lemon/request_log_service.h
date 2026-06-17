@@ -76,7 +76,6 @@ private:
     bool init_schema();
     bool insert_entries(const std::vector<RequestLogEntry>& entries);
     void run_purge();
-    nlohmann::json row_to_json(int row) const;
 
 #ifdef LEMONADE_HAVE_REQUEST_LOG
     mutable std::mutex db_mutex_;

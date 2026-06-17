@@ -168,6 +168,48 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_client_ip ON request_logs (client_ip
 CREATE INDEX IF NOT EXISTS idx_request_logs_path ON request_logs (path);
 CREATE INDEX IF NOT EXISTS idx_request_logs_keep_alive ON request_logs (keep_alive);
 )SQL";
+
+nlohmann::json row_to_json_from_result(PGresult* result, int row) {
+    auto value = [result, row](int column) -> std::string {
+        const char* raw = PQgetvalue(result, row, column);
+        return raw ? raw : "";
+    };
+
+    nlohmann::json entry = {
+        {"id", std::stoll(value(0))},
+        {"created_at", value(1)},
+        {"client_ip", value(2)},
+        {"forwarded_for", value(3)},
+        {"method", value(4)},
+        {"path", value(5)},
+        {"query_string", value(6)},
+        {"status_code", value(7).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(7)))},
+        {"duration_ms", value(8).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(8)))},
+        {"user_agent", value(9)},
+        {"endpoint_type", value(10)},
+        {"model", value(11)},
+        {"keep_alive", value(12).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(12))},
+        {"stream", value(13).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(13) == "t")},
+        {"request_body_bytes", value(14).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(14)))},
+        {"response_body_bytes", value(15).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(15)))},
+        {"prompt_chars", value(16).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(16)))},
+        {"messages_chars", value(17).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(17)))},
+        {"error", value(19).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(19))},
+    };
+
+    const char* redacted = PQgetvalue(result, row, 18);
+    if (redacted && *redacted) {
+        try {
+            entry["redacted_body"] = nlohmann::json::parse(redacted);
+        } catch (...) {
+            entry["redacted_body"] = redacted;
+        }
+    } else {
+        entry["redacted_body"] = nullptr;
+    }
+    return entry;
+}
+
 #endif
 
 } // namespace
@@ -507,109 +549,6 @@ void RequestLogService::run_purge() {
     }
 }
 
-nlohmann::json RequestLogService::row_to_json(int row) const {
-    auto value = [this, row](int column) -> std::string {
-        const char* raw = PQgetvalue(as_pg_conn(pg_conn_), row, column);
-        return raw ? raw : "";
-    };
-
-    nlohmann::json entry = {
-        {"id", std::stoll(value(0))},
-        {"created_at", value(1)},
-        {"client_ip", value(2)},
-        {"forwarded_for", value(3)},
-        {"method", value(4)},
-        {"path", value(5)},
-        {"query_string", value(6)},
-        {"status_code", value(7).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(7)))},
-        {"duration_ms", value(8).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(8)))},
-        {"user_agent", value(9)},
-        {"endpoint_type", value(10)},
-        {"model", value(11)},
-        {"keep_alive", value(12).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(12))},
-        {"stream", value(13).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(13) == "t")},
-        {"request_body_bytes", value(14).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(14)))},
-        {"response_body_bytes", value(15).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(15)))},
-        {"prompt_chars", value(16).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(16)))},
-        {"messages_chars", value(17).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(17)))},
-        {"error", value(19).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(19))},
-    };
-
-    const char* redacted = PQgetvalue(as_pg_conn(pg_conn_), row, 18);
-    if (redacted && *redacted) {
-        try {
-            entry["redacted_body"] = nlohmann::json::parse(redacted);
-        } catch (...) {
-            entry["redacted_body"] = redacted;
-        }
-    } else {
-        entry["redacted_body"] = nullptr;
-    }
-    return entry;
-}
-
-#else
-
-bool RequestLogService::ensure_connection() { return false; }
-void RequestLogService::close_connection() {}
-bool RequestLogService::init_schema() { return false; }
-bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>&) { return false; }
-void RequestLogService::run_purge() {}
-nlohmann::json RequestLogService::row_to_json(int) const { return nlohmann::json::object(); }
-
-#endif
-
-void RequestLogService::writer_loop() {
-    while (running_.load()) {
-        std::vector<RequestLogEntry> batch;
-        {
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            queue_cv_.wait_for(lock, std::chrono::milliseconds(500), [this]() {
-                return !running_.load() || !queue_.empty();
-            });
-            if (!running_.load() && queue_.empty()) {
-                break;
-            }
-            while (!queue_.empty() && batch.size() < 50) {
-                batch.push_back(std::move(queue_.front()));
-                queue_.pop_front();
-            }
-        }
-
-        if (!batch.empty()) {
-            if (!insert_entries(batch)) {
-                LOG(WARNING, "RequestLog")
-                    << "Request log insert failed; entries in this batch were dropped."
-                    << std::endl;
-            }
-        }
-    }
-
-    std::vector<RequestLogEntry> remaining;
-    {
-        std::lock_guard<std::mutex> lock(queue_mutex_);
-        remaining.assign(std::make_move_iterator(queue_.begin()),
-                         std::make_move_iterator(queue_.end()));
-        queue_.clear();
-    }
-    if (!remaining.empty()) {
-        insert_entries(remaining);
-    }
-}
-
-void RequestLogService::purge_loop() {
-    while (running_.load()) {
-        for (int i = 0; i < 3600 && running_.load(); ++i) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        if (!running_.load()) {
-            break;
-        }
-        run_purge();
-    }
-}
-
-#ifdef LEMONADE_HAVE_REQUEST_LOG
 nlohmann::json RequestLogService::get_recent(int limit) const {
     if (!const_cast<RequestLogService*>(this)->ensure_connection() ||
         !const_cast<RequestLogService*>(this)->init_schema()) {
@@ -637,7 +576,7 @@ nlohmann::json RequestLogService::get_recent(int limit) const {
     nlohmann::json entries = nlohmann::json::array();
     const int rows = PQntuples(result);
     for (int i = 0; i < rows; ++i) {
-        entries.push_back(row_to_json(i));
+        entries.push_back(row_to_json_from_result(result, i));
     }
     PQclear(result);
     return {{"entries", entries}};
@@ -703,7 +642,7 @@ nlohmann::json RequestLogService::search(const httplib::Request& req) const {
     nlohmann::json entries = nlohmann::json::array();
     const int rows = PQntuples(result);
     for (int i = 0; i < rows; ++i) {
-        entries.push_back(row_to_json(i));
+        entries.push_back(row_to_json_from_result(result, i));
     }
     PQclear(result);
     return {{"entries", entries}, {"limit", limit}, {"offset", offset}};
@@ -781,6 +720,12 @@ nlohmann::json RequestLogService::get_stats(const httplib::Request& req) const {
 
 #else
 
+bool RequestLogService::ensure_connection() { return false; }
+void RequestLogService::close_connection() {}
+bool RequestLogService::init_schema() { return false; }
+bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>&) { return false; }
+void RequestLogService::run_purge() {}
+
 nlohmann::json RequestLogService::get_recent(int) const {
     throw std::runtime_error("Request logging is not available in this build");
 }
@@ -794,5 +739,55 @@ nlohmann::json RequestLogService::get_stats(const httplib::Request&) const {
 }
 
 #endif
+
+void RequestLogService::writer_loop() {
+    while (running_.load()) {
+        std::vector<RequestLogEntry> batch;
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex_);
+            queue_cv_.wait_for(lock, std::chrono::milliseconds(500), [this]() {
+                return !running_.load() || !queue_.empty();
+            });
+            if (!running_.load() && queue_.empty()) {
+                break;
+            }
+            while (!queue_.empty() && batch.size() < 50) {
+                batch.push_back(std::move(queue_.front()));
+                queue_.pop_front();
+            }
+        }
+
+        if (!batch.empty()) {
+            if (!insert_entries(batch)) {
+                LOG(WARNING, "RequestLog")
+                    << "Request log insert failed; entries in this batch were dropped."
+                    << std::endl;
+            }
+        }
+    }
+
+    std::vector<RequestLogEntry> remaining;
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex_);
+        remaining.assign(std::make_move_iterator(queue_.begin()),
+                         std::make_move_iterator(queue_.end()));
+        queue_.clear();
+    }
+    if (!remaining.empty()) {
+        insert_entries(remaining);
+    }
+}
+
+void RequestLogService::purge_loop() {
+    while (running_.load()) {
+        for (int i = 0; i < 3600 && running_.load(); ++i) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        if (!running_.load()) {
+            break;
+        }
+        run_purge();
+    }
+}
 
 } // namespace lemon
