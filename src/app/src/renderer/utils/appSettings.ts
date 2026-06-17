@@ -24,6 +24,7 @@ export interface LayoutSettings {
   isModelManagerVisible: boolean;
   leftPanelView: 'models' | 'marketplace' | 'backends' | 'settings';
   isLogsVisible: boolean;
+  centerPanelTab: 'server-logs' | 'request-logs';
   modelManagerWidth: number;
   chatWidth: number;
   logsHeight: number;
@@ -88,6 +89,7 @@ export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
   isModelManagerVisible: true,
   leftPanelView: 'models',
   isLogsVisible: false,
+  centerPanelTab: 'server-logs',
   modelManagerWidth: 280,
   chatWidth: 350,
   logsHeight: 200,
@@ -262,6 +264,9 @@ export const mergeWithDefaultSettings = (incoming?: Partial<AppSettings>): AppSe
     }
     if (typeof rawLayout.isLogsVisible === 'boolean') {
       defaults.layout.isLogsVisible = rawLayout.isLogsVisible;
+    }
+    if (rawLayout.centerPanelTab === 'server-logs' || rawLayout.centerPanelTab === 'request-logs') {
+      defaults.layout.centerPanelTab = rawLayout.centerPanelTab;
     }
     // Merge numeric size settings
     if (typeof rawLayout.modelManagerWidth === 'number') {

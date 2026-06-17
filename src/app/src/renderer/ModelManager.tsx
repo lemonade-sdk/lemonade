@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
+import { Boxes, Brain, ChevronRight, Cpu, Eye, Flame, Layers, ListOrdered, ScrollText, Settings, SlidersHorizontal, Sparkles, SquareCode, Store, User, Wrench, XIcon } from './components/Icons';
 import { ModelInfo, USER_MODEL_PREFIX } from './utils/modelData';
 import { CANONICAL_PREFIXES, getModelDisplayName } from './utils/modelDisplayName';
 import { ToastContainer, useToast } from './Toast';
@@ -328,6 +328,8 @@ interface ModelManagerProps {
   width?: number;
   currentView: LeftPanelView;
   onViewChange: (view: LeftPanelView) => void;
+  onOpenRequestLogs?: () => void;
+  isRequestLogsActive?: boolean;
 }
 
 interface ModelJSON {
@@ -346,7 +348,15 @@ interface ModelJSON {
 export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 
-const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({
+  isContentVisible,
+  onContentVisibilityChange,
+  width = 280,
+  currentView,
+  onViewChange,
+  onOpenRequestLogs,
+  isRequestLogsActive = false,
+}) => {
   // Get shared model data from context
   const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
@@ -1813,6 +1823,14 @@ const [searchQuery, setSearchQuery] = useState('');
           </button>
           <button className={`left-panel-mode-btn ${currentView === 'marketplace' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('marketplace')} title="Marketplace" aria-label="Marketplace">
             <Store size={14} strokeWidth={1.9} />
+          </button>
+          <button
+            className={`left-panel-mode-btn ${isRequestLogsActive ? 'active' : ''}`}
+            onClick={() => onOpenRequestLogs?.()}
+            title="Request Logs"
+            aria-label="Request Logs"
+          >
+            <ScrollText size={14} strokeWidth={1.9} />
           </button>
           <div className="left-panel-mode-rail-spacer" />
           <button className={`left-panel-mode-btn ${currentView === 'settings' && isContentVisible ? 'active' : ''}`} onClick={() => handleRailClick('settings')} title="Settings" aria-label="Settings">

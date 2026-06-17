@@ -271,3 +271,15 @@ export const PinIcon: React.FC<{ size?: number; fill?: string }> = ({ size = 14,
     <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.48A2 2 0 0 1 15 9.28V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.28a2 2 0 0 1-.78 1.24l-2.78 3.48a2 2 0 0 0-.44 1.24Z" />
   </svg>
 );
+
+export const ScrollText: React.FC<IconProps> = ({ size = 24, strokeWidth = 2 }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 12h-5" />
+    <path d="M15 8h-5" />
+    <path d="M19 17V5a2 2 0 0 0-2-2H8" />
+    <path d="M9 17h6" />
+    <path d="M9 13h6" />
+    <path d="M9 9h1" />
+    <path d="M5 21h14a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2z" />
+  </svg>
+);

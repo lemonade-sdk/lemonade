@@ -5,6 +5,8 @@ import TitleBar from './TitleBar';
 import ChatWindow from './ChatWindow';
 import ModelManager, { LeftPanelView } from './ModelManager';
 import LogsWindow from './LogsWindow';
+import CenterPanelTabs, { CenterPanelTab } from './CenterPanelTabs';
+import RequestLogPanel from './RequestLogPanel';
 import ResizableDivider from './ResizableDivider';
 import DownloadManager from './DownloadManager';
 import StatusBar from './StatusBar';
@@ -58,6 +60,7 @@ const AppContent: React.FC = () => {
   const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('models');
   const [externalContentUrl, setExternalContentUrl] = useState<string | null>(null);
   const [isLogsVisible, setIsLogsVisible] = useState(DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
+  const [centerPanelTab, setCenterPanelTab] = useState<CenterPanelTab>(DEFAULT_LAYOUT_SETTINGS.centerPanelTab);
   const [isDownloadManagerVisible, setIsDownloadManagerVisible] = useState(false);
   const [modelManagerWidth, setModelManagerWidth] = useState(DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
   const [chatWidth, setChatWidth] = useState(DEFAULT_LAYOUT_SETTINGS.chatWidth);
@@ -92,6 +95,10 @@ const AppContent: React.FC = () => {
               setLeftPanelView(savedView);
             }
             setIsLogsVisible(settings.layout.isLogsVisible ?? DEFAULT_LAYOUT_SETTINGS.isLogsVisible);
+            const savedCenterTab = settings.layout.centerPanelTab;
+            if (savedCenterTab === 'server-logs' || savedCenterTab === 'request-logs') {
+              setCenterPanelTab(savedCenterTab);
+            }
             setModelManagerWidth(settings.layout.modelManagerWidth ?? DEFAULT_LAYOUT_SETTINGS.modelManagerWidth);
             setChatWidth(settings.layout.chatWidth ?? DEFAULT_LAYOUT_SETTINGS.chatWidth);
             setLogsHeight(settings.layout.logsHeight ?? DEFAULT_LAYOUT_SETTINGS.logsHeight);
@@ -104,6 +111,10 @@ const AppContent: React.FC = () => {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('view') === 'logs') {
           setIsLogsVisible(true);
+        }
+        if (urlParams.get('view') === 'request-logs') {
+          setIsLogsVisible(true);
+          setCenterPanelTab('request-logs');
         }
         setLayoutLoaded(true);
       }
@@ -126,6 +137,7 @@ const AppContent: React.FC = () => {
             isModelManagerVisible,
             leftPanelView,
             isLogsVisible,
+            centerPanelTab,
             modelManagerWidth,
             chatWidth,
             logsHeight,
@@ -135,7 +147,12 @@ const AppContent: React.FC = () => {
     } catch (error) {
       console.error('Failed to save layout settings:', error);
     }
-  }, [layoutLoaded, theme, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, modelManagerWidth, chatWidth, logsHeight]);
+  }, [layoutLoaded, theme, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, centerPanelTab, modelManagerWidth, chatWidth, logsHeight]);
+
+  const handleOpenRequestLogs = useCallback(() => {
+    setIsLogsVisible(true);
+    setCenterPanelTab('request-logs');
+  }, []);
 
   // Debounced save effect
   useEffect(() => {
@@ -218,6 +235,10 @@ const AppContent: React.FC = () => {
       const unsub = window.api.onNavigate((data: { view?: string; model?: string }) => {
         if (data.view === 'logs') {
           setIsLogsVisible(true);
+        }
+        if (data.view === 'request-logs') {
+          setIsLogsVisible(true);
+          setCenterPanelTab('request-logs');
         }
       });
       if (typeof unsub === 'function') unsubscribe = unsub;
@@ -504,6 +525,7 @@ const AppContent: React.FC = () => {
         onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
         isLogsVisible={isLogsVisible}
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
+        onOpenRequestLogs={handleOpenRequestLogs}
         isDownloadManagerVisible={isDownloadManagerVisible}
         onToggleDownloadManager={handleToggleDownloadManager}
       />
@@ -518,16 +540,20 @@ const AppContent: React.FC = () => {
           width={isModelManagerVisible ? modelManagerWidth : LAYOUT_CONSTANTS.experienceRailWidth}
           currentView={leftPanelView}
           onViewChange={setLeftPanelView}
+          onOpenRequestLogs={handleOpenRequestLogs}
+          isRequestLogsActive={isLogsVisible && centerPanelTab === 'request-logs'}
         />
         {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
           <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />
         )}
         {isLogsVisible && (
           <div className="main-content-container">
-            <LogsWindow
-              isVisible={true}
-              height={undefined}
-            />
+            <CenterPanelTabs activeTab={centerPanelTab} onTabChange={setCenterPanelTab} />
+            {centerPanelTab === 'server-logs' ? (
+              <LogsWindow isVisible={true} height={undefined} />
+            ) : (
+              <RequestLogPanel />
+            )}
           </div>
         )}
         {isChatVisible && (
