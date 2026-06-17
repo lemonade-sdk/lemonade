@@ -1,206 +1,410 @@
-# Lemonade UI Redesign Prototype
+## 🍋 Lemonade: Refreshingly fast local AI
 
-A **React 19 + TypeScript + webpack** proof-of-concept for the next-generation Lemonade UI. This prototype is built side-by-side with the existing `src/app/` and `src/web-app/` in the main codebase and now runs **real-server-first** against `lemond` at `http://localhost:13305` by default. It is designed to work both as a web app and as a desktop Tauri application — a single React codebase powering both delivery channels.
+<p align="center">
+  <a href="https://discord.gg/5xXzkMu8Zk">
+    <img src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/contribute.md" title="Contribution Guide">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
+  <a href="https://github.com/lemonade-sdk/lemonade/releases/latest" title="Download the latest release">
+    <img src="https://img.shields.io/github/v/release/lemonade-sdk/lemonade?include_prereleases" alt="Latest Release" /></a>
+  <a href="https://tooomm.github.io/github-release-stats/?username=lemonade-sdk&repository=lemonade">
+    <img src="https://img.shields.io/github/downloads/lemonade-sdk/lemonade/total.svg" alt="GitHub downloads" /></a>
+  <a href="https://github.com/lemonade-sdk/lemonade/issues">
+    <img src="https://img.shields.io/github/issues/lemonade-sdk/lemonade" alt="GitHub issues" /></a>
+  <a href="https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-Apache-yellow.svg" alt="License: Apache" /></a>
+  <a href="https://star-history.com/#lemonade-sdk/lemonade">
+    <img src="https://img.shields.io/badge/Star%20History-View-brightgreen" alt="Star History Chart" /></a>
+</p>
+<p align="center">
+  <img src="https://github.com/lemonade-sdk/assets/blob/main/docs/banner_02.png?raw=true" alt="Lemonade Banner" />
+</p>
+<h3 align="center">
+  <a href="https://lemonade-server.ai/install_options.html">Download</a> |
+  <a href="https://lemonade-server.ai/docs/">Documentation</a> |
+  <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>
+</h3>
 
-**Not production code** — this is an active design and engineering POC on branch `feat/ui-testing`. See [`.squad/decisions.md`](../../.squad/decisions.md) for the design rationale and capability-keyed presets architecture (v1.4).
+Lemonade is the local AI server that gives you the same capabilities as cloud APIs, except 100% free and private. Use the latest models for chat, coding, speech, and image generation on your own NPU and GPU.
 
-## Prerequisites
+Lemonade comes in two flavors:
 
-- **Node.js 20+** (check `package.json` `engines` field for exact requirement)
-- **npm 10+**
-- Optional for UI-only review, recommended for functional testing: a running `lemond` instance at `http://localhost:13305` or a custom URL entered in Connect
+* **Lemonade Server** installs a service you can connect to hundreds of great apps using standard OpenAI, Anthropic, and Ollama APIs.
+* **Embeddable Lemonade** is a portable binary you can package into your own application to give it multi-modal local AI that auto-optimizes for your user’s PC.
 
-## Quick Start
+*This project is built by the community for every PC, with optimizations by AMD engineers to get the most from Ryzen AI, Radeon, and Strix Halo PCs.*
 
-### Install dependencies
+## Getting Started
 
-```bash
-npm install
-```
+1. **Install**: [Windows](https://lemonade-server.ai/install_options.html#windows) · [Linux](https://lemonade-server.ai/install_options.html#linux) · [macOS](https://lemonade-server.ai/install_options.html#macos) · [Docker](https://lemonade-server.ai/install_options.html#docker) · [Source](./docs/dev/getting-started.md)
+2. **Get Models**: Browse and download with the [Model Manager](#model-library)
+3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
+4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
+5. **Connect**: Use Lemonade with your [favorite apps](https://lemonade-server.ai/marketplace):
 
-### Run the dev server
+<!-- MARKETPLACE_START -->
+<p align="center">
+  <a href="https://lemonade-server.ai/docs/server/apps/claude-code/" title="Claude Code"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/claude-code/logo.png" alt="Claude Code" width="60" /></a>&nbsp;&nbsp;<a href="https://quickthoughts.ca/posts/firefox-chatback-lemonade-sdk/" title="Firefox Chatbot"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/fx-chatbot/logo.png" alt="Firefox Chatbot" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/anythingLLM/" title="AnythingLLM"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/anythingllm/logo.png" alt="AnythingLLM" width="60" /></a>&nbsp;&nbsp;<a href="https://marketplace.dify.ai/plugins/langgenius/lemonade" title="Dify"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/dify/logo.png" alt="Dify" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/amd/gaia?tab=readme-ov-file#getting-started-guide" title="GAIA"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/gaia/logo.png" alt="GAIA" width="60" /></a>&nbsp;&nbsp;<a href="https://admcpr.com/local-github-copilot-with-lemonade-server-on-windows" title="GitHub Copilot"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/github-copilot/logo.png" alt="GitHub Copilot" width="60" /></a>&nbsp;&nbsp;<a href="https://github.com/lemonade-sdk/infinity-arcade" title="Infinity Arcade"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/infinity-arcade/logo.png" alt="Infinity Arcade" width="60" /></a>&nbsp;&nbsp;<a href="https://n8n.io/integrations/lemonade-model/" title="n8n"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/n8n/logo.png" alt="n8n" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-webui/" title="Open WebUI"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/open-webui/logo.png" alt="Open WebUI" width="60" /></a>&nbsp;&nbsp;<a href="https://lemonade-server.ai/docs/server/apps/open-hands/" title="OpenHands"><img src="https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps/openhands/logo.png" alt="OpenHands" width="60" /></a>
+</p>
 
-```bash
-npm run dev
-```
+<p align="center"><em>Want your app featured here? <a href="https://github.com/lemonade-sdk/marketplace">Just submit a marketplace PR!</a></em></p>
+<!-- MARKETPLACE_END -->
 
-Opens at **http://localhost:8080** with hot-module reloading via webpack-dev-server.
+## Supported Platforms
 
-## Build & Distribution
+| Platform | Build |
+|----------|-------|
+| [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-supported-1793D1?logo=arch-linux&logoColor=white)](https://lemonade-server.ai/install_options.html#arch) | [![Build on Arch](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Arch)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
+| [![Debian Trixie+](https://img.shields.io/badge/Debian-Trixie%2B-A81D33?logo=debian&logoColor=white)](https://lemonade-server.ai/install_options.html#debian) | [![Build on Debian](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Debian)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
+| [![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](https://lemonade-server.ai/install_options.html#docker) | [![Build Container Image](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/build-and-push-container.yml?branch=main&label=Build%20Container%20Image)](https://github.com/lemonade-sdk/lemonade/actions/workflows/build-and-push-container.yml) |
+| [![Fedora 43+](https://img.shields.io/badge/Fedora-43%2B-294172?logo=fedora&logoColor=white)](https://lemonade-server.ai/install_options.html#fedora) | [![Build .rpm](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.rpm)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
+| [![macOS](https://img.shields.io/badge/macOS-supported-999999?logo=apple&logoColor=white)](https://lemonade-server.ai/install_options.html#macos) | [![Build .pkg](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.pkg)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
+| [![Snap](https://img.shields.io/badge/Snap-supported-82BEA0?logo=snapcraft&logoColor=white)](https://snapcraft.io/lemonade-server) | [![Build Snap](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade-server-snap/snap-build.yaml?branch=main&label=Build%20Snap)](https://github.com/lemonade-sdk/lemonade-server-snap/actions/workflows/snap-build.yaml) |
+| [![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?logo=ubuntu&logoColor=white)](https://lemonade-server.ai/install_options.html#ubuntu) | [![Build Launchpad PPA](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/launchpad-ppa.yml?branch=main&label=Build%20Launchpad%20PPA)](https://github.com/lemonade-sdk/lemonade/actions/workflows/launchpad-ppa.yml) |
+| [![Windows 11](https://img.shields.io/badge/Windows-11-0078D6?logo=windows&logoColor=white)](https://lemonade-server.ai/install_options.html#windows) | [![Build .msi](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.msi)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
 
-### Production build
+## Using the CLI
 
-```bash
-npm run build
-```
-
-Outputs optimized bundles to `dist/`.
-
-### Watch mode (for development)
-
-```bash
-npm run watch
-```
-
-Incrementally rebuilds on file changes.
-
-## Testing
-
-### Headless tests (CI mode)
-
-```bash
-npm test
-```
-
-Runs all UI-safe Playwright tests headless via Chromium. Real-server smoke tests are opt-in so they fail fast instead of silently passing without a running server or loaded model:
-
-```bash
-LEMONADE_REAL_SERVER=1 npm test
-```
-
-Artifacts are saved under Playwright's per-test output folders, so screenshots from repeated runs are not overwritten.
-
-### Headed tests (visible browser)
-
-```bash
-npm run test:headed
-```
-
-Opens the browser so you can watch the tests run step-by-step.
-
-### First run setup
-
-On first run, Playwright may ask to install browser binaries:
-
-```bash
-npx playwright install
-```
-
-## What's Implemented
-
-This prototype showcases the **redesigned UI** with capability-keyed presets (v1.4):
-
-### UI Panels
-- **Chat** — multi-turn conversation with streaming support, scoped user/guest history, omni-capable composer routing, preset selector, sampling controls
-- **Models** — model registry with load/unload, custom model/custom omni registration, categorized view (Loaded / Downloaded / Registry / HuggingFace)
-- **Backends** — device-first capability matrix, backend versions and status
-- **Connect / Discover** — integration showcase and curated model feed
-- **Presets** — capability-keyed preset system with chat/omni (Balanced, Quality, Fast, Creative, Long Context, Code) and image (Sharp, Quick) starters
-
-### Multimodal / Omni Mode
-- **Omni capability detection** recognizes loaded models marked as `omni`, `multimodal`, `vision`, VLM, LLaVA, Pixtral, Qwen-VL, MiniCPM-V, Mllama, GPT-4o-style, and similar names or labels.
-- **Omni composer mode** keeps those models in chat instead of misrouting them as plain LLMs or image/audio utility models. Text, image attachments, and one audio attachment are sent through `/api/v1/chat/completions` using OpenAI-style multimodal content parts.
-- **Specialized modes remain explicit:** image models route to `/api/v1/images/generations`, Whisper/Moonshine transcription models to `/api/v1/audio/transcriptions`, and TTS models to `/api/v1/audio/speech`.
-
-### Custom Models
-- **Custom model form** on the Models page lets a user register a local/HuggingFace checkpoint or path, recipe/backend, labels, and capability.
-- **Custom Omni models** are first-class: choose `Omni` in the capability dropdown and the composer treats the model as multimodal chat even if the server health response later lacks perfect capability metadata.
-- **Scoped per user:** custom definitions are saved under the active guest/user storage scope. Guest custom models are shared on the browser; signed-in users get private custom definitions.
-- **Load path:** custom models register/pull with the current Lemonade payload (`model_name`, `checkpoint`, `recipe`, capability booleans, optional `mmproj`). Custom Omni collections register as `recipe: "collection.omni"` with a `components` array, then load by `model_name`.
-
-### Local Users / Privacy Prototype
-- **Guest mode is shared:** users can chat without signing in. If guest history is enabled, it is visible to anyone using the same browser profile.
-- **Named local users:** users can create an account with name + password. Passwords are salted and hashed with PBKDF2 in browser storage; raw passwords are never stored.
-- **Scoped data:** conversations, active chat, tools setting, user presets, and custom model definitions are namespaced under `lemonade:<storageScope>:...`. Signed-in users see only their own local profile data.
-- **Deletion rules:** guests can delete shared guest data, signed-in users can delete their own scoped data/account, and the first local account is admin with an all-local-user-data reset. The account UI lives in `src/features/accounts/` so it can be extracted/replaced by server-backed auth for production.
-
-### Presets v1.4 Features
-- **Capability-keyed compatibility** — presets declare `applies_to: [capability]` and models declare `labels`; runtime matches by label intersection
-- **Staged bindings** — when you adjust preset settings (temperature, top-p, etc.), they show "Will apply on next load" — no immediate server calls
-- **Sampling wired** — temperature, top_p, top_k, repeat_penalty settings are forwarded to `/api/v1/chat/completions`
-- **Advanced disclosure** — backend hint field behind an Advanced toggle for power users
-- **Distinct image presets** — Steps and CFG scale controls for image generation, separate from chat sampling
-
-## Project Structure
+To run and chat with Gemma:
 
 ```
-src/
-  index.tsx              # React entry point
-  index.html            # HTML shell
-  App.tsx               # Root component
-  api.ts                # API client (health, models, chat/completions, etc.)
-  presetStore.ts        # Scoped presets state & v1.4 capability-keyed data model
-  components/           # React components (Chat, Models, Backends, Presets, etc.)
-  features/accounts/    # Extractable local user/session prototype
-  features/customModels/# Extractable custom model + custom omni prototype
-  hooks/                # Custom React hooks
-  styles/               # CSS modules and global styles
-  tools/                # Utility functions
-
-tests/
-  features.spec.ts      # Playwright test suite
-
-webpack.config.js       # Webpack configuration (dev server, loaders, bundles)
-playwright.config.ts    # Playwright configuration (baseURL, browsers, output dirs)
-tsconfig.json           # TypeScript configuration
+lemonade run Gemma-4-E2B-it-GGUF
 ```
 
-## Connecting to a Server
+To code with Lemonade models:
 
-The prototype stores an explicitly chosen Lemonade server URL in local browser state. For the packaged Lemonade web app, if that state is missing or has been cleared, the API client also tries the current browser origin, so a custom Lemonade host/port is recovered when the UI itself is served by `lemond`. During local webpack development it still prefers the usual `http://localhost:13305` server and retries the current origin if needed. Use the Connect screen to change the URL; the field validates `http://` / `https://` URLs before attempting a request and shows the exact endpoint plus HTTP/network error on failure. API keys can be kept session-only or explicitly persisted.
-
-Core API paths are normalized to `/api/v1/...` in `src/api.ts`. Mocked responses are no longer the default runtime path; use Playwright route mocks in tests when a deterministic mocked scenario is needed.
-
-## Troubleshooting
-
-### Port 8080 is already in use
-
-```bash
-npm run dev -- --port 9000
+```
+lemonade launch claude
 ```
 
-Webpack dev server will bind to the next available port, or specify one explicitly with `--port`.
+Multi-modality:
 
-### Playwright browser not found
+```
+# image gen
+lemonade run SDXL-Turbo
 
-```bash
-npx playwright install chromium
+# speech gen
+lemonade run kokoro-v1
+
+# transcription
+lemonade run Whisper-Large-v3-Turbo
 ```
 
-This downloads the Chromium binary used by Playwright tests.
+To see available models and download them:
 
-### Hot reload isn't working
+```
+lemonade list
 
-Check that webpack-dev-server is running (it should print the URL). If you edited a file and the page didn't update, try:
-- Hard refresh (Ctrl+Shift+R or Cmd+Shift+R)
-- Restart `npm run dev`
+lemonade pull Gemma-4-E2B-it-GGUF
+```
 
-### "Connection refused" when pointing at a real lemond
+To see the backends available on your PC:
 
-Verify the server is running (`lemond` or `lemonade launch`), check the URL in the Connect screen, and ensure no firewall is blocking the port. Try `curl http://localhost:13305/api/v1/health` from the terminal, or replace the port with your configured server URL.
+```
+lemonade backends
+```
 
-### Test timeouts or failures
+For hybrid setups, Lemonade can also route to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, …) alongside local models — see [Cloud Offload](./docs/guide/configuration/cloud.md). *(Experimental.)*
 
-Playwright waits up to 60 seconds by default (see `playwright.config.ts`). If tests time out:
-- Check that `npm run dev` is running on port 8080
-- Verify network connectivity (especially for real-server tests)
-- Run `npm run test:headed` to see what the browser is actually doing
 
-## Design & Architecture Notes
+## Model Library
 
-- **Single codebase, dual delivery:** The same React source powers both web-served and desktop (Tauri) builds. Platform-specific code uses feature detection, not separate branches.
-- **Real-server-first development:** Runtime calls go to Lemonade-compatible `/api/v1/...` endpoints. Tests that need deterministic data should mock those network routes explicitly.
-- **Local client state:** Conversation history is opt-in and now scoped to either the shared guest space or a signed-in local user. The account menu controls profile deletion; admin can clear every local profile.
-- **Client-only auth caveat:** The account prototype protects data by browser-storage namespace and password-hash login, but production must enforce users, sessions, and authorization on the backend.
-- **Custom model caveat:** Custom model records are prototype metadata; production should validate checkpoint paths, allowed recipes, and permissions server-side before loading.
-- **Presets are client-side:** Presets are not persisted to the server; they're computed locally based on the model registry and user adjustments, and user-created presets are scoped per local user/guest space.
+<img align="right" src="https://github.com/lemonade-sdk/assets/blob/main/docs/model_manager_02.png?raw=true" alt="Model Manager" width="280" />
 
-## Next Steps
+Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whisper, stable diffusion, etc. models across CPU, GPU, and NPU.
 
-To integrate this prototype into the main codebase:
+Use `lemonade pull` or the built-in **Model Manager** to download models. You can also import custom GGUF/ONNX models from Hugging Face.
 
-1. Coordinate with Kyle and the team on the next milestone (web app only vs. Tauri desktop first)
-2. Move approved UI components to `src/web-app/` or `src/app/` as appropriate
-3. Keep API calls aligned with the finalized `/api/v1/...` server contract and add route-level mocks only for deterministic tests
-4. Update the main `CMakeLists.txt` build targets and Web app webpack if needed
+**[Browse all built-in models →](https://lemonade-server.ai/models.html)**
 
-See [`.squad/decisions.md`](../../.squad/decisions.md) and [`.squad/agents/mattingly/history.md`](../../.squad/agents/mattingly/history.md) for the full decision trail and learnings.
+<br clear="right"/>
 
-### Follow-up fixes in this prototype package
+## Supported Configurations
 
-- Omni registry/custom collection models stay selectable as the Omni wrapper even when lemond reports the loaded runtime as individual vLLM/llama/vision/audio components.
-- Model typing is deliberately conservative: vLLM and plain LLM recipes stay in LLM mode; only explicit Omni/multimodal/VL metadata or collection recipes become Omni.
-- Model downloads are started with server-owned persistence (`subscribe: false`) and the Models page polls `/api/v1/downloads`, so active downloads reappear after refresh/new tab on servers that expose the downloads API.
-- Custom Omni collections can be created from named text, vision, image, transcription, and speech components and are sent to Lemonade as `collection.omni` plus `components`, not as pseudo-checkpoint registrations.
-- Account popovers use an opaque raised surface so labels remain readable over the model grid.
-- Backend summary now falls back from `/system-info` `lemonade_version` to `/health` `version`, so Linux builds no longer show `Lemonade unknown ...` when system-info omits the version.
+Lemonade supports multiple inference engines for LLM, speech, TTS, and image generation, and each has its own backend and hardware requirements.
+
+<table>
+  <thead>
+    <tr>
+      <th>Modality</th>
+      <th>Engine</th>
+      <th>Backend</th>
+      <th>Device</th>
+      <th>OS</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="6"><code>llamacpp</code></td>
+      <td><code>vulkan</code></td>
+      <td><code>x86_64</code> CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU; ARM64 CPU (Linux)</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>metal</code></td>
+      <td>Apple Silicon GPU</td>
+      <td>macOS</td>
+    </tr>
+    <tr>
+      <td><code>system</code></td>
+      <td><code>x86_64</code>/ARM64 CPU, GPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>flm</code></td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>ryzenai-llm</code></td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>vllm</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="4"><strong>Speech-to-text</strong></td>
+      <td rowspan="3"><code>whispercpp</code></td>
+      <td><code>npu</code></td>
+      <td>XDNA2 NPU</td>
+      <td>Windows</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>moonshine</code></td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code>/<code>arm64</code> CPU</td>
+      <td>Windows, Linux, macOS</td>
+    </tr>
+    <tr>
+      <td><strong>Text-to-speech</strong></td>
+      <td><code>kokoro</code></td>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="4"><strong>Image generation</strong></td>
+      <td rowspan="4"><code>sd-cpp</code></td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU/dGPU families*</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>vulkan</code></td>
+      <td>Vulkan-capable GPUs</td>
+      <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>cuda</code></td>
+      <td>NVIDIA GPUs (Turing or newer)**</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td><code>cpu</code></td>
+      <td><code>x86_64</code> CPU</td>
+      <td>Windows, Linux</td>
+    </tr>
+  </tbody>
+</table>
+
+To check exactly which recipes/backends are supported on your own machine, run:
+
+```
+lemonade backends
+```
+
+<details>
+<summary><small><i>* See supported AMD ROCm platforms</i></small></summary>
+
+<br>
+
+<table>
+  <thead>
+    <tr>
+      <th>Architecture</th>
+      <th>Platform Support</th>
+      <th>GPU Models</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>gfx1151</b> (STX Halo)</td>
+      <td>Windows, Ubuntu</td>
+      <td>Ryzen AI MAX+ Pro 395</td>
+    </tr>
+    <tr>
+      <td><b>gfx120X</b> (RDNA4)</td>
+      <td>Windows, Ubuntu</td>
+      <td>Radeon AI PRO R9700, RX 9070 XT/GRE/9070, RX 9060 XT</td>
+    </tr>
+    <tr>
+      <td><b>gfx110X</b> (RDNA3)</td>
+      <td>Windows, Ubuntu</td>
+      <td>Radeon PRO W7900/W7800/W7700/V710, RX 7900 XTX/XT/GRE, RX 7800 XT, RX 7700 XT</td>
+    </tr>
+  </tbody>
+</table>
+</details>
+
+<details>
+<summary><small><i>** See supported NVIDIA CUDA platforms</i></small></summary>
+
+<br>
+
+<table>
+  <thead>
+    <tr>
+      <th>Compute Capability</th>
+      <th>Architecture</th>
+      <th>GPU Models</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>sm_75</b></td>
+      <td>Turing</td>
+      <td>RTX 20-series, GTX 16-series, T4</td>
+    </tr>
+    <tr>
+      <td><b>sm_80</b> / <b>sm_86</b></td>
+      <td>Ampere</td>
+      <td>RTX 30-series, A100, A40</td>
+    </tr>
+    <tr>
+      <td><b>sm_89</b></td>
+      <td>Ada Lovelace</td>
+      <td>RTX 40-series, L40, L4</td>
+    </tr>
+    <tr>
+      <td><b>sm_90</b></td>
+      <td>Hopper</td>
+      <td>H100, H200</td>
+    </tr>
+    <tr>
+      <td><b>sm_100</b> / <b>sm_120</b></td>
+      <td>Blackwell</td>
+      <td>RTX 50-series, B100, B200</td>
+    </tr>
+  </tbody>
+</table>
+</details>
+
+## Project Roadmap
+
+Lemonade's roadmap is defined by a set of working groups. Visit the landing page [here](./docs/dev/working-groups/README.md) to learn each group's goal and roadmap.
+
+## Integrate Embeddable Lemonade in You Application
+
+Embeddable Lemonade is a binary version of Lemonade that you can bundle into your own app to give it a portable, auto-optimizing, multi-modal local AI stack. This lets users focus on your app, with zero Lemonade installers, branding, or telemetry.
+
+Check out the [Embeddable Lemonade guide](docs/embeddable/README.md).
+
+
+## Connect Lemonade Server to Your Application
+
+You can use any OpenAI-compatible client library by configuring it to use `http://localhost:13305/v1` as the base URL. A table containing official and popular OpenAI clients on different languages is shown below.
+
+Feel free to pick and choose your preferred language.
+
+
+| Python | C++ | Java | C# | Node.js | Go | Ruby | Rust | PHP |
+|--------|-----|------|----|---------|----|-------|------|-----|
+| [openai-python](https://github.com/openai/openai-python) | [openai-cpp](https://github.com/olrea/openai-cpp) | [openai-java](https://github.com/openai/openai-java) | [openai-dotnet](https://github.com/openai/openai-dotnet) | [openai-node](https://github.com/openai/openai-node) | [go-openai](https://github.com/sashabaranov/go-openai) | [ruby-openai](https://github.com/alexrudall/ruby-openai) | [async-openai](https://github.com/64bit/async-openai) | [openai-php](https://github.com/openai-php/client) |
+
+
+### Python Client Example
+```python
+from openai import OpenAI
+
+# Initialize the client to use Lemonade Server
+client = OpenAI(
+    base_url="http://localhost:13305/api/v1",
+    api_key="lemonade"  # required but unused
+)
+
+# Create a chat completion
+completion = client.chat.completions.create(
+    model="Gemma-4-E2B-it-GGUF",  # or any other available model
+    messages=[
+        {"role": "user", "content": "What is the capital of France?"}
+    ]
+)
+
+# Print the response
+print(completion.choices[0].message.content)
+```
+
+Click to learn more about the [available APIs](./docs/api/README.md) and how to [embed Lemonade](./docs/embeddable/README.md) in your own application.
+
+## FAQ
+
+To read our frequently asked questions, see our [FAQ Guide](./docs/guide/faq.md)
+
+## Contributing
+
+Lemonade is built by the local AI community! If you would like to contribute to this project, please check out our [contribution guide](./docs/dev/contribute.md).
+
+## Maintainers
+
+This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @kenvandine @Geramy @ramkrishna2910 @sawansri @siavashhub @sofiageo @superm1 @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Committers and reviewers**: [Maintainers](#maintainers) of this repo
+- **Approvers**: [Owners](https://github.com/orgs/lemonade-sdk/people?query=role%3Aowner)
+
+**Privacy policy**: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. When the user requests it, Lemonade downloads AI models from [Hugging Face Hub](https://huggingface.co/) (see their [privacy policy](https://huggingface.co/privacy)).
+
+## License and Attribution
+
+This project is:
+- Built with C++ (server) and React (app) with ❤️ for the open source community,
+- Standing on the shoulders of great tools from:
+  - [ggml/llama.cpp](https://github.com/ggml-org/llama.cpp)
+  - [ggml/whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+  - [ggml/stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+  - [kokoros](https://github.com/lucasjinreal/Kokoros)
+  - [OnnxRuntime GenAI](https://github.com/microsoft/onnxruntime-genai)
+  - [Hugging Face Hub](https://github.com/huggingface/huggingface_hub)
+  - [OpenAI API](https://github.com/openai/openai-python)
+  - [IRON/MLIR-AIE](https://github.com/Xilinx/mlir-aie)
+  - and more...
+- Licensed under the [Apache 2.0 License](https://github.com/lemonade-sdk/lemonade/blob/main/LICENSE).
+  - Portions of the project are licensed as described in [LICENSE](./LICENSE).
+
+<!--This file was originally licensed under Apache 2.0. It has been modified.
+Modifications Copyright (c) 2025 AMD-->
