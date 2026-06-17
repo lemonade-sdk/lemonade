@@ -31,30 +31,10 @@ module.exports = (env, argv) => ({
     clean: true,
   },
   optimization: {
-    // Prototype build: keep production output deterministic and fast. The full
-    // dependency graph is large enough that default Terser minification can
-    // stall local verification, while the UI is still under active review.
+    // GUI3 pulls in large visualization/markdown dependencies. Keep the beta
+    // renderer unminified so CI can build it reliably without changing the
+    // single-bundle entry expected by Tauri and packaging.
     minimize: false,
-    splitChunks: {
-      chunks: 'all',
-      cacheGroups: {
-        charts: {
-          test: /[\\/]node_modules[\\/](recharts|d3-.*|victory-vendor)[\\/]/,
-          name: 'charts',
-          priority: 20,
-        },
-        markdown: {
-          test: /[\\/]node_modules[\\/](highlight\.js|markdown-it|katex|markdown-it-texmath)[\\/]/,
-          name: 'markdown',
-          priority: 20,
-        },
-        vendors: {
-          test: /[\\/]node_modules[\\/]/,
-          name: 'vendors',
-          priority: 10,
-        },
-      },
-    },
   },
   plugins: [
     new HtmlWebpackPlugin({
