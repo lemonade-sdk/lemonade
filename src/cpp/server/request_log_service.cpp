@@ -15,6 +15,10 @@
 #include <libpq-fe.h>
 #endif
 
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+#include <zlib.h>
+#endif
+
 namespace lemon {
 namespace {
 
@@ -43,7 +47,16 @@ bool parse_bool_env(const char* value, bool default_value) {
 }
 
 bool encoding_contains(const std::string& encoding, const char* token) {
-    return encoding.find(token) != std::string::npos;
+    if (encoding.empty() || !token || !*token) {
+        return false;
+    }
+    auto lower = [](std::string value) {
+        for (char& ch : value) {
+            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        }
+        return value;
+    };
+    return lower(encoding).find(lower(token)) != std::string::npos;
 }
 
 bool is_gzip_payload(const std::string& body) {
@@ -62,18 +75,49 @@ std::string decompress_with(httplib_detail::decompressor& decompressor,
             out.append(data, len);
             return true;
         });
-    return ok && !out.empty() ? out : body;
+    return ok ? out : body;
 }
 
-std::string prepare_response_body_for_logging(const httplib::Response& res) {
-    const std::string& body = res.body;
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+std::string decompress_gzip_zlib(const std::string& body) {
     if (body.empty()) {
         return body;
     }
 
-    std::string encoding;
-    if (res.has_header("Content-Encoding")) {
-        encoding = res.get_header_value("Content-Encoding");
+    z_stream strm{};
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    if (inflateInit2(&strm, 32 + 15) != Z_OK) {
+        return body;
+    }
+
+    std::string out;
+    strm.avail_in = static_cast<uInt>(body.size());
+    strm.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(body.data()));
+
+    int ret = Z_OK;
+    do {
+        char buffer[16384];
+        strm.avail_out = sizeof(buffer);
+        strm.next_out = reinterpret_cast<Bytef*>(buffer);
+        ret = inflate(&strm, Z_NO_FLUSH);
+        if (ret == Z_STREAM_ERROR || ret == Z_NEED_DICT || ret == Z_DATA_ERROR ||
+            ret == Z_MEM_ERROR) {
+            inflateEnd(&strm);
+            return body;
+        }
+        out.append(buffer, sizeof(buffer) - strm.avail_out);
+    } while (ret != Z_STREAM_END);
+
+    inflateEnd(&strm);
+    return out.empty() ? body : out;
+}
+#endif
+
+std::string try_decompress_body(const std::string& body, const std::string& encoding) {
+    if (body.empty()) {
+        return body;
     }
 
     if (!encoding.empty()) {
@@ -83,6 +127,10 @@ std::string prepare_response_body_for_logging(const httplib::Response& res) {
             const std::string decoded = decompress_with(decompressor, body);
             if (decoded != body) {
                 return decoded;
+            }
+            const std::string zlib_decoded = decompress_gzip_zlib(body);
+            if (zlib_decoded != body) {
+                return zlib_decoded;
             }
         }
 #endif
@@ -113,10 +161,28 @@ std::string prepare_response_body_for_logging(const httplib::Response& res) {
         if (decoded != body) {
             return decoded;
         }
+        const std::string zlib_decoded = decompress_gzip_zlib(body);
+        if (zlib_decoded != body) {
+            return zlib_decoded;
+        }
 #endif
     }
 
     return body;
+}
+
+std::string prepare_response_body_for_logging(const httplib::Response& res) {
+    const std::string& body = res.body;
+    if (body.empty()) {
+        return body;
+    }
+
+    std::string encoding;
+    if (res.has_header("Content-Encoding")) {
+        encoding = res.get_header_value("Content-Encoding");
+    }
+
+    return try_decompress_body(body, encoding);
 }
 
 int parse_int_env(const char* value, int default_value) {

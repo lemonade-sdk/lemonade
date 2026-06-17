@@ -77,14 +77,57 @@ function formatTokens(entry: RequestLogEntry): string {
   return `${input} / ${output}`;
 }
 
+function looksLikeJsonString(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith('{') || trimmed.startsWith('[');
+}
+
+function tryParseJsonString(value: string): unknown {
+  if (!looksLikeJsonString(value)) {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/** Recursively expand JSON-encoded strings so nested payloads pretty-print. */
+function normalizeJsonForDisplay(value: unknown): unknown {
+  if (typeof value === 'string') {
+    let parsed: unknown = tryParseJsonString(value);
+    // Handle double-encoded JSON (JSONB stored as a quoted JSON string).
+    if (typeof parsed === 'string' && looksLikeJsonString(parsed)) {
+      parsed = tryParseJsonString(parsed);
+    }
+    if (parsed !== value) {
+      return normalizeJsonForDisplay(parsed);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeJsonForDisplay(item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeJsonForDisplay(item)]),
+    );
+  }
+  return value;
+}
+
 function formatJsonBlock(value: unknown): string {
   if (value === null || value === undefined) {
     return '—';
   }
-  if (typeof value === 'string') {
-    return value;
+
+  const normalized = normalizeJsonForDisplay(value);
+  if (typeof normalized === 'string') {
+    return normalized;
   }
-  return JSON.stringify(value, null, 2);
+
+  return JSON.stringify(normalized, null, 2);
 }
 
 function payloadUsesCharCountsOnly(value: unknown): boolean {

@@ -1182,13 +1182,8 @@ void Server::setup_http_logger(httplib::Server &web_server) {
         request_log_service_->log_response(req, res);
     };
 
-    // Capture uncompressed response bodies before httplib applies gzip/brotli/zstd.
-    web_server.set_pre_compression_logger(
-        [emit_request_log](const httplib::Request& req, const httplib::Response& res) {
-            emit_request_log(req, res);
-        });
-
-    // Add request logging for ALL requests (except health checks and stats endpoints)
+    // Log after the response is finalized (including optional Content-Encoding
+    // compression). prepare_response_body_for_logging decompresses before parsing.
     web_server.set_logger([this, should_emit_request_log, emit_request_log](
                               const httplib::Request& req, const httplib::Response& res) {
         if (req.path == "/metrics") {
@@ -1232,15 +1227,6 @@ void Server::setup_http_logger(httplib::Server &web_server) {
         }
 
         if (request_log_service_ && should_emit_request_log(req)) {
-            if (res.has_header("Content-Encoding")) {
-                const std::string& encoding = res.get_header_value("Content-Encoding");
-                if (encoding.find("gzip") != std::string::npos ||
-                    encoding.find("deflate") != std::string::npos ||
-                    encoding.find("br") != std::string::npos ||
-                    encoding.find("zstd") != std::string::npos) {
-                    return;
-                }
-            }
             emit_request_log(req, res);
         }
     });
