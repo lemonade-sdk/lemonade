@@ -44,6 +44,8 @@ std::string extract_response_error(const std::string& response_body, int status_
 
 std::string sanitize_utf8_for_db(std::string value);
 
+std::string safe_json_dump(const nlohmann::json& value);
+
 bool should_skip_request_log_path(const std::string& path, const std::string& method);
 
 } // namespace lemon

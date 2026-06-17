@@ -12,6 +12,7 @@ using lemon::extract_response_error;
 using lemon::parse_request_body;
 using lemon::parse_response_body;
 using lemon::redact_json;
+using lemon::safe_json_dump;
 using lemon::sanitize_utf8_for_db;
 
 struct TestResult {
@@ -144,11 +145,48 @@ static void test_invalid_utf8_json_dump(TestResult& result) {
     std::string bad = "hi";
     bad.push_back(static_cast<char>(0xF6));
     summary["content"] = sanitize_utf8_for_db(bad);
-    try {
-        summary.dump();
+    const std::string dumped = safe_json_dump(summary);
+    if (!dumped.empty() && dumped.find("content") != std::string::npos) {
         result.ok("sanitized invalid utf8 dumps safely");
-    } catch (...) {
+    } else {
         result.fail("sanitized invalid utf8 dumps safely");
+    }
+}
+
+static void test_invalid_utf8_response_content(TestResult& result) {
+    std::string content = "answer";
+    content.push_back(static_cast<char>(0xF6));
+    const nlohmann::json response_json = {
+        {"message", nlohmann::json{{"role", "assistant"}, {"content", content}}},
+        {"prompt_eval_count", 42},
+        {"eval_count", 7},
+    };
+    const std::string response =
+        response_json.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+    const auto parsed = parse_response_body(response, "/api/chat", 200, true);
+    if (parsed.prompt_tokens.has_value() && parsed.prompt_tokens.value() == 42 &&
+        parsed.completion_tokens.has_value() && parsed.completion_tokens.value() == 7 &&
+        parsed.has_redacted_response &&
+        parsed.redacted_response.contains("content") &&
+        !parsed.redacted_response.contains("note")) {
+        result.ok("invalid utf8 response content logged without serialization fallback");
+    } else {
+        result.fail("invalid utf8 response content logged without serialization fallback");
+    }
+}
+
+static void test_float_token_counts(TestResult& result) {
+    const std::string response = R"({
+        "message": {"role": "assistant", "content": "ok"},
+        "prompt_eval_count": 100.0,
+        "eval_count": 5.0
+    })";
+    const auto parsed = parse_response_body(response, "/api/chat", 200, false);
+    if (parsed.prompt_tokens.has_value() && parsed.prompt_tokens.value() == 100 &&
+        parsed.completion_tokens.has_value() && parsed.completion_tokens.value() == 5) {
+        result.ok("float token counts coerced to integers");
+    } else {
+        result.fail("float token counts coerced to integers");
     }
 }
 
@@ -160,6 +198,8 @@ int main() {
     test_binary_response_error(result);
     test_response_tokens_and_content(result);
     test_invalid_utf8_json_dump(result);
+    test_invalid_utf8_response_content(result);
+    test_float_token_counts(result);
 
     printf("\nResults: %d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;

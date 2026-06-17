@@ -485,25 +485,14 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
         entry.prompt_tokens = parsed_response.prompt_tokens;
         entry.completion_tokens = parsed_response.completion_tokens;
         if (parsed.has_redacted_body) {
-            try {
-                entry.redacted_body_json =
-                    sanitize_utf8_for_db(parsed.redacted_body.dump());
-                entry.has_redacted_body = true;
-            } catch (...) {
-                entry.redacted_body_json = R"({"note":"request could not be serialized for logging"})";
-                entry.has_redacted_body = true;
-            }
+            entry.redacted_body_json =
+                sanitize_utf8_for_db(safe_json_dump(parsed.redacted_body));
+            entry.has_redacted_body = true;
         }
         if (parsed_response.has_redacted_response) {
-            try {
-                entry.redacted_response_json =
-                    sanitize_utf8_for_db(parsed_response.redacted_response.dump());
-                entry.has_redacted_response = true;
-            } catch (...) {
-                entry.redacted_response_json =
-                    R"({"note":"response could not be serialized for logging"})";
-                entry.has_redacted_response = true;
-            }
+            entry.redacted_response_json =
+                sanitize_utf8_for_db(safe_json_dump(parsed_response.redacted_response));
+            entry.has_redacted_response = true;
         }
 
         entry.client_ip = sanitize_utf8_for_db(std::move(entry.client_ip));
