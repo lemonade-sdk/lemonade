@@ -32,13 +32,13 @@ From the repository root:
 ./examples/start-request-log-db.sh
 ```
 
-This starts PostgreSQL on port `5433` and prints the connection URL.
+This starts PostgreSQL with a random host port (Docker assigns an available port) and prints the connection URL.
 
 Suggested env drop-in for systemd (`/etc/lemonade/conf.d/request-log.conf`):
 
 ```ini
 LEMONADE_REQUEST_LOG_ENABLED=true
-LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0.1:5433/lemonade_logs
+LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0.1:<PORT>/lemonade_logs
 LEMONADE_REQUEST_LOG_RETENTION_DAYS=30
 LEMONADE_LOG_PROMPTS=false
 ```
@@ -118,8 +118,10 @@ curl -s -X POST http://127.0.0.1:13305/api/chat \
 
 Connect to the database:
 
+Use the connection URL printed by `./examples/start-request-log-db.sh`, for example:
+
 ```bash
-psql postgresql://lemonade:change-me@127.0.0.1:5433/lemonade_logs
+psql postgresql://lemonade:change-me@127.0.0.1:<PORT>/lemonade_logs
 ```
 
 Clients sending `keep_alive`:
@@ -164,10 +166,12 @@ cmake -DLEMONADE_REQUEST_LOG=OFF --preset default
 
 sudo tee /etc/lemonade/conf.d/request-log.conf <<'EOF'
 LEMONADE_REQUEST_LOG_ENABLED=true
-LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0.1:5433/lemonade_logs
+LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0.1:<PORT>/lemonade_logs
 LEMONADE_REQUEST_LOG_RETENTION_DAYS=30
 LEMONADE_LOG_PROMPTS=false
 EOF
+
+Use the `<PORT>` value printed by `./examples/start-request-log-db.sh`.
 
 sudo systemctl stop lemond.service
 sudo cp build/lemond /usr/bin/lemond

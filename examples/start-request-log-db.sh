@@ -6,11 +6,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/examples/docker-compose.request-log.yml"
 SERVICE_NAME="lemonade-request-log-db"
 DB_HOST="127.0.0.1"
-DB_PORT="5433"
 DB_USER="lemonade"
 DB_PASSWORD="change-me"
 DB_NAME="lemonade_logs"
-DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "Error: docker is required but not installed." >&2
@@ -29,7 +27,7 @@ fi
 echo "Starting PostgreSQL request log database..."
 "${COMPOSE[@]}" -f "${COMPOSE_FILE}" up -d
 
-echo "Waiting for PostgreSQL to accept connections on ${DB_HOST}:${DB_PORT}..."
+echo "Waiting for PostgreSQL to accept connections..."
 ready=0
 for _ in $(seq 1 60); do
     if "${COMPOSE[@]}" -f "${COMPOSE_FILE}" exec -T "${SERVICE_NAME}" \
@@ -45,10 +43,20 @@ if [[ "${ready}" -ne 1 ]]; then
     exit 1
 fi
 
+port_line="$("${COMPOSE[@]}" -f "${COMPOSE_FILE}" port "${SERVICE_NAME}" 5432)"
+DB_PORT="${port_line##*:}"
+if [[ -z "${DB_PORT}" || "${DB_PORT}" == "${port_line}" ]]; then
+    echo "Error: Could not determine published host port for ${SERVICE_NAME}." >&2
+    exit 1
+fi
+
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
 cat <<EOF
 
 PostgreSQL request log database is ready.
 
+Published host port: ${DB_PORT}
 Connection URL:
   ${DATABASE_URL}
 
