@@ -4,7 +4,9 @@ This guide documents the end-to-end process of releasing Lemonade.
 
 ## Quality
 
-Lemonade has built its brand on quality and ease-of-use. Do not release a new Lemonade version if this is compromised in any way. Carefully monitor the state of the upcoming release using [https://lemonade-server.ai/repo-manager](https://lemonade-server.ai/repo-manager).
+Lemonade has built its brand on quality and ease-of-use. Do not release a new Lemonade version if this is compromised in any way.
+
+The repo-manager workflow runs automatically on every push to `main` or a release branch and publishes a live release dashboard at [https://lemonade-server.ai/repo-manager](https://lemonade-server.ai/repo-manager). Use this as your primary source of truth for whether the release is ready to ship. It also maintains three GitHub issues for the upcoming release (described in the steps below); these are updated automatically on each push.
 
 ## Release Cadence
 
@@ -38,6 +40,14 @@ git checkout -b release-vX.Y.Z
 git push origin release-vX.Y.Z
 ```
 
+Once the branch is pushed, repo-manager will automatically create three GitHub issues for this release:
+
+- **`Release vX.Y.Z final checklist`** — a prioritized (P1/P2/P3) checklist of things to verify before shipping, with a machine-generated verdict (`Ready` / `Needs Attention`). Work through the P1 items before tagging.
+- **`vX.Y.Z release notes`** — Headline and Breaking Changes sections pre-populated from the commit history. Review and edit before tagging; the release action pulls directly from this issue.
+- **`vX.Y.Z announcement`** — a full Discord announcement draft with per-feature sections and contributor shoutouts. Review and edit before posting.
+
+All three issues are re-synced automatically on every subsequent push to the release branch.
+
 ### Managing the Release Branch
 
 Two situations arise while the release branch is open:
@@ -69,6 +79,8 @@ git push origin main   # requires admin "bypass branch protections" permission
 Confirm with the team before pushing directly to `main`.
 
 ## Step 3: Push a Tag
+
+Before tagging, check the **`Release vX.Y.Z final checklist`** issue. All P1 items should be resolved and the verdict should read `Ready`.
 
 Lemonade releases are automatically created by the [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) final step, which is triggered by pushing a tag that matches the `v*` pattern. The tag must match the pattern `v<major>.<minor>.<patch>`, i.e., the value from CMakeLists.txt with a leading `v`.
 
@@ -120,9 +132,9 @@ git push origin vX.Y.Z --force
 
 ## Step 6: Update the Release Notes
 
-The release action auto-generates release notes that include the **Headline** and **Breaking Changes** sections pulled from the open GitHub issue titled `vX.Y.Z release notes` (exact match on the tag name, e.g. `v10.8.0 release notes`). The result looks like this: https://github.com/lemonade-sdk/lemonade/releases/tag/v10.7.0
+Open the **`vX.Y.Z release notes`** GitHub issue. Repo-manager has pre-populated the **Headline** and **Breaking Changes** sections from the commit history. Review and edit them — the release action pulls these sections directly from this issue to build the GitHub release page.
 
-You may need to manually edit the release to:
+You may also need to manually edit the GitHub release after it publishes to:
 - add co-author contributors who were missing
 - add deprecation notices
 - add/remove links to release artifacts that we forgot to update in the release workflow.
@@ -141,21 +153,10 @@ Bulleted list with one item per breaking change. Keep it concise, and link to a 
 
 ## Step 7: Discord Announcement
 
-Each release gets a post in `#announcements` on the Lemonade Discord.
+Open the **`vX.Y.Z announcement`** GitHub issue. Repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits, and post it in `#announcements` on the Lemonade Discord.
 
 - Major and Minor releases: `@everyone`
 - Patch releases: `@release`
-
-This announcement should create excitement for the release and give shout outs to everyone who contributed
-
-Suggested structure:
-- Introduction sentence
-- News (if any)
-- Breaking changes: copied from release notes
-- One section per headline from the release notes, with 1-2 sentences explaining it.
-- Additional Improvements section with a bulleted list, one bullet per notable contribution
-
-Try to find an appealing narrative arc for the release, and implement it by combining contributions into sections/bullets. For example, if there were 3 contributions by 3 authors for LMX models, say "Authors X, Y, and Z teamed up to improve in LMX..."
 
 ## Step 8: Social Media
 
