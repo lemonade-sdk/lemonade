@@ -16,6 +16,10 @@ inputs:
     description: 'Whether to download the artifact (set to false if already downloaded)'
     required: false
     default: 'true'
+  port:
+    description: "Port to start lemond on. Use 'auto' to pick a free port (needed on shared self-hosted runners where the default port may be taken)."
+    required: false
+    default: '13305'
 
 outputs:
   bin-path:
@@ -126,79 +130,72 @@ runs:
         echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
         export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-        # On these single-tenant self-hosted runners a previous run's lemond can
-        # still hold port 13305, which lemond now refuses to bind over (it exits
-        # as a duplicate). Free the port authoritatively before starting: kill
-        # any lemond, then kill whatever still holds the port (escalating with
-        # sudo if available), and wait until the port is actually free instead of
-        # assuming a fixed delay is enough.
-        SUDO=""
-        if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-          SUDO="sudo"
-        fi
+        # With port=auto, start on a job-unique free port instead of the default
+        # 13305. Non-containerized self-hosted jobs share the host network, so a
+        # concurrent job may already hold 13305 — and lemond now refuses to bind
+        # an in-use port. The resolved port is exported so the test harness
+        # (LEMONADE_TEST_PORT) and the lemonade CLI (LEMONADE_PORT) target it.
+        REQUESTED_PORT="${{ inputs.port }}"
 
-        free_port_13305() {
-          # Kill known lemonade processes by name.
-          $SUDO pkill -9 -x lemond 2>/dev/null || true
-          $SUDO pkill -9 -f LemonadeServer 2>/dev/null || true
-          # Kill whatever is bound to the port, by PID, via the first tool present.
-          if command -v fuser >/dev/null 2>&1; then
-            $SUDO fuser -k 13305/tcp 2>/dev/null || true
+        # Print a free TCP port (loopback). Prefer an OS-assigned ephemeral port
+        # via python3; fall back to a random high port checked with ss.
+        pick_free_port() {
+          if command -v python3 >/dev/null 2>&1; then
+            python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()' && return 0
           fi
-          if command -v lsof >/dev/null 2>&1; then
-            local pids
-            pids=$(lsof -t -iTCP:13305 -sTCP:LISTEN 2>/dev/null || true)
-            [ -n "$pids" ] && $SUDO kill -9 $pids 2>/dev/null || true
-          fi
+          for _ in $(seq 1 50); do
+            local p=$(( (RANDOM % 20000) + 20000 ))
+            if ! ss -ltn 2>/dev/null | grep -q ":$p "; then
+              echo "$p"; return 0
+            fi
+          done
+          return 1
         }
 
-        # Returns 0 when nothing is LISTENING on 13305.
-        port_is_free() {
-          if command -v ss >/dev/null 2>&1; then
-            ! ss -ltn 2>/dev/null | grep -q ':13305 '
-          elif command -v lsof >/dev/null 2>&1; then
-            [ -z "$(lsof -t -iTCP:13305 -sTCP:LISTEN 2>/dev/null || true)" ]
+        # Start lemond; with auto, retry on a fresh port if the chosen one got
+        # taken in the race between picking and binding.
+        started=0
+        for start_attempt in $(seq 1 5); do
+          if [ "$REQUESTED_PORT" = "auto" ]; then
+            PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
           else
-            ! (netstat -ltn 2>/dev/null | grep -q ':13305 ')
+            PORT="$REQUESTED_PORT"
           fi
-        }
+          echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
+          "$SERVER_BIN" "$CACHE_DIR" --port "$PORT" > "$LOG_FILE" 2>&1 &
+          SERVER_PID=$!
 
-        for attempt in $(seq 1 10); do
-          if port_is_free; then
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:$PORT/live" > /dev/null 2>&1; then
+              echo "Server is running and healthy on port $PORT (PID $SERVER_PID)"
+              echo "LEMONADE_TEST_PORT=$PORT" >> "$GITHUB_ENV"
+              echo "LEMONADE_PORT=$PORT" >> "$GITHUB_ENV"
+              started=1
+              break
+            fi
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              echo "Server (PID $SERVER_PID) exited prematurely on port $PORT"
+              echo "=== Server log ==="
+              cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 2
+          done
+
+          [ "$started" = "1" ] && break
+          # Only an auto port is worth retrying (a fixed port won't change).
+          if [ "$REQUESTED_PORT" != "auto" ]; then
             break
           fi
-          echo "Port 13305 still in use (attempt $attempt) - freeing it..."
-          free_port_13305
+          echo "Start attempt $start_attempt failed; retrying on a new port..."
+          kill -9 $SERVER_PID 2>/dev/null || true
           sleep 1
         done
-        if ! port_is_free; then
-          echo "ERROR: Port 13305 is still held after cleanup. Current listeners:"
-          (command -v ss >/dev/null 2>&1 && $SUDO ss -ltnp 2>/dev/null | grep ':13305 ') \
-            || (command -v lsof >/dev/null 2>&1 && $SUDO lsof -iTCP:13305 -sTCP:LISTEN 2>/dev/null) \
-            || true
+
+        if [ "$started" != "1" ]; then
+          echo "ERROR: server failed to start after multiple attempts"
+          echo "=== Server log (last 50 lines) ==="
+          tail -50 "$LOG_FILE" 2>/dev/null || echo "(no log file)"
           exit 1
         fi
-
-        "$SERVER_BIN" "$CACHE_DIR" > "$LOG_FILE" 2>&1 &
-        SERVER_PID=$!
-
-        echo "Waiting for server to be ready (PID $SERVER_PID)..."
-        for i in $(seq 1 30); do
-          if curl -sf http://127.0.0.1:13305/live > /dev/null 2>&1; then
-            echo "Server is running and healthy"
-            exit 0
-          fi
-          # Check if process is still alive
-          if ! kill -0 $SERVER_PID 2>/dev/null; then
-            echo "ERROR: Server process (PID $SERVER_PID) exited prematurely"
-            echo "=== Server log ==="
-            cat "$LOG_FILE" 2>/dev/null || echo "(no log file)"
-            exit 1
-          fi
-          echo "Waiting for server... ($i/30)"
-          sleep 2
-        done
-        echo "ERROR: Server did not start within 60 seconds"
-        echo "=== Server log (last 50 lines) ==="
-        tail -50 "$LOG_FILE" 2>/dev/null || echo "(no log file)"
-        exit 1
