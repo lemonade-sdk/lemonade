@@ -446,7 +446,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // Should have 8 starter cards
     const starterCards = recipesView.locator('[data-recipe-grid="starters"] .recipe-card');
-    await expect(starterCards).toHaveCount(8);
+    await expect(starterCards).toHaveCount(9);
 
     // Starter badge on first card
     await expect(starterCards.first().locator('.starter-badge')).toContainText('Starter');

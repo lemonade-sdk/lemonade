@@ -97,13 +97,14 @@ export function presetSupportsCapability(preset: Pick<Preset, 'id' | 'applies_to
 
 export const STARTERS: Preset[] = [
   { id: 's-balanced', name: 'Balanced', description: 'Sensible defaults. Good first pick for everyday chat.', applies_to: ['chat'], recipe_options: { ctx_size: 4096 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-quality', name: 'Quality', description: 'Larger context, slightly looser sampling for richer long-form answers.', applies_to: ['chat'], recipe_options: { ctx_size: 8192 }, sampling: { temperature: 0.70, top_p: 0.95, top_k: 40, repeat_penalty: 1.10 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-fast', name: 'Fast', description: 'Small context, tight sampling. Snappy responses for quick interactions.', applies_to: ['chat'], recipe_options: { ctx_size: 2048 }, sampling: { temperature: 0.60, top_p: 0.80, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-creative', name: 'Creative', description: 'Higher temperature for brainstorming, dialog, and divergent thinking.', applies_to: ['chat'], recipe_options: { ctx_size: 8192 }, sampling: { temperature: 0.95, top_p: 0.95, top_k: 60, repeat_penalty: 1.00 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-code', name: 'Code', description: 'Low temperature, tight sampling for code generation and refactoring.', applies_to: ['chat'], recipe_options: { ctx_size: 8192 }, sampling: { temperature: 0.20, top_p: 0.95, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
-  { id: 's-sharp', name: 'Sharp', description: 'More steps and tighter guidance for crisp, deliberate image generation.', applies_to: ['image'], recipe_options: { steps: 30, cfg_scale: 8.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
-  { id: 's-quick', name: 'Quick', description: 'Fewer steps, looser guidance — fast drafts and iteration.', applies_to: ['image'], recipe_options: { steps: 15, cfg_scale: 7.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
+  { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.40, top_p: 0.95, top_k: 40, repeat_penalty: 1.10 }, engine_hint: 'llamacpp', starter: true },
+  { id: 's-quick-chat', name: 'Quick Chat', description: 'Small context, tight sampling. Snappy responses for quick interactions.', applies_to: ['chat'], recipe_options: { ctx_size: 4048 }, sampling: { temperature: 0.60, top_p: 0.80, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
+  { id: 's-creative', name: 'Creative', description: 'Higher temperature for brainstorming, dialog, and divergent thinking.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.95, top_p: 0.95, top_k: 60, repeat_penalty: 1.00 }, engine_hint: 'llamacpp', starter: true },
+  { id: 's-long-context', name: 'Long Context', description: 'For documents, codebases, and long conversation threads.', applies_to: ['chat'], recipe_options: { ctx_size: 262144 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
+  { id: 's-code', name: 'Code', description: 'Low temperature, tight sampling for code generation and refactoring.', applies_to: ['chat'], recipe_options: { ctx_size: 131072 }, sampling: { temperature: 0.20, top_p: 0.95, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
+  { id: 's-quality', name: 'Quality', description: 'More steps and tighter guidance for crisp, deliberate image generation.', applies_to: ['image'], recipe_options: { steps: 20, cfg_scale: 8.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
+  { id: 's-preview', name: 'Preview', description: 'Fewer steps, looser guidance — fast drafts and iteration.', applies_to: ['image'], recipe_options: { steps: 8, cfg_scale: 6.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
+  { id: 's-turbo', name: 'Turbo', description: 'Fastest image drafts for rapid iteration.', applies_to: ['image'], recipe_options: { steps: 4, cfg_scale: 1.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
 ];
 
 
@@ -479,10 +480,11 @@ export type PresetIconName =
   | 'gem'
   | 'gauge'
   | 'timer'
+  | 'scan-eye'
   | 'pen-line'
   | 'library'
   | 'code'
-  | 'search'
+  | 'search-check'
   | 'hard-drive'
   | 'sliders-horizontal';
 
@@ -491,15 +493,18 @@ export function getPresetIcon(id: string, nameRaw: string): PresetIconName {
   const name = String(nameRaw || '').toLowerCase();
 
   if (normalizedId === DEFAULT_PRESET.id || name === 'default') return 'citrus';
+  // Chat
   if (name.includes('balanced')) return 'scale';
-  if (name.includes('quality')) return 'gem';
-  if (name.includes('fast')) return 'gauge';
+  if (name.includes('thorough')) return 'search-check';
   if (name.includes('quick')) return 'timer';
   if (name.includes('creative')) return 'pen-line';
   if (name.includes('long')) return 'library';
   if (name.includes('code')) return 'code';
-  if (name.includes('sharp')) return 'search';
   if (name.includes('memory')) return 'hard-drive';
+  // Image
+  if (name.includes('quality')) return 'gem';
+  if (name.includes('preview')) return 'scan-eye';
+  if (name.includes('turbo')) return 'gauge';
 
   return 'sliders-horizontal';
 }
