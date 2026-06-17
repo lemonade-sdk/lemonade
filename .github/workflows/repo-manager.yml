@@ -28,6 +28,7 @@ jobs:
           git config --global user.name "Lemonade Bot"
           git config --global user.email "lemonade@amd.com"
           git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
+          gh auth setup-git
 
       - name: Clean stale repo-manager state
         run: rm -rf /opt/lemonade-manager/.repo-manager/pages
