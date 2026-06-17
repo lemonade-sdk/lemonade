@@ -46,7 +46,10 @@
       "gfx1033",
       "gfx1034",
       "gfx1035",
-      "gfx1036"
+      "gfx1036",
+      "gfx103X",
+      "gfx110X",
+      "gfx120X"
     ],
     "url_mapping": {
       "gfx908": "gfx90X-dcgpu",
