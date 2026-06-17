@@ -1,46 +1,52 @@
 /**
- * Model Options Modal
+ * Model Settings Modal
  *
- * This component uses the central recipe options configuration to dynamically
- * render the appropriate options for each recipe type.
+ * Edit persisted model defaults and user-defined API aliases for downloaded models.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { serverFetch } from "./utils/serverConfig";
-import { ModelInfo, downloadModelExportFile } from "./utils/modelData";
-import { useSystem } from "./hooks/useSystem";
-import { writeClipboard } from "./utils/clipboardUtils";
+import { serverFetch } from './utils/serverConfig';
+import { ModelInfo, updateModelSettings } from './utils/modelData';
+import { useSystem } from './hooks/useSystem';
+import { writeClipboard } from './utils/clipboardUtils';
 import {
   RecipeOptions,
-  clampOptionValue,
   createDefaultOptions,
   apiToRecipeOptions,
+  recipeOptionsToApi,
+  clampOptionValue,
 } from './recipes/recipeOptions';
 import ModelOptionsForm from './components/ModelOptionsForm';
+import { formatAliasInput, parseAliasInput } from './components/modelOptionsFormShared';
 
-interface SettingsModalProps {
+interface ModelSettingsModalProps {
   isOpen: boolean;
-  onSubmit: (modelName: string, options: RecipeOptions) => void;
   onCancel: () => void;
+  onSaved?: () => void;
   model: string | null;
 }
 
-const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onSubmit, model }) => {
+const ModelSettingsModal: React.FC<ModelSettingsModalProps> = ({
+  isOpen,
+  onCancel,
+  onSaved,
+  model,
+}) => {
   const { supportedRecipes, ensureSystemInfoLoaded } = useSystem();
   const [modelInfo, setModelInfo] = useState<ModelInfo>();
-  const [modelName, setModelName] = useState("");
-  const [modelUrl, setModelUrl] = useState<string>("");
+  const [modelName, setModelName] = useState('');
+  const [modelUrl, setModelUrl] = useState('');
   const [options, setOptions] = useState<RecipeOptions>();
+  const [aliasInput, setAliasInput] = useState('');
   const [numericDrafts, setNumericDrafts] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [isModelNameCopied, setIsModelNameCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const modelNameCopyTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch options when modal opens
   useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
@@ -51,14 +57,15 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       modelNameCopyTimeoutIdRef.current = null;
     }
     setLoadError(null);
-    setExportError(null);
+    setSaveError(null);
     setModelInfo(undefined);
-    setModelName(model ?? "");
-    setModelUrl("");
+    setModelName(model ?? '');
+    setModelUrl('');
     setOptions(undefined);
+    setAliasInput('');
     void ensureSystemInfoLoaded();
 
-    const fetchOptions = async () => {
+    const fetchSettings = async () => {
       if (isMounted) setIsLoading(true);
       if (!model) {
         if (isMounted) {
@@ -71,7 +78,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       try {
         const response = await serverFetch(`/models/${encodeURIComponent(model)}`);
         if (!response.ok) {
-          throw new Error(`Failed to load model options (${response.status})`);
+          throw new Error(`Failed to load model settings (${response.status})`);
         }
         const data = await response.json();
 
@@ -86,17 +93,22 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         const recipe = data.recipe as string;
         const recipeOptions = data.recipe_options ?? {};
         setOptions(apiToRecipeOptions(recipe, recipeOptions));
+
+        const aliases = Array.isArray(data.aliases)
+          ? data.aliases.filter((entry: unknown): entry is string => typeof entry === 'string')
+          : [];
+        setAliasInput(formatAliasInput(aliases));
       } catch (error) {
-        console.error('Failed to load options:', error);
+        console.error('Failed to load model settings:', error);
         if (isMounted) {
-          setLoadError('Failed to load model options.');
+          setLoadError('Failed to load model settings.');
         }
       } finally {
         if (isMounted) setIsLoading(false);
       }
     };
 
-    fetchOptions();
+    void fetchSettings();
     return () => { isMounted = false; };
   }, [isOpen, model, ensureSystemInfoLoaded]);
 
@@ -108,7 +120,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     };
   }, []);
 
-  // Handle click outside and escape key
   useEffect(() => {
     if (!isOpen) return;
 
@@ -131,7 +142,6 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     };
   }, [isOpen, onCancel]);
 
-  // Reset all options to defaults
   const handleReset = () => {
     if (!options?.recipe) return;
     setNumericDrafts({});
@@ -158,25 +168,8 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     }
   };
 
-  const handleModelExport = async (event: React.MouseEvent<HTMLAnchorElement>) => {
-    // The shared helper fetches the live /models/{id} object and saves the
-    // normalized, import-ready file (same shape the CLI export produces).
-    event.preventDefault();
-    setExportError(null);
-    try {
-      await downloadModelExportFile(modelInfo?.id as string);
-    } catch (error) {
-      console.error('Failed to export model:', error);
-      setExportError(error instanceof Error ? error.message : 'Failed to export model.');
-    }
-  }
-
-  const handleCancel = () => {
-    onCancel();
-  };
-
-  const handleSubmit = () => {
-    if (!options || !modelName) return;
+  const buildSubmitOptions = (): RecipeOptions | undefined => {
+    if (!options) return undefined;
 
     let submitOptions: RecipeOptions = options;
 
@@ -201,12 +194,36 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
       } as RecipeOptions;
     }
 
-    onSubmit(modelName, submitOptions);
+    return submitOptions;
   };
+
+  const handleSave = async () => {
+    if (!modelName) return;
+    const submitOptions = buildSubmitOptions();
+    if (!submitOptions) return;
+
+    setSaveError(null);
+    setIsSaving(true);
+    try {
+      await updateModelSettings(modelName, {
+        recipe_options: recipeOptionsToApi(submitOptions),
+        aliases: parseAliasInput(aliasInput),
+      });
+      onSaved?.();
+      onCancel();
+    } catch (error) {
+      console.error('Failed to save model settings:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to save model settings.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!isOpen) return null;
 
   const renderHeader = () => (
     <div className="settings-header">
-      <h3>Model Options</h3>
+      <h3>Model Settings</h3>
       <button className="settings-close-button" onClick={onCancel} title="Close">
         <svg width="14" height="14" viewBox="0 0 14 14">
           <path d="M 1,1 L 13,13 M 13,1 L 1,13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -215,19 +232,17 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
     </div>
   );
 
-  if (!isOpen) return null;
-
   if (!options) {
     return (
       <div className="settings-overlay">
         <div className="settings-modal" ref={cardRef} onMouseDown={(e) => e.stopPropagation()}>
           {renderHeader()}
           <div className="settings-loading">
-            {loadError ?? 'Loading options...'}
+            {loadError ?? 'Loading settings...'}
           </div>
           {loadError && (
             <div className="settings-footer">
-              <button className="settings-save-button" onClick={handleCancel}>Cancel</button>
+              <button className="settings-save-button" onClick={onCancel}>Cancel</button>
             </div>
           )}
         </div>
@@ -241,7 +256,7 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
         {renderHeader()}
 
         {isLoading ? (
-          <div className="settings-loading">Loading options...</div>
+          <div className="settings-loading">Loading settings...</div>
         ) : (
           <div className="model-options-content">
             <div className="model-options-category-header">
@@ -286,6 +301,23 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
               </h5>
             </div>
 
+            <div className="form-section">
+              <label className="form-label" htmlFor="model-alias-input">
+                aliases
+              </label>
+              <input
+                id="model-alias-input"
+                type="text"
+                className="form-input"
+                value={aliasInput}
+                onChange={(e) => setAliasInput(e.target.value)}
+                placeholder="gemma4, gemma4:latest"
+              />
+              <span className="settings-description">
+                API names that resolve to this model (comma-separated).
+              </span>
+            </div>
+
             <ModelOptionsForm
               options={options}
               setOptions={setOptions}
@@ -297,31 +329,30 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
           </div>
         )}
 
-        {exportError && (
-          <div className="settings-export-error">{exportError}</div>
+        {saveError && (
+          <div className="settings-export-error">{saveError}</div>
         )}
         <div className="settings-footer">
           <button
             className="settings-reset-button"
             onClick={handleReset}
-            disabled={isSubmitting || isLoading}
+            disabled={isSaving || isLoading}
           >
             Reset All
           </button>
-          <a className="settings-save-button" onClick={handleModelExport} href="">Export Model</a>
           <button
             className="settings-save-button"
-            onClick={handleCancel}
-            disabled={isSubmitting || isLoading}
+            onClick={onCancel}
+            disabled={isSaving || isLoading}
           >
-            {isSubmitting ? 'Cancelling...' : 'Cancel'}
+            Cancel
           </button>
           <button
             className="settings-save-button"
-            onClick={handleSubmit}
-            disabled={isSubmitting || isLoading}
+            onClick={handleSave}
+            disabled={isSaving || isLoading}
           >
-            {isSubmitting ? 'Connecting...' : 'Load'}
+            {isSaving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
@@ -329,4 +360,4 @@ const ModelOptionsModal: React.FC<SettingsModalProps> = ({ isOpen, onCancel, onS
   );
 };
 
-export default ModelOptionsModal;
+export default ModelSettingsModal;

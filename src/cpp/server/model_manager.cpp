@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <lemon/utils/aixlog.hpp>
 
 #ifndef _WIN32
@@ -151,6 +152,34 @@ static std::string cache_key_to_canonical_id(const std::string& cache_key) {
         return cache_key;
     }
     return canonical_id(ModelSource::Builtin, cache_key);
+}
+
+static std::string canonical_id_to_cache_key(const std::string& id) {
+    if (auto canon = parse_canonical_id(id)) {
+        if (canon->source == ModelSource::Builtin) {
+            return canon->bare_name;
+        }
+        return id;
+    }
+    return id;
+}
+
+static std::string trim_copy(const std::string& s) {
+    const auto start = s.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) {
+        return "";
+    }
+    const auto end = s.find_last_not_of(" \t\r\n");
+    return s.substr(start, end - start + 1);
+}
+
+static std::string strip_latest_suffix(const std::string& name) {
+    const std::string suffix = ":latest";
+    if (name.size() > suffix.size() &&
+        name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        return name.substr(0, name.size() - suffix.size());
+    }
+    return name;
 }
 
 template <typename T>
@@ -1111,6 +1140,13 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
     server_models_ = load_server_models();
     user_models_ = load_optional_json(get_user_models_file());
     recipe_options_ = load_optional_json(get_recipe_options_file());
+    model_aliases_ = load_optional_json(get_model_aliases_file());
+    if (!model_aliases_.is_object()) {
+        if (!model_aliases_.is_null()) {
+            LOG(WARNING, "ModelManager") << "model_aliases.json is not a JSON object; resetting to empty object" << std::endl;
+        }
+        model_aliases_ = json::object();
+    }
 
     // One-shot migration of recipe_options.json: older Lemonade keyed built-in
     // entries by bare name; the current spec requires a canonical "builtin."
@@ -1166,6 +1202,10 @@ std::string ModelManager::get_user_models_file() {
 
 std::string ModelManager::get_recipe_options_file() {
     return get_cache_dir() + "/recipe_options.json";
+}
+
+std::string ModelManager::get_model_aliases_file() {
+    return get_cache_dir() + "/model_aliases.json";
 }
 
 std::string ModelManager::get_hf_cache_dir() const {
@@ -1857,6 +1897,78 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     save_user_json(get_recipe_options_file(), recipe_options_);
 }
 
+void ModelManager::save_model_aliases(const std::string& model_name,
+                                      const std::vector<std::string>& aliases) {
+    build_cache();
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    const std::string cache_key = resolve_input_to_cache_key_locked(model_name);
+    if (models_cache_.find(cache_key) == models_cache_.end()) {
+        throw std::runtime_error("Model not found: " + model_name);
+    }
+    std::vector<std::string> normalized;
+    normalized.reserve(aliases.size());
+    for (const auto& raw : aliases) {
+        normalized.push_back(trim_copy(raw));
+    }
+    validate_aliases_locked(cache_key, normalized);
+    const std::string canonical = cache_key_to_canonical_id(cache_key);
+    if (normalized.empty()) {
+        model_aliases_.erase(canonical);
+    } else {
+        model_aliases_[canonical] = normalized;
+    }
+    save_user_json(get_model_aliases_file(), model_aliases_);
+    rebuild_user_model_aliases_locked();
+}
+
+void ModelManager::save_model_settings(const ModelInfo& info,
+                                       const std::vector<std::string>& aliases) {
+    build_cache();
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    const std::string cache_key = resolve_input_to_cache_key_locked(info.model_name);
+    if (models_cache_.find(cache_key) == models_cache_.end()) {
+        throw std::runtime_error("Model not found: " + info.model_name);
+    }
+    std::vector<std::string> normalized;
+    normalized.reserve(aliases.size());
+    for (const auto& raw : aliases) {
+        normalized.push_back(trim_copy(raw));
+    }
+    validate_aliases_locked(cache_key, normalized);
+    const std::string canonical = cache_key_to_canonical_id(cache_key);
+    if (normalized.empty()) {
+        model_aliases_.erase(canonical);
+    } else {
+        model_aliases_[canonical] = normalized;
+    }
+    recipe_options_[canonical] = info.recipe_options.to_json();
+    auto cache_it = models_cache_.find(cache_key);
+    if (cache_it != models_cache_.end()) {
+        cache_it->second.recipe_options = info.recipe_options;
+    }
+    save_user_json(get_model_aliases_file(), model_aliases_);
+    save_user_json(get_recipe_options_file(), recipe_options_);
+    rebuild_user_model_aliases_locked();
+}
+
+std::vector<std::string> ModelManager::get_model_aliases(const std::string& model_name) {
+    build_cache();
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    const std::string cache_key = resolve_input_to_cache_key_locked(model_name);
+    const std::string canonical = cache_key_to_canonical_id(cache_key);
+    auto it = model_aliases_.find(canonical);
+    if (it == model_aliases_.end() || !it->value().is_array()) {
+        return {};
+    }
+    std::vector<std::string> result;
+    for (const auto& entry : it->value()) {
+        if (entry.is_string()) {
+            result.push_back(entry.get<std::string>());
+        }
+    }
+    return result;
+}
+
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
     // Build cache if needed (lazy initialization)
     build_cache();
@@ -2227,6 +2339,7 @@ void ModelManager::build_cache() {
     }
 
     rebuild_public_model_aliases_locked();
+    rebuild_user_model_aliases_locked();
 
     cache_valid_ = true;
     LOG(INFO, "ModelManager") << "Cache built: " << models_cache_.size()
@@ -3120,10 +3233,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     build_cache();
     // O(1) lookup - download status is in cache
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto alias_it = public_model_aliases_.find(model_name);
-    const std::string canonical_name = alias_it != public_model_aliases_.end()
-        ? alias_it->second
-        : model_name;
+    const std::string canonical_name = resolve_input_to_cache_key_locked(model_name);
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
         if (it->second.downloaded) {
@@ -4879,7 +4989,17 @@ void ModelManager::delete_model(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Checkpoint: " << info.checkpoint() << std::endl;
     LOG(INFO, "ModelManager") << "Recipe: " << info.recipe << std::endl;
 
-    // Handle extra models (from --extra-models-dir) - these are user-managed external files
+    {
+        const std::string alias_key = cache_key_to_canonical_id(canonical_model_name);
+        if (model_aliases_.contains(alias_key)) {
+            model_aliases_.erase(alias_key);
+            save_user_json(get_model_aliases_file(), model_aliases_);
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            rebuild_user_model_aliases_locked();
+        }
+    }
+
+    // Handle extra models (from --extra-models-dir)
     if (canonical_model_name.substr(0, 6) == "extra.") {
         throw std::runtime_error("Cannot delete extra models via API. Models in --extra-models-dir are user-managed. "
                                  "Delete the file directly from: " + info.checkpoint());
@@ -5164,8 +5284,7 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
     // O(1) lookup in cache
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        const std::string canonical_name = resolve_input_to_cache_key_locked(model_name);
         auto it = models_cache_.find(canonical_name);
         if (it != models_cache_.end()) {
             return it->second;
@@ -5174,8 +5293,7 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
 
     if (refresh_user_models_from_disk_for_lookup(model_name)) {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        const std::string canonical_name = resolve_input_to_cache_key_locked(model_name);
         auto it = models_cache_.find(canonical_name);
         if (it != models_cache_.end()) {
             return it->second;
@@ -5189,8 +5307,7 @@ std::string ModelManager::resolve_model_name(const std::string& model_name) {
     build_cache();
 
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    auto it = public_model_aliases_.find(model_name);
-    return it != public_model_aliases_.end() ? it->second : model_name;
+    return resolve_input_to_cache_key_locked(model_name);
 }
 
 std::string ModelManager::get_public_model_name(const std::string& model_name) {
@@ -5208,8 +5325,7 @@ bool ModelManager::model_exists(const std::string& model_name) {
     // O(1) lookup in cache
     {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        const std::string canonical_name = resolve_input_to_cache_key_locked(model_name);
         if (models_cache_.find(canonical_name) != models_cache_.end()) {
             return true;
         }
@@ -5217,8 +5333,7 @@ bool ModelManager::model_exists(const std::string& model_name) {
 
     if (refresh_user_models_from_disk_for_lookup(model_name)) {
         std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+        const std::string canonical_name = resolve_input_to_cache_key_locked(model_name);
         return models_cache_.find(canonical_name) != models_cache_.end();
     }
 
@@ -5461,8 +5576,7 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
     // This is populated by filter_models_by_backend() during cache building
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-    auto alias_it = public_model_aliases_.find(model_name);
-    std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
+    const std::string canonical_name = resolve_input_to_cache_key_locked(model_name);
     auto it = filtered_out_models_.find(canonical_name);
     if (it != filtered_out_models_.end()) {
         return it->second;
@@ -5470,6 +5584,107 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 
     // Model wasn't filtered out (either it's available or doesn't exist)
     return "";
+}
+
+std::string ModelManager::resolve_input_to_cache_key_locked(const std::string& model_name) const {
+    auto lookup = [this](const std::map<std::string, std::string>& aliases,
+                         const std::string& name) -> std::optional<std::string> {
+        auto it = aliases.find(name);
+        if (it != aliases.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    };
+
+    if (auto resolved = lookup(user_model_aliases_, model_name)) {
+        return *resolved;
+    }
+
+    const std::string stripped = strip_latest_suffix(model_name);
+    if (stripped != model_name) {
+        if (auto resolved = lookup(user_model_aliases_, stripped)) {
+            return *resolved;
+        }
+    }
+
+    if (auto resolved = lookup(public_model_aliases_, model_name)) {
+        return *resolved;
+    }
+    if (stripped != model_name) {
+        if (auto resolved = lookup(public_model_aliases_, stripped)) {
+            return *resolved;
+        }
+    }
+
+    return model_name;
+}
+
+void ModelManager::rebuild_user_model_aliases_locked() {
+    user_model_aliases_.clear();
+    if (!model_aliases_.is_object()) {
+        return;
+    }
+    for (auto it = model_aliases_.begin(); it != model_aliases_.end(); ++it) {
+        if (!it.value().is_array()) {
+            continue;
+        }
+        const std::string cache_key = canonical_id_to_cache_key(it.key());
+        if (models_cache_.find(cache_key) == models_cache_.end()) {
+            continue;
+        }
+        for (const auto& entry : it.value()) {
+            if (entry.is_string()) {
+                user_model_aliases_[entry.get<std::string>()] = cache_key;
+            }
+        }
+    }
+}
+
+void ModelManager::validate_aliases_locked(const std::string& cache_key,
+                                           const std::vector<std::string>& aliases) const {
+    std::set<std::string> seen;
+    for (const auto& raw : aliases) {
+        const std::string alias = trim_copy(raw);
+        if (alias.empty()) {
+            throw AliasValidationError("Alias cannot be empty");
+        }
+        if (!seen.insert(alias).second) {
+            throw AliasValidationError("Duplicate alias: " + alias);
+        }
+        if (is_reserved_registration_name(alias)) {
+            throw AliasValidationError("Alias uses a reserved name: " + alias);
+        }
+        if (parse_canonical_id(alias)) {
+            throw AliasValidationError("Alias cannot use canonical ID prefix: " + alias);
+        }
+
+        for (const auto& [existing_alias, existing_key] : user_model_aliases_) {
+            if (existing_alias == alias && existing_key != cache_key) {
+                throw AliasValidationError("Alias already in use: " + alias);
+            }
+        }
+
+        for (const auto& [key, info] : models_cache_) {
+            (void)info;
+            if (key == alias || key == cache_key) {
+                if (key != cache_key) {
+                    throw AliasValidationError("Alias conflicts with model id: " + alias);
+                }
+            }
+            auto pub_it = canonical_public_names_.find(key);
+            const std::string& wire_id = pub_it != canonical_public_names_.end() ? pub_it->second : key;
+            if (wire_id == alias && key != cache_key) {
+                throw AliasValidationError("Alias conflicts with model id: " + alias);
+            }
+        }
+
+        if (public_model_aliases_.find(alias) != public_model_aliases_.end()) {
+            const std::string& mapped = public_model_aliases_.at(alias);
+            if (mapped != cache_key) {
+                throw AliasValidationError("Alias conflicts with existing model name: " + alias);
+            }
+        }
+    }
 }
 
 // Must be called with models_cache_mutex_ held.

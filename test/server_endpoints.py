@@ -3259,6 +3259,156 @@ class EndpointTests(ServerTestBase):
             f"{[v['name'] for v in variants]}"
         )
 
+    def test_034_user_defined_model_aliases(self):
+        """PATCH /models/{id} persists user aliases that resolve API lookups."""
+        alias = f"test-alias-{uuid.uuid4().hex[:8]}"
+        alias_latest = f"{alias}:latest"
+        model_url = f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}"
+
+        try:
+            patch_response = requests.patch(
+                model_url,
+                json={"aliases": [alias, alias_latest]},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                patch_response.status_code,
+                200,
+                patch_response.text,
+            )
+            patch_data = patch_response.json()
+            self.assertIn(alias, patch_data["aliases"])
+            self.assertIn(alias_latest, patch_data["aliases"])
+
+            get_response = requests.get(
+                f"{self.base_url}/models/{alias}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_response.status_code, 200)
+            self.assertEqual(get_response.json()["id"], ENDPOINT_TEST_MODEL)
+
+            get_latest_response = requests.get(
+                f"{self.base_url}/models/{alias_latest}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_latest_response.status_code, 200)
+            self.assertEqual(get_latest_response.json()["id"], ENDPOINT_TEST_MODEL)
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": alias_latest},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(
+                load_response.status_code,
+                200,
+                load_response.text,
+            )
+        finally:
+            requests.patch(
+                model_url,
+                json={"aliases": []},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        missing = requests.get(
+            f"{self.base_url}/models/{alias}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(missing.status_code, 404)
+        print(f"[OK] User-defined aliases resolve for {ENDPOINT_TEST_MODEL}")
+
+    def test_035_user_defined_alias_conflict_rejected(self):
+        """PATCH rejects an alias already claimed by another model."""
+        alias = f"conflict-alias-{uuid.uuid4().hex[:8]}"
+        model_a_url = f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}"
+        model_b_name = f"user.AliasConflict-{uuid.uuid4().hex[:8]}"
+        model_b_url = f"{self.base_url}/models/{model_b_name}"
+
+        pull_response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": model_b_name,
+                "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                "recipe": "llamacpp",
+                "stream": False,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+        try:
+            first = requests.patch(
+                model_a_url,
+                json={"aliases": [alias]},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(first.status_code, 200, first.text)
+
+            second = requests.patch(
+                model_b_url,
+                json={"aliases": [alias]},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(second.status_code, 400, second.text)
+            self.assertIn("alias", second.text.lower())
+        finally:
+            requests.patch(
+                model_a_url,
+                json={"aliases": []},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            requests.post(
+                f"{self.base_url}/delete",
+                json={"model_name": model_b_name},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        print("[OK] Conflicting user-defined aliases are rejected")
+
+    def test_036_user_defined_aliases_removed_on_delete(self):
+        """Deleting a user model removes its persisted aliases."""
+        alias = f"delete-alias-{uuid.uuid4().hex[:8]}"
+        model_name = f"user.AliasDelete-{uuid.uuid4().hex[:8]}"
+
+        pull_response = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": model_name,
+                "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                "recipe": "llamacpp",
+                "stream": False,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(pull_response.status_code, 200, pull_response.text)
+
+        patch_response = requests.patch(
+            f"{self.base_url}/models/{model_name}",
+            json={"aliases": [alias]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(patch_response.status_code, 200, patch_response.text)
+
+        alias_lookup = requests.get(
+            f"{self.base_url}/models/{alias}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(alias_lookup.status_code, 200)
+
+        delete_response = requests.post(
+            f"{self.base_url}/delete",
+            json={"model_name": model_name},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(delete_response.status_code, 200, delete_response.text)
+
+        missing = requests.get(
+            f"{self.base_url}/models/{alias}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(missing.status_code, 404)
+        print("[OK] User-defined aliases are removed when the model is deleted")
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")

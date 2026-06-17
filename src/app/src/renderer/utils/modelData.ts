@@ -31,6 +31,7 @@ export interface ModelInfo {
   vision?: boolean;
   downloaded?: boolean;
   image_defaults?: ImageDefaults;
+  aliases?: string[];
   [key: string]: unknown;
 }
 
@@ -361,4 +362,34 @@ export const downloadModelExportFile = async (modelId: string): Promise<void> =>
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+};
+
+export interface ModelSettingsUpdate {
+  recipe_options?: Record<string, unknown>;
+  aliases?: string[];
+}
+
+export const updateModelSettings = async (
+  modelId: string,
+  update: ModelSettingsUpdate,
+): Promise<ModelInfo & { id?: string }> => {
+  const { serverFetch } = await import('./serverConfig');
+  const response = await serverFetch(`/models/${encodeURIComponent(modelId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  });
+  if (!response.ok) {
+    let message = `Failed to save model settings (${response.status})`;
+    try {
+      const body: unknown = await response.json();
+      if (typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string') {
+        message = (body as { error: string }).error;
+      }
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(message);
+  }
+  return response.json();
 };

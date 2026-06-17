@@ -495,6 +495,18 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
     });
+    web_server.Patch(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_update_model_by_id(req, res);
+    });
+    web_server.Patch(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_update_model_by_id(req, res);
+    });
+    web_server.Patch(R"(/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_update_model_by_id(req, res);
+    });
+    web_server.Patch(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_update_model_by_id(req, res);
+    });
 
     // Chat completions (OpenAI compatible)
     register_post("chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1044,7 +1056,7 @@ void Server::setup_cors(httplib::Server &web_server) {
     // Set CORS headers for all responses
     web_server.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
-        {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
+        {"Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"},
         {"Access-Control-Allow-Headers", "Content-Type, Authorization"}
     });
 
@@ -1726,7 +1738,14 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe_options", info.recipe_options.to_json()},
     };
 
-    // Surface the cloud provider on cloud entries so the Model Manager can
+    const auto aliases = model_manager_->get_model_aliases(info.model_name);
+    if (!aliases.empty()) {
+        model_json["aliases"] = aliases;
+    } else {
+        model_json["aliases"] = nlohmann::json::array();
+    }
+
+    // Surface the cloud provider on cloud entries
     // bucket each provider into its own sub-heading. Omitted on local models
     // so the field doesn't pollute every entry — and skipped for the Ollama
     // serialization path (handle_ollama_show / tags) which builds its own
@@ -1801,6 +1820,94 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     } else {
         res.status = 404;
         auto error_response = create_model_error(model_id, "Model not found");
+        res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::handle_update_model_by_id(const httplib::Request& req, httplib::Response& res) {
+    std::string model_id = req.matches[1];
+
+    try {
+        if (!model_manager_->model_exists(model_id)) {
+            res.status = 404;
+            auto error_response = create_model_error(model_id, "Model not found");
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        auto request_json = nlohmann::json::parse(req.body);
+        const bool has_aliases = request_json.contains("aliases");
+        const bool has_options = request_json.contains("recipe_options");
+        if (!has_aliases && !has_options) {
+            res.status = 400;
+            res.set_content(R"({"error": "Request must include aliases and/or recipe_options"})", "application/json");
+            return;
+        }
+
+        auto info = model_manager_->get_model_info(model_id);
+
+        std::optional<std::vector<std::string>> aliases_opt;
+        if (has_aliases) {
+            if (!request_json["aliases"].is_array()) {
+                res.status = 400;
+                res.set_content(R"({"error": "aliases must be a JSON array of strings"})", "application/json");
+                return;
+            }
+            std::vector<std::string> aliases;
+            for (const auto& entry : request_json["aliases"]) {
+                if (!entry.is_string()) {
+                    res.status = 400;
+                    res.set_content(R"({"error": "aliases must be a JSON array of strings"})", "application/json");
+                    return;
+                }
+                aliases.push_back(entry.get<std::string>());
+            }
+            aliases_opt = std::move(aliases);
+        }
+
+        if (has_options) {
+            if (!request_json["recipe_options"].is_object()) {
+                res.status = 400;
+                res.set_content(R"({"error": "recipe_options must be a JSON object"})", "application/json");
+                return;
+            }
+            nlohmann::json merged = info.recipe_options.to_json();
+            for (auto& [key, value] : request_json["recipe_options"].items()) {
+                merged[key] = value;
+            }
+            info.recipe_options = RecipeOptions(info.recipe, merged);
+        }
+
+        if (has_aliases && has_options) {
+            model_manager_->save_model_settings(info, *aliases_opt);
+        } else if (has_aliases) {
+            model_manager_->save_model_aliases(info.model_name, *aliases_opt);
+        } else {
+            model_manager_->save_model_options(info);
+        }
+
+        const std::string canonical_cache_key = model_manager_->resolve_model_name(model_id);
+        const std::string wire_id = model_manager_->get_public_model_name(canonical_cache_key);
+        info = model_manager_->get_model_info(canonical_cache_key);
+        res.set_content(model_info_to_json(wire_id, info).dump(), "application/json");
+    } catch (const AliasValidationError& e) {
+        res.status = 400;
+        nlohmann::json error_response = {
+            {"error", e.what()}
+        };
+        res.set_content(error_response.dump(), "application/json");
+    } catch (const nlohmann::json::exception& e) {
+        res.status = 400;
+        nlohmann::json error_response = {
+            {"error", std::string("Invalid JSON: ") + e.what()}
+        };
+        res.set_content(error_response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to update model settings: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error_response = {
+            {"error", e.what()}
+        };
         res.set_content(error_response.dump(), "application/json");
     }
 }

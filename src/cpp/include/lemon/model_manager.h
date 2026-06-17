@@ -36,6 +36,12 @@ public:
 };
 constexpr const char* kUnknownModelErrorCode = "unknown_model";
 
+// Thrown by ModelManager::save_model_aliases when alias validation fails.
+class AliasValidationError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 // Progress information for download operations
 struct DownloadProgress {
     std::string file;           // Current file being downloaded
@@ -228,6 +234,13 @@ public:
 
     void save_model_options(const ModelInfo& info);
 
+    // User-defined API aliases (persisted in model_aliases.json).
+    std::vector<std::string> get_model_aliases(const std::string& model_name);
+    void save_model_aliases(const std::string& model_name,
+                            const std::vector<std::string>& aliases);
+    void save_model_settings(const ModelInfo& info,
+                             const std::vector<std::string>& aliases);
+
     void start_directory_watcher();
 
 private:
@@ -251,6 +264,7 @@ private:
 
     std::string get_user_models_file();
     std::string get_recipe_options_file();
+    std::string get_model_aliases_file();
 
     // Collection manifests (recipe="collection.omni" with an HF-repo checkpoint):
     // the full collection definition lives on Hugging Face as an exported
@@ -308,6 +322,7 @@ private:
     json server_models_;
     json user_models_;
     json recipe_options_;
+    json model_aliases_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
@@ -317,6 +332,7 @@ private:
     mutable std::map<std::string, ModelInfo> models_cache_;
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
+    mutable std::map<std::string, std::string> user_model_aliases_;  // user alias -> cache key
     mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
     mutable bool cache_valid_ = false;
 
@@ -326,6 +342,10 @@ private:
     bool refresh_user_models_from_disk_for_lookup(const std::string& model_name);
 
     void rebuild_public_model_aliases_locked();
+    void rebuild_user_model_aliases_locked();
+    void validate_aliases_locked(const std::string& cache_key,
+                                 const std::vector<std::string>& aliases) const;
+    std::string resolve_input_to_cache_key_locked(const std::string& model_name) const;
 };
 
 } // namespace lemon
