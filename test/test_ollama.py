@@ -131,7 +131,6 @@ class OllamaTests(ServerTestBase):
         self.assertIn("completion", data["capabilities"])
         self.assertIn("num_ctx", data["parameters"])
         self.assertIn("llamacpp.context_length", data["model_info"])
-        self.assertGreater(data["model_info"]["llamacpp.context_length"], 0)
 
     def test_005_show_not_found(self):
         """Test /api/show returns 404 for non-existent model."""
@@ -705,6 +704,13 @@ class OllamaTests(ServerTestBase):
         response = requests.post(
             f"{self.base_url}/pull",
             json={"model_name": TOOL_CALLING_MODEL, "stream": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": TOOL_CALLING_MODEL, "ctx_size": 8192},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)

@@ -145,6 +145,8 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
         res = cli.Get(path);
     } else if (method == "POST") {
         res = cli.Post(path, body, content_type);
+    } else if (method == "DELETE") {
+        res = cli.Delete(path);
     } else {
         throw std::runtime_error("Unsupported HTTP method: " + method);
     }
@@ -154,15 +156,22 @@ std::string LemonadeClient::make_request(const std::string& path, const std::str
 
 }
 
-// Helper function to handle SSE streaming response
+// Helper function to handle SSE streaming response. If `should_abort` is
+// non-null and returns true, the content receiver returns `false`, which makes
+// httplib close the connection and return immediately — used to stop streaming
+// responses on Ctrl-C without waiting for the next chunk.
 static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string& path, const std::string& body, const std::string& content_type,
-                              std::function<void(const std::string& event_type, const std::string& event_data)> callback) {
+                              std::function<void(const std::string& event_type, const std::string& event_data)> callback,
+                              std::function<bool()> should_abort = nullptr) {
     std::string buffer;
     std::string raw_response_body;
     bool saw_sse_event = false;
 
     auto res = cli.Post(path, httplib::Headers(), body, content_type,
         [&](const char* data, size_t len) {
+            if (should_abort && should_abort()) {
+                return false;
+            }
             raw_response_body.append(data, len);
             buffer.append(data, len);
 
@@ -193,6 +202,9 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
                 if (!event_data.empty()) {
                     saw_sse_event = true;
                     callback(event_type, event_data);
+                    if (should_abort && should_abort()) {
+                        return false;
+                    }
                 }
             }
 
@@ -210,12 +222,18 @@ static httplib::Result handle_sse_stream(httplib::Client& cli, const std::string
 bool LemonadeClient::make_request(const std::string& path, const std::string& method,
                                    const std::string& body, const std::string& content_type,
                                    std::function<void(const std::string& event_type, const std::string& event_data)> callback,
-                                   time_t connection_timeout_ms, time_t read_timeout_ms) const {
+                                   time_t connection_timeout_ms, time_t read_timeout_ms,
+                                   std::function<bool()> should_abort) const {
     std::string normalized_host = normalize_host(host_);
     httplib::Client cli = make_client(normalized_host, port_, api_key_, connection_timeout_ms, read_timeout_ms);
 
     if (method == "POST") {
-        auto res = handle_sse_stream(cli, path, body, content_type, callback);
+        auto res = handle_sse_stream(cli, path, body, content_type, callback, should_abort);
+        // If we deliberately aborted, suppress the "connection closed"-style
+        // error that httplib reports — the caller asked for this.
+        if (should_abort && should_abort()) {
+            return false;
+        }
         assert_http_ok(res);
 
         return true;
@@ -265,8 +283,13 @@ int LemonadeClient::status(int display_port) const {
             for (const auto& model : json_response["all_models_loaded"]) {
                 if (!model.is_object()) continue;
 
+                std::string model_name = model.value("model_name", "-");
+                if (model.value("pinned", false)) {
+                    model_name += " (pinned)";
+                }
+
                 std::cout << std::left
-                          << std::setw(30) << model.value("model_name", "-")
+                          << std::setw(30) << model_name
                           << std::setw(10) << model.value("type", "-")
                           << std::setw(10) << model.value("device", "-")
                           << std::setw(14) << model.value("recipe", "-")
@@ -613,7 +636,7 @@ int LemonadeClient::pull_model(const json& model_data, const std::string& displa
             } else {
                 parse_sse_progress(event_data, state);
             }
-        }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
+        }, LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
 
         if (!state.success) {
             // Wire-protocol constant; server-side definition and contract live in
@@ -719,13 +742,16 @@ int LemonadeClient::cleanup_cache(bool dry_run) const {
     }
 }
 
-int LemonadeClient::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options) const {
+int LemonadeClient::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options, std::optional<bool> pinned) const {
     std::cout << "Loading model: " << model_name << std::endl;
 
     try {
         json request_body = recipe_options;
         request_body["model_name"] = model_name;
         request_body["save_options"] = save_options;
+        if (pinned.has_value()) {
+            request_body["pinned"] = pinned.value();
+        }
 
         // since load can trigger a pull but doesn't send the related streaming events, we want long read timeouts.
         make_request("/api/v1/load", "POST", request_body.dump(), "application/json", LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
@@ -738,6 +764,18 @@ int LemonadeClient::load_model(const std::string& model_name, const nlohmann::js
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error loading model: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::pin_model(const std::string& model_name, bool pinned) const {
+    try {
+        json request_body = {{"model_name", model_name}, {"pinned", pinned}};
+        make_request("/internal/pin", "POST", request_body.dump(), "application/json");
+        std::cout << "Model " << (pinned ? "pinned" : "unpinned") << " successfully!" << std::endl;
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 }
@@ -910,7 +948,7 @@ int LemonadeClient::install_backend(const std::string& recipe, const std::string
             } else {
                 parse_sse_progress(event_data, state);
             }
-        }, LONG_TIMEOUT_MS, DEFAULT_READ_TIMEOUT_MS);
+        }, LONG_TIMEOUT_MS, LONG_TIMEOUT_MS);
         if (!state.success) {
             if (!state.error_message.empty()) {
                 throw std::runtime_error(state.error_message);
@@ -954,6 +992,164 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
         return 1;
     } catch (const std::exception& e) {
         std::cerr << "Error uninstalling backend: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::install_cloud_provider(const std::string& provider,
+                                            const std::string& base_url,
+                                            const std::string& api_key) {
+    std::cout << "Installing cloud provider: " << provider
+              << " (" << base_url << ")" << std::endl;
+    try {
+        json body = {
+            {"backend", "cloud"},
+            {"provider", provider},
+            {"base_url", base_url}
+        };
+        if (!api_key.empty()) {
+            body["api_key"] = api_key;
+        }
+        std::string response = make_request("/api/v1/install", "POST",
+                                             body.dump(), "application/json");
+        auto response_json = json::parse(response);
+        if (response_json.value("status", "") != "success") {
+            std::cerr << "Install failed: " << response << std::endl;
+            return 1;
+        }
+        std::cout << "Cloud provider installed: " << provider << std::endl;
+        if (response_json.contains("auth_state")) {
+            const auto& s = response_json["auth_state"];
+            bool env = s.value("env_var_set", false);
+            bool rt = s.value("runtime_key_set", false);
+            std::cout << "  env var set: " << (env ? "yes" : "no")
+                      << ", runtime key set: " << (rt ? "yes" : "no")
+                      << std::endl;
+        }
+        if (response_json.contains("models_discovered")) {
+            std::cout << "  models discovered: "
+                      << response_json["models_discovered"].get<size_t>()
+                      << std::endl;
+        }
+        if (response_json.contains("warning")) {
+            std::cout << "Warning: "
+                      << response_json["warning"].get<std::string>()
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error installing cloud provider: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error installing cloud provider: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::uninstall_cloud_provider(const std::string& provider) {
+    std::cout << "Uninstalling cloud provider: " << provider << std::endl;
+    try {
+        json body = {{"backend", "cloud"}, {"provider", provider}};
+        std::string response = make_request("/api/v1/uninstall", "POST",
+                                             body.dump(), "application/json");
+        auto response_json = json::parse(response);
+        if (response_json.value("status", "") != "success") {
+            std::cerr << "Uninstall failed: " << response << std::endl;
+            return 1;
+        }
+        std::cout << "Cloud provider uninstalled: " << provider
+                  << " (evicted "
+                  << response_json.value("models_evicted", size_t{0})
+                  << " models)" << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error uninstalling cloud provider: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error uninstalling cloud provider: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cloud_auth(const std::string& provider, const std::string& api_key) {
+    try {
+        json body = {{"provider", provider}, {"api_key", api_key}};
+        std::string response = make_request("/api/v1/cloud/auth", "POST",
+                                             body.dump(), "application/json");
+        auto response_json = json::parse(response);
+        std::cout << "Cloud auth set for: " << provider << std::endl;
+        if (response_json.contains("models_discovered")) {
+            std::cout << "  models discovered: "
+                      << response_json["models_discovered"].get<size_t>()
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        // 409 (env conflict) and 404 (not installed) come through here with
+        // a structured error body — extract_server_error_message pulls the
+        // message field out.
+        std::cerr << "Error setting cloud auth: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error setting cloud auth: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cloud_auth_clear(const std::string& provider) {
+    try {
+        std::string response = make_request("/api/v1/cloud/auth/" + provider,
+                                             "DELETE", "", "");
+        auto response_json = json::parse(response);
+        bool cleared = response_json.value("cleared_runtime_key", false);
+        std::cout << "Cloud auth cleared for: " << provider
+                  << (cleared ? "" : " (no runtime key was set)") << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error clearing cloud auth: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error clearing cloud auth: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::cloud_list() const {
+    try {
+        std::string response = make_request("/api/v1/system-info", "GET");
+        auto info = json::parse(response);
+        if (!info.contains("cloud") || !info["cloud"].contains("providers")) {
+            std::cout << "No cloud providers installed." << std::endl;
+            return 0;
+        }
+        const auto& providers = info["cloud"]["providers"];
+        if (providers.empty()) {
+            std::cout << "No cloud providers installed." << std::endl;
+            return 0;
+        }
+        std::cout << "Cloud providers:" << std::endl;
+        for (const auto& p : providers) {
+            std::cout << "  " << p.value("name", "")
+                      << "  " << p.value("base_url", "")
+                      << "  [env_var=" << p.value("env_var", "") << "]"
+                      << std::endl;
+            std::cout << "    auth: "
+                      << "env_var_set=" << (p.value("env_var_set", false) ? "yes" : "no")
+                      << ", runtime_key_set=" << (p.value("runtime_key_set", false) ? "yes" : "no")
+                      << ", models_discovered=" << p.value("models_discovered", size_t{0})
+                      << std::endl;
+        }
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing cloud providers: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing cloud providers: " << e.what() << std::endl;
         return 1;
     }
 }

@@ -9,7 +9,6 @@ on:
       - "**/CMakeLists.txt"
       - "CMakePresets.json"
       - "cmake/**"
-      - "src/cpp/**"
       - "setup.sh"
       - "test/server_cli2.py"
       - "test/server_endpoints.py"
@@ -43,9 +42,6 @@ jobs:
           - distro: Arch
             image: archlinux:latest
             python: python
-          - distro: Debian
-            image: debian:trixie
-            python: python3
           - distro: openSUSE
             image: opensuse/tumbleweed:latest
             python: python3

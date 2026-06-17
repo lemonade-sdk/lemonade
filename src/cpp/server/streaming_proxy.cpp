@@ -2,6 +2,9 @@
 #include <sstream>
 #include <iostream>
 #include <chrono>
+#include <cstring>
+#include <stdexcept>
+#include <curl/curl.h>
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
@@ -11,7 +14,8 @@ void StreamingProxy::forward_sse_stream(
     const std::string& request_body,
     httplib::DataSink& sink,
     std::function<void(const TelemetryData&)> on_complete,
-    long timeout_seconds) {
+    long timeout_seconds,
+    std::function<void()> on_chunk) {
 
     std::string telemetry_buffer;
     bool stream_error = false;
@@ -20,16 +24,17 @@ void StreamingProxy::forward_sse_stream(
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
 
-    // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
         [&sink, &telemetry_buffer, &has_done_marker, &has_first_token,
-         &time_to_first_token, &start_time](const char* data, size_t length) {
-            // Buffer for telemetry parsing
+         &time_to_first_token, &start_time, &on_chunk](const char* data, size_t length) {
+            if (on_chunk) {
+                on_chunk();
+            }
+
             telemetry_buffer.append(data, length);
 
-            // Check if this chunk contains [DONE]
             std::string chunk(data, length);
             if (!has_first_token && chunk.find("data: ") != std::string::npos) {
                 has_first_token = true;
@@ -37,40 +42,53 @@ void StreamingProxy::forward_sse_stream(
                     std::chrono::steady_clock::now() - start_time).count();
             }
 
-            if (chunk.find("[DONE]") != std::string::npos) {
+            if (chunk.find("data: [DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
 
-            // Forward chunk to client immediately
             if (!sink.write(data, length)) {
-                return false; // Client disconnected
+                return false;
             }
 
-            return true; // Continue streaming
+            return true;
         },
-        {}, // Empty headers map
+        {},
         timeout_seconds
     );
+
+    const bool transport_interrupted =
+        result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
     if (result.status_code != 200) {
         stream_error = true;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
     }
 
+    if (transport_interrupted && !has_done_marker) {
+        // This is the important crash path: HTTP headers may have been sent and
+        // some bytes may even have reached the client, but the SSE protocol never
+        // completed. Do not synthesize [DONE], because that hides backend crashes
+        // from the router and leaves stale loaded-model state behind.
+        stream_error = true;
+        throw std::runtime_error(
+            "backend connection failed during SSE stream before DONE: CURL error: " +
+            result.curl_error);
+    }
+
     if (!stream_error) {
-        // Ensure [DONE] marker is sent if backend didn't send it
+        // Ensure [DONE] marker is sent only for clean transports. If the transport
+        // was interrupted before [DONE], the block above throws and recovery is
+        // handled by WrappedServer/Router instead of pretending success.
         if (!has_done_marker) {
             LOG(WARNING, "StreamingProxy") << "WARNING: Backend did not send [DONE] marker, adding it" << std::endl;
             const char* done_marker = "data: [DONE]\n\n";
             sink.write(done_marker, strlen(done_marker));
         }
 
-        // Explicitly flush and signal completion
         sink.done();
 
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
 
-        // Parse telemetry from buffered data
         auto telemetry = parse_telemetry(telemetry_buffer);
         if (telemetry.time_to_first_token <= 0.0) {
             telemetry.time_to_first_token = time_to_first_token;
@@ -81,7 +99,6 @@ void StreamingProxy::forward_sse_stream(
             on_complete(telemetry);
         }
     } else {
-        // Properly terminate the chunked response even on error
         sink.done();
     }
 }
@@ -90,37 +107,51 @@ void StreamingProxy::forward_byte_stream(
     const std::string& backend_url,
     const std::string& request_body,
     httplib::DataSink& sink,
-    long timeout_seconds) {
+    long timeout_seconds,
+    std::function<void()> on_chunk) {
 
     bool stream_error = false;
 
-    // Use HttpClient to stream from backend
     auto result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink](const char* data, size_t length) {
-            // Forward chunk to client immediately
-            if (!sink.write(data, length)) {
-                return false; // Client disconnected
+        [&sink, &on_chunk](const char* data, size_t length) {
+            if (on_chunk) {
+                on_chunk();
             }
 
-            return true; // Continue streaming
+            if (!sink.write(data, length)) {
+                return false;
+            }
+
+            return true;
         },
-        {}, // Empty headers map
+        {},
         timeout_seconds
     );
+
+    const bool transport_interrupted =
+        result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
     if (result.status_code != 200) {
         stream_error = true;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << result.status_code << std::endl;
     }
 
+    if (transport_interrupted) {
+        // Keep byte streams consistent with SSE: an interrupted transport is a
+        // backend failure, not a clean stream completion. The caller will mark
+        // the backend unavailable and reload after the current response unwinds.
+        stream_error = true;
+        throw std::runtime_error(
+            "backend connection failed during byte stream: CURL error: " +
+            result.curl_error);
+    }
+
     if (!stream_error) {
-        // Explicitly flush and signal completion
         sink.done();
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
     } else {
-        // Properly terminate the chunked response even on error
         sink.done();
     }
 }

@@ -8,8 +8,10 @@
 #include <vector>
 #include <mutex>
 #include <functional>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include "canonical_id.h"
+#include "directory_watcher.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -81,6 +83,12 @@ struct ModelInfo {
     bool hf_load = false;
     double size = 0.0;   // Model size in GB
     int64_t max_context_window = 0;  // Static model-supported text context, when known
+
+    // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
+    int64_t gguf_block_count = 0;       // number of transformer blocks (layers)
+    int64_t gguf_embedding_length = 0;  // hidden size
+    int64_t gguf_head_count_kv = 0;     // KV attention heads
+    int64_t gguf_key_length = 0;        // key head dimension
     RecipeOptions recipe_options;
 
     // Multi-model support fields
@@ -89,6 +97,15 @@ struct ModelInfo {
 
     // Image generation defaults (for sd-cpp models)
     ImageDefaults image_defaults;
+
+    // Cloud offload (for "cloud" recipe). Names the provider to dispatch to
+    // (e.g., "fireworks"). Empty for non-cloud recipes.
+    std::string cloud_provider;
+    // Per-token price in USD per 1,000,000 tokens, when the provider reports it
+    // (OpenRouter, Together). <0 means unknown (e.g. Fireworks doesn't publish
+    // pricing in /v1/models). Used for display only — never affects routing.
+    double cost_input_per_million = -1.0;
+    double cost_output_per_million = -1.0;
 
     // Moonshine-specific model architecture (e.g., 2 = TINY_STREAMING, 4 = SMALL_STREAMING, 5 = MEDIUM_STREAMING)
     int moonshine_arch = -1;
@@ -100,9 +117,31 @@ struct ModelInfo {
     std::string mmproj() const { return checkpoint("mmproj"); }
 };
 
+class CloudProviderRegistry;
+
 class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
+
+    // Wires the cloud provider registry. ModelManager uses it to look up
+    // {base_url, api_key} per provider when refreshing cloud models during
+    // build_cache(). Pointer (not ownership) — Server owns the registry.
+    // Must be called before the first build_cache() / get_supported_models().
+    void set_cloud_registry(CloudProviderRegistry* registry);
+
+    // Refresh discovered models for one provider. Looks up creds via the
+    // registry, calls CloudServer::discover_models, and re-seeds the
+    // provider's entries (drop-then-add semantics). No-op + warning if the
+    // provider has no resolvable key. Returns the number of models present
+    // after refresh. Throws never — errors logged, empty result returned.
+    size_t refresh_cloud_models(const std::string& provider);
+
+    // Drop every cached model for one provider (used by uninstall). Returns
+    // the count removed. Doesn't touch the registry — caller already did.
+    size_t evict_cloud_models(const std::string& provider);
+
+    // Count of currently-cached cloud models for a provider. For system-info.
+    size_t count_cloud_models(const std::string& provider) const;
 
     // Invalidate the models cache (e.g. after backend install/uninstall)
     void invalidate_models_cache();
@@ -181,10 +220,15 @@ public:
     // Get HuggingFace cache directory (respects HF_HUB_CACHE, HF_HOME, and platform defaults)
     std::string get_hf_cache_dir() const;
 
-    // Set extra models directory for GGUF discovery
+    // Set extra models directory for GGUF discovery.
+    // Starts/stops an inotify (Linux) / kqueue (macOS) watcher that
+    // automatically refreshes the model cache when files are added or
+    // removed in the directory.
     void set_extra_models_dir(const std::string& dir);
 
     void save_model_options(const ModelInfo& info);
+
+    void start_directory_watcher();
 
 private:
     // Cycle-detecting overload used by the collection fan-out in download_model.
@@ -200,8 +244,40 @@ private:
     json load_optional_json(const std::string& path);
     void save_user_models(const json& user_models);
 
+    // Remove a user model entry from user_models.json (no file deletion).
+    // Used to roll back a collection registered earlier in the same call when
+    // its component resolution fails.
+    void unregister_user_model(const std::string& model_name);
+
     std::string get_user_models_file();
     std::string get_recipe_options_file();
+
+    // Collection manifests (recipe="collection.omni" with an HF-repo checkpoint):
+    // the full collection definition lives on Hugging Face as an exported
+    // collection JSON (conventionally <CollectionName>.json; discovered by
+    // content, not filename). fetch_collection_manifest downloads/refreshes it
+    // into the HF cache (honoring do_not_upgrade and offline mode) and returns
+    // the parsed manifest object.
+    nlohmann::json fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade);
+
+    // Resolve a collection's component list against the registry: known names
+    // keep the local definition (local-wins, drift logged); unknown names are
+    // registered as `user.` models from their inline definition in
+    // `component_defs` (the `models` array of a collection file/manifest).
+    // Returns the components as canonical cache names, preserving order.
+    std::vector<std::string> register_components(const nlohmann::json& component_names,
+                                                 const nlohmann::json& component_defs);
+
+    // Resolve an HF-backed collection's components at pull time: fetch the
+    // manifest, then register_components() against its components/models arrays.
+    std::vector<std::string> resolve_collection_components_from_manifest(
+        const std::string& repo_id, bool do_not_upgrade);
+
+    // Populate a collection's components from a manifest already cached on disk
+    // (offline, no registration). Used by build_cache so a pulled collection keeps
+    // its components across restarts. No-op if the manifest is not cached.
+    // Caller must hold models_cache_mutex_ (reads server_models_/user_models_).
+    void populate_collection_components_from_cache_locked(ModelInfo& info);
 
     // Cache management
     void build_cache();
@@ -233,6 +309,8 @@ private:
     json user_models_;
     json recipe_options_;
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
+    CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
+    std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
