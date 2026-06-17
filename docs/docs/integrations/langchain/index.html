@@ -10,36 +10,36 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/configuration/llamacpp/">
+        <link rel="canonical" href="https://lemonade-server.ai/integrations/langchain/">
       
       
-        <link rel="prev" href="../multi-model/">
+        <link rel="prev" href="../continue/">
       
       
-        <link rel="next" href="../vllm/">
+        <link rel="next" href="../lemon-zest/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/favicon.ico">
+      <link rel="icon" href="../../assets/favicon.ico">
       <meta name="generator" content="zensical-0.0.39">
     
     
       
-        <title>llama.cpp Backend Options - Lemonade Server Documentation</title>
+        <title>LangChain Integration Guide - Lemonade Server Documentation</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.1e981d71.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.1e981d71.min.css">
       
         
           
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.dfe2e883.min.css">
       
       
 
@@ -53,11 +53,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 
     
-      <link rel="stylesheet" href="../../../assets/website-styles.css">
+      <link rel="stylesheet" href="../../assets/website-styles.css">
     
-      <link rel="stylesheet" href="../../../assets/zest-theme.css">
+      <link rel="stylesheet" href="../../assets/zest-theme.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#llamacpp-backend-options" class="md-skip">
+        <a href="#langchain-integration-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -100,7 +100,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
@@ -117,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              llama.cpp Backend Options
+              LangChain Integration Guide
             
           </span>
         </div>
@@ -208,7 +208,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     Lemonade Server Documentation
@@ -235,7 +235,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -259,20 +259,18 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
@@ -293,7 +291,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -311,7 +309,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../" class="md-nav__link">
+      <a href="../../guide/" class="md-nav__link">
         
   
   
@@ -386,7 +384,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/" class="md-nav__link">
+      <a href="../../guide/install/" class="md-nav__link">
         
   
   
@@ -414,7 +412,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/ubuntu/" class="md-nav__link">
+      <a href="../../guide/install/ubuntu/" class="md-nav__link">
         
   
   
@@ -442,7 +440,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/arch/" class="md-nav__link">
+      <a href="../../guide/install/arch/" class="md-nav__link">
         
   
   
@@ -470,7 +468,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/fedora/" class="md-nav__link">
+      <a href="../../guide/install/fedora/" class="md-nav__link">
         
   
   
@@ -498,7 +496,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/debian/" class="md-nav__link">
+      <a href="../../guide/install/debian/" class="md-nav__link">
         
   
   
@@ -526,7 +524,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/docker/" class="md-nav__link">
+      <a href="../../guide/install/docker/" class="md-nav__link">
         
   
   
@@ -562,7 +560,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/" class="md-nav__link">
+      <a href="../../guide/concepts/" class="md-nav__link">
         
   
   
@@ -590,7 +588,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/" class="md-nav__link">
+      <a href="../../guide/cli/" class="md-nav__link">
         
   
   
@@ -618,7 +616,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli-chat/" class="md-nav__link">
+      <a href="../../guide/cli-chat/" class="md-nav__link">
         
   
   
@@ -643,20 +641,18 @@
                 
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
         
           
           <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
@@ -677,7 +673,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -695,7 +691,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../guide/configuration/" class="md-nav__link">
         
   
   
@@ -723,7 +719,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../custom-models/" class="md-nav__link">
+      <a href="../../guide/configuration/custom-models/" class="md-nav__link">
         
   
   
@@ -751,7 +747,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../multi-model/" class="md-nav__link">
+      <a href="../../guide/configuration/multi-model/" class="md-nav__link">
         
   
   
@@ -776,37 +772,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    llama.cpp
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/llamacpp/" class="md-nav__link">
         
   
   
@@ -822,260 +791,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#available-backends" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Available Backends
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Available Backends">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CPU
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#vulkan" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Vulkan
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cuda" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CUDA
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#metal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Metal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#system" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        System
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rocm-channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Configuration
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ROCm Channel Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#nightly-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Nightly Channel
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#changing-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Changing Channels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Pinning to a Specific Version Tag
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#choosing-the-right-backend" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Choosing the Right Backend
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Choosing the Right Backend">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#decision-tree" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Decision Tree
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm-channel-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#platform-specifics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Platform Specifics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Platform Specifics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#macos" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        macOS
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1088,7 +803,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../vllm/" class="md-nav__link">
+      <a href="../../guide/configuration/vllm/" class="md-nav__link">
         
   
   
@@ -1116,7 +831,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../moonshine/" class="md-nav__link">
+      <a href="../../guide/configuration/moonshine/" class="md-nav__link">
         
   
   
@@ -1144,7 +859,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cloud/" class="md-nav__link">
+      <a href="../../guide/configuration/cloud/" class="md-nav__link">
         
   
   
@@ -1180,7 +895,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
+      <a href="../../guide/faq/" class="md-nav__link">
         
   
   
@@ -1262,7 +977,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/" class="md-nav__link">
+      <a href="../../dev/" class="md-nav__link">
         
   
   
@@ -1290,7 +1005,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/philosophy/" class="md-nav__link">
+      <a href="../../dev/philosophy/" class="md-nav__link">
         
   
   
@@ -1318,7 +1033,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/working-groups/" class="md-nav__link">
+      <a href="../../dev/working-groups/" class="md-nav__link">
         
   
   
@@ -1346,7 +1061,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/contribute/" class="md-nav__link">
+      <a href="../../dev/contribute/" class="md-nav__link">
         
   
   
@@ -1374,7 +1089,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/getting-started/" class="md-nav__link">
+      <a href="../../dev/getting-started/" class="md-nav__link">
         
   
   
@@ -1402,7 +1117,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/app/" class="md-nav__link">
+      <a href="../../dev/app/" class="md-nav__link">
         
   
   
@@ -1430,7 +1145,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/web-ui/" class="md-nav__link">
+      <a href="../../dev/web-ui/" class="md-nav__link">
         
   
   
@@ -1458,7 +1173,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/lemonade-omni/" class="md-nav__link">
+      <a href="../../dev/lemonade-omni/" class="md-nav__link">
         
   
   
@@ -1486,7 +1201,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/self-hosted-runners/" class="md-nav__link">
+      <a href="../../dev/self-hosted-runners/" class="md-nav__link">
         
   
   
@@ -1514,7 +1229,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/release/" class="md-nav__link">
+      <a href="../../dev/release/" class="md-nav__link">
         
   
   
@@ -1546,18 +1261,20 @@
       
   
   
+    
   
   
+  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
         
           
           <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
@@ -1578,7 +1295,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1596,7 +1313,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -1624,7 +1341,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/ai-toolkit/" class="md-nav__link">
+      <a href="../ai-toolkit/" class="md-nav__link">
         
   
   
@@ -1652,7 +1369,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/anythingLLM/" class="md-nav__link">
+      <a href="../anythingLLM/" class="md-nav__link">
         
   
   
@@ -1680,7 +1397,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/claude-code/" class="md-nav__link">
+      <a href="../claude-code/" class="md-nav__link">
         
   
   
@@ -1708,7 +1425,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/codeGPT/" class="md-nav__link">
+      <a href="../codeGPT/" class="md-nav__link">
         
   
   
@@ -1736,7 +1453,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/continue/" class="md-nav__link">
+      <a href="../continue/" class="md-nav__link">
         
   
   
@@ -1761,10 +1478,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../../integrations/langchain/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LangChain
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1780,6 +1524,154 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Prerequisites
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-under-5-minutes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup (Under 5 Minutes)
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup (Under 5 Minutes)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-install-langchain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 1 — Install LangChain
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-configure-langchain-to-use-lemonade-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 2 — Configure LangChain to use Lemonade Server
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-send-your-first-message" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 3 — Send your first message
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-1-simple-chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example 1 — Simple Chat
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-2-rag-pipeline-chat-with-your-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example 2 — RAG Pipeline (Chat with Your Documents)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-3-prompt-template-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example 3 — Prompt Template + Chain
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-use-lemonade-with-langchain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Use Lemonade with LangChain?
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resources
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1792,7 +1684,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/lemon-zest/" class="md-nav__link">
+      <a href="../lemon-zest/" class="md-nav__link">
         
   
   
@@ -1820,7 +1712,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/mindcraft/" class="md-nav__link">
+      <a href="../mindcraft/" class="md-nav__link">
         
   
   
@@ -1848,7 +1740,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-hands/" class="md-nav__link">
+      <a href="../open-hands/" class="md-nav__link">
         
   
   
@@ -1876,7 +1768,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-webui/" class="md-nav__link">
+      <a href="../open-webui/" class="md-nav__link">
         
   
   
@@ -1904,7 +1796,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/wut/" class="md-nav__link">
+      <a href="../wut/" class="md-nav__link">
         
   
   
@@ -1986,7 +1878,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/" class="md-nav__link">
+      <a href="../../api/" class="md-nav__link">
         
   
   
@@ -2014,7 +1906,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/openai/" class="md-nav__link">
+      <a href="../../api/openai/" class="md-nav__link">
         
   
   
@@ -2042,7 +1934,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/ollama/" class="md-nav__link">
+      <a href="../../api/ollama/" class="md-nav__link">
         
   
   
@@ -2070,7 +1962,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/anthropic/" class="md-nav__link">
+      <a href="../../api/anthropic/" class="md-nav__link">
         
   
   
@@ -2098,7 +1990,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/llamacpp/" class="md-nav__link">
+      <a href="../../api/llamacpp/" class="md-nav__link">
         
   
   
@@ -2126,7 +2018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/lemonade/" class="md-nav__link">
+      <a href="../../api/lemonade/" class="md-nav__link">
         
   
   
@@ -2208,7 +2100,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/" class="md-nav__link">
+      <a href="../../embeddable/" class="md-nav__link">
         
   
   
@@ -2236,7 +2128,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/runtime/" class="md-nav__link">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
         
   
   
@@ -2264,7 +2156,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/backends/" class="md-nav__link">
+      <a href="../../embeddable/backends/" class="md-nav__link">
         
   
   
@@ -2292,7 +2184,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/models/" class="md-nav__link">
+      <a href="../../embeddable/models/" class="md-nav__link">
         
   
   
@@ -2320,7 +2212,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/building/" class="md-nav__link">
+      <a href="../../embeddable/building/" class="md-nav__link">
         
   
   
@@ -2389,22 +2281,33 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#available-backends" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Available Backends
+        Prerequisites
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Available Backends">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-under-5-minutes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Setup (Under 5 Minutes)
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup (Under 5 Minutes)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cpu" class="md-nav__link">
+  <a href="#step-1-install-langchain" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        CPU
+        Step 1 — Install LangChain
       </span>
     </span>
   </a>
@@ -2412,10 +2315,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vulkan" class="md-nav__link">
+  <a href="#step-2-configure-langchain-to-use-lemonade-server" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Vulkan
+        Step 2 — Configure LangChain to use Lemonade Server
       </span>
     </span>
   </a>
@@ -2423,43 +2326,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#rocm" class="md-nav__link">
+  <a href="#step-3-send-your-first-message" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        ROCm
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cuda" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CUDA
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#metal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Metal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#system" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        System
+        Step 3 — Send your first message
       </span>
     </span>
   </a>
@@ -2472,152 +2342,68 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#rocm-channel-configuration" class="md-nav__link">
+  <a href="#example-1-simple-chat" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        ROCm Channel Configuration
+        Example 1 — Simple Chat
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="ROCm Channel Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#nightly-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Nightly Channel
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#changing-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Changing Channels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Pinning to a Specific Version Tag
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#choosing-the-right-backend" class="md-nav__link">
+  <a href="#example-2-rag-pipeline-chat-with-your-documents" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Choosing the Right Backend
+        Example 2 — RAG Pipeline (Chat with Your Documents)
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Choosing the Right Backend">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#decision-tree" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Decision Tree
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm-channel-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#platform-specifics" class="md-nav__link">
+  <a href="#example-3-prompt-template-chain" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Platform Specifics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Platform Specifics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
+        Example 3 — Prompt Template + Chain
       </span>
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Windows
+        Troubleshooting
       </span>
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#macos" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#why-use-lemonade-with-langchain" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        macOS
+        Why Use Lemonade with LangChain?
       </span>
     </span>
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resources
+      </span>
+    </span>
+  </a>
   
 </li>
       
@@ -2639,220 +2425,193 @@
   
 
 
-<h1 id="llamacpp-backend-options">llama.cpp Backend Options</h1>
-<p>Lemonade uses <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a> as its primary LLM inference backend, supporting multiple hardware acceleration options. This document explains the available backends and how to choose between them.</p>
-<h2 id="available-backends">Available Backends</h2>
-<h3 id="cpu">CPU</h3>
+<h1 id="langchain-integration-guide">LangChain Integration Guide</h1>
+<p><a href="https://github.com/langchain-ai/langchain">LangChain</a> is a popular Python framework for building LLM-powered applications — including RAG pipelines, agents, and chatbots. This guide shows how to connect LangChain to Lemonade Server as a fully local, offline alternative to OpenAI.</p>
+<hr />
+<h2 id="prerequisites">Prerequisites</h2>
 <ul>
-<li><strong>Platform</strong>: Windows, Linux, macOS</li>
-<li><strong>Hardware</strong>: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)</li>
-<li><strong>Use Case</strong>: Universal fallback, no GPU required</li>
-<li><strong>Performance</strong>: Slowest option, suitable for small models or testing</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
+<li><a href="https://lemonade-server.ai/docs/install/">Lemonade Server installed and running</a></li>
+<li>Python 3.9+</li>
+<li>A model pulled via Lemonade (e.g. <code>lemonade pull Llama-3.2-3B-Instruct-Hybrid</code>)</li>
 </ul>
-<h3 id="vulkan">Vulkan</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs, Qualcomm Adreno and other Vulkan-capable GPUs on ARM64 Linux</li>
-<li><strong>Use Case</strong>: Cross-vendor GPU acceleration</li>
-<li><strong>Performance</strong>: Good performance across all GPU vendors</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-<li><strong>Notes</strong>: Recommended for most GPU users; on ARM64 Linux (e.g., Qualcomm X Elite), Vulkan is the default backend</li>
-</ul>
-<h3 id="rocm">ROCm</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD Radeon RX 6000/7000 series (RDNA2/RDNA3/RDNA4), AMD Ryzen AI iGPUs (Strix Point/Halo)</li>
-<li><strong>Use Case</strong>: AMD GPU-optimized inference</li>
-<li><strong>Performance</strong>: Optimized for AMD hardware, may outperform Vulkan on supported GPUs</li>
-<li><strong>Channel Options</strong>:</li>
-<li><strong>Stable</strong> (default): Custom builds with latest optimizations from lemonade-sdk</li>
-<li><strong>Nightly</strong>: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)</li>
-<li><strong>Installation</strong>: Varies by channel (see below)</li>
-</ul>
-<h3 id="cuda">CUDA</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)</li>
-<li><strong>Use Case</strong>: NVIDIA GPU-optimized inference</li>
-<li><strong>Performance</strong>: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs</li>
-<li><strong>Source</strong>: Per-architecture builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></li>
-<li><strong>Binaries</strong>: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)</li>
-<li><strong>Runtime</strong>: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)</li>
-<li><strong>Notes</strong>: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system <code>tar</code>.</li>
-</ul>
-<h3 id="metal">Metal</h3>
-<ul>
-<li><strong>Platform</strong>: macOS only</li>
-<li><strong>Hardware</strong>: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support</li>
-<li><strong>Use Case</strong>: macOS GPU acceleration</li>
-<li><strong>Performance</strong>: Optimized for Apple Silicon</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-</ul>
-<h3 id="system">System</h3>
-<ul>
-<li><strong>Platform</strong>: Linux only</li>
-<li><strong>Hardware</strong>: Depends on system-installed llama-server binary</li>
-<li><strong>Use Case</strong>: Advanced users with custom llama.cpp builds</li>
-<li><strong>Performance</strong>: Depends on build configuration</li>
-<li><strong>Installation</strong>: Requires manual installation of <code>llama-server</code> in system PATH</li>
-<li><strong>Enable</strong>: Set <code>"llamacpp": { "backend": "system" }</code> in <code>config.json</code> to enable the system backend, or use <code>lemonade config set llamacpp.backend=system</code></li>
-<li><strong>HIP plugin on non-standard paths</strong>: When an AMD GPU is present, the system backend needs the GGML HIP plugin (<code>libggml-hip.so</code>). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set <code>LEMONADE_GGML_HIP_PATH</code> to the full path of the plugin so the backend is reported as available:</li>
-</ul>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_GGML_HIP_PATH</span><span class="o">=</span>/opt/rocm/lib/libggml-hip.so
+<hr />
+<h2 id="setup-under-5-minutes">Setup (Under 5 Minutes)</h2>
+<h3 id="step-1-install-langchain">Step 1 — Install LangChain</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>langchain<span class="w"> </span>langchain-openai
 </code></pre></div>
-<p>The filename must look like <code>libggml-hip*.so*</code> (versioned sonames such as <code>libggml-hip.so.0</code> are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.</p>
-<h2 id="rocm-channel-configuration">ROCm Channel Configuration</h2>
-<p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
-<h3 id="stable-channel-default">Stable Channel (Default)</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-- <strong>Source</strong>: Custom builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a>
-- <strong>Binaries</strong>: Common builds for supported architectures
-- <strong>Updates</strong>: Frequent updates with latest optimizations and fixes
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>: Requires runtime for both Windows and Linux to be installed separately.
-- <strong>Best For</strong>: Users who want the latest performance optimizations</p>
-<h3 id="nightly-channel">Nightly Channel</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nightly&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-- <strong>Source</strong>: Nightly builds from <a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a>
-- <strong>Binaries</strong>: Architecture-specific builds (gfx1150, gfx1151, gfx103X, gfx110X, gfx120X)
-- <strong>Updates</strong>: Nightly builds with experimental features and latest upstream changes
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>: Bundled runtime on Linux, TheRock ROCm dependencies
-- <strong>Best For</strong>: Developers and testers who want bleeding-edge features and are comfortable with potential instability</p>
-<h3 id="changing-channels">Changing Channels</h3>
-<p>To switch between channels, update your <code>config.json</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Or use the Lemonade CLI:
-<div class="highlight"><pre><span></span><code><span class="c1"># Switch to stable channel</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
+<h3 id="step-2-configure-langchain-to-use-lemonade-server">Step 2 — Configure LangChain to use Lemonade Server</h3>
+<p>LangChain supports any OpenAI-compatible backend via <code>ChatOpenAI</code>. Point it to Lemonade's local server:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span>
 
-<span class="c1"># Switch to stable channel (default)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
+<span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>           <span class="c1"># required by LangChain but unused by Lemonade</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span><span class="p">,</span>  <span class="c1"># any model you have pulled</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="step-3-send-your-first-message">Step 3 — Send your first message</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">HumanMessage</span>
 
-<span class="c1"># Switch to nightly channel (experimental)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
-</code></pre></div></p>
-<p>After changing channels, you'll need to reinstall the ROCm backend:
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:rocm
-</code></pre></div></p>
-<h3 id="pinning-to-a-specific-version-tag">Pinning to a Specific Version Tag</h3>
-<p>You can pin <code>llamacpp.rocm_bin</code> to a specific release tag instead of using <code>"builtin"</code> or <code>"latest"</code>. <strong>Each channel downloads from a different GitHub repository, so you must set the correct channel before setting a specific tag.</strong></p>
+<span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">invoke</span><span class="p">([</span><span class="n">HumanMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">&quot;What is the capital of France?&quot;</span><span class="p">)])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+<span class="c1"># Paris</span>
+</code></pre></div>
+<hr />
+<h2 id="example-1-simple-chat">Example 1 — Simple Chat</h2>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">HumanMessage</span><span class="p">,</span> <span class="n">SystemMessage</span>
+
+<span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">SystemMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant. Be concise.&quot;</span><span class="p">),</span>
+    <span class="n">HumanMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">&quot;Explain what a vector database is in one sentence.&quot;</span><span class="p">),</span>
+<span class="p">]</span>
+
+<span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="example-2-rag-pipeline-chat-with-your-documents">Example 2 — RAG Pipeline (Chat with Your Documents)</h2>
+<p>This example builds a full Retrieval-Augmented Generation pipeline using Lemonade as the LLM backend — fully local and offline.</p>
+<p><strong>Additional prerequisite:</strong> pull the embedding model before running:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>nomic-embed-text-v1-GGUF
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>langchain<span class="w"> </span>langchain-openai<span class="w"> </span>langchain-community<span class="w"> </span>langchain-chroma<span class="w"> </span>langchain-text-splitters<span class="w"> </span>pypdf
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span><span class="p">,</span> <span class="n">OpenAIEmbeddings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_community.document_loaders</span><span class="w"> </span><span class="kn">import</span> <span class="n">PyPDFLoader</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_text_splitters</span><span class="w"> </span><span class="kn">import</span> <span class="n">RecursiveCharacterTextSplitter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_chroma</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chroma</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.prompts</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptTemplate</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.output_parsers</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrOutputParser</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.runnables</span><span class="w"> </span><span class="kn">import</span> <span class="n">RunnablePassthrough</span>
+
+<span class="c1"># ── Connect to Lemonade ──────────────────────────────────</span>
+<span class="n">LEMONADE_BASE_URL</span>   <span class="o">=</span> <span class="s2">&quot;http://localhost:13305/api/v1&quot;</span>
+<span class="n">LEMONADE_API_KEY</span>    <span class="o">=</span> <span class="s2">&quot;lemonade&quot;</span>
+<span class="n">MODEL_NAME</span>          <span class="o">=</span> <span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span>
+<span class="n">EMBEDDING_MODEL</span>     <span class="o">=</span> <span class="s2">&quot;nomic-embed-text-v1-GGUF&quot;</span>
+
+<span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="n">LEMONADE_BASE_URL</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="n">LEMONADE_API_KEY</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="n">MODEL_NAME</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Requires the embedding model to be pulled first:</span>
+<span class="c1">#   lemonade pull nomic-embed-text-v1-GGUF</span>
+<span class="c1"># check_embedding_ctx_length=False disables LangChain&#39;s OpenAI-specific</span>
+<span class="c1"># tokenizer check, which fails against non-OpenAI providers.</span>
+<span class="n">embeddings</span> <span class="o">=</span> <span class="n">OpenAIEmbeddings</span><span class="p">(</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="n">LEMONADE_BASE_URL</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="n">LEMONADE_API_KEY</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="n">EMBEDDING_MODEL</span><span class="p">,</span>
+    <span class="n">check_embedding_ctx_length</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># ── Load and chunk your PDF ──────────────────────────────</span>
+<span class="n">loader</span> <span class="o">=</span> <span class="n">PyPDFLoader</span><span class="p">(</span><span class="s2">&quot;your_document.pdf&quot;</span><span class="p">)</span>
+<span class="n">docs</span>   <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
+
+<span class="n">splitter</span> <span class="o">=</span> <span class="n">RecursiveCharacterTextSplitter</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">chunk_overlap</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
+<span class="n">chunks</span>   <span class="o">=</span> <span class="n">splitter</span><span class="o">.</span><span class="n">split_documents</span><span class="p">(</span><span class="n">docs</span><span class="p">)</span>
+
+<span class="c1"># ── Store in ChromaDB ────────────────────────────────────</span>
+<span class="n">vectorstore</span> <span class="o">=</span> <span class="n">Chroma</span><span class="o">.</span><span class="n">from_documents</span><span class="p">(</span><span class="n">chunks</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">)</span>
+<span class="n">retriever</span>   <span class="o">=</span> <span class="n">vectorstore</span><span class="o">.</span><span class="n">as_retriever</span><span class="p">(</span><span class="n">search_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;k&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">})</span>
+
+<span class="c1"># ── Build RAG chain ──────────────────────────────────────</span>
+<span class="n">prompt</span> <span class="o">=</span> <span class="n">PromptTemplate</span><span class="o">.</span><span class="n">from_template</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">Answer the question using ONLY the context below.</span>
+<span class="s2">If unsure, say &quot;I don&#39;t know based on this document.&quot;</span>
+
+<span class="s2">Context: </span><span class="si">{context}</span>
+<span class="s2">Question: </span><span class="si">{question}</span>
+<span class="s2">Answer:</span>
+<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">format_docs</span><span class="p">(</span><span class="n">docs</span><span class="p">):</span>
+    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">page_content</span> <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">)</span>
+
+<span class="n">rag_chain</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">{</span><span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">retriever</span> <span class="o">|</span> <span class="n">format_docs</span><span class="p">,</span> <span class="s2">&quot;question&quot;</span><span class="p">:</span> <span class="n">RunnablePassthrough</span><span class="p">()}</span>
+    <span class="o">|</span> <span class="n">prompt</span>
+    <span class="o">|</span> <span class="n">llm</span>
+    <span class="o">|</span> <span class="n">StrOutputParser</span><span class="p">()</span>
+<span class="p">)</span>
+
+<span class="c1"># ── Ask questions ────────────────────────────────────────</span>
+<span class="n">answer</span> <span class="o">=</span> <span class="n">rag_chain</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="s2">&quot;What is the main topic of this document?&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">answer</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="example-3-prompt-template-chain">Example 3 — Prompt Template + Chain</h2>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.prompts</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatPromptTemplate</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.output_parsers</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrOutputParser</span>
+
+<span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">prompt</span> <span class="o">=</span> <span class="n">ChatPromptTemplate</span><span class="o">.</span><span class="n">from_template</span><span class="p">(</span>
+    <span class="s2">&quot;Summarize the following text in 3 bullet points:</span><span class="se">\n\n</span><span class="si">{text}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+
+<span class="n">chain</span> <span class="o">=</span> <span class="n">prompt</span> <span class="o">|</span> <span class="n">llm</span> <span class="o">|</span> <span class="n">StrOutputParser</span><span class="p">()</span>
+
+<span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">invoke</span><span class="p">({</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;Your long text goes here...&quot;</span><span class="p">})</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
 <table>
 <thead>
 <tr>
-<th>Channel</th>
-<th>Repository</th>
-<th>Tag format</th>
+<th>Problem</th>
+<th>Fix</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>stable</code> <em>(default)</em></td>
-<td><a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></td>
-<td>Lemonade-specific build tags</td>
+<td><code>Connection refused</code></td>
+<td>Make sure Lemonade Server is running (<code>lemonade status</code>)</td>
 </tr>
 <tr>
-<td><code>nightly</code></td>
-<td><a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a></td>
-<td>Nightly tags, e.g. <code>b1260</code></td>
+<td><code>Model not found</code></td>
+<td>Pull the model first: <code>lemonade pull MODEL_NAME</code></td>
+</tr>
+<tr>
+<td><code>Embeddings not working</code></td>
+<td>Pull the model first: <code>lemonade pull nomic-embed-text-v1-GGUF</code>. Make sure <code>model=</code> and <code>check_embedding_ctx_length=False</code> are set in <code>OpenAIEmbeddings</code></td>
+</tr>
+<tr>
+<td>Slow responses</td>
+<td>Use a smaller model (e.g. 3B instead of 7B)</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p><strong>Always set <code>rocm_channel</code> to the correct channel before setting <code>rocm_bin</code> to a specific tag.</strong> If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.</p>
-</blockquote>
-<p>Example — pin to a specific nightly build:
-<div class="highlight"><pre><span></span><code><span class="c1"># 1. Switch to the nightly channel first</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
-
-<span class="c1"># 2. Then pin to the desired nightly tag</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.rocm_bin<span class="o">=</span>b1260
-</code></pre></div></p>
-<h2 id="choosing-the-right-backend">Choosing the Right Backend</h2>
-<h3 id="decision-tree">Decision Tree</h3>
-<ol>
-<li><strong>Do you have an NVIDIA GPU (Turing or newer)?</strong></li>
-<li>Try <strong>CUDA</strong> first for best performance</li>
-<li>
-<p>Fall back to <strong>Vulkan</strong> if you encounter issues</p>
-</li>
-<li>
-<p><strong>Do you have an AMD GPU?</strong></p>
-</li>
-<li><strong>For Radeon RX 6000/7000 or Ryzen AI iGPU</strong>:<ul>
-<li>Try <strong>ROCm</strong> first for best performance</li>
-<li>Fall back to <strong>Vulkan</strong> if you encounter issues</li>
-</ul>
-</li>
-<li>
-<p><strong>For older AMD GPUs (RX 5000 and earlier)</strong>:</p>
+<hr />
+<h2 id="why-use-lemonade-with-langchain">Why Use Lemonade with LangChain?</h2>
 <ul>
-<li>Use <strong>Vulkan</strong> (ROCm not supported)</li>
+<li><strong>100% offline</strong> — no API keys, no internet required after setup</li>
+<li><strong>Drop-in replacement</strong> — change one URL to switch from OpenAI to local</li>
+<li><strong>Full LangChain ecosystem</strong> — chains, prompt templates, and RAG pipelines work out of the box</li>
+<li><strong>Privacy</strong> — your documents never leave your machine</li>
 </ul>
-</li>
-<li>
-<p><strong>Do you have an Intel GPU or older NVIDIA GPU?</strong></p>
-</li>
-<li>
-<p>Use <strong>Vulkan</strong></p>
-</li>
-<li>
-<p><strong>Do you have Apple Silicon?</strong></p>
-</li>
-<li>
-<p>Use <strong>Metal</strong></p>
-</li>
-<li>
-<p><strong>No GPU or unsupported GPU?</strong></p>
-</li>
-<li>Use <strong>CPU</strong></li>
-</ol>
-<h3 id="rocm-channel-selection">ROCm Channel Selection</h3>
+<hr />
+<h2 id="resources">Resources</h2>
 <ul>
-<li><strong>Use Stable</strong> if you:</li>
-<li>Prefer stability over latest features</li>
-<li>Want upstream llama.cpp compatibility</li>
-<li>
-<p>Are deploying in production</p>
-</li>
-<li>
-<p><strong>Use Nightly</strong> if you:</p>
-</li>
-<li>Want bleeding-edge experimental features</li>
-<li>Are testing unreleased llama.cpp functionality</li>
-<li>Are comfortable with potential bugs and instability</li>
-<li>Are a developer contributing to lemonade or llama.cpp</li>
-</ul>
-<h2 id="platform-specifics">Platform Specifics</h2>
-<h3 id="linux">Linux</h3>
-<ul>
-<li>All backends supported (CPU, Vulkan, ROCm, CUDA, System)</li>
-<li>CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default</li>
-<li>ROCm requires compatible AMD GPU (see above)</li>
-<li>CUDA requires compatible NVIDIA GPU (see above)</li>
-<li>System backend requires manual llama-server installation</li>
-</ul>
-<h3 id="windows">Windows</h3>
-<ul>
-<li>Supported: CPU, Vulkan, ROCm, CUDA</li>
-<li>ROCm requires compatible AMD GPU</li>
-<li>CUDA requires compatible NVIDIA GPU and Windows 11 22H2+ (for bundled bsdtar that extracts .7z assets)</li>
-<li>No system backend support</li>
-</ul>
-<h3 id="macos">macOS</h3>
-<ul>
-<li>Supported: CPU, Metal</li>
-<li>Metal recommended for all Macs with Metal support</li>
+<li><a href="https://lemonade-server.ai">Lemonade Server Documentation</a></li>
+<li><a href="https://python.langchain.com">LangChain Documentation</a></li>
+<li><a href="https://discord.gg/5xXzkMu8Zk">Lemonade Discord</a></li>
 </ul>
 
 
@@ -2891,7 +2650,7 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../multi-model/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Running Many Models">
+          <a href="../continue/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Continue">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -2901,20 +2660,20 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
                 Previous
               </span>
               <div class="md-ellipsis">
-                Running Many Models
+                Continue
               </div>
             </div>
           </a>
         
         
           
-          <a href="../vllm/" class="md-footer__link md-footer__link--next" aria-label="Next: vLLM">
+          <a href="../lemon-zest/" class="md-footer__link md-footer__link--next" aria-label="Next: Lemon Zest">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                vLLM
+                Lemon Zest
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -2993,12 +2752,12 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
     
       
       
-      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
       
-        <script src="../../../assets/carousel.js"></script>
+        <script src="../../assets/carousel.js"></script>
       
     
   </body>

@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/configuration/llamacpp/">
+        <link rel="canonical" href="https://lemonade-server.ai/guide/configuration/cloud/">
       
       
-        <link rel="prev" href="../multi-model/">
+        <link rel="prev" href="../moonshine/">
       
       
-        <link rel="next" href="../vllm/">
+        <link rel="next" href="../../faq/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>llama.cpp Backend Options - Lemonade Server Documentation</title>
+        <title>Cloud Offload - Lemonade Server Documentation</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#llamacpp-backend-options" class="md-skip">
+        <a href="#cloud-offload" class="md-skip">
           Skip to content
         </a>
       
@@ -117,7 +117,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              llama.cpp Backend Options
+              Cloud Offload
             
           </span>
         </div>
@@ -776,37 +776,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    llama.cpp
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../llamacpp/" class="md-nav__link">
         
   
   
@@ -822,260 +795,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#available-backends" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Available Backends
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Available Backends">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CPU
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#vulkan" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Vulkan
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cuda" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CUDA
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#metal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Metal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#system" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        System
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rocm-channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Configuration
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ROCm Channel Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#nightly-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Nightly Channel
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#changing-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Changing Channels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Pinning to a Specific Version Tag
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#choosing-the-right-backend" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Choosing the Right Backend
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Choosing the Right Backend">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#decision-tree" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Decision Tree
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm-channel-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#platform-specifics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Platform Specifics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Platform Specifics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#macos" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        macOS
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1141,10 +860,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../cloud/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cloud Offload
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1160,6 +906,121 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quickstart" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quickstart
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quickstart">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#option-a-environment-variable-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Option A: Environment variable (recommended)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#option-b-runtime-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Option B: Runtime API key
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-cloud-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Using cloud models
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication-precedence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Authentication precedence
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-discovery-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How discovery works
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#admin-multi-client-deployments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Admin / multi-client deployments
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2389,22 +2250,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#available-backends" class="md-nav__link">
+  <a href="#quickstart" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Available Backends
+        Quickstart
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Available Backends">
+    <nav class="md-nav" aria-label="Quickstart">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cpu" class="md-nav__link">
+  <a href="#option-a-environment-variable-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        CPU
+        Option A: Environment variable (recommended)
       </span>
     </span>
   </a>
@@ -2412,54 +2273,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vulkan" class="md-nav__link">
+  <a href="#option-b-runtime-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Vulkan
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cuda" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CUDA
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#metal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Metal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#system" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        System
+        Option B: Runtime API key
       </span>
     </span>
   </a>
@@ -2472,152 +2289,57 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#rocm-channel-configuration" class="md-nav__link">
+  <a href="#using-cloud-models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        ROCm Channel Configuration
+        Using cloud models
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="ROCm Channel Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#nightly-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Nightly Channel
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#changing-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Changing Channels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Pinning to a Specific Version Tag
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#choosing-the-right-backend" class="md-nav__link">
+  <a href="#authentication-precedence" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Choosing the Right Backend
+        Authentication precedence
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Choosing the Right Backend">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#decision-tree" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Decision Tree
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm-channel-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#platform-specifics" class="md-nav__link">
+  <a href="#how-discovery-works" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Platform Specifics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Platform Specifics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
+        How discovery works
       </span>
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#admin-multi-client-deployments" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Windows
+        Admin / multi-client deployments
       </span>
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#macos" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        macOS
+        Troubleshooting
       </span>
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2639,220 +2361,109 @@
   
 
 
-<h1 id="llamacpp-backend-options">llama.cpp Backend Options</h1>
-<p>Lemonade uses <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a> as its primary LLM inference backend, supporting multiple hardware acceleration options. This document explains the available backends and how to choose between them.</p>
-<h2 id="available-backends">Available Backends</h2>
-<h3 id="cpu">CPU</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux, macOS</li>
-<li><strong>Hardware</strong>: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)</li>
-<li><strong>Use Case</strong>: Universal fallback, no GPU required</li>
-<li><strong>Performance</strong>: Slowest option, suitable for small models or testing</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-</ul>
-<h3 id="vulkan">Vulkan</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs, Qualcomm Adreno and other Vulkan-capable GPUs on ARM64 Linux</li>
-<li><strong>Use Case</strong>: Cross-vendor GPU acceleration</li>
-<li><strong>Performance</strong>: Good performance across all GPU vendors</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-<li><strong>Notes</strong>: Recommended for most GPU users; on ARM64 Linux (e.g., Qualcomm X Elite), Vulkan is the default backend</li>
-</ul>
-<h3 id="rocm">ROCm</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD Radeon RX 6000/7000 series (RDNA2/RDNA3/RDNA4), AMD Ryzen AI iGPUs (Strix Point/Halo)</li>
-<li><strong>Use Case</strong>: AMD GPU-optimized inference</li>
-<li><strong>Performance</strong>: Optimized for AMD hardware, may outperform Vulkan on supported GPUs</li>
-<li><strong>Channel Options</strong>:</li>
-<li><strong>Stable</strong> (default): Custom builds with latest optimizations from lemonade-sdk</li>
-<li><strong>Nightly</strong>: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)</li>
-<li><strong>Installation</strong>: Varies by channel (see below)</li>
-</ul>
-<h3 id="cuda">CUDA</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)</li>
-<li><strong>Use Case</strong>: NVIDIA GPU-optimized inference</li>
-<li><strong>Performance</strong>: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs</li>
-<li><strong>Source</strong>: Per-architecture builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></li>
-<li><strong>Binaries</strong>: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)</li>
-<li><strong>Runtime</strong>: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)</li>
-<li><strong>Notes</strong>: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system <code>tar</code>.</li>
-</ul>
-<h3 id="metal">Metal</h3>
-<ul>
-<li><strong>Platform</strong>: macOS only</li>
-<li><strong>Hardware</strong>: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support</li>
-<li><strong>Use Case</strong>: macOS GPU acceleration</li>
-<li><strong>Performance</strong>: Optimized for Apple Silicon</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-</ul>
-<h3 id="system">System</h3>
-<ul>
-<li><strong>Platform</strong>: Linux only</li>
-<li><strong>Hardware</strong>: Depends on system-installed llama-server binary</li>
-<li><strong>Use Case</strong>: Advanced users with custom llama.cpp builds</li>
-<li><strong>Performance</strong>: Depends on build configuration</li>
-<li><strong>Installation</strong>: Requires manual installation of <code>llama-server</code> in system PATH</li>
-<li><strong>Enable</strong>: Set <code>"llamacpp": { "backend": "system" }</code> in <code>config.json</code> to enable the system backend, or use <code>lemonade config set llamacpp.backend=system</code></li>
-<li><strong>HIP plugin on non-standard paths</strong>: When an AMD GPU is present, the system backend needs the GGML HIP plugin (<code>libggml-hip.so</code>). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set <code>LEMONADE_GGML_HIP_PATH</code> to the full path of the plugin so the backend is reported as available:</li>
-</ul>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_GGML_HIP_PATH</span><span class="o">=</span>/opt/rocm/lib/libggml-hip.so
+<h1 id="cloud-offload">Cloud Offload</h1>
+<p>Lemonade can route inference to any OpenAI-compatible cloud provider (Fireworks, OpenAI, OpenRouter, Together, etc.) alongside locally-loaded models. Cloud-routed models show up in <code>/v1/models</code> like any other recipe, so every client connecting to your <code>lemond</code> — the desktop app, the CLI, third-party SDKs, and agents launched via <code>lemonade launch</code> — sees the same catalog without per-client configuration.</p>
+<blockquote>
+<p><strong>Status: experimental.</strong> Cloud routing has been validated with Fireworks, OpenAI, OpenRouter, and Together. Other OpenAI-compatible providers should work; report problems with <code>lemond</code> logs and the provider's <code>/v1/models</code> response.</p>
+</blockquote>
+<h2 id="quickstart">Quickstart</h2>
+<p>There are two ways to authenticate. <strong>Env vars</strong> are preferred — they're persistent, never written to disk by <code>lemond</code>, and visible to every connecting client.</p>
+<h3 id="option-a-environment-variable-recommended">Option A: Environment variable (recommended)</h3>
+<p>Set the provider's API key in <code>lemond</code>'s environment before starting the server:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_FIREWORKS_API_KEY</span><span class="o">=</span>fw-XXXXX
 </code></pre></div>
-<p>The filename must look like <code>libggml-hip*.so*</code> (versioned sonames such as <code>libggml-hip.so.0</code> are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.</p>
-<h2 id="rocm-channel-configuration">ROCm Channel Configuration</h2>
-<p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
-<h3 id="stable-channel-default">Stable Channel (Default)</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
+<p>Then install the provider once:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>fireworks<span class="w"> </span>--base-url<span class="w"> </span>https://api.fireworks.ai/inference/v1
 </code></pre></div>
-- <strong>Source</strong>: Custom builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a>
-- <strong>Binaries</strong>: Common builds for supported architectures
-- <strong>Updates</strong>: Frequent updates with latest optimizations and fixes
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>: Requires runtime for both Windows and Linux to be installed separately.
-- <strong>Best For</strong>: Users who want the latest performance optimizations</p>
-<h3 id="nightly-channel">Nightly Channel</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nightly&quot;</span>
-<span class="p">}</span>
+<p>That's it. <code>lemond</code> discovers Fireworks's chat-capable models, registers them under the <code>fireworks.</code> namespace, and surfaces them in <code>/v1/models</code>:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>fireworks
 </code></pre></div>
-- <strong>Source</strong>: Nightly builds from <a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a>
-- <strong>Binaries</strong>: Architecture-specific builds (gfx1150, gfx1151, gfx103X, gfx110X, gfx120X)
-- <strong>Updates</strong>: Nightly builds with experimental features and latest upstream changes
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>: Bundled runtime on Linux, TheRock ROCm dependencies
-- <strong>Best For</strong>: Developers and testers who want bleeding-edge features and are comfortable with potential instability</p>
-<h3 id="changing-channels">Changing Channels</h3>
-<p>To switch between channels, update your <code>config.json</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
+<h3 id="option-b-runtime-api-key">Option B: Runtime API key</h3>
+<p>If you don't want to set an env var (e.g., on a dev box where the key shouldn't persist), register the provider and supply the key at runtime:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>fireworks<span class="w"> </span>--base-url<span class="w"> </span>https://api.fireworks.ai/inference/v1
+lemonade<span class="w"> </span>cloud<span class="w"> </span>auth<span class="w"> </span>fireworks
+<span class="c1"># Prompts: API key for fireworks:</span>
 </code></pre></div>
-<p>Or use the Lemonade CLI:
-<div class="highlight"><pre><span></span><code><span class="c1"># Switch to stable channel</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
-
-<span class="c1"># Switch to stable channel (default)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
-
-<span class="c1"># Switch to nightly channel (experimental)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
-</code></pre></div></p>
-<p>After changing channels, you'll need to reinstall the ROCm backend:
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:rocm
-</code></pre></div></p>
-<h3 id="pinning-to-a-specific-version-tag">Pinning to a Specific Version Tag</h3>
-<p>You can pin <code>llamacpp.rocm_bin</code> to a specific release tag instead of using <code>"builtin"</code> or <code>"latest"</code>. <strong>Each channel downloads from a different GitHub repository, so you must set the correct channel before setting a specific tag.</strong></p>
+<p>Or in one step:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>fireworks<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--base-url<span class="w"> </span>https://api.fireworks.ai/inference/v1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--api-key<span class="w"> </span>fw-XXXXX
+</code></pre></div>
+<p>Runtime keys live in <code>lemond</code>'s process memory only — they're never written to disk and they vanish on restart. To make them survive a restart, switch to Option A.</p>
+<h2 id="using-cloud-models">Using cloud models</h2>
+<p>Cloud-discovered models use a dot-namespaced name: <code>&lt;provider&gt;.&lt;upstream-id&gt;</code>. For example, after installing Fireworks you'll see entries like:</p>
+<div class="highlight"><pre><span></span><code>fireworks.accounts/fireworks/models/kimi-k2p5
+fireworks.qwen3-235b-a22b
+</code></pre></div>
+<p>They work everywhere a local model name works:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>load<span class="w"> </span>fireworks.kimi-k2p5
+lemonade<span class="w"> </span>run<span class="w"> </span>fireworks.kimi-k2p5
+</code></pre></div>
+<p>Standard OpenAI chat completions:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<span class="s1">    &quot;model&quot;: &quot;fireworks.kimi-k2p5&quot;,</span>
+<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;hi&quot;}]</span>
+<span class="s1">  }&#39;</span>
+</code></pre></div>
+<p>No special headers, no per-request credentials — <code>lemond</code> resolves the key from its registry and forwards the request transparently.</p>
+<h2 id="authentication-precedence">Authentication precedence</h2>
+<p>When <code>lemond</code> needs an API key for a provider, it resolves it in this order:</p>
+<ol>
+<li><strong><code>LEMONADE_&lt;PROVIDER&gt;_API_KEY</code> env var</strong>, if set in <code>lemond</code>'s environment.</li>
+<li><strong>Runtime key</strong> from <code>POST /v1/cloud/auth</code>, if previously supplied this session.</li>
+<li><strong>None</strong> — <code>lemond</code> refuses to call the provider and returns a structured error.</li>
+</ol>
+<p>Env vars always win. If you <code>POST /v1/cloud/auth</code> while the env var is set, the server returns <strong>409 Conflict</strong> with <code>{"error":{"type":"auth_conflict","env_var":"LEMONADE_&lt;PROVIDER&gt;_API_KEY"}}</code> and does <em>not</em> store the supplied key. This means an operator who provisions a "house" key via env can trust that a client can't silently override it.</p>
+<h2 id="how-discovery-works">How discovery works</h2>
+<p><code>lemond</code> calls <code>GET &lt;base_url&gt;/models</code> for each installed provider with a resolvable key, then filters the results to chat-capable models (using <code>supports_chat</code>, <code>capabilities</code>, <code>architecture.modality</code>, <code>type</code>, or id-pattern fallback depending on the provider). For each model it captures:</p>
+<ul>
+<li><strong>Public name</strong> — <code>&lt;provider&gt;.&lt;cleaned_upstream_id&gt;</code> after stripping <code>accounts/&lt;x&gt;/models/</code> wrappers and deduplicating leading provider segments.</li>
+<li><strong>Capability labels</strong> — <code>vision</code>, <code>tool-calling</code>, <code>reasoning</code>, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.</li>
+<li><strong>Context window</strong> — from <code>context_length</code>, when reported.</li>
+<li><strong>Per-million-token cost</strong> — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Used for display only — never affects routing.</li>
+</ul>
+<p>Discovery runs at every cache build (server startup, install, auth) and is best-effort: an unreachable provider logs a warning and is skipped without blocking the rest of the catalog.</p>
+<h2 id="admin-multi-client-deployments">Admin / multi-client deployments</h2>
+<p>A single <code>lemond</code> can serve multiple connecting clients (GUI, CLI, SDKs, coding agents on the same or different machines). Cloud config is <strong>shared infrastructure config</strong>, not per-client state:</p>
+<ul>
+<li><strong>Provider URLs</strong> persist in <code>lemond</code>'s <code>config.json</code> under <code>cloud_providers</code>. Every connecting client sees the same list.</li>
+<li><strong>API keys</strong> live in env vars (persistent, shared) or <code>lemond</code> process memory (ephemeral). They are <strong>never</strong> written to disk by <code>lemond</code>, and <code>GET /v1/system-info</code> reports auth status but never the key value.</li>
+</ul>
+<p>A common admin pattern: set <code>LEMONADE_FIREWORKS_API_KEY</code> in the systemd / Docker / service environment, install the provider once, and every user pointing their client at the server gets cloud access without seeing the key.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
 <table>
 <thead>
 <tr>
-<th>Channel</th>
-<th>Repository</th>
-<th>Tag format</th>
+<th>Symptom</th>
+<th>Check</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>stable</code> <em>(default)</em></td>
-<td><a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></td>
-<td>Lemonade-specific build tags</td>
+<td>Provider installed but <code>models_discovered: 0</code> in <code>system-info</code></td>
+<td>No resolvable key — env var missing or runtime key not POSTed.</td>
 </tr>
 <tr>
-<td><code>nightly</code></td>
-<td><a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a></td>
-<td>Nightly tags, e.g. <code>b1260</code></td>
+<td><code>POST /v1/cloud/auth</code> returns 409</td>
+<td>Env var is set for that provider. Unset it or use the env-var value going forward.</td>
+</tr>
+<tr>
+<td>Chat returns "No API key for cloud provider X"</td>
+<td>Same as above — check <code>LEMONADE_&lt;PROVIDER&gt;_API_KEY</code> is exported in <code>lemond</code>'s environment, not your shell.</td>
+</tr>
+<tr>
+<td>Cloud model missing from <code>/v1/models</code></td>
+<td>Provider doesn't expose it as chat-capable, or discovery failed. Check <code>lemond</code> logs for warnings from the <code>Cloud</code> component.</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p><strong>Always set <code>rocm_channel</code> to the correct channel before setting <code>rocm_bin</code> to a specific tag.</strong> If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.</p>
-</blockquote>
-<p>Example — pin to a specific nightly build:
-<div class="highlight"><pre><span></span><code><span class="c1"># 1. Switch to the nightly channel first</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
-
-<span class="c1"># 2. Then pin to the desired nightly tag</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.rocm_bin<span class="o">=</span>b1260
-</code></pre></div></p>
-<h2 id="choosing-the-right-backend">Choosing the Right Backend</h2>
-<h3 id="decision-tree">Decision Tree</h3>
-<ol>
-<li><strong>Do you have an NVIDIA GPU (Turing or newer)?</strong></li>
-<li>Try <strong>CUDA</strong> first for best performance</li>
-<li>
-<p>Fall back to <strong>Vulkan</strong> if you encounter issues</p>
-</li>
-<li>
-<p><strong>Do you have an AMD GPU?</strong></p>
-</li>
-<li><strong>For Radeon RX 6000/7000 or Ryzen AI iGPU</strong>:<ul>
-<li>Try <strong>ROCm</strong> first for best performance</li>
-<li>Fall back to <strong>Vulkan</strong> if you encounter issues</li>
-</ul>
-</li>
-<li>
-<p><strong>For older AMD GPUs (RX 5000 and earlier)</strong>:</p>
+<p>For a structured view of every installed provider's auth state and discovered model count, hit <code>GET /v1/system-info</code> — the <code>cloud.providers[]</code> block reports <code>env_var_set</code>, <code>runtime_key_set</code>, and <code>models_discovered</code> per provider.</p>
+<p>See also:</p>
 <ul>
-<li>Use <strong>Vulkan</strong> (ROCm not supported)</li>
-</ul>
-</li>
-<li>
-<p><strong>Do you have an Intel GPU or older NVIDIA GPU?</strong></p>
-</li>
-<li>
-<p>Use <strong>Vulkan</strong></p>
-</li>
-<li>
-<p><strong>Do you have Apple Silicon?</strong></p>
-</li>
-<li>
-<p>Use <strong>Metal</strong></p>
-</li>
-<li>
-<p><strong>No GPU or unsupported GPU?</strong></p>
-</li>
-<li>Use <strong>CPU</strong></li>
-</ol>
-<h3 id="rocm-channel-selection">ROCm Channel Selection</h3>
-<ul>
-<li><strong>Use Stable</strong> if you:</li>
-<li>Prefer stability over latest features</li>
-<li>Want upstream llama.cpp compatibility</li>
-<li>
-<p>Are deploying in production</p>
-</li>
-<li>
-<p><strong>Use Nightly</strong> if you:</p>
-</li>
-<li>Want bleeding-edge experimental features</li>
-<li>Are testing unreleased llama.cpp functionality</li>
-<li>Are comfortable with potential bugs and instability</li>
-<li>Are a developer contributing to lemonade or llama.cpp</li>
-</ul>
-<h2 id="platform-specifics">Platform Specifics</h2>
-<h3 id="linux">Linux</h3>
-<ul>
-<li>All backends supported (CPU, Vulkan, ROCm, CUDA, System)</li>
-<li>CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default</li>
-<li>ROCm requires compatible AMD GPU (see above)</li>
-<li>CUDA requires compatible NVIDIA GPU (see above)</li>
-<li>System backend requires manual llama-server installation</li>
-</ul>
-<h3 id="windows">Windows</h3>
-<ul>
-<li>Supported: CPU, Vulkan, ROCm, CUDA</li>
-<li>ROCm requires compatible AMD GPU</li>
-<li>CUDA requires compatible NVIDIA GPU and Windows 11 22H2+ (for bundled bsdtar that extracts .7z assets)</li>
-<li>No system backend support</li>
-</ul>
-<h3 id="macos">macOS</h3>
-<ul>
-<li>Supported: CPU, Metal</li>
-<li>Metal recommended for all Macs with Metal support</li>
+<li><a href="../../cli/#options-for-cloud">CLI reference: <code>cloud</code> subcommands</a></li>
+<li><a href="../../../api/lemonade/">API reference: <code>/v1/cloud/auth</code>, <code>/v1/install</code>, <code>/v1/uninstall</code></a></li>
 </ul>
 
 
@@ -2891,7 +2502,7 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../multi-model/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Running Many Models">
+          <a href="../moonshine/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Moonshine">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -2901,20 +2512,20 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
                 Previous
               </span>
               <div class="md-ellipsis">
-                Running Many Models
+                Moonshine
               </div>
             </div>
           </a>
         
         
           
-          <a href="../vllm/" class="md-footer__link md-footer__link--next" aria-label="Next: vLLM">
+          <a href="../../faq/" class="md-footer__link md-footer__link--next" aria-label="Next: FAQ">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                vLLM
+                FAQ
               </div>
             </div>
             <div class="md-footer__button md-icon">

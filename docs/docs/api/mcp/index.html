@@ -10,36 +10,32 @@
       
       
       
-        <link rel="canonical" href="https://lemonade-server.ai/guide/configuration/llamacpp/">
+        <link rel="canonical" href="https://lemonade-server.ai/api/mcp/">
       
       
-        <link rel="prev" href="../multi-model/">
-      
-      
-        <link rel="next" href="../vllm/">
       
       
         
       
       
-      <link rel="icon" href="../../../assets/favicon.ico">
+      <link rel="icon" href="../../assets/favicon.ico">
       <meta name="generator" content="zensical-0.0.39">
     
     
       
-        <title>llama.cpp Backend Options - Lemonade Server Documentation</title>
+        <title>MCP Gateway - Lemonade Server Documentation</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.1e981d71.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.1e981d71.min.css">
       
         
           
         
-        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.dfe2e883.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.dfe2e883.min.css">
       
       
 
@@ -53,11 +49,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;450;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 
     
-      <link rel="stylesheet" href="../../../assets/website-styles.css">
+      <link rel="stylesheet" href="../../assets/website-styles.css">
     
-      <link rel="stylesheet" href="../../../assets/zest-theme.css">
+      <link rel="stylesheet" href="../../assets/zest-theme.css">
     
-    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,a=__md_scope)=>JSON.parse(t.getItem(a.pathname+"."+e)),__md_set=(e,t,a=localStorage,_=__md_scope)=>{try{a.setItem(_.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
@@ -82,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#llamacpp-backend-options" class="md-skip">
+        <a href="#mcp-gateway" class="md-skip">
           Skip to content
         </a>
       
@@ -100,7 +96,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-header__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
@@ -117,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              llama.cpp Backend Options
+              MCP Gateway
             
           </span>
         </div>
@@ -208,7 +204,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href="https://lemonade-server.ai" title="Lemonade Server Documentation" class="md-nav__button md-logo" aria-label="Lemonade Server Documentation" data-md-component="logo">
       
-  <img src="../../../assets/favicon.ico" alt="Lemonade Server Documentation">
+  <img src="../../assets/favicon.ico" alt="Lemonade Server Documentation">
 
     </a>
     Lemonade Server Documentation
@@ -235,7 +231,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -259,20 +255,18 @@
       
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
         
           
           <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
@@ -293,7 +287,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -311,7 +305,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../" class="md-nav__link">
+      <a href="../../guide/" class="md-nav__link">
         
   
   
@@ -386,7 +380,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/" class="md-nav__link">
+      <a href="../../guide/install/" class="md-nav__link">
         
   
   
@@ -414,7 +408,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/ubuntu/" class="md-nav__link">
+      <a href="../../guide/install/ubuntu/" class="md-nav__link">
         
   
   
@@ -442,7 +436,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/arch/" class="md-nav__link">
+      <a href="../../guide/install/arch/" class="md-nav__link">
         
   
   
@@ -470,7 +464,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/fedora/" class="md-nav__link">
+      <a href="../../guide/install/fedora/" class="md-nav__link">
         
   
   
@@ -498,7 +492,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/debian/" class="md-nav__link">
+      <a href="../../guide/install/debian/" class="md-nav__link">
         
   
   
@@ -526,7 +520,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/docker/" class="md-nav__link">
+      <a href="../../guide/install/docker/" class="md-nav__link">
         
   
   
@@ -562,7 +556,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../concepts/" class="md-nav__link">
+      <a href="../../guide/concepts/" class="md-nav__link">
         
   
   
@@ -590,7 +584,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli/" class="md-nav__link">
+      <a href="../../guide/cli/" class="md-nav__link">
         
   
   
@@ -618,7 +612,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cli-chat/" class="md-nav__link">
+      <a href="../../guide/cli-chat/" class="md-nav__link">
         
   
   
@@ -643,20 +637,18 @@
                 
   
   
-    
   
   
-  
     
     
     
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
         
           
           <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
@@ -677,7 +669,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_2_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -695,7 +687,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../" class="md-nav__link">
+      <a href="../../guide/configuration/" class="md-nav__link">
         
   
   
@@ -723,7 +715,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../custom-models/" class="md-nav__link">
+      <a href="../../guide/configuration/custom-models/" class="md-nav__link">
         
   
   
@@ -751,7 +743,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../multi-model/" class="md-nav__link">
+      <a href="../../guide/configuration/multi-model/" class="md-nav__link">
         
   
   
@@ -776,37 +768,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    llama.cpp
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../guide/configuration/llamacpp/" class="md-nav__link">
         
   
   
@@ -822,260 +787,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#available-backends" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Available Backends
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Available Backends">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#cpu" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CPU
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#vulkan" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Vulkan
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cuda" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        CUDA
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#metal" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Metal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#system" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        System
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#rocm-channel-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Configuration
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ROCm Channel Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#nightly-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Nightly Channel
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#changing-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Changing Channels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Pinning to a Specific Version Tag
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#choosing-the-right-backend" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Choosing the Right Backend
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Choosing the Right Backend">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#decision-tree" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Decision Tree
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm-channel-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#platform-specifics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Platform Specifics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Platform Specifics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#macos" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        macOS
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1088,7 +799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../vllm/" class="md-nav__link">
+      <a href="../../guide/configuration/vllm/" class="md-nav__link">
         
   
   
@@ -1116,7 +827,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../moonshine/" class="md-nav__link">
+      <a href="../../guide/configuration/moonshine/" class="md-nav__link">
         
   
   
@@ -1144,7 +855,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../cloud/" class="md-nav__link">
+      <a href="../../guide/configuration/cloud/" class="md-nav__link">
         
   
   
@@ -1180,7 +891,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../faq/" class="md-nav__link">
+      <a href="../../guide/faq/" class="md-nav__link">
         
   
   
@@ -1262,7 +973,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/" class="md-nav__link">
+      <a href="../../dev/" class="md-nav__link">
         
   
   
@@ -1290,7 +1001,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/philosophy/" class="md-nav__link">
+      <a href="../../dev/philosophy/" class="md-nav__link">
         
   
   
@@ -1318,7 +1029,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/working-groups/" class="md-nav__link">
+      <a href="../../dev/working-groups/" class="md-nav__link">
         
   
   
@@ -1346,7 +1057,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/contribute/" class="md-nav__link">
+      <a href="../../dev/contribute/" class="md-nav__link">
         
   
   
@@ -1374,7 +1085,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/getting-started/" class="md-nav__link">
+      <a href="../../dev/getting-started/" class="md-nav__link">
         
   
   
@@ -1402,7 +1113,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/app/" class="md-nav__link">
+      <a href="../../dev/app/" class="md-nav__link">
         
   
   
@@ -1430,7 +1141,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/web-ui/" class="md-nav__link">
+      <a href="../../dev/web-ui/" class="md-nav__link">
         
   
   
@@ -1458,7 +1169,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/lemonade-omni/" class="md-nav__link">
+      <a href="../../dev/lemonade-omni/" class="md-nav__link">
         
   
   
@@ -1486,7 +1197,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/self-hosted-runners/" class="md-nav__link">
+      <a href="../../dev/self-hosted-runners/" class="md-nav__link">
         
   
   
@@ -1514,7 +1225,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../dev/release/" class="md-nav__link">
+      <a href="../../dev/release/" class="md-nav__link">
         
   
   
@@ -1596,7 +1307,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/" class="md-nav__link">
+      <a href="../../integrations/" class="md-nav__link">
         
   
   
@@ -1624,7 +1335,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/ai-toolkit/" class="md-nav__link">
+      <a href="../../integrations/ai-toolkit/" class="md-nav__link">
         
   
   
@@ -1652,7 +1363,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/anythingLLM/" class="md-nav__link">
+      <a href="../../integrations/anythingLLM/" class="md-nav__link">
         
   
   
@@ -1680,7 +1391,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/claude-code/" class="md-nav__link">
+      <a href="../../integrations/claude-code/" class="md-nav__link">
         
   
   
@@ -1708,7 +1419,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/codeGPT/" class="md-nav__link">
+      <a href="../../integrations/codeGPT/" class="md-nav__link">
         
   
   
@@ -1736,7 +1447,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/continue/" class="md-nav__link">
+      <a href="../../integrations/continue/" class="md-nav__link">
         
   
   
@@ -1764,7 +1475,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/langchain/" class="md-nav__link">
+      <a href="../../integrations/langchain/" class="md-nav__link">
         
   
   
@@ -1792,7 +1503,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/lemon-zest/" class="md-nav__link">
+      <a href="../../integrations/lemon-zest/" class="md-nav__link">
         
   
   
@@ -1820,7 +1531,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/mindcraft/" class="md-nav__link">
+      <a href="../../integrations/mindcraft/" class="md-nav__link">
         
   
   
@@ -1848,7 +1559,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-hands/" class="md-nav__link">
+      <a href="../../integrations/open-hands/" class="md-nav__link">
         
   
   
@@ -1876,7 +1587,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/open-webui/" class="md-nav__link">
+      <a href="../../integrations/open-webui/" class="md-nav__link">
         
   
   
@@ -1904,7 +1615,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../integrations/wut/" class="md-nav__link">
+      <a href="../../integrations/wut/" class="md-nav__link">
         
   
   
@@ -1986,7 +1697,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -2014,7 +1725,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/openai/" class="md-nav__link">
+      <a href="../openai/" class="md-nav__link">
         
   
   
@@ -2042,7 +1753,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/ollama/" class="md-nav__link">
+      <a href="../ollama/" class="md-nav__link">
         
   
   
@@ -2070,7 +1781,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/anthropic/" class="md-nav__link">
+      <a href="../anthropic/" class="md-nav__link">
         
   
   
@@ -2098,7 +1809,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/llamacpp/" class="md-nav__link">
+      <a href="../llamacpp/" class="md-nav__link">
         
   
   
@@ -2126,7 +1837,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../api/lemonade/" class="md-nav__link">
+      <a href="../lemonade/" class="md-nav__link">
         
   
   
@@ -2208,7 +1919,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/" class="md-nav__link">
+      <a href="../../embeddable/" class="md-nav__link">
         
   
   
@@ -2236,7 +1947,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/runtime/" class="md-nav__link">
+      <a href="../../embeddable/runtime/" class="md-nav__link">
         
   
   
@@ -2264,7 +1975,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/backends/" class="md-nav__link">
+      <a href="../../embeddable/backends/" class="md-nav__link">
         
   
   
@@ -2292,7 +2003,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/models/" class="md-nav__link">
+      <a href="../../embeddable/models/" class="md-nav__link">
         
   
   
@@ -2320,7 +2031,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../embeddable/building/" class="md-nav__link">
+      <a href="../../embeddable/building/" class="md-nav__link">
         
   
   
@@ -2389,22 +2100,44 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#available-backends" class="md-nav__link">
+  <a href="#authentication" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Available Backends
+        Authentication
       </span>
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Available Backends">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Supported methods
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Tools
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cpu" class="md-nav__link">
+  <a href="#lemonade_list_models" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        CPU
+        <code>lemonade_list_models</code>
       </span>
     </span>
   </a>
@@ -2412,10 +2145,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#vulkan" class="md-nav__link">
+  <a href="#lemonade_chat" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Vulkan
+        <code>lemonade_chat</code>
       </span>
     </span>
   </a>
@@ -2423,10 +2156,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#rocm" class="md-nav__link">
+  <a href="#lemonade_transcribe_audio" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        ROCm
+        <code>lemonade_transcribe_audio</code>
       </span>
     </span>
   </a>
@@ -2434,10 +2167,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cuda" class="md-nav__link">
+  <a href="#lemonade_generate_image" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        CUDA
+        <code>lemonade_generate_image</code>
       </span>
     </span>
   </a>
@@ -2445,21 +2178,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#metal" class="md-nav__link">
+  <a href="#lemonade_omni" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Metal
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#system" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        System
+        <code>lemonade_omni</code>
       </span>
     </span>
   </a>
@@ -2472,152 +2194,35 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#rocm-channel-configuration" class="md-nav__link">
+  <a href="#error-model" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        ROCm Channel Configuration
+        Error model
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="ROCm Channel Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#stable-channel-default" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Stable Channel (Default)
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#nightly-channel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Nightly Channel
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#changing-channels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Changing Channels
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Pinning to a Specific Version Tag
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#choosing-the-right-backend" class="md-nav__link">
+  <a href="#limitations-mvp" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Choosing the Right Backend
+        Limitations (MVP)
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Choosing the Right Backend">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#decision-tree" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Decision Tree
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#rocm-channel-selection" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        ROCm Channel Selection
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#platform-specifics" class="md-nav__link">
+  <a href="#quick-test-with-curl" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Platform Specifics
+        Quick test with curl
       </span>
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Platform Specifics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#linux" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Linux
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#windows" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Windows
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#macos" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        macOS
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2639,221 +2244,207 @@
   
 
 
-<h1 id="llamacpp-backend-options">llama.cpp Backend Options</h1>
-<p>Lemonade uses <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a> as its primary LLM inference backend, supporting multiple hardware acceleration options. This document explains the available backends and how to choose between them.</p>
-<h2 id="available-backends">Available Backends</h2>
-<h3 id="cpu">CPU</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux, macOS</li>
-<li><strong>Hardware</strong>: x86_64 processors (Windows and Linux); ARM64/aarch64 processors (Linux)</li>
-<li><strong>Use Case</strong>: Universal fallback, no GPU required</li>
-<li><strong>Performance</strong>: Slowest option, suitable for small models or testing</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-</ul>
-<h3 id="vulkan">Vulkan</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD GPUs (iGPU and dGPU), NVIDIA GPUs, Intel GPUs, Qualcomm Adreno and other Vulkan-capable GPUs on ARM64 Linux</li>
-<li><strong>Use Case</strong>: Cross-vendor GPU acceleration</li>
-<li><strong>Performance</strong>: Good performance across all GPU vendors</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-<li><strong>Notes</strong>: Recommended for most GPU users; on ARM64 Linux (e.g., Qualcomm X Elite), Vulkan is the default backend</li>
-</ul>
-<h3 id="rocm">ROCm</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: AMD Radeon RX 6000/7000 series (RDNA2/RDNA3/RDNA4), AMD Ryzen AI iGPUs (Strix Point/Halo)</li>
-<li><strong>Use Case</strong>: AMD GPU-optimized inference</li>
-<li><strong>Performance</strong>: Optimized for AMD hardware, may outperform Vulkan on supported GPUs</li>
-<li><strong>Channel Options</strong>:</li>
-<li><strong>Stable</strong> (default): Custom builds with latest optimizations from lemonade-sdk</li>
-<li><strong>Nightly</strong>: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)</li>
-<li><strong>Installation</strong>: Varies by channel (see below)</li>
-</ul>
-<h3 id="cuda">CUDA</h3>
-<ul>
-<li><strong>Platform</strong>: Windows, Linux</li>
-<li><strong>Hardware</strong>: NVIDIA GPUs with Compute Capability 7.5+ (Turing, Ampere, Ada, Hopper, Blackwell)</li>
-<li><strong>Use Case</strong>: NVIDIA GPU-optimized inference</li>
-<li><strong>Performance</strong>: Optimized for NVIDIA hardware, typically outperforms Vulkan on supported GPUs</li>
-<li><strong>Source</strong>: Per-architecture builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></li>
-<li><strong>Binaries</strong>: Compute-capability-specific builds (sm_75, sm_80, sm_86, sm_89, sm_90, sm_100, sm_120)</li>
-<li><strong>Runtime</strong>: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)</li>
-<li><strong>Notes</strong>: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system <code>tar</code>.</li>
-</ul>
-<h3 id="metal">Metal</h3>
-<ul>
-<li><strong>Platform</strong>: macOS only</li>
-<li><strong>Hardware</strong>: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support</li>
-<li><strong>Use Case</strong>: macOS GPU acceleration</li>
-<li><strong>Performance</strong>: Optimized for Apple Silicon</li>
-<li><strong>Installation</strong>: Automatically available via upstream llama.cpp releases</li>
-</ul>
-<h3 id="system">System</h3>
-<ul>
-<li><strong>Platform</strong>: Linux only</li>
-<li><strong>Hardware</strong>: Depends on system-installed llama-server binary</li>
-<li><strong>Use Case</strong>: Advanced users with custom llama.cpp builds</li>
-<li><strong>Performance</strong>: Depends on build configuration</li>
-<li><strong>Installation</strong>: Requires manual installation of <code>llama-server</code> in system PATH</li>
-<li><strong>Enable</strong>: Set <code>"llamacpp": { "backend": "system" }</code> in <code>config.json</code> to enable the system backend, or use <code>lemonade config set llamacpp.backend=system</code></li>
-<li><strong>HIP plugin on non-standard paths</strong>: When an AMD GPU is present, the system backend needs the GGML HIP plugin (<code>libggml-hip.so</code>). Lemonade looks for it in the standard system library paths. If your distribution or package manager installs it elsewhere (e.g. NixOS, a custom prefix, or a manual build), set <code>LEMONADE_GGML_HIP_PATH</code> to the full path of the plugin so the backend is reported as available:</li>
-</ul>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LEMONADE_GGML_HIP_PATH</span><span class="o">=</span>/opt/rocm/lib/libggml-hip.so
-</code></pre></div>
-<p>The filename must look like <code>libggml-hip*.so*</code> (versioned sonames such as <code>libggml-hip.so.0</code> are accepted). This Linux-only variable is used solely to detect plugin availability; it is not forwarded to the GGML loader, so it does not change where llama.cpp actually loads the plugin from.</p>
-<h2 id="rocm-channel-configuration">ROCm Channel Configuration</h2>
-<p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
-<h3 id="stable-channel-default">Stable Channel (Default)</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-- <strong>Source</strong>: Custom builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a>
-- <strong>Binaries</strong>: Common builds for supported architectures
-- <strong>Updates</strong>: Frequent updates with latest optimizations and fixes
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>: Requires runtime for both Windows and Linux to be installed separately.
-- <strong>Best For</strong>: Users who want the latest performance optimizations</p>
-<h3 id="nightly-channel">Nightly Channel</h3>
-<p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nightly&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-- <strong>Source</strong>: Nightly builds from <a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a>
-- <strong>Binaries</strong>: Architecture-specific builds (gfx1150, gfx1151, gfx103X, gfx110X, gfx120X)
-- <strong>Updates</strong>: Nightly builds with experimental features and latest upstream changes
-- <strong>Platform</strong>: Windows and Linux
-- <strong>Runtime</strong>: Bundled runtime on Linux, TheRock ROCm dependencies
-- <strong>Best For</strong>: Developers and testers who want bleeding-edge features and are comfortable with potential instability</p>
-<h3 id="changing-channels">Changing Channels</h3>
-<p>To switch between channels, update your <code>config.json</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Or use the Lemonade CLI:
-<div class="highlight"><pre><span></span><code><span class="c1"># Switch to stable channel</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
-
-<span class="c1"># Switch to stable channel (default)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>stable
-
-<span class="c1"># Switch to nightly channel (experimental)</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
-</code></pre></div></p>
-<p>After changing channels, you'll need to reinstall the ROCm backend:
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:rocm
-</code></pre></div></p>
-<h3 id="pinning-to-a-specific-version-tag">Pinning to a Specific Version Tag</h3>
-<p>You can pin <code>llamacpp.rocm_bin</code> to a specific release tag instead of using <code>"builtin"</code> or <code>"latest"</code>. <strong>Each channel downloads from a different GitHub repository, so you must set the correct channel before setting a specific tag.</strong></p>
+<h1 id="mcp-gateway">MCP Gateway</h1>
+<p>Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the <code>mcp</code> Python client, etc.) can call your locally running models as tools.</p>
+<p>The gateway implements the <strong>MCP "Streamable HTTP" transport</strong> (spec version <code>2025-06-18</code>) with the <code>tools</code> capability only. All traffic flows through a single endpoint:</p>
 <table>
 <thead>
 <tr>
-<th>Channel</th>
-<th>Repository</th>
-<th>Tag format</th>
+<th>Endpoint</th>
+<th>Status</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>stable</code> <em>(default)</em></td>
-<td><a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a></td>
-<td>Lemonade-specific build tags</td>
+<td><code>POST /mcp</code></td>
+<td>Supported</td>
+<td>JSON-RPC 2.0 envelope. Accepts a single message or a batch array.</td>
 </tr>
 <tr>
-<td><code>nightly</code></td>
-<td><a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a></td>
-<td>Nightly tags, e.g. <code>b1260</code></td>
+<td><code>GET /mcp</code></td>
+<td><code>405 Method Not Allowed</code></td>
+<td>Server-initiated SSE channel is not supported.</td>
 </tr>
 </tbody>
 </table>
 <blockquote>
-<p><strong>Always set <code>rocm_channel</code> to the correct channel before setting <code>rocm_bin</code> to a specific tag.</strong> If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.</p>
+<p><strong>Why a single path?</strong> The MCP specification mandates one endpoint URL per server, so <code>/mcp</code> is an intentional exception to Lemonade's quad-prefix convention.</p>
 </blockquote>
-<p>Example — pin to a specific nightly build:
-<div class="highlight"><pre><span></span><code><span class="c1"># 1. Switch to the nightly channel first</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_channel</span><span class="o">=</span>nightly
+<h2 id="authentication">Authentication</h2>
+<p><code>/mcp</code> is treated as a regular API route, so it honors <code>LEMONADE_API_KEY</code> exactly like <code>/api/v1/chat/completions</code>:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:13305/mcp<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$LEMONADE_API_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;ping&quot;}&#39;</span>
+</code></pre></div>
+<h2 id="supported-methods">Supported methods</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>initialize</code></td>
+<td>Negotiate protocol version, return server identity and capabilities.</td>
+</tr>
+<tr>
+<td><code>notifications/initialized</code></td>
+<td>Client acknowledgement; silently accepted.</td>
+</tr>
+<tr>
+<td><code>tools/list</code></td>
+<td>Return the catalogue of callable tools (with JSON Schemas).</td>
+</tr>
+<tr>
+<td><code>tools/call</code></td>
+<td>Invoke one of the tools below.</td>
+</tr>
+<tr>
+<td><code>ping</code></td>
+<td>Liveness probe; returns <code>{}</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tools">Tools</h2>
+<p>All tools auto-load (and download, if missing) the requested model on first call, exactly like <code>POST /v1/chat/completions</code>. Errors are returned as MCP results with <code>"isError": true</code> rather than JSON-RPC errors, matching the spec's guidance for tool failures.</p>
+<h3 id="lemonade_list_models"><code>lemonade_list_models</code></h3>
+<p>Discover what's loaded, what's downloaded, and what's recommended. Call this first if you don't already know the exact model name to pass to the other tools — passing a wrong name may trigger a multi-GB download.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade_list_models&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;include_available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;include_suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Returns a summary text block plus a JSON-stringified text block with <code>{loaded, available, suggested_to_pull, recommended_chat_model}</code>.</p>
+<h3 id="lemonade_chat"><code>lemonade_chat</code></h3>
+<p>Chat completion against any LLM in the registry.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade_chat&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-1.7B-GGUF&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;system&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are concise.&quot;</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize MCP in one line.&quot;</span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;temperature&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.2</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Returns one text block with the assistant content. If the model emits tool calls, a second text block containing <code>tool_calls: &lt;json&gt;</code> is appended.</p>
+<p>Reasoning models (Qwen3, DeepSeek-R1, ...) have the <code>&lt;think&gt;</code> block disabled by default to keep small <code>max_tokens</code> budgets from being consumed by reasoning. Pass <code>"chat_template_kwargs": {"enable_thinking": true}</code> to opt back in.</p>
+<blockquote>
+<p><strong>Picking a portable model.</strong> The example above uses <code>Qwen3-1.7B-GGUF</code> because GGUF (llama.cpp) runs everywhere lemonade does — Windows, Linux/Docker, macOS, CPU and Vulkan/ROCm/Metal GPUs. Hybrid/NPU variants such as <code>*-Hybrid</code> (recipe <code>ryzenai-llm</code>, <strong>Windows + AMD RyzenAI</strong> only) or <code>*-FLM</code> (recipe <code>flm</code>, <strong>AMD Ryzen AI NPU</strong> only) are faster on supported hardware but unavailable on others. If your client picks one that isn't supported, the tool returns a structured error suggesting a portable alternative — prefer <code>lemonade_list_models</code> to discover what's actually available on the running server.</p>
+</blockquote>
+<h3 id="lemonade_transcribe_audio"><code>lemonade_transcribe_audio</code></h3>
+<p>Transcribe a local audio file with a Whisper-class model. Prefer <code>audio_path</code> (the server runs on the same machine as the caller); use <code>audio_base64</code> only when you genuinely have bytes in memory.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade_transcribe_audio&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Large-v3-Turbo&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;audio_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:/clips/meeting.wav&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;response_format&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;verbose_json&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Returns two text blocks: the bare transcript, followed by the full OpenAI-shaped response (for callers that need timestamps or segments).</p>
+<h3 id="lemonade_generate_image"><code>lemonade_generate_image</code></h3>
+<p>Generate one or more PNGs from a prompt. <strong>Prefer writing to disk</strong> via <code>output_path</code> (single image) or <code>output_dir</code> (one or more) — base64 image content blocks cost tens of thousands of tokens per image and some clients surface them as opaque resource URIs.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade_generate_image&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SDXL-Turbo&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;a lemon-shaped car driving across the moon&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;output_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemon-car.png&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>When disk paths are provided, returns text block(s) with the absolute path(s). Otherwise, returns one inline image content block per image (<code>{"type":"image", "data":"&lt;base64&gt;", "mimeType":"image/png"}</code>).</p>
+<p><strong>Sandboxed disk writes.</strong> To prevent a cross-origin or unauthenticated caller from overwriting arbitrary files, <code>output_path</code> and <code>output_dir</code> are confined to a sandbox directory:</p>
+<ul>
+<li>Default: <code>&lt;cache_dir&gt;/mcp-images</code>.</li>
+<li>Override with the <code>LEMONADE_MCP_IMAGE_DIR</code> environment variable (absolute path).</li>
+<li>Relative paths resolve against the sandbox root; absolute paths must stay within it. Paths that escape the sandbox (via <code>..</code> or symlinks) are rejected.</li>
+<li><code>output_dir</code> writes use auto-generated, unique filenames (<code>image_&lt;token&gt;_&lt;i&gt;.png</code>), so concurrent callers never clobber one another's images — the returned <code>paths</code> tell you the exact names. Use <code>output_path</code> when you need an exact, caller-chosen filename (it is written as named, replacing any existing file at that path).</li>
+</ul>
+<h3 id="lemonade_omni"><code>lemonade_omni</code></h3>
+<p>One-shot multimodal turn against a <strong>Lemonade Omni collection</strong> (a model bundle that pairs a planner LLM with an image model, an image-edit model, and a TTS voice under a single <code>collection.omni</code> recipe — see <a href="../../dev/lemonade-omni/">the Omni docs</a>). The server runs the orchestrator's internal tool-calling loop, executes the collection's <code>generate_image</code> / <code>edit_image</code> / <code>text_to_speech</code> tools by routing to the bundled components, and returns the result as a text block plus native MCP <code>image</code> / <code>audio</code> content blocks — one per artifact, in the order they were produced.</p>
+<p><code>model</code> is <strong>optional</strong> and defaults to <code>LMX-Omni-5.5B-Lite</code> (smaller and faster). Pass <code>model</code> explicitly to opt into a larger collection (e.g. <code>LMX-Omni-52B-Halo</code> on capable hardware) or any other <code>collection.omni</code> model surfaced by <code>lemonade_list_models</code>. The collection is downloaded on first use and may be multi-GB.</p>
+<p>Use <code>lemonade_chat</code> instead when you only need plain-text LLM output and don't want the planner-loop overhead.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade_omni&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Generate an image of a lemon car, then read out a one-line description.&quot;</span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;output_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;omni&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Disk vs. inline output.</strong> A single Omni turn can produce both images and audio in arbitrary order. Pass an <code>output_dir</code> to write each artifact to disk under a unique auto-generated name (<code>omni_&lt;token&gt;_&lt;i&gt;.&lt;ext&gt;</code>) — the tool returns one text block per artifact with its absolute path, plus a JSON-stringified <code>paths</code> array. This is strongly preferred over inline base64 for the same reasons documented under <code>lemonade_generate_image</code> — and is the <strong>only</strong> way to get audio out on clients that don't render <code>audio</code> content blocks. Like <code>lemonade_generate_image</code>, <code>output_dir</code> is confined to the MCP image sandbox (see <strong>Sandboxed disk writes</strong> above): relative paths resolve against the sandbox root, paths escaping it are rejected, and unique filenames mean concurrent callers never clobber each other.</p>
+<p>When <code>output_dir</code> is omitted, artifacts are inlined as MCP content blocks: <code>{"type":"image", "data":"&lt;base64&gt;", "mimeType":"image/png"}</code> and <code>{"type":"audio", "data":"&lt;base64&gt;", "mimeType":"audio/mpeg"}</code>.</p>
+<p>If the planner emits app-defined tool calls (those you passed in via <code>tools</code>/<code>tool_choice</code>), an extra text block <code>tool_calls: &lt;json&gt;</code> is appended, matching <code>lemonade_chat</code>'s passthrough semantics.</p>
+<p>Passing a non-collection model (e.g. a plain LLM) returns <code>isError: true</code> with a hint to use <code>lemonade_chat</code>.</p>
+<h2 id="error-model">Error model</h2>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-32700</code></td>
+<td>Body was not valid JSON.</td>
+</tr>
+<tr>
+<td><code>-32600</code></td>
+<td>Request was not a JSON-RPC object (or batch was empty / missing <code>method</code>).</td>
+</tr>
+<tr>
+<td><code>-32601</code></td>
+<td>Unknown JSON-RPC method (e.g. <code>resources/list</code>).</td>
+</tr>
+<tr>
+<td><code>-32602</code></td>
+<td>Invalid <code>params</code> for a known method.</td>
+</tr>
+<tr>
+<td><code>-32603</code></td>
+<td>Internal server error (an exception escaped a handler).</td>
+</tr>
+</tbody>
+</table>
+<p>Tool-level failures (bad arguments, model load errors, backend exceptions) are returned as <strong>successful</strong> JSON-RPC results with <code>"isError": true</code> and a text content block describing the failure, so MCP-aware models can self-correct.</p>
+<h2 id="limitations-mvp">Limitations (MVP)</h2>
+<ul>
+<li>No server-initiated SSE (GET /mcp returns 405). Tools return their full result in the POST response.</li>
+<li>No session resumption (<code>Mcp-Session-Id</code> header is not issued).</li>
+<li><code>resources/*</code> and <code>prompts/*</code> capabilities are not implemented.</li>
+<li>Streaming chat output is not exposed via MCP — <code>stream=true</code> is ignored. Use <code>POST /v1/chat/completions</code> directly for streamed tokens.</li>
+<li>Embeddings and text-to-speech are not currently exposed as MCP tools; use the OpenAI-compatible endpoints (<code>/v1/embeddings</code>, <code>/v1/audio/speech</code>) for those.</li>
+</ul>
+<h2 id="quick-test-with-curl">Quick test with curl</h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. Initialize</span>
+curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:13305/mcp<span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;initialize&quot;,&quot;params&quot;:{&quot;protocolVersion&quot;:&quot;2025-06-18&quot;,&quot;capabilities&quot;:{}}}&#39;</span>
 
-<span class="c1"># 2. Then pin to the desired nightly tag</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.rocm_bin<span class="o">=</span>b1260
-</code></pre></div></p>
-<h2 id="choosing-the-right-backend">Choosing the Right Backend</h2>
-<h3 id="decision-tree">Decision Tree</h3>
-<ol>
-<li><strong>Do you have an NVIDIA GPU (Turing or newer)?</strong></li>
-<li>Try <strong>CUDA</strong> first for best performance</li>
-<li>
-<p>Fall back to <strong>Vulkan</strong> if you encounter issues</p>
-</li>
-<li>
-<p><strong>Do you have an AMD GPU?</strong></p>
-</li>
-<li><strong>For Radeon RX 6000/7000 or Ryzen AI iGPU</strong>:<ul>
-<li>Try <strong>ROCm</strong> first for best performance</li>
-<li>Fall back to <strong>Vulkan</strong> if you encounter issues</li>
-</ul>
-</li>
-<li>
-<p><strong>For older AMD GPUs (RX 5000 and earlier)</strong>:</p>
-<ul>
-<li>Use <strong>Vulkan</strong> (ROCm not supported)</li>
-</ul>
-</li>
-<li>
-<p><strong>Do you have an Intel GPU or older NVIDIA GPU?</strong></p>
-</li>
-<li>
-<p>Use <strong>Vulkan</strong></p>
-</li>
-<li>
-<p><strong>Do you have Apple Silicon?</strong></p>
-</li>
-<li>
-<p>Use <strong>Metal</strong></p>
-</li>
-<li>
-<p><strong>No GPU or unsupported GPU?</strong></p>
-</li>
-<li>Use <strong>CPU</strong></li>
-</ol>
-<h3 id="rocm-channel-selection">ROCm Channel Selection</h3>
-<ul>
-<li><strong>Use Stable</strong> if you:</li>
-<li>Prefer stability over latest features</li>
-<li>Want upstream llama.cpp compatibility</li>
-<li>
-<p>Are deploying in production</p>
-</li>
-<li>
-<p><strong>Use Nightly</strong> if you:</p>
-</li>
-<li>Want bleeding-edge experimental features</li>
-<li>Are testing unreleased llama.cpp functionality</li>
-<li>Are comfortable with potential bugs and instability</li>
-<li>Are a developer contributing to lemonade or llama.cpp</li>
-</ul>
-<h2 id="platform-specifics">Platform Specifics</h2>
-<h3 id="linux">Linux</h3>
-<ul>
-<li>All backends supported (CPU, Vulkan, ROCm, CUDA, System)</li>
-<li>CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default</li>
-<li>ROCm requires compatible AMD GPU (see above)</li>
-<li>CUDA requires compatible NVIDIA GPU (see above)</li>
-<li>System backend requires manual llama-server installation</li>
-</ul>
-<h3 id="windows">Windows</h3>
-<ul>
-<li>Supported: CPU, Vulkan, ROCm, CUDA</li>
-<li>ROCm requires compatible AMD GPU</li>
-<li>CUDA requires compatible NVIDIA GPU and Windows 11 22H2+ (for bundled bsdtar that extracts .7z assets)</li>
-<li>No system backend support</li>
-</ul>
-<h3 id="macos">macOS</h3>
-<ul>
-<li>Supported: CPU, Metal</li>
-<li>Metal recommended for all Macs with Metal support</li>
-</ul>
+<span class="c1"># 2. List tools</span>
+curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:13305/mcp<span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:2,&quot;method&quot;:&quot;tools/list&quot;}&#39;</span>
+
+<span class="c1"># 3. Call lemonade_chat</span>
+curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:13305/mcp<span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:3,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;lemonade_chat&quot;,&quot;arguments&quot;:{&quot;model&quot;:&quot;Qwen3-1.7B-GGUF&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;hi&quot;}],&quot;max_tokens&quot;:16}}}&#39;</span>
+</code></pre></div>
 
 
 
@@ -2886,44 +2477,6 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer" >
-        
-          
-          <a href="../multi-model/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Running Many Models">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Running Many Models
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../vllm/" class="md-footer__link md-footer__link--next" aria-label="Next: vLLM">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                vLLM
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">
@@ -2993,12 +2546,12 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
     
       
       
-      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.footer","navigation.tracking","navigation.top","content.code.annotate","content.code.copy"],"search":"../../assets/javascripts/workers/search.e2d2d235.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
+      <script src="../../assets/javascripts/bundle.dbc0afdc.min.js"></script>
       
-        <script src="../../../assets/carousel.js"></script>
+        <script src="../../assets/carousel.js"></script>
       
     
   </body>

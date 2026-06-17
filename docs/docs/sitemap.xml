@@ -19,6 +19,9 @@
         <loc>https://lemonade-server.ai/guide/install/fedora/</loc>
       </url>
       <url>
+        <loc>https://lemonade-server.ai/guide/install/debian/</loc>
+      </url>
+      <url>
         <loc>https://lemonade-server.ai/guide/install/docker/</loc>
       </url>
       <url>
@@ -26,6 +29,9 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/guide/cli/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/guide/cli-chat/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/guide/configuration/</loc>
@@ -41,6 +47,12 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/guide/configuration/vllm/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/guide/configuration/moonshine/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/guide/configuration/cloud/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/guide/faq/</loc>
@@ -71,6 +83,45 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/dev/self-hosted-runners/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/dev/release/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/ai-toolkit/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/anythingLLM/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/claude-code/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/codeGPT/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/continue/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/langchain/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/lemon-zest/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/mindcraft/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/open-hands/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/open-webui/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/wut/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/api/</loc>
