@@ -440,8 +440,22 @@
             }
             break;
           case 'debian':
-            html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/getting-started.md#building-from-source" target="_blank" rel="noopener">' +
-              '<span class="material-symbols-outlined">open_in_new</span> Build from source</a>';
+            if (v) {
+              var deb = 'lemonade-server_' + v + '-debian13_amd64.deb';
+              html = gsConsoleHtml([
+                'wget https://github.com/lemonade-sdk/lemonade/releases/latest/download/' + deb,
+                'sudo apt install ./' + deb
+              ]) +
+              '<div style="margin-top:16px;">' +
+                gsConsoleHtml([
+                  'sudo systemctl enable --now lemond',
+                  'sudo systemctl --no-pager status lemond'
+                ]) +
+              '</div>';
+            } else {
+              html = '<a class="gs-download-link" href="https://github.com/lemonade-sdk/lemonade/releases/latest">' +
+                '<span class="material-symbols-outlined">open_in_new</span> View latest release</a>';
+            }
             break;
         }
         el.innerHTML = html;

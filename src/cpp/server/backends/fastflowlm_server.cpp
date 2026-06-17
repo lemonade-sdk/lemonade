@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <thread>
 #include <chrono>
-#include <sstream>
 #include <fstream>
 #include <algorithm>
 #include <lemon/utils/aixlog.hpp>
@@ -93,10 +92,9 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
     // Run flm pull command (with debug output if enabled)
     auto handle = utils::ProcessManager::start_process(flm_path, args, "", is_debug());
 
-    // Wait for process to complete (handles both fast exits and long downloads)
-    // NOTE: On Linux, is_running() reaps the process via waitpid(), making the
-    // exit code unavailable to get_exit_code(). Use WaitForSingleObject/waitpid
-    // directly instead of the is_running/get_exit_code combo.
+    // Wait for process to complete (handles both fast exits and long downloads).
+    // Use the owning wait primitive directly because this helper intentionally
+    // reaps the short-lived `flm pull` child.
     int timeout_seconds = 300; // 5 minutes
     LOG(INFO, "FastFlowLM") << "Waiting for model download to complete..." << std::endl;
     bool completed = false;
@@ -155,13 +153,8 @@ void FastFlowLMServer::load(const std::string& model_name,
 
     // Get FLM-specific options from RecipeOptions
     int ctx_size = options.get_option("ctx_size");
-    std::string flm_args = options.get_option("flm_args");
 
-    std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size;
-    if (!flm_args.empty()) {
-        std::cout << ", flm_args=\"" << flm_args << "\"";
-    }
-    std::cout << std::endl;
+    std::cout << "[FastFlowLM] Options: ctx_size=" << ctx_size << std::endl;
     // Note: checkpoint_ is set by Router via set_model_metadata() before load() is called
     // We use checkpoint_ (base class field) for FLM API calls
 
@@ -217,15 +210,6 @@ void FastFlowLMServer::load(const std::string& model_name,
         };
     }
 
-    // Parse and append custom flm_args if provided
-    if (!flm_args.empty()) {
-        std::istringstream iss(flm_args);
-        std::string token;
-        while (iss >> token) {
-            args.push_back(token);
-        }
-    }
-
     LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {
@@ -233,29 +217,32 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    process_handle_ = utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true);
+    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true));
     LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
 
     // Wait for flm-server to be ready
     bool ready = wait_for_ready();
     if (!ready) {
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};  // Reset to prevent double-stop on destructor
+        const ProcessHandle handle = consume_process_handle_for_cleanup();
+        if (has_process_handle(handle)) {
+            utils::ProcessManager::stop_process(handle);
+        }
         throw std::runtime_error("flm-server failed to start");
     }
 
     is_loaded_ = true;
-    LOG(INFO, "FastFlowLM") << "Model loaded on port " << port_ << std::endl;
+    LOG(INFO, "FastFlowLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void FastFlowLMServer::unload() {
+    stop_backend_watchdog();
     LOG(INFO, "FastFlowLM") << "Unloading model..." << std::endl;
-    if (is_loaded_ && process_handle_.pid != 0) {
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
-        is_loaded_ = false;
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        utils::ProcessManager::stop_process(handle);
     }
+    is_loaded_ = false;
 }
 
 bool FastFlowLMServer::wait_for_ready() {
@@ -266,10 +253,16 @@ bool FastFlowLMServer::wait_for_ready() {
 
     const int max_attempts = 300;  // 5 minutes timeout (large models can take time to load)
     for (int attempt = 0; attempt < max_attempts; ++attempt) {
-        // Check if process is still running
-        if (!utils::ProcessManager::is_running(process_handle_)) {
+        // Check if process is still running. If it already exited, consume and
+        // reap the owned handle here so failed-start cleanup cannot later signal
+        // a stale PID.
+        const ProcessHandle handle = get_process_handle_snapshot();
+        if (!has_process_handle(handle) || !utils::ProcessManager::is_running(handle)) {
             LOG(ERROR, "FastFlowLM") << server_name_ << " process has terminated!" << std::endl;
-            int exit_code = utils::ProcessManager::get_exit_code(process_handle_);
+            const ProcessHandle exited_handle = consume_process_handle_for_cleanup();
+            int exit_code = has_process_handle(exited_handle)
+                ? utils::ProcessManager::reap_process(exited_handle)
+                : -1;
             LOG(ERROR, "FastFlowLM") << "Process exit code: " << exit_code << std::endl;
             LOG(ERROR, "FastFlowLM") << "Troubleshooting tips:" << std::endl;
             LOG(ERROR, "FastFlowLM") << "  1. Check if FLM is installed correctly: flm --version" << std::endl;
@@ -281,6 +274,7 @@ bool FastFlowLMServer::wait_for_ready() {
         // Try to reach the /api/tags endpoint
         if (utils::HttpClient::is_reachable(tags_url, 1)) {
             LOG(INFO, "FastFlowLM") << server_name_ + " is ready!" << std::endl;
+            start_backend_watchdog("/api/tags");
             return true;
         }
 
@@ -425,6 +419,7 @@ void FastFlowLMServer::forward_streaming_request(const std::string& endpoint,
         std::string error_msg = "data: {\"error\":{\"message\":\"Streaming not supported for FLM "
             + model_type_to_string(model_type_) + " model\",\"type\":\"unsupported_operation\"}}\n\n";
         sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
         return;
     }
 

@@ -20,6 +20,15 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 
 > Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
 
+### Seeding defaults for packaged installs
+
+On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+
+1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+
+Values set in the user's `config.json` always take precedence over these seeded defaults.
+
 ### Example config.json
 
 ```json
@@ -33,7 +42,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
   "no_broadcast": false,
   "extra_models_dir": "",
   "models_dir": "auto",
-  "ctx_size": 4096,
+  "ctx_size": -1,
   "offline": false,
   "no_fetch_executables": false,
   "disable_model_filtering": false,
@@ -97,7 +106,7 @@ If you are using a standalone `lemond` exectable, the default location is `~/.ca
 | `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
 | `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
-| `ctx_size` | int | 4096 | Default context size for LLM models |
+| `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `offline` | bool | false | Skip model downloads |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |

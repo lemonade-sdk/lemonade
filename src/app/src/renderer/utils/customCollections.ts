@@ -1,10 +1,9 @@
-import type { ImageDefaults, ModelInfo, ModelsData } from './modelData';
+import type { ModelInfo, ModelsData } from './modelData';
 import { USER_MODEL_PREFIX } from './modelData';
 import { isChatPlannerCandidate } from './modelLabels';
 import { COLLECTION_OMNI_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
 
 export const CUSTOM_COLLECTION_PREFIX = USER_MODEL_PREFIX;
-const CUSTOM_COLLECTIONS_EXPORT_VERSION = 3;
 
 export type CustomCollectionRole = 'llm' | 'vision' | 'image' | 'edit' | 'transcription' | 'speech';
 
@@ -36,33 +35,6 @@ export interface CustomCollectionPullRequest {
   model_name: string;
   recipe: typeof COLLECTION_OMNI_MODEL_RECIPE;
   components: string[];
-}
-
-export interface CustomModelExportEntry {
-  model_name: string;
-  recipe: string;
-  checkpoint?: string;
-  checkpoints?: Record<string, string>;
-  labels?: string[];
-  size?: number;
-  mmproj?: string;
-  image_defaults?: ImageDefaults;
-  reasoning?: boolean;
-  vision?: boolean;
-}
-
-export interface CustomCollectionsExportPayload {
-  version: number;
-  exportedAt: string;
-  collections: CustomCollectionPullRequest[];
-  models: CustomModelExportEntry[];
-}
-
-export interface CustomCollectionImportResult {
-  imported: number;
-  skipped: number;
-  collections: CustomCollectionDraft[];
-  models: CustomModelExportEntry[];
 }
 
 const roleLabels: Record<CustomCollectionRole, string> = {
@@ -203,183 +175,6 @@ export const modelEntryToCustomCollection = (
   };
 };
 
-export const normalizeCustomCollection = (value: unknown, modelsData: ModelsData = {}): CustomCollectionDraft | null => {
-  if (!isRecord(value)) return null;
-
-  const rawName = normalizeComponentValue(value.name)
-    ?? normalizeComponentValue(value.model_name)
-    ?? normalizeComponentValue(value.id);
-  if (!rawName) return null;
-
-  const components = normalizeComponents(value.components, modelsData);
-  if (!components) return null;
-
-  const componentList = getCustomCollectionComponentList({ components });
-  if (Object.keys(modelsData).length > 0 && !componentList.every((component) => !!modelsData[component])) {
-    return null;
-  }
-
-  const rawId = normalizeComponentValue(value.id) ?? normalizeComponentValue(value.model_name);
-
-  return {
-    id: rawId ? makeCollectionId(rawId) : undefined,
-    name: cleanName(rawName),
-    createdAt: normalizeComponentValue(value.createdAt),
-    components,
-  };
-};
-
-const extractImportRecords = (value: unknown): unknown[] => {
-  if (Array.isArray(value)) return value;
-  if (!isRecord(value)) return [];
-  if (Array.isArray(value.collections)) return value.collections;
-  return [value];
-};
-
-const extractModelRecords = (value: unknown): unknown[] => {
-  if (!isRecord(value)) return [];
-  return Array.isArray(value.models) ? value.models : [];
-};
-
-const normalizeStringArray = (value: unknown): string[] | undefined => {
-  if (!Array.isArray(value)) return undefined;
-  const items = value.filter((item): item is string => typeof item === 'string' && item.length > 0);
-  return items.length > 0 ? Array.from(new Set(items)) : undefined;
-};
-
-const normalizeCheckpoints = (value: unknown): Record<string, string> | undefined => {
-  if (!isRecord(value)) return undefined;
-  const checkpoints = Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0)
-  );
-  return Object.keys(checkpoints).length > 0 ? checkpoints : undefined;
-};
-
-const normalizeCustomModelExportEntry = (value: unknown): CustomModelExportEntry | null => {
-  if (!isRecord(value)) return null;
-  const modelName = normalizeComponentValue(value.model_name) ?? normalizeComponentValue(value.id);
-  const recipe = normalizeComponentValue(value.recipe);
-  if (!modelName || !recipe || isCollectionRecipe(recipe)) return null;
-
-  const checkpoint = normalizeComponentValue(value.checkpoint);
-  const checkpoints = normalizeCheckpoints(value.checkpoints);
-  if (!checkpoint && !checkpoints) return null;
-
-  const entry: CustomModelExportEntry = {
-    model_name: modelName,
-    recipe,
-  };
-  if (checkpoint) entry.checkpoint = checkpoint;
-  if (checkpoints) entry.checkpoints = checkpoints;
-
-  const labels = normalizeStringArray(value.labels);
-  if (labels) entry.labels = labels;
-
-  const size = value.size;
-  if (typeof size === 'number' && Number.isFinite(size)) entry.size = size;
-
-  const mmproj = normalizeComponentValue(value.mmproj);
-  if (mmproj) entry.mmproj = mmproj;
-
-  if (isRecord(value.image_defaults)) entry.image_defaults = value.image_defaults as ImageDefaults;
-  if (typeof value.reasoning === 'boolean') entry.reasoning = value.reasoning;
-  if (typeof value.vision === 'boolean') entry.vision = value.vision;
-
-  return entry;
-};
-
-const modelExportEntryToModelInfo = (entry: CustomModelExportEntry): ModelInfo => ({
-  checkpoint: entry.checkpoint ?? entry.checkpoints?.main ?? '',
-  checkpoints: entry.checkpoints,
-  recipe: entry.recipe,
-  suggested: false,
-  labels: entry.labels ?? [],
-  downloaded: true,
-  size: entry.size,
-  mmproj: entry.mmproj,
-  image_defaults: entry.image_defaults,
-  model_name: entry.model_name,
-  reasoning: entry.reasoning,
-  vision: entry.vision,
-});
-
-export const importCustomCollections = (value: unknown, modelsData: ModelsData = {}): CustomCollectionImportResult => {
-  const entries = extractImportRecords(value);
-  const models = extractModelRecords(value)
-    .map(normalizeCustomModelExportEntry)
-    .filter((model): model is CustomModelExportEntry => model !== null);
-
-  if (entries.length === 0) {
-    throw new Error('No Omni Models found in the selected file.');
-  }
-
-  const importModelsData: ModelsData = { ...modelsData };
-  for (const model of models) {
-    importModelsData[model.model_name] = importModelsData[model.model_name] ?? modelExportEntryToModelInfo(model);
-  }
-
-  const collections = entries
-    .map((entry) => normalizeCustomCollection(entry, importModelsData))
-    .filter((collection): collection is CustomCollectionDraft => collection !== null);
-
-  if (collections.length === 0) {
-    throw new Error('The selected file does not contain valid Omni Models.');
-  }
-
-  return {
-    imported: collections.length,
-    skipped: entries.length - collections.length,
-    collections,
-    models,
-  };
-};
-
-const modelInfoToExportEntry = (modelName: string, info?: ModelInfo): CustomModelExportEntry | null => {
-  if (!info || isCollectionRecipe(info.recipe)) return null;
-
-  const checkpoint = typeof info.checkpoint === 'string' && info.checkpoint.length > 0 ? info.checkpoint : undefined;
-  const checkpoints = normalizeCheckpoints(info.checkpoints);
-  if (!checkpoint && !checkpoints) return null;
-
-  const entry: CustomModelExportEntry = {
-    model_name: modelName,
-    recipe: info.recipe,
-  };
-  if (checkpoint) entry.checkpoint = checkpoint;
-  if (checkpoints) entry.checkpoints = checkpoints;
-
-  const labels = normalizeStringArray(info.labels);
-  if (labels) entry.labels = labels;
-  if (typeof info.size === 'number' && Number.isFinite(info.size)) entry.size = info.size;
-  if (typeof info.mmproj === 'string' && info.mmproj.length > 0) entry.mmproj = info.mmproj;
-  if (info.image_defaults) entry.image_defaults = info.image_defaults;
-  if (typeof info.reasoning === 'boolean') entry.reasoning = info.reasoning;
-  if (typeof info.vision === 'boolean') entry.vision = info.vision;
-
-  return entry;
-};
-
-export const buildCustomCollectionsExportPayload = (
-  collections: Array<CustomCollection | CustomCollectionDraft>,
-  modelsData: ModelsData = {},
-): CustomCollectionsExportPayload => {
-  const modelEntries = new Map<string, CustomModelExportEntry>();
-
-  for (const collection of collections) {
-    for (const component of getCustomCollectionComponentList(collection)) {
-      const entry = modelInfoToExportEntry(component, modelsData[component]);
-      if (entry) modelEntries.set(component, entry);
-    }
-  }
-
-  return {
-    version: CUSTOM_COLLECTIONS_EXPORT_VERSION,
-    exportedAt: new Date().toISOString(),
-    collections: collections.map(buildCustomCollectionPullRequest),
-    models: Array.from(modelEntries.values()),
-  };
-};
-
 export const buildCustomCollectionPullRequest = (draft: CustomCollectionDraft): CustomCollectionPullRequest => {
   const modelName = makeCollectionId(draft.id ?? draft.name);
   const components = getCustomCollectionComponentList(draft);
@@ -395,8 +190,6 @@ export const buildCustomCollectionPullRequest = (draft: CustomCollectionDraft): 
   };
   return request;
 };
-
-export const buildCustomModelPullRequest = (model: CustomModelExportEntry): CustomModelExportEntry => ({ ...model });
 
 const isCollectionEligibleModel = (info?: ModelInfo): boolean => {
   if (!info || isCollectionRecipe(info.recipe)) {

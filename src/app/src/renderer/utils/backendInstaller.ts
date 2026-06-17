@@ -744,7 +744,11 @@ async function ensureModelReadyInternal(
     const recipe = modelInfo?.recipe;
     if (recipe) {
       // If loadBody specifies an explicit backend, install that one specifically
-      const explicitBackend = extractExplicitBackend(options?.loadBody);
+      const selectedBackendOptions = {
+        ...(modelInfo?.recipe_options ?? {}),
+        ...(options?.loadBody ?? {}),
+      };
+      const explicitBackend = extractExplicitBackend(selectedBackendOptions);
       if (explicitBackend) {
         const freshSystemData = await fetchSystemInfoData();
         const freshRecipes = freshSystemData.info?.recipes;

@@ -1,0 +1,193 @@
+name: MCP Smoke Test
+
+# Smoke-tests all 5 MCP tools (lemonade_list_models, lemonade_chat,
+# lemonade_transcribe_audio, lemonade_generate_image, lemonade_omni) via two
+# independent build paths: a native CMake build and a Docker image build.
+# Either job failing fails the workflow.
+
+on:
+  pull_request:
+    paths:
+      - "src/cpp/server/mcp_server.cpp"
+      - "src/cpp/include/lemon/mcp_server.h"
+      - "src/cpp/server/server.cpp"
+      - "src/cpp/server/router.cpp"
+      - "src/cpp/server/model_manager.cpp"
+      - "src/cpp/resources/server_models.json"
+      - "src/cpp/resources/backend_versions.json"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "setup.sh"
+      - "test/server_mcp_smoke.py"
+      - "test/server_mcp.py"
+      - ".github/workflows/mcp-smoke-test.yml"
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ========================================================================
+  # CMake path: build lemond natively, start it, hit /mcp
+  # ========================================================================
+  cmake-smoke-test:
+    name: CMake build + MCP smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            libssl-dev \
+            libcurl4-openssl-dev \
+            pkg-config \
+            libdrm-dev
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: mcp-smoke-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            mcp-smoke-fetchcontent-
+
+      - name: Configure (CMake, web-app disabled)
+        run: |
+          cmake --preset default -DBUILD_WEB_APP=OFF
+
+      - name: Build lemond
+        run: |
+          cmake --build --preset default --target lemond
+
+      - name: Verify lemond binary
+        run: |
+          test -x build/lemond
+          ./build/lemond --version
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Start lemond in background
+        run: |
+          mkdir -p server-logs-cmake
+          mkdir -p ci-cache-cmake
+          nohup ./build/lemond ci-cache-cmake \
+            --host 127.0.0.1 --port 13305 \
+            > server-logs-cmake/lemond.stdout.log \
+            2> server-logs-cmake/lemond.stderr.log &
+          echo "$!" > lemond.pid
+          echo "Started lemond PID $(cat lemond.pid)"
+
+      - name: Run MCP smoke tests against CMake build
+        run: |
+          python test/server_mcp_smoke.py --host 127.0.0.1 --port 13305
+
+      - name: Shut down lemond
+        if: always()
+        run: |
+          curl -s -X POST http://127.0.0.1:13305/internal/shutdown || true
+          sleep 2
+          if [ -f lemond.pid ]; then
+            kill "$(cat lemond.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cmake-server-logs
+          path: server-logs-cmake/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ========================================================================
+  # Docker path: build the image, run the container, hit /mcp
+  # ========================================================================
+  docker-smoke-test:
+    name: Docker build + MCP smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          tags: lemonade-server:mcp-smoke
+          push: false
+          load: true
+          cache-from: type=gha,scope=mcp-smoke
+          cache-to: type=gha,mode=max,scope=mcp-smoke
+
+      - name: Run container
+        run: |
+          docker run -d \
+            --name lemonade-mcp-smoke \
+            -p 13305:13305 \
+            lemonade-server:mcp-smoke
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Run MCP smoke tests against Docker container
+        run: |
+          python test/server_mcp_smoke.py --host 127.0.0.1 --port 13305
+
+      - name: Capture container logs
+        if: always()
+        run: |
+          mkdir -p server-logs-docker
+          docker logs lemonade-mcp-smoke \
+            > server-logs-docker/lemond.stdout.log \
+            2> server-logs-docker/lemond.stderr.log || true
+
+      - name: Stop container
+        if: always()
+        run: |
+          docker rm -f lemonade-mcp-smoke || true
+
+      - name: Upload container logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-server-logs
+          path: server-logs-docker/
+          retention-days: 7
+          if-no-files-found: ignore
