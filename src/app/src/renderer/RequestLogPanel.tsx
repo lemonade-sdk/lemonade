@@ -298,6 +298,27 @@ const RequestLogPanel: React.FC = () => {
         <div className="request-log-unavailable">
           <p>{error}</p>
           {error.includes('not enabled') && (
+            <div className="request-log-unavailable-hint">
+              <p>Start <code>lemond</code> with:</p>
+              <pre className="request-log-setup-snippet">{`export LEMONADE_REQUEST_LOG_ENABLED=true
+export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0.1:<PORT>/lemonade_logs
+./build/lemond`}</pre>
+              <p>
+                Use the URL printed by{' '}
+                <code>./examples/start-request-log-db.sh</code>. Rebuild with{' '}
+                <code>libpq-dev</code> installed so request logging is compiled in.
+              </p>
+            </div>
+          )}
+          {error.includes('database is unavailable') && (
+            <div className="request-log-unavailable-hint">
+              <p>Check that PostgreSQL is running and the URL matches the published port:</p>
+              <pre className="request-log-setup-snippet">{`docker compose -f examples/docker-compose.request-log.yml ps
+# then restart lemond with the correct LEMONADE_REQUEST_LOG_DATABASE_URL`}</pre>
+            </div>
+          )}
+          {error.includes('not enabled') === false &&
+            error.includes('database is unavailable') === false && (
             <p className="request-log-unavailable-hint">
               See{' '}
               <a

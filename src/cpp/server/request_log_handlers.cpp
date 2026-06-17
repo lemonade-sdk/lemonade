@@ -29,10 +29,6 @@ void handle_request_log_recent(RequestLogService* service,
         set_service_unavailable(res, "Request logging is not enabled");
         return;
     }
-    if (!service->is_database_available()) {
-        set_service_unavailable(res, "Request log database is unavailable");
-        return;
-    }
 
     int limit = 100;
     if (req.has_param("limit")) {
@@ -72,10 +68,6 @@ void handle_request_log_search(RequestLogService* service,
         set_service_unavailable(res, "Request logging is not enabled");
         return;
     }
-    if (!service->is_database_available()) {
-        set_service_unavailable(res, "Request log database is unavailable");
-        return;
-    }
 
     try {
         const auto payload = service->search(req);
@@ -96,10 +88,6 @@ void handle_request_log_stats(RequestLogService* service,
 
     if (!service || !service->is_enabled()) {
         set_service_unavailable(res, "Request logging is not enabled");
-        return;
-    }
-    if (!service->is_database_available()) {
-        set_service_unavailable(res, "Request log database is unavailable");
         return;
     }
 

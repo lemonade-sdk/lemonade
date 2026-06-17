@@ -7889,3 +7889,16 @@ input::-webkit-calendar-picker-indicator {
 .request-log-unavailable a {
     color: var(--accent-primary, #6ba3d6);
 }
+
+.request-log-setup-snippet {
+    margin: 8px 0;
+    padding: 10px;
+    border-radius: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-secondary);
+    font-size: 0.68rem;
+    line-height: 1.45;
+    text-align: left;
+    overflow-x: auto;
+    color: var(--text-secondary);
+}

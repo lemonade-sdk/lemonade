@@ -71,29 +71,37 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const readErrorMessage = async (fallback: string): Promise<string> => {
+    try {
+      const body = await response.json();
+      if (body?.error && typeof body.error === 'string') {
+        return body.error;
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return fallback;
+  };
+
   if (response.status === 401) {
     throw new RequestLogApiError(
-      'API key required — set it in Settings → Connection',
+      await readErrorMessage('API key required — set it in Settings → Connection'),
       401,
     );
   }
   if (response.status === 503) {
     throw new RequestLogApiError(
-      'Request logging is not enabled or the database is unavailable',
+      await readErrorMessage(
+        'Request logging is not enabled or the database is unavailable',
+      ),
       503,
     );
   }
   if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-    try {
-      const body = await response.json();
-      if (body?.error && typeof body.error === 'string') {
-        message = body.error;
-      }
-    } catch {
-      // ignore parse errors
-    }
-    throw new RequestLogApiError(message, response.status);
+    throw new RequestLogApiError(
+      await readErrorMessage(`Request failed (${response.status})`),
+      response.status,
+    );
   }
   return response.json() as Promise<T>;
 }

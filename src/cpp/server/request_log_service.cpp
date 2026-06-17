@@ -374,7 +374,7 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
     if (entries.empty()) {
         return true;
     }
-    if (!ensure_connection()) {
+    if (!ensure_connection() || !init_schema()) {
         return false;
     }
 
@@ -611,7 +611,8 @@ void RequestLogService::purge_loop() {
 
 #ifdef LEMONADE_HAVE_REQUEST_LOG
 nlohmann::json RequestLogService::get_recent(int limit) const {
-    if (!const_cast<RequestLogService*>(this)->ensure_connection()) {
+    if (!const_cast<RequestLogService*>(this)->ensure_connection() ||
+        !const_cast<RequestLogService*>(this)->init_schema()) {
         throw std::runtime_error("Request log database is unavailable");
     }
 
@@ -643,7 +644,8 @@ nlohmann::json RequestLogService::get_recent(int limit) const {
 }
 
 nlohmann::json RequestLogService::search(const httplib::Request& req) const {
-    if (!const_cast<RequestLogService*>(this)->ensure_connection()) {
+    if (!const_cast<RequestLogService*>(this)->ensure_connection() ||
+        !const_cast<RequestLogService*>(this)->init_schema()) {
         throw std::runtime_error("Request log database is unavailable");
     }
 
@@ -708,7 +710,8 @@ nlohmann::json RequestLogService::search(const httplib::Request& req) const {
 }
 
 nlohmann::json RequestLogService::get_stats(const httplib::Request& req) const {
-    if (!const_cast<RequestLogService*>(this)->ensure_connection()) {
+    if (!const_cast<RequestLogService*>(this)->ensure_connection() ||
+        !const_cast<RequestLogService*>(this)->init_schema()) {
         throw std::runtime_error("Request log database is unavailable");
     }
 
