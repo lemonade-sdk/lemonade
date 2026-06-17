@@ -29,6 +29,9 @@ jobs:
           git config --global user.email "lemonade@amd.com"
           git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
 
+      - name: Clean stale repo-manager state
+        run: rm -rf /opt/lemonade-manager/.repo-manager/pages
+
       - name: Run repo-manager
         working-directory: /opt/lemonade-manager
         run: repo-manager all
