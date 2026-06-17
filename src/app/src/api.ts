@@ -308,6 +308,8 @@ export interface RealtimeTranscriptionHandle {
 
 export type LemonadeRequestInit = Omit<RequestInit, 'body'> & { body?: unknown };
 
+export type LemonadeContextDefault = number | 'auto';
+
 export type ChatMessageContent = string | null | Array<
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
@@ -327,6 +329,72 @@ export interface ChatMessage {
 
 type StatusListener = (status: ConnectionStatus) => void;
 
+
+type HostSettingsApi = {
+  getSettings?: () => Promise<unknown>;
+  saveSettings?: (settings: unknown) => Promise<unknown>;
+  getServerBaseUrl?: () => Promise<string | null | undefined>;
+  getServerAPIKey?: () => Promise<string | null | undefined>;
+};
+
+function getHostSettingsApi(): HostSettingsApi | null {
+  if (typeof window === 'undefined') return null;
+  return ((window as unknown as { api?: HostSettingsApi }).api || null);
+}
+
+async function waitForHostSettingsApi(): Promise<HostSettingsApi | null> {
+  for (let i = 0; i < 20; i++) {
+    const hostApi = getHostSettingsApi();
+    if (hostApi) return hostApi;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return null;
+}
+
+function safeGetLocalStorage(key: string): string | null {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeSetLocalStorage(key: string, value: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+  } catch {}
+}
+
+function safeRemoveLocalStorage(key: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+  } catch {}
+}
+
+function typedStringSetting(value: string): { value: string; useDefault: boolean } {
+  return { value, useDefault: value.trim().length === 0 };
+}
+
+function typedSettingString(settings: unknown, key: string): string {
+  if (!isObject(settings)) return '';
+  const raw = settings[key];
+  if (!isObject(raw)) return '';
+  return typeof raw.value === 'string' ? raw.value : '';
+}
+
+function mergeConnectionSettings(settings: unknown, baseUrl: string, apiKey: string): Record<string, unknown> {
+  const current = isObject(settings) ? { ...settings } : {};
+  return {
+    ...current,
+    baseURL: typedStringSetting(baseUrl),
+    apiKey: typedStringSetting(apiKey),
+  };
+}
+
+export interface ConnectionSettingsSaveResult {
+  apiKeyPersisted: boolean;
+}
+
 class LemonadeAPI {
   private _status: ConnectionStatus = 'disconnected';
   private _lastConnectionError: string | null = null;
@@ -337,17 +405,22 @@ class LemonadeAPI {
   private _systemInfoData: Record<string, unknown> | null = null;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _sessionApiKey = '';
+  private _hostBaseUrl: string | null = null;
+  private _connectionSettingsPromise: Promise<void> | null = null;
 
-  // ── Config (persisted in localStorage) ──────────────────────────
+  // ── Config ──────────────────────────────────────────────────────
+  // Non-secret connection settings may be persisted in browser storage.
+  // API keys are never stored in localStorage; in the desktop app they are
+  // persisted through Lemonade's native settings bridge (`window.api.saveSettings`).
 
   get baseUrl(): string {
     try {
-      const raw = normalizeBaseUrl(localStorage.getItem(LS_BASE_URL) || DEFAULT_BASE_URL);
+      const raw = normalizeBaseUrl(this._hostBaseUrl || safeGetLocalStorage(LS_BASE_URL) || DEFAULT_BASE_URL);
       // On mobile, window.location.hostname is the PC's LAN IP (e.g. 192.168.3.35).
       // Substitute it when the configured host is localhost/127.0.0.1 so that all
       // API calls and WebSocket connections resolve to the serving machine, not the phone.
       const parsed = new URL(raw);
-      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      if ((parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') && typeof window !== 'undefined') {
         parsed.hostname = window.location.hostname;
       }
       return parsed.toString().replace(/\/+$/, '');
@@ -357,26 +430,102 @@ class LemonadeAPI {
   }
 
   set baseUrl(url: string) {
-    localStorage.setItem(LS_BASE_URL, normalizeBaseUrl(url));
+    const normalized = normalizeBaseUrl(url);
+    this._hostBaseUrl = normalized;
+    safeSetLocalStorage(LS_BASE_URL, normalized);
   }
 
   get apiKey(): string {
-    return this._sessionApiKey || localStorage.getItem(LS_API_KEY) || '';
+    safeRemoveLocalStorage(LS_API_KEY);
+    return this._sessionApiKey;
   }
 
   set apiKey(key: string) {
-    this._sessionApiKey = key;
-    if (key) localStorage.setItem(LS_API_KEY, key);
-    else localStorage.removeItem(LS_API_KEY);
+    this.setSessionApiKey(key);
+  }
+
+  get canPersistApiKey(): boolean {
+    const hostApi = getHostSettingsApi();
+    return Boolean(hostApi?.getSettings && hostApi?.saveSettings);
+  }
+
+  async loadConnectionSettings(): Promise<void> {
+    safeRemoveLocalStorage(LS_API_KEY);
+    if (this._connectionSettingsPromise) return this._connectionSettingsPromise;
+
+    this._connectionSettingsPromise = (async () => {
+      const hostApi = await waitForHostSettingsApi();
+      if (!hostApi) return;
+
+      if (hostApi.getSettings) {
+        const settings = await hostApi.getSettings();
+        const baseUrl = typedSettingString(settings, 'baseURL');
+        const apiKey = typedSettingString(settings, 'apiKey');
+        if (baseUrl.trim()) {
+          this._hostBaseUrl = normalizeBaseUrl(baseUrl);
+          safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+        }
+        this._sessionApiKey = apiKey;
+        return;
+      }
+
+      if (hostApi.getServerBaseUrl) {
+        const baseUrl = await hostApi.getServerBaseUrl();
+        if (typeof baseUrl === 'string' && baseUrl.trim()) {
+          this._hostBaseUrl = normalizeBaseUrl(baseUrl);
+          safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+        }
+      }
+      if (hostApi.getServerAPIKey) {
+        const apiKey = await hostApi.getServerAPIKey();
+        this._sessionApiKey = typeof apiKey === 'string' ? apiKey : '';
+      }
+    })().catch(err => {
+      this._connectionSettingsPromise = null;
+      throw err;
+    });
+
+    return this._connectionSettingsPromise;
+  }
+
+  async saveConnectionSettings(baseUrl: string, apiKey: string, rememberApiKey: boolean): Promise<ConnectionSettingsSaveResult> {
+    const normalized = normalizeBaseUrl(baseUrl);
+    this._hostBaseUrl = normalized;
+    this._sessionApiKey = apiKey;
+    safeSetLocalStorage(LS_BASE_URL, normalized);
+    safeRemoveLocalStorage(LS_API_KEY);
+
+    const hostApi = await waitForHostSettingsApi();
+    if (!hostApi?.getSettings || !hostApi?.saveSettings) {
+      return { apiKeyPersisted: false };
+    }
+
+    const persistedApiKey = rememberApiKey ? apiKey : '';
+    const currentSettings = await hostApi.getSettings();
+    await hostApi.saveSettings(mergeConnectionSettings(currentSettings, normalized, persistedApiKey));
+    return { apiKeyPersisted: Boolean(persistedApiKey) };
+  }
+
+  async clearConnectionSettings(): Promise<void> {
+    this._hostBaseUrl = null;
+    this._sessionApiKey = '';
+    safeRemoveLocalStorage(LS_BASE_URL);
+    safeRemoveLocalStorage(LS_API_KEY);
+
+    const hostApi = await waitForHostSettingsApi();
+    if (hostApi?.getSettings && hostApi?.saveSettings) {
+      const currentSettings = await hostApi.getSettings();
+      await hostApi.saveSettings(mergeConnectionSettings(currentSettings, '', ''));
+    }
   }
 
   setSessionApiKey(key: string): void {
     this._sessionApiKey = key;
-    if (!key) localStorage.removeItem(LS_API_KEY);
+    safeRemoveLocalStorage(LS_API_KEY);
   }
 
   clearStoredApiKey(): void {
-    localStorage.removeItem(LS_API_KEY);
+    safeRemoveLocalStorage(LS_API_KEY);
   }
 
   // ── Connection status ───────────────────────────────────────────
@@ -804,10 +953,15 @@ class LemonadeAPI {
     return this._json<Record<string, unknown>>('/internal/config');
   }
 
-  async getDefaultContextSize(): Promise<number | undefined> {
+  async getDefaultContextSize(): Promise<LemonadeContextDefault | undefined> {
     const data = await this.getRuntimeConfig();
     const n = Number(data.ctx_size);
-    return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+
+    if (!Number.isFinite(n)) return undefined;
+    if (n === -1) return 'auto';
+    if (n > 0) return Math.round(n);
+
+    return undefined;
   }
 
   // ── Log level ───────────────────────────────────────────────────
