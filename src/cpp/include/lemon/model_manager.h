@@ -326,6 +326,13 @@ private:
     bool refresh_user_models_from_disk_for_lookup(const std::string& model_name);
 
     void rebuild_public_model_aliases_locked();
+
+    // One download at a time per model. Concurrent /pull, /load, and auto-load
+    // paths otherwise race in HttpClient and corrupt shared .partial files.
+    std::shared_ptr<std::mutex> get_model_download_lock(const std::string& model_name);
+
+    std::mutex model_download_locks_mutex_;
+    std::map<std::string, std::weak_ptr<std::mutex>> model_download_locks_;
 };
 
 } // namespace lemon

@@ -13,6 +13,8 @@
 #include <cctype>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 #include <mbedtls/md.h>
 
@@ -768,11 +770,51 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     return result;
 }
 
+// Serialize concurrent downloads to the same output path. Without this, two
+// callers (e.g. /pull and /load racing, or duplicate /pull requests) can both
+// write to the same .partial file and corrupt the on-disk bytes.
+struct PathDownloadLockRegistry {
+    std::mutex registry_mutex;
+    std::unordered_map<std::string, std::weak_ptr<std::mutex>> locks;
+
+    std::shared_ptr<std::mutex> acquire(const std::string& output_path) {
+        const std::string key = download_lock_key(output_path);
+        std::lock_guard<std::mutex> guard(registry_mutex);
+        if (auto it = locks.find(key); it != locks.end()) {
+            if (auto existing = it->second.lock()) {
+                return existing;
+            }
+        }
+        auto lock = std::make_shared<std::mutex>();
+        locks[key] = lock;
+        return lock;
+    }
+
+private:
+    static std::string download_lock_key(const std::string& output_path) {
+        fs::path path = path_from_utf8(output_path);
+        std::error_code ec;
+        fs::path normalized = fs::weakly_canonical(path, ec);
+        if (ec) {
+            normalized = fs::absolute(path, ec);
+            if (ec) {
+                normalized = path;
+            }
+        }
+        return path_to_utf8(normalized);
+    }
+};
+
+static PathDownloadLockRegistry g_path_download_locks;
+
 DownloadResult HttpClient::download_file(const std::string& url,
                                          const std::string& output_path,
                                          ProgressCallback callback,
                                          const std::map<std::string, std::string>& headers,
                                          const DownloadOptions& options) {
+    auto path_lock = g_path_download_locks.acquire(output_path);
+    std::lock_guard<std::mutex> path_guard(*path_lock);
+
     DownloadResult final_result;
     int retry_delay_ms = options.initial_retry_delay_ms;
     const ExpectedHash expected_hash = parse_expected_hash(options);

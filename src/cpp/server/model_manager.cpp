@@ -3137,10 +3137,31 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
     return false;
 }
 
+std::shared_ptr<std::mutex> ModelManager::get_model_download_lock(const std::string& model_name) {
+    const std::string lock_key = resolve_model_name(model_name);
+    std::lock_guard<std::mutex> guard(model_download_locks_mutex_);
+    if (auto it = model_download_locks_.find(lock_key); it != model_download_locks_.end()) {
+        if (auto existing = it->second.lock()) {
+            return existing;
+        }
+    }
+    auto lock = std::make_shared<std::mutex>();
+    model_download_locks_[lock_key] = lock;
+    return lock;
+}
+
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
     // Cloud models have no local artifacts; "downloading" is a no-op.
     if (info.recipe == "cloud") {
         update_model_in_cache(info.model_name, true);
+        return;
+    }
+
+    auto model_lock = get_model_download_lock(info.model_name);
+    std::lock_guard<std::mutex> download_guard(*model_lock);
+
+    // Another caller may have finished while we waited for the model lock.
+    if (do_not_upgrade && is_model_downloaded(info.model_name)) {
         return;
     }
 

@@ -663,6 +663,34 @@ function extractExplicitBackend(loadBody?: Record<string, unknown>): { recipe: s
 }
 
 /**
+ * Wait for an in-flight model download started by another caller (or tab)
+ * instead of starting a second /pull that would race on the server.
+ */
+async function awaitExistingModelDownload(modelName: string): Promise<void> {
+  const downloadId = downloadTracker.getStableDownloadId(modelName, 'model');
+  downloadTracker.startServerPolling();
+
+  const serverDownloads = await downloadTracker.hydrateFromServer();
+  const active = serverDownloads.find(
+    item => item.model_name === modelName &&
+      (item.running === true || item.status === 'downloading'),
+  );
+  if (active) {
+    downloadTracker.applyServerDownload(active);
+  } else if (!downloadTracker.isActive(modelName)) {
+    return;
+  }
+
+  await waitForServerDownloadTerminal(
+    downloadId,
+    modelName,
+    new AbortController(),
+    () => undefined,
+    Boolean(active),
+  );
+}
+
+/**
  * Universal pre-flight check for all inference requests.
  * Ensures backend is installed, model is downloaded, and model is loaded —
  * all through tracked SSE paths visible in the Download Manager.
@@ -791,7 +819,12 @@ async function ensureModelReadyInternal(
 
     // Step 5: Pull model if not downloaded (shows in Download Manager)
     if (!isDownloaded) {
-      await pullModel(modelName, { declaredSizeGB: modelsData[modelName]?.size });
+      if (downloadTracker.isActive(modelName) ||
+          await downloadTracker.hasActiveServerDownload(modelName)) {
+        await awaitExistingModelDownload(modelName);
+      } else {
+        await pullModel(modelName, { declaredSizeGB: modelsData[modelName]?.size });
+      }
     }
 
     // Step 6: Load model into memory (merge loadBody if provided)

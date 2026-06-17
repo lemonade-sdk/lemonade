@@ -3426,8 +3426,33 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
             // response exactly as before.
             stream_download_operation(res, operation);
         } else {
-            // Legacy synchronous mode - blocks until complete
-            model_manager_->download_model(model_name, request_json, do_not_upgrade);
+            // Legacy synchronous mode - blocks until complete. Route through the
+            // shared download job registry so sync /pull deduplicates with any
+            // in-flight server-owned or SSE pull for the same model.
+            auto operation = [this, model_name, request_json, do_not_upgrade](DownloadProgressCallback progress_cb) {
+                model_manager_->download_model(model_name, request_json, do_not_upgrade, progress_cb);
+            };
+            auto job = start_download_job("model:" + model_name, "model", model_name, operation);
+            join_download_job(job);
+
+            std::string error_message;
+            std::string error_code;
+            {
+                std::lock_guard<std::mutex> lock(downloads_mutex_);
+                if (job->status == "error") {
+                    error_message = job->error;
+                    if (job->progress.contains("code") && job->progress["code"].is_string()) {
+                        error_code = job->progress["code"].get<std::string>();
+                    }
+                }
+            }
+
+            if (!error_message.empty()) {
+                if (error_code == lemon::kUnknownModelErrorCode) {
+                    throw lemon::UnknownModelError(error_message);
+                }
+                throw std::runtime_error(error_message);
+            }
 
             nlohmann::json response = {{"status", "success"}, {"model_name", model_name}};
             res.set_content(response.dump(), "application/json");
