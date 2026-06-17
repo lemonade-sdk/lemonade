@@ -471,6 +471,7 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
 
     bool ok = true;
     for (const auto& raw_entry : entries) {
+        try {
         RequestLogEntry entry = raw_entry;
         ParsedRequestBody parsed =
             parse_request_body(entry.request_body, entry.path, log_prompts_);
@@ -484,14 +485,25 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
         entry.prompt_tokens = parsed_response.prompt_tokens;
         entry.completion_tokens = parsed_response.completion_tokens;
         if (parsed.has_redacted_body) {
-            entry.redacted_body_json =
-                sanitize_utf8_for_db(parsed.redacted_body.dump());
-            entry.has_redacted_body = true;
+            try {
+                entry.redacted_body_json =
+                    sanitize_utf8_for_db(parsed.redacted_body.dump());
+                entry.has_redacted_body = true;
+            } catch (...) {
+                entry.redacted_body_json = R"({"note":"request could not be serialized for logging"})";
+                entry.has_redacted_body = true;
+            }
         }
         if (parsed_response.has_redacted_response) {
-            entry.redacted_response_json =
-                sanitize_utf8_for_db(parsed_response.redacted_response.dump());
-            entry.has_redacted_response = true;
+            try {
+                entry.redacted_response_json =
+                    sanitize_utf8_for_db(parsed_response.redacted_response.dump());
+                entry.has_redacted_response = true;
+            } catch (...) {
+                entry.redacted_response_json =
+                    R"({"note":"response could not be serialized for logging"})";
+                entry.has_redacted_response = true;
+            }
         }
 
         entry.client_ip = sanitize_utf8_for_db(std::move(entry.client_ip));
@@ -558,6 +570,14 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
             break;
         }
         PQclear(result);
+        } catch (const std::exception& e) {
+            LOG(WARNING, "RequestLog")
+                << "Skipping request log row after serialization error: " << e.what()
+                << std::endl;
+        } catch (...) {
+            LOG(WARNING, "RequestLog")
+                << "Skipping request log row after serialization error." << std::endl;
+        }
     }
 
     PGresult* end = PQexec(as_pg_conn(pg_conn_), ok ? "COMMIT" : "ROLLBACK");

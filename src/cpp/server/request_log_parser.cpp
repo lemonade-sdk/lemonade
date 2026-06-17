@@ -150,6 +150,79 @@ bool looks_like_binary_payload(const std::string& value) {
 
 } // namespace
 
+std::string sanitize_utf8_for_db(std::string value) {
+    if (value.empty() || is_valid_utf8(value)) {
+        return value;
+    }
+
+    std::string sanitized;
+    sanitized.reserve(value.size());
+    size_t i = 0;
+    while (i < value.size()) {
+        const unsigned char byte = static_cast<unsigned char>(value[i]);
+        size_t seq_len = 1;
+        bool valid = true;
+        if (byte <= 0x7F) {
+            seq_len = 1;
+        } else if ((byte & 0xE0) == 0xC0) {
+            seq_len = 2;
+        } else if ((byte & 0xF0) == 0xE0) {
+            seq_len = 3;
+        } else if ((byte & 0xF8) == 0xF0) {
+            seq_len = 4;
+        } else {
+            valid = false;
+        }
+
+        if (valid && i + seq_len <= value.size()) {
+            for (size_t j = 1; j < seq_len; ++j) {
+                const unsigned char continuation =
+                    static_cast<unsigned char>(value[i + j]);
+                if ((continuation & 0xC0) != 0x80) {
+                    valid = false;
+                    break;
+                }
+            }
+        } else {
+            valid = false;
+        }
+
+        if (valid) {
+            sanitized.append(value, i, seq_len);
+            i += seq_len;
+        } else {
+            sanitized.append("\xEF\xBF\xBD", 3);
+            ++i;
+        }
+    }
+    return sanitized;
+}
+
+namespace {
+
+nlohmann::json sanitize_json_utf8(const nlohmann::json& value) {
+    if (value.is_string()) {
+        return sanitize_utf8_for_db(value.get<std::string>());
+    }
+    if (value.is_object()) {
+        nlohmann::json out = nlohmann::json::object();
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            out[it.key()] = sanitize_json_utf8(it.value());
+        }
+        return out;
+    }
+    if (value.is_array()) {
+        nlohmann::json out = nlohmann::json::array();
+        for (const auto& item : value) {
+            out.push_back(sanitize_json_utf8(item));
+        }
+        return out;
+    }
+    return value;
+}
+
+} // namespace
+
 nlohmann::json redact_json(const nlohmann::json& value) {
     if (value.is_object()) {
         nlohmann::json out = nlohmann::json::object();
@@ -168,6 +241,9 @@ nlohmann::json redact_json(const nlohmann::json& value) {
             out.push_back(redact_json(item));
         }
         return out;
+    }
+    if (value.is_string()) {
+        return sanitize_utf8_for_db(value.get<std::string>());
     }
     return value;
 }
@@ -275,7 +351,7 @@ ParsedRequestBody parse_request_body(const std::string& body,
         parsed.messages_chars = count_message_chars(request_json["messages"]);
     }
 
-    nlohmann::json redacted = redact_json(request_json);
+    nlohmann::json redacted = sanitize_json_utf8(redact_json(request_json));
     if (!log_prompts) {
         if (redacted.contains("prompt") && redacted["prompt"].is_string()) {
             redacted["prompt"] = nlohmann::json{{"char_count", parsed.prompt_chars}};
@@ -291,22 +367,27 @@ ParsedRequestBody parse_request_body(const std::string& body,
         redacted["_meta"] = nlohmann::json{{"pinned", request_json["pinned"].get<bool>()}};
     }
 
-    const std::string dumped = redacted.dump();
-    if (dumped.size() <= kMaxRedactedBodyBytes) {
-        parsed.redacted_body = std::move(redacted);
-        parsed.has_redacted_body = true;
-    } else {
+    try {
+        const std::string dumped = redacted.dump();
+        if (dumped.size() <= kMaxRedactedBodyBytes) {
+            parsed.redacted_body = std::move(redacted);
+            parsed.has_redacted_body = true;
+        } else {
+            parsed.redacted_body = nlohmann::json{
+                {"truncated", true},
+                {"original_bytes", dumped.size()},
+            };
+            parsed.has_redacted_body = true;
+        }
+    } catch (...) {
         parsed.redacted_body = nlohmann::json{
-            {"truncated", true},
-            {"original_bytes", dumped.size()},
+            {"note", "request could not be serialized for logging"},
         };
         parsed.has_redacted_body = true;
     }
 
     return parsed;
 }
-
-std::string sanitize_utf8_for_db(std::string value);
 
 std::optional<int> json_int_field(const nlohmann::json& obj, const char* key) {
     if (!obj.contains(key)) {
@@ -396,7 +477,7 @@ ParsedResponseBody parse_response_body(const std::string& body,
         summary["completion_tokens"] = parsed.completion_tokens.value();
     }
 
-    const std::string content = extract_response_text(response_json);
+    const std::string content = sanitize_utf8_for_db(extract_response_text(response_json));
     if (!content.empty()) {
         if (log_prompts) {
             summary["content"] = content;
@@ -406,20 +487,29 @@ ParsedResponseBody parse_response_body(const std::string& body,
     }
 
     if (log_prompts) {
-        summary["body"] = redact_json(response_json);
+        summary["body"] = sanitize_json_utf8(redact_json(response_json));
     } else if (status_code >= 400) {
-        summary["body"] = redact_json(response_json);
+        summary["body"] = sanitize_json_utf8(redact_json(response_json));
     }
 
     if (!summary.empty()) {
-        const std::string dumped = summary.dump();
-        if (dumped.size() <= kMaxRedactedBodyBytes) {
-            parsed.redacted_response = std::move(summary);
-            parsed.has_redacted_response = true;
-        } else {
+        try {
+            const std::string dumped = summary.dump();
+            if (dumped.size() <= kMaxRedactedBodyBytes) {
+                parsed.redacted_response = std::move(summary);
+                parsed.has_redacted_response = true;
+            } else {
+                parsed.redacted_response = nlohmann::json{
+                    {"truncated", true},
+                    {"original_bytes", dumped.size()},
+                    {"prompt_tokens", parsed.prompt_tokens.value_or(0)},
+                    {"completion_tokens", parsed.completion_tokens.value_or(0)},
+                };
+                parsed.has_redacted_response = true;
+            }
+        } catch (...) {
             parsed.redacted_response = nlohmann::json{
-                {"truncated", true},
-                {"original_bytes", dumped.size()},
+                {"note", "response could not be serialized for logging"},
                 {"prompt_tokens", parsed.prompt_tokens.value_or(0)},
                 {"completion_tokens", parsed.completion_tokens.value_or(0)},
             };
@@ -428,54 +518,6 @@ ParsedResponseBody parse_response_body(const std::string& body,
     }
 
     return parsed;
-}
-
-std::string sanitize_utf8_for_db(std::string value) {
-    if (value.empty() || is_valid_utf8(value)) {
-        return value;
-    }
-
-    std::string sanitized;
-    sanitized.reserve(value.size());
-    size_t i = 0;
-    while (i < value.size()) {
-        const unsigned char byte = static_cast<unsigned char>(value[i]);
-        size_t seq_len = 1;
-        bool valid = true;
-        if (byte <= 0x7F) {
-            seq_len = 1;
-        } else if ((byte & 0xE0) == 0xC0) {
-            seq_len = 2;
-        } else if ((byte & 0xF0) == 0xE0) {
-            seq_len = 3;
-        } else if ((byte & 0xF8) == 0xF0) {
-            seq_len = 4;
-        } else {
-            valid = false;
-        }
-
-        if (valid && i + seq_len <= value.size()) {
-            for (size_t j = 1; j < seq_len; ++j) {
-                const unsigned char continuation =
-                    static_cast<unsigned char>(value[i + j]);
-                if ((continuation & 0xC0) != 0x80) {
-                    valid = false;
-                    break;
-                }
-            }
-        } else {
-            valid = false;
-        }
-
-        if (valid) {
-            sanitized.append(value, i, seq_len);
-            i += seq_len;
-        } else {
-            sanitized.append("\xEF\xBF\xBD", 3);
-            ++i;
-        }
-    }
-    return sanitized;
 }
 
 std::string extract_response_error(const std::string& response_body, int status_code) {

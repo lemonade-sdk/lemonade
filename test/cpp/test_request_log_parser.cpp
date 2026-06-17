@@ -139,6 +139,19 @@ static void test_response_tokens_and_content(TestResult& result) {
     }
 }
 
+static void test_invalid_utf8_json_dump(TestResult& result) {
+    nlohmann::json summary = nlohmann::json::object();
+    std::string bad = "hi";
+    bad.push_back(static_cast<char>(0xF6));
+    summary["content"] = sanitize_utf8_for_db(bad);
+    try {
+        summary.dump();
+        result.ok("sanitized invalid utf8 dumps safely");
+    } catch (...) {
+        result.fail("sanitized invalid utf8 dumps safely");
+    }
+}
+
 int main() {
     TestResult result;
     test_endpoint_classification(result);
@@ -146,6 +159,7 @@ int main() {
     test_char_counts_without_prompt_logging(result);
     test_binary_response_error(result);
     test_response_tokens_and_content(result);
+    test_invalid_utf8_json_dump(result);
 
     printf("\nResults: %d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
