@@ -208,23 +208,39 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
     cache_dir = LlamaCppSystemBackendTests.cache_dir
     cmd = [lemond_binary, cache_dir, "--port", str(PORT)]
 
-    if sys.platform == "win32":
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=os.environ.copy(),
-        )
-    else:
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=os.environ.copy(),
-        )
+    # lemond refuses to start if the port is already in use, and its shutdown
+    # has a multi-second teardown that can keep the listen socket open briefly
+    # after the HTTP endpoint stops responding. Make sure the port is fully
+    # released before launching so a stop->start in quick succession doesn't
+    # race the previous instance.
+    if _is_server_running(PORT):
+        _stop_server()
+    if not _wait_for_server_stop(PORT, timeout=30):
+        raise RuntimeError(f"Port {PORT} still in use; cannot start lemond")
 
-    wait_for_server(timeout=60)
+    # Redirect output to a log file rather than a PIPE: lemond runs with
+    # debug logging here, and an undrained PIPE can fill its buffer and block
+    # the process before it opens the port. The log is printed on failure.
+    log_path = os.path.join(tempfile.gettempdir(), f"lemond_test_{PORT}.log")
+    log_file = open(log_path, "w", encoding="utf-8")
+    subprocess.Popen(
+        cmd,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        env=os.environ.copy(),
+    )
+
+    try:
+        wait_for_server(timeout=60)
+    except TimeoutError:
+        log_file.flush()
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                print("=== lemond startup log ===")
+                print(f.read())
+        except OSError:
+            pass
+        raise
 
     runtime_config = {}
     if wrapped_server == "llamacpp" and backend:
