@@ -1,5 +1,3 @@
-#ifdef _WIN32
-
 #include "lemon_tray/platform/windows_tray.h"
 
 #include <codecvt>
@@ -509,5 +507,3 @@ void WindowsTray::on_destroy() {
 }
 
 } // namespace lemon_tray
-
-#endif // _WIN32

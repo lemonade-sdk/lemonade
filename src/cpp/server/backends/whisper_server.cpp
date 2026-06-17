@@ -2,6 +2,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
 #include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
 #include "lemon/audio_types.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
@@ -76,8 +77,9 @@ WhisperServer::~WhisperServer() {
 InstallParams WhisperServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
+    params.repo = "lemonade-sdk/whisper.cpp-rocm";
+
     if (backend == "npu") {
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
 #ifdef _WIN32
         params.filename = "whisper-" + version + "-windows-npu-x64.zip";
 #else
@@ -85,23 +87,33 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
 #endif
     } else if (backend == "cpu") {
 #ifdef _WIN32
-        params.repo = "ggml-org/whisper.cpp";
-        params.filename = "whisper-bin-x64.zip";
+        params.filename = "whisper-" + version + "-windows-cpu-x64.zip";
 #elif defined(__linux__)
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-linux-cpu-x86_64.tar.gz";
 #else
-        throw std::runtime_error("Unsupported platform for whisper.cpp");
+        throw std::runtime_error("Unsupported platform for whisper.cpp cpu backend");
+#endif
+    } else if (backend == "rocm") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (rocm_arch.empty()) {
+            throw std::runtime_error(SystemInfo::get_unsupported_backend_error("whispercpp", "rocm"));
+        }
+#ifdef _WIN32
+        params.filename = "whisper-" + version + "-windows-rocm-" + rocm_arch + ".zip";
+#elif defined(__linux__)
+        params.filename = "whisper-" + version + "-linux-rocm-" + rocm_arch + ".tar.gz";
+#else
+        throw std::runtime_error("ROCm whisper.cpp backend is only supported on Windows and Linux");
 #endif
     } else if (backend == "vulkan") {
-#if defined(__linux__)
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
+#ifdef _WIN32
+        params.filename = "whisper-" + version + "-windows-vulkan-x64.zip";
+#elif defined(__linux__)
         params.filename = "whisper-" + version + "-linux-vulkan-x86_64.tar.gz";
 #else
-        throw std::runtime_error("Vulkan whisper.cpp backend is currently supported only on Linux");
+        throw std::runtime_error("Vulkan whisper.cpp backend is only supported on Windows and Linux");
 #endif
     } else if (backend == "metal") {
-        params.repo = "lemonade-sdk/whisper.cpp-builds";
         params.filename = "whisper-" + version + "-darwin-metal-arm64.tar.gz";
     } else {
         throw std::runtime_error("[WhisperServer] Unknown whisper backend: " + backend);
@@ -301,7 +313,7 @@ void WhisperServer::load(const std::string& model_name,
 #endif
 
     // Launch the subprocess
-    process_handle_ = utils::ProcessManager::start_process(
+    ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
@@ -309,12 +321,13 @@ void WhisperServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
+    set_process_handle(started_handle);
 
-    if (process_handle_.pid == 0) {
+    if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start whisper-server process");
     }
 
-    LOG(INFO, "WhisperServer") << "Process started with PID: " << process_handle_.pid << std::endl;
+    LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
 
     // Wait for server to be ready
     if (!wait_for_ready("/health")) {
@@ -326,11 +339,11 @@ void WhisperServer::load(const std::string& model_name,
 }
 
 void WhisperServer::unload() {
-    if (process_handle_.pid != 0) {
-        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << process_handle_.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+    stop_backend_watchdog();
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
+        utils::ProcessManager::stop_process(handle);
     }
 }
 
@@ -537,7 +550,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
         fields.push_back(translate_field);
     }
 
-    const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
+    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
     // Pass 0 so HttpClient falls back to its default timeout, which is kept in
@@ -628,7 +641,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
         fields.push_back(translate_field);
     }
 
-    const std::string url = "http://127.0.0.1:" + std::to_string(port_) + "/inference";
+    const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
 
     // See the note on the file-path variant above: 0 inherits the configured

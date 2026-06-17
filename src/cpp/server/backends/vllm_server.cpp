@@ -6,6 +6,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -193,7 +194,7 @@ void VLLMServer::load(const std::string& model_name,
         }
     }
 
-    LOG(INFO, "vLLM") << "Starting vllm-server on port " << port_ << "..." << std::endl;
+    LOG(INFO, "vLLM") << "Starting vllm-server on port " << get_backend_port() << "..." << std::endl;
 
     // Set environment variables
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -206,12 +207,14 @@ void VLLMServer::load(const std::string& model_name,
 
     // Start process
     bool inherit_output = (log_level_ == "info") || is_debug();
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars);
+    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 
     // vLLM can take longer to start (loading model, compiling kernels)
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
+        const ProcessHandle handle = consume_process_handle_for_cleanup();
+        if (has_process_handle(handle)) {
+            ProcessManager::stop_process(handle);
+        }
         std::string err = "vllm-server failed to start within timeout";
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
@@ -222,19 +225,16 @@ void VLLMServer::load(const std::string& model_name,
         throw std::runtime_error(err);
     }
 
-    LOG(DEBUG, "vLLM") << "Model loaded on port " << port_ << std::endl;
+    LOG(DEBUG, "vLLM") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void VLLMServer::unload() {
+    stop_backend_watchdog();
     LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
-#ifdef _WIN32
-    if (process_handle_.handle) {
-#else
-    if (process_handle_.pid > 0) {
-#endif
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
-        port_ = 0;
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        ProcessManager::stop_process(handle);
     }
 }
 
@@ -248,6 +248,65 @@ json VLLMServer::completion(const json& request) {
 
 json VLLMServer::responses(const json& request) {
     return forward_request("/v1/responses", request);
+}
+
+void VLLMServer::forward_streaming_request(const std::string& endpoint,
+                                           const std::string& request_body,
+                                           httplib::DataSink& sink,
+                                           bool sse,
+                                           long timeout_seconds,
+                                           TelemetryCallback telemetry_callback) {
+    std::string body = request_body;
+    const auto start = std::chrono::steady_clock::now();
+
+    if (sse && (endpoint == "/v1/chat/completions" || endpoint == "/v1/completions")) {
+        try {
+            json request = json::parse(request_body);
+            json& stream_options = request["stream_options"];
+            if (!stream_options.is_object()) {
+                stream_options = json::object();
+            }
+            stream_options["include_usage"] = true;
+            body = request.dump();
+        } catch (...) {
+            // Forward the original request if it cannot be parsed.
+        }
+    }
+
+    Telemetry telemetry;
+    bool has_telemetry = false;
+
+    WrappedServer::forward_streaming_request(
+        endpoint, body, sink, sse, timeout_seconds,
+        [&telemetry, &has_telemetry](int input_tokens,
+                                     int output_tokens,
+                                     double time_to_first_token,
+                                     double tokens_per_second) {
+            has_telemetry = true;
+            telemetry.input_tokens = input_tokens;
+            telemetry.output_tokens = output_tokens;
+            telemetry.time_to_first_token = time_to_first_token;
+            telemetry.tokens_per_second = tokens_per_second;
+        });
+
+    if (has_telemetry) {
+        if (sse && telemetry.output_tokens > 0 && telemetry.tokens_per_second <= 0.0) {
+            const double elapsed_seconds = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - start).count();
+            const double decode_seconds = elapsed_seconds - telemetry.time_to_first_token;
+            const double tps_seconds = decode_seconds > 0.0 ? decode_seconds : elapsed_seconds;
+            if (tps_seconds > 1e-6) {
+                telemetry.tokens_per_second = telemetry.output_tokens / tps_seconds;
+            }
+        }
+
+        if (telemetry_callback) {
+            telemetry_callback(telemetry.input_tokens,
+                               telemetry.output_tokens,
+                               telemetry.time_to_first_token,
+                               telemetry.tokens_per_second);
+        }
+    }
 }
 
 } // namespace backends

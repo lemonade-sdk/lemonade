@@ -13,7 +13,7 @@ namespace lemon {
 using json = nlohmann::json;
 
 static const json DEFAULTS = {
-    {"ctx_size", 4096},
+    {"ctx_size", -1},  // -1 triggers auto-resolution (memory + arch metadata)
     {"merge_args", true},
     {"llamacpp_device", ""},
     {"llamacpp_backend", ""},  // Will be overridden dynamically
@@ -22,6 +22,7 @@ static const json DEFAULTS = {
     {"sdcpp_args", ""},
     {"whispercpp_backend", ""},  // "" means auto-detect (mapped from "auto" in config.json)
     {"whispercpp_args", ""},
+    {"moonshine_args", ""},      // Custom arguments to pass to moonshine-server
     // Image generation defaults (for sd-cpp recipe)
     // These are recipe-level defaults only, not CLI arguments — per reviewer guidance,
     // there are too many image gen params for CLI flags, and no universal defaults.
@@ -31,12 +32,22 @@ static const json DEFAULTS = {
     {"height", 512},
     {"sampling_method", ""},
     {"flow_shift", 0.0},
-    // FLM-specific options
-    {"flm_args", ""},       // Custom arguments to pass to flm serve
     // vLLM-specific options
     {"vllm_backend", ""},  // "" means auto-detect
-    {"vllm_args", ""}      // Custom arguments to pass to vllm-server
+    {"vllm_args", ""},     // Custom arguments to pass to vllm-server
+    // Cloud recipe has no backend variants (provider selection lives on the
+    // per-model cloud_provider field). The empty string satisfies Router's
+    // per-backend-args lookup; cloud reads no backend-specific config.
+    {"cloud_backend", ""},
+
+    // Auto-eviction options
+    {"auto_evict", nullptr},          // nullptr means fallback to global config
+    {"evict_idle_timeout", 300},      // Default hard idle timeout (5 mins)
+    {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
+    {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
+    {"pinned", false}
 };
+
 
 // Mapping from flat option names to CLI flags (used by to_cli_options)
 // Note: Image generation params (steps, cfg_scale, width, height, sampling_method,
@@ -52,33 +63,45 @@ static const std::map<std::string, std::string> OPTION_TO_CLI_FLAG = {
     {"sdcpp_args", "--sdcpp-args"},
     {"whispercpp_backend", "--whispercpp"},
     {"whispercpp_args", "--whispercpp-args"},
-    {"flm_args", "--flm-args"},
+    {"moonshine_args", "--moonshine-args"},
     {"vllm_backend", "--vllm"},
     {"vllm_args", "--vllm-args"}
 };
 
 static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
+    std::vector<std::string> keys;
     if (recipe == "llamacpp") {
-        return {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
+        keys = {"ctx_size", "llamacpp_device", "llamacpp_backend", "llamacpp_args", "merge_args"};
     } else if (recipe == "whispercpp") {
-        return {"whispercpp_backend", "whispercpp_args", "merge_args"};
+        keys = {"whispercpp_backend", "whispercpp_args", "merge_args"};
+    } else if (recipe == "moonshine") {
+        keys = {"moonshine_args", "merge_args"};
     } else if (recipe == "flm") {
-        return {"ctx_size", "flm_args", "merge_args"};
+        return {"ctx_size", "merge_args"};
     } else if (recipe == "ryzenai-llm") {
-        return {"ctx_size"};
+        keys = {"ctx_size"};
     } else if (recipe == "sd-cpp") {
-        return {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
+        keys = {"sd-cpp_backend", "sdcpp_args", "steps", "cfg_scale", "width", "height", "sampling_method", "flow_shift", "merge_args"};
     } else if (recipe == "vllm") {
-        return {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
-    } else {
-        return {};
+        keys = {"ctx_size", "vllm_backend", "vllm_args", "merge_args"};
     }
+
+    // Add auto-eviction options for all recipes
+    keys.push_back("auto_evict");
+    keys.push_back("evict_idle_timeout");
+    keys.push_back("downsize_idle_timeout");
+    keys.push_back("evict_weight_factor");
+    keys.push_back("pinned");
+
+    return keys;
 }
 
 static bool is_empty_option(json option) {
-    return (option.is_number() && (option == -1)) ||
+    return option.is_null() ||
+           (option.is_number() && (option == -1)) ||
            (option.is_string() && (option == "" || option == "auto"));
 }
+
 
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
@@ -219,23 +242,27 @@ json RecipeOptions::get_option(const std::string& opt) const {
     return DEFAULTS.contains(opt) ? DEFAULTS[opt] : json();
 }
 
+void RecipeOptions::set_option(const std::string& opt, const json& value) {
+    options_[opt] = value;
+}
+
 #ifdef LEMONADE_CLI
 // CLI_OPTIONS used only by the lemonade CLI client for add_cli_options
 static const json CLI_OPTIONS = {
-    {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"envname", "LEMONADE_CTX_SIZE"}, {"help", "Context size for the model"}}},
-    {"--merge-args", {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"envname", "LEMONADE_MERGE_ARGS"}, {"help", "Merge global and model arguments when loading the model"}}},
-    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_LLAMACPP"}, {"help", "LlamaCpp backend to use"}}},
-    {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"envname", "LEMONADE_LLAMACPP_DEVICE"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}}},
-    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_LLAMACPP_ARGS"}, {"help", "Custom arguments to pass to llama-server"}}},
-    {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_SDCPP"}, {"help", "SD.cpp backend to use"}}},
-    {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_SDCPP_ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}}},
-    {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_WHISPERCPP"}, {"help", "WhisperCpp backend to use"}}},
-    {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_WHISPERCPP_ARGS"}, {"help", "Custom arguments to pass to whisper-server"}}},
-    {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"envname", "LEMONADE_VLLM"}, {"help", "vLLM backend to use"}}},
-    {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_VLLM_ARGS"}, {"help", "Custom arguments to pass to vllm-server"}}},
+    {"--ctx-size", {{"option_name", "ctx_size"}, {"type_name", "SIZE"}, {"help", "Context size for the model"}, {"group", "General Options"}}},
+    {"--merge-args", {{"option_name", "merge_args"}, {"type_name", "BOOL"}, {"help", "Merge global and model arguments when loading the model"}, {"group", "General Options"}}},
+    {"--llamacpp", {{"option_name", "llamacpp_backend"}, {"type_name", "BACKEND"}, {"help", "LlamaCpp backend to use"}, {"group", "Llama.cpp Backend Options"}}},
+    {"--llamacpp-device", {{"option_name", "llamacpp_device"}, {"type_name", "DEVICES"}, {"help", "Comma-separated list of accelerator devices to use (e.g. Vulkan0)"}, {"group", "Llama.cpp Backend Options"}}},
+    {"--llamacpp-args", {{"option_name", "llamacpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to llama-server"}, {"group", "Llama.cpp Backend Options"}}},
+    {"--sdcpp", {{"option_name", "sd-cpp_backend"}, {"type_name", "BACKEND"}, {"help", "SD.cpp backend to use"}, {"group", "Stable Diffusion Options"}}},
+    {"--sdcpp-args", {{"option_name", "sdcpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to sd-server (must not conflict with managed args)"}, {"group", "Stable Diffusion Options"}}},
+    {"--whispercpp", {{"option_name", "whispercpp_backend"}, {"type_name", "BACKEND"}, {"help", "WhisperCpp backend to use"}, {"group", "Whisper.cpp Options"}}},
+    {"--whispercpp-args", {{"option_name", "whispercpp_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to whisper-server"}, {"group", "Whisper.cpp Options"}}},
+    {"--moonshine-args", {{"option_name", "moonshine_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to moonshine-server"}}},
+    {"--vllm", {{"option_name", "vllm_backend"}, {"type_name", "BACKEND"}, {"help", "vLLM backend to use"}, {"group", "vLLM Options"}}},
+    {"--vllm-args", {{"option_name", "vllm_args"}, {"type_name", "ARGS"}, {"help", "Custom arguments to pass to vllm-server"}, {"group", "vLLM Options"}}},
     // Note: Image gen params (--steps, --cfg-scale, --width, --height) removed — recipe-level only.
     // Runtime options (--diffusion-fa, --offload-to-cpu) go through --sdcpp-args.
-    {"--flm-args", {{"option_name", "flm_args"}, {"type_name", "ARGS"}, {"envname", "LEMONADE_FLM_ARGS"}, {"help", "Custom arguments to pass to flm serve"}}}
 };
 
 void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
@@ -258,8 +285,8 @@ void RecipeOptions::add_cli_options(CLI::App& app, json& storage) {
             o->default_val(defval);
         }
 
-        o->envname(opt["envname"]);
         o->type_name(opt["type_name"]);
+        o->group(opt.value("group", "Options"));
     }
 }
 #endif

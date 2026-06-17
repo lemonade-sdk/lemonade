@@ -8,6 +8,8 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
 #include <lemon/backends/backend_utils.h>
+#include <lemon/backends/cloud_server.h>
+#include <lemon/cloud_provider_registry.h>
 #include <lemon/backends/fastflowlm_server.h>
 #include <filesystem>
 #include <iostream>
@@ -26,11 +28,16 @@
 #include <limits>
 #include <lemon/utils/aixlog.hpp>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 using namespace lemon::utils;
 
 #ifdef _WIN32
 #include <windows.h>
+#include <Shlobj.h>
 // MSVC's std::filesystem refuses to traverse reparse points it considers
 // "untrusted" when the process token lacks symlink privileges (e.g., when
 // launched from an MSI installer custom action). The Win32 API has no such
@@ -46,16 +53,62 @@ static bool safe_is_directory(const fs::path& p) {
 // fs::recursive_directory_iterator also throws on these reparse points.
 // skip_permission_denied tells it to skip inaccessible entries instead of throwing.
 static constexpr auto safe_dir_options = fs::directory_options::skip_permission_denied;
+// MSVC's create_directories also fails on symlinks crossing volume boundaries
+// ("untrusted mount point"). SHCreateDirectoryExW does not have this restriction.
+// Throws on failure to preserve the fail-fast semantics of fs::create_directories.
+static void ensure_create_directories(const fs::path& p) {
+    if (p.empty()) return;
+    if (safe_is_directory(p)) return;
+    if (safe_exists(p)) {
+        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
+                                 path_to_utf8(p) + "'");
+    }
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    if (!ec) return;
+    // Fall back to Win32 API which handles cross-volume symlinks gracefully
+    std::wstring wpath = p.wstring();
+    DWORD result = SHCreateDirectoryExW(NULL, wpath.c_str(), NULL);
+    if (result != ERROR_SUCCESS && result != ERROR_ALREADY_EXISTS) {
+        char error_msg[256];
+        FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr,
+            result,
+            0,
+            error_msg,
+            sizeof(error_msg),
+            nullptr
+        );
+        std::string desc = error_msg[0] ? error_msg : "unknown error";
+        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                 "': " + desc);
+    }
+}
 #else
 static bool safe_exists(const fs::path& p) { return fs::exists(p); }
 static bool safe_is_directory(const fs::path& p) { return fs::is_directory(p); }
+static void ensure_create_directories(const fs::path& p) {
+    if (p.empty()) return;
+    if (safe_is_directory(p)) return;
+    if (safe_exists(p)) {
+        throw std::runtime_error("Cannot create directory; a non-directory already exists at '" +
+                                 path_to_utf8(p) + "'");
+    }
+    std::error_code ec;
+    fs::create_directories(p, ec);
+    if (ec) {
+        throw std::runtime_error("Failed to create directory '" + path_to_utf8(p) +
+                                 "': " + ec.message());
+    }
+}
 static constexpr auto safe_dir_options = fs::directory_options::none;
 #endif
 
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options"};
 
 // Helper functions for string operations
 static std::string to_lower(const std::string& str) {
@@ -197,51 +250,136 @@ static bool skip_gguf_value(std::istream& in, uint32_t type) {
     return size > 0 && skip_bytes(in, size);
 }
 
-static int64_t read_gguf_context_length(const std::string& path) {
+// All GGUF metadata extracted in a single pass over the KV header.
+// Replaces the previous three separate readers (context_length, arch_info, capabilities)
+// that each opened the file independently.
+struct GgufMetadata {
+    std::string architecture;
+    int64_t context_length = 0;
+    int64_t block_count = 0;
+    int64_t embedding_length = 0;
+    int64_t head_count_kv = 0;
+    int64_t key_length = 0;
+    GgufCapabilities caps;
+};
+
+static bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
     std::ifstream in(path_from_utf8(path), std::ios::binary);
-    if (!in) return 0;
+    if (!in) return false;
 
     char magic[4] = {};
     in.read(magic, sizeof(magic));
-    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return 0;
+    if (!in || std::memcmp(magic, "GGUF", 4) != 0) return false;
 
     uint32_t version = 0;
     uint64_t tensor_count = 0;
     uint64_t kv_count = 0;
-    if (!read_le(in, version) || !read_le(in, tensor_count) || !read_le(in, kv_count)) return 0;
+    if (!read_le(in, version) || !read_le(in, tensor_count) || !read_le(in, kv_count)) return false;
     (void)version;
     (void)tensor_count;
 
-    std::string architecture;
     int64_t pending_context_length = 0;
 
     for (uint64_t i = 0; i < kv_count; ++i) {
         std::string key;
         uint32_t type = 0;
-        if (!read_gguf_string(in, key) || !read_le(in, type)) return 0;
+        if (!read_gguf_string(in, key) || !read_le(in, type)) return false;
 
+        // Read architecture
         if (key == "general.architecture" && type == 8) {
-            if (!read_gguf_string(in, architecture)) return 0;
-            if (pending_context_length > 0) return pending_context_length;
+            if (!read_gguf_string(in, out.architecture)) return false;
+            if (pending_context_length > 0) {
+                out.context_length = pending_context_length;
+            }
             continue;
         }
 
-        const bool context_key = !architecture.empty() && key == architecture + ".context_length";
-        const bool possible_context_key = architecture.empty() && key.size() > std::strlen(".context_length") &&
+        // Context length
+        const bool context_key = !out.architecture.empty() && key == out.architecture + ".context_length";
+        const bool possible_context_key = out.architecture.empty() && key.size() > std::strlen(".context_length") &&
                                           ends_with_ignore_case(key, ".context_length");
         if (context_key || possible_context_key) {
             int64_t value = 0;
-            if (!read_gguf_integer_value(in, type, value)) return 0;
-            if (value <= 0) return 0;
-            if (context_key) return value;
-            pending_context_length = value;
+            if (read_gguf_integer_value(in, type, value) && value > 0) {
+                if (context_key) {
+                    out.context_length = value;
+                } else {
+                    pending_context_length = value;
+                }
+            }
             continue;
         }
 
-        if (!skip_gguf_value(in, type)) return 0;
+        // Architecture fields for KV cache estimation
+        if (!out.architecture.empty()) {
+            if (key == out.architecture + ".block_count") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.block_count = value;
+                continue;
+            }
+            if (key == out.architecture + ".embedding_length") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.embedding_length = value;
+                continue;
+            }
+            if (key == out.architecture + ".attention.head_count_kv") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.head_count_kv = value;
+                continue;
+            }
+            if (key == out.architecture + ".attention.key_length") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.key_length = value;
+                continue;
+            }
+        }
+
+        // Capability detection (vision, tool-calling, MTP)
+        if (type == 4) {
+            uint32_t val = 0;
+            if (read_le(in, val)) {
+                if (contains_ignore_case(key, "nextn_predict_layers") && val > 0)
+                    out.caps.mtp = true;
+            }
+        } else if (type == 8) {
+            std::string value;
+            if (read_gguf_string(in, value)) {
+                inspect_gguf_string(key, value, out.caps);
+            }
+        } else if (type == 9) {
+            // Array — check string elements for capability hints
+            uint32_t elem_type = 0;
+            uint64_t count = 0;
+            if (read_le(in, elem_type) && read_le(in, count)) {
+                if (elem_type == 8) {
+                    for (uint64_t j = 0; j < count; ++j) {
+                        std::string value;
+                        if (!read_gguf_string(in, value)) return false;
+                        inspect_gguf_string(key, value, out.caps);
+                    }
+                } else if (elem_type != 9) {
+                    uint64_t elem_size = gguf_scalar_size(elem_type);
+                    if (elem_size == 0) return false;
+                    if (!skip_bytes(in, count * elem_size)) return false;
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            if (!skip_gguf_value(in, type)) return false;
+        }
     }
 
-    return pending_context_length;
+    if (out.context_length == 0 && pending_context_length > 0) {
+        out.context_length = pending_context_length;
+    }
+    return true;
 }
 
 // Candidate roots that FLM may use to store models. FLM resolves its model
@@ -336,23 +474,27 @@ static int64_t read_flm_max_context_window(const ModelInfo& info) {
     return 0;
 }
 
-static void populate_static_max_context_window(ModelInfo& info) {
+static void populate_model_metadata(ModelInfo& info) {
     info.max_context_window = 0;
     if (!info.downloaded) return;
 
     if (info.recipe == "llamacpp") {
         std::string gguf_path = info.resolved_path();
         if (!gguf_path.empty() && ends_with_ignore_case(gguf_path, ".gguf") && safe_exists(path_from_utf8(gguf_path))) {
-            info.max_context_window = read_gguf_context_length(gguf_path);
+            GgufMetadata meta;
+            if (read_gguf_metadata(meta, gguf_path)) {
+                info.max_context_window = meta.context_length;
+                info.gguf_block_count = meta.block_count;
+                info.gguf_embedding_length = meta.embedding_length;
+                info.gguf_head_count_kv = meta.head_count_kv;
+                info.gguf_key_length = meta.key_length;
 
-            // GGUF vision/tool metadata are LLM capabilities. Do not apply
-            // them to embedding/reranking models, otherwise labels such as
-            // tool-calling would reclassify the model away from its endpoint
-            // type and break /embeddings or /rerank.
-            if (info.type == ModelType::LLM) {
-                std::ifstream in(path_from_utf8(gguf_path), std::ios::binary);
-                if (in) {
-                    apply_gguf_capability_labels(info.labels, read_gguf_capabilities(in));
+                // GGUF vision/tool metadata are LLM capabilities. Do not apply
+                // them to embedding/reranking models, otherwise labels such as
+                // tool-calling would reclassify the model away from its endpoint
+                // type and break /embeddings or /rerank.
+                if (info.type == ModelType::LLM) {
+                    apply_gguf_capability_labels(info.labels, meta.caps);
                 }
             }
         }
@@ -418,7 +560,7 @@ static void write_hf_ref_main(const fs::path& model_cache_path, const std::strin
     }
 
     fs::path refs_dir = model_cache_path / "refs";
-    fs::create_directories(refs_dir);
+    ensure_create_directories(refs_dir);
     std::ofstream refs_file(refs_dir / "main");
     if (refs_file.is_open()) {
         refs_file << commit_hash;
@@ -580,6 +722,84 @@ static void cleanup_empty_parents(const fs::path& file_path, const fs::path& sto
         } else {
             break;
         }
+    }
+}
+
+// Return the on-disk size of a resolved model path. Some recipes (for
+// example Moonshine streaming) resolve to a directory of artifacts rather than
+// to a single model file. std::filesystem::file_size() fails on directories
+static uintmax_t resolved_path_size_bytes(const fs::path& path) {
+    std::error_code ec;
+    if (!safe_exists(path)) {
+        return 0;
+    }
+
+    if (!safe_is_directory(path)) {
+        auto size = fs::file_size(path, ec);
+        return ec ? 0 : size;
+    }
+
+    uintmax_t total = 0;
+    for (const auto& entry : fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
+        if (ec) {
+            ec.clear();
+            break;
+        }
+        if (!entry.is_regular_file(ec)) {
+            ec.clear();
+            continue;
+        }
+
+        auto size = fs::file_size(entry.path(), ec);
+        if (!ec) {
+            total += size;
+        } else {
+            ec.clear();
+        }
+    }
+    return total;
+}
+
+static void cleanup_orphaned_blobs_under(const fs::path& path,
+                                         const fs::path& models_dir) {
+    if (!safe_exists(path)) {
+        return;
+    }
+
+    if (!safe_is_directory(path)) {
+        cleanup_orphaned_blob(path, models_dir);
+        return;
+    }
+
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(path, safe_dir_options, ec)) {
+        if (ec) {
+            ec.clear();
+            break;
+        }
+        cleanup_orphaned_blob(entry.path(), models_dir);
+    }
+}
+
+static void remove_resolved_path_or_throw(const fs::path& path,
+                                          const std::string& description) {
+    if (!safe_exists(path)) {
+        return;
+    }
+
+    LOG(INFO, "ModelManager") << "Removing " << description << ": "
+                              << path_to_utf8(path) << std::endl;
+
+    std::error_code ec;
+    if (safe_is_directory(path)) {
+        fs::remove_all(path, ec);
+    } else {
+        fs::remove(path, ec);
+    }
+
+    if (ec) {
+        throw std::runtime_error("Failed to remove " + description + " '" +
+                                 path_to_utf8(path) + "': " + ec.message());
     }
 }
 
@@ -923,7 +1143,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
             recipe_options_ = std::move(migrated_options);
             try {
                 fs::path dir = fs::path(get_recipe_options_file()).parent_path();
-                fs::create_directories(dir);
+                ensure_create_directories(dir);
                 JsonUtils::save_to_file(recipe_options_, get_recipe_options_file());
                 LOG(INFO, "ModelManager") << "migrated " << migrated
                           << " legacy recipe_options keys to builtin. prefix" << std::endl;
@@ -936,6 +1156,7 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
 
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
+        start_directory_watcher();
     }
 }
 
@@ -1001,13 +1222,27 @@ bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& m
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
-    // Invalidate cache so discovered models are included on next access
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-    cache_valid_ = false;
+    directory_watcher_.reset();
 
     if (!extra_models_dir_.empty()) {
         LOG(INFO, "ModelManager") << "Extra models directory set to: " << extra_models_dir_ << std::endl;
+        start_directory_watcher();
     }
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    cache_valid_ = false;
+}
+
+void ModelManager::start_directory_watcher() {
+    directory_watcher_ = std::make_unique<DirectoryWatcher>(extra_models_dir_);
+    directory_watcher_->set_callback([this]() {
+        LOG(DEBUG, "ModelManager") << "Extra models directory changed, invalidating cache" << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            cache_valid_ = false;
+        }
+    });
+    directory_watcher_->start();
 }
 
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
@@ -1161,6 +1396,12 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 std::string ModelManager::resolve_model_path(const ModelInfo& info, const std::string& type, const std::string& checkpoint) const {
     // Collections are virtual entries with no direct checkpoint to resolve
     if (is_collection_recipe(info.recipe)) {
+        return "";
+    }
+
+    // Cloud-offloaded models have no local artifacts; checkpoint is the
+    // upstream provider's model id, used directly when forwarding requests.
+    if (info.recipe == "cloud") {
         return "";
     }
 
@@ -1556,7 +1797,7 @@ static void save_user_json(const std::string& save_path, const json& to_save) {
     // Ensure directory exists
     fs::path target = path_from_utf8(save_path);
     fs::path dir = target.parent_path();
-    fs::create_directories(dir);
+    ensure_create_directories(dir);
 
     LOG(INFO, "ModelManager") << "Saving " << target.filename() << std::endl;
 
@@ -1779,7 +2020,23 @@ void ModelManager::build_cache() {
         info.recipe = JsonUtils::get_or_default<std::string>(value, "recipe", "");
         info.suggested = JsonUtils::get_or_default<bool>(value, "suggested", false);
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
+        info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
+
+        // HF-backed collections store their components on Hugging Face — the
+        // cached manifest is the single source of truth. Rebuild the component
+        // list from it on every cache build whenever a repo pointer is present,
+        // so a refreshed manifest is always reflected (and any stale components
+        // a previous version may have persisted are ignored/self-healed). A
+        // pure inline collection has no checkpoint pointer; it keeps its
+        // authored components and only falls back to the cache when empty.
+        if (is_collection_recipe(info.recipe) &&
+            (info.components.empty() || !info.checkpoint().empty())) {
+            info.components.clear();
+            populate_collection_components_from_cache_locked(info);
+        }
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1819,6 +2076,20 @@ void ModelManager::build_cache() {
         info.hf_load = JsonUtils::get_or_default<bool>(value, "hf_load", false);
         info.source = JsonUtils::get_or_default<std::string>(value, "source", "");
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
+        info.moonshine_arch = JsonUtils::get_or_default<int>(value, "moonshine_arch", -1);
+
+        // HF-backed user collections (created by `lemonade pull <org>/<repo>`)
+        // keep only a repo pointer in user_models.json; their components live in
+        // the cached manifest. Rebuild them from it whenever a pointer is present
+        // so a refreshed manifest is reflected and no stale list can shadow it.
+        // A pure inline user collection has no checkpoint pointer and keeps its
+        // authored components, falling back to the cache only when empty.
+        if (is_collection_recipe(info.recipe) &&
+            (info.components.empty() || !info.checkpoint().empty())) {
+            info.components.clear();
+            populate_collection_components_from_cache_locked(info);
+        }
 
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
@@ -1872,6 +2143,41 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Cloud-offload discovery is server-side and automatic. For each
+    // installed cloud provider with a resolvable credential (env var or
+    // runtime-auth POST), call discover_models and merge the results into
+    // all_models. Per AGENTS.md invariant #11, the registry persists only
+    // {provider, base_url} pairs — API keys live in env vars or process
+    // memory, never on disk. Failures are logged, never propagated, so a
+    // single offline provider can't block the rest of cache build.
+    if (cloud_registry_ != nullptr) {
+        auto installed = cloud_registry_->list_installed();
+        for (const auto& rec : installed) {
+            const std::string api_key = cloud_registry_->resolve_key(rec.name);
+            if (api_key.empty() || rec.base_url.empty()) {
+                LOG(INFO, "ModelManager") << "Skipping cloud discovery for '"
+                                           << rec.name << "': no API key resolvable"
+                                           << " (set " << CloudProviderRegistry::env_var_name(rec.name)
+                                           << " or POST /v1/cloud/auth)" << std::endl;
+                continue;
+            }
+            std::vector<ModelInfo> discovered;
+            try {
+                discovered = backends::CloudServer::discover_models(rec.name, api_key, rec.base_url);
+            } catch (const std::exception& e) {
+                LOG(WARNING, "ModelManager") << "Cloud discovery threw for '"
+                                              << rec.name << "': " << e.what()
+                                              << std::endl;
+                continue;
+            }
+            for (auto& m : discovered) {
+                if (m.recipe != "cloud" || m.model_name.empty()) continue;
+                // Same merge precedence as FLM: emplace, don't overwrite.
+                all_models.emplace(m.model_name, std::move(m));
+            }
+        }
+    }
+
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) — built-ins are keyed bare in the cache, so
     // we translate before lookup.
@@ -1894,6 +2200,8 @@ void ModelManager::build_cache() {
             continue;  // Handled in second pass after components are resolved
         } else if (info.recipe == "flm") {
             info.downloaded = flm_set.count(info.checkpoint()) > 0;
+        } else if (info.recipe == "cloud") {
+            info.downloaded = true;  // Cloud-offloaded models have no local artifacts
         } else {
             info.downloaded = are_required_checkpoints_complete(info);
         }
@@ -1914,7 +2222,7 @@ void ModelManager::build_cache() {
     }
 
     for (auto& [name, info] : all_models) {
-        populate_static_max_context_window(info);
+        populate_model_metadata(info);
         models_cache_[name] = info;
     }
 
@@ -1960,6 +2268,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     load_checkpoints(info, *model_json);
     parse_components(info, *model_json);
     info.recipe = JsonUtils::get_or_default<std::string>(*model_json, "recipe", "");
+    info.cloud_provider = JsonUtils::get_or_default<std::string>(*model_json, "cloud_provider", "");
 
     parse_image_defaults(info, *model_json);
     json jro = (model_json->contains("recipe_options") && (*model_json)["recipe_options"].is_object())
@@ -1997,11 +2306,13 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     } else if (info.recipe == "flm") {
         auto flm_models = get_flm_installed_models();
         info.downloaded = std::find(flm_models.begin(), flm_models.end(), info.checkpoint()) != flm_models.end();
+    } else if (info.recipe == "cloud") {
+        info.downloaded = true;  // Cloud-offloaded models have no local artifacts
     } else {
         info.downloaded = are_required_checkpoints_complete(info);
     }
 
-    populate_static_max_context_window(info);
+    populate_model_metadata(info);
     models_cache_[model_name] = info;
     rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
@@ -2043,7 +2354,7 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
                           << model_name << "'" << std::endl;
                 return;
             }
-            populate_static_max_context_window(it->second);
+            populate_model_metadata(it->second);
             LOG(INFO, "ModelManager") << "Updated '" << model_name
                       << "' downloaded=" << downloaded
                       << ", resolved_path=" << it->second.resolved_path() << std::endl;
@@ -2055,11 +2366,8 @@ void ModelManager::update_model_in_cache(const std::string& model_name, bool dow
         // Calculate size in GB
         uintmax_t total_size = 0;
         for (auto& [type, path] : it->second.resolved_paths) {
-            try {
-                total_size += fs::file_size(path);
-            } catch (...) {
-                // skip inaccessible entries
-            }
+            (void)type;
+            total_size += resolved_path_size_bytes(path_from_utf8(path));
         }
         double file_size_gb = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
         if (file_size_gb < 1.0)
@@ -2168,7 +2476,6 @@ static double parse_physical_memory_gb(const std::string& memory_str) {
 
     return 0.0;
 }
-
 
 
 double get_max_memory_of_device(json device, MemoryAllocBehavior mem_alloc_behavior) {
@@ -2340,6 +2647,16 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             continue;
         }
 
+        // Cloud-offloaded models bypass local backend/RAM checks (the model
+        // executes on a remote provider). Discovery is server-side and runs
+        // at every cache build, so this branch normally sees the full set
+        // of discovered cloud entries plus anything a user pinned into
+        // user_models.json.
+        if (recipe == "cloud") {
+            filtered[name] = info;
+            continue;
+        }
+
         const bool user_controlled_model = is_user_model_name(name) ||
                                            is_extra_model_name(name) ||
                                            info.source == "local_upload";
@@ -2393,6 +2710,120 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     return filtered;
 }
 
+void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
+    cloud_registry_ = registry;
+}
+
+size_t ModelManager::refresh_cloud_models(const std::string& provider) {
+    if (provider.empty() || cloud_registry_ == nullptr) {
+        return 0;
+    }
+
+    // Resolve creds outside the cache lock — resolve_key takes a shared
+    // lock on the registry's mutex internally; holding the cache lock here
+    // doesn't matter but keeping it tight is cheaper.
+    const std::string api_key = cloud_registry_->resolve_key(provider);
+    const std::string base_url = cloud_registry_->base_url_for(provider);
+    if (api_key.empty() || base_url.empty()) {
+        // Drop any stale entries for this provider but don't try to discover —
+        // there's nothing to discover with. The contract is "models present
+        // after refresh", so return 0 (not the evicted count).
+        evict_cloud_models(provider);
+        return 0;
+    }
+
+    // discover_models() is best-effort; it logs upstream failures and
+    // returns an empty list rather than throwing, so we can keep going for
+    // other providers regardless of network state. This call happens
+    // outside the cache lock because it can take up to 15 s on a slow
+    // provider and we don't want to block /models on it.
+    std::vector<ModelInfo> models;
+    try {
+        models = backends::CloudServer::discover_models(provider, api_key, base_url);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
+                                      << provider << "': " << e.what() << std::endl;
+        // Same contract: evict stale entries, report 0 present after refresh.
+        evict_cloud_models(provider);
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+
+    // Reseed: drop this provider's previously-registered entries before
+    // inserting the fresh list, so a model the provider stopped exposing
+    // disappears. Other providers' entries are untouched.
+    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+            it = models_cache_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    size_t added = 0;
+    for (const auto& m : models) {
+        if (m.recipe != "cloud" || m.model_name.empty()) continue;
+        // Match build_cache()'s precedence exactly: emplace, don't overwrite.
+        // Any pre-existing entry under the same bare cache key wins — whether
+        // it's an FLM model, another cloud provider that discovered first, or
+        // a builtin/extra/user record. This provider's previously-registered
+        // entries are already cleared above, so emplace here is symmetric
+        // with build_cache and immune to a fast /cloud/auth racing past an
+        // already-populated cache.
+        ModelInfo info = m;
+        // discover_models() populates name/checkpoint/labels/context/cost but
+        // not recipe_options; Router needs it to construct CloudServer.
+        info.recipe_options = RecipeOptions("cloud", json::object());
+        auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
+        if (!inserted) {
+            LOG(INFO, "ModelManager")
+                << "Cloud discovery for '" << provider << "' skipping '"
+                << it->first << "': name already held (recipe="
+                << it->second.recipe << ")" << std::endl;
+            continue;
+        }
+        ++added;
+    }
+
+    rebuild_public_model_aliases_locked();
+
+    LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
+                               << provider << "': " << added << " model(s)"
+                               << std::endl;
+    return added;
+}
+
+size_t ModelManager::evict_cloud_models(const std::string& provider) {
+    if (provider.empty()) return 0;
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    size_t removed = 0;
+    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+            it = models_cache_.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    if (removed > 0) {
+        rebuild_public_model_aliases_locked();
+        LOG(DEBUG, "ModelManager") << "Evicted " << removed
+                                    << " cloud model(s) for provider '"
+                                    << provider << "'" << std::endl;
+    }
+    return removed;
+}
+
+size_t ModelManager::count_cloud_models(const std::string& provider) const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return std::count_if(models_cache_.begin(), models_cache_.end(),
+                         [&](const auto& kv) {
+                             return kv.second.recipe == "cloud" &&
+                                    kv.second.cloud_provider == provider;
+                         });
+}
+
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
@@ -2438,12 +2869,32 @@ void ModelManager::register_user_model(const std::string& model_name,
         labels.insert("transcription");
         labels.insert("realtime-transcription");
     }
+    if (recipe == "moonshine") {
+        labels.insert("transcription");
+        labels.insert("realtime-transcription");
+    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
 
     if (!source.empty()) {
         model_entry["source"] = source;
+    }
+
+    // Single source of truth for HF-backed collections: the component list lives
+    // in the cached Hugging Face manifest, so the registry entry stores only the
+    // repo pointer (checkpoint). Persisting `components` here would let a stale
+    // local copy shadow a refreshed manifest. A pure inline collection has no
+    // checkpoint pointer and keeps its authored components.
+    if (is_collection_recipe(recipe)) {
+        std::string pointer = model_entry.value("checkpoint", std::string());
+        if (pointer.empty() && model_entry.contains("checkpoints") &&
+            model_entry["checkpoints"].is_object()) {
+            pointer = model_entry["checkpoints"].value("main", std::string());
+        }
+        if (!pointer.empty()) {
+            model_entry.erase("components");
+        }
     }
 
     // Keep the read/modify/write of user_models.json atomic. Concurrent pulls
@@ -2462,6 +2913,23 @@ void ModelManager::register_user_model(const std::string& model_name,
         user_models_ = std::move(updated_user_models);
         cache_valid_ = false;
     }
+}
+
+void ModelManager::unregister_user_model(const std::string& model_name) {
+    std::string clean_name = model_name;
+    if (is_user_model_name(clean_name)) {
+        clean_name = strip_user_model_prefix(clean_name);
+    }
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    json updated_user_models = load_optional_json(get_user_models_file());
+    if (!updated_user_models.is_object() || !updated_user_models.contains(clean_name)) {
+        return;
+    }
+    updated_user_models.erase(clean_name);
+    save_user_models(updated_user_models);
+    user_models_ = std::move(updated_user_models);
+    cache_valid_ = false;
 }
 
 // Find the FLM executable: install dir on Windows, system PATH on Linux.
@@ -2658,13 +3126,25 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
         : model_name;
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
+        if (it->second.downloaded) {
+            bool still_complete = are_required_checkpoints_complete(it->second);
+            if (!still_complete) {
+                it->second.downloaded = false;
+            }
+        }
         return it->second.downloaded;
     }
     return false;
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
-    // Use FLM pull for FLM models, otherwise download from HuggingFace
+    // Cloud models have no local artifacts; "downloading" is a no-op.
+    if (info.recipe == "cloud") {
+        update_model_in_cache(info.model_name, true);
+        return;
+    }
+
+    // Use recipe-specific download paths
     if (info.recipe == "flm") {
         download_from_flm(info.checkpoint(), do_not_upgrade, progress_callback);
     } else {
@@ -2693,6 +3173,293 @@ void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_
                 cache_valid_ = false;
             }
         }
+    }
+}
+
+// Build a ModelInfo from a raw model definition (server_models.json /
+// collection-manifest shape) using the same parsing as build_cache, so a
+// manifest component can be compared field-for-field against a registered model.
+static ModelInfo model_info_from_def(const json& def_in) {
+    json def = def_in;  // load_checkpoints needs a non-const json
+    ModelInfo info;
+    info.checkpoints["main"] = JsonUtils::get_or_default<std::string>(def, "checkpoint", "");
+    parse_legacy_mmproj(info, def);
+    load_checkpoints(info, def);
+    info.recipe = JsonUtils::get_or_default<std::string>(def, "recipe", "");
+    return info;
+}
+
+// Return a human-readable description of load-bearing differences between a
+// registered model and a manifest's inline definition of the same component
+// (empty string when they agree). Reuses model_info_from_def so identical
+// definitions never produce false-positive drift.
+static std::string collection_component_drift(const ModelInfo& local, const json& manifest_comp) {
+    ModelInfo m = model_info_from_def(manifest_comp);
+    std::vector<std::string> diffs;
+    if (!m.recipe.empty() && m.recipe != local.recipe) {
+        diffs.push_back("recipe (manifest='" + m.recipe + "' local='" + local.recipe + "')");
+    }
+    for (const auto& [type, ck] : m.checkpoints) {
+        if (ck.empty()) continue;
+        auto it = local.checkpoints.find(type);
+        std::string lck = (it == local.checkpoints.end()) ? "" : it->second;
+        if (ck != lck) {
+            diffs.push_back("checkpoint[" + type + "] (manifest='" + ck + "' local='" + lck + "')");
+        }
+    }
+    std::string out;
+    for (size_t i = 0; i < diffs.size(); ++i) {
+        if (i) out += "; ";
+        out += diffs[i];
+    }
+    return out;
+}
+
+// Locate a collection manifest in a cached HF snapshot: any *.json file whose
+// content is an object with recipe == "collection.omni". Note the two halves use
+// different discovery rules by design: the *initial* fetch from Hugging Face is
+// filename-keyed on <RepoName>.json (see fetch_pull_variants in hf_variants.cpp),
+// but once the snapshot is cached this reader is content-based, so the filename is
+// not load-bearing here. Returns an empty json when no manifest is cached.
+static json read_cached_collection_manifest(const fs::path& cache_dir) {
+    fs::path snap = active_hf_snapshot_path(cache_dir);
+    if (snap.empty()) return json();
+
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(snap, safe_dir_options, ec)) {
+        std::error_code file_ec;
+        if (!entry.is_regular_file(file_ec)) continue;
+        if (entry.path().extension() != ".json") continue;
+        json candidate;
+        try {
+            candidate = JsonUtils::load_from_file(path_to_utf8(entry.path()));
+        } catch (const std::exception&) {
+            continue;
+        }
+        if (candidate.is_object() &&
+            is_collection_recipe(JsonUtils::get_or_default<std::string>(candidate, "recipe", ""))) {
+            return candidate;
+        }
+    }
+    return json();
+}
+
+// Bare component name: collection files reference components by public name;
+// definitions may carry a `user.` prefix from the export transform.
+static std::string bare_component_name(const std::string& name) {
+    return is_user_model_name(name) ? strip_user_model_prefix(name) : name;
+}
+
+// A collection component's inline definition must be a usable model
+// registration before we register it: a non-empty recipe plus at least one
+// non-empty checkpoint. Fails an inline import closed instead of persisting a
+// half-defined component that only blows up later during download.
+static bool collection_component_def_is_valid(const json& def) {
+    if (!def.is_object() || !def.contains("recipe") || !def["recipe"].is_string()) {
+        return false;
+    }
+    if (def["recipe"].get<std::string>().empty()) {
+        return false;
+    }
+    if (def.contains("checkpoint") && def["checkpoint"].is_string() &&
+        !def["checkpoint"].get<std::string>().empty()) {
+        return true;
+    }
+    if (def.contains("checkpoints") && def["checkpoints"].is_object()) {
+        for (const auto& [_, value] : def["checkpoints"].items()) {
+            if (value.is_string() && !value.get<std::string>().empty()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+json ModelManager::fetch_collection_manifest(const std::string& repo_id, bool do_not_upgrade) {
+    fs::path cache_dir = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(repo_id);
+
+    // A usable manifest needs both arrays; an incomplete cached copy (e.g. a
+    // stale old-format file) must not satisfy do_not_upgrade — it should
+    // trigger a refresh instead.
+    auto manifest_complete = [](const json& m) {
+        return m.is_object() &&
+               m.contains("components") && m["components"].is_array() &&
+               !m["components"].empty() &&
+               m.contains("models") && m["models"].is_array();
+    };
+
+    json manifest = read_cached_collection_manifest(cache_dir);
+    bool have_cache = manifest_complete(manifest);
+
+    bool offline = false;
+    if (auto* cfg = RuntimeConfig::global()) {
+        offline = cfg->offline();
+    }
+
+    if (offline) {
+        if (!have_cache) {
+            throw std::runtime_error(
+                "Offline mode: collection definition for '" + repo_id +
+                "' is not cached locally.");
+        }
+    } else if (!(do_not_upgrade && have_cache)) {
+        // Download the collection repo (the manifest plus its other small files)
+        // into the HF cache. A bare repo id with no variant downloads all files.
+        ModelInfo manifest_info;
+        manifest_info.model_name = repo_id;
+        manifest_info.checkpoints["main"] = repo_id;
+        try {
+            download_from_huggingface(manifest_info, nullptr);
+            manifest = read_cached_collection_manifest(cache_dir);
+        } catch (const std::exception& e) {
+            if (!have_cache) throw;
+            LOG(WARNING, "ModelManager") << "Could not refresh collection manifest for "
+                << repo_id << " (" << e.what() << "); using cached copy" << std::endl;
+        }
+    }
+
+    if (!manifest_complete(manifest)) {
+        throw std::runtime_error(
+            "Collection manifest for '" + repo_id +
+            "' must contain a non-empty 'components' array and a 'models' array.");
+    }
+    return manifest;
+}
+
+std::vector<std::string> ModelManager::register_components(const json& component_names,
+                                                           const json& component_defs) {
+    auto def_name = [](const json& def) -> std::string {
+        if (!def.is_object()) return "";
+        for (const char* key : {"model_name", "id"}) {
+            if (def.contains(key) && def[key].is_string()) {
+                return bare_component_name(def[key].get<std::string>());
+            }
+        }
+        return "";
+    };
+
+    // Two passes so register_components is atomic: validate every unknown
+    // component's inline definition first, and only register them once the whole
+    // list is known good. A half-defined component therefore never persists a
+    // stray user.* entry that a later failure would have to roll back.
+    std::vector<std::string> components;
+    std::vector<std::pair<std::string, json>> pending_registrations;  // canonical, def
+    for (const auto& entry : component_names) {
+        if (!entry.is_string()) continue;
+        std::string name = bare_component_name(entry.get<std::string>());
+        if (name.empty()) {
+            LOG(WARNING, "ModelManager") << "Skipping collection component with an "
+                << "empty name" << std::endl;
+            continue;
+        }
+
+        // Find the inline definition matching this component, if any.
+        json def;
+        if (component_defs.is_array()) {
+            for (const auto& candidate : component_defs) {
+                if (def_name(candidate) == name) {
+                    def = candidate;
+                    break;
+                }
+            }
+        }
+
+        // Components must be regular models, not collections (backstop for the
+        // HF-manifest path, which does not go through validate_collection_request).
+        bool def_is_collection =
+            def.is_object() && is_collection_recipe(def.value("recipe", std::string()));
+        if (def_is_collection ||
+            (model_exists(name) && is_collection_recipe(get_model_info(name).recipe))) {
+            throw std::runtime_error(
+                "Collection components must be regular models, not collections: '" + name + "'");
+        }
+
+        if (model_exists(name)) {
+            // Local-wins: the shipped/registered definition is authoritative. Warn
+            // (do not overwrite) when the inline definition has drifted.
+            if (def.is_object()) {
+                ModelInfo local = get_model_info(name);
+                std::string drift = collection_component_drift(local, def);
+                if (!drift.empty()) {
+                    LOG(WARNING, "ModelManager") << "Collection component '" << name
+                        << "' differs from the local model definition; using the local "
+                        << "definition. Drift: " << drift << std::endl;
+                }
+            }
+            components.push_back(resolve_model_name(name));
+        } else if (def.is_object()) {
+            // Unknown component: register it from the inline definition so the
+            // collection file is self-contained. Persists to user_models.json.
+            std::string canonical = "user." + name;
+            // Manifest content is remote input — apply the same reserved-name
+            // check as the CLI and /pull registration paths.
+            if (is_reserved_registration_name(canonical)) {
+                LOG(WARNING, "ModelManager") << "Skipping collection component with "
+                    << "reserved name: " << name << std::endl;
+                continue;
+            }
+            // Fail closed on a half-defined component (missing recipe/checkpoint)
+            // rather than registering it and failing later mid-download. The
+            // throw aborts before any registration in the second pass runs.
+            if (!collection_component_def_is_valid(def)) {
+                throw std::runtime_error(
+                    "Collection component '" + name + "' has an incomplete inline "
+                    "definition (a recipe and at least one checkpoint are required).");
+            }
+            pending_registrations.emplace_back(canonical, def);
+            components.push_back(canonical);
+        } else {
+            LOG(WARNING, "ModelManager") << "Skipping unknown collection component with no "
+                << "inline definition: " << name << std::endl;
+        }
+    }
+
+    for (const auto& [canonical, def] : pending_registrations) {
+        LOG(INFO, "ModelManager") << "Registering collection component as user model: "
+            << canonical << std::endl;
+        register_user_model(canonical, def);
+    }
+    return components;
+}
+
+std::vector<std::string> ModelManager::resolve_collection_components_from_manifest(
+        const std::string& repo_id, bool do_not_upgrade) {
+    json manifest = fetch_collection_manifest(repo_id, do_not_upgrade);
+    return register_components(manifest["components"], manifest["models"]);
+}
+
+void ModelManager::populate_collection_components_from_cache_locked(ModelInfo& info) {
+    std::string repo_id = info.checkpoint();
+    if (repo_id.empty()) return;
+
+    fs::path cache_dir = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(repo_id);
+    json manifest = read_cached_collection_manifest(cache_dir);
+    if (!manifest.is_object() || !manifest.contains("components") ||
+        !manifest["components"].is_array()) {
+        return;
+    }
+
+    for (const auto& entry : manifest["components"]) {
+        if (!entry.is_string()) continue;
+        std::string name = bare_component_name(entry.get<std::string>());
+        // Compute the canonical cache name without registering or taking a lock
+        // (build_cache already holds models_cache_mutex_). A built-in is keyed bare;
+        // a component registered at pull time lives under user.<name>.
+        std::string canonical;
+        if (server_models_.contains(name)) {
+            canonical = name;
+        } else if (user_models_.contains(name)) {
+            canonical = "user." + name;
+        } else {
+            canonical = name;  // not yet registered → resolves as not-downloaded
+        }
+        info.components.push_back(canonical);
+    }
+
+    // Surface the collection's total download size when the slim registry entry
+    // omits it.
+    if (info.size == 0.0 && manifest.contains("size") && manifest["size"].is_number()) {
+        info.size = manifest["size"].get<double>();
     }
 }
 
@@ -2828,12 +3595,25 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     // Register collections early — the fan-out below calls get_model_info().
+    // Track that this call created the registration so component-resolution
+    // failures can roll it back instead of leaving a broken entry behind.
+    bool collection_registered_this_call = false;
     if (is_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
         register_user_model(model_name, model_data);
         model_registered = true;
+        collection_registered_this_call = true;
     }
 
-    // Collections don't have their own backend — download each component instead
+    // Collections don't have their own backend — download each component instead.
+    //
+    // Persistence follows one rule, uniform across models and collections: a
+    // registry entry stores what was *authored locally*; anything *fetched from
+    // Hugging Face* lives in HF_HUB and is rebuilt on lookup. A regular model
+    // persists its recipe/checkpoint but not its weights; an inline collection
+    // persists its components (authored); an HF-backed collection persists only
+    // its `checkpoint` pointer, with the component list rebuilt from the cached
+    // manifest (fetched). The one exception: a fetched manifest registers its
+    // components as user models so they're routable.
     if (is_collection_recipe(actual_recipe)) {
         // Cycle guard: re-entering the same collection on the current call
         // chain means the user registered a circular reference (e.g. user.A
@@ -2848,10 +3628,54 @@ void ModelManager::download_model(const std::string& model_name,
         }
 
         auto info = get_model_info(model_name);
-        if (info.components.empty()) {
-            throw std::runtime_error("Collection '" + model_name + "' has no components defined");
+        std::vector<std::string> components = info.components;
+
+        try {
+            if (model_data.contains("models") && model_data["models"].is_array() &&
+                model_data.contains("components") && model_data["components"].is_array()) {
+                // Collection file import: the body carries each component's definition
+                // inline in `models` (the exported-collection format). Register unknown
+                // components from those definitions and canonicalize the list.
+                components = register_components(model_data["components"], model_data["models"]);
+
+                // The early registration above persisted the raw component names from
+                // the file; re-register with the canonical list so cache lookups
+                // (check_component_downloaded, update_model_in_cache) match after a
+                // rebuild. register_user_model drops the bulky `models` array and,
+                // for an HF-backed collection (one with a checkpoint pointer), also
+                // drops `components` so the cached manifest stays the sole source of
+                // truth — only a pure inline collection persists its component list.
+                if (is_user_model_name(model_name) && !components.empty()) {
+                    json reg = model_data;
+                    reg["components"] = components;
+                    register_user_model(model_name, reg);
+                }
+            } else if (!repo_id.empty() && (components.empty() || !do_not_upgrade)) {
+                // HF-backed collections keep their full definition — the component list
+                // and each component's model object — on Hugging Face as an exported
+                // collection JSON. A non-empty checkpoint marks such a collection; fetch
+                // the manifest to learn its components. On an explicit pull
+                // (do_not_upgrade=false) always refresh so newly added components are
+                // picked up.
+                components = resolve_collection_components_from_manifest(repo_id, do_not_upgrade);
+            }
+
+            if (components.empty()) {
+                throw std::runtime_error("Collection '" + model_name + "' has no components defined");
+            }
+        } catch (...) {
+            // Roll back the early registration when component resolution fails,
+            // so a failed import does not persist a collection entry whose
+            // components were never resolved. Downloads below are not rolled
+            // back — a mid-download failure leaves a valid, re-pullable entry.
+            if (collection_registered_this_call) {
+                LOG(WARNING, "ModelManager") << "Component resolution failed; unregistering "
+                    << "collection: " << model_name << std::endl;
+                unregister_user_model(model_name);
+            }
+            throw;
         }
-        LOG(INFO, "ModelManager") << "Downloading " << info.components.size()
+        LOG(INFO, "ModelManager") << "Downloading " << components.size()
                                   << " component(s) for collection: " << model_name << std::endl;
 
         // Wrap the callback so recursive per-component downloads don't each
@@ -2872,7 +3696,7 @@ void ModelManager::download_model(const std::string& model_name,
             };
         }
 
-        for (const auto& component : info.components) {
+        for (const auto& component : components) {
             if (!model_exists(component)) {
                 LOG(WARNING, "ModelManager") << "Skipping unknown component: " << component << std::endl;
                 continue;
@@ -2885,6 +3709,17 @@ void ModelManager::download_model(const std::string& model_name,
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
             download_model(component, comp_data, do_not_upgrade, forward, visited);
+        }
+
+        // An HF-backed collection's in-memory components were empty until the
+        // manifest was fetched above (build_cache populated them empty at startup
+        // when no manifest was cached yet). Invalidate the cache so the next lookup
+        // rebuilds the collection entry from the now-cached manifest — populating
+        // its components and recomputing its downloaded status — instead of leaving
+        // the stale empty-components/not-downloaded state until a restart.
+        if (!repo_id.empty()) {
+            std::lock_guard<std::mutex> lock(models_cache_mutex_);
+            cache_valid_ = false;
         }
 
         // Emit a single completion event for the whole collection
@@ -3245,7 +4080,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         std::string output_path = file_download_path + "/" + filename;
 
         // Create parent directory for file (handles folders in filenames)
-        fs::create_directories(fs::path(output_path).parent_path());
+        ensure_create_directories(fs::path(output_path).parent_path());
 
         LOG(INFO, "ModelManager") << "Downloading: " << filename << "..." << std::endl;
 
@@ -3482,10 +4317,10 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
     fs::path hf_cache_path = path_from_utf8(hf_cache);
 
     // Create cache directory structure
-    fs::create_directories(hf_cache_path);
+    ensure_create_directories(hf_cache_path);
 
     fs::path model_cache_path = hf_cache_path / repo_id_to_cache_dir_name(main_repo_id);
-    fs::create_directories(model_cache_path);
+    ensure_create_directories(model_cache_path);
 
     std::map<std::string, fs::path> repo_cache_paths;
     std::map<std::string, std::string> repo_previous_refs;
@@ -3536,7 +4371,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
 
     // Create snapshot directory using commit hash
     fs::path snapshot_path = model_cache_path / "snapshots" / commit_hash;
-    fs::create_directories(snapshot_path);
+    ensure_create_directories(snapshot_path);
 
     // refs/main is advanced only after the selected files are successfully
     // downloaded, or an unchanged previous snapshot is selected. This keeps Lemonade on the previous active
@@ -3562,6 +4397,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         bool is_direct_file = ends_with(main_variant, ".safetensors") ||
                               ends_with(main_variant, ".pth") ||
                               ends_with(main_variant, ".ckpt");
+        bool is_moonshine = info.recipe == "moonshine";
 
         if (is_direct_file) {
             // For non-GGUF model files, download the specified file directly
@@ -3571,6 +4407,23 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
             } else {
                 throw std::runtime_error("Model file not found in repository: " + main_variant);
             }
+        } else if (is_moonshine) {
+            // Moonshine variant is a directory path (e.g., "medium-streaming-en/quantized")
+            // Download all files under that directory
+            std::string folder_prefix = main_variant;
+            if (!folder_prefix.empty() && folder_prefix.back() != '/') {
+                folder_prefix += "/";
+            }
+            for (const auto& file : repo_files) {
+                if (starts_with_ignore_case(file, folder_prefix)) {
+                    files_to_download[main_repo_id].push_back(file);
+                }
+            }
+            if (files_to_download[main_repo_id].empty()) {
+                throw std::runtime_error("No Moonshine model files found in folder: " + main_variant);
+            }
+            LOG(INFO, "ModelManager") << "Moonshine: downloading " << files_to_download[main_repo_id].size()
+                                      << " files from " << main_variant << std::endl;
         } else {
             // GGUF model: Use identify_gguf_models to determine which files to download
             GGUFFiles gguf_files = identify_gguf_models(main_repo_id, main_variant, repo_files);
@@ -3661,7 +4514,7 @@ void ModelManager::download_from_huggingface(const ModelInfo& info,
         repo_cache_paths[repo_id] = other_cache_path;
         repo_previous_refs[repo_id] = read_hf_ref_main(other_cache_path);
         fs::path other_snapshot = other_cache_path / "snapshots" / other_hash;
-        fs::create_directories(other_snapshot);
+        ensure_create_directories(other_snapshot);
 
         // refs/main for auxiliary repos is advanced only after successful
         // download, matching the main repo behavior.
@@ -4172,17 +5025,18 @@ void ModelManager::delete_model(const std::string& model_name) {
             LOG(INFO, "ModelManager") << "Warning: Model cache directory not found (may already be deleted)" << std::endl;
         }
     } else {
-        // Shared repo — only delete this model's specific variant file
+        // Shared repo — only delete this model's specific resolved variant path
         LOG(INFO, "ModelManager") << "Main repo " << main_repo
-                    << " is shared with other models, deleting variant file only" << std::endl;
+                    << " is shared with other models, deleting variant path only" << std::endl;
         std::string rpath = info.resolved_path("main");
         if (!rpath.empty()) {
-            fs::path file_path = path_from_utf8(rpath);
-            if (fs::exists(file_path)) {
-                cleanup_orphaned_blob(file_path, model_cache_path_fs);
-                LOG(INFO, "ModelManager") << "Removing variant file: " << rpath << std::endl;
-                fs::remove(file_path);
-                cleanup_empty_parents(file_path, model_cache_path_fs);
+            fs::path variant_path = path_from_utf8(rpath);
+            if (safe_exists(variant_path)) {
+                // Delete the whole resolved path, not just regular files
+                // and clean any HF symlink blobs before removing the snapshot entries.
+                cleanup_orphaned_blobs_under(variant_path, model_cache_path_fs);
+                remove_resolved_path_or_throw(variant_path, "variant path");
+                cleanup_empty_parents(variant_path, model_cache_path_fs);
             }
         }
         LOG(INFO, "ModelManager") << "✓ Deleted variant for: " << canonical_model_name << std::endl;
@@ -4373,20 +5227,92 @@ bool ModelManager::model_exists(const std::string& model_name) {
 
 std::optional<std::string> ModelManager::validate_collection_request(
     const std::string& model_name, const json& model_data) {
-    if (!model_data.contains("components") ||
-        !model_data["components"].is_array() ||
-        model_data["components"].empty()) {
+    // An HF-backed collection is registered as a pointer: recipe + a checkpoint
+    // that names the HF repo, with no inline components. /pull downloads the
+    // repo's manifest to disk and resolves the components from it, so there is
+    // nothing to validate here — accept the pointer body.
+    std::string checkpoint_pointer = model_data.value("checkpoint", std::string());
+    if (checkpoint_pointer.empty() && model_data.contains("checkpoints") &&
+        model_data["checkpoints"].is_object()) {
+        checkpoint_pointer = model_data["checkpoints"].value("main", std::string());
+    }
+    const bool has_components =
+        model_data.contains("components") && model_data["components"].is_array() &&
+        !model_data["components"].empty();
+    if (!has_components) {
+        if (!checkpoint_pointer.empty()) {
+            return std::nullopt;  // pointer-only HF-backed collection
+        }
         return std::string("recipe='collection.omni' requires a non-empty 'components' array");
     }
+    // An inline collection import carries its component definitions in a `models`
+    // array. Every component must be *resolvable*: either it is already
+    // registered locally (local-wins) or it has a matching definition in
+    // `models`. Validate this per-component and fail closed. `models` being
+    // present is not a blanket license — a component it omits would otherwise
+    // pass here and then be silently skipped during registration, persisting a
+    // collection smaller than the imported file describes. Mirror the
+    // name-matching that register_components() uses (bare names; `model_name`
+    // or `id` keys) so this gate rejects exactly what registration would drop.
+    const bool has_models_array =
+        model_data.contains("models") && model_data["models"].is_array();
+    auto inline_def_name = [](const json& def) -> std::string {
+        if (!def.is_object()) return "";
+        for (const char* key : {"model_name", "id"}) {
+            if (def.contains(key) && def[key].is_string()) {
+                return bare_component_name(def[key].get<std::string>());
+            }
+        }
+        return "";
+    };
+    auto find_inline_def = [&](const std::string& bare) -> const json* {
+        if (!has_models_array) return nullptr;
+        for (const auto& candidate : model_data["models"]) {
+            if (inline_def_name(candidate) == bare) return &candidate;
+        }
+        return nullptr;
+    };
+    const std::string bare_collection = bare_component_name(model_name);
     for (const auto& component : model_data["components"]) {
         if (!component.is_string()) {
             return std::string("components entries must be strings");
         }
         std::string component_name = component.get<std::string>();
-        if (component_name == model_name) {
+        std::string bare = bare_component_name(component_name);
+        // Self-reference: compare bare forms so a collection `user.MyCol` with
+        // `components: ["MyCol"]` is rejected too, not only the exact-string case.
+        if (bare == bare_collection) {
             return "Collection cannot reference itself: " + component_name;
         }
-        if (!model_exists(component_name)) {
+        // Components must be regular models, not collections.
+        const json* def = find_inline_def(bare);
+        bool is_collection_component =
+            (def != nullptr && def->is_object() &&
+             is_collection_recipe(def->value("recipe", std::string()))) ||
+            (model_exists(bare) && is_collection_recipe(get_model_info(bare).recipe));
+        if (is_collection_component) {
+            return "Collection components must be regular models, not collections: '" +
+                   component_name + "'";
+        }
+        if (has_models_array) {
+            if (!model_exists(bare) && def == nullptr) {
+                return "Inline collection component '" + component_name +
+                       "' has no matching definition in 'models' and is not a "
+                       "registered model. Every component must be defined inline "
+                       "(matching 'model_name') or reference an already-registered "
+                       "model.";
+            }
+            // A component that resolves to its inline definition (rather than an
+            // already-registered model) must be a usable registration. Reject a
+            // half-defined component here instead of registering it and failing
+            // later mid-download.
+            if (!model_exists(bare) && def != nullptr &&
+                !collection_component_def_is_valid(*def)) {
+                return "Inline collection component '" + component_name +
+                       "' has an incomplete definition in 'models' (a recipe and "
+                       "at least one checkpoint are required).";
+            }
+        } else if (!model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
         }
@@ -4517,6 +5443,11 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         if ((*model_json)["size"].is_number()) {
             info.size = (*model_json)["size"].get<double>();
         }
+    }
+
+    // Parse moonshine_arch
+    if (model_json->contains("moonshine_arch") && (*model_json)["moonshine_arch"].is_number_integer()) {
+        info.moonshine_arch = (*model_json)["moonshine_arch"].get<int>();
     }
 
     return info;

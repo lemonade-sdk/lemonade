@@ -1,12 +1,12 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "llamacpp": {
-    "vulkan": "b9585",
-    "rocm-stable": "b9586",
+    "vulkan": "b9632",
+    "rocm-stable": "b9631",
     "rocm-nightly": "b1292",
-    "cuda": "b9586",
-    "metal": "b9585",
-    "cpu": "b9585"
+    "cuda": "b9631",
+    "metal": "b9632",
+    "cpu": "b9632"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -19,7 +19,7 @@
     "cpu": "master-672-1f9ee88",
     "rocm-stable": "master-672-1f9ee88",
     "vulkan": "master-672-1f9ee88",
-    "cuda": "master-672-b638fe9",
+    "cuda": "master-685-db48014",
     "metal": "master-672-1f9ee88"
   },
   "therock": {
@@ -31,6 +31,7 @@
       "gfx1100",
       "gfx1101",
       "gfx1102",
+      "gfx1103",
       "gfx1150",
       "gfx1151",
       "gfx1152",
@@ -45,15 +46,22 @@
       "gfx1033",
       "gfx1034",
       "gfx1035",
-      "gfx1036"
+      "gfx1036",
+      "gfx103X",
+      "gfx110X",
+      "gfx120X"
     ],
     "url_mapping": {
       "gfx908": "gfx90X-dcgpu",
       "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
+      "gfx103X": "gfx103X-all",
+      "gfx110X": "gfx110X-all",
+      "gfx120X": "gfx120X-all",
       "gfx1100": "gfx110X-all",
       "gfx1101": "gfx110X-all",
       "gfx1102": "gfx110X-all",
+      "gfx1103": "gfx110X-all",
       "gfx1150": "gfx1150",
       "gfx1151": "gfx1151",
       "gfx1152": "gfx1152",
@@ -83,6 +91,9 @@
   },
   "vllm": {
     "rocm": "vllm0.20.1-rocm7.12.0"
+  },
+  "moonshine": {
+    "cpu": "moonshine0.0.62"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

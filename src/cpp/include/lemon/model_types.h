@@ -12,6 +12,29 @@ inline bool is_collection_recipe(const std::string& recipe) {
     return recipe == COLLECTION_OMNI_MODEL_RECIPE;
 }
 
+enum class ModelState {
+    LOADING,
+    READY,
+    IN_USE,
+    DOWNSIZING,
+    DOWNSIZED,
+    EVICTING,
+    UNLOADED
+};
+
+inline std::string model_state_to_string(ModelState state) {
+    switch (state) {
+        case ModelState::LOADING: return "loading";
+        case ModelState::READY: return "ready";
+        case ModelState::IN_USE: return "in_use";
+        case ModelState::DOWNSIZING: return "downsizing";
+        case ModelState::DOWNSIZED: return "downsized";
+        case ModelState::EVICTING: return "evicting";
+        case ModelState::UNLOADED: return "unloaded";
+        default: return "unknown";
+    }
+}
+
 enum class ModelType {
     LLM,
     EMBEDDING,
@@ -127,12 +150,16 @@ inline DeviceType get_device_type_from_recipe(const std::string& recipe) {
         return DEVICE_NPU;
     } else if (recipe == "whispercpp") {
         return DEVICE_CPU;
+    } else if (recipe == "moonshine") {
+        return DEVICE_CPU;
     } else if (recipe == "sd-cpp") {
         return DEVICE_CPU;
     } else if (recipe == "kokoro") {
         return DEVICE_CPU;
     } else if (is_collection_recipe(recipe)) {
         return DEVICE_NONE;
+    } else if (recipe == "cloud") {
+        return DEVICE_NONE;  // Cloud-offloaded models execute on a remote provider
     }
     return DEVICE_NONE;
 }

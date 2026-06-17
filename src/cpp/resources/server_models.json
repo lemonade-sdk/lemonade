@@ -1313,6 +1313,40 @@
         ],
         "size": 1.62
     },
+    "Moonshine-Tiny-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/tiny",
+        "recipe": "moonshine",
+        "moonshine_arch": 2,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription"
+        ],
+        "size": 0.202
+    },
+    "Moonshine-Small-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/small",
+        "recipe": "moonshine",
+        "moonshine_arch": 4,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription"
+        ],
+        "size": 0.431
+    },
+    "Moonshine-Medium-Streaming": {
+        "checkpoint": "UsefulSensors/moonshine-streaming:onnx/medium",
+        "recipe": "moonshine",
+        "moonshine_arch": 5,
+        "suggested": true,
+        "labels": [
+            "transcription",
+            "realtime-transcription",
+            "hot"
+        ],
+        "size": 1.08
+    },
     "SD-Turbo": {
         "checkpoint": "stabilityai/sd-turbo:sd_turbo.safetensors",
         "recipe": "sd-cpp",
@@ -1495,26 +1529,16 @@
         }
     },
     "LMX-Omni-52B-Halo": {
-        "checkpoint": "",
+        "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
         "recipe": "collection.omni",
         "suggested": true,
-        "components": [
-            "Qwen3.6-35B-A3B-MTP-GGUF",
-            "Flux-2-Klein-9B-GGUF",
-            "Whisper-Large-v3-Turbo",
-            "kokoro-v1"
-        ]
+        "size": 44.77
     },
     "LMX-Omni-5.5B-Lite": {
-        "checkpoint": "",
+        "checkpoint": "lemonade-sdk/LMX-Omni-5.5B-Lite",
         "recipe": "collection.omni",
         "suggested": true,
-        "components": [
-            "Qwen3.5-4B-MTP-GGUF",
-            "SD-Turbo",
-            "Whisper-Tiny",
-            "kokoro-v1"
-        ]
+        "size": 9.30
     },
     "Ultra Collection": {
         "checkpoint": "",
@@ -1567,7 +1591,7 @@
         ],
         "size": 0.017
     },
-    "Qwen3.5-0.8B-vLLM": {
+    "Qwen3.5-0.8B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",
         "suggested": true,
@@ -1576,31 +1600,34 @@
         ],
         "size": 1.77
     },
-    "Qwen3.5-2B-vLLM": {
+    "Qwen3.5-2B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-2B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 4.57
     },
-    "Qwen3.5-4B-vLLM": {
+    "Qwen3.5-4B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-4B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
             "reasoning",
-            "hot"
+            "hot",
+            "tool-calling"
         ],
         "size": 9.34
     },
-    "Qwen3.5-9B-vLLM": {
+    "Qwen3.5-9B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-9B",
         "recipe": "vllm",
         "suggested": true,
         "labels": [
-            "reasoning"
+            "reasoning",
+            "tool-calling"
         ],
         "size": 19.3
     }

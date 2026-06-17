@@ -8,12 +8,14 @@
 #include "lemon/backends/ryzenaiserver.h"
 #include "lemon/backends/vllm_server.h"
 #include "lemon/backends/fastflowlm_server.h"
+#include "lemon/backends/moonshine_server.h"
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/archive_platform.h"
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -44,6 +46,7 @@ namespace lemon::backends {
         if (recipe == "ryzenai-llm") return &::lemon::RyzenAIServer::SPEC;
         if (recipe == "vllm") return &VLLMServer::SPEC;
         if (recipe == "flm") return &FastFlowLMServer::SPEC;
+        if (recipe == "moonshine") return &MoonshineServer::SPEC;
         return nullptr;
     }
 
@@ -117,82 +120,14 @@ namespace lemon::backends {
         return "";
     }
 
-#ifdef _WIN32
-    // Resolve the full path to Windows' built-in bsdtar (System32\tar.exe).
-    // This avoids picking up GNU tar from Git, which can't handle zip files
-    // and misinterprets drive letter colons as remote host specifiers.
-    // Returns "tar" as fallback if SystemRoot isn't set.
-    static std::string get_native_tar_path() {
-        const char* system_root = std::getenv("SystemRoot");
-        if (system_root) {
-            return std::string(system_root) + "\\System32\\tar.exe";
-        }
-        return "tar";
-    }
-
-    static bool is_native_tar_available() {
-        std::string tar_path = get_native_tar_path();
-        std::string command = tar_path + " --version >nul 2>&1";
-        std::string unused;
-        return lemon::utils::ProcessManager::run_command(command, unused) == 0;
-    }
-#endif
-
     bool BackendUtils::extract_zip(const std::string& zip_path, const std::string& dest_dir, const std::string& backend_name) {
-        std::string command;
-        fs::create_directories(dest_dir);
-#ifdef _WIN32
-        if (is_native_tar_available()) {
-            LOG(DEBUG, backend_name) << "Extracting ZIP with native tar to " << dest_dir << std::endl;
-            command = get_native_tar_path() + " -xf \"" + zip_path + "\" -C \"" + dest_dir + "\"";
-        } else {
-            LOG(DEBUG, backend_name) << "Extracting ZIP via PowerShell to " << dest_dir << std::endl;
-            std::string powershell_path = "powershell";
-            const char* system_root = std::getenv("SystemRoot");
-            if (system_root) {
-                powershell_path = std::string(system_root) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-            }
-            command = powershell_path + " -Command \"Expand-Archive -Path '" + zip_path +
-                    "' -DestinationPath '" + dest_dir + "' -Force\"";
-        }
-#elif defined(__APPLE__) || defined(__linux__)
-        LOG(DEBUG, backend_name) << "Extracting zip to " << dest_dir << std::endl;
-        command = "unzip -o -q \"" + zip_path + "\" -d \"" + dest_dir + "\"";
-#endif
-        int result = system(command.c_str());
-        if (result != 0) {
-            #ifdef _WIN32
-                LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
-            #else
-                LOG(ERROR, backend_name) << "Extraction failed. Ensure 'unzip' is installed. Code: " << result << std::endl;
-            #endif
-            return false;
-        }
-        return true;
+        auto archive_platform = utils::create_archive_platform();
+        return archive_platform->extract_zip(zip_path, dest_dir, backend_name);
     }
 
     bool BackendUtils::extract_tarball(const std::string& tarball_path, const std::string& dest_dir, const std::string& backend_name) {
-        std::string command;
-        fs::create_directories(dest_dir);
-        LOG(DEBUG, backend_name) << "Extracting tarball to " << dest_dir << std::endl;
-        // Use the auto-detect form `-xf` (instead of `-xzf`) so we transparently
-        // handle .tar.gz, .tar.xz, .tar.bz2, etc. — the lemonade-sdk/llama.cpp
-        // Linux release ships .tar.xz.
-#ifdef _WIN32
-        if (!is_native_tar_available()) {
-            LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 10 (17063+) required." << std::endl;
-            return false;
-        }
-        command = get_native_tar_path() + " -xf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
-#else
-        command = "tar -xf \"" + tarball_path + "\" -C \"" + dest_dir + "\" --strip-components=1 --no-same-owner";
-#endif
-        int result = system(command.c_str());
-        if (result != 0) {
-            LOG(ERROR, backend_name) << "Extraction failed with code: " << result << std::endl;
-            return false;
-        }
-        return true;
+        auto archive_platform = utils::create_archive_platform();
+        return archive_platform->extract_tarball(tarball_path, dest_dir, backend_name);
     }
 
     static bool ends_with(const std::string& s, const std::string& suffix) {
@@ -221,15 +156,18 @@ namespace lemon::backends {
         fs::create_directories(dest_dir);
         LOG(DEBUG, backend_name) << "Extracting 7z to " << dest_dir << std::endl;
 #ifdef _WIN32
+        auto platform = lemon::utils::create_archive_platform();
+
         // Windows System32\tar.exe is bsdtar (libarchive) on Windows 11 22H2+,
         // which can read .7z. Probe with `--list` first to confirm .7z support;
         // older tar.exe (from Windows 10) will exit non-zero for .7z archives.
-        if (!is_native_tar_available()) {
+        if (!platform->is_native_tar_available()) {
             LOG(ERROR, backend_name) << "Error: 'tar' command not found. Windows 11 22H2+ required for .7z support." << std::endl;
             return false;
         }
         {
-            std::string probe_cmd = get_native_tar_path() + " --list -f \"" + archive_path + "\" >nul 2>&1";
+            std::string tar_path = platform->get_native_tar_path();
+            std::string probe_cmd = tar_path + " --list -f \"" + archive_path + "\" >nul 2>&1";
             std::string unused;
             if (lemon::utils::ProcessManager::run_command(probe_cmd, unused, 10) != 0) {
                 LOG(ERROR, backend_name) << "Error: tar.exe cannot read this .7z archive. Windows 11 22H2+ (bsdtar/libarchive) required." << std::endl;
@@ -239,7 +177,7 @@ namespace lemon::backends {
         // Note: do NOT use --strip-components=1 here. The CUDA .7z archives from
         // lemonade-sdk/llama.cpp have no top-level directory — files sit at the
         // archive root. Stripping would discard every entry and produce an empty dir.
-        command = get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
+        command = platform->get_native_tar_path() + " -xf \"" + archive_path + "\" -C \"" + dest_dir + "\"";
 #else
         LOG(ERROR, backend_name) << "Error: .7z backend archives are only expected on Windows. Linux CUDA assets should be .tar.xz." << std::endl;
         return false;

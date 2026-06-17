@@ -1,8 +1,11 @@
 #include "lemon/server.h"
+#include <optional>
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
+#include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/cloud_server.h"
 #include "lemon/backends/sd_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
@@ -92,6 +95,26 @@ bool strip_handled_thinking_fields(json& request_json) {
     return modified;
 }
 
+// Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
+// Returns true if the model name was modified
+bool normalize_client_model_name(json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return false;
+    }
+
+    std::string model_name = request_json["model"].get<std::string>();
+    const std::string latest_suffix = ":latest";
+
+    if (model_name.size() > latest_suffix.size() &&
+        model_name.substr(model_name.size() - latest_suffix.size()) == latest_suffix) {
+        std::string normalized = model_name.substr(0, model_name.size() - latest_suffix.size());
+        request_json["model"] = normalized;
+        return true;
+    }
+
+    return false;
+}
+
 bool prepend_no_think_to_last_user_message(json& request_json) {
     if (!request_json.contains("messages") || !request_json["messages"].is_array()) {
         LOG(DEBUG, "Server") << "No messages array found for /no_think injection" << std::endl;
@@ -154,6 +177,16 @@ void set_error_response(const json& response, httplib::Response& res,
     res.set_content(response.dump(), "application/json");
 }
 
+int get_http_status_from_error(const std::string& error_code) {
+    if (error_code == "slots_pinned_error") {
+        return 409;
+    } else if (error_code == "model_load_error") {
+        return 500;
+    } else {
+        return 404;
+    }
+}
+
 bool is_quiet_polling_path(const std::string& path) {
     return path == "/api/v0/downloads" || path == "/api/v1/downloads" ||
            path == "/v0/downloads" || path == "/v1/downloads" ||
@@ -178,12 +211,25 @@ static const json MIME_TYPES = {
 Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
     : config_(config),
       cache_dir_(cache_dir),
-      port_(config->port()), running_(false), udp_beacon_() {
+      port_(config->port()), running_(false), udp_beacon_(),
+      metrics_platform_(create_metrics_platform()) {
 
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
+    cloud_registry_ = std::make_unique<CloudProviderRegistry>();
+    // Seed installed providers from config.json. Runtime keys stay empty
+    // until either an env var resolves them per-request or a client POSTs
+    // /v1/cloud/auth — by design we never persist secrets to disk.
+    {
+        json snap = config_->snapshot();
+        if (snap.contains("cloud_providers")) {
+            cloud_registry_->load_from_config(snap["cloud_providers"]);
+        }
+    }
+
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
+    model_manager_->set_cloud_registry(cloud_registry_.get());
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -191,6 +237,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
+    router_->set_cloud_registry(cloud_registry_.get());
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
 
@@ -234,9 +281,29 @@ void Server::start_model_cache_warmup() {
     });
 }
 
+// Extract the member-function pointer for httplib::Server's private virtual
+// process_and_close_socket (see upgradable_http_server.h). Explicit
+// instantiation is the one context where C++ permits naming a private member.
+template struct lemon::detail::PrivateMemberInit<
+    lemon::detail::ProcessAndCloseSocketTag,
+    &httplib::Server::process_and_close_socket>;
+
 void Server::setup_http_servers() {
-    http_server_ = std::make_unique<httplib::Server>();
-    http_server_v6_ = std::make_unique<httplib::Server>();
+    http_server_ = std::make_unique<RoutedHttpServer>();
+    http_server_v6_ = std::make_unique<RoutedHttpServer>();
+
+    // Front listeners for the main port: WebSocket upgrades for /realtime and
+    // /logs/stream are adopted by the libwebsockets server; everything else is
+    // processed by the routed servers above. The dedicated websocket_port
+    // listener keeps running unchanged.
+    auto upgrade_handler = [this](socket_t sock) -> bool {
+        if (websocket_server_ && websocket_server_->is_running()) {
+            return websocket_server_->adopt_socket(static_cast<intptr_t>(sock));
+        }
+        return false;
+    };
+    http_front_ = std::make_unique<UpgradableFrontServer>(http_server_.get(), upgrade_handler);
+    http_front_v6_ = std::make_unique<UpgradableFrontServer>(http_server_v6_.get(), upgrade_handler);
 
     // CRITICAL: Enable multi-threading so the server can handle concurrent requests
     // Without this, the server is single-threaded and blocks on long operations
@@ -246,11 +313,32 @@ void Server::setup_http_servers() {
         return new httplib::ThreadPool(8);
     };
 
+    // The fronts own the accept loops (and therefore the task queues)
+    http_front_->new_task_queue = task_queue_factory;
+    http_front_v6_->new_task_queue = task_queue_factory;
     http_server_->new_task_queue = task_queue_factory;
     http_server_v6_->new_task_queue = task_queue_factory;
 
     setup_routes(*http_server_);
     setup_routes(*http_server_v6_);
+}
+
+void Server::stop_http_listeners() {
+    // The routed servers never own the listen socket: clear the injected fd so
+    // their per-connection keep-alive loops exit, then close it once via the
+    // fronts (which are the servers actually listening).
+    if (http_server_) {
+        http_server_->set_listen_socket(INVALID_SOCKET);
+    }
+    if (http_server_v6_) {
+        http_server_v6_->set_listen_socket(INVALID_SOCKET);
+    }
+    if (http_front_) {
+        http_front_->stop();
+    }
+    if (http_front_v6_) {
+        http_front_v6_->stop();
+    }
 }
 
 Server::~Server() {
@@ -269,10 +357,14 @@ void Server::log_request(const httplib::Request& req) {
 }
 
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
-    // Check if path requires authentication (API routes and internal endpoints)
+    // Check if path requires authentication (API routes and internal endpoints).
+    // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
+    // gateway (Critical Invariant #10). It is the only API route outside the
+    // /api/, /v0/, /v1/ prefixes — see register_routes() in McpServer for why.
     bool is_api_route = (req.path.rfind("/api/", 0) == 0) ||
                         (req.path.rfind("/v0/", 0) == 0) ||
-                        (req.path.rfind("/v1/", 0) == 0);
+                        (req.path.rfind("/v1/", 0) == 0) ||
+                        (req.path == "/mcp");
     bool is_internal_route = (req.path.rfind("/internal/", 0) == 0);
     bool is_metrics_route = (req.path == "/metrics");
 
@@ -288,7 +380,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     // - If api_key_ is empty, the regular endpoints require no authentication.
     // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
-    std::string auth_token = httplib::get_bearer_token_auth(req);
+    // Safely extract bearer token, guarding against malformed Authorization headers
+    std::string auth_token;
+    try {
+        if (req.has_header("Authorization")) {
+            auto auth_value = req.get_header_value("Authorization");
+            // httplib::get_bearer_token_auth does substr(7) for "Bearer ", so check length
+            if (auth_value.size() >= 7) {
+                auth_token = httplib::get_bearer_token_auth(req);
+            }
+            // Silently ignore malformed/short Authorization headers
+        }
+    } catch (const std::exception& e) {
+        LOG(DEBUG, "Server") << "Failed to parse Authorization header: " << e.what() << std::endl;
+    }
 
     if (is_internal_route) {
         // Internal routes require admin key authentication
@@ -532,6 +637,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_shutdown(req, res);
     });
 
+    web_server.Post("/internal/pin", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_pin(req, res);
+    });
+
     // Unified config endpoints (not part of public API)
     web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_set(req, res);
@@ -541,6 +650,32 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Post("/internal/cleanup-cache", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cleanup_cache(req, res);
+    });
+    web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_simulate_vram_pressure(req, res);
+    });
+
+    // Cloud auth: register quad-prefix POST and a parameterized DELETE.
+    //   POST /v1/cloud/auth        body: {provider, api_key}
+    //   DELETE /v1/cloud/auth/{p}
+    // The runtime key lives in process memory only; env var
+    // LEMONADE_<PROVIDER>_API_KEY takes precedence (POST returns 409 if it
+    // is set). Both endpoints respect LEMONADE_ADMIN_API_KEY when configured
+    // via the standard authentication path applied to /v1/.
+    register_post("cloud/auth", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_set(req, res);
+    });
+    web_server.Delete(R"(/api/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/api/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/v0/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
+    });
+    web_server.Delete(R"(/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_cloud_auth_clear(req, res);
     });
 
     // Test endpoint to verify POST works
@@ -552,6 +687,15 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Register Ollama-compatible API routes
     auto ollama_api = std::make_shared<OllamaApi>(router_.get(), model_manager_.get());
     ollama_api->register_routes(web_server);
+
+    // Register MCP gateway (POST /mcp). NOTE: /mcp is an INTENTIONAL EXCEPTION
+    // to the quad-prefix invariant (AGENTS.md #1) — the MCP spec mandates a
+    // single endpoint URL.
+    auto mcp_server = std::make_shared<McpServer>(
+        router_.get(),
+        model_manager_.get(),
+        [this](const std::string& m) { auto_load_model_if_needed(m); });
+    mcp_server->register_routes(web_server);
 
     // Setup static file serving for web UI
     setup_static_files(web_server);
@@ -1107,15 +1251,18 @@ void Server::run() {
             setup_http_logger(*http_server_);
             http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
                 LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
-                int result = http_server_->bind_to_port(ipv4, port_);
+                int result = http_front_->bind_to_port(ipv4, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                // The routed server's keep-alive loop runs only while it sees
+                // a valid listen socket
+                http_server_->set_listen_socket(http_front_->listen_socket());
                 LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
                 listener_started = true;
-                if (!http_server_->listen_after_bind()) {
+                if (!http_front_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
@@ -1126,15 +1273,16 @@ void Server::run() {
             setup_http_logger(*http_server_v6_);
             http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
                 LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
-                int result = http_server_v6_->bind_to_port(ipv6, port_);
+                int result = http_front_v6_->bind_to_port(ipv6, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
                     listener_start_failed = true;
                     return;
                 }
+                http_server_v6_->set_listen_socket(http_front_v6_->listen_socket());
                 LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
                 listener_started = true;
-                if (!http_server_v6_->listen_after_bind()) {
+                if (!http_front_v6_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
                     listener_start_failed = true;
                 }
@@ -1249,8 +1397,7 @@ void Server::stop() {
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();
-        http_server_v6_->stop();
-        http_server_->stop();
+        stop_http_listeners();
         running_ = false;
         shutdown_requested_ = false;  // Reset for potential future use
 
@@ -1362,7 +1509,18 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
         return error_response;
     }
 
-    // Case 3: Model exists and is available, but failed to load (engine error)
+    // Case 3: Model exists and is available, but failed to load (engine error or pinned slots constraint)
+    if (exception_msg.find("are pinned") != std::string::npos) {
+        error_response["error"] = {
+            {"message", exception_msg},
+            {"type", "slots_pinned_error"},
+            {"param", "model"},
+            {"code", "slots_pinned_error"},
+            {"requested_model", requested_model}
+        };
+        return error_response;
+    }
+
     // Return the actual exception message so the user knows what went wrong
     std::string message = "Failed to load model '" + requested_model + "': " + exception_msg;
 
@@ -1485,6 +1643,9 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
+    // Add pinned model counts
+    response["pinned_models"] = router_->get_pinned_model_counts();
+
     // Add WebSocket server port for realtime API and log streaming
     if (websocket_server_ && websocket_server_->is_running()) {
         response["websocket_port"] = websocket_server_->get_port();
@@ -1537,7 +1698,14 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
     res.set_content(response.dump(), "application/json");
 }
 
-nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info) {
+// Maximum collection-component nesting depth embedded in "models" arrays.
+// Collection components are normally leaf models, but nothing prevents
+// registering a collection as a component of another collection — including
+// cyclically — so the embedding recursion must be bounded.
+static constexpr int kMaxCollectionEmbedDepth = 3;
+
+nlohmann::json Server::model_info_to_json(const std::string& model_id, const ModelInfo& info,
+                                          int depth) {
     std::vector<std::string> public_components;
     public_components.reserve(info.components.size());
     for (const auto& component : info.components) {
@@ -1558,6 +1726,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"recipe_options", info.recipe_options.to_json()},
     };
 
+    // Surface the cloud provider on cloud entries so the Model Manager can
+    // bucket each provider into its own sub-heading. Omitted on local models
+    // so the field doesn't pollute every entry — and skipped for the Ollama
+    // serialization path (handle_ollama_show / tags) which builds its own
+    // payload.
+    if (!info.cloud_provider.empty()) {
+        model_json["cloud_provider"] = info.cloud_provider;
+    }
+
     // Add size if available
     if (info.size > 0.0) {
         model_json["size"] = info.size;
@@ -1565,6 +1742,15 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     if (info.max_context_window > 0) {
         model_json["max_context_window"] = info.max_context_window;
+    }
+
+    // Per-million-token pricing in USD, when the provider reported it (cloud
+    // models from OpenRouter/Together). Display only.
+    if (info.cost_input_per_million >= 0) {
+        model_json["cost_input_per_million"] = info.cost_input_per_million;
+    }
+    if (info.cost_output_per_million >= 0) {
+        model_json["cost_output_per_million"] = info.cost_output_per_million;
     }
 
     // Add image_defaults if present (for sd-cpp models)
@@ -1580,6 +1766,23 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         if (info.image_defaults.flow_shift > 0.0f)
             img_def["flow_shift"] = info.image_defaults.flow_shift;
         model_json["image_defaults"] = img_def;
+    }
+
+    // Collections (Omni) additionally embed each component's full model object,
+    // in component order, under "models". Embedding is bounded by
+    // kMaxCollectionEmbedDepth so nested (or cyclic) collection registrations
+    // cannot recurse unboundedly.
+    if (is_collection_recipe(info.recipe) && depth < kMaxCollectionEmbedDepth) {
+        nlohmann::json component_models = nlohmann::json::array();
+        for (const auto& component : info.components) {
+            if (!model_manager_->model_exists(component)) {
+                continue;
+            }
+            auto comp_info = model_manager_->get_model_info(component);
+            component_models.push_back(model_info_to_json(
+                model_manager_->get_public_model_name(component), comp_info, depth + 1));
+        }
+        model_json["models"] = component_models;
     }
 
     return model_json;
@@ -1614,7 +1817,7 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
                              << "': " << e.what() << std::endl;
         auto error_response = create_model_error(collection_info.model_name, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.status = get_http_status_from_error(error_code);
         res.set_content(error_response.dump(), "application/json");
         return;
     }
@@ -1663,6 +1866,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Normalize client-provided model names (e.g., strip ":latest" suffix)
+        // Must be done before any model_manager/router lookups and before forwarding
+        normalize_client_model_name(request_json);
+
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
             LOG(DEBUG, "Server") << "Tools present in request: " << request_json["tools"].size() << " tool(s)" << std::endl;
@@ -1670,6 +1877,8 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         } else {
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
+
+        bool request_modified = false;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
         // plain completion. Branch before auto-load/LLM-type checks: the collection
@@ -1700,11 +1909,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
-                    res.status = 500;  // Internal server error - model exists but failed to load
-                } else {
-                    res.status = 404;  // Not found - model doesn't exist or is filtered out
-                }
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1728,21 +1933,21 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
         // Use original request body - each backend (FLM, llamacpp, etc.) handles
-        // model name transformation internally via their forward methods
+        // model name transformation internally via their forward methods.
+        // Note: request_json was already normalized at the top of this function
         std::string request_body = req.body;
-        bool request_modified = false;
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
         if (should_disable_thinking(request_json)) {
-            request_modified = prepend_no_think_to_last_user_message(request_json);
+            request_modified = prepend_no_think_to_last_user_message(request_json) || request_modified;
         }
         request_modified = strip_handled_thinking_fields(request_json) || request_modified;
 
-        // If we modified the request, serialize it back to string
-        if (request_modified) {
-            request_body = request_json.dump();
-        }
+        // If we modified the request (or normalized the model name earlier), serialize to string
+        // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
+        // so we always use request_json for the body to ensure model name normalization is applied
+        request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -1896,6 +2101,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Normalize client-provided model names (e.g., strip ":latest" suffix)
+        // Must be done before any model_manager/router lookups and before forwarding
+        normalize_client_model_name(request_json);
+
         // Handle model loading/switching (same logic as chat_completions)
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
@@ -1906,11 +2115,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 auto error_response = create_model_error(requested_model, e.what());
                 // Set appropriate status code based on error type
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                if (error_code == "model_load_error") {
-                    res.status = 500;  // Internal server error - model exists but failed to load
-                } else {
-                    res.status = 404;  // Not found - model doesn't exist or is filtered out
-                }
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -1933,8 +2138,8 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use original request body - each backend handles model name transformation internally
-        std::string request_body = req.body;
+        // Use normalized request - model name was already normalized at the top
+        std::string request_body = request_json.dump();
 
         if (is_streaming) {
             try {
@@ -2089,7 +2294,7 @@ void Server::handle_embeddings(const httplib::Request& req, httplib::Response& r
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2125,7 +2330,7 @@ void Server::handle_reranking(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2354,7 +2559,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
                 LOG(ERROR, "Server") << "Failed to load audio model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2402,7 +2607,7 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
                 LOG(ERROR, "Server") << "Failed to load text-to-speech model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -2533,7 +2738,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
             auto error_response = create_model_error(requested_model, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = get_http_status_from_error(error_code);
             res.set_content(error_response.dump(), "application/json");
             return;
         }
@@ -2635,7 +2840,7 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
         LOG(ERROR, "Server") << "Failed to load image model: " << e.what() << std::endl;
         auto error_response = create_model_error(requested_model, e.what());
         std::string error_code = error_response["error"]["code"].get<std::string>();
-        res.status = (error_code == "model_load_error") ? 500 : 404;
+        res.status = get_http_status_from_error(error_code);
         res.set_content(error_response.dump(), "application/json");
         return false;
     }
@@ -3030,7 +3235,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
                 auto error_response = create_model_error(requested_model, e.what());
                 std::string error_code = error_response["error"]["code"].get<std::string>();
-                res.status = (error_code == "model_load_error") ? 500 : 404;
+                res.status = get_http_status_from_error(error_code);
                 res.set_content(error_response.dump(), "application/json");
                 return;
             }
@@ -3044,6 +3249,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        std::string request_body = req.body;
+
         if (is_streaming) {
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
@@ -3056,7 +3263,7 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
                 // Use cpp-httplib's chunked content provider for SSE streaming
                 res.set_chunked_content_provider(
                     "text/event-stream",
-                    [this, request_body = req.body](size_t offset, httplib::DataSink& sink) {
+                    [this, request_body](size_t offset, httplib::DataSink& sink) {
                         if (offset > 0) {
                             return false; // Only stream once
                         }
@@ -3153,12 +3360,21 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
                 bad_request(*err);
                 return;
             }
-            // Canonicalize components so downstream cache lookups
-            // (check_component_downloaded, update_model_in_cache) succeed
-            // even when the client passed a public alias (bare name) rather
-            // than the canonical `user.X` / `builtin.X` form.
-            for (auto& c : request_json["components"]) {
-                c = model_manager_->resolve_model_name(c.get<std::string>());
+            // A body carrying a `models` array is a collection file import: its
+            // components may not be registered yet (download_model registers them
+            // from the embedded definitions and canonicalizes the list itself).
+            // A pointer body (HF-backed collection) has no `components` at all —
+            // they come from the downloaded manifest. Only pre-canonicalize an
+            // inline `components` list whose entries must already exist.
+            if (request_json.contains("components") && request_json["components"].is_array() &&
+                (!request_json.contains("models") || !request_json["models"].is_array())) {
+                // Canonicalize components so downstream cache lookups
+                // (check_component_downloaded, update_model_in_cache) succeed
+                // even when the client passed a public alias (bare name) rather
+                // than the canonical `user.X` / `builtin.X` form.
+                for (auto& c : request_json["components"]) {
+                    c = model_manager_->resolve_model_name(c.get<std::string>());
+                }
             }
         }
 
@@ -3275,6 +3491,12 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto request_json = nlohmann::json::parse(req.body);
         model_name = request_json["model_name"];
 
+        // Cloud models are registered automatically at cache build / cloud-auth
+        // / install time, so a cloud model reaching /load is already in the
+        // cache. /load carries no creds payload; CloudServer reads the
+        // resolved key (env var or runtime POST) from CloudProviderRegistry
+        // when a request is actually forwarded.
+
         // Get model info
         if (!model_manager_->model_exists(model_name)) {
             LOG(ERROR, "Server") << "Model not found: " << model_name << std::endl;
@@ -3289,6 +3511,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         bool save_options = request_json.value("save_options", false);
+        std::optional<bool> pinned_opt = std::nullopt;
+        if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
+            pinned_opt = request_json["pinned"].get<bool>();
+        }
 
         LOG(INFO, "Server") << "Ensuring model loaded: " << model_name;
         LOG(INFO, "Server") << " " << options.to_log_string(false);
@@ -3300,10 +3526,10 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             model_manager_->save_model_options(info);
         }
 
-        // Download model if needed (first-time use). Collections have no
+        // Download model if needed (first-time use or missing files). Collections have no
         // checkpoint of their own, so skip the generic HF download path here
         // and let the per-component branch below cascade any missing pieces.
-        if (!info.downloaded && !is_collection_recipe(info.recipe)) {
+        if (!model_manager_->is_model_downloaded(model_name) && !is_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
@@ -3324,7 +3550,8 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             // if already loaded with matching options, reload only if options
             // differ)
             router_->load_model(model_name, info, options, true,
-                                /*allow_reload_on_option_change=*/true);
+                                /*allow_reload_on_option_change=*/true,
+                                pinned_opt);
 
             // Return success response
             nlohmann::json response = {
@@ -3343,7 +3570,7 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         if (!model_name.empty()) {
             auto error_response = create_model_error(model_name, e.what());
             std::string error_code = error_response["error"]["code"].get<std::string>();
-            res.status = (error_code == "model_load_error") ? 500 : 404;
+            res.status = get_http_status_from_error(error_code);
             res.set_content(error_response.dump(), "application/json");
         } else {
             // JSON parsing failed before we got model_name - return generic error
@@ -3411,6 +3638,64 @@ void Server::handle_unload(const httplib::Request& req, httplib::Response& res) 
         }
 
         nlohmann::json error = {{"error", e.what()}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_pin(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const std::exception& parse_err) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Invalid JSON body: " + std::string(parse_err.what())},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("model") && !request_json.contains("model_name")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'model' or 'model_name' is required"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("pinned") || !request_json["pinned"].is_boolean()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'pinned' is required and must be a boolean"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        std::string model_name = request_json.contains("model") ?
+            request_json["model"].get<std::string>() :
+            request_json["model_name"].get<std::string>();
+        bool pinned = request_json["pinned"].get<bool>();
+
+        std::string canonical_name = model_manager_->resolve_model_name(model_name);
+        router_->set_model_pinned(canonical_name, pinned);
+
+        nlohmann::json response = {
+            {"status", "success"},
+            {"model_name", model_name},
+            {"pinned", pinned}
+        };
+        res.status = 200;
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Pin/unpin failed: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"}
+        }}};
         res.set_content(error.dump(), "application/json");
     }
 }
@@ -3501,6 +3786,133 @@ void Server::handle_cleanup_cache(const httplib::Request& req, httplib::Response
         res.status = 500;
         auto error_response = create_model_error("", e.what());
         res.set_content(error_response.dump(), "application/json");
+    }
+}
+
+void Server::persist_cloud_providers() {
+    if (cache_dir_.empty() || !cloud_registry_) return;
+    try {
+        json snap = config_->snapshot();
+        snap["cloud_providers"] = cloud_registry_->to_config_array();
+        ConfigFile::save(cache_dir_, snap);
+    } catch (const std::exception& e) {
+        // Persistence failure must not undo the in-memory change — the
+        // registry is already updated and the provider is usable until
+        // restart. Log so the operator can see why config.json is stale.
+        LOG(WARNING, "Server") << "Failed to persist cloud_providers to config.json: "
+                                << e.what() << std::endl;
+    }
+}
+
+void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const auto body = nlohmann::json::parse(req.body);
+        if (!body.contains("provider") || !body["provider"].is_string() ||
+            !body.contains("api_key") || !body["api_key"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Body must contain string fields: provider, api_key"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        const auto provider = body["provider"].get<std::string>();
+        const auto api_key = body["api_key"].get<std::string>();
+        if (provider.empty() || api_key.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "provider and api_key must be non-empty"},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        if (!cloud_registry_->is_installed(provider)) {
+            res.status = 404;
+            nlohmann::json error = {{"error", {
+                {"message", "Cloud provider '" + provider + "' is not installed. "
+                            "Call POST /v1/install with backend=cloud, provider, "
+                            "and base_url first."},
+                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // env-wins-over-runtime: if the env var is set, refuse the runtime
+        // key with 409 so the caller knows their POST had no effect.
+        if (!cloud_registry_->set_runtime_key(provider, api_key)) {
+            res.status = 409;
+            const auto env_name = CloudProviderRegistry::env_var_name(provider);
+            nlohmann::json error = {{"error", {
+                {"message", env_name + " is set in the lemond process; the env var "
+                            "takes precedence and the supplied API key was not stored."},
+                {"type", "auth_conflict"},
+                {"env_var", env_name}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        // Refresh the provider's discovered model list with the new key.
+        // Best-effort — refresh logs failures and returns 0. Either way the
+        // key is stored and the response reflects the auth state.
+        size_t models_after = model_manager_->refresh_cloud_models(provider);
+
+        const auto state = cloud_registry_->auth_state(provider);
+        nlohmann::json response = {
+            {"provider", provider},
+            {"auth_state", {
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set}
+            }},
+            {"models_discovered", models_after}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const nlohmann::json::parse_error& e) {
+        res.status = 400;
+        nlohmann::json error = {{"error", {{"message", "Invalid JSON: " + std::string(e.what())},
+                                            {"type", "invalid_request_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_set: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res) {
+    try {
+        const std::string provider = req.matches[1].str();
+        if (provider.empty()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {{"message", "Missing provider in URL"},
+                                                {"type", "invalid_request_error"}}}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+
+        const bool cleared = cloud_registry_->clear_runtime_key(provider);
+        // If the env var is set, models stay discovered (env still authenticates);
+        // if not, the cache should reflect the now-unauthenticated state.
+        const auto state = cloud_registry_->auth_state(provider);
+        if (!state.env_var_set) {
+            model_manager_->evict_cloud_models(provider);
+        }
+
+        nlohmann::json response = {
+            {"provider", provider},
+            {"cleared_runtime_key", cleared},
+            {"auth_state", {
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set}
+            }}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_cloud_auth_clear: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+        res.set_content(error.dump(), "application/json");
     }
 }
 
@@ -3714,300 +4126,55 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
     }
 
+    // Cloud providers: per-provider {name, base_url, env_var_set,
+    // runtime_key_set, models_discovered}. Never includes the key itself.
+    // Clients use this to decide whether to prompt for an API key, show a
+    // "configured by env var" badge, or surface the model count to the user.
+    if (cloud_registry_) {
+        nlohmann::json providers = nlohmann::json::array();
+        for (const auto& rec : cloud_registry_->list_installed()) {
+            auto state = cloud_registry_->auth_state(rec.name);
+            providers.push_back({
+                {"name", rec.name},
+                {"base_url", rec.base_url},
+                {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
+                {"env_var_set", state.env_var_set},
+                {"runtime_key_set", state.runtime_key_set},
+                {"models_discovered", model_manager_->count_cloud_models(rec.name)}
+            });
+        }
+        system_info["cloud"] = {{"providers", providers}};
+    }
+
     res.set_content(system_info.dump(), "application/json");
 }
 
 // Get CPU usage percentage
 double Server::get_cpu_usage() {
-#ifdef __linux__
-    // Linux: Parse /proc/stat for system-wide CPU usage
-    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
-
-    std::ifstream stat_file("/proc/stat");
-    if (!stat_file.is_open()) {
-        return -1.0;
-    }
-
-    std::string line;
-    std::getline(stat_file, line);
-    stat_file.close();
-
-    // Parse: "cpu  user nice system idle iowait irq softirq steal"
-    std::istringstream iss(line);
-    std::string cpu_label;
-    uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
-
-    iss >> cpu_label >> user >> nice >> system >> idle >> iowait >> irq >> softirq >> steal;
-
-    uint64_t total_idle = idle + iowait;
-    uint64_t total_active = user + nice + system + irq + softirq + steal;
-    uint64_t total = total_idle + total_active;
-
-    if (last_cpu_stats_.total > 0) {
-        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
-        uint64_t total_diff = total - last_cpu_stats_.total;
-
-        last_cpu_stats_.total_idle = total_idle;
-        last_cpu_stats_.total = total;
-
-        if (total_diff > 0) {
-            return ((total_diff - idle_diff) * 100.0) / total_diff;
-        }
-    }
-
-    last_cpu_stats_.total_idle = total_idle;
-    last_cpu_stats_.total = total;
-    return 0.0; // First call, no delta yet
-
-#elif defined(_WIN32)
-    // Windows: Use GetSystemTimes for system-wide CPU usage
-    std::lock_guard<std::mutex> lock(cpu_stats_mutex_);
-
-    FILETIME idle_time, kernel_time, user_time;
-    if (!GetSystemTimes(&idle_time, &kernel_time, &user_time)) {
-        return -1.0;
-    }
-
-    // Convert FILETIME to uint64_t (100-nanosecond intervals)
-    auto filetime_to_uint64 = [](const FILETIME& ft) -> uint64_t {
-        return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
-    };
-
-    uint64_t idle = filetime_to_uint64(idle_time);
-    uint64_t kernel = filetime_to_uint64(kernel_time); // Includes idle time
-    uint64_t user = filetime_to_uint64(user_time);
-
-    // Kernel time includes idle time, so subtract it to get actual kernel time
-    uint64_t total = kernel + user;
-    uint64_t total_idle = idle;
-
-    if (last_cpu_stats_.total > 0) {
-        uint64_t idle_diff = total_idle - last_cpu_stats_.total_idle;
-        uint64_t total_diff = total - last_cpu_stats_.total;
-
-        last_cpu_stats_.total_idle = total_idle;
-        last_cpu_stats_.total = total;
-
-        if (total_diff > 0) {
-            return ((total_diff - idle_diff) * 100.0) / total_diff;
-        }
-    }
-
-    last_cpu_stats_.total_idle = total_idle;
-    last_cpu_stats_.total = total;
-    return 0.0; // First call, no delta yet
-
-#elif defined(__APPLE__)
-    // macOS: Could use host_processor_info or top command
-    return -1.0; // Not implemented yet
-
+#if defined(__linux__) || defined(_WIN32)
+    return metrics_platform_->get_cpu_usage(cpu_stats_mutex_,
+                                            last_cpu_stats_.total,
+                                            last_cpu_stats_.total_idle);
 #else
-    return -1.0;
+    uint64_t dummy_total = 0, dummy_idle = 0;
+    std::mutex dummy_mutex;
+    return metrics_platform_->get_cpu_usage(dummy_mutex, dummy_total, dummy_idle);
 #endif
 }
 
 // Get GPU usage percentage (AMD GPUs on Linux)
 double Server::get_gpu_usage() {
-#ifdef __linux__
-    // Linux: Read from AMD sysfs (gpu_busy_percent)
-    // Check all GPUs and return the highest utilization
-    try {
-        std::string drm_path = "/sys/class/drm";
-
-        if (!fs::exists(drm_path)) {
-            return -1.0;
-        }
-
-        double highest_usage = -1.0;
-
-        for (const auto& entry : fs::directory_iterator(drm_path)) {
-            std::string card_name = entry.path().filename().string();
-            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
-                continue;
-            }
-
-            std::string busy_path = entry.path().string() + "/device/gpu_busy_percent";
-            std::ifstream busy_file(busy_path);
-            if (busy_file.is_open()) {
-                double usage;
-                busy_file >> usage;
-                busy_file.close();
-                if (usage > highest_usage) {
-                    highest_usage = usage;
-                }
-            }
-        }
-
-        return highest_usage;
-    } catch (...) {
-        return -1.0;
-    }
-
-#else
-    // GPU usage monitoring not implemented for Windows/macOS
-    return -1.0;
-#endif
+    return metrics_platform_->get_gpu_usage();
 }
 
 // Get VRAM/GTT usage in GB (AMD GPUs on Linux)
 double Server::get_vram_usage() {
-#ifdef __linux__
-    // Linux: Read from AMD sysfs
-    // For dGPU: return VRAM used
-    // For APU: return VRAM + GTT used
-    // On multi-GPU systems, return memory from GPU with highest utilization
-    try {
-        std::string drm_path = "/sys/class/drm";
-
-        if (!fs::exists(drm_path)) {
-            return -1.0;
-        }
-
-        double highest_usage = -1.0;
-        std::string highest_card;
-        double highest_card_memory = 0.0;
-
-        for (const auto& entry : fs::directory_iterator(drm_path)) {
-            std::string card_name = entry.path().filename().string();
-            if (card_name.find("card") != 0 || card_name.find("-") != std::string::npos) {
-                continue;
-            }
-
-            std::string device_path = entry.path().string() + "/device";
-
-            // Read GPU utilization to find the most active GPU
-            double gpu_usage = 0.0;
-            std::ifstream busy_file(device_path + "/gpu_busy_percent");
-            if (busy_file.is_open()) {
-                busy_file >> gpu_usage;
-                busy_file.close();
-            }
-
-            // Check if this is a dGPU (has board_info) or APU (no board_info)
-            bool is_dgpu = fs::exists(device_path + "/board_info");
-
-            // Read VRAM used
-            uint64_t vram_used = 0;
-            std::ifstream vram_file(device_path + "/mem_info_vram_used");
-            if (vram_file.is_open()) {
-                vram_file >> vram_used;
-                vram_file.close();
-            }
-
-            // Read GTT used
-            uint64_t gtt_used = 0;
-            std::ifstream gtt_file(device_path + "/mem_info_gtt_used");
-            if (gtt_file.is_open()) {
-                gtt_file >> gtt_used;
-                gtt_file.close();
-            }
-
-            // Skip if no memory info found
-            if (vram_used == 0 && gtt_used == 0) {
-                continue;
-            }
-
-            // Calculate memory for this card
-            uint64_t card_memory = is_dgpu ? vram_used : (vram_used + gtt_used);
-
-            // Track the GPU with highest utilization
-            if (gpu_usage > highest_usage || highest_usage < 0) {
-                highest_usage = gpu_usage;
-                highest_card = card_name;
-                highest_card_memory = card_memory / (1024.0 * 1024.0 * 1024.0); // Convert to GB
-            }
-        }
-
-        return highest_card_memory > 0 ? highest_card_memory : -1.0;
-    } catch (...) {
-        return -1.0;
-    }
-
-#else
-    // VRAM monitoring not implemented for Windows/macOS
-    return -1.0;
-#endif
+    return metrics_platform_->get_vram_usage_gb();
 }
 
 // Helper: Get NPU utilization (AMD NPU on Linux)
 double Server::get_npu_utilization() {
-#ifdef __linux__
-    try {
-        std::string accel_path = "/dev/accel/accel0";
-        if (!fs::exists(accel_path)) {
-            return -1.0;
-        }
-
-        int fd = open(accel_path.c_str(), O_RDWR);
-        if (fd < 0) {
-            return -1.0;
-        }
-
-        // Check DRM API version (must be 0.7 or later for these IOCTLs)
-        struct drm_version drm_v;
-        memset(&drm_v, 0, sizeof(drm_v));
-        bool version_ok = false;
-        if (ioctl(fd, DRM_IOCTL_VERSION, &drm_v) == 0) {
-            if (drm_v.version_major > 0 || (drm_v.version_major == 0 && drm_v.version_minor >= 7)) {
-                version_ok = true;
-            }
-        }
-
-        if (!version_ok) {
-            close(fd);
-            return -1.0;
-        }
-
-        // Check power_state to avoid waking the NPU if it is asleep
-        fs::path power_state_path = "/sys/class/accel/accel0/device/power_state";
-        if (fs::exists(power_state_path)) {
-            std::ifstream power_file(power_state_path);
-            std::string state;
-            if (power_file >> state) {
-                if (state != "D0") {
-                    close(fd);
-                    return 0.0;
-                }
-            }
-        }
-
-        amdxdna_drm_query_sensor sensors[16] = {};
-        amdxdna_drm_get_info get_info = {};
-        get_info.param = DRM_AMDXDNA_QUERY_SENSORS;
-        get_info.buffer_size = sizeof(sensors);
-        get_info.buffer = (uintptr_t)sensors;
-
-        if (ioctl(fd, DRM_IOCTL_AMDXDNA_GET_INFO, &get_info) < 0) {
-            close(fd);
-            return -1.0;
-        }
-
-        close(fd);
-
-        int num_sensors = get_info.buffer_size / sizeof(amdxdna_drm_query_sensor);
-        double usage_sum = 0.0;
-        int usage_count = 0;
-        for (int i = 0; i < num_sensors; ++i) {
-            if (sensors[i].type == AMDXDNA_SENSOR_TYPE_COLUMN_UTILIZATION) {
-                double val = (double)sensors[i].input * std::pow(10.0, sensors[i].unitm);
-                usage_sum += val;
-                usage_count++;
-            }
-        }
-
-        if (usage_count > 0) {
-            // Return average utilization percentage [0, 100]
-            return (usage_sum / usage_count);
-        }
-
-        return -1.0;
-    } catch (...) {
-        return -1.0;
-    }
-#else
-    // NPU monitoring not implemented for Windows/macOS
-    return -1.0;
-#endif
+    return metrics_platform_->get_npu_utilization();
 }
 
 void Server::handle_system_stats(const httplib::Request& req, httplib::Response& res) {
@@ -4024,49 +4191,7 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     stats["cpu_percent"] = (cpu_percent >= 0) ? nlohmann::json(cpu_percent) : nlohmann::json();
 
     // Get memory info
-#ifdef _WIN32
-    MEMORYSTATUSEX memInfo;
-    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
-    if (GlobalMemoryStatusEx(&memInfo)) {
-        double used_gb = (memInfo.ullTotalPhys - memInfo.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);
-        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
-    } else {
-        stats["memory_gb"] = 0;
-    }
-#elif defined(__linux__)
-    // Linux: Read /proc/meminfo
-    std::ifstream meminfo("/proc/meminfo");
-    if (meminfo.is_open()) {
-        std::string line;
-        long long total_kb = 0, available_kb = 0;
-        while (std::getline(meminfo, line)) {
-            if (line.find("MemTotal:") == 0) {
-                sscanf(line.c_str(), "MemTotal: %lld kB", &total_kb);
-            } else if (line.find("MemAvailable:") == 0) {
-                sscanf(line.c_str(), "MemAvailable: %lld kB", &available_kb);
-                break;
-            }
-        }
-        meminfo.close();
-        double used_gb = (total_kb - available_kb) / (1024.0 * 1024.0);
-        stats["memory_gb"] = std::round(used_gb * 10.0) / 10.0;
-    } else {
-        stats["memory_gb"] = 0;
-    }
-#elif defined(__APPLE__)
-    // macOS: Get memory info
-    int64_t physical_memory = 0;
-    size_t length = sizeof(physical_memory);
-    if (sysctlbyname("hw.memsize", &physical_memory, &length, nullptr, 0) == 0) {
-        // For now, just report total memory since getting free memory is complex on macOS
-        double total_gb = physical_memory / (1024.0 * 1024.0 * 1024.0);
-        stats["memory_gb"] = std::round(total_gb * 10.0) / 10.0;
-    } else {
-        stats["memory_gb"] = 0;
-    }
-#else
-    stats["memory_gb"] = 0;
-#endif
+    stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
 
     // GPU usage
     double gpu_percent = get_gpu_usage();
@@ -4105,6 +4230,18 @@ void Server::handle_log_level(const httplib::Request& req, httplib::Response& re
         res.status = 500;
         nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res) {
+    try {
+        auto req_json = json::parse(req.body);
+        double pct = req_json.value("pct", 0.0);
+        router_->simulate_vram_pressure(pct);
+        res.set_content(R"({"status": "ok"})", "application/json");
+    } catch (const std::exception& e) {
+        res.status = 400;
+        res.set_content(json{{"error", e.what()}}.dump(), "application/json");
     }
 }
 
@@ -4277,15 +4414,13 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                 port_.store(new_port);
                 rebind_requested_ = true;
                 udp_beacon_.stopBroadcasting();
-                http_server_->stop();
-                http_server_v6_->stop();
+                stop_http_listeners();
             }
         } else if (key == "host") {
             LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
             rebind_requested_ = true;
             udp_beacon_.stopBroadcasting();
-            http_server_->stop();
-            http_server_v6_->stop();
+            stop_http_listeners();
             // Restart websocket server with new host
             if (websocket_server_) {
                 websocket_server_->stop();
@@ -4819,6 +4954,81 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
+        // Cloud install branch. Cloud providers don't have a binary to fetch —
+        // "installing" one means registering its OpenAI-compat base URL with
+        // the in-process CloudProviderRegistry so that ModelManager can
+        // discover its catalog as soon as the matching API key is supplied
+        // (env var or POST /v1/cloud/auth). Shape:
+        //   {backend: "cloud", provider: "fireworks",
+        //    base_url: "https://api.fireworks.ai/inference/v1",
+        //    api_key: "..."}  // optional
+        if (request_json.value("backend", "") == "cloud") {
+            const std::string provider = request_json.value("provider", "");
+            const std::string base_url = request_json.value("base_url", "");
+            const std::string api_key = request_json.value("api_key", "");
+            if (provider.empty() || base_url.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", err},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", err},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            LOG(INFO, "Server") << "Installing cloud provider '" << provider
+                                  << "' with base_url " << base_url << std::endl;
+            cloud_registry_->install(provider, base_url);
+            persist_cloud_providers();
+
+            // Best-effort optional auth: if api_key was supplied, treat this
+            // as "install + auth in one shot". Honors the env-wins rule: if
+            // LEMONADE_<P>_API_KEY is set, we don't store the runtime key and
+            // we don't error — install still succeeds, env var still wins.
+            bool runtime_key_stored = false;
+            if (!api_key.empty()) {
+                runtime_key_stored = cloud_registry_->set_runtime_key(provider, api_key);
+            }
+
+            // Best-effort discovery. Empty result is fine — install means
+            // "registered", not "verified-and-non-empty". The client can
+            // call /v1/system-info later to see how many models showed up.
+            size_t models_after = model_manager_->refresh_cloud_models(provider);
+            const auto state = cloud_registry_->auth_state(provider);
+
+            nlohmann::json response = {
+                {"status", "success"},
+                {"backend", "cloud"},
+                {"provider", provider},
+                {"base_url", cloud_registry_->base_url_for(provider)},
+                {"models_discovered", models_after},
+                {"auth_state", {
+                    {"env_var_set", state.env_var_set},
+                    {"runtime_key_set", state.runtime_key_set}
+                }}
+            };
+            if (!api_key.empty() && !runtime_key_stored) {
+                response["warning"] = CloudProviderRegistry::env_var_name(provider) +
+                    " is set; supplied api_key was ignored.";
+            }
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
         bool stream = request_json.value("stream", false);
@@ -4919,6 +5129,53 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
 void Server::handle_uninstall(const httplib::Request& req, httplib::Response& res) {
     try {
         auto request_json = nlohmann::json::parse(req.body);
+
+        // Cloud uninstall: drop the provider record + its runtime key +
+        // every discovered model. Idempotent — uninstalling an unknown
+        // provider returns 404 (matching the symmetric install error shape)
+        // rather than silently succeeding, so CI scripts can tell which
+        // case happened.
+        if (request_json.value("backend", "") == "cloud") {
+            const std::string provider = request_json.value("provider", "");
+            if (provider.empty()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud uninstall requires 'provider' string field"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            // Unload any loaded cloud-recipe models for this provider before
+            // erasing them from the cache. Router::unload_model expects a
+            // model_name, not a recipe filter — walk the loaded list manually.
+            auto loaded = router_->get_all_loaded_models();
+            for (const auto& m : loaded) {
+                if (m.value("recipe", "") == "cloud" &&
+                    m.value("cloud_provider", "") == provider) {
+                    router_->unload_model(m.value("model_name", ""));
+                }
+            }
+            bool removed = cloud_registry_->uninstall(provider);
+            size_t evicted = model_manager_->evict_cloud_models(provider);
+            if (!removed) {
+                res.status = 404;
+                nlohmann::json error = {{"error", {
+                    {"message", "Cloud provider '" + provider + "' is not installed"},
+                    {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+            persist_cloud_providers();
+            nlohmann::json response = {
+                {"status", "success"},
+                {"backend", "cloud"},
+                {"provider", provider},
+                {"models_evicted", evicted}
+            };
+            res.set_content(response.dump(), "application/json");
+            return;
+        }
+
         std::string recipe = request_json.value("recipe", "");
         std::string backend = request_json.value("backend", "");
 
