@@ -28,6 +28,15 @@ module.exports = (env, argv) => {
     }
   }
 
+  const systemPackageAliases = useSystemPackages ? {
+    // These GUI3 libraries remain real npm dependencies for the Tauri/app
+    // build. The distro web-app build uses system Node modules and maps
+    // unavailable packages to conservative local fallbacks.
+    'dompurify$': path.resolve(__dirname, 'system-stubs/dompurify.ts'),
+    'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
+    'recharts$': path.resolve(__dirname, 'system-stubs/recharts.tsx'),
+  } : {};
+
   // Resolve polyfills conditionally - try to resolve them, but fall back to false if not available
   let bufferPolyfill = false;
   let processPolyfill = false;
@@ -104,6 +113,7 @@ module.exports = (env, argv) => {
       ],
       alias: {
         ...katexAlias,
+        ...systemPackageAliases,
         // The staged GUI app imports @tauri-apps/*
         // modules in tauriShim.ts. The web-app intentionally excludes those
         // packages; alias each specifier to a no-op stub. The shim never calls
