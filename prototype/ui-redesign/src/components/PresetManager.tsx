@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import api, { LoadedModel, ModelInfo } from '../api';
 import {
   CAPABILITY_LABELS,
+  CUSTOM_PRESET_PROMPTS,
   DEFAULT_PRESET,
   KNOWN_CAPABILITIES,
   Capability,
+  NO_SYSTEM_PROMPT_ID,
   Preset,
   PresetRecipe,
+  PresetSystemPrompt,
   RecipeOptions,
   SamplingParams,
   STARTERS,
@@ -18,6 +21,8 @@ import {
   presetLabelsFor,
   presetParamPreviewLines,
   sanitizePreset,
+  newCustomSystemPrompt,
+  systemPromptNameForPreset,
   saveApplied,
   saveUserPresets,
 } from '../presetStore';
@@ -274,6 +279,18 @@ function paramsPreviewLines(preset: Preset): string[] {
   return presetParamPreviewLines(preset);
 }
 
+function cloneSystemPrompts(prompts: PresetSystemPrompt[] | undefined): PresetSystemPrompt[] {
+  return (prompts || []).map(prompt => ({ ...prompt }));
+}
+
+function promptDisplayText(preset: Preset): string {
+  return systemPromptNameForPreset(preset);
+}
+
+function toolsDisplayText(preset: Preset): string {
+  return preset.tools_enabled === false ? 'OFF' : 'ON';
+}
+
 function hasManualArgs(preset: Pick<Preset, 'recipe_options'>): boolean {
   const ro = preset.recipe_options || {};
   return Boolean(
@@ -383,6 +400,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       starter: false,
       auto_opt_enabled: true,
       auto_opt_run_id: AUTO_OPT_RUNS[0]?.id || null,
+      system_prompt_id: 'general',
+      system_prompts: cloneSystemPrompts(CUSTOM_PRESET_PROMPTS),
+      tools_enabled: true,
     };
     setUserPresets(prev => [newPreset, ...prev]);
     openSlideover(newPreset);
@@ -441,6 +461,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ loadedModels }) => {
       applies_to: normalizePresetCapabilities(clonedId, preset.applies_to),
       recipe_options: { ...preset.recipe_options },
       sampling: { ...preset.sampling },
+      system_prompts: cloneSystemPrompts(preset.system_prompts),
+      system_prompt_id: preset.system_prompt_id || NO_SYSTEM_PROMPT_ID,
+      tools_enabled: preset.tools_enabled !== false,
     };
     setUserPresets(prev => [cloned, ...prev]);
     openSlideover(cloned);
@@ -691,6 +714,10 @@ const PresetCard: React.FC<{
       <span className="recipe-card__param-key">params</span>
       <span className="recipe-card__param-val preset-param-lines">{paramsPreviewLines(preset).map(line => <span key={line}>{line}</span>)}</span>
     </div>
+    <div className="recipe-card__behavior" aria-hidden="true">
+      <span>prompt</span><strong>{promptDisplayText(preset)}</strong>
+      <span>tools</span><strong>{toolsDisplayText(preset)}</strong>
+    </div>
     <div className="recipe-card__actions" onClick={e => e.stopPropagation()}>
       {preset.starter ? (
         <button className="recipe-card__action recipe-card__action--primary" onClick={onClone}>Clone</button>
@@ -740,6 +767,9 @@ const SlideoverContent: React.FC<{
   const [topP, setTopP] = useState(sp.top_p ?? 0.9);
   const [topK, setTopK] = useState(sp.top_k ?? 40);
   const [repeatPenalty, setRepeatPenalty] = useState(sp.repeat_penalty ?? 1.05);
+  const [systemPromptId, setSystemPromptId] = useState(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
+  const [systemPrompts, setSystemPrompts] = useState<PresetSystemPrompt[]>(cloneSystemPrompts(preset.system_prompts));
+  const [toolsEnabled, setToolsEnabled] = useState(preset.tools_enabled !== false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -763,6 +793,9 @@ const SlideoverContent: React.FC<{
     setTopP(nextSp.top_p ?? 0.9);
     setTopK(nextSp.top_k ?? 40);
     setRepeatPenalty(nextSp.repeat_penalty ?? 1.05);
+    setSystemPromptId(preset.system_prompt_id || NO_SYSTEM_PROMPT_ID);
+    setSystemPrompts(cloneSystemPrompts(preset.system_prompts));
+    setToolsEnabled(preset.tools_enabled !== false);
     setSaved(false);
   }, [preset, autoRuns]);
 
@@ -780,19 +813,24 @@ const SlideoverContent: React.FC<{
         applies_to: normalizePresetCapabilities(preset.id, preset.applies_to),
       };
     }
+    const normalizedAppliesTo = normalizePresetCapabilities(preset.id, appliesTo);
+    const supportsTools = normalizedAppliesTo.includes('all') || normalizedAppliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
     return {
       ...preset,
       name,
       description,
-      applies_to: normalizePresetCapabilities(preset.id, appliesTo),
+      applies_to: normalizedAppliesTo,
       engine_hint: engineHint,
       recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
       sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
       starter: false,
       auto_opt_enabled: !manualArgsActive,
       auto_opt_run_id: manualArgsActive ? null : (autoOptRunId || autoRuns[0]?.id || null),
+      system_prompt_id: systemPromptId,
+      system_prompts: cloneSystemPrompts(systemPrompts),
+      tools_enabled: supportsTools && toolsEnabled,
     };
-  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, manualArgsActive, autoOptRunId, autoRuns]);
+  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, systemPromptId, systemPrompts, toolsEnabled, manualArgsActive, autoOptRunId, autoRuns]);
 
 const selectedModel = models.find(m => modelName(m) === applyTarget);
 const selectedModelContextLimit = contextLimitForModel(selectedModel);
@@ -814,6 +852,27 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = hasAll || appliesTo.includes('image');
   const isDefaultEmptyPreset = preset.id === DEFAULT_PRESET.id;
+  const selectedSystemPrompt = systemPromptId === NO_SYSTEM_PROMPT_ID ? null : (systemPrompts.find(prompt => prompt.id === systemPromptId) || null);
+  const selectedPromptIsCustom = selectedSystemPrompt?.built_in === false;
+
+  const updateSelectedSystemPrompt = (patch: Partial<PresetSystemPrompt>) => {
+    if (!selectedSystemPrompt || isReadOnly || !selectedPromptIsCustom) return;
+    setSystemPrompts(prev => prev.map(prompt => prompt.id === selectedSystemPrompt.id ? { ...prompt, ...patch } : prompt));
+  };
+
+  const addCustomSystemPrompt = () => {
+    if (isReadOnly) return;
+    const customPrompt = newCustomSystemPrompt(systemPrompts);
+    setSystemPrompts(prev => [...prev, customPrompt]);
+    setSystemPromptId(customPrompt.id);
+  };
+
+  const deleteSelectedCustomPrompt = () => {
+    if (isReadOnly || !selectedSystemPrompt || !selectedPromptIsCustom) return;
+    const remaining = systemPrompts.filter(prompt => prompt.id !== selectedSystemPrompt.id);
+    setSystemPrompts(remaining);
+    setSystemPromptId(remaining[0]?.id || NO_SYSTEM_PROMPT_ID);
+  };
 
   const toggleCap = (cap: Capability) => {
     if (isReadOnly) return;
@@ -859,6 +918,55 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="slideover__section preset-system-prompt">
+          <h3>System prompt</h3>
+          <p className="preset-help">Only the selected prompt is sent with each compatible request. The full prompt list stays in the preset and does not inflate conversation context.</p>
+          <div className="field">
+            <label className="field__label">Prompt type</label>
+            <div className="field__row">
+              <select className="select" value={systemPromptId} disabled={isReadOnly} onChange={e => setSystemPromptId(e.target.value)}>
+                <option value={NO_SYSTEM_PROMPT_ID}>No system prompt</option>
+                {systemPrompts.map(prompt => <option key={prompt.id} value={prompt.id}>{prompt.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <details className="preset-prompt-details">
+            <summary>{selectedSystemPrompt ? `Prompt text: ${selectedSystemPrompt.name}` : 'Prompt text'}</summary>
+            {!selectedSystemPrompt ? (
+              <p className="preset-help">No behavior system prompt will be sent for this preset.</p>
+            ) : selectedPromptIsCustom && !isReadOnly ? (
+              <div className="preset-prompt-editor">
+                <div className="field">
+                  <label className="field__label">Displayed name</label>
+                  <input className="input" value={selectedSystemPrompt.name} onChange={e => updateSelectedSystemPrompt({ name: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label className="field__label">System prompt text</label>
+                  <textarea className="input preset-prompt-textarea" rows={7} value={selectedSystemPrompt.prompt} onChange={e => updateSelectedSystemPrompt({ prompt: e.target.value })} />
+                </div>
+              </div>
+            ) : (
+              <pre className="preset-prompt-preview">{selectedSystemPrompt.prompt}</pre>
+            )}
+          </details>
+          {!isReadOnly && (
+            <div className="preset-prompt-actions">
+              <button type="button" className="btn btn--ghost btn--tiny" onClick={addCustomSystemPrompt}>+ Custom prompt</button>
+              {selectedPromptIsCustom && <button type="button" className="btn btn--ghost btn--tiny" style={{ color: 'var(--danger)' }} onClick={deleteSelectedCustomPrompt}>Delete custom prompt</button>}
+            </div>
+          )}
+        </div>
+
+        <div className="slideover__section preset-tools-default">
+          <h3>Tools start value</h3>
+          <label className="preset-toggle">
+            <input type="checkbox" checked={hasChat && toolsEnabled} disabled={isReadOnly || !hasChat} onChange={e => setToolsEnabled(e.target.checked)} />
+            <span>{hasChat ? `Start chats with Lemonade tools ${toolsEnabled ? 'enabled' : 'disabled'} for this preset.` : 'Image-only presets do not start Lemonade chat tools.'}</span>
+          </label>
+          {preset.id === 's-quick-chat' && <p className="preset-help">Quick Chat starts with tools off to minimize request context.</p>}
+          {!hasChat && <p className="preset-help">Direct image generation/edit endpoints use the prompt and image options directly; chat tools are not useful there.</p>}
         </div>
 
         <div className="slideover__section">

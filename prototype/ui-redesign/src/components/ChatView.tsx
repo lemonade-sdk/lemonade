@@ -28,7 +28,7 @@ import { customModelToModelInfo, loadCustomModels } from '../features/customMode
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { LEMONADE_TOOLS, executeTool } from '../tools/lemonadeTools';
 import { buildOmniToolRuntime } from '../tools/omniTools';
-import { PRESET_STORE_EVENT, activePresetForModel } from '../presetStore';
+import { PRESET_STORE_EVENT, activePresetForModel, systemPromptTextForPreset, systemPromptNameForPreset } from '../presetStore';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -574,6 +574,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
   const [useTools, setUseTools] = useState(() => {
     try { return localStorage.getItem(scopedKey(storageScope, TOOLS_KEY)) === 'true'; } catch { return false; }
   });
+  const presetToolsSeedRef = useRef('');
   const [showInlineLogs, setShowInlineLogs] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
@@ -656,6 +657,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     return () => window.removeEventListener(PRESET_STORE_EVENT, updatePresetVersion);
   }, []);
   const currentPreset = useMemo(() => currentModel ? activePresetForModel(currentModel) : null, [currentModel, presetVersion]);
+
+  useEffect(() => {
+    if (!currentModel || !currentPreset) return;
+    const next = currentPreset.tools_enabled !== false;
+    const seed = `${storageScope}:${currentModel}:${currentPreset.id}:${next ? 'tools-on' : 'tools-off'}`;
+    if (presetToolsSeedRef.current === seed) return;
+    presetToolsSeedRef.current = seed;
+    setUseTools(next);
+    try { localStorage.setItem(scopedKey(storageScope, TOOLS_KEY), String(next)); } catch { /* ignore */ }
+  }, [currentModel, currentPreset, storageScope]);
 
   const hasRealtimeAudio = useMemo(
     () => !!currentModel && modelSupportsRealtimeAudio(currentModel, currentKnownModelInfo, currentLoadedModel),
@@ -1377,6 +1388,8 @@ ${finalText}`
     const chatMessages: ChatMessage[] = [];
 
     const systemPrompts: string[] = [];
+    const presetSystemPrompt = systemPromptTextForPreset(currentPreset);
+    if (presetSystemPrompt) systemPrompts.push(presetSystemPrompt);
     if (omniRuntime?.systemPrompt) systemPrompts.push(omniRuntime.systemPrompt);
 
     // Inject a system prompt when Lemonade tools are enabled so the model knows to use them.
@@ -1454,6 +1467,7 @@ ${finalText}`
     currentKnownModelInfo,
     imageMode,
     currentModel,
+    currentPreset,
     knownModelInfos,
     loadedModels,
     modeSupportsChatCompletions,
@@ -2036,7 +2050,7 @@ ${finalText}`
             <CapabilityIcon capability={currentCapability} size={13} /> {supportsRealtimeAudio && modeSupportsChatCompletions ? 'Chat + Audio' : capabilityLabel(currentCapability)} mode
           </button>
           {currentPreset && (
-            <span className="composer__preset-badge" title="Active preset for this model">
+            <span className="composer__preset-badge" title={`Active preset for this model. Prompt: ${systemPromptNameForPreset(currentPreset)}. Tools start ${currentPreset.tools_enabled === false ? 'OFF' : 'ON'}.`}>
               <PresetIcon preset={currentPreset} /> Preset: {currentPreset.name}
             </span>
           )}
