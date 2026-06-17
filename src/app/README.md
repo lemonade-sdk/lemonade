@@ -137,7 +137,7 @@ tsconfig.json           # TypeScript configuration
 
 ## Connecting to a Server
 
-The prototype stores the Lemonade server URL in local browser state and defaults to `http://localhost:13305`. Use the Connect screen to change it; the field validates `http://` / `https://` URLs before attempting a request and shows the exact endpoint plus HTTP/network error on failure. API keys can be kept session-only or explicitly persisted.
+The prototype stores an explicitly chosen Lemonade server URL in local browser state. For the packaged Lemonade web app, if that state is missing or has been cleared, the API client also tries the current browser origin, so a custom Lemonade host/port is recovered when the UI itself is served by `lemond`. During local webpack development it still prefers the usual `http://localhost:13305` server and retries the current origin if needed. Use the Connect screen to change the URL; the field validates `http://` / `https://` URLs before attempting a request and shows the exact endpoint plus HTTP/network error on failure. API keys can be kept session-only or explicitly persisted.
 
 Core API paths are normalized to `/api/v1/...` in `src/api.ts`. Mocked responses are no longer the default runtime path; use Playwright route mocks in tests when a deterministic mocked scenario is needed.
 
