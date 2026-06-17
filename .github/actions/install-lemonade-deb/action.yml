@@ -125,6 +125,16 @@ runs:
         chmod 700 "$RUNNER_TEMP/xdg-runtime"
         echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
         export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+        # On self-hosted runners a previous run's lemond (or its TIME_WAIT
+        # socket) can still hold port 13305, which lemond now refuses to bind
+        # over. Free the port before starting so we don't exit as a duplicate.
+        if command -v fuser >/dev/null 2>&1; then
+          fuser -k 13305/tcp 2>/dev/null || true
+        fi
+        pkill -9 -x lemond 2>/dev/null || true
+        sleep 1
+
         "$SERVER_BIN" "$CACHE_DIR" > "$LOG_FILE" 2>&1 &
         SERVER_PID=$!
 
