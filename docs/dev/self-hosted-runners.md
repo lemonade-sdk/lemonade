@@ -27,9 +27,9 @@ Workflows target self-hosted runners by the labels the runner carries. We use tw
 
 | Label | Meaning |
 |-------|---------|
-| `lemon-prod` | Runner is a production lemonade-sdk runner. **Every self-hosted runner job must include this label.** It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes or special-purpose runners like `repo-manager`) that happen to share capability labels. |
+| `lemon-prod` | Runner is a production lemonade-sdk runner. **Every production self-hosted runner job must include this label.** It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes) that happen to share capability labels. Special-purpose runners (e.g. `repo-manager`) use their own dedicated labels and intentionally omit `lemon-prod`. |
 
-Without `lemon-prod`, a job that requests only `[self-hosted, Linux]` could run on *any* self-hosted Linux machine registered to the org. All production runners carry this label; runners that are not part of the production inference pool must not have it.
+Without `lemon-prod`, a job that requests only `[self-hosted, Linux]` could run on *any* self-hosted Linux machine registered to the org. All production inference runners carry this label; special-purpose runners that are not part of the production pool must not have it.
 
 ### Capability labels
 
@@ -164,7 +164,7 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Place a 🌩️ emoji in the name of all of your self-host workflows, so that PR reviewers can see at a glance which workflows are using self-hosted resources.
     - Example: `name: Test Lemonade on NPU and Hybrid with OGA environment 🌩️`
 - Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include `on: pull request:` in your workflow until after a reviewer has signed off.
-- **Always include `lemon-prod`** in every self-hosted `runs-on` list (see [Pool membership label](#pool-membership-label)). For example, `runs-on: [Windows, xdna2, lemon-prod]` for NPU work, `runs-on: [Linux, vulkan, rocm, lemon-prod]` for a job that exercises both GPU backends. CPU-only self-hosted jobs use `[self-hosted, Windows, lemon-prod]` / `[self-hosted, Linux, lemon-prod]`, but prefer GitHub-hosted runners (`windows-latest`, `ubuntu-latest`) for CPU-only work when possible.
+- **Always include `lemon-prod`** in every *production* self-hosted `runs-on` list (see [Pool membership label](#pool-membership-label)). For example, `runs-on: [Windows, xdna2, lemon-prod]` for NPU work, `runs-on: [Linux, vulkan, rocm, lemon-prod]` for a job that exercises both GPU backends. CPU-only self-hosted jobs use `[self-hosted, Windows, lemon-prod]` / `[self-hosted, Linux, lemon-prod]`, but prefer GitHub-hosted runners (`windows-latest`, `ubuntu-latest`) for CPU-only work when possible. Special-purpose runners with their own dedicated labels (e.g. `[self-hosted, linux, repo-manager]`) are the exception and should not include `lemon-prod`.
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
     - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#new-runner-setup) section to see which software is already expected on the system.
