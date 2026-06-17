@@ -30,6 +30,8 @@ nlohmann::json redact_json(const nlohmann::json& value);
 
 std::string extract_response_error(const std::string& response_body, int status_code);
 
+std::string sanitize_utf8_for_db(std::string value);
+
 bool should_skip_request_log_path(const std::string& path, const std::string& method);
 
 } // namespace lemon

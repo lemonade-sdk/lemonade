@@ -107,6 +107,47 @@ std::string json_value_to_string(const nlohmann::json& value) {
 
 constexpr size_t kMaxRedactedBodyBytes = 32768;
 
+bool is_valid_utf8(const std::string& value) {
+    size_t i = 0;
+    while (i < value.size()) {
+        const unsigned char byte = static_cast<unsigned char>(value[i]);
+        if (byte <= 0x7F) {
+            ++i;
+            continue;
+        }
+        size_t extra = 0;
+        if ((byte & 0xE0) == 0xC0) {
+            extra = 1;
+        } else if ((byte & 0xF0) == 0xE0) {
+            extra = 2;
+        } else if ((byte & 0xF8) == 0xF0) {
+            extra = 3;
+        } else {
+            return false;
+        }
+        if (i + extra >= value.size()) {
+            return false;
+        }
+        for (size_t j = 1; j <= extra; ++j) {
+            const unsigned char continuation =
+                static_cast<unsigned char>(value[i + j]);
+            if ((continuation & 0xC0) != 0x80) {
+                return false;
+            }
+        }
+        i += extra + 1;
+    }
+    return true;
+}
+
+bool looks_like_binary_payload(const std::string& value) {
+    if (value.size() >= 2 && static_cast<unsigned char>(value[0]) == 0x1F &&
+        static_cast<unsigned char>(value[1]) == 0x8B) {
+        return true;
+    }
+    return !is_valid_utf8(value);
+}
+
 } // namespace
 
 nlohmann::json redact_json(const nlohmann::json& value) {
@@ -265,6 +306,54 @@ ParsedRequestBody parse_request_body(const std::string& body,
     return parsed;
 }
 
+std::string sanitize_utf8_for_db(std::string value) {
+    if (value.empty() || is_valid_utf8(value)) {
+        return value;
+    }
+
+    std::string sanitized;
+    sanitized.reserve(value.size());
+    size_t i = 0;
+    while (i < value.size()) {
+        const unsigned char byte = static_cast<unsigned char>(value[i]);
+        size_t seq_len = 1;
+        bool valid = true;
+        if (byte <= 0x7F) {
+            seq_len = 1;
+        } else if ((byte & 0xE0) == 0xC0) {
+            seq_len = 2;
+        } else if ((byte & 0xF0) == 0xE0) {
+            seq_len = 3;
+        } else if ((byte & 0xF8) == 0xF0) {
+            seq_len = 4;
+        } else {
+            valid = false;
+        }
+
+        if (valid && i + seq_len <= value.size()) {
+            for (size_t j = 1; j < seq_len; ++j) {
+                const unsigned char continuation =
+                    static_cast<unsigned char>(value[i + j]);
+                if ((continuation & 0xC0) != 0x80) {
+                    valid = false;
+                    break;
+                }
+            }
+        } else {
+            valid = false;
+        }
+
+        if (valid) {
+            sanitized.append(value, i, seq_len);
+            i += seq_len;
+        } else {
+            sanitized.append("\xEF\xBF\xBD", 3);
+            ++i;
+        }
+    }
+    return sanitized;
+}
+
 std::string extract_response_error(const std::string& response_body, int status_code) {
     if (status_code >= 200 && status_code < 300) {
         return {};
@@ -278,25 +367,28 @@ std::string extract_response_error(const std::string& response_body, int status_
             if (response_json.contains("error")) {
                 const auto& error = response_json["error"];
                 if (error.is_string()) {
-                    return error.get<std::string>();
+                    return sanitize_utf8_for_db(error.get<std::string>());
                 }
                 if (error.is_object() && error.contains("message") &&
                     error["message"].is_string()) {
-                    return error["message"].get<std::string>();
+                    return sanitize_utf8_for_db(error["message"].get<std::string>());
                 }
-                return error.dump();
+                return sanitize_utf8_for_db(error.dump());
             }
             if (response_json.contains("message") &&
                 response_json["message"].is_string()) {
-                return response_json["message"].get<std::string>();
+                return sanitize_utf8_for_db(response_json["message"].get<std::string>());
             }
         }
     } catch (...) {
     }
-    if (response_body.size() > 512) {
-        return response_body.substr(0, 512);
+    if (looks_like_binary_payload(response_body)) {
+        return "[non-UTF-8 response body, " + std::to_string(response_body.size()) + " bytes]";
     }
-    return response_body;
+    if (response_body.size() > 512) {
+        return sanitize_utf8_for_db(response_body.substr(0, 512));
+    }
+    return sanitize_utf8_for_db(response_body);
 }
 
 bool should_skip_request_log_path(const std::string& path, const std::string& method) {

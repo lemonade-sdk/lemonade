@@ -8,8 +8,10 @@
 
 using lemon::ParsedRequestBody;
 using lemon::classify_endpoint_type;
+using lemon::extract_response_error;
 using lemon::parse_request_body;
 using lemon::redact_json;
+using lemon::sanitize_utf8_for_db;
 
 struct TestResult {
     int passed = 0;
@@ -90,11 +92,29 @@ static void test_char_counts_without_prompt_logging(TestResult& result) {
     }
 }
 
+static void test_binary_response_error(TestResult& result) {
+    const std::string gzip_like = std::string{'\x1f', '\x8b', '\x08', '\x00'};
+    const std::string extracted = extract_response_error(gzip_like, 404);
+    if (extracted.find("non-UTF-8") != std::string::npos) {
+        result.ok("binary response error sanitized");
+    } else {
+        result.fail("binary response error sanitized");
+    }
+
+    const std::string sanitized = sanitize_utf8_for_db(std::string{'\x8b', 'x'});
+    if (sanitized.find('\x8b') == std::string::npos && !sanitized.empty()) {
+        result.ok("invalid utf8 bytes replaced");
+    } else {
+        result.fail("invalid utf8 bytes replaced");
+    }
+}
+
 int main() {
     TestResult result;
     test_endpoint_classification(result);
     test_redaction(result);
     test_char_counts_without_prompt_logging(result);
+    test_binary_response_error(result);
 
     printf("\nResults: %d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;

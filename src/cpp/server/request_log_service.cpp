@@ -392,9 +392,13 @@ void RequestLogService::close_connection() {
         PQfinish(as_pg_conn(pg_conn_));
         pg_conn_ = nullptr;
     }
+    schema_initialized_ = false;
 }
 
 bool RequestLogService::init_schema() {
+    if (schema_initialized_) {
+        return true;
+    }
     std::lock_guard<std::mutex> lock(db_mutex_);
     if (!pg_conn_ || PQstatus(as_pg_conn(pg_conn_)) != CONNECTION_OK) {
         return false;
@@ -408,6 +412,9 @@ bool RequestLogService::init_schema() {
     }
     if (result) {
         PQclear(result);
+    }
+    if (ok) {
+        schema_initialized_ = true;
     }
     return ok;
 }
@@ -453,9 +460,21 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
         entry.prompt_chars = parsed.prompt_chars;
         entry.messages_chars = parsed.messages_chars;
         if (parsed.has_redacted_body) {
-            entry.redacted_body_json = parsed.redacted_body.dump();
+            entry.redacted_body_json =
+                sanitize_utf8_for_db(parsed.redacted_body.dump());
             entry.has_redacted_body = true;
         }
+
+        entry.client_ip = sanitize_utf8_for_db(std::move(entry.client_ip));
+        entry.forwarded_for = sanitize_utf8_for_db(std::move(entry.forwarded_for));
+        entry.method = sanitize_utf8_for_db(std::move(entry.method));
+        entry.path = sanitize_utf8_for_db(std::move(entry.path));
+        entry.query_string = sanitize_utf8_for_db(std::move(entry.query_string));
+        entry.user_agent = sanitize_utf8_for_db(std::move(entry.user_agent));
+        entry.endpoint_type = sanitize_utf8_for_db(std::move(entry.endpoint_type));
+        entry.model = sanitize_utf8_for_db(std::move(entry.model));
+        entry.keep_alive = sanitize_utf8_for_db(std::move(entry.keep_alive));
+        entry.error = sanitize_utf8_for_db(std::move(entry.error));
 
         const std::string status_code = std::to_string(entry.status_code);
         const std::string duration_ms = std::to_string(entry.duration_ms);

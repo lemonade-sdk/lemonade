@@ -77,6 +77,8 @@ private:
     bool insert_entries(const std::vector<RequestLogEntry>& entries);
     void run_purge();
 
+    bool schema_initialized_ = false;
+
 #ifdef LEMONADE_HAVE_REQUEST_LOG
     mutable std::mutex db_mutex_;
     void* pg_conn_ = nullptr; // PGconn*, opaque to avoid header dependency
