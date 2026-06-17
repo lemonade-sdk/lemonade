@@ -18,6 +18,8 @@
 namespace lemon {
 namespace {
 
+namespace httplib_detail = httplib::detail;
+
 thread_local std::chrono::steady_clock::time_point g_request_log_start;
 thread_local bool g_request_log_start_valid = false;
 
@@ -49,7 +51,8 @@ bool is_gzip_payload(const std::string& body) {
            static_cast<unsigned char>(body[1]) == 0x8B;
 }
 
-std::string decompress_with(httplib::decompressor& decompressor, const std::string& body) {
+std::string decompress_with(httplib_detail::decompressor& decompressor,
+                            const std::string& body) {
     if (!decompressor.is_valid() || body.empty()) {
         return body;
     }
@@ -76,7 +79,7 @@ std::string prepare_response_body_for_logging(const httplib::Response& res) {
     if (!encoding.empty()) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
         if (encoding_contains(encoding, "gzip") || encoding_contains(encoding, "deflate")) {
-            httplib::gzip_decompressor decompressor;
+            httplib_detail::gzip_decompressor decompressor;
             const std::string decoded = decompress_with(decompressor, body);
             if (decoded != body) {
                 return decoded;
@@ -85,7 +88,7 @@ std::string prepare_response_body_for_logging(const httplib::Response& res) {
 #endif
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
         if (encoding_contains(encoding, "br")) {
-            httplib::brotli_decompressor decompressor;
+            httplib_detail::brotli_decompressor decompressor;
             const std::string decoded = decompress_with(decompressor, body);
             if (decoded != body) {
                 return decoded;
@@ -94,7 +97,7 @@ std::string prepare_response_body_for_logging(const httplib::Response& res) {
 #endif
 #ifdef CPPHTTPLIB_ZSTD_SUPPORT
         if (encoding_contains(encoding, "zstd")) {
-            httplib::zstd_decompressor decompressor;
+            httplib_detail::zstd_decompressor decompressor;
             const std::string decoded = decompress_with(decompressor, body);
             if (decoded != body) {
                 return decoded;
@@ -105,7 +108,7 @@ std::string prepare_response_body_for_logging(const httplib::Response& res) {
 
     if (is_gzip_payload(body)) {
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        httplib::gzip_decompressor decompressor;
+        httplib_detail::gzip_decompressor decompressor;
         const std::string decoded = decompress_with(decompressor, body);
         if (decoded != body) {
             return decoded;
