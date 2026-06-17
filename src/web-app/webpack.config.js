@@ -80,7 +80,7 @@ module.exports = (env, argv) => {
         {
           test: /\.css$/,
           use: ['style-loader', 'css-loader'],
-          exclude: useSystemPackages ? /katex\.min\.css$/ : undefined,
+          exclude: useSystemKatexCss ? /katex\.min\.css$/ : undefined,
         },
         {
           test: /\.svg$/,
@@ -139,6 +139,11 @@ module.exports = (env, argv) => {
     output: {
       filename: 'renderer.bundle.js',
       path: process.env.WEBPACK_OUTPUT_PATH || path.resolve(__dirname, 'dist/renderer'),
+    },
+    optimization: {
+      // GUI3's full web entry includes large markdown/diagram/chart code.
+      // Keep packaging builds unminified so CI does not stall in Terser.
+      minimize: false,
     },
     plugins: [
       new HtmlWebpackPlugin({
