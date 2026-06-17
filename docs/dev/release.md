@@ -27,25 +27,66 @@ Decide the new version number using these criteria:
 - `patch` release: release only contains fixes or less-visible features.
     - `patch` releases are rare, and typically only happen if a serious bug needs to be fixed right after a `major`/`minor` release.
 
-## Step 2: Push a Tag
+## Step 2: Create the Release Branch
+
+Each release is developed and tagged from a dedicated release branch, not from `main`. Create the branch from the tip of `main` once the release is ready to stabilize:
+
+```bash
+git checkout main
+git pull
+git checkout -b release-vX.Y.Z
+git push origin release-vX.Y.Z
+```
+
+### Managing the Release Branch
+
+Two situations arise while the release branch is open:
+
+**Backport a fix from `main` to the release branch** (most common — a fix merged to main that should also land in this release):
+
+```bash
+# Find the squash-merge commit SHA on main
+git log main --oneline | head -10
+
+git checkout release-vX.Y.Z
+git cherry-pick <commit-sha>
+git push origin release-vX.Y.Z
+```
+
+The release branch has no squash-merge PR requirement, so a direct push works fine.
+
+**Forward-port a commit from the release branch back to `main`** (rare — a fix made directly on the release branch that was never on main):
+
+Because `main` requires squash merges for PRs, **do not use a PR** — it would collapse the cherry-picked commit into a squash commit, destroying authorship and history. Push directly with an admin bypass instead:
+
+```bash
+git checkout main
+git pull
+git cherry-pick <commit-sha-from-release-branch>
+git push origin main   # requires admin "bypass branch protections" permission
+```
+
+Confirm with the team before pushing directly to `main`.
+
+## Step 3: Push a Tag
 
 Lemonade releases are automatically created by the [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) final step, which is triggered by pushing a tag that matches the `v*` pattern. The tag must match the pattern `v<major>.<minor>.<patch>`, i.e., the value from CMakeLists.txt with a leading `v`.
 
-Let's say you're releasing v10.7.0, this will trigger the release action:
+Let's say you're releasing v10.8.0, this will trigger the release action:
 
-```
+```bash
 # Make sure you are tagging the right commit!
-git checkout main
+git checkout release-v10.8.0
 git pull
 
-git tag v10.7.0
+git tag v10.8.0
 
-git push origin v10.7.0
+git push origin v10.8.0
 ```
 
 Example action from v10.7.0: https://github.com/lemonade-sdk/lemonade/actions/runs/27283434473/job/80590025966
 
-## Step 3: Windows Signing
+## Step 4: Windows Signing
 
 Lemonade .msi artifacts are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!
 
@@ -61,21 +102,27 @@ You can view the signing request here: https://app.signpath.io/Web/8103545b-7814
 
 You must click the link, sign in, and press `Approve`.
 
-## Step 4: Release Action Finishes
+## Step 5: Release Action Finishes
 
 Wait for the `cpp_server_build_test_release.yml` action to complete successfully. Sometimes it doesn't, because of a false negative on a test or because we renamed a workflow step or release artifact and forgot to update the release step.
 
 If it fails, ideally you can press "rerun" on the job and get success.
 
-If you need to fix the code, first push the fix to `main` branch. Then tag the head of main with the release tag and force push it to origin.
+If you need to fix the code, push the fix to the release branch. Then move the tag to the new head and force push it to origin:
 
-## Step 5: Update the Release Notes
+```bash
+git checkout release-vX.Y.Z
+# ... make fix, commit ...
+git push origin release-vX.Y.Z
+git tag -f vX.Y.Z
+git push origin vX.Y.Z --force
+```
 
-The release action auto-generates a set of release notes that looks like this: https://github.com/lemonade-sdk/lemonade/releases/tag/v10.7.0
+## Step 6: Update the Release Notes
 
-Notably, two sections are not auto-generated: the headline and breaking changes.
+The release action auto-generates release notes that include the **Headline** and **Breaking Changes** sections pulled from the open GitHub issue titled `vX.Y.Z release notes` (exact match on the tag name, e.g. `v10.8.0 release notes`). The result looks like this: https://github.com/lemonade-sdk/lemonade/releases/tag/v10.7.0
 
-You may also need to edit the release to:
+You may need to manually edit the release to:
 - add co-author contributors who were missing
 - add deprecation notices
 - add/remove links to release artifacts that we forgot to update in the release workflow.
@@ -84,15 +131,15 @@ DO NOT add or replace release artifacts, as this would break the chain of custod
 
 ### Headline
 
-The headline section must start with `## Headline` and contain a single-depth bulleted list, because https://lemonade-server.ai looks for this pattern.
+The headline section starts with `## Headline` and contains a single-depth bulleted list. The website at https://lemonade-server.ai parses this section, so the format must be preserved.
 
-The list should be the 3-5 most noteworthy aspects of the release that you would want users to know about. Keep these concise and do not include meta info like shoutouts. Headlines must also not include any special formatting or links.
+The list should be the 3-5 most noteworthy aspects of the release. Keep items concise; no special formatting or links, no shoutouts.
 
 ### Breaking Changes
 
 Bulleted list with one item per breaking change. Keep it concise, and link to a wiki article for migration if more details are needed.
 
-## Step 6: Discord Announcement
+## Step 7: Discord Announcement
 
 Each release gets a post in `#announcements` on the Lemonade Discord.
 
@@ -110,6 +157,6 @@ Suggested structure:
 
 Try to find an appealing narrative arc for the release, and implement it by combining contributions into sections/bullets. For example, if there were 3 contributions by 3 authors for LMX models, say "Authors X, Y, and Z teamed up to improve in LMX..."
 
-## Step 7: Social Media
+## Step 8: Social Media
 
 Not required, but it is always good to promote the new release online.
