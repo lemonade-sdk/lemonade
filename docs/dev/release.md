@@ -6,13 +6,15 @@ This guide documents the end-to-end process of releasing Lemonade.
 
 Lemonade has built its brand on quality and ease-of-use. Do not release a new Lemonade version if this is compromised in any way.
 
-The repo-manager workflow runs automatically on every push to `main` or a release branch and publishes a live release dashboard at [https://lemonade-server.ai/repo-manager](https://lemonade-server.ai/repo-manager). Use this as your primary source of truth for whether the release is ready to ship. It also maintains three GitHub issues for the upcoming release (described in the steps below); these are updated automatically on each push.
+The repo-manager workflow runs automatically on every push to `main` or a release branch and publishes a live release dashboard at [https://lemonade-server.ai/repo-manager](https://lemonade-server.ai/repo-manager). Use to assess whether the release is ready to ship. It also maintains three GitHub issues for the upcoming release (described in the steps below); these are updated automatically on each push.
 
 ## Release Cadence
 
 Lemonade operates on a weekly release cadence, with new releases coming out each Wednesday morning. Each release is managed by a core maintainer on a rotating basis.
 
 It is highly recommended that any PR targeting a particular release be in a highly-reviewed state by Monday morning on the week of that release. Maintainers reserve the right to postpone merging any PR until after the release, in order to prioritize quality.
+
+We suggest creating the release branch on the Tuesday before the release to provide time for testing before the Wednesday release.
 
 ## Step 1: Update the Version
 
@@ -46,7 +48,7 @@ Once the branch is pushed, repo-manager will automatically create three GitHub i
 - **`vX.Y.Z release notes`** — Headline and Breaking Changes sections pre-populated from the commit history. Review and edit before tagging; the release action pulls directly from this issue.
 - **`vX.Y.Z announcement`** — a full Discord announcement draft with per-feature sections and contributor shoutouts. Review and edit before posting.
 
-All three issues are re-synced automatically on every subsequent push to the release branch.
+All three issues are re-synced automatically on every subsequent push to the release branch. If you leave comments on those issues the system will take your feedback into account when regenerating the issue content.
 
 ### Managing the Release Branch
 
@@ -158,6 +160,31 @@ Open the **`vX.Y.Z announcement`** GitHub issue. Repo-manager has drafted a full
 - Major and Minor releases: `@everyone`
 - Patch releases: `@release`
 
+The auto-generated announcement uses people's github usernames for shoutouts. Please try to translate those to Discord usernames to the best of your ability before posting.
+
 ## Step 8: Social Media
 
 Not required, but it is always good to promote the new release online.
+
+### Reddit
+
+There are two kinds of Reddit posts we typically do. It's ok to do both for a single release, but in that case post one on Wednesday and one 2+ days later.
+
+**Release Update**
+
+Covers the entire release. This can be similar to the announcement posted on Discord, but:
+- Be sure to remove Discord-specific artifacts like `@everyone`.
+- Add context for people who are not Lemonade users.
+- Add call-to-action (CTA) content to the bottom. Typically a link to the GitHub, a link to the Discord, and some request such as giving feedback on a plan or trying something out.
+
+Example of a successful Reddit release updates:
+- Major update: https://www.reddit.com/r/LocalLLaMA/comments/1rsucvk/lemonade_v10_linux_npu_support_and_chock_full_of/
+- Minor update: https://www.reddit.com/r/LocalLLaMA/comments/1u26wkb/lemonade_v107_release_and_project_organization/
+
+**Feature Update**
+
+Covers a specific feature in-depth. Always include a graphical asset to draw people in.
+
+Examples of successful Reddit feature posts:
+- https://www.reddit.com/r/LocalLLaMA/comments/1t7g70j/vllm_rocm_has_been_added_to_lemonade_as_an/
+- https://www.reddit.com/r/LocalLLaMA/comments/1u37q7u/having_some_fun_with_lmxomni52bhalo_in_open_webui/
