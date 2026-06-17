@@ -18,6 +18,7 @@ WorkingDirectory=%S/lemonade
 #   LEMONADE_API_KEY         — require API-key auth on all routes
 #   LEMONADE_ADMIN_API_KEY   — API-key specific to internal routes
 EnvironmentFile=-/etc/lemonade/conf.d/*.conf
+Environment=LD_LIBRARY_PATH=/opt/xilinx/xrt/lib:/opt/xilinx/xrt/lib64
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

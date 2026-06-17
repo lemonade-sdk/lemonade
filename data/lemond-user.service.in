@@ -7,6 +7,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=%h
 EnvironmentFile=-%E/lemonade/conf.d/*.conf
+Environment=LD_LIBRARY_PATH=/opt/xilinx/xrt/lib:/opt/xilinx/xrt/lib64
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
