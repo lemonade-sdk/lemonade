@@ -112,12 +112,53 @@ function capChipClass(cap: Capability): string {
 
 
 const DEFAULT_CONTEXT_SIZE = 4096;
-const DEFAULT_CONTEXT_LIMIT = 131072;
+const DEFAULT_CONTEXT_LIMIT = 998400;
 
 function parseContextSize(value: unknown, fallback = DEFAULT_CONTEXT_SIZE): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.max(1, Math.round(n));
+}
+
+const CONTEXT_SIZE_SLIDER_SEGMENTS = [
+  { from: 1024, to: 16 * 1024, step: 1024 },
+  { from: 20 * 1024, to: 64 * 1024, step: 4 * 1024 },
+  { from: 80 * 1024, to: 256 * 1024, step: 16 * 1024 },
+  { from: 320 * 1024, to: DEFAULT_CONTEXT_LIMIT, step: 64 * 1024 },
+];
+
+function contextSizeOptions(max: number): number[] {
+  const limit = Math.max(1, Math.round(max));
+  const values = new Set<number>();
+
+  for (const segment of CONTEXT_SIZE_SLIDER_SEGMENTS) {
+    if (segment.from > limit) continue;
+    const end = Math.min(segment.to, limit);
+    for (let value = segment.from; value <= end; value += segment.step) {
+      values.add(value);
+    }
+  }
+
+  values.add(Math.min(DEFAULT_CONTEXT_SIZE, limit));
+  values.add(limit);
+
+  return [...values]
+    .filter(value => value > 0 && value <= limit)
+    .sort((a, b) => a - b);
+}
+
+function nearestContextSize(value: unknown, options: number[], fallback = DEFAULT_CONTEXT_SIZE): number {
+  const parsed = parseContextSize(value, fallback);
+  if (!options.length) return parsed;
+
+  return options.reduce((best, candidate) => (
+    Math.abs(candidate - parsed) < Math.abs(best - parsed) ? candidate : best
+  ), options[0]);
+}
+
+function contextSizeIndex(value: unknown, options: number[]): number {
+  const nearest = nearestContextSize(value, options);
+  return Math.max(0, options.indexOf(nearest));
 }
 
 function clampContextSize(value: unknown, max: number, fallback = DEFAULT_CONTEXT_SIZE): number {
@@ -753,14 +794,21 @@ const SlideoverContent: React.FC<{
     };
   }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, manualArgsActive, autoOptRunId, autoRuns]);
 
-  const selectedModel = models.find(m => modelName(m) === applyTarget);
-  const selectedModelContextLimit = contextLimitForModel(selectedModel);
-  const ctxSliderMax = selectedModelContextLimit || DEFAULT_CONTEXT_LIMIT;
-  const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
+const selectedModel = models.find(m => modelName(m) === applyTarget);
+const selectedModelContextLimit = contextLimitForModel(selectedModel);
+const ctxSliderMax = selectedModelContextLimit || DEFAULT_CONTEXT_LIMIT;
+const ctxOptions = useMemo(() => contextSizeOptions(ctxSliderMax), [ctxSliderMax]);
+const ctxSliderIndex = useMemo(() => contextSizeIndex(ctxSize, ctxOptions), [ctxSize, ctxOptions]);
+const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
 
   useEffect(() => {
-    if (ctxSize > ctxSliderMax) setCtxSize(ctxSliderMax);
-  }, [ctxSize, ctxSliderMax]);
+    const nextCtxSize = nearestContextSize(
+      clampContextSize(ctxSize, ctxSliderMax, DEFAULT_CONTEXT_SIZE),
+      ctxOptions,
+    );
+
+    if (ctxSize !== nextCtxSize) setCtxSize(nextCtxSize);
+  }, [ctxSize, ctxSliderMax, ctxOptions]);
   const validKeys = RECIPE_KEYS[engineHint] || [];
   const hasAll = appliesTo.includes('all');
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
@@ -832,12 +880,12 @@ const SlideoverContent: React.FC<{
                   <input
                     type="range"
                     className="slider"
-                    min={1024}
-                    max={ctxSliderMax}
-                    step={1024}
-                    value={ctxSize}
+                    min={0}
+                    max={Math.max(0, ctxOptions.length - 1)}
+                    step={1}
+                    value={ctxSliderIndex}
                     disabled={isReadOnly}
-                    onChange={e => setCtxSize(clampContextSize(e.target.value, ctxSliderMax, ctxSize))}
+                    onChange={e => setCtxSize(ctxOptions[Number(e.target.value)] ?? ctxSize)}
                     data-recipe-ctx
                   />
                   <span className="field__value">{ctxSize.toLocaleString()}</span>
