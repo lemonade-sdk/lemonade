@@ -23,6 +23,7 @@ import { getCollectionComponents, isCollectionFullyDownloaded, isCollectionModel
 import { getCollectionDisplayName, isCollectionEditableAsCustom } from './utils/customCollections';
 import { mergeWithDefaultSettings } from './utils/appSettings';
 import { tauriReady } from './tauriShim';
+import { getVisibleDownloadedModels } from './utils/visibleDownloadedModels';
 
 interface ModelFamily {
   displayName: string;
@@ -348,7 +349,7 @@ export type LeftPanelView = 'models' | 'backends' | 'marketplace' | 'settings';
 
 const ModelManager: React.FC<ModelManagerProps> = ({ isContentVisible, onContentVisibilityChange, width = 280, currentView, onViewChange }) => {
   // Get shared model data from context
-  const { modelsData, suggestedModels, refresh: refreshModels } = useModels();
+  const { modelsData, suggestedModels, downloadedModels, refresh: refreshModels } = useModels();
   // Get system context for lazy loading system info
   const { ensureSystemInfoLoaded, systemInfo } = useSystem();
 
@@ -640,6 +641,28 @@ const [searchQuery, setSearchQuery] = useState('');
     () => Object.values(groupedModels).reduce((sum, arr) => sum + arr.length, 0),
     [groupedModels]
   );
+  const visibleDownloadedModels = useMemo(() => {
+    let models = getVisibleDownloadedModels(downloadedModels);
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      models = models.filter((model) => {
+        const displayName = isCollectionModel(model.info)
+          ? getCollectionDisplayName(model.id)
+          : getModelDisplayName(model.id, model.info);
+        return model.id.toLowerCase().includes(query) ||
+          displayName.toLowerCase().includes(query);
+      });
+    }
+    return [...models].sort((a, b) => {
+      const nameA = isCollectionModel(a.info)
+        ? getCollectionDisplayName(a.id)
+        : getModelDisplayName(a.id, a.info);
+      const nameB = isCollectionModel(b.info)
+        ? getCollectionDisplayName(b.id)
+        : getModelDisplayName(b.id, b.info);
+      return nameA.localeCompare(nameB);
+    });
+  }, [downloadedModels, searchQuery]);
   const categories = useMemo(() => Object.keys(groupedModels).sort(), [groupedModels]);
   const builtModelLists = useMemo(
     () => Object.fromEntries(
@@ -1959,6 +1982,52 @@ const [searchQuery, setSearchQuery] = useState('');
                   <div className="loaded-model-count-pill">{availableModelCount} shown</div>
                 </div>
                 {renderModelsView()}
+              </div>
+            )}
+            {currentView === 'models' && (
+              <div className="downloaded-models-section widget">
+                <div className="available-models-header">
+                  <div className="loaded-model-label">DOWNLOADED MODELS</div>
+                  <div className="loaded-model-count-pill">{visibleDownloadedModels.length} downloaded</div>
+                </div>
+                {visibleDownloadedModels.length === 0 && (
+                  <div className="loaded-model-empty">No downloaded models</div>
+                )}
+                <div className="loaded-model-list">
+                  {visibleDownloadedModels.map(({ id: modelName, info }) => {
+                    const displayName = isCollectionModel(info)
+                      ? getCollectionDisplayName(modelName)
+                      : getModelDisplayName(modelName, info);
+                    const size = getModelSize(modelName, info);
+                    const isCollection = isCollectionModel(info);
+                    const isBuiltInCollection = isCollection && info?.suggested === true &&
+                      !(info?.labels ?? []).includes('custom') &&
+                      !modelName.startsWith(USER_MODEL_PREFIX) &&
+                      info?.source !== 'user' && info?.source !== 'user_models' && info?.source !== 'custom';
+                    const canDelete = !isCollection || !isBuiltInCollection;
+                    return (
+                      <div key={modelName} className="loaded-model-info">
+                        <div className="loaded-model-details">
+                          <span
+                            className="loaded-model-indicator downloaded"
+                            title="Downloaded"
+                          />
+                          <span className="loaded-model-name" title={modelName}>
+                            {displayName}
+                            {size !== undefined && (
+                              <span className="downloaded-model-size"> ({formatSize(size)})</span>
+                            )}
+                          </span>
+                        </div>
+                        {canDelete && (
+                          <div className="active-model-actions">
+                            {renderDeleteButton(modelName, isCollection ? 'Delete Omni Model' : 'Delete model')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {currentView === 'models' && searchQuery.trim().length >= 3 && ( // Rendering the HF models by searching

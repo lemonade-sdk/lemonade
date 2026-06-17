@@ -82,6 +82,20 @@ const tests = [
       );
     },
   },
+  {
+    name: 'downloaded models section lists local inventory with delete actions',
+    run() {
+      const source = normalizeWhitespace(readSource(MODEL_MANAGER));
+      assertIncludes(source, 'DOWNLOADED MODELS', 'Model Manager should expose a Downloaded Models section.');
+      assertIncludes(source, 'getVisibleDownloadedModels', 'Downloaded Models should use the shared visibility helper.');
+      assertIncludes(source, 'downloadedModels', 'Downloaded Models should read from useModels downloadedModels.');
+      assertMatches(
+        source,
+        /downloaded-models-section[\s\S]*?visibleDownloadedModels\.map[\s\S]*?renderDeleteButton/,
+        'Downloaded model rows should render delete buttons via renderDeleteButton.',
+      );
+    },
+  },
 ];
 
 module.exports = { tests };

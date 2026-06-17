@@ -3,6 +3,7 @@ import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
 import { isCustomCollectionModel } from '../utils/customCollections';
 import { getModelDisplayName } from '../utils/modelDisplayName';
+import { getVisibleDownloadedModels } from '../utils/visibleDownloadedModels';
 
 interface ModelSelectorProps {
   disabled: boolean;
@@ -25,13 +26,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const visibleDownloadedModels = downloadedModels.filter((model) => {
-    if (model.info?.labels?.includes('upscaling')) return false;
-    if (!isCollectionModel(model.info)) {
-      return true;
-    }
-    return model.info.suggested === true || isCustomCollectionModel(model.id, model.info);
-  });
+  const visibleDownloadedModels = getVisibleDownloadedModels(downloadedModels);
 
   const visibleDownloadedModelIds = new Set(visibleDownloadedModels.map((model) => model.id));
 

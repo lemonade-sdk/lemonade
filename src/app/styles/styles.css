@@ -1309,6 +1309,15 @@ footer {
     background: transparent;
 }
 
+.downloaded-models-section.widget {
+    margin: var(--mm-stack-gap) 0 0;
+    padding: var(--mm-section-pad-y) var(--mm-section-pad-x) 6px;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    border-top: 1px solid var(--border-alpha-05);
+}
+
 .hf-search-section.widget {
     margin: var(--mm-stack-gap) 0 0;
     padding: var(--mm-section-pad-y) var(--mm-section-pad-x) 6px;
@@ -1576,6 +1585,18 @@ footer {
     background-color: #facc15;
     animation: pulse 1.5s ease-in-out infinite;
     filter: drop-shadow(0 0 2px #facc15);
+}
+
+.loaded-model-indicator.downloaded {
+    background-color: var(--model-available);
+    animation: none;
+    filter: none;
+    opacity: 1;
+}
+
+.downloaded-model-size {
+    color: var(--text-secondary);
+    font-weight: 400;
 }
 
 @keyframes pulse-glow {
