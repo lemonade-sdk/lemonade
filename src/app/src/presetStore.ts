@@ -1,5 +1,14 @@
 import type { ModelInfo } from './api';
 import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';
+import {
+  NO_SYSTEM_PROMPT_ID,
+  defaultSystemPromptIdForPreset,
+  defaultToolsEnabledForPreset,
+  sanitizeSystemPrompts,
+  starterSystemPromptsForPreset,
+  type PresetSystemPrompt,
+} from './presetPrompts';
+export { CUSTOM_PRESET_PROMPTS, NO_SYSTEM_PROMPT_ID, newCustomSystemPrompt, type PresetSystemPrompt } from './presetPrompts';
 
 export type Capability = 'all' | 'chat' | 'omni' | 'image' | 'transcription' | 'tts' | 'embedding' | 'reranking' | 'vision' | 'code';
 export type PresetRecipe = 'llamacpp' | 'sd-cpp' | 'whispercpp' | 'moonshine' | 'flm' | 'ryzenai-llm' | 'vllm' | 'kokoro' | 'auto';
@@ -46,6 +55,9 @@ export interface Preset {
   starter: boolean;
   auto_opt_run_id?: string | null;
   auto_opt_enabled?: boolean;
+  system_prompt_id?: string;
+  system_prompts?: PresetSystemPrompt[];
+  tools_enabled?: boolean;
 }
 
 export const LS_USER_PRESETS = 'user_presets';
@@ -79,6 +91,9 @@ export const DEFAULT_PRESET: Preset = {
   starter: true,
   auto_opt_enabled: true,
   auto_opt_run_id: null,
+  system_prompt_id: NO_SYSTEM_PROMPT_ID,
+  system_prompts: [],
+  tools_enabled: true,
 };
 
 
@@ -95,8 +110,8 @@ export function presetSupportsCapability(preset: Pick<Preset, 'id' | 'applies_to
   return caps.includes(cap);
 }
 
-export const STARTERS: Preset[] = [
-  { id: 's-balanced', name: 'Balanced', description: 'Sensible defaults. Good first pick for everyday chat.', applies_to: ['chat'], recipe_options: { ctx_size: 4096 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
+const STARTER_BASE: Preset[] = [
+  { id: 's-balanced', name: 'Balanced', description: 'Sensible defaults. Good first pick for everyday chat.', applies_to: ['chat'], recipe_options: { ctx_size: 16384 }, sampling: { temperature: 0.70, top_p: 0.90, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
   { id: 's-thorough', name: 'Thorough', description: 'Careful answers for analysis, planning, debugging, and decisions.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.40, top_p: 0.95, top_k: 40, repeat_penalty: 1.10 }, engine_hint: 'llamacpp', starter: true },
   { id: 's-quick-chat', name: 'Quick Chat', description: 'Small context, tight sampling. Snappy responses for quick interactions.', applies_to: ['chat'], recipe_options: { ctx_size: 4048 }, sampling: { temperature: 0.60, top_p: 0.80, top_k: 40, repeat_penalty: 1.05 }, engine_hint: 'llamacpp', starter: true },
   { id: 's-creative', name: 'Creative', description: 'Higher temperature for brainstorming, dialog, and divergent thinking.', applies_to: ['chat'], recipe_options: { ctx_size: 32768 }, sampling: { temperature: 0.95, top_p: 0.95, top_k: 60, repeat_penalty: 1.00 }, engine_hint: 'llamacpp', starter: true },
@@ -106,6 +121,13 @@ export const STARTERS: Preset[] = [
   { id: 's-preview', name: 'Preview', description: 'Fewer steps, looser guidance — fast drafts and iteration.', applies_to: ['image'], recipe_options: { steps: 8, cfg_scale: 6.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
   { id: 's-turbo', name: 'Turbo', description: 'Fastest image drafts for rapid iteration.', applies_to: ['image'], recipe_options: { steps: 4, cfg_scale: 1.0 }, sampling: {}, engine_hint: 'sd-cpp', starter: true },
 ];
+
+export const STARTERS: Preset[] = STARTER_BASE.map(preset => ({
+  ...preset,
+  system_prompt_id: defaultSystemPromptIdForPreset(preset.id),
+  system_prompts: starterSystemPromptsForPreset(preset.id),
+  tools_enabled: defaultToolsEnabledForPreset(preset.id),
+}));
 
 
 function formatDash(value: unknown, digits?: number): string {
@@ -359,17 +381,29 @@ export function isCompatible(preset: Preset, model: ModelInfo | string | null | 
 export function sanitizePreset(p: Partial<Preset>): Preset | null {
   if (!Array.isArray(p.applies_to) || p.applies_to.length === 0) return null;
   const id = p.id || `u-${Date.now()}`;
+  const isDefault = id === DEFAULT_PRESET.id;
+  const normalizedAppliesTo = normalizePresetCapabilities(id, p.applies_to);
+  const supportsTools = normalizedAppliesTo.includes('all') || normalizedAppliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
+  const systemPrompts = isDefault ? [] : sanitizeSystemPrompts(p.system_prompts, id);
+  const requestedPromptId = typeof p.system_prompt_id === 'string' ? p.system_prompt_id : defaultSystemPromptIdForPreset(id);
+  const hasRequestedPrompt = systemPrompts.some(prompt => prompt.id === requestedPromptId);
+  const systemPromptId = isDefault
+    ? NO_SYSTEM_PROMPT_ID
+    : (requestedPromptId === NO_SYSTEM_PROMPT_ID ? NO_SYSTEM_PROMPT_ID : (hasRequestedPrompt ? requestedPromptId : (systemPrompts[0]?.id || NO_SYSTEM_PROMPT_ID)));
   return {
     id,
     name: p.name || 'Untitled',
     description: p.description || '',
-    applies_to: normalizePresetCapabilities(id, p.applies_to as Capability[]),
+    applies_to: normalizedAppliesTo,
     recipe_options: p.recipe_options || {},
     sampling: p.sampling || {},
     engine_hint: p.engine_hint || 'auto',
     starter: p.starter ?? false,
     auto_opt_run_id: p.auto_opt_run_id ?? null,
     auto_opt_enabled: p.auto_opt_enabled ?? true,
+    system_prompt_id: systemPromptId,
+    system_prompts: systemPrompts,
+    tools_enabled: supportsTools && (typeof p.tools_enabled === 'boolean' ? p.tools_enabled : defaultToolsEnabledForPreset(id)),
   };
 }
 
@@ -414,6 +448,22 @@ export function saveBackendApplied(applied: Record<string, string>): void {
 
 export function allStoredPresets(): Preset[] {
   return [DEFAULT_PRESET, ...STARTERS, ...loadUserPresets()];
+}
+
+export function selectedSystemPromptForPreset(preset: Preset | null | undefined): PresetSystemPrompt | null {
+  if (!preset || preset.system_prompt_id === NO_SYSTEM_PROMPT_ID) return null;
+  const prompts = sanitizeSystemPrompts(preset.system_prompts, preset.id);
+  const selected = prompts.find(prompt => prompt.id === preset.system_prompt_id) || prompts[0];
+  return selected && selected.prompt.trim() ? selected : null;
+}
+
+export function systemPromptTextForPreset(preset: Preset | null | undefined): string | null {
+  return selectedSystemPromptForPreset(preset)?.prompt.trim() || null;
+}
+
+export function systemPromptNameForPreset(preset: Preset | null | undefined): string {
+  if (!preset || preset.system_prompt_id === NO_SYSTEM_PROMPT_ID) return 'No prompt';
+  return selectedSystemPromptForPreset(preset)?.name || 'No prompt';
 }
 
 export function activePresetForModel(modelName: string): Preset {
