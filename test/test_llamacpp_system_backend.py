@@ -28,7 +28,6 @@ from utils.server_base import (
     PORT,
     pull_model_with_retry,
     set_server_config,
-    wait_for_server,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -167,59 +166,11 @@ def _is_server_running(port=PORT):
         return False
 
 
-def _port_bindable(family, ip, port):
-    """Probe whether (ip, port) can be bound. Mirrors lemond's port_is_available
-    check: uses SO_REUSEADDR (POSIX) / SO_EXCLUSIVEADDRUSE (Windows) so a socket
-    in TIME_WAIT is still treated as free, while an actively-bound listener is
-    detected as busy.
-    """
-    sock = socket.socket(family, socket.SOCK_STREAM)
-    try:
-        if os.name == "nt":
-            # Best-effort: SO_EXCLUSIVEADDRUSE matches the lemond probe but is
-            # only present on Windows.
-            try:
-                sock.setsockopt(
-                    socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", 0), 1
-                )
-            except (AttributeError, OSError):
-                pass
-        else:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            sock.bind((ip, port))
-            return True
-        except OSError:
-            return False
-    finally:
-        sock.close()
-
-
-def _port_is_free(port=PORT):
-    """True only when the port is bindable on both 127.0.0.1 and ::1.
-
-    lemond binds IPv4 and IPv6 separately and refuses to start if either is
-    already in use. A liveness probe via socket.create_connection() can return
-    False (connect refused) while an old lemond's IPv6 listen socket is still
-    bound, so we explicitly verify both families are free.
-    """
-    if not _port_bindable(socket.AF_INET, "127.0.0.1", port):
-        return False
-    if socket.has_ipv6:
-        try:
-            if not _port_bindable(socket.AF_INET6, "::1", port):
-                return False
-        except OSError:
-            # IPv6 stack unavailable — IPv4 result is sufficient.
-            pass
-    return True
-
-
 def _wait_for_server_stop(port=PORT, timeout=30):
-    """Wait for the server to stop and the port to become bindable again."""
+    """Wait for the server's HTTP endpoint to stop accepting connections."""
     start_time = time.time()
     while time.time() - start_time < timeout:
-        if not _is_server_running(port) and _port_is_free(port):
+        if not _is_server_running(port):
             return True
         time.sleep(1)
     return False
@@ -237,58 +188,123 @@ def _get_lemond_binary():
     return shutil.which("lemond") or "lemond"
 
 
+def _pick_free_port():
+    """Return an unused TCP port assigned by the OS on the IPv4 loopback.
+
+    Each lemond instance this test starts uses a fresh OS-assigned port. That
+    sidesteps a TCP rebind hazard: lemond (the server) initiates the close on
+    shutdown, so its accepted socket on the listen port lingers in FIN_WAIT2 /
+    TIME_WAIT. Once the process is gone that socket is orphaned and, on Linux,
+    can keep the port un-bindable for up to ~60s even with SO_REUSEADDR. Because
+    this test restarts lemond many times in quick succession, reusing one fixed
+    port makes startup flaky in CI; a fresh port is always immediately bindable.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
 def _stop_server():
-    """Stop the server via /internal/shutdown."""
+    """Stop the currently-running server via /internal/shutdown."""
     try:
         requests.post(
             f"http://localhost:{PORT}/internal/shutdown",
             headers=_auth_headers(),
             timeout=5,
         )
-        _wait_for_server_stop()
+        _wait_for_server_stop(PORT)
     except Exception as e:
         print(f"Warning: Failed to stop server: {e}")
 
 
+def _server_healthy(port=PORT):
+    """True if lemond answers a health check on the port."""
+    try:
+        response = requests.get(
+            f"http://localhost:{port}/api/v1/health",
+            headers=_auth_headers(),
+            timeout=2,
+        )
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
 def _start_server(wrapped_server=None, backend=None, config_updates=None):
-    """Start lemond and wait for it to be ready."""
+    """Start a fresh lemond on a new OS-assigned port and wait until ready.
+
+    Each call binds a brand-new port (see _pick_free_port) and republishes it as
+    the module-level ``PORT`` so the rest of the test talks to the current
+    instance. Binding a fresh port every time means the rapid restarts this test
+    performs never contend for a port still held in a lingering TCP teardown
+    state by a previously stopped instance.
+    """
+    global PORT
+
     lemond_binary = _get_lemond_binary()
     cache_dir = LlamaCppSystemBackendTests.cache_dir
-    cmd = [lemond_binary, cache_dir, "--port", str(PORT)]
 
-    # lemond refuses to start if the port is already in use, and its shutdown
-    # has a multi-second teardown that can keep the listen socket open briefly
-    # after the HTTP endpoint stops responding. Make sure the port is fully
-    # released before launching so a stop->start in quick succession doesn't
-    # race the previous instance.
+    # Stop the instance we previously started, if any, so it releases its
+    # resources before we launch the next one.
     if _is_server_running(PORT):
         _stop_server()
-    if not _wait_for_server_stop(PORT, timeout=30):
-        raise RuntimeError(f"Port {PORT} still in use; cannot start lemond")
 
     # Redirect output to a log file rather than a PIPE: lemond runs with
     # debug logging here, and an undrained PIPE can fill its buffer and block
     # the process before it opens the port. The log is printed on failure.
-    log_path = os.path.join(tempfile.gettempdir(), f"lemond_test_{PORT}.log")
-    log_file = open(log_path, "w", encoding="utf-8")
-    subprocess.Popen(
-        cmd,
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        env=os.environ.copy(),
-    )
+    log_path = os.path.join(tempfile.gettempdir(), "lemond_test.log")
+    last_log = ""
 
-    try:
-        wait_for_server(timeout=60)
-    except TimeoutError:
-        log_file.flush()
+    proc = None
+    started = False
+    max_attempts = 5
+    for _attempt in range(1, max_attempts + 1):
+        port = _pick_free_port()
+        PORT = port
+        cmd = [lemond_binary, cache_dir, "--port", str(port)]
+
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                env=os.environ.copy(),
+            )
+
+        # Wait for this instance to become healthy, bailing early if it exits
+        # so we can retry on a fresh port.
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break  # lemond exited early -> retry on a new port
+            if _server_healthy(port):
+                started = True
+                break
+            time.sleep(1)
+
+        if started:
+            break
+
+        # This attempt failed: clean up before retrying on a new port.
+        try:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=10)
+        except Exception:
+            pass
         try:
             with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                print("=== lemond startup log ===")
-                print(f.read())
+                last_log = f.read()
         except OSError:
-            pass
-        raise
+            last_log = ""
+
+    if not started:
+        print("=== lemond startup log (last attempt) ===")
+        print(last_log)
+        raise RuntimeError(f"lemond failed to start after {max_attempts} attempts")
 
     runtime_config = {}
     if wrapped_server == "llamacpp" and backend:
