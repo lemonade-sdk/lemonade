@@ -1701,3 +1701,22 @@ if(EXISTS "${_DIR_WATCHER_TEST_SRC}" AND EXISTS "${_DIR_WATCHER_LIB_SRC}")
     include(CTest)
     add_test(NAME DirectoryWatcherTest COMMAND test_directory_watcher)
 endif()
+
+# GGUF capability detection (MTP / vision / tool-calling label logic).
+# Header-only unit under test, so no extra source files are required.
+set(_GGUF_CAPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_capabilities.cpp"
+)
+if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
+    add_executable(test_gguf_capabilities
+        test/cpp/test_gguf_capabilities.cpp
+    )
+    target_include_directories(test_gguf_capabilities PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+
+    # Enable testing and register the test with CTest
+    include(CTest)
+    add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
+endif()
