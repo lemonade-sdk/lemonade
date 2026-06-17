@@ -1,0 +1,28 @@
+name: Repo Manager
+
+on:
+  push:
+    branches:
+      - main
+      - 'release-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  repo-manager:
+    runs-on: [self-hosted, linux, repo-manager]
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run repo-manager
+        working-directory: /opt/lemonade-manager
+        run: repo-manager all
