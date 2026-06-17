@@ -23,8 +23,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mark lemonade-manager as git safe directory
-        run: git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
+      - name: Configure git identity and safe directories
+        run: |
+          git config --global user.name "Lemonade Bot"
+          git config --global user.email "lemonade@amd.com"
+          git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
 
       - name: Run repo-manager
         working-directory: /opt/lemonade-manager
