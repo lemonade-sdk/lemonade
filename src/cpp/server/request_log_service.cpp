@@ -40,6 +40,82 @@ bool parse_bool_env(const char* value, bool default_value) {
     return default_value;
 }
 
+bool encoding_contains(const std::string& encoding, const char* token) {
+    return encoding.find(token) != std::string::npos;
+}
+
+bool is_gzip_payload(const std::string& body) {
+    return body.size() >= 2 && static_cast<unsigned char>(body[0]) == 0x1F &&
+           static_cast<unsigned char>(body[1]) == 0x8B;
+}
+
+std::string decompress_with(httplib::decompressor& decompressor, const std::string& body) {
+    if (!decompressor.is_valid() || body.empty()) {
+        return body;
+    }
+    std::string out;
+    const bool ok = decompressor.decompress(
+        body.data(), body.size(), [&](const char* data, size_t len) {
+            out.append(data, len);
+            return true;
+        });
+    return ok && !out.empty() ? out : body;
+}
+
+std::string prepare_response_body_for_logging(const httplib::Response& res) {
+    const std::string& body = res.body;
+    if (body.empty()) {
+        return body;
+    }
+
+    std::string encoding;
+    if (res.has_header("Content-Encoding")) {
+        encoding = res.get_header_value("Content-Encoding");
+    }
+
+    if (!encoding.empty()) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+        if (encoding_contains(encoding, "gzip") || encoding_contains(encoding, "deflate")) {
+            httplib::gzip_decompressor decompressor;
+            const std::string decoded = decompress_with(decompressor, body);
+            if (decoded != body) {
+                return decoded;
+            }
+        }
+#endif
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+        if (encoding_contains(encoding, "br")) {
+            httplib::brotli_decompressor decompressor;
+            const std::string decoded = decompress_with(decompressor, body);
+            if (decoded != body) {
+                return decoded;
+            }
+        }
+#endif
+#ifdef CPPHTTPLIB_ZSTD_SUPPORT
+        if (encoding_contains(encoding, "zstd")) {
+            httplib::zstd_decompressor decompressor;
+            const std::string decoded = decompress_with(decompressor, body);
+            if (decoded != body) {
+                return decoded;
+            }
+        }
+#endif
+    }
+
+    if (is_gzip_payload(body)) {
+#ifdef CPPHTTPLIB_ZLIB_SUPPORT
+        httplib::gzip_decompressor decompressor;
+        const std::string decoded = decompress_with(decompressor, body);
+        if (decoded != body) {
+            return decoded;
+        }
+#endif
+    }
+
+    return body;
+}
+
 int parse_int_env(const char* value, int default_value) {
     if (!value || !*value) {
         return default_value;
@@ -361,9 +437,10 @@ void RequestLogService::log_response(const httplib::Request& req,
     entry.endpoint_type = classify_endpoint_type(req.path, req.method);
     entry.request_body_bytes = static_cast<int>(req.body.size());
     entry.response_body_bytes = static_cast<int>(res.body.size());
-    entry.error = extract_response_error(res.body, res.status);
+    const std::string response_body = prepare_response_body_for_logging(res);
+    entry.error = extract_response_error(response_body, res.status);
     entry.request_body = req.body;
-    entry.response_body = res.body;
+    entry.response_body = response_body;
 
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
