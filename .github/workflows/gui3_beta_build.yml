@@ -1,0 +1,303 @@
+name: GUI3 Alpha Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_label:
+        description: "Artifact label. Keep alpha until GUI3 beta is ready."
+        required: false
+        default: "alpha"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
+  BUILD_LABEL: ${{ inputs.build_label || 'alpha' }}
+
+jobs:
+  app-lockfile-check:
+    name: Check app lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            src/app/package-lock.json
+            src/web-app/package-lock.json
+
+      - name: Verify src/app package lock
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f src/app/package.json
+          test -f src/app/package-lock.json
+
+          if git ls-files | grep -q '^src/app/node_modules/'; then
+            echo "ERROR: src/app/node_modules is tracked. Remove it from git."
+            exit 1
+          fi
+
+          cd src/app
+          npm ci --ignore-scripts
+
+  build-alpha-windows:
+    name: Build GUI3 Alpha Windows MSI
+    runs-on: windows-latest
+    needs: app-lockfile-check
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            src/app/package-lock.json
+            src/web-app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CMake if not available
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $cmakeInstalled = Get-Command cmake -ErrorAction SilentlyContinue
+          if (-not $cmakeInstalled) {
+            $cmakeVersion = "3.28.1"
+            $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-windows-x86_64.msi"
+            $cmakeInstaller = "$env:RUNNER_TEMP\cmake-installer.msi"
+
+            Invoke-WebRequest -Uri $cmakeUrl -OutFile $cmakeInstaller -UseBasicParsing
+            Start-Process msiexec.exe -ArgumentList "/i `"$cmakeInstaller`" /quiet /norestart" -Wait
+
+            $cmakePath = "C:\Program Files\CMake\bin"
+            $env:PATH = "$cmakePath;$env:PATH"
+            echo $cmakePath >> $env:GITHUB_PATH
+          }
+
+          cmake --version
+
+      - name: Install WiX Toolset 5.0.2
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $wixUri = "https://github.com/wixtoolset/wix/releases/download/v5.0.2/wix-cli-x64.msi"
+          $msiPath = "$env:RUNNER_TEMP\wix-cli-x64.msi"
+
+          Invoke-WebRequest -UseBasicParsing -Uri $wixUri -OutFile $msiPath
+          $p = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            exit $p.ExitCode
+          }
+
+          $wixDirs = @(
+            "C:\Program Files\WiX Toolset v5.0\bin",
+            "C:\Program Files (x86)\WiX Toolset v5.0\bin"
+          )
+
+          $wixExe = $null
+          foreach ($dir in $wixDirs) {
+            if (Test-Path (Join-Path $dir "wix.exe")) {
+              $wixExe = Join-Path $dir "wix.exe"
+              break
+            }
+          }
+
+          if (-not $wixExe) {
+            Write-Host "ERROR: wix.exe not found after installation."
+            exit 1
+          }
+
+          $wixDir = Split-Path $wixExe -Parent
+          "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & $wixExe --version
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v5
+        with:
+          path: build/_deps
+          key: alpha-fetchcontent-windows-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            alpha-fetchcontent-windows-
+
+      - name: Configure build environment
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          .\setup.ps1
+
+      - name: Build unsigned alpha MSI installers
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          cmake --build build --config Release --target wix_installers
+
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+
+          if (Test-Path "lemonade.msi") {
+            Copy-Item "lemonade.msi" "artifacts\lemonade-${env:BUILD_LABEL}-windows-x64.msi"
+          }
+
+          if (Test-Path "lemonade-server-minimal.msi") {
+            Copy-Item "lemonade-server-minimal.msi" "artifacts\lemonade-server-${env:BUILD_LABEL}-windows-x64.msi"
+          }
+
+          Get-ChildItem artifacts | Format-Table Name, Length
+
+      - name: Upload Windows alpha artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-${{ env.BUILD_LABEL }}-windows-x64
+          path: artifacts/*
+          retention-days: 14
+
+  build-alpha-macos:
+    name: Build GUI3 Alpha macOS App
+    runs-on: macos-latest
+    needs: app-lockfile-check
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            src/app/package-lock.json
+            src/web-app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure and build unsigned app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bash setup.sh
+
+          cmake --preset default \
+            -DBUILD_TAURI_APP=ON \
+            -DSIGNING_IDENTITY=- \
+            -DINSTALLER_IDENTITY=-
+
+          cmake --build --preset default
+
+          test -f build/lemond
+          test -f build/lemonade
+          test -d build/app/lemonade-app.app
+
+      - name: Package macOS alpha artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts/lemonade-${BUILD_LABEL}-macos
+          cp -R build/app/lemonade-app.app artifacts/lemonade-${BUILD_LABEL}-macos/
+          cp build/lemond artifacts/lemonade-${BUILD_LABEL}-macos/
+          cp build/lemonade artifacts/lemonade-${BUILD_LABEL}-macos/
+          cp -R build/resources artifacts/lemonade-${BUILD_LABEL}-macos/
+
+          ditto -c -k --sequesterRsrc --keepParent \
+            artifacts/lemonade-${BUILD_LABEL}-macos \
+            artifacts/lemonade-${BUILD_LABEL}-macos.zip
+
+          ls -lh artifacts
+
+      - name: Upload macOS alpha artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-${{ env.BUILD_LABEL }}-macos
+          path: artifacts/lemonade-${{ env.BUILD_LABEL }}-macos.zip
+          retention-days: 14
+
+  build-alpha-linux:
+    name: Build GUI3 Alpha Linux Bundle
+    runs-on: ubuntu-latest
+    needs: app-lockfile-check
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: |
+            src/app/package-lock.json
+            src/web-app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            g++ \
+            pkg-config \
+            libssl-dev \
+            libdrm-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Configure and build unsigned app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cmake --preset default -DBUILD_TAURI_APP=ON
+          cmake --build --preset default
+
+          test -f build/lemond
+          test -f build/lemonade
+          test -f build/app/lemonade-app
+
+      - name: Package Linux alpha artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p artifacts/lemonade-${BUILD_LABEL}-linux-x64
+          cp build/lemond artifacts/lemonade-${BUILD_LABEL}-linux-x64/
+          cp build/lemonade artifacts/lemonade-${BUILD_LABEL}-linux-x64/
+          cp build/app/lemonade-app artifacts/lemonade-${BUILD_LABEL}-linux-x64/
+          cp -R build/resources artifacts/lemonade-${BUILD_LABEL}-linux-x64/
+
+          tar -C artifacts -czf artifacts/lemonade-${BUILD_LABEL}-linux-x64.tar.gz lemonade-${BUILD_LABEL}-linux-x64
+          ls -lh artifacts
+
+      - name: Upload Linux alpha artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-${{ env.BUILD_LABEL }}-linux-x64
+          path: artifacts/lemonade-${{ env.BUILD_LABEL }}-linux-x64.tar.gz
+          retention-days: 14
