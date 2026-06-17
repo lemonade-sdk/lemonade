@@ -151,7 +151,42 @@ bool looks_like_binary_payload(const std::string& value) {
     return !is_valid_utf8(value);
 }
 
+bool is_postgres_text_byte(unsigned char byte) {
+    if (byte == 0) {
+        return false;
+    }
+    if (byte < 0x20 && byte != '\t' && byte != '\n' && byte != '\r') {
+        return false;
+    }
+    return true;
+}
+
+std::string strip_postgres_text_bytes(std::string value) {
+    std::string stripped;
+    stripped.reserve(value.size());
+    for (unsigned char byte : value) {
+        if (is_postgres_text_byte(byte)) {
+            stripped.push_back(static_cast<char>(byte));
+        }
+    }
+    return stripped;
+}
+
+std::string strip_json_null_escapes(std::string json) {
+    std::string out;
+    out.reserve(json.size());
+    for (size_t i = 0; i < json.size(); ++i) {
+        if (i + 6 <= json.size() && json.compare(i, 6, "\\u0000") == 0) {
+            i += 5;
+            continue;
+        }
+        out.push_back(json[i]);
+    }
+    return out;
+}
+
 std::string sanitize_utf8_for_db(std::string value) {
+    value = strip_postgres_text_bytes(std::move(value));
     if (value.empty() || is_valid_utf8(value)) {
         return value;
     }
@@ -196,7 +231,7 @@ std::string sanitize_utf8_for_db(std::string value) {
             ++i;
         }
     }
-    return sanitized;
+    return strip_postgres_text_bytes(std::move(sanitized));
 }
 
 std::string safe_json_dump(const nlohmann::json& value) {
@@ -205,6 +240,10 @@ std::string safe_json_dump(const nlohmann::json& value) {
     } catch (...) {
         return "{}";
     }
+}
+
+std::string safe_json_dump_for_db(const nlohmann::json& value) {
+    return sanitize_utf8_for_db(strip_json_null_escapes(safe_json_dump(value)));
 }
 
 namespace {
@@ -454,12 +493,25 @@ ParsedResponseBody parse_response_body(const std::string& body,
         response_json = nlohmann::json::parse(body);
     } catch (...) {
         if (status_code >= 200 && status_code < 300) {
-            const std::string preview =
-                body.size() > 512 ? body.substr(0, 512) : body;
-            parsed.redacted_response = nlohmann::json{
-                {"note", "non-JSON response"},
-                {"preview", sanitize_utf8_for_db(preview)},
-            };
+            if (looks_like_binary_payload(body)) {
+                nlohmann::json summary = nlohmann::json{
+                    {"note", "binary response"},
+                    {"bytes", static_cast<int>(body.size())},
+                };
+                if (body.size() >= 2 &&
+                    static_cast<unsigned char>(body[0]) == 0x1F &&
+                    static_cast<unsigned char>(body[1]) == 0x8B) {
+                    summary["encoding"] = "gzip";
+                }
+                parsed.redacted_response = std::move(summary);
+            } else {
+                const std::string preview =
+                    body.size() > 512 ? body.substr(0, 512) : body;
+                parsed.redacted_response = nlohmann::json{
+                    {"note", "non-JSON response"},
+                    {"preview", sanitize_utf8_for_db(preview)},
+                };
+            }
             parsed.has_redacted_response = true;
         }
         return parsed;

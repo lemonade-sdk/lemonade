@@ -485,13 +485,12 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
         entry.prompt_tokens = parsed_response.prompt_tokens;
         entry.completion_tokens = parsed_response.completion_tokens;
         if (parsed.has_redacted_body) {
-            entry.redacted_body_json =
-                sanitize_utf8_for_db(safe_json_dump(parsed.redacted_body));
+            entry.redacted_body_json = safe_json_dump_for_db(parsed.redacted_body);
             entry.has_redacted_body = true;
         }
         if (parsed_response.has_redacted_response) {
             entry.redacted_response_json =
-                sanitize_utf8_for_db(safe_json_dump(parsed_response.redacted_response));
+                safe_json_dump_for_db(parsed_response.redacted_response);
             entry.has_redacted_response = true;
         }
 

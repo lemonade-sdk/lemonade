@@ -13,6 +13,7 @@ using lemon::parse_request_body;
 using lemon::parse_response_body;
 using lemon::redact_json;
 using lemon::safe_json_dump;
+using lemon::safe_json_dump_for_db;
 using lemon::sanitize_utf8_for_db;
 
 struct TestResult {
@@ -190,6 +191,41 @@ static void test_float_token_counts(TestResult& result) {
     }
 }
 
+static void test_binary_success_response(TestResult& result) {
+    const std::string gzip_like =
+        std::string{'\x1f', '\x8b', '\x08', '\x00', 'x', 'y', '\x00', 'z'};
+    const auto parsed = parse_response_body(gzip_like, "/api/chat", 200, true);
+    if (parsed.has_redacted_response &&
+        parsed.redacted_response.value("note", "") == "binary response" &&
+        parsed.redacted_response.value("encoding", "") == "gzip" &&
+        !parsed.redacted_response.contains("preview")) {
+        result.ok("binary 200 response omits garbage preview");
+    } else {
+        result.fail("binary 200 response omits garbage preview");
+    }
+}
+
+static void test_null_byte_stripping(TestResult& result) {
+    std::string with_null = "hello";
+    with_null.push_back('\0');
+    with_null += "world";
+    const std::string sanitized = sanitize_utf8_for_db(with_null);
+    if (sanitized.find('\0') == std::string::npos && sanitized == "helloworld") {
+        result.ok("null bytes stripped for postgres");
+    } else {
+        result.fail("null bytes stripped for postgres");
+    }
+
+    const nlohmann::json payload{{"preview", with_null}};
+    const std::string dumped = safe_json_dump_for_db(payload);
+    if (dumped.find("\\u0000") == std::string::npos &&
+        dumped.find('\0') == std::string::npos) {
+        result.ok("json dump for db has no null escapes");
+    } else {
+        result.fail("json dump for db has no null escapes");
+    }
+}
+
 int main() {
     TestResult result;
     test_endpoint_classification(result);
@@ -200,6 +236,8 @@ int main() {
     test_invalid_utf8_json_dump(result);
     test_invalid_utf8_response_content(result);
     test_float_token_counts(result);
+    test_binary_success_response(result);
+    test_null_byte_stripping(result);
 
     printf("\nResults: %d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
