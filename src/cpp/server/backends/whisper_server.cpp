@@ -301,6 +301,19 @@ void WhisperServer::load(const std::string& model_name,
     // set LD_LIBRARY_PATH to include executable directory
     std::string lib_path = exe_dir.string();
 
+    // ROCm whisper-server needs the TheRock ROCm libs (libamd_comgr.so.3, etc.)
+    // on LD_LIBRARY_PATH, exactly as llamacpp_server.cpp and sd_server.cpp do.
+    // Without this it aborts at startup (dlopen libamd_comgr.so.3) on gfx1151.
+    if (whispercpp_backend == "rocm") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
+            if (!therock_lib.empty()) {
+                lib_path = therock_lib + ":" + lib_path;
+            }
+        }
+    }
+
     const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
     if (existing_ld_path && strlen(existing_ld_path) > 0) {
         lib_path = lib_path + ":" + std::string(existing_ld_path);
