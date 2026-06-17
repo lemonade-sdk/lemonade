@@ -167,11 +167,59 @@ def _is_server_running(port=PORT):
         return False
 
 
+def _port_bindable(family, ip, port):
+    """Probe whether (ip, port) can be bound. Mirrors lemond's port_is_available
+    check: uses SO_REUSEADDR (POSIX) / SO_EXCLUSIVEADDRUSE (Windows) so a socket
+    in TIME_WAIT is still treated as free, while an actively-bound listener is
+    detected as busy.
+    """
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    try:
+        if os.name == "nt":
+            # Best-effort: SO_EXCLUSIVEADDRUSE matches the lemond probe but is
+            # only present on Windows.
+            try:
+                sock.setsockopt(
+                    socket.SOL_SOCKET, getattr(socket, "SO_EXCLUSIVEADDRUSE", 0), 1
+                )
+            except (AttributeError, OSError):
+                pass
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((ip, port))
+            return True
+        except OSError:
+            return False
+    finally:
+        sock.close()
+
+
+def _port_is_free(port=PORT):
+    """True only when the port is bindable on both 127.0.0.1 and ::1.
+
+    lemond binds IPv4 and IPv6 separately and refuses to start if either is
+    already in use. A liveness probe via socket.create_connection() can return
+    False (connect refused) while an old lemond's IPv6 listen socket is still
+    bound, so we explicitly verify both families are free.
+    """
+    if not _port_bindable(socket.AF_INET, "127.0.0.1", port):
+        return False
+    if socket.has_ipv6:
+        try:
+            if not _port_bindable(socket.AF_INET6, "::1", port):
+                return False
+        except OSError:
+            # IPv6 stack unavailable — IPv4 result is sufficient.
+            pass
+    return True
+
+
 def _wait_for_server_stop(port=PORT, timeout=30):
-    """Wait for server to stop."""
+    """Wait for the server to stop and the port to become bindable again."""
     start_time = time.time()
     while time.time() - start_time < timeout:
-        if not _is_server_running(port):
+        if not _is_server_running(port) and _port_is_free(port):
             return True
         time.sleep(1)
     return False
