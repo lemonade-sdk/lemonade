@@ -1,0 +1,14 @@
+services:
+  lemonade-request-log-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: lemonade_logs
+      POSTGRES_USER: lemonade
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - lemonade_request_logs:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+volumes:
+  lemonade_request_logs:

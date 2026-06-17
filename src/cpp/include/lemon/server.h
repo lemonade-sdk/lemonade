@@ -24,6 +24,7 @@
 #include "websocket_server.h"
 #include "lemon/utils/network_beacon.h"
 #include "lemon/system_metrics_platform.h"
+#include "lemon/request_log_service.h"
 
 namespace lemon {
 
@@ -125,6 +126,9 @@ private:
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
     void handle_log_level(const httplib::Request& req, httplib::Response& res);
+    void handle_request_log_recent(const httplib::Request& req, httplib::Response& res);
+    void handle_request_log_search(const httplib::Request& req, httplib::Response& res);
+    void handle_request_log_stats(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 
@@ -259,6 +263,7 @@ private:
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;
     std::unique_ptr<WebSocketServer> websocket_server_;
+    std::unique_ptr<RequestLogService> request_log_service_;
 
     std::mutex downloads_mutex_;
     std::map<std::string, std::shared_ptr<DownloadJob>> download_jobs_;

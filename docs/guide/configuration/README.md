@@ -313,6 +313,10 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 **Client Behavior:** Clients (CLI, tray app) automatically prefer `LEMONADE_ADMIN_API_KEY` if set, otherwise fall back to `LEMONADE_API_KEY`.
 
+### Request logging (PostgreSQL)
+
+Optional HTTP request logging to PostgreSQL is configured via environment variables (not `config.json`). See [Request Logging](./request-log.md) for setup, retention, privacy behavior, review API endpoints, and Docker/database bootstrap.
+
 ## Remote Server Connection
 
 To make Lemonade Server accessible from other machines on your network, set the host to `0.0.0.0`:

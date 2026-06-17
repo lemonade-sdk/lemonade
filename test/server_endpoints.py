@@ -130,6 +130,9 @@ class EndpointTests(ServerTestBase):
             "images/generations",
             "install",
             "uninstall",
+            "request-log/recent",
+            "request-log/search",
+            "request-log/stats",
         ]
 
         session = requests.Session()

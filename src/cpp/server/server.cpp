@@ -14,6 +14,7 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/prometheus_metrics.h"
+#include "lemon/request_log_handlers.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
@@ -252,6 +253,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         admin_api_key_ = api_key_;
     }
 
+    request_log_service_ = RequestLogService::from_env();
+
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -421,6 +424,9 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        if (request_log_service_) {
+            request_log_service_->mark_request_start();
+        }
         this->log_request(req);
         return authenticate_request(req, res);
     });
@@ -626,6 +632,18 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
         handle_log_level(req, res);
+    });
+
+    register_get("request-log/recent", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_log_recent(req, res);
+    });
+
+    register_get("request-log/search", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_log_search(req, res);
+    });
+
+    register_get("request-log/stats", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_log_stats(req, res);
     });
 
 
@@ -1170,6 +1188,10 @@ void Server::setup_http_logger(httplib::Server &web_server) {
         if (!is_quiet_get) {
             LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
         }
+
+        if (request_log_service_) {
+            request_log_service_->log_response(req, res);
+        }
     });
 }
 
@@ -1224,6 +1246,10 @@ void Server::run() {
     warn_if_unsecured(host, ipv4, ipv6);
 
     running_ = true;
+
+    if (request_log_service_) {
+        request_log_service_->start();
+    }
 
     // Start WebSocket server for realtime API and log streaming
     if (websocket_server_) {
@@ -1394,6 +1420,10 @@ bool Server::is_running() const {
 }
 
 void Server::stop() {
+    if (request_log_service_) {
+        request_log_service_->stop();
+    }
+
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();
@@ -4063,6 +4093,18 @@ void Server::resolve_and_register_local_model(
     );
 
     LOG(INFO, "Server") << "Model registered successfully" << std::endl;
+}
+
+void Server::handle_request_log_recent(const httplib::Request& req, httplib::Response& res) {
+    lemon::handle_request_log_recent(request_log_service_.get(), req, res);
+}
+
+void Server::handle_request_log_search(const httplib::Request& req, httplib::Response& res) {
+    lemon::handle_request_log_search(request_log_service_.get(), req, res);
+}
+
+void Server::handle_request_log_stats(const httplib::Request& req, httplib::Response& res) {
+    lemon::handle_request_log_stats(request_log_service_.get(), req, res);
 }
 
 void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {

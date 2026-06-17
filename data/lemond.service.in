@@ -17,6 +17,10 @@ WorkingDirectory=%S/lemonade
 #   HF_TOKEN                 — HuggingFace authentication token
 #   LEMONADE_API_KEY         — require API-key auth on all routes
 #   LEMONADE_ADMIN_API_KEY   — API-key specific to internal routes
+#   LEMONADE_REQUEST_LOG_ENABLED — enable PostgreSQL HTTP request logging
+#   LEMONADE_REQUEST_LOG_DATABASE_URL — PostgreSQL URL for request logs
+#   LEMONADE_REQUEST_LOG_RETENTION_DAYS — retention days (-1 forever, 0 purge all hourly)
+#   LEMONADE_LOG_PROMPTS     — store prompt/message content in request logs (default false)
 EnvironmentFile=-/etc/lemonade/conf.d/*.conf
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
 ExecReload=/bin/kill -HUP $MAINPID

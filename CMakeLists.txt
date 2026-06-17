@@ -625,6 +625,9 @@ set(SOURCES_CORE
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
     src/cpp/server/websocket_server.cpp
+    src/cpp/server/request_log_parser.cpp
+    src/cpp/server/request_log_handlers.cpp
+    src/cpp/server/request_log_service.cpp
 )
 
 # Add platform-specific source files to core
@@ -650,6 +653,18 @@ endif()
 # ============================================================
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
 # ============================================================
+option(LEMONADE_REQUEST_LOG "Build PostgreSQL request logging support" ON)
+if(LEMONADE_REQUEST_LOG)
+    find_package(PostgreSQL QUIET)
+    if(PostgreSQL_FOUND)
+        message(STATUS "PostgreSQL request logging enabled (libpq found)")
+    else()
+        message(STATUS "PostgreSQL libpq not found; request logging will compile without persistence")
+    endif()
+else()
+    message(STATUS "PostgreSQL request logging disabled (LEMONADE_REQUEST_LOG=OFF)")
+endif()
+
 add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 
 # ============================================================
@@ -724,6 +739,12 @@ if(USE_SYSTEM_LWS)
 else()
     target_link_libraries(lemonade-server-core PUBLIC websockets)
     target_include_directories(lemonade-server-core PUBLIC ${libwebsockets_BINARY_DIR}/include ${libwebsockets_SOURCE_DIR}/include)
+endif()
+
+if(LEMONADE_REQUEST_LOG AND PostgreSQL_FOUND)
+    target_compile_definitions(lemonade-server-core PUBLIC LEMONADE_HAVE_REQUEST_LOG)
+    target_link_libraries(lemonade-server-core PUBLIC PostgreSQL::PostgreSQL)
+    target_include_directories(lemonade-server-core PUBLIC ${PostgreSQL_INCLUDE_DIRS})
 endif()
 
 # Enable ARC (Automatic Reference Counting) for macOS Objective-C++ files
@@ -1719,4 +1740,25 @@ if(EXISTS "${_GGUF_CAPS_TEST_SRC}")
     # Enable testing and register the test with CTest
     include(CTest)
     add_test(NAME GgufCapabilitiesTest COMMAND test_gguf_capabilities)
+endif()
+
+set(_REQUEST_LOG_PARSER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_log_parser.cpp"
+)
+set(_REQUEST_LOG_PARSER_LIB_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/request_log_parser.cpp"
+)
+if(EXISTS "${_REQUEST_LOG_PARSER_TEST_SRC}" AND EXISTS "${_REQUEST_LOG_PARSER_LIB_SRC}")
+    add_executable(test_request_log_parser
+        test/cpp/test_request_log_parser.cpp
+        src/cpp/server/request_log_parser.cpp
+    )
+    target_include_directories(test_request_log_parser PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_request_log_parser PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_test(NAME RequestLogParserTest COMMAND test_request_log_parser)
 endif()

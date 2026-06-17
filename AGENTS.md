@@ -48,7 +48,7 @@ All core endpoints are registered under **4 path prefixes**:
 - `/v0/` — Legacy short
 - `/v1/` — OpenAI SDK / LiteLLM compatibility
 
-**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`
+**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `load`, `unload`, `delete`, `params`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `log-level`, `logs/stream`, `request-log/recent`, `request-log/search`, `request-log/stats`
 
 **Ollama-compatible endpoints** (under `/api/` without version prefix): `chat`, `generate`, `tags`, `show`, `delete`, `pull`, `embed`, `embeddings`, `ps`, `version`
 
@@ -69,7 +69,7 @@ Optional API key auth via `LEMONADE_API_KEY` env var (regular API endpoints) or 
 
 ### Key Dependencies
 
-**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, libwebsockets, brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
+**C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, libwebsockets, brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux). Optional **libpq** (PostgreSQL client) when `LEMONADE_REQUEST_LOG=ON` for HTTP request logging — see `docs/guide/configuration/request-log.md`.
 
 **Desktop app:** Tauri v2 (Rust), React 19, TypeScript 5.3, Webpack 5, markdown-it, highlight.js, katex. Rust crates: `tauri`, `tauri-plugin-{opener,clipboard-manager,single-instance,deep-link}`, `tokio`, `reqwest`, `serde`.
 
@@ -133,6 +133,9 @@ python test/server_whisper.py
 
 # Image generation tests (slow)
 python test/server_sd.py
+
+# Request log review API tests (optional PostgreSQL)
+python test/server_request_log.py
 ```
 
 Test utilities in `test/utils/` with `server_base.py` as the base class. Test dependencies include `requests`, `httpx`, `openai`, `huggingface_hub`, `psutil`, `numpy`, `websockets`, and `ollama`.
@@ -170,6 +173,7 @@ Test utilities in `test/utils/` with `server_base.py` as the base class. Test de
 | `src/cpp/server/anthropic_api.cpp` | Anthropic API compatibility |
 | `src/cpp/server/ollama_api.cpp` | Ollama API compatibility |
 | `src/cpp/server/mcp_server.cpp` | MCP gateway (POST /mcp) |
+| `src/cpp/server/request_log_service.cpp` | PostgreSQL HTTP request logging (optional libpq) |
 | `src/cpp/include/lemon/websocket_server.h` | WebSocket Realtime API server |
 | `src/cpp/include/lemon/model_types.h` | Model type and device type enums |
 | `src/cpp/include/lemon/config_file.h` | config.json load/save/migrate |
