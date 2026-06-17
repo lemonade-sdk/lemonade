@@ -1,0 +1,183 @@
+{
+  "image_size": "512x256",
+  "system_prompt": "You are a helpful multimodal AI assistant with access to the following tools:\n\n{tool_list}\n\nWhen the user asks you to perform an action that matches one of these tools, use the appropriate tool. You may call multiple tools if the request requires it. After using a tool, describe what you did to the user in a brief, friendly response. If the user's request does not require any tool, respond normally with text.{tool_guidance}",
+  "tools": [
+    {
+      "requires_labels": [
+        "image"
+      ],
+      "function": {
+        "name": "generate_image",
+        "description": "Generate a NEW image from scratch based on a text description. Use this only for a new image, not for modifying an existing image.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "A detailed description of the image to generate."
+            },
+            "size": {
+              "type": "string",
+              "description": "Optional output canvas size as WIDTHxHEIGHT pixels. Omit by default to use {image_size}. Use only when the user explicitly asks for the final output image/canvas dimensions or a specific aspect ratio. For aspect-ratio requests, choose reasonable dimensions and round dimensions to the nearest multiple of 8."
+            },
+            "steps": {
+              "type": "integer",
+              "description": "Optional sampling/denoising step count. Use only when the user asks for speed, quality, detail, or a specific step count.",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "cfg_scale": {
+              "type": "number",
+              "description": "Optional text guidance scale. Higher values follow the prompt more strongly; lower values allow more variation. Use only when requested or clearly implied.",
+              "minimum": 0
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Optional random seed for reproducible generation. Use when the user provides a seed or asks for reproducibility."
+            },
+            "sample_method": {
+              "type": "string",
+              "description": "Optional sampler name/method. Use only when the user explicitly requests a sampler."
+            },
+            "flow_shift": {
+              "type": "number",
+              "description": "Optional flow shift value for models/backends that support it. Use only when requested or model guidance requires it.",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "requires_labels": [
+        "edit"
+      ],
+      "prompt_guidance": "When an image already exists in the conversation and the user asks to add, remove, change, modify, or adjust it, use edit_image rather than generate_image. Use generate_image for creating a brand new image from scratch. The edit_image tool automatically uses the most recent image as its source. If the user explicitly asks for final output canvas dimensions or aspect ratio for the edited image, set size with dimensions rounded to the nearest multiple of 8; otherwise omit size.",
+      "function": {
+        "name": "edit_image",
+        "description": "Edit or modify the most recent generated image from this conversation. Use this for requested changes to an existing image, not for creating a brand new image.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "A description of the desired edit or modification."
+            },
+            "size": {
+              "type": "string",
+              "description": "Optional output canvas size as WIDTHxHEIGHT pixels for the edited image. Omit by default to preserve the edit source/default canvas. Use only when the user explicitly asks for final output image/canvas dimensions or aspect ratio. For aspect-ratio requests, choose reasonable dimensions and round dimensions to the nearest multiple of 8."
+            },
+            "steps": {
+              "type": "integer",
+              "description": "Optional sampling/denoising step count. Use only when the user asks for speed, quality, detail, or a specific step count.",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "cfg_scale": {
+              "type": "number",
+              "description": "Optional text guidance scale. Higher values follow the prompt more strongly; lower values allow more variation. Use only when requested or clearly implied.",
+              "minimum": 0
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Optional random seed for reproducible generation. Use when the user provides a seed or asks for reproducibility."
+            },
+            "sample_method": {
+              "type": "string",
+              "description": "Optional sampler name/method. Use only when the user explicitly requests a sampler."
+            },
+            "flow_shift": {
+              "type": "number",
+              "description": "Optional flow shift value for models/backends that support it. Use only when requested or model guidance requires it.",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "requires_labels": [
+        "tts"
+      ],
+      "function": {
+        "name": "text_to_speech",
+        "description": "Convert text to spoken audio. Use this when the user asks you to speak, say, read aloud, or convert text to speech.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string",
+              "description": "The text to convert to speech"
+            },
+            "voice": {
+              "type": "string",
+              "description": "Voice to use for speech synthesis",
+              "default": "af_heart"
+            }
+          },
+          "required": [
+            "input"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "requires_labels": [
+        "transcription"
+      ],
+      "function": {
+        "name": "transcribe_audio",
+        "description": "Transcribe audio to text (speech-to-text). Use this when the user provides an audio file or when you see '[User provided audio file #N]' placeholders in the conversation. The audio data is automatically provided by the system, just call this tool with the language parameter.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "language": {
+              "type": "string",
+              "description": "Language of the audio (ISO 639-1 code, e.g. 'en', 'es', 'fr')",
+              "default": "en"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "requires_llm_labels": [
+        "vision"
+      ],
+      "prompt_guidance": "When the user sends an image (as an image_url in their message), use the analyze_image tool to look at the image before responding about it.",
+      "function": {
+        "name": "analyze_image",
+        "description": "Analyze, describe, or answer questions about an image. Use this when the user shares an image and asks you to look at it, describe it, read text from it, identify objects, or answer any question about what's in the image.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "image_url": {
+              "type": "string",
+              "description": "The URL or base64 data URI of the image to analyze"
+            },
+            "question": {
+              "type": "string",
+              "description": "The question to answer about the image, or 'describe' for a general description"
+            }
+          },
+          "required": [
+            "image_url",
+            "question"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}
