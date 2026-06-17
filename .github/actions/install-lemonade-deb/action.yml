@@ -126,14 +126,58 @@ runs:
         echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
         export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
 
-        # On self-hosted runners a previous run's lemond (or its TIME_WAIT
-        # socket) can still hold port 13305, which lemond now refuses to bind
-        # over. Free the port before starting so we don't exit as a duplicate.
-        if command -v fuser >/dev/null 2>&1; then
-          fuser -k 13305/tcp 2>/dev/null || true
+        # On these single-tenant self-hosted runners a previous run's lemond can
+        # still hold port 13305, which lemond now refuses to bind over (it exits
+        # as a duplicate). Free the port authoritatively before starting: kill
+        # any lemond, then kill whatever still holds the port (escalating with
+        # sudo if available), and wait until the port is actually free instead of
+        # assuming a fixed delay is enough.
+        SUDO=""
+        if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+          SUDO="sudo"
         fi
-        pkill -9 -x lemond 2>/dev/null || true
-        sleep 1
+
+        free_port_13305() {
+          # Kill known lemonade processes by name.
+          $SUDO pkill -9 -x lemond 2>/dev/null || true
+          $SUDO pkill -9 -f LemonadeServer 2>/dev/null || true
+          # Kill whatever is bound to the port, by PID, via the first tool present.
+          if command -v fuser >/dev/null 2>&1; then
+            $SUDO fuser -k 13305/tcp 2>/dev/null || true
+          fi
+          if command -v lsof >/dev/null 2>&1; then
+            local pids
+            pids=$(lsof -t -iTCP:13305 -sTCP:LISTEN 2>/dev/null || true)
+            [ -n "$pids" ] && $SUDO kill -9 $pids 2>/dev/null || true
+          fi
+        }
+
+        # Returns 0 when nothing is LISTENING on 13305.
+        port_is_free() {
+          if command -v ss >/dev/null 2>&1; then
+            ! ss -ltn 2>/dev/null | grep -q ':13305 '
+          elif command -v lsof >/dev/null 2>&1; then
+            [ -z "$(lsof -t -iTCP:13305 -sTCP:LISTEN 2>/dev/null || true)" ]
+          else
+            ! (netstat -ltn 2>/dev/null | grep -q ':13305 ')
+          fi
+        }
+
+        for attempt in $(seq 1 10); do
+          if port_is_free; then
+            break
+          fi
+          echo "Port 13305 still in use (attempt $attempt) - freeing it..."
+          free_port_13305
+          sleep 1
+        done
+        if ! port_is_free; then
+          echo "ERROR: Port 13305 is still held after cleanup. Current listeners:"
+          (command -v ss >/dev/null 2>&1 && $SUDO ss -ltnp 2>/dev/null | grep ':13305 ') \
+            || (command -v lsof >/dev/null 2>&1 && $SUDO lsof -iTCP:13305 -sTCP:LISTEN 2>/dev/null) \
+            || true
+          exit 1
+        fi
 
         "$SERVER_BIN" "$CACHE_DIR" > "$LOG_FILE" 2>&1 &
         SERVER_PID=$!
