@@ -133,6 +133,7 @@ class EndpointTests(ServerTestBase):
             "request-log/recent",
             "request-log/search",
             "request-log/stats",
+            "request-log/clear",
         ]
 
         session = requests.Session()

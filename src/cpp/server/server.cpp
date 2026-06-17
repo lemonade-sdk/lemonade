@@ -646,6 +646,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_request_log_stats(req, res);
     });
 
+    register_post("request-log/clear", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_request_log_clear(req, res);
+    });
+
 
     // NOTE: /api/v1/halt endpoint removed - use SIGTERM signal instead (like Python server)
     // The stop command now sends termination signal directly to the process
@@ -1073,7 +1077,17 @@ void Server::setup_cors(httplib::Server &web_server) {
 
     // Catch-all error handler - must be last!
     web_server.set_error_handler([](const httplib::Request& req, httplib::Response& res) {
-        LOG(ERROR, "Server") << "Error " << res.status << ": " << req.method << " " << req.path << std::endl;
+        // Handlers such as OllamaApi already log client context for expected 404s
+        // (unknown model, etc.). Avoid duplicate ERROR lines for those responses.
+        const bool handler_reported =
+            res.status == 404 && !res.body.empty() &&
+            (res.body.find("not found") != std::string::npos ||
+             res.body.find("try pulling it first") != std::string::npos);
+
+        if (!handler_reported) {
+            LOG(ERROR, "Server") << "Error " << res.status << ": " << req.method << " "
+                                 << req.path << std::endl;
+        }
 
         if (res.status == 404) {
             // Only set generic "endpoint not found" if no content was already set
@@ -4105,6 +4119,10 @@ void Server::handle_request_log_search(const httplib::Request& req, httplib::Res
 
 void Server::handle_request_log_stats(const httplib::Request& req, httplib::Response& res) {
     lemon::handle_request_log_stats(request_log_service_.get(), req, res);
+}
+
+void Server::handle_request_log_clear(const httplib::Request& req, httplib::Response& res) {
+    lemon::handle_request_log_clear(request_log_service_.get(), req, res);
 }
 
 void Server::handle_stats(const httplib::Request& req, httplib::Response& res) {

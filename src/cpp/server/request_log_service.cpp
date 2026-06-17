@@ -159,7 +159,10 @@ CREATE TABLE IF NOT EXISTS request_logs (
   response_body_bytes INTEGER,
   prompt_chars INTEGER,
   messages_chars INTEGER,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
   redacted_body JSONB,
+  redacted_response JSONB,
   error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_request_logs_created_at ON request_logs (created_at);
@@ -167,6 +170,9 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_model ON request_logs (model);
 CREATE INDEX IF NOT EXISTS idx_request_logs_client_ip ON request_logs (client_ip);
 CREATE INDEX IF NOT EXISTS idx_request_logs_path ON request_logs (path);
 CREATE INDEX IF NOT EXISTS idx_request_logs_keep_alive ON request_logs (keep_alive);
+ALTER TABLE request_logs ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER;
+ALTER TABLE request_logs ADD COLUMN IF NOT EXISTS completion_tokens INTEGER;
+ALTER TABLE request_logs ADD COLUMN IF NOT EXISTS redacted_response JSONB;
 )SQL";
 
 nlohmann::json row_to_json_from_result(PGresult* result, int row) {
@@ -194,10 +200,12 @@ nlohmann::json row_to_json_from_result(PGresult* result, int row) {
         {"response_body_bytes", value(15).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(15)))},
         {"prompt_chars", value(16).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(16)))},
         {"messages_chars", value(17).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(17)))},
-        {"error", value(19).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(19))},
+        {"prompt_tokens", value(18).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(18)))},
+        {"completion_tokens", value(19).empty() ? nlohmann::json(nullptr) : nlohmann::json(std::stoi(value(19)))},
+        {"error", value(22).empty() ? nlohmann::json(nullptr) : nlohmann::json(value(22))},
     };
 
-    const char* redacted = PQgetvalue(result, row, 18);
+    const char* redacted = PQgetvalue(result, row, 20);
     if (redacted && *redacted) {
         try {
             entry["redacted_body"] = nlohmann::json::parse(redacted);
@@ -206,6 +214,17 @@ nlohmann::json row_to_json_from_result(PGresult* result, int row) {
         }
     } else {
         entry["redacted_body"] = nullptr;
+    }
+
+    const char* redacted_response = PQgetvalue(result, row, 21);
+    if (redacted_response && *redacted_response) {
+        try {
+            entry["redacted_response"] = nlohmann::json::parse(redacted_response);
+        } catch (...) {
+            entry["redacted_response"] = redacted_response;
+        }
+    } else {
+        entry["redacted_response"] = nullptr;
     }
     return entry;
 }
@@ -344,6 +363,7 @@ void RequestLogService::log_response(const httplib::Request& req,
     entry.response_body_bytes = static_cast<int>(res.body.size());
     entry.error = extract_response_error(res.body, res.status);
     entry.request_body = req.body;
+    entry.response_body = res.body;
 
     {
         std::lock_guard<std::mutex> lock(queue_mutex_);
@@ -446,23 +466,32 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
         "INSERT INTO request_logs (client_ip, forwarded_for, method, path, query_string, "
         "status_code, duration_ms, user_agent, endpoint_type, model, keep_alive, stream, "
         "request_body_bytes, response_body_bytes, prompt_chars, messages_chars, "
-        "redacted_body, error) "
-        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)";
+        "prompt_tokens, completion_tokens, redacted_body, redacted_response, error) "
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)";
 
     bool ok = true;
     for (const auto& raw_entry : entries) {
         RequestLogEntry entry = raw_entry;
         ParsedRequestBody parsed =
             parse_request_body(entry.request_body, entry.path, log_prompts_);
+        ParsedResponseBody parsed_response = parse_response_body(
+            entry.response_body, entry.path, entry.status_code, log_prompts_);
         entry.model = parsed.model;
         entry.keep_alive = parsed.keep_alive;
         entry.stream = parsed.stream;
         entry.prompt_chars = parsed.prompt_chars;
         entry.messages_chars = parsed.messages_chars;
+        entry.prompt_tokens = parsed_response.prompt_tokens;
+        entry.completion_tokens = parsed_response.completion_tokens;
         if (parsed.has_redacted_body) {
             entry.redacted_body_json =
                 sanitize_utf8_for_db(parsed.redacted_body.dump());
             entry.has_redacted_body = true;
+        }
+        if (parsed_response.has_redacted_response) {
+            entry.redacted_response_json =
+                sanitize_utf8_for_db(parsed_response.redacted_response.dump());
+            entry.has_redacted_response = true;
         }
 
         entry.client_ip = sanitize_utf8_for_db(std::move(entry.client_ip));
@@ -482,8 +511,16 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
         const std::string response_body_bytes = std::to_string(entry.response_body_bytes);
         const std::string prompt_chars = std::to_string(entry.prompt_chars);
         const std::string messages_chars = std::to_string(entry.messages_chars);
+        std::string prompt_tokens;
+        std::string completion_tokens;
+        if (entry.prompt_tokens.has_value()) {
+            prompt_tokens = std::to_string(entry.prompt_tokens.value());
+        }
+        if (entry.completion_tokens.has_value()) {
+            completion_tokens = std::to_string(entry.completion_tokens.value());
+        }
 
-        const char* params[18] = {
+        const char* params[21] = {
             nullable_cstr(entry.client_ip),
             nullable_cstr(entry.forwarded_for),
             entry.method.c_str(),
@@ -500,11 +537,14 @@ bool RequestLogService::insert_entries(const std::vector<RequestLogEntry>& entri
             response_body_bytes.c_str(),
             prompt_chars.c_str(),
             messages_chars.c_str(),
+            prompt_tokens.empty() ? nullptr : prompt_tokens.c_str(),
+            completion_tokens.empty() ? nullptr : completion_tokens.c_str(),
             entry.has_redacted_body ? entry.redacted_body_json.c_str() : nullptr,
+            entry.has_redacted_response ? entry.redacted_response_json.c_str() : nullptr,
             nullable_cstr(entry.error),
         };
 
-        PGresult* result = PQexecParams(as_pg_conn(pg_conn_), insert_sql, 18, nullptr, params,
+        PGresult* result = PQexecParams(as_pg_conn(pg_conn_), insert_sql, 21, nullptr, params,
                                         nullptr, nullptr, 0);
         if (!result || PQresultStatus(result) != PGRES_COMMAND_OK) {
             LOG(WARNING, "RequestLog")
@@ -578,7 +618,8 @@ nlohmann::json RequestLogService::get_recent(int limit) const {
     const std::string sql =
         "SELECT id, created_at, client_ip, forwarded_for, method, path, query_string, "
         "status_code, duration_ms, user_agent, endpoint_type, model, keep_alive, stream, "
-        "request_body_bytes, response_body_bytes, prompt_chars, messages_chars, redacted_body, error "
+        "request_body_bytes, response_body_bytes, prompt_chars, messages_chars, "
+        "prompt_tokens, completion_tokens, redacted_body, redacted_response, error "
         "FROM request_logs ORDER BY created_at DESC LIMIT $1";
     const std::string limit_str = std::to_string(limit);
     const char* params[1] = {limit_str.c_str()};
@@ -618,7 +659,8 @@ nlohmann::json RequestLogService::search(const httplib::Request& req) const {
     std::ostringstream sql;
     sql << "SELECT id, created_at, client_ip, forwarded_for, method, path, query_string, "
            "status_code, duration_ms, user_agent, endpoint_type, model, keep_alive, stream, "
-           "request_body_bytes, response_body_bytes, prompt_chars, messages_chars, redacted_body, error "
+           "request_body_bytes, response_body_bytes, prompt_chars, messages_chars, "
+           "prompt_tokens, completion_tokens, redacted_body, redacted_response, error "
            "FROM request_logs WHERE 1=1";
 
     std::vector<std::string> params;
@@ -737,6 +779,45 @@ nlohmann::json RequestLogService::get_stats(const httplib::Request& req) const {
     return response;
 }
 
+nlohmann::json RequestLogService::clear_all() {
+    if (!ensure_connection()) {
+        throw std::runtime_error("Request log database is unavailable");
+    }
+
+    std::lock_guard<std::mutex> lock(db_mutex_);
+    if (!pg_conn_ || PQstatus(as_pg_conn(pg_conn_)) != CONNECTION_OK) {
+        throw std::runtime_error("Request log database is unavailable");
+    }
+
+    int64_t deleted = 0;
+    PGresult* count_result = PQexec(as_pg_conn(pg_conn_), "SELECT COUNT(*)::bigint FROM request_logs");
+    if (count_result && PQresultStatus(count_result) == PGRES_TUPLES_OK && PQntuples(count_result) > 0) {
+        const char* value = PQgetvalue(count_result, 0, 0);
+        if (value && *value) {
+            deleted = std::stoll(value);
+        }
+    }
+    if (count_result) {
+        PQclear(count_result);
+    }
+
+    PGresult* delete_result = PQexec(as_pg_conn(pg_conn_), "DELETE FROM request_logs");
+    const bool ok = delete_result && PQresultStatus(delete_result) == PGRES_COMMAND_OK;
+    if (!ok) {
+        if (delete_result) {
+            PQclear(delete_result);
+        }
+        database_available_.store(false);
+        throw std::runtime_error("Failed to clear request logs");
+    }
+    if (delete_result) {
+        PQclear(delete_result);
+    }
+
+    LOG(INFO, "RequestLog") << "Cleared " << deleted << " request log entries." << std::endl;
+    return {{"deleted", deleted}};
+}
+
 #else
 
 bool RequestLogService::ensure_connection() { return false; }
@@ -754,6 +835,10 @@ nlohmann::json RequestLogService::search(const httplib::Request&) const {
 }
 
 nlohmann::json RequestLogService::get_stats(const httplib::Request&) const {
+    throw std::runtime_error("Request logging is not available in this build");
+}
+
+nlohmann::json RequestLogService::clear_all() {
     throw std::runtime_error("Request logging is not available in this build");
 }
 

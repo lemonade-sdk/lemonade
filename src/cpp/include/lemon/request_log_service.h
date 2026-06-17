@@ -34,10 +34,15 @@ struct RequestLogEntry {
     int response_body_bytes = 0;
     int prompt_chars = 0;
     int messages_chars = 0;
+    std::optional<int> prompt_tokens;
+    std::optional<int> completion_tokens;
     std::string redacted_body_json;
     bool has_redacted_body = false;
+    std::string redacted_response_json;
+    bool has_redacted_response = false;
     std::string error;
     std::string request_body;
+    std::string response_body;
 };
 
 class RequestLogService {
@@ -67,6 +72,7 @@ public:
     nlohmann::json get_recent(int limit) const;
     nlohmann::json search(const httplib::Request& req) const;
     nlohmann::json get_stats(const httplib::Request& req) const;
+    nlohmann::json clear_all();
 
 private:
     void writer_loop();

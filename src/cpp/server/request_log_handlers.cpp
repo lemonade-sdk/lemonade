@@ -100,4 +100,26 @@ void handle_request_log_stats(RequestLogService* service,
     }
 }
 
+void handle_request_log_clear(RequestLogService* service,
+                              const httplib::Request& req,
+                              httplib::Response& res) {
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    if (!service || !service->is_enabled()) {
+        set_service_unavailable(res, "Request logging is not enabled");
+        return;
+    }
+
+    try {
+        const auto payload = service->clear_all();
+        res.set_content(payload.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "RequestLog") << "handle_request_log_clear failed: " << e.what() << std::endl;
+        set_service_unavailable(res, e.what());
+    }
+}
+
 } // namespace lemon

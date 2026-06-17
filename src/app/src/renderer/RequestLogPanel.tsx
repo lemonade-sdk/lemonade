@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  clearRequestLogs,
   fetchRequestLogSearch,
   fetchRequestLogStats,
   RequestLogApiError,
   RequestLogEntry,
   RequestLogStats,
 } from './utils/requestLogApi';
+import { writeClipboard } from './utils/clipboardUtils';
 
 type KeepAliveFilter = 'any' | 'zero' | 'has';
 type SinceFilter = '1h' | '24h' | '7d';
@@ -66,6 +68,42 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
+function formatTokens(entry: RequestLogEntry): string {
+  if (entry.prompt_tokens === null && entry.completion_tokens === null) {
+    return '—';
+  }
+  const input = entry.prompt_tokens ?? '—';
+  const output = entry.completion_tokens ?? '—';
+  return `${input} / ${output}`;
+}
+
+function formatJsonBlock(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function payloadUsesCharCountsOnly(value: unknown): boolean {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.prompt && typeof record.prompt === 'object' && record.prompt !== null) {
+    return 'char_count' in (record.prompt as Record<string, unknown>);
+  }
+  if (record.messages && typeof record.messages === 'object' && record.messages !== null) {
+    return 'char_count' in (record.messages as Record<string, unknown>);
+  }
+  if (record.content && typeof record.content === 'object' && record.content !== null) {
+    return 'char_count' in (record.content as Record<string, unknown>);
+  }
+  return false;
+}
+
 function applyKeepAliveClientFilter(
   entries: RequestLogEntry[],
   keepAlive: KeepAliveFilter,
@@ -88,6 +126,8 @@ const RequestLogPanel: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [clearing, setClearing] = useState(false);
 
   const selectedEntry = useMemo(
     () => entries.find((entry) => entry.id === selectedId) ?? null,
@@ -178,13 +218,48 @@ const RequestLogPanel: React.FC = () => {
     return () => window.clearInterval(intervalId);
   }, [autoRefresh, loadData]);
 
+  useEffect(() => {
+    setCopyState('idle');
+  }, [selectedId]);
+
   const handleApply = () => {
     setAppliedFilters({ ...filters });
   };
 
-  const handleClear = () => {
+  const handleClearFilters = () => {
     setFilters(DEFAULT_FILTERS);
     setAppliedFilters(DEFAULT_FILTERS);
+  };
+
+  const handleClearLog = async () => {
+    if (error) {
+      return;
+    }
+    const confirmed = window.confirm(
+      'Delete all HTTP request log entries from the database? This cannot be undone.',
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setClearing(true);
+    try {
+      await clearRequestLogs();
+      setSelectedId(null);
+      setOffset(0);
+      setHasMore(false);
+      await loadData();
+    } catch (err) {
+      const message =
+        err instanceof RequestLogApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to clear request logs';
+      setError(message);
+    } finally {
+      setClearing(false);
+    }
   };
 
   const handleCopyRow = async () => {
@@ -192,11 +267,19 @@ const RequestLogPanel: React.FC = () => {
       return;
     }
     try {
-      await navigator.clipboard.writeText(JSON.stringify(selectedEntry, null, 2));
+      await writeClipboard(JSON.stringify(selectedEntry, null, 2));
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 2000);
     } catch {
-      // clipboard unavailable
+      setCopyState('failed');
+      window.setTimeout(() => setCopyState('idle'), 2000);
     }
   };
+
+  const requestRedacted = selectedEntry?.redacted_body;
+  const responseRedacted = selectedEntry?.redacted_response;
+  const showRedactionHint =
+    payloadUsesCharCountsOnly(requestRedacted) || payloadUsesCharCountsOnly(responseRedacted);
 
   return (
     <div className="request-log-panel">
@@ -213,6 +296,14 @@ const RequestLogPanel: React.FC = () => {
           </label>
           <button type="button" className="logs-control-btn" onClick={() => void loadData()}>
             Refresh
+          </button>
+          <button
+            type="button"
+            className="logs-control-btn request-log-clear-btn"
+            disabled={clearing || !!error}
+            onClick={() => void handleClearLog()}
+          >
+            {clearing ? 'Clearing…' : 'Clear log'}
           </button>
         </div>
       </div>
@@ -289,7 +380,7 @@ const RequestLogPanel: React.FC = () => {
         <button type="button" className="logs-control-btn" onClick={handleApply}>
           Apply
         </button>
-        <button type="button" className="logs-control-btn" onClick={handleClear}>
+        <button type="button" className="logs-control-btn" onClick={handleClearFilters}>
           Clear
         </button>
       </div>
@@ -352,6 +443,7 @@ export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0
                 <th>Method</th>
                 <th>Path</th>
                 <th>Model</th>
+                <th>Tokens in/out</th>
                 <th>Keep-alive</th>
                 <th>Stream</th>
                 <th>Status</th>
@@ -376,6 +468,7 @@ export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0
                     {entry.path}
                   </td>
                   <td>{entry.model ?? '—'}</td>
+                  <td>{formatTokens(entry)}</td>
                   <td>{entry.keep_alive ?? '—'}</td>
                   <td>
                     {entry.stream === null || entry.stream === undefined
@@ -413,7 +506,7 @@ export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0
           <div className="request-log-detail-header">
             <strong>Request #{selectedEntry.id}</strong>
             <button type="button" className="logs-control-btn" onClick={() => void handleCopyRow()}>
-              Copy JSON
+              {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy JSON'}
             </button>
           </div>
           <dl className="request-log-detail-grid">
@@ -433,14 +526,41 @@ export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0
             <dd>{selectedEntry.prompt_chars ?? '—'}</dd>
             <dt>Messages chars</dt>
             <dd>{selectedEntry.messages_chars ?? '—'}</dd>
+            <dt>Input tokens</dt>
+            <dd>{selectedEntry.prompt_tokens ?? '—'}</dd>
+            <dt>Output tokens</dt>
+            <dd>{selectedEntry.completion_tokens ?? '—'}</dd>
             <dt>Error</dt>
             <dd>{selectedEntry.error ?? '—'}</dd>
           </dl>
-          {selectedEntry.redacted_body !== null && selectedEntry.redacted_body !== undefined && (
-            <pre className="request-log-json">
-              {JSON.stringify(selectedEntry.redacted_body, null, 2)}
-            </pre>
+
+          {showRedactionHint && (
+            <p className="request-log-redaction-hint">
+              Prompt and response text are summarized by character count unless{' '}
+              <code>LEMONADE_LOG_PROMPTS=true</code> is set on the server. Restart{' '}
+              <code>lemond</code> after changing it.
+            </p>
           )}
+
+          <div className="request-log-payload-section">
+            <h4 className="request-log-payload-title">Request payload (redacted)</h4>
+            {requestRedacted !== null && requestRedacted !== undefined ? (
+              <pre className="request-log-json">{formatJsonBlock(requestRedacted)}</pre>
+            ) : (
+              <p className="request-log-payload-empty">No request body recorded</p>
+            )}
+          </div>
+
+          <div className="request-log-payload-section">
+            <h4 className="request-log-payload-title">API response (redacted)</h4>
+            {responseRedacted !== null && responseRedacted !== undefined ? (
+              <pre className="request-log-json">{formatJsonBlock(responseRedacted)}</pre>
+            ) : (
+              <p className="request-log-payload-empty">
+                No response body recorded (common for streaming requests or empty errors)
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

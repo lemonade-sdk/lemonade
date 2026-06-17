@@ -19,7 +19,10 @@ export interface RequestLogEntry {
   response_body_bytes: number | null;
   prompt_chars: number | null;
   messages_chars: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
   redacted_body: unknown;
+  redacted_response: unknown;
   error: string | null;
 }
 
@@ -135,4 +138,15 @@ export async function fetchRequestLogRecent(limit = 100): Promise<RequestLogSear
     `/request-log/recent${buildQuery({ limit })}`,
   );
   return parseJsonResponse<RequestLogSearchResponse>(response);
+}
+
+export interface RequestLogClearResponse {
+  deleted: number;
+}
+
+export async function clearRequestLogs(): Promise<RequestLogClearResponse> {
+  const response = await serverConfig.fetch('/request-log/clear', {
+    method: 'POST',
+  });
+  return parseJsonResponse<RequestLogClearResponse>(response);
 }

@@ -306,6 +306,130 @@ ParsedRequestBody parse_request_body(const std::string& body,
     return parsed;
 }
 
+std::string sanitize_utf8_for_db(std::string value);
+
+std::optional<int> json_int_field(const nlohmann::json& obj, const char* key) {
+    if (!obj.contains(key)) {
+        return std::nullopt;
+    }
+    const auto& value = obj[key];
+    if (value.is_number_integer()) {
+        return value.get<int>();
+    }
+    if (value.is_number_unsigned()) {
+        return static_cast<int>(value.get<unsigned>());
+    }
+    return std::nullopt;
+}
+
+std::string extract_response_text(const nlohmann::json& response_json) {
+    if (response_json.contains("choices") && response_json["choices"].is_array() &&
+        !response_json["choices"].empty()) {
+        const auto& choice = response_json["choices"][0];
+        if (choice.is_object()) {
+            if (choice.contains("message") && choice["message"].is_object() &&
+                choice["message"].contains("content")) {
+                return json_value_to_string(choice["message"]["content"]);
+            }
+            if (choice.contains("text") && choice["text"].is_string()) {
+                return choice["text"].get<std::string>();
+            }
+        }
+    }
+    if (response_json.contains("message") && response_json["message"].is_object() &&
+        response_json["message"].contains("content")) {
+        return json_value_to_string(response_json["message"]["content"]);
+    }
+    if (response_json.contains("response") && response_json["response"].is_string()) {
+        return response_json["response"].get<std::string>();
+    }
+    return {};
+}
+
+ParsedResponseBody parse_response_body(const std::string& body,
+                                       const std::string& path,
+                                       int status_code,
+                                       bool log_prompts) {
+    (void)path;
+    ParsedResponseBody parsed;
+    if (body.empty()) {
+        return parsed;
+    }
+
+    nlohmann::json response_json;
+    try {
+        response_json = nlohmann::json::parse(body);
+    } catch (...) {
+        if (status_code >= 200 && status_code < 300) {
+            const std::string preview =
+                body.size() > 512 ? body.substr(0, 512) : body;
+            parsed.redacted_response = nlohmann::json{
+                {"note", "non-JSON response"},
+                {"preview", sanitize_utf8_for_db(preview)},
+            };
+            parsed.has_redacted_response = true;
+        }
+        return parsed;
+    }
+
+    if (!response_json.is_object()) {
+        return parsed;
+    }
+
+    if (response_json.contains("usage") && response_json["usage"].is_object()) {
+        const auto& usage = response_json["usage"];
+        parsed.prompt_tokens = json_int_field(usage, "prompt_tokens");
+        parsed.completion_tokens = json_int_field(usage, "completion_tokens");
+    }
+    if (!parsed.prompt_tokens.has_value()) {
+        parsed.prompt_tokens = json_int_field(response_json, "prompt_eval_count");
+    }
+    if (!parsed.completion_tokens.has_value()) {
+        parsed.completion_tokens = json_int_field(response_json, "eval_count");
+    }
+
+    nlohmann::json summary = nlohmann::json::object();
+    if (parsed.prompt_tokens.has_value()) {
+        summary["prompt_tokens"] = parsed.prompt_tokens.value();
+    }
+    if (parsed.completion_tokens.has_value()) {
+        summary["completion_tokens"] = parsed.completion_tokens.value();
+    }
+
+    const std::string content = extract_response_text(response_json);
+    if (!content.empty()) {
+        if (log_prompts) {
+            summary["content"] = content;
+        } else {
+            summary["content"] = nlohmann::json{{"char_count", static_cast<int>(content.size())}};
+        }
+    }
+
+    if (log_prompts) {
+        summary["body"] = redact_json(response_json);
+    } else if (status_code >= 400) {
+        summary["body"] = redact_json(response_json);
+    }
+
+    if (!summary.empty()) {
+        const std::string dumped = summary.dump();
+        if (dumped.size() <= kMaxRedactedBodyBytes) {
+            parsed.redacted_response = std::move(summary);
+            parsed.has_redacted_response = true;
+        } else {
+            parsed.redacted_response = nlohmann::json{
+                {"truncated", true},
+                {"original_bytes", dumped.size()},
+                {"prompt_tokens", parsed.prompt_tokens.value_or(0)},
+                {"completion_tokens", parsed.completion_tokens.value_or(0)},
+            };
+            parsed.has_redacted_response = true;
+        }
+    }
+
+    return parsed;
+}
+
 std::string sanitize_utf8_for_db(std::string value) {
     if (value.empty() || is_valid_utf8(value)) {
         return value;

@@ -16,6 +16,13 @@ struct ParsedRequestBody {
     bool has_redacted_body = false;
 };
 
+struct ParsedResponseBody {
+    std::optional<int> prompt_tokens;
+    std::optional<int> completion_tokens;
+    nlohmann::json redacted_response;
+    bool has_redacted_response = false;
+};
+
 std::string classify_endpoint_type(const std::string& path, const std::string& method);
 
 std::string extract_forwarded_for(const std::string& x_forwarded_for,
@@ -25,6 +32,11 @@ std::string extract_forwarded_for(const std::string& x_forwarded_for,
 ParsedRequestBody parse_request_body(const std::string& body,
                                      const std::string& path,
                                      bool log_prompts);
+
+ParsedResponseBody parse_response_body(const std::string& body,
+                                       const std::string& path,
+                                       int status_code,
+                                       bool log_prompts);
 
 nlohmann::json redact_json(const nlohmann::json& value);
 

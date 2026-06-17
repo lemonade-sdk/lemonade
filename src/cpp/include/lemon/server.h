@@ -129,6 +129,7 @@ private:
     void handle_request_log_recent(const httplib::Request& req, httplib::Response& res);
     void handle_request_log_search(const httplib::Request& req, httplib::Response& res);
     void handle_request_log_stats(const httplib::Request& req, httplib::Response& res);
+    void handle_request_log_clear(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 

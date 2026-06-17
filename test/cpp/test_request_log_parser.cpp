@@ -10,6 +10,7 @@ using lemon::ParsedRequestBody;
 using lemon::classify_endpoint_type;
 using lemon::extract_response_error;
 using lemon::parse_request_body;
+using lemon::parse_response_body;
 using lemon::redact_json;
 using lemon::sanitize_utf8_for_db;
 
@@ -109,12 +110,42 @@ static void test_binary_response_error(TestResult& result) {
     }
 }
 
+static void test_response_tokens_and_content(TestResult& result) {
+    const std::string openai_response = R"({
+        "choices": [{"message": {"role": "assistant", "content": "Hello there"}}],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 3}
+    })";
+    const auto parsed = lemon::parse_response_body(openai_response, "/v1/chat/completions", 200, true);
+    if (parsed.prompt_tokens.has_value() && parsed.prompt_tokens.value() == 12 &&
+        parsed.completion_tokens.has_value() && parsed.completion_tokens.value() == 3 &&
+        parsed.has_redacted_response) {
+        result.ok("openai response tokens extracted");
+    } else {
+        result.fail("openai response tokens extracted");
+    }
+
+    const std::string ollama_response = R"({
+        "message": {"role": "assistant", "content": "Hi"},
+        "prompt_eval_count": 20,
+        "eval_count": 2
+    })";
+    const auto ollama_parsed =
+        lemon::parse_response_body(ollama_response, "/api/chat", 200, false);
+    if (ollama_parsed.prompt_tokens.has_value() && ollama_parsed.prompt_tokens.value() == 20 &&
+        ollama_parsed.completion_tokens.has_value() && ollama_parsed.completion_tokens.value() == 2) {
+        result.ok("ollama response tokens extracted");
+    } else {
+        result.fail("ollama response tokens extracted");
+    }
+}
+
 int main() {
     TestResult result;
     test_endpoint_classification(result);
     test_redaction(result);
     test_char_counts_without_prompt_logging(result);
     test_binary_response_error(result);
+    test_response_tokens_and_content(result);
 
     printf("\nResults: %d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;

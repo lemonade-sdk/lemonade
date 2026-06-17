@@ -7688,6 +7688,12 @@ input::-webkit-calendar-picker-indicator {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-wrap: wrap;
+}
+
+.request-log-clear-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .request-log-auto-refresh {
@@ -7793,7 +7799,7 @@ input::-webkit-calendar-picker-indicator {
     background: var(--bg-secondary);
 }
 
-.request-log-row--keep-alive-zero td:nth-child(6) {
+.request-log-row--keep-alive-zero td:nth-child(7) {
     color: #f59e0b;
     font-weight: 600;
 }
@@ -7826,7 +7832,7 @@ input::-webkit-calendar-picker-indicator {
 .request-log-detail {
     border-top: 1px solid var(--border-tertiary);
     padding: 12px 14px;
-    max-height: 220px;
+    max-height: 420px;
     overflow: auto;
     flex-shrink: 0;
     background: var(--bg-secondary);
@@ -7869,7 +7875,40 @@ input::-webkit-calendar-picker-indicator {
     font-size: 0.68rem;
     line-height: 1.4;
     overflow: auto;
-    max-height: 120px;
+    max-height: 200px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-secondary);
+}
+
+.request-log-payload-section {
+    margin-top: 14px;
+}
+
+.request-log-payload-title {
+    margin: 0 0 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.request-log-payload-empty {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--text-quaternary);
+    font-style: italic;
+}
+
+.request-log-redaction-hint {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: 4px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    font-size: 0.72rem;
+    line-height: 1.5;
     color: var(--text-secondary);
 }
 

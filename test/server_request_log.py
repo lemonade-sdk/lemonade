@@ -118,6 +118,31 @@ class RequestLogTests(ServerTestBase):
         self.assertIn("by_endpoint_type", payload)
         self.assertIn("by_model", payload)
 
+    def test_004_request_log_clear(self):
+        """Clear endpoint removes all rows when DB logging is active."""
+        if not os.environ.get("LEMONADE_REQUEST_LOG_DATABASE_URL"):
+            self.skipTest("LEMONADE_REQUEST_LOG_DATABASE_URL is not configured")
+
+        clear_url = f"{self.base_url}/request-log/clear"
+        response = requests.post(clear_url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT)
+        if response.status_code == 503:
+            self.skipTest("Request logging is not enabled on the running server")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("deleted", payload)
+        self.assertIsInstance(payload["deleted"], int)
+
+        search_url = f"{self.base_url}/request-log/search"
+        search = requests.get(
+            search_url,
+            params={"limit": 10},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(search.status_code, 200)
+        self.assertEqual(search.json().get("entries", []), [])
+
 
 if __name__ == "__main__":
     from utils.server_base import run_server_tests
