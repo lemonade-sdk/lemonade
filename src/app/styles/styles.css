@@ -7881,6 +7881,44 @@ input::-webkit-calendar-picker-indicator {
     color: var(--text-secondary);
 }
 
+.request-log-json--metadata {
+    max-height: 320px;
+}
+
+.request-log-payload-view {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.request-log-text-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.request-log-text-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+}
+
+.request-log-text-value {
+    margin: 0;
+    padding: 10px;
+    border-radius: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-secondary);
+    font-size: 0.68rem;
+    line-height: 1.5;
+    overflow: auto;
+    max-height: 480px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-secondary);
+}
+
 .request-log-payload-section {
     margin-top: 14px;
 }

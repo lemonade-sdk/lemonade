@@ -8,6 +8,8 @@ import {
   RequestLogStats,
 } from './utils/requestLogApi';
 import { writeClipboard } from './utils/clipboardUtils';
+import { payloadUsesCharCountsOnly } from './utils/requestLogFormat';
+import RequestLogPayloadView from './RequestLogPayloadView';
 
 type KeepAliveFilter = 'any' | 'zero' | 'has';
 type SinceFilter = '1h' | '24h' | '7d';
@@ -75,76 +77,6 @@ function formatTokens(entry: RequestLogEntry): string {
   const input = entry.prompt_tokens ?? '—';
   const output = entry.completion_tokens ?? '—';
   return `${input} / ${output}`;
-}
-
-function looksLikeJsonString(value: string): boolean {
-  const trimmed = value.trim();
-  return trimmed.startsWith('{') || trimmed.startsWith('[');
-}
-
-function tryParseJsonString(value: string): unknown {
-  if (!looksLikeJsonString(value)) {
-    return value;
-  }
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
-
-/** Recursively expand JSON-encoded strings so nested payloads pretty-print. */
-function normalizeJsonForDisplay(value: unknown): unknown {
-  if (typeof value === 'string') {
-    let parsed: unknown = tryParseJsonString(value);
-    // Handle double-encoded JSON (JSONB stored as a quoted JSON string).
-    if (typeof parsed === 'string' && looksLikeJsonString(parsed)) {
-      parsed = tryParseJsonString(parsed);
-    }
-    if (parsed !== value) {
-      return normalizeJsonForDisplay(parsed);
-    }
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeJsonForDisplay(item));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, normalizeJsonForDisplay(item)]),
-    );
-  }
-  return value;
-}
-
-function formatJsonBlock(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '—';
-  }
-
-  const normalized = normalizeJsonForDisplay(value);
-  if (typeof normalized === 'string') {
-    return normalized;
-  }
-
-  return JSON.stringify(normalized, null, 2);
-}
-
-function payloadUsesCharCountsOnly(value: unknown): boolean {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  if (record.prompt && typeof record.prompt === 'object' && record.prompt !== null) {
-    return 'char_count' in (record.prompt as Record<string, unknown>);
-  }
-  if (record.messages && typeof record.messages === 'object' && record.messages !== null) {
-    return 'char_count' in (record.messages as Record<string, unknown>);
-  }
-  if (record.content && typeof record.content === 'object' && record.content !== null) {
-    return 'char_count' in (record.content as Record<string, unknown>);
-  }
-  return false;
 }
 
 function applyKeepAliveClientFilter(
@@ -588,7 +520,7 @@ export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0
           <div className="request-log-payload-section">
             <h4 className="request-log-payload-title">Request payload (redacted)</h4>
             {requestRedacted !== null && requestRedacted !== undefined ? (
-              <pre className="request-log-json">{formatJsonBlock(requestRedacted)}</pre>
+              <RequestLogPayloadView value={requestRedacted} />
             ) : (
               <p className="request-log-payload-empty">No request body recorded</p>
             )}
@@ -597,7 +529,7 @@ export LEMONADE_REQUEST_LOG_DATABASE_URL=postgresql://lemonade:change-me@127.0.0
           <div className="request-log-payload-section">
             <h4 className="request-log-payload-title">API response (redacted)</h4>
             {responseRedacted !== null && responseRedacted !== undefined ? (
-              <pre className="request-log-json">{formatJsonBlock(responseRedacted)}</pre>
+              <RequestLogPayloadView value={responseRedacted} />
             ) : (
               <p className="request-log-payload-empty">
                 No response body recorded (common for streaming requests or empty errors)
