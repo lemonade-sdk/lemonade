@@ -7622,7 +7622,7 @@ input::-webkit-calendar-picker-indicator {
     margin-top: 4px;
 }
 
-/* Center panel tabs (Server Logs / Request Logs) */
+/* Center panel tabs (System Logs / Request Logs) */
 .center-panel-tabs {
     display: flex;
     gap: 0;

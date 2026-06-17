@@ -15,7 +15,7 @@ const CenterPanelTabs: React.FC<CenterPanelTabsProps> = ({ activeTab, onTabChang
         className={`center-panel-tab ${activeTab === 'server-logs' ? 'active' : ''}`}
         onClick={() => onTabChange('server-logs')}
       >
-        Server Logs
+        System Logs
       </button>
       <button
         type="button"

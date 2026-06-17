@@ -149,11 +149,6 @@ const AppContent: React.FC = () => {
     }
   }, [layoutLoaded, theme, isChatVisible, isModelManagerVisible, leftPanelView, isLogsVisible, centerPanelTab, modelManagerWidth, chatWidth, logsHeight]);
 
-  const handleOpenRequestLogs = useCallback(() => {
-    setIsLogsVisible(true);
-    setCenterPanelTab('request-logs');
-  }, []);
-
   // Debounced save effect
   useEffect(() => {
     if (!layoutLoaded) return;
@@ -525,7 +520,6 @@ const AppContent: React.FC = () => {
         onToggleModelManager={() => setIsModelManagerVisible(!isModelManagerVisible)}
         isLogsVisible={isLogsVisible}
         onToggleLogs={() => setIsLogsVisible(!isLogsVisible)}
-        onOpenRequestLogs={handleOpenRequestLogs}
         isDownloadManagerVisible={isDownloadManagerVisible}
         onToggleDownloadManager={handleToggleDownloadManager}
       />
@@ -540,8 +534,6 @@ const AppContent: React.FC = () => {
           width={isModelManagerVisible ? modelManagerWidth : LAYOUT_CONSTANTS.experienceRailWidth}
           currentView={leftPanelView}
           onViewChange={setLeftPanelView}
-          onOpenRequestLogs={handleOpenRequestLogs}
-          isRequestLogsActive={isLogsVisible && centerPanelTab === 'request-logs'}
         />
         {isModelManagerVisible && (isLogsVisible || isChatVisible) && (
           <ResizableDivider onMouseDown={handleLeftDividerMouseDown} />

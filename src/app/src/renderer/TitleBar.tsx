@@ -13,7 +13,6 @@ interface TitleBarProps {
   onToggleModelManager: () => void;
   isLogsVisible: boolean;
   onToggleLogs: () => void;
-  onOpenRequestLogs?: () => void;
   isDownloadManagerVisible: boolean;
   onToggleDownloadManager: () => void;
 }
@@ -27,7 +26,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
   onToggleModelManager,
   isLogsVisible,
   onToggleLogs,
-  onOpenRequestLogs,
   isDownloadManagerVisible,
   onToggleDownloadManager
 }) => {
@@ -200,9 +198,6 @@ const TitleBar: React.FC<TitleBarProps> = ({
                   <div className="menu-option" onClick={() => { onToggleLogs(); setActiveMenu(null); }}>
                     <span>{isLogsVisible ? '✓ ' : ''}Logs</span>
                     <span className="menu-shortcut">Ctrl+Shift+L</span>
-                  </div>
-                  <div className="menu-option" onClick={() => { onOpenRequestLogs?.(); setActiveMenu(null); }}>
-                    <span>Request Logs</span>
                   </div>
                   <div className="menu-option has-submenu">
                     <span>Theme</span>
