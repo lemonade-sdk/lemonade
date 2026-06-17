@@ -26,8 +26,8 @@ module.exports = (env, argv) => ({
     extensions: ['.tsx', '.ts', '.js', '.jsx'],
   },
   output: {
-    filename: '[name].bundle.js',
-    path: path.resolve(__dirname, 'dist'),
+    filename: 'renderer.bundle.js',
+    path: path.resolve(__dirname, 'dist/renderer'),
     clean: true,
   },
   optimization: {
@@ -63,8 +63,8 @@ module.exports = (env, argv) => ({
     }),
   ],
   devServer: {
-    static: path.resolve(__dirname, 'dist'),
-    port: 8080,
+    static: path.resolve(__dirname, 'dist/renderer'),
+    port: 9123,
     hot: true,
     open: false,
     historyApiFallback: true,
