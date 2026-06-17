@@ -3260,25 +3260,27 @@ class EndpointTests(ServerTestBase):
         )
 
     def test_034_user_defined_model_aliases(self):
-        """PATCH /models/{id} persists user aliases that resolve API lookups."""
+        """POST /model-settings persists user aliases that resolve API lookups."""
         alias = f"test-alias-{uuid.uuid4().hex[:8]}"
         alias_latest = f"{alias}:latest"
-        model_url = f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}"
 
         try:
-            patch_response = requests.patch(
-                model_url,
-                json={"aliases": [alias, alias_latest]},
+            save_response = requests.post(
+                f"{self.base_url}/model-settings",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "aliases": [alias, alias_latest],
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(
-                patch_response.status_code,
+                save_response.status_code,
                 200,
-                patch_response.text,
+                save_response.text,
             )
-            patch_data = patch_response.json()
-            self.assertIn(alias, patch_data["aliases"])
-            self.assertIn(alias_latest, patch_data["aliases"])
+            save_data = save_response.json()
+            self.assertIn(alias, save_data["aliases"])
+            self.assertIn(alias_latest, save_data["aliases"])
 
             get_response = requests.get(
                 f"{self.base_url}/models/{alias}",
@@ -3305,9 +3307,12 @@ class EndpointTests(ServerTestBase):
                 load_response.text,
             )
         finally:
-            requests.patch(
-                model_url,
-                json={"aliases": []},
+            requests.post(
+                f"{self.base_url}/model-settings",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "aliases": [],
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
 
@@ -3319,11 +3324,9 @@ class EndpointTests(ServerTestBase):
         print(f"[OK] User-defined aliases resolve for {ENDPOINT_TEST_MODEL}")
 
     def test_035_user_defined_alias_conflict_rejected(self):
-        """PATCH rejects an alias already claimed by another model."""
+        """POST /model-settings rejects an alias already claimed by another model."""
         alias = f"conflict-alias-{uuid.uuid4().hex[:8]}"
-        model_a_url = f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}"
         model_b_name = f"user.AliasConflict-{uuid.uuid4().hex[:8]}"
-        model_b_url = f"{self.base_url}/models/{model_b_name}"
 
         pull_response = requests.post(
             f"{self.base_url}/pull",
@@ -3338,24 +3341,33 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(pull_response.status_code, 200, pull_response.text)
 
         try:
-            first = requests.patch(
-                model_a_url,
-                json={"aliases": [alias]},
+            first = requests.post(
+                f"{self.base_url}/model-settings",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "aliases": [alias],
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(first.status_code, 200, first.text)
 
-            second = requests.patch(
-                model_b_url,
-                json={"aliases": [alias]},
+            second = requests.post(
+                f"{self.base_url}/model-settings",
+                json={
+                    "model_name": model_b_name,
+                    "aliases": [alias],
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(second.status_code, 400, second.text)
             self.assertIn("alias", second.text.lower())
         finally:
-            requests.patch(
-                model_a_url,
-                json={"aliases": []},
+            requests.post(
+                f"{self.base_url}/model-settings",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "aliases": [],
+                },
                 timeout=TIMEOUT_DEFAULT,
             )
             requests.post(
@@ -3382,9 +3394,12 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(pull_response.status_code, 200, pull_response.text)
 
-        patch_response = requests.patch(
-            f"{self.base_url}/models/{model_name}",
-            json={"aliases": [alias]},
+        patch_response = requests.post(
+            f"{self.base_url}/model-settings",
+            json={
+                "model_name": model_name,
+                "aliases": [alias],
+            },
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(patch_response.status_code, 200, patch_response.text)

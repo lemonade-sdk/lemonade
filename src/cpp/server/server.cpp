@@ -496,16 +496,16 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_by_id(req, res);
     });
     web_server.Patch(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_update_model_by_id(req, res);
+        handle_model_settings(req, res);
     });
     web_server.Patch(R"(/api/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_update_model_by_id(req, res);
+        handle_model_settings(req, res);
     });
     web_server.Patch(R"(/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_update_model_by_id(req, res);
+        handle_model_settings(req, res);
     });
     web_server.Patch(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_update_model_by_id(req, res);
+        handle_model_settings(req, res);
     });
 
     // Chat completions (OpenAI compatible)
@@ -608,6 +608,10 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_post("delete", [this](const httplib::Request& req, httplib::Response& res) {
         handle_delete(req, res);
+    });
+
+    register_post("model-settings", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_model_settings(req, res);
     });
 
     register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1824,10 +1828,27 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     }
 }
 
-void Server::handle_update_model_by_id(const httplib::Request& req, httplib::Response& res) {
-    std::string model_id = req.matches[1];
-
+void Server::handle_model_settings(const httplib::Request& req, httplib::Response& res) {
     try {
+        if (req.body.empty()) {
+            res.status = 400;
+            res.set_content(R"({"error": "Request body required"})", "application/json");
+            return;
+        }
+
+        auto request_json = nlohmann::json::parse(req.body);
+
+        std::string model_id;
+        if (request_json.contains("model_name") && request_json["model_name"].is_string()) {
+            model_id = request_json["model_name"].get<std::string>();
+        } else if (req.matches.size() > 1) {
+            model_id = req.matches[1];
+        } else {
+            res.status = 400;
+            res.set_content(R"({"error": "model_name is required"})", "application/json");
+            return;
+        }
+
         if (!model_manager_->model_exists(model_id)) {
             res.status = 404;
             auto error_response = create_model_error(model_id, "Model not found");
@@ -1835,7 +1856,6 @@ void Server::handle_update_model_by_id(const httplib::Request& req, httplib::Res
             return;
         }
 
-        auto request_json = nlohmann::json::parse(req.body);
         const bool has_aliases = request_json.contains("aliases");
         const bool has_options = request_json.contains("recipe_options");
         if (!has_aliases && !has_options) {

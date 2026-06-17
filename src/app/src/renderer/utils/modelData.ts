@@ -374,10 +374,13 @@ export const updateModelSettings = async (
   update: ModelSettingsUpdate,
 ): Promise<ModelInfo & { id?: string }> => {
   const { serverFetch } = await import('./serverConfig');
-  const response = await serverFetch(`/models/${encodeURIComponent(modelId)}`, {
-    method: 'PATCH',
+  const response = await serverFetch('/model-settings', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(update),
+    body: JSON.stringify({
+      model_name: modelId,
+      ...update,
+    }),
   });
   if (!response.ok) {
     let message = `Failed to save model settings (${response.status})`;

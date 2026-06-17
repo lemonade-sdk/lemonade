@@ -1957,11 +1957,11 @@ std::vector<std::string> ModelManager::get_model_aliases(const std::string& mode
     const std::string cache_key = resolve_input_to_cache_key_locked(model_name);
     const std::string canonical = cache_key_to_canonical_id(cache_key);
     auto it = model_aliases_.find(canonical);
-    if (it == model_aliases_.end() || !it->value().is_array()) {
+    if (it == model_aliases_.end() || !it.value().is_array()) {
         return {};
     }
     std::vector<std::string> result;
-    for (const auto& entry : it->value()) {
+    for (const auto& entry : it.value()) {
         if (entry.is_string()) {
             result.push_back(entry.get<std::string>());
         }
