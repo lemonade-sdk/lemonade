@@ -555,15 +555,15 @@
         ],
         "size": 1.0
     },
-    "Qwen3.5-4B-MLX": {
-        "checkpoint": "mlx-community/Qwen3.5-4B-4bit",
+    "Qwen3.6-27B-MLX": {
+        "checkpoint": "mlx-community/Qwen3.6-27B-4bit",
         "recipe": "lemon-mlx",
         "suggested": true,
         "labels": [
             "reasoning",
             "tool-calling"
         ],
-        "size": 3.6
+        "size": 16.1
     },
     "Qwen3.6-35B-A3B-MLX": {
         "checkpoint": "mlx-community/Qwen3.6-35B-A3B-4bit",
