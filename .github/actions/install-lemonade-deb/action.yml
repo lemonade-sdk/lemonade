@@ -59,11 +59,37 @@ runs:
         DEB_DEPENDS=$(dpkg-deb -f "$DEB_FILE" Depends 2>/dev/null || true)
         if [ -n "$DEB_DEPENDS" ] && command -v apt-get >/dev/null 2>&1; then
             echo "Installing .deb runtime dependencies: $DEB_DEPENDS"
+
+            # Some CI-built binary packages depend on runtime .debs from the
+            # same build environment, for example libcpp-httplib0.26. Those
+            # packages are uploaded beside lemonade-server_*.deb when they are
+            # not available from a plain ubuntu-latest apt source. Install local
+            # dependency artifacts first so apt-get satisfy can resolve the
+            # package's shlibs-generated dependency set.
+            LOCAL_RUNTIME_DEBS=()
+            while IFS= read -r dep_deb; do
+                [ -n "$dep_deb" ] && LOCAL_RUNTIME_DEBS+=("$dep_deb")
+            done < <(find . -maxdepth 1 -type f -name '*.deb' ! -name "$(basename "$DEB_FILE")" -print | sort)
+
+            install_local_runtime_debs() {
+                if [ "${#LOCAL_RUNTIME_DEBS[@]}" -gt 0 ]; then
+                    echo "Installing local runtime dependency artifacts:"
+                    printf '  %s\n' "${LOCAL_RUNTIME_DEBS[@]}"
+                    apt-get install -y "${LOCAL_RUNTIME_DEBS[@]}"
+                fi
+            }
+
             if [ "$(id -u)" -eq 0 ]; then
                 apt-get update
+                install_local_runtime_debs
                 apt-get satisfy -y "$DEB_DEPENDS"
             elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
                 sudo apt-get update
+                if [ "${#LOCAL_RUNTIME_DEBS[@]}" -gt 0 ]; then
+                    echo "Installing local runtime dependency artifacts:"
+                    printf '  %s\n' "${LOCAL_RUNTIME_DEBS[@]}"
+                    sudo apt-get install -y "${LOCAL_RUNTIME_DEBS[@]}"
+                fi
                 sudo apt-get satisfy -y "$DEB_DEPENDS"
             else
                 echo "No root/passwordless sudo available; assuming runtime dependencies are already installed."
