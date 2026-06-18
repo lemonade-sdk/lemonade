@@ -7227,3 +7227,159 @@ input, textarea {
     grid-area: auto;
   }
 }
+
+/* Follow-up: Connect layout, multiline logs, and TTS on-demand playback controls */
+.connect__layout {
+  grid-template-areas:
+    "server help"
+    "dirs cloud"
+    "market market";
+  align-items: start;
+}
+
+.connect__section--cloud,
+.connect__section--help {
+  align-self: start;
+}
+
+.logs-output {
+  overflow: auto;
+}
+
+.logs-line--continuation .logs-line__time,
+.logs-line--continuation .logs-line__badge {
+  opacity: 0.45;
+}
+
+.logs-line--continuation .logs-line__tag {
+  color: var(--text-tertiary);
+  min-width: 60px;
+  max-width: 120px;
+  text-align: left;
+}
+
+.logs-line__text {
+  white-space: pre;
+  word-break: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail__tts-playback {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.detail__tts-controls {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.detail__tts-mode,
+.detail__tts-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.detail__tts-mode-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.detail__tts-mode-button {
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.detail__tts-mode-button:hover,
+.detail__tts-mode-button--active {
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--accent-fg);
+}
+
+.detail__tts-toggle input[type="range"] {
+  width: 54px;
+  min-width: 54px;
+  flex: 0 0 54px;
+}
+
+.detail__tts-toggle strong {
+  min-width: 24px;
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+@media (max-width: 980px) {
+  .connect__layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: none;
+  }
+  .connect__section--server,
+  .connect__section--help,
+  .connect__section--directories,
+  .connect__section--cloud,
+  .connect__section--marketplace {
+    grid-area: auto;
+  }
+}
+
+/* Follow-up: tighten speech settings and align Connect panels/cards */
+.detail__tts-playback {
+  width: min(100%, 380px);
+  max-width: 380px;
+}
+
+.connect__layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.connect__section--server,
+.connect__section--help,
+.connect__section--directories,
+.connect__section--cloud {
+  align-self: stretch;
+  height: 100%;
+}
+
+.connect__help-grid {
+  align-items: stretch;
+  grid-auto-rows: 1fr;
+}
+
+.connect__help-card {
+  width: 100%;
+  height: 100%;
+  min-height: 78px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 980px) {
+  .connect__layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: none;
+  }
+
+  .connect__section--server,
+  .connect__section--help,
+  .connect__section--directories,
+  .connect__section--cloud,
+  .connect__section--marketplace {
+    grid-area: auto;
+    height: auto;
+  }
+}

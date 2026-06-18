@@ -13,9 +13,12 @@ export const TTS_VOICES = [
   { id: 'shimmer', label: 'Shimmer' },
 ];
 
+export type TtsPlaybackMode = 'demand' | 'always';
+
 export interface TtsPlaybackSettings {
   modelName: string | null;
   speakUserText: boolean;
+  playbackMode: TtsPlaybackMode;
 }
 
 function activeModelKey(scope: string): string {
@@ -26,13 +29,22 @@ function speakUserKey(scope: string): string {
   return scopedStorageKey(scope, 'tts_speak_user_text');
 }
 
+function playbackModeKey(scope: string): string {
+  return scopedStorageKey(scope, 'tts_playback_mode');
+}
+
+function normalizePlaybackMode(value: unknown): TtsPlaybackMode {
+  return value === 'always' ? 'always' : 'demand';
+}
+
 export function loadTtsPlaybackSettings(scope: string): TtsPlaybackSettings {
   try {
     const modelName = localStorage.getItem(activeModelKey(scope));
     const speakUserText = localStorage.getItem(speakUserKey(scope)) === 'true';
-    return { modelName: modelName || null, speakUserText };
+    const playbackMode = normalizePlaybackMode(localStorage.getItem(playbackModeKey(scope)));
+    return { modelName: modelName || null, speakUserText, playbackMode };
   } catch {
-    return { modelName: null, speakUserText: false };
+    return { modelName: null, speakUserText: false, playbackMode: 'demand' };
   }
 }
 
@@ -47,6 +59,11 @@ export function saveActiveTtsModel(scope: string, modelName: string | null): voi
 
 export function saveSpeakUserText(scope: string, enabled: boolean): void {
   try { localStorage.setItem(speakUserKey(scope), enabled ? 'true' : 'false'); } catch { /* ignore */ }
+  emitTtsSettingsChanged(scope);
+}
+
+export function saveTtsPlaybackMode(scope: string, mode: TtsPlaybackMode): void {
+  try { localStorage.setItem(playbackModeKey(scope), normalizePlaybackMode(mode)); } catch { /* ignore */ }
   emitTtsSettingsChanged(scope);
 }
 
