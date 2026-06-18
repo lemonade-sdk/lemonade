@@ -35,6 +35,12 @@ module.exports = (env, argv) => {
     'dompurify$': path.resolve(__dirname, 'system-stubs/dompurify.ts'),
     'mermaid$': path.resolve(__dirname, 'system-stubs/mermaid.ts'),
     'recharts$': path.resolve(__dirname, 'system-stubs/recharts.tsx'),
+
+    // Debian/Ubuntu/Fedora system highlight.js packages can provide the JS
+    // module without the npm package's bundled style files. Keep the GUI3
+    // import graph unchanged and provide a small local stylesheet only for
+    // the system-node web-app build.
+    'highlight.js/styles/github-dark.css$': path.resolve(__dirname, 'system-stubs/highlight-github-dark.css'),
   } : {};
 
   // Resolve polyfills conditionally - try to resolve them, but fall back to false if not available
