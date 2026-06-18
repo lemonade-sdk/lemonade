@@ -450,7 +450,9 @@ static const std::vector<RecipeBackendDef> RECIPE_DEFS = {
         {"amd_npu", {"XDNA2"}},
     }},
     {"whispercpp", "rocm", {"windows", "linux"}, {
-        {"amd_gpu", {"gfx1150", "gfx1151", "gfx103X", "gfx110X", "gfx120X"}},
+        // gfx103X omitted: lemonade-sdk/whisper.cpp-rocm publishes no gfx103X
+        // ROCm whisper build, so advertising it would yield a 404 on install.
+        {"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}},
     }},
     {"whispercpp", "vulkan", {"windows", "linux"}, {
         {"cpu", {"x86_64"}},

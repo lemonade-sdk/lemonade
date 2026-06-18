@@ -103,7 +103,7 @@ jobs:
     name: Validate vllm (rocm)
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
-    runs-on: [self-hosted, stx-halo, Linux]
+    runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
     steps:
       - uses: actions/checkout@v5
         with:
