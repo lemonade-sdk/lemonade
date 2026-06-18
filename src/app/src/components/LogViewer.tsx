@@ -269,9 +269,9 @@ const LogViewer: React.FC = () => {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(l =>
-        l.line.toLowerCase().includes(q) ||
-        l.tag.toLowerCase().includes(q) ||
-        l.severity.toLowerCase().includes(q)
+        String(l.line || '').toLowerCase().includes(q) ||
+        String(l.tag || '').toLowerCase().includes(q) ||
+        String(l.severity || '').toLowerCase().includes(q)
       );
     }
     return result;
@@ -301,10 +301,21 @@ const LogViewer: React.FC = () => {
 
   /* ── Virtual scroll calculation ──────────────────────────── */
 
-  const totalHeight = filteredLogs.length * LINE_HEIGHT;
+  const renderedLogRows = useMemo(() => {
+    const rows: { entry: LogEntry; line: string; partIndex: number }[] = [];
+    filteredLogs.forEach(entry => {
+      const parts = String(entry.line || '').split(/\r?\n/);
+      (parts.length ? parts : ['']).forEach((line, partIndex) => {
+        rows.push({ entry, line, partIndex });
+      });
+    });
+    return rows;
+  }, [filteredLogs]);
+
+  const totalHeight = renderedLogRows.length * LINE_HEIGHT;
   const startIdx = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN);
-  const endIdx = Math.min(filteredLogs.length, Math.ceil((scrollTop + viewHeight) / LINE_HEIGHT) + OVERSCAN);
-  const visibleLogs = filteredLogs.slice(startIdx, endIdx);
+  const endIdx = Math.min(renderedLogRows.length, Math.ceil((scrollTop + viewHeight) / LINE_HEIGHT) + OVERSCAN);
+  const visibleLogRows = renderedLogRows.slice(startIdx, endIdx);
 
   /* ── Status indicator ────────────────────────────────────── */
 
@@ -395,16 +406,19 @@ const LogViewer: React.FC = () => {
         ) : (
           <div className="logs-virtual" style={{ height: totalHeight, position: 'relative' }}>
             <div style={{ position: 'absolute', top: startIdx * LINE_HEIGHT, left: 0, right: 0 }}>
-              {visibleLogs.map(entry => (
-                <div className={`logs-line ${severityClass(entry.severity)}`} key={entry.seq}>
-                  <span className="logs-line__time">{entry.timestamp.split(' ')[1] || entry.timestamp}</span>
-                  <span className={`logs-line__badge ${severityClass(entry.severity)}`}>
-                    {severityBadge(entry.severity)}
-                  </span>
-                  <span className="logs-line__tag">{entry.tag}</span>
-                  <span className="logs-line__text">{entry.line}</span>
-                </div>
-              ))}
+              {visibleLogRows.map(({ entry, line, partIndex }) => {
+                const isContinuation = partIndex > 0;
+                return (
+                  <div className={`logs-line ${severityClass(entry.severity)}${isContinuation ? ' logs-line--continuation' : ''}`} key={`${entry.seq}:${partIndex}`}>
+                    <span className="logs-line__time">{isContinuation ? '' : (entry.timestamp.split(' ')[1] || entry.timestamp)}</span>
+                    <span className={`logs-line__badge ${severityClass(entry.severity)}`}>
+                      {isContinuation ? '' : severityBadge(entry.severity)}
+                    </span>
+                    <span className="logs-line__tag">{isContinuation ? '...' : entry.tag}</span>
+                    <span className="logs-line__text">{line || ' '}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

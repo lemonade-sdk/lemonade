@@ -862,12 +862,19 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
 
   useEffect(() => () => stopAutoSpeech(), [stopAutoSpeech]);
 
-  const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user') => {
+  const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
     const modelName = ttsPlaybackSettings.modelName;
     if (!trimmed || !modelName) return;
-    if (source === 'user' && !ttsPlaybackSettings.speakUserText) return;
+    if (!force) {
+      if (ttsPlaybackSettings.playbackMode !== 'always') return;
+      if (source === 'user' && !ttsPlaybackSettings.speakUserText) return;
+    }
     try {
+      const isLoaded = loadedModels.some(model => model.model_name.toLowerCase() === modelName.toLowerCase());
+      if (!isLoaded) {
+        await api.loadModel(modelName, undefined, findModelInfoByName(knownModelInfos, modelName) || null);
+      }
       const voice = ttsVoiceFromRecipeOptions(activePresetForModel(modelName).recipe_options);
       const audio = await api.textToSpeech(modelName, trimmed, voice);
       stopAutoSpeech();
@@ -883,7 +890,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel, loadedModels, onModel
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadedModels, presetVersion, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -1613,6 +1620,12 @@ ${finalText}`
     );
   }, [activeId, appendAssistantMessage, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
 
+  const handleSpeakAssistantMessage = useCallback((text: string) => {
+    void speakWithPinnedTts(text, 'assistant', true);
+  }, [speakWithPinnedTts]);
+
+  const canReadAssistantMessages = Boolean(ttsPlaybackSettings.modelName);
+
   const handleEditUserMessage = useCallback(async (messageIndex: number, revisedContent: string) => {
     const text = revisedContent.trim();
     if (!text || !activeId || isBusy) return;
@@ -1965,6 +1978,7 @@ ${finalText}`
                   userLabel={accountSession.isGuest ? 'Guest' : accountSession.name}
                   onOptionSelect={handleOptionSelect}
                   onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
+                  onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
                   onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
                 />
               ))}
@@ -2500,7 +2514,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 
 /* ── Message bubble ──────────────────────────────────────── */
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onEditUser }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
@@ -2617,6 +2631,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           >
             <Icon name="copy" size={13} /> Copy
           </button>
+          {onSpeak && (
+            <button type="button" className="message__action" onClick={onSpeak}>
+              <Icon name="tts" size={13} /> Read aloud
+            </button>
+          )}
           {onRetry && (
             <button type="button" className="message__action" onClick={onRetry}>
               ↻ Retry

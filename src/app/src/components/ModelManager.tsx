@@ -6,7 +6,7 @@ import { scopedStorageKey, type AccountSession } from '../features/accounts/acco
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
-import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText } from '../features/audio/ttsSettings';
+import { TTS_SETTINGS_EVENT, TtsPlaybackMode, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText, saveTtsPlaybackMode } from '../features/audio/ttsSettings';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -1479,6 +1479,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
   };
 
+  const setTtsPlaybackMode = (mode: TtsPlaybackMode) => {
+    saveTtsPlaybackMode(accountSession.storageScope, mode);
+    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+  };
+
   const renderPinAndSpeechControl = (name: string, isPinned: boolean, capability: ModelCapability) => {
     const pinButton = (
       <button
@@ -1866,19 +1871,37 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             {capability === 'tts' && activeTtsModelName === name && (
               <div className="detail__field detail__field--wide detail__tts-playback">
                 <span className="detail__label">Speech playback</span>
-                <label className="detail__tts-toggle">
-                  <span>Also read user text</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={1}
-                    value={ttsPlaybackSettings.speakUserText ? 1 : 0}
-                    onChange={e => setSpeakUserText(Number(e.target.value) === 1)}
-                    aria-label="Also read user text"
-                  />
-                  <strong>{ttsPlaybackSettings.speakUserText ? 'On' : 'Off'}</strong>
-                </label>
+                <div className="detail__tts-controls">
+                  <div className="detail__tts-mode" role="group" aria-label="Speech playback mode">
+                    <span>Mode</span>
+                    <span className="detail__tts-mode-buttons">
+                      {(['demand', 'always'] as TtsPlaybackMode[]).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`detail__tts-mode-button${ttsPlaybackSettings.playbackMode === mode ? ' detail__tts-mode-button--active' : ''}`}
+                          onClick={() => setTtsPlaybackMode(mode)}
+                          aria-pressed={ttsPlaybackSettings.playbackMode === mode}
+                        >
+                          {mode === 'demand' ? 'On demand' : 'Always'}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                  <label className="detail__tts-toggle">
+                    <span>Also read user text</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={1}
+                      value={ttsPlaybackSettings.speakUserText ? 1 : 0}
+                      onChange={e => setSpeakUserText(Number(e.target.value) === 1)}
+                      aria-label="Also read user text"
+                    />
+                    <strong>{ttsPlaybackSettings.speakUserText ? 'On' : 'Off'}</strong>
+                  </label>
+                </div>
               </div>
             )}
           </div>
