@@ -1,4 +1,4 @@
-import React, { ReactElement, useEffect, useState } from 'react';
+import React, { ReactElement, useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from './components/Icons';
 import {
   AppSettings,
@@ -12,6 +12,8 @@ import {
 import ConnectionSettings from './tabs/ConnectionSettings';
 import TTSSettings from './tabs/TTSSettings';
 import LLMChatSettings from './tabs/LLMChatSettings';
+import { useModels } from './hooks/useModels';
+import { fetchDefaultModel, saveDefaultModel } from './utils/serverRuntimeConfig';
 
 interface SettingsPanelProps {
   isVisible: boolean;
@@ -47,8 +49,17 @@ const numericSettingsConfig: Array<{
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = '' }) => {
   const [settings, setSettings] = useState<AppSettings>(createDefaultSettings());
+  const [defaultModel, setDefaultModel] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { downloadedModels } = useModels();
+  const defaultModelOptions = useMemo(() => {
+    const optionSet = new Set(downloadedModels.map((model) => model.id));
+    if (defaultModel) {
+      optionSet.add(defaultModel);
+    }
+    return Array.from(optionSet).sort((a, b) => a.localeCompare(b));
+  }, [downloadedModels, defaultModel]);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(['connection_settings', 'llm_chat_settings', 'tts_settings'])
   );
@@ -72,6 +83,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         const stored = await window.api.getSettings();
         if (isMounted) {
           setSettings(mergeWithDefaultSettings(stored));
+        }
+
+        try {
+          const configuredDefaultModel = await fetchDefaultModel();
+          if (isMounted) {
+            setDefaultModel(configuredDefaultModel);
+          }
+        } catch (error) {
+          console.error('Failed to load default model setting:', error);
         }
       } catch (error) {
         console.error('Failed to load settings:', error);
@@ -197,17 +217,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
 
   const handleReset = () => {
     setSettings(createDefaultSettings());
+    setDefaultModel('');
   };
 
   const handleSave = async () => {
-    if (!window.api?.saveSettings) {
-      return;
-    }
-
     setIsSaving(true);
     try {
-      const saved = await window.api.saveSettings(settings);
-      setSettings(mergeWithDefaultSettings(saved));
+      if (window.api?.saveSettings) {
+        const saved = await window.api.saveSettings(settings);
+        setSettings(mergeWithDefaultSettings(saved));
+      }
+
+      await saveDefaultModel(defaultModel);
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert('Failed to save settings. Please try again.');
@@ -247,9 +268,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
       id: 'llm_chat_settings',
       label: 'LLM',
       keywords: [
-        'llm', 'chat', 'temperature', 'top k', 'top p', 'repeat penalty', 'thinking', 'collapse thinking'
+        'llm', 'chat', 'default model', 'temperature', 'top k', 'top p', 'repeat penalty', 'thinking', 'collapse thinking'
       ],
-      settingCount: 6,
+      settingCount: 7,
     },
     {
       id: 'tts_settings',
@@ -282,6 +303,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ isVisible, searchQuery = 
         return <LLMChatSettings
           settings={settings}
           numericSettingsConfig={numericSettingsConfig}
+          defaultModel={defaultModel}
+          defaultModelOptions={defaultModelOptions}
+          onDefaultModelChange={setDefaultModel}
           onBooleanChangeFunc={handleBooleanChange}
           onNumericChangeFunc={handleNumericChange}
           onResetFunc={handleResetField}

@@ -4,6 +4,7 @@
 #include "lemon/hf_variants.h"
 #include "lemon/config_file.h"
 #include "lemon/mcp_server.h"
+#include "lemon/model_resolution.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud_server.h"
 #include "lemon/backends/sd_server.h"
@@ -1547,21 +1548,23 @@ nlohmann::json Server::create_model_error(const std::string& requested_model, co
 //
 // Note: Only the /pull endpoint checks HuggingFace for updates (do_not_upgrade=false)
 void Server::auto_load_model_if_needed(const std::string& requested_model) {
+    std::string model = resolve_model_with_default(requested_model, model_manager_.get());
+
     // Check if this specific model is already loaded (multi-model aware)
-    if (router_->is_model_loaded(requested_model)) {
-        LOG(INFO, "Server") << "Model already loaded: " << requested_model << std::endl;
+    if (router_->is_model_loaded(model)) {
+        LOG(INFO, "Server") << "Model already loaded: " << model << std::endl;
         return;
     }
 
     // Log the auto-loading action
-    LOG(INFO, "Server") << "Auto-loading model: " << requested_model << std::endl;
+    LOG(INFO, "Server") << "Auto-loading model: " << model << std::endl;
 
     // Get model info
-    if (!model_manager_->model_exists(requested_model)) {
+    if (!model_manager_->model_exists(model)) {
         throw std::runtime_error("Model not found: " + requested_model);
     }
 
-    auto info = model_manager_->get_model_info(requested_model);
+    auto info = model_manager_->get_model_info(model);
 
     // Collections have no backend of their own — load each component instead.
     if (is_collection_recipe(info.recipe)) {
@@ -1575,22 +1578,22 @@ void Server::auto_load_model_if_needed(const std::string& requested_model) {
     //   - If model is NOT downloaded: Download it from HuggingFace
     //   - If model IS downloaded: Skip HuggingFace API check entirely (use cached version)
     // Only the /pull endpoint should check for updates (uses do_not_upgrade=false)
-    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(requested_model)) {
+    if (info.recipe != "flm" && !model_manager_->is_model_downloaded(model)) {
         LOG(INFO, "Server") << "Model not cached, downloading from Hugging Face..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);
-        LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
+        LOG(INFO, "Server") << "Model download complete: " << model << std::endl;
 
         // CRITICAL: Refresh model info after download to get correct resolved_path
         // The resolved_path is computed based on filesystem, so we need fresh info now that files exist
-        info = model_manager_->get_model_info(requested_model);
+        info = model_manager_->get_model_info(model);
     }
 
     // Load model with do_not_upgrade=true
     // For FLM models: FastFlowLMServer will handle download internally if needed
     // For non-FLM models: Model should already be cached at this point
-    router_->load_model(requested_model, info, RecipeOptions(info.recipe, json::object()), true);
-    LOG(INFO, "Server") << "Model loaded successfully: " << requested_model << std::endl;
+    router_->load_model(model, info, RecipeOptions(info.recipe, json::object()), true);
+    LOG(INFO, "Server") << "Model loaded successfully: " << model << std::endl;
 }
 
 void Server::ensure_collection_loaded(const ModelInfo& info) {

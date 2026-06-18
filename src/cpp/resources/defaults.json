@@ -13,6 +13,7 @@
   "offline": false,
   "no_fetch_executables": false,
   "disable_model_filtering": false,
+  "default_model": "",
   "enable_dgpu_gtt": false,
   "rocm_channel": "stable",
   "llamacpp": {
