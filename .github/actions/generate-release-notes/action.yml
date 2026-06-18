@@ -95,8 +95,39 @@ runs:
         # Extract unique contributors from the changelog (exclude bots)
         CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | grep -ivE '^@(copilot|claude)$' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
 
+        # Search for the release notes issue by exact title (e.g. "v10.8.0 release notes")
+        RELEASE_NOTES_ISSUE_BODY=$(gh issue list --repo "$REPO" \
+          --state open \
+          --search "\"$TAG_NAME release notes\" in:title" \
+          --json body --limit 1 \
+          | jq -r '.[0].body // ""' 2>/dev/null || echo "")
+
+        HEADLINE_SECTION=""
+        BREAKING_CHANGES_SECTION=""
+
+        if [ -n "$RELEASE_NOTES_ISSUE_BODY" ]; then
+          echo "Found release notes issue, extracting Headline and Breaking Changes..."
+          HEADLINE_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
+            awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')
+          BREAKING_CHANGES_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
+            awk '/^## Breaking Changes/{found=1} found && /^## / && !/^## Breaking Changes/{found=0} found{print}')
+        else
+          echo "No release notes issue found; Headline and Breaking Changes will need to be added manually."
+        fi
+
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
+
+        {
+          if [ -n "$HEADLINE_SECTION" ]; then
+            echo "$HEADLINE_SECTION"
+            echo ""
+          fi
+          if [ -n "$BREAKING_CHANGES_SECTION" ]; then
+            echo "$BREAKING_CHANGES_SECTION"
+            echo ""
+          fi
+        } > "$RELEASE_NOTES_FILE"
 
         {
           echo "## Lemonade Server"
@@ -124,7 +155,7 @@ runs:
           echo ""
           echo "---"
           echo ""
-        } > "$RELEASE_NOTES_FILE"
+        } >> "$RELEASE_NOTES_FILE"
 
         # Build What's Changed section with thank you and collapsible details
         if [ -n "$WHATS_CHANGED_CONTENT" ]; then

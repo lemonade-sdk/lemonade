@@ -528,7 +528,7 @@ Codex-only option:
 - `--api-key` is propagated to the launched agent process.
 - For `codex`, launch now injects a Lemonade model provider by default so host/port settings are honored.
 - `--provider` is accepted only by `lemonade launch codex` and is passed directly to Codex as `model_provider`; provider resolution/errors are handled by Codex.
-- Existing `LEMONADE_*` recipe env vars such as `LEMONADE_CTX_SIZE` are still honored by `launch`.
+- To customize recipe options (e.g. context size) for the launched model, configure them ahead of time with `lemonade load <model> ... --save-options`, or with `lemonade config set`.
 - `--agent-args` is parsed and appended to the launched agent command.
 - Supported agents: `claude`, `codex`, `opencode`, `pi`
 - `opencode` uses an auto-managed config file at `~/.config/opencode/opencode.json`.
