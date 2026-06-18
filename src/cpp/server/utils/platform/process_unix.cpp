@@ -370,6 +370,16 @@ bool UnixProcessPlatform::is_running(ProcessHandle handle) {
     }
 #endif
 
+    // Reap any zombie before falling back to kill(). kill(pid,0) returns
+    // success for zombies (PID still in kernel table) so we must try to wait
+    // on the child first.
+    int status = 0;
+    pid_t result = waitpid(handle.pid, &status, WNOHANG);
+    if (result > 0) {
+        // Process has exited (including zombie) — reap it and report dead.
+        return false;
+    }
+
     errno = 0;
     return ::kill(handle.pid, 0) == 0 || errno == EPERM;
 }
