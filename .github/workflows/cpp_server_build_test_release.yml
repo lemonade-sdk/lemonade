@@ -701,42 +701,40 @@ jobs:
           .venv/bin/python test/server_streaming_errors.py --cli-binary ./build/lemonade
           echo "Streaming error tests PASSED!"
 
-      - name: Ensure server is running before whisper tests (unsigned path)
+      - name: Restart server before whisper Metal tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
         shell: bash
         env:
           LEMONADE_CI_MODE: "True"
+          GGML_METAL_NO_RESIDENCY: "1"
         run: |
           set -e
-          echo "Checking if lemond is running before whisper tests..."
-          if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-            echo "Server is already running and healthy"
-          else
-            echo "Server not reachable — restarting lemond..."
-            # Kill any existing lemond that may be zombie/hung
-            pkill -f lemond 2>/dev/null || true
+          echo "Restarting lemond before whisper Metal tests so Metal env is inherited..."
+
+          pkill -f lemond 2>/dev/null || true
+          sleep 2
+
+          mkdir -p "$RUNNER_TEMP/xdg-runtime"
+          chmod 700 "$RUNNER_TEMP/xdg-runtime"
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+          ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
+          LEMOND_PID=$!
+          disown "$LEMOND_PID"
+
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
+              echo "Server started successfully for whisper tests (PID $LEMOND_PID)"
+              exit 0
+            fi
+            echo "Waiting for server... ($i/30)"
             sleep 2
-            # Start lemond directly from build/ (avoid legacy shim health-check timeout)
-            mkdir -p "$RUNNER_TEMP/xdg-runtime"
-            chmod 700 "$RUNNER_TEMP/xdg-runtime"
-            echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
-            export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
-            ./build/lemond > "$RUNNER_TEMP/lemond-whisper-pre.log" 2>&1 &
-            LEMOND_PID=$!
-            disown "$LEMOND_PID"
-            # Wait for server to become healthy
-            for i in $(seq 1 30); do
-              if curl -sf http://localhost:13305/live > /dev/null 2>&1; then
-                echo "Server started successfully (PID $LEMOND_PID)"
-                exit 0
-              fi
-              echo "Waiting for server... ($i/30)"
-              sleep 2
-            done
-            echo "ERROR: Server did not start within 60 seconds"
-            cat "$RUNNER_TEMP/lemond-whisper-pre.log" 2>/dev/null || true
-            exit 1
-          fi
+          done
+
+          echo "ERROR: Server did not start within 60 seconds"
+          cat "$RUNNER_TEMP/lemond-whisper-pre.log" 2>/dev/null || true
+          exit 1
 
       - name: Run whisper Metal inference tests (unsigned path)
         if: steps.check_signing.outputs.has_signing != 'true'
