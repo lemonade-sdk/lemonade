@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { CloudProviderRow, ConnectionStatus, DirectorySettings, friendlyErrorMessage, normalizeBaseUrl } from '../api';
 import { AccountSession, clearAllAccountsAndScopedData, clearCurrentSessionData, describeSession } from '../features/accounts/accountStore';
+import { Icon, IconName } from './Icon';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -20,6 +21,14 @@ type MarketplaceApp = {
 };
 
 const MARKETPLACE_URL = 'https://raw.githubusercontent.com/lemonade-sdk/marketplace/main/apps.json';
+
+const HELP_LINKS: { label: string; href: string; icon: IconName; description: string }[] = [
+  { label: 'Documentation', href: 'https://lemonade-server.ai/docs/', icon: 'book-open', description: 'Setup, APIs, and integration guides.' },
+  { label: 'Release notes', href: 'https://github.com/lemonade-sdk/lemonade/releases', icon: 'newspaper', description: 'Latest packaged changes and tags.' },
+  { label: 'GitHub', href: 'https://github.com/lemonade-sdk/lemonade', icon: 'github', description: 'Source, issues, and pull requests.' },
+  { label: 'Discord', href: 'https://discord.gg/5xXzkMu8Zk', icon: 'discord', description: 'Community support and discussion.' },
+];
+
 const CLOUD_QUICK_FILL = [
   { label: 'Fireworks', provider: 'fireworks', baseUrl: 'https://api.fireworks.ai/inference/v1' },
   { label: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1' },
@@ -390,6 +399,23 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, accountSession, onLoc
               </button>
             </div>
           </form>
+        </section>
+
+
+        <section className="connect__section connect__section--help">
+          <h2>Help</h2>
+          <p className="connect__hint">Quick access to project support, documentation, and community channels.</p>
+          <div className="connect__help-grid" aria-label="Help links">
+            {HELP_LINKS.map(link => (
+              <button key={link.href} className="connect__help-card" type="button" onClick={() => openExternal(link.href)}>
+                <span className="connect__help-icon"><Icon name={link.icon} size={18} /></span>
+                <span>
+                  <strong>{link.label}</strong>
+                  <small>{link.description}</small>
+                </span>
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="connect__section connect__section--directories">

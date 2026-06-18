@@ -28,6 +28,7 @@ import {
 } from '../presetStore';
 import { CapabilityIcon, PresetIcon } from './Icon';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { DEFAULT_TTS_VOICE, TTS_VOICES, normalizeTtsVoice } from '../features/audio/ttsSettings';
 
 const ENGINE_LABELS: Record<PresetRecipe, string> = {
   auto: 'Auto — server decides',
@@ -50,10 +51,10 @@ const RECIPE_KEYS: Record<PresetRecipe, (keyof RecipeOptions)[]> = {
   flm: ['ctx_size', 'flm_args', 'merge_args'],
   'ryzenai-llm': ['ctx_size'],
   vllm: ['ctx_size', 'vllm_backend', 'vllm_args', 'merge_args'],
-  kokoro: [],
+  kokoro: ['voice', 'speed', 'merge_args'],
 };
 
-const CAPABILITIES: Capability[] = ['all', 'chat', 'image'];
+const CAPABILITIES: Capability[] = ['all', 'chat', 'image', 'tts'];
 
 interface AutoOptRun {
   id: string;
@@ -759,6 +760,7 @@ const SlideoverContent: React.FC<{
   const [cfgScale, setCfgScale] = useState(ro.cfg_scale ?? 7.0);
   const [imgWidth, setImgWidth] = useState(ro.width ?? 512);
   const [imgHeight, setImgHeight] = useState(ro.height ?? 512);
+  const [ttsVoice, setTtsVoice] = useState(normalizeTtsVoice(ro.voice ?? DEFAULT_TTS_VOICE));
   const [llamacppBackend, setLlamacppBackend] = useState(ro.llamacpp_backend ?? '');
   const [llamacppDevice, setLlamacppDevice] = useState(ro.llamacpp_device ?? '');
   const [llamacppArgs, setLlamacppArgs] = useState(ro.llamacpp_args ?? '');
@@ -785,6 +787,7 @@ const SlideoverContent: React.FC<{
     setCfgScale(nextRo.cfg_scale ?? 7.0);
     setImgWidth(nextRo.width ?? 512);
     setImgHeight(nextRo.height ?? 512);
+    setTtsVoice(normalizeTtsVoice(nextRo.voice ?? DEFAULT_TTS_VOICE));
     setLlamacppBackend(nextRo.llamacpp_backend ?? '');
     setLlamacppDevice(nextRo.llamacpp_device ?? '');
     setLlamacppArgs(nextRo.llamacpp_args ?? '');
@@ -821,7 +824,7 @@ const SlideoverContent: React.FC<{
       description,
       applies_to: normalizedAppliesTo,
       engine_hint: engineHint,
-      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
+      recipe_options: buildRecipeOptions(appliesTo, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs),
       sampling: buildSampling(appliesTo, temperature, topP, topK, repeatPenalty),
       starter: false,
       auto_opt_enabled: !manualArgsActive,
@@ -830,7 +833,7 @@ const SlideoverContent: React.FC<{
       system_prompts: cloneSystemPrompts(systemPrompts),
       tools_enabled: supportsTools && toolsEnabled,
     };
-  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, systemPromptId, systemPrompts, toolsEnabled, manualArgsActive, autoOptRunId, autoRuns]);
+  }, [isReadOnly, preset, name, description, appliesTo, engineHint, ctxSize, steps, cfgScale, imgWidth, imgHeight, ttsVoice, llamacppBackend, llamacppDevice, llamacppArgs, sdcppArgs, temperature, topP, topK, repeatPenalty, systemPromptId, systemPrompts, toolsEnabled, manualArgsActive, autoOptRunId, autoRuns]);
 
 const selectedModel = models.find(m => modelName(m) === applyTarget);
 const selectedModelContextLimit = contextLimitForModel(selectedModel);
@@ -851,6 +854,7 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
   const hasAll = appliesTo.includes('all');
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = hasAll || appliesTo.includes('image');
+  const hasTts = hasAll || appliesTo.includes('tts');
   const isDefaultEmptyPreset = preset.id === DEFAULT_PRESET.id;
   const selectedSystemPrompt = systemPromptId === NO_SYSTEM_PROMPT_ID ? null : (systemPrompts.find(prompt => prompt.id === systemPromptId) || null);
   const selectedPromptIsCustom = selectedSystemPrompt?.built_in === false;
@@ -1009,6 +1013,26 @@ const canApply = !!selectedModel && isCompatible(currentPreset, selectedModel);
               <div className="field"><label className="field__label">CFG scale</label><div className="field__row"><input type="range" className="slider" min={1} max={30} step={0.5} value={cfgScale} disabled={isReadOnly} onChange={e => setCfgScale(Number(e.target.value))} data-recipe-cfg /><span className="field__value">{cfgScale.toFixed(1)}</span></div></div>
             </div>
           )}
+          {!isDefaultEmptyPreset && hasTts && (
+            <div data-preset-fields="audio" className="preset-audio-settings">
+              <h4>Audio</h4>
+              <div className="field">
+                <label className="field__label" htmlFor="preset-tts-voice">Voice</label>
+                <div className="field__row">
+                  <select
+                    id="preset-tts-voice"
+                    className="select"
+                    value={ttsVoice}
+                    disabled={isReadOnly}
+                    onChange={e => setTtsVoice(normalizeTtsVoice(e.target.value))}
+                    data-recipe-tts-voice
+                  >
+                    {TTS_VOICES.map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {!isDefaultEmptyPreset && <div className="slideover__section preset-autoopt">
@@ -1079,6 +1103,7 @@ function buildRecipeOptions(
   cfgScale: number,
   imgWidth: number,
   imgHeight: number,
+  ttsVoice: string,
   llamacppBackend: string,
   llamacppDevice: string,
   llamacppArgs: string,
@@ -1088,6 +1113,7 @@ function buildRecipeOptions(
   const hasAll = appliesTo.includes('all');
   const hasChat = hasAll || appliesTo.some(cap => cap === 'chat' || cap === 'omni' || cap === 'code' || cap === 'vision');
   const hasImage = hasAll || appliesTo.includes('image');
+  const hasTts = hasAll || appliesTo.includes('tts');
   if (hasChat) {
     opts.ctx_size = ctxSize;
     if (llamacppBackend) opts.llamacpp_backend = llamacppBackend;
@@ -1100,6 +1126,9 @@ function buildRecipeOptions(
     opts.width = imgWidth;
     opts.height = imgHeight;
     if (sdcppArgs) opts.sdcpp_args = sdcppArgs;
+  }
+  if (hasTts) {
+    opts.voice = normalizeTtsVoice(ttsVoice);
   }
   return opts;
 }

@@ -6,6 +6,7 @@ import { scopedStorageKey, type AccountSession } from '../features/accounts/acco
 import { CUSTOM_CAPABILITIES, CustomModelCapability, customLoadOptions, customModelToModelInfo, customRegistrationOptions, deleteCustomModel, exportCustomModelsPayload, importCustomModels, loadCustomModels, upsertCustomModel } from '../features/customModels/customModelStore';
 import { collectionComponentLabel, getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import { DEFAULT_CONTEXT_SIZE, DEFAULT_PRESET, PRESET_STORE_EVENT, Preset, STARTERS, effectivePresetParamPreviewLines, isCompatible, loadApplied, loadUserPresets, modelContextSize, presetHasApplicablePreviewOverrides, presetParamPreviewLines, saveApplied } from '../presetStore';
+import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, saveActiveTtsModel, saveSpeakUserText } from '../features/audio/ttsSettings';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -931,6 +932,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
   const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModels(accountSession.storageScope));
+  const [ttsPlaybackSettings, setTtsPlaybackSettings] = useState(() => loadTtsPlaybackSettings(accountSession.storageScope));
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [userPresets, setUserPresets] = useState<Preset[]>(loadUserPresets);
@@ -959,6 +961,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
 
   useEffect(() => {
     setPinnedModels(loadPinnedModels(accountSession.storageScope));
+  }, [accountSession.storageScope]);
+
+  useEffect(() => {
+    const reloadTtsSettings = () => setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+    reloadTtsSettings();
+    window.addEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
+    return () => window.removeEventListener(TTS_SETTINGS_EVENT, reloadTtsSettings);
   }, [accountSession.storageScope]);
 
   const refreshCustomRecipeAvailability = useCallback(async () => {
@@ -1457,6 +1466,48 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     });
   };
 
+  const activeTtsModelName = ttsPlaybackSettings.modelName;
+
+  const toggleTtsSpeechModel = (name: string) => {
+    const next = activeTtsModelName === name ? null : name;
+    saveActiveTtsModel(accountSession.storageScope, next);
+    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+  };
+
+  const setSpeakUserText = (enabled: boolean) => {
+    saveSpeakUserText(accountSession.storageScope, enabled);
+    setTtsPlaybackSettings(loadTtsPlaybackSettings(accountSession.storageScope));
+  };
+
+  const renderPinAndSpeechControl = (name: string, isPinned: boolean, capability: ModelCapability) => {
+    const pinButton = (
+      <button
+        type="button"
+        className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
+        onClick={(e) => { e.stopPropagation(); togglePinnedModel(name); }}
+        title={isPinned ? 'Unpin model' : 'Pin model'}
+        aria-label={isPinned ? 'Unpin model' : 'Pin model'}
+        aria-pressed={isPinned}
+      ><Icon name="pin" size={13} /></button>
+    );
+
+    if (capability !== 'tts') return pinButton;
+    const isSpeechActive = activeTtsModelName === name;
+    return (
+      <span className="row__tts-actions" title="TTS playback controls">
+        {pinButton}
+        <button
+          type="button"
+          className={`row__speech${isSpeechActive ? ' row__speech--active' : ''}`}
+          onClick={(e) => { e.stopPropagation(); toggleTtsSpeechModel(name); }}
+          title={isSpeechActive ? 'Stop using this model for spoken replies' : 'Read assistant chat messages with this model'}
+          aria-label={isSpeechActive ? 'Disable spoken replies for this TTS model' : 'Use this TTS model for spoken replies'}
+          aria-pressed={isSpeechActive}
+        ><Icon name="speech" size={13} /></button>
+      </span>
+    );
+  };
+
   const handleSaveCustomModel = (e: React.FormEvent) => {
     e.preventDefault();
     setCustomError(null);
@@ -1812,6 +1863,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
                 </div>
               </div>
             )}
+            {capability === 'tts' && activeTtsModelName === name && (
+              <div className="detail__field detail__field--wide detail__tts-playback">
+                <span className="detail__label">Speech playback</span>
+                <label className="detail__tts-toggle">
+                  <span>Also read user text</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={1}
+                    value={ttsPlaybackSettings.speakUserText ? 1 : 0}
+                    onChange={e => setSpeakUserText(Number(e.target.value) === 1)}
+                    aria-label="Also read user text"
+                  />
+                  <strong>{ttsPlaybackSettings.speakUserText ? 'On' : 'Off'}</strong>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Right column: checkpoint / HF link */}
@@ -1904,14 +1973,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{expandedModel === m.model_name ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
-            <button
-              type="button"
-              className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
-              onClick={(e) => { e.stopPropagation(); togglePinnedModel(m.model_name); }}
-              title={isPinned ? 'Unpin model' : 'Pin model'}
-              aria-label={isPinned ? 'Unpin model' : 'Pin model'}
-              aria-pressed={isPinned}
-            ><Icon name="pin" size={13} /></button>
+            {renderPinAndSpeechControl(m.model_name, isPinned, cap)}
             <CopyInlineButton text={m.model_name} />
             <span className="row__status-pill row__status-pill--running">
               <span className="row__pulse" /> {isActive ? `Active ${capabilityLabel(cap)} mode` : 'Running'}
@@ -1982,6 +2044,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
     const pullPercent = pulling[name];
     const isPulling = pullPercent !== undefined;
     const activePreset = activePresetForName(name);
+    const cap = capabilityFromModelInfo(m);
     const isPinned = pinnedNameSet.has(name.toLowerCase());
     const rowCtx = contextSizeForDisplay(m, undefined, serverDefaultCtxSize);
     const isPresetHighlighted = Boolean(highlightedPresetId
@@ -2009,14 +2072,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, selectedMode
             <span className="row__expand">{expandedModel === name ? '▾' : '▸'}</span>
           </button>
           <div className="row__right">
-            <button
-              type="button"
-              className={`row__pin${isPinned ? ' row__pin--active' : ''}`}
-              onClick={(e) => { e.stopPropagation(); togglePinnedModel(name); }}
-              title={isPinned ? 'Unpin model' : 'Pin model'}
-              aria-label={isPinned ? 'Unpin model' : 'Pin model'}
-              aria-pressed={isPinned}
-            ><Icon name="pin" size={13} /></button>
+            {renderPinAndSpeechControl(name, isPinned, cap)}
             <CopyInlineButton text={name} />
             {isPulling ? (
               <div className="row__progress">
