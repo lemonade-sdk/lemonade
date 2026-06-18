@@ -32,7 +32,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev -- --port 8080',
+    // Playwright runs browser-only GUI tests. Start the webpack renderer server
+    // directly instead of `tauri dev`, otherwise Linux CI tries to compile the
+    // native Tauri host and needs GTK/GLib/WebKit development packages.
+    command: 'npm run dev:renderer -- --port 8080',
     port: 8080,
     reuseExistingServer: true,
     timeout: 30000,
