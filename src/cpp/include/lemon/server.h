@@ -128,6 +128,8 @@ private:
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 
+    void load_pinned_models_async();
+
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
     void handle_uninstall(const httplib::Request& req, httplib::Response& res);
@@ -249,6 +251,10 @@ private:
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
     std::thread model_cache_warmup_thread_;
+    std::thread pinned_models_autoload_thread_;
+
+    std::mutex shutdown_mutex_;
+    std::condition_variable shutdown_cv_;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port

@@ -177,6 +177,7 @@ private:
     void evict_if_committed(const std::string& model_name);
     std::unique_ptr<WrappedServer> create_backend_server(const ModelInfo& model_info);
     std::string resolve_model_name(const std::string& model_name) const;
+    void persist_pinned_state(const std::string& model_name, bool pinned);
     ModelTelemetryIdentity get_telemetry_identity(WrappedServer* server) const;
     void record_telemetry_for_model(const ModelTelemetryIdentity& identity,
                                     int input_tokens,

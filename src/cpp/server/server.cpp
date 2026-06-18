@@ -1336,6 +1336,9 @@ void Server::run() {
                         << "or hostname that resolves to RFC1918 IPv4." << std::endl;
         }
 
+        // Load pinned models gracefully in the background on boot
+        load_pinned_models_async();
+
         // Wait for listener threads, but check periodically for shutdown or rebind signals.
         // The threads are blocked in listen_after_bind(), which only returns when
         // the server is stopped or an error occurs.
@@ -1410,7 +1413,11 @@ bool Server::should_shutdown() const {
 }
 
 void Server::set_shutdown_requested(bool requested) {
-    shutdown_requested_.store(requested);
+    {
+        std::lock_guard<std::mutex> lock(shutdown_mutex_);
+        shutdown_requested_.store(requested);
+    }
+    shutdown_cv_.notify_all();
 }
 
 bool Server::is_running() const {
@@ -1423,6 +1430,17 @@ void Server::stop() {
         udp_beacon_.stopBroadcasting();
         stop_http_listeners();
         running_ = false;
+
+        {
+            std::lock_guard<std::mutex> lock(shutdown_mutex_);
+            shutdown_requested_.store(true);
+        }
+        shutdown_cv_.notify_all();
+
+        if (pinned_models_autoload_thread_.joinable()) {
+            pinned_models_autoload_thread_.join();
+        }
+
         shutdown_requested_ = false;  // Reset for potential future use
 
         // Stop WebSocket server
@@ -5302,6 +5320,53 @@ void Server::enrich_recipes(json& recipes) {
             } catch (...) {}
         }
     }
+}
+
+void Server::load_pinned_models_async() {
+    if (pinned_models_autoload_thread_.joinable()) {
+        return;
+    }
+    pinned_models_autoload_thread_ = std::thread([this]() {
+        try {
+            // Brief interruptible sleep to defer log interleaving, allowing startup logs and
+            // listener addresses to print fully before background model loading output begins.
+            {
+                std::unique_lock<std::mutex> lock(shutdown_mutex_);
+                if (shutdown_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() { return shutdown_requested_.load(); })) {
+                    return;
+                }
+            }
+
+            LOG(INFO, "Server") << "Checking for pinned models to auto-load..." << std::endl;
+            auto models = model_manager_->get_supported_models();
+            for (const auto& [name, info] : models) {
+                if (shutdown_requested_.load()) {
+                    break;
+                }
+
+                bool is_pinned = info.recipe_options.get_option("pinned").is_boolean() &&
+                                 info.recipe_options.get_option("pinned").get<bool>();
+
+                if (is_pinned) {
+                    LOG(INFO, "Server") << "Auto-loading pinned model: " << name << std::endl;
+                    try {
+                        router_->load_model(name, info, info.recipe_options, true, false, true);
+                        LOG(INFO, "Server") << "Successfully auto-loaded pinned model: " << name << std::endl;
+                    } catch (const std::exception& e) {
+                        LOG(ERROR, "Server") << "Failed to auto-load pinned model '" << name << "': " << e.what() << std::endl;
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Error during pinned models auto-load: " << e.what() << std::endl;
+        }
+
+        // KEEP THREAD ALIVE to prevent Linux PR_SET_PDEATHSIG from killing child processes.
+        // On Linux, the parent task is the specific thread that spawned the child.
+        // If this thread exits, the kernel sends SIGTERM to the spawned llama-servers.
+        std::unique_lock<std::mutex> lock(shutdown_mutex_);
+        shutdown_cv_.wait(lock, [this]() { return shutdown_requested_.load(); });
+    });
 }
 
 } // namespace lemon
