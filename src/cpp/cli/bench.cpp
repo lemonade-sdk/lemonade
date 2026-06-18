@@ -607,7 +607,6 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& backend,
                                  int ctx_size,
                                  const std::string& backend_args,
-                                 bool capture_response,
                                  const std::string& response_log_path,
                                  const std::string& response_timestamp) {
     BenchScenarioResult result;
@@ -651,7 +650,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
         }
 
         std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
-        auto run_result = run_single_bench(client, model, scenario, memory_tracking, capture_response);
+        auto run_result = run_single_bench(client, model, scenario, memory_tracking, !response_log_path.empty());
         if (!run_result.success) {
             result.failed_runs++;
             std::cout << " FAILED (excluded from stats)" << std::endl;
@@ -1353,7 +1352,6 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
 
                         auto scenario_result = run_scenario(client, model, scenario, warmup, runs,
                                                             config.memory_tracking, config.reload, recipe, backend, ctx_size, recipe_args,
-                                                            !config.response_log.empty(),
                                                             config.response_log,
                                                             command_timestamp);
                         backend_result.scenarios.push_back(scenario_result);

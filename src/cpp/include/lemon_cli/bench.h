@@ -134,7 +134,7 @@ BenchRunResult run_single_bench(lemonade::LemonadeClient& client,
                                 const std::string& model,
                                 const BenchScenario& scenario,
                                 bool memory_tracking,
-                                bool capture_response = false);
+                                bool capture_response);
 
 // Run a full scenario (warmup + measurement runs).
 // When reload=true, unloads+loads the model before each measurement run to clear prompt cache.
@@ -149,8 +149,7 @@ BenchScenarioResult run_scenario(lemonade::LemonadeClient& client,
                                  const std::string& backend,
                                  int ctx_size,
                                  const std::string& backend_args,
-                                 bool capture_response = false,
-                                 const std::string& response_log_path = "",
+                                 const std::string& response_log_path,
                                  const std::string& response_timestamp = "");
 
 // ============================================================
