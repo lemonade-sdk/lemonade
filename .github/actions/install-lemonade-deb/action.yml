@@ -63,12 +63,22 @@ runs:
             # Some CI-built binary packages depend on runtime .debs from the
             # same build environment, for example libcpp-httplib0.26. Those
             # packages are uploaded beside lemonade-server_*.deb when they are
-            # not available from a plain ubuntu-latest apt source. Install local
-            # dependency artifacts first so apt-get satisfy can resolve the
-            # package's shlibs-generated dependency set.
+            # not available from a plain ubuntu-latest apt source.
+            #
+            # Do NOT install sibling Lemonade packages from the artifact here:
+            # lemonade-desktop is also uploaded in the same artifact and depends
+            # on lemonade-server, which we intentionally extract rather than
+            # install system-wide in this action.
             LOCAL_RUNTIME_DEBS=()
             while IFS= read -r dep_deb; do
-                [ -n "$dep_deb" ] && LOCAL_RUNTIME_DEBS+=("$dep_deb")
+                [ -n "$dep_deb" ] || continue
+                package_name=$(dpkg-deb -f "$dep_deb" Package 2>/dev/null || true)
+                case "$package_name" in
+                    ""|lemonade-server|lemonade-desktop|lemonade-*)
+                        continue
+                        ;;
+                esac
+                LOCAL_RUNTIME_DEBS+=("$dep_deb")
             done < <(find . -maxdepth 1 -type f -name '*.deb' ! -name "$(basename "$DEB_FILE")" -print | sort)
 
             install_local_runtime_debs() {
