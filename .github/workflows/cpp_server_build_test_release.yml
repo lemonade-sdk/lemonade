@@ -1631,7 +1631,7 @@ jobs:
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
-              "$archiveDir\resources\defaults.json",
+              "$archiveDir\resources\defaults.json"
           )
           $failures = @()
           foreach ($f in $expected) {

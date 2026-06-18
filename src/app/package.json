@@ -20,11 +20,11 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
     "@playwright/test": "^1.60.0",
+    "@tauri-apps/cli": "^2.0.0",
     "@types/katex": "^0.16.7",
     "@types/markdown-it": "^14.1.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "@tauri-apps/cli": "^2.0.0",
     "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.6.4",
     "style-loader": "^4.0.0",
@@ -35,6 +35,10 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.10.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2.0.0",
+    "@tauri-apps/plugin-deep-link": "^2.0.0",
+    "@tauri-apps/plugin-opener": "^2.0.0",
     "@types/dompurify": "^3.0.5",
     "dompurify": "^3.4.7",
     "highlight.js": "^11.11.1",
@@ -44,10 +48,9 @@
     "mermaid": "^11.15.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "recharts": "^3.8.1",
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-clipboard-manager": "^2.0.0",
-    "@tauri-apps/plugin-deep-link": "^2.0.0",
-    "@tauri-apps/plugin-opener": "^2.0.0"
+    "recharts": "^3.8.1"
+  },
+  "overrides": {
+    "@tauri-apps/api": "2.10.1"
   }
 }
