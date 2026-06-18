@@ -92,12 +92,12 @@ def test_lemon_mlx_models_are_modern_and_sized():
         assert isinstance(model["size"], (int, float)) and model["size"] > 0
 
 
-def test_lemon_mlx_capabilities_exercise_streaming_paths():
+def test_lemon_mlx_capabilities_match_supported_runtime_paths():
     capabilities = _read("test/utils/capabilities.py")
     lemon_mlx_block = capabilities.split('"lemon-mlx": {', 1)[1].split("        },", 1)[0]
 
     assert '"chat_completions_streaming": True' in lemon_mlx_block
-    assert '"completions_streaming": True' in lemon_mlx_block
+    assert '"completions_streaming": False' in lemon_mlx_block
     assert '"tool_calls_streaming": True' in lemon_mlx_block
     assert '"llm": "Qwen3.5-0.8B-MLX"' in lemon_mlx_block
 
