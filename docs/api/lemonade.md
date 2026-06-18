@@ -20,7 +20,6 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/log-level`](#post-v1log-level) | Change the server log verbosity at runtime |
-| `POST` | [`/v1/params`](#post-v1params) | Read and update server configuration at runtime |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend |
 | `POST` | [`/v1/cloud/auth`](#post-v1cloudauth) | Set an in-memory API key for a cloud provider |
