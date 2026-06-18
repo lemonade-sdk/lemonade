@@ -37,7 +37,7 @@ static const json DEFAULTS = {
     {"vllm_args", ""},     // Custom arguments to pass to vllm-server
     // lemon-mlx-specific options
     {"lemon-mlx_backend", ""},  // "" means auto-detect
-    {"lemon-mlx_args", ""}      // Custom arguments to pass to lemon-mlx server
+    {"lemon-mlx_args", ""},     // Custom arguments to pass to lemon-mlx server
     // Cloud recipe has no backend variants (provider selection lives on the
     // per-model cloud_provider field). The empty string satisfies Router's
     // per-backend-args lookup; cloud reads no backend-specific config.

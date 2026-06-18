@@ -1268,11 +1268,13 @@ void MlxServer::load(const std::string& model_name,
     launch_args_ = args;
     launch_env_vars_ = env_vars;
     launch_inherit_output_ = inherit_output;
-    process_handle_ = ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars);
+    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
 
     if (!wait_for_ready("/health")) {
-        ProcessManager::stop_process(process_handle_);
-        process_handle_ = {nullptr, 0};
+        const ProcessHandle handle = consume_process_handle_for_cleanup();
+        if (has_process_handle(handle)) {
+            ProcessManager::stop_process(handle);
+        }
         throw std::runtime_error("lemon-mlx server failed to start");
     }
 
@@ -1280,19 +1282,14 @@ void MlxServer::load(const std::string& model_name,
 }
 
 void MlxServer::unload() {
-#ifdef _WIN32
-    const bool running = process_handle_.handle != nullptr;
-#else
-    const bool running = process_handle_.pid > 0;
-#endif
-    if (!running) {
-        return;
+    stop_backend_watchdog();
+    LOG(INFO, kLog) << "Unloading model..." << std::endl;
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        ProcessManager::stop_process(handle);
     }
 
-    LOG(INFO, kLog) << "Unloading model..." << std::endl;
-    ProcessManager::stop_process(process_handle_);
-    process_handle_ = {nullptr, 0};
-    port_ = 0;
     loaded_model_ref_.clear();
     launch_executable_.clear();
     launch_args_.clear();
@@ -1309,14 +1306,19 @@ bool MlxServer::restart_backend_after_cancel() {
     }
 
     LOG(INFO, kLog) << "Restarting lemon-mlx backend to cancel in-flight generation" << std::endl;
-    ProcessManager::stop_process(process_handle_);
+    stop_backend_watchdog();
+    if (has_process_handle(process_handle_)) {
+        ProcessManager::stop_process(process_handle_);
+    }
     process_handle_ = {nullptr, 0};
 
     try {
-        process_handle_ = ProcessManager::start_process(
-            launch_executable_, launch_args_, "", launch_inherit_output_, true, launch_env_vars_);
+        set_process_handle(ProcessManager::start_process(
+            launch_executable_, launch_args_, "", launch_inherit_output_, true, launch_env_vars_));
         if (!wait_for_ready("/health", 180)) {
-            ProcessManager::stop_process(process_handle_);
+            if (has_process_handle(process_handle_)) {
+                ProcessManager::stop_process(process_handle_);
+            }
             process_handle_ = {nullptr, 0};
             LOG(ERROR, kLog) << "lemon-mlx backend restart failed" << std::endl;
             return false;
@@ -1346,10 +1348,13 @@ bool MlxServer::ensure_backend_ready() {
 
     LOG(INFO, kLog) << "lemon-mlx backend is not running; restarting before request" << std::endl;
     try {
-        process_handle_ = ProcessManager::start_process(
-            launch_executable_, launch_args_, "", launch_inherit_output_, true, launch_env_vars_);
+        stop_backend_watchdog();
+        set_process_handle(ProcessManager::start_process(
+            launch_executable_, launch_args_, "", launch_inherit_output_, true, launch_env_vars_));
         if (!wait_for_ready("/health", 180)) {
-            ProcessManager::stop_process(process_handle_);
+            if (has_process_handle(process_handle_)) {
+                ProcessManager::stop_process(process_handle_);
+            }
             process_handle_ = {nullptr, 0};
             LOG(ERROR, kLog) << "lemon-mlx backend restart failed" << std::endl;
             return false;
@@ -1470,6 +1475,8 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
         return;
     }
 
+    BackendRequestScope request_scope(*this, BackendRequestKind::Streaming);
+
     const std::string url = get_base_url() + endpoint;
     const auto started = std::chrono::steady_clock::now();
     auto first_token_at = started;
@@ -1488,7 +1495,7 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
     SmallQwenRepetitionStopper repetition_stopper(is_small_qwen_model(stream_model_ref));
     json last_chunk = json::object();
 
-    const auto write_chunk = [&sink, &saw_first_token, &first_token_at, &estimated_output_tokens, &client_aborted](const json& chunk) -> bool {
+    const auto write_chunk = [this, &sink, &saw_first_token, &first_token_at, &estimated_output_tokens, &client_aborted](const json& chunk) -> bool {
         if (client_aborted) {
             return false;
         }
@@ -1505,6 +1512,7 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
             client_aborted = true;
             return false;
         }
+        note_backend_activity();
         return true;
     };
 
@@ -1620,6 +1628,7 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
                     client_aborted = true;
                     return false;
                 }
+                note_backend_activity();
             }
         }
 
@@ -1629,6 +1638,7 @@ void MlxServer::forward_streaming_request(const std::string& endpoint,
                 client_aborted = true;
                 return false;
             }
+            note_backend_activity();
             return true;
         }
         return true;
