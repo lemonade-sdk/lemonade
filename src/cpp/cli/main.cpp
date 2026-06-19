@@ -174,6 +174,7 @@ struct CliConfig {
     std::string cloud_provider;
     std::string cloud_base_url;
     std::string cloud_api_key;
+    std::string router_id;
 
     // Chat REPL options
     bool chat_cli = false;
@@ -1196,6 +1197,11 @@ int main(int argc, char* argv[]) {
 
     CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
 
+    CLI::App* routers_cmd = app.add_subcommand("routers", "Manage model routers")->group("Server");
+    CLI::App* routers_list_cmd = routers_cmd->add_subcommand("list", "List configured routers")->group("Subcommands");
+    CLI::App* routers_show_cmd = routers_cmd->add_subcommand("show", "Show router details")->group("Subcommands");
+    routers_show_cmd->add_option("router", config.router_id, "Router ID")->required()->type_name("ROUTER");
+
     // Pull options
     pull_cmd->add_option("model", config.model,
         "Registered model name, or Hugging Face checkpoint (owner/repo[:variant])")
@@ -1441,6 +1447,15 @@ int main(int argc, char* argv[]) {
         }
         // No subcommand specified: print help.
         std::cout << cloud_cmd->help() << std::endl;
+        return 0;
+    } else if (routers_cmd->count() > 0) {
+        if (routers_list_cmd->count() > 0 || routers_cmd->get_subcommands().empty()) {
+            return client.list_routers();
+        }
+        if (routers_show_cmd->count() > 0) {
+            return client.show_router(config.router_id);
+        }
+        std::cout << routers_cmd->help() << std::endl;
         return 0;
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);

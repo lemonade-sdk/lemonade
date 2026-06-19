@@ -1134,4 +1134,104 @@ int LemonadeClient::cloud_list() const {
     }
 }
 
+std::vector<RouterInfo> LemonadeClient::get_routers() const {
+    std::vector<RouterInfo> routers;
+    try {
+        std::string response = make_request("/api/v1/routers");
+        auto json_response = json::parse(response);
+        if (!json_response.contains("data") || !json_response["data"].is_array()) {
+            return routers;
+        }
+
+        for (const auto& item : json_response["data"]) {
+            RouterInfo info;
+            info.id = item.value("id", "");
+            info.type = item.value("type", "");
+            info.description = item.value("description", "");
+            info.default_model = item.value("default_model", "");
+            info.router_model = item.value("router_model", "");
+            info.recommended_max_loaded_models = item.value("recommended_max_loaded_models", 1);
+
+            if (item.contains("endpoints") && item["endpoints"].is_array()) {
+                for (const auto& endpoint : item["endpoints"]) {
+                    if (endpoint.is_string()) info.endpoints.push_back(endpoint.get<std::string>());
+                }
+            }
+            if (item.contains("candidates") && item["candidates"].is_array()) {
+                for (const auto& candidate : item["candidates"]) {
+                    if (!candidate.is_object()) continue;
+                    info.candidates.push_back({
+                        candidate.value("model", ""),
+                        candidate.value("description", "")
+                    });
+                }
+            }
+
+            if (!info.id.empty()) {
+                routers.push_back(std::move(info));
+            }
+        }
+    } catch (const HttpError& e) {
+        std::cerr << "Error listing routers: " << extract_server_error_message(e) << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing routers: " << e.what() << std::endl;
+    }
+    return routers;
+}
+
+nlohmann::json LemonadeClient::get_router_info(const std::string& router_id) const {
+    std::string response = make_request("/api/v1/routers/" + router_id);
+    return json::parse(response);
+}
+
+int LemonadeClient::list_routers() const {
+    try {
+        auto routers = get_routers();
+        if (routers.empty()) {
+            std::cout << "No routers configured." << std::endl;
+            return 0;
+        }
+
+        std::sort(routers.begin(), routers.end(),
+                  [](const RouterInfo& a, const RouterInfo& b) { return a.id < b.id; });
+
+        std::cout << std::left << std::setw(44) << "Router ID"
+                  << std::setw(12) << "Type"
+                  << std::setw(28) << "Default Model"
+                  << "Candidates" << std::endl;
+        std::cout << std::string(120, '-') << std::endl;
+
+        for (const auto& router : routers) {
+            std::string candidates;
+            for (size_t i = 0; i < router.candidates.size(); ++i) {
+                if (i > 0) candidates += ", ";
+                candidates += router.candidates[i].first;
+            }
+            std::cout << std::left << std::setw(44) << router.id
+                      << std::setw(12) << router.type
+                      << std::setw(28) << router.default_model
+                      << candidates << std::endl;
+        }
+        std::cout << std::string(120, '-') << std::endl;
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error listing routers: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+int LemonadeClient::show_router(const std::string& router_id) const {
+    try {
+        auto router = get_router_info(router_id);
+        std::cout << router.dump(4) << std::endl;
+        return 0;
+    } catch (const HttpError& e) {
+        std::cerr << "Error fetching router: " << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error fetching router: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
 } // namespace lemonade

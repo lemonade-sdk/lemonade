@@ -6,6 +6,7 @@
 #include <functional>
 #include <cstdint>
 #include <chrono>
+#include <utility>
 #include <nlohmann/json.hpp>
 
 // Forward declaration for httplib
@@ -69,6 +70,17 @@ struct RecipeStatus {
     std::vector<BackendStatus> backends;
 };
 
+struct RouterInfo {
+    std::string id;
+    std::string type;
+    std::string description;
+    std::string default_model;
+    std::string router_model;
+    int recommended_max_loaded_models = 1;
+    std::vector<std::string> endpoints;
+    std::vector<std::pair<std::string, std::string>> candidates;
+};
+
 // Main CLI client class
 class LemonadeClient {
 public:
@@ -107,6 +119,12 @@ public:
     int cloud_auth(const std::string& provider, const std::string& api_key);
     int cloud_auth_clear(const std::string& provider);
     int cloud_list() const;
+
+    // Router commands
+    std::vector<RouterInfo> get_routers() const;
+    nlohmann::json get_router_info(const std::string& router_id) const;
+    int list_routers() const;
+    int show_router(const std::string& router_id) const;
 
     // Cache management
     int cleanup_cache(bool dry_run) const;

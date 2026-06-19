@@ -1,6 +1,6 @@
 # Model Routing
 
-Lemonade can expose model-router aliases as OpenAI-compatible model IDs. A client sends a normal request to a router model, Lemonade chooses a concrete target model, rewrites the request, and then uses the existing local or cloud backend path.
+Lemonade can expose model-router aliases and a `/v1/route` endpoint. A client asks Lemonade for a route decision, receives the selected concrete model plus a rewritten request, and then sends that request to the normal OpenAI-compatible endpoint.
 
 Router aliases are configured in `routers.json` in the Lemonade cache directory, next to `config.json`.
 
@@ -10,35 +10,85 @@ Examples:
 - Standalone `lemond`: `~/.cache/lemonade/routers.json`
 - Explicit cache dir: `<cache_dir>/routers.json`
 
-If `routers.json` changes while `lemond` is running, Lemonade reloads it on the next router lookup or `/models` request.
+If `routers.json` changes while `lemond` is running, Lemonade reloads it on the next router lookup or `/routers` request.
 
-## Router Models
+## Router Discovery
 
-Each router appears in `/v1/models` as a synthetic model:
+Routers are separate from models. List them with `/v1/routers`:
+
+```bash
+curl http://localhost:13305/v1/routers
+```
+
+Each router entry looks like:
 
 ```json
 {
   "id": "router.example.heuristic-qwen35-fireworks",
-  "object": "model",
-  "owned_by": "lemonade",
-  "recipe": "router",
-  "downloaded": true,
-  "labels": ["router", "heuristic"]
+  "type": "heuristic",
+  "default_model": "Qwen3.5-35B-A3B-GGUF",
+  "recommended_max_loaded_models": 1,
+  "candidates": [
+    {"model": "Qwen3.5-35B-A3B-GGUF"},
+    {"model": "fireworks.kimi-k2p6"}
+  ]
 }
 ```
 
-Use the router ID anywhere you would normally use a model name:
+Use that router ID with `/v1/route`:
 
 ```bash
-curl -X POST http://localhost:13305/v1/chat/completions \
+curl -X POST http://localhost:13305/v1/route \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "router.example.heuristic-qwen35-fireworks",
-    "messages": [{"role": "user", "content": "Debug this CMake error"}]
+    "router": "router.example.heuristic-qwen35-fireworks",
+    "endpoint": "chat.completions",
+    "request": {
+      "messages": [{"role": "user", "content": "Debug this CMake error"}]
+    }
   }'
 ```
 
-Lemonade adds route metadata headers to routed responses:
+You can also put the router ID in the path:
+
+```bash
+curl -X POST http://localhost:13305/v1/route/router.example.heuristic-qwen35-fireworks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "endpoint": "chat.completions",
+    "request": {
+      "messages": [{"role": "user", "content": "Debug this CMake error"}]
+    }
+  }'
+```
+
+`/v1/route` returns a decision and a rewritten request:
+
+```json
+{
+  "object": "route.decision",
+  "endpoint": "chat.completions",
+  "router": "router.example.heuristic-qwen35-fireworks",
+  "selected_model": "fireworks.kimi-k2p6",
+  "request": {
+    "model": "fireworks.kimi-k2p6",
+    "messages": [{"role": "user", "content": "Debug this CMake error"}]
+  },
+  "decision": {
+    "routed": true,
+    "fallback": false,
+    "router": "router.example.heuristic-qwen35-fireworks",
+    "type": "heuristic",
+    "selected_model": "fireworks.kimi-k2p6",
+    "rule": "coding",
+    "reason": "matched heuristic rule: coding"
+  }
+}
+```
+
+Then send the returned `request` object to the endpoint named by `endpoint`, for example `/v1/chat/completions`.
+
+When a routed request is executed through Lemonade compatibility paths, Lemonade also adds route metadata headers:
 
 | Header | Meaning |
 |---|---|
@@ -52,40 +102,6 @@ Lemonade also records routed traffic in its serving telemetry:
 
 - `GET /v1/stats` includes a nested `routing` object with totals and breakdowns.
 - `GET /metrics` exports Prometheus counters with the `lemonade_router_` prefix.
-
-## Dry Run
-
-Use `/v1/router/evaluate` to test a routing decision without loading the selected target model:
-
-```bash
-curl -X POST http://localhost:13305/v1/router/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "router": "router.example.heuristic-qwen35-fireworks",
-    "endpoint": "chat.completions",
-    "request": {
-      "messages": [{"role": "user", "content": "Debug this Python stack trace"}]
-    }
-  }'
-```
-
-Example response:
-
-```json
-{
-  "object": "router.evaluation",
-  "resolved_model": "fireworks.kimi-k2p6",
-  "decision": {
-    "routed": true,
-    "router": "router.example.heuristic-qwen35-fireworks",
-    "type": "heuristic",
-    "original_model": "router.example.heuristic-qwen35-fireworks",
-    "selected_model": "fireworks.kimi-k2p6",
-    "rule": "coding",
-    "reason": "matched heuristic rule: coding"
-  }
-}
-```
 
 ## Heuristic Router
 
@@ -214,4 +230,4 @@ Example router configs live in:
 - `examples/routing/heuristic-qwen35-router.json`
 - `examples/routing/agentic-qwen35-router.json`
 
-Copy one to your cache directory as `routers.json`, then call `/v1/models` or `lemonade list` to see the router alias.
+Copy one to your cache directory as `routers.json`, then call `/v1/routers` or `lemonade routers list` to see the router alias.

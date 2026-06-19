@@ -89,6 +89,8 @@ private:
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
+    void handle_routers(const httplib::Request& req, httplib::Response& res);
+    void handle_router_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
@@ -101,7 +103,8 @@ private:
     void handle_slots_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_tokenize(const httplib::Request& req, httplib::Response& res);
     void handle_responses(const httplib::Request& req, httplib::Response& res);
-    void handle_router_evaluate(const httplib::Request& req, httplib::Response& res);
+    void handle_route(const httplib::Request& req, httplib::Response& res);
+    void handle_route_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_pull(const httplib::Request& req, httplib::Response& res);
     void handle_pull_variants(const httplib::Request& req, httplib::Response& res);
     void handle_load(const httplib::Request& req, httplib::Response& res);
@@ -215,6 +218,9 @@ private:
     // to the selected target model or throws on routing failure.
     std::optional<RoutingDecision> resolve_routed_model(const std::string& endpoint,
                                                         nlohmann::json& request_json);
+    nlohmann::json evaluate_route_request(const nlohmann::json& body,
+                                          const std::string& router_id,
+                                          bool record_decision);
     RoutingDecision resolve_agentic_route(const RoutingPolicy& policy,
                                           const std::string& endpoint,
                                           const nlohmann::json& request_json);

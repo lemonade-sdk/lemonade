@@ -206,29 +206,37 @@ class RouterEndpointTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         return json.loads(body)["data"]
 
-    def _router_by_id(self, router_id):
-        for model in self._models():
-            if model["id"] == router_id:
-                return model
-        self.fail(f"Router alias missing from /models: {router_id}")
-
-    def test_001_router_alias_appears_in_models(self):
-        model = self._router_by_id(HEURISTIC_ROUTER)
-        self.assertEqual(model["recipe"], "router")
-        self.assertEqual(model["router"]["type"], "heuristic")
-        self.assertEqual(model["router"]["recommended_max_loaded_models"], 1)
-        self.assertEqual(model["router"]["default_model"], LOCAL_MODEL)
-
-    def test_002_router_model_by_id(self):
-        status, _headers, body = _http_get(f"{self.base_url}/models/{HEURISTIC_ROUTER}")
+    def _routers(self):
+        status, _headers, body = _http_get(f"{self.base_url}/routers")
         self.assertEqual(status, 200, body)
-        model = json.loads(body)
-        self.assertEqual(model["id"], HEURISTIC_ROUTER)
-        self.assertEqual(model["recipe"], "router")
+        return json.loads(body)["data"]
 
-    def test_003_heuristic_evaluate_routes_by_rule_and_default(self):
+    def _router_by_id(self, router_id):
+        for router in self._routers():
+            if router["id"] == router_id:
+                return router
+        self.fail(f"Router missing from /routers: {router_id}")
+
+    def test_001_routers_list_excludes_models(self):
+        router = self._router_by_id(HEURISTIC_ROUTER)
+        self.assertEqual(router["type"], "heuristic")
+        self.assertEqual(router["recommended_max_loaded_models"], 1)
+        self.assertEqual(router["default_model"], LOCAL_MODEL)
+
+        model_ids = [model["id"] for model in self._models()]
+        self.assertNotIn(HEURISTIC_ROUTER, model_ids)
+        self.assertNotIn(AGENTIC_ROUTER, model_ids)
+
+    def test_002_router_by_id(self):
+        status, _headers, body = _http_get(f"{self.base_url}/routers/{HEURISTIC_ROUTER}")
+        self.assertEqual(status, 200, body)
+        router = json.loads(body)
+        self.assertEqual(router["id"], HEURISTIC_ROUTER)
+        self.assertEqual(router["type"], "heuristic")
+
+    def test_003_route_endpoint_routes_by_rule_and_default(self):
         status, _headers, body = _http_post_json(
-            f"{self.base_url}/router/evaluate",
+            f"{self.base_url}/route",
             {
                 "router": HEURISTIC_ROUTER,
                 "endpoint": "chat.completions",
@@ -241,13 +249,14 @@ class RouterEndpointTests(unittest.TestCase):
         )
         self.assertEqual(status, 200, body)
         coding = json.loads(body)
+        self.assertEqual(coding["object"], "route.decision")
         self.assertEqual(coding["decision"]["selected_model"], REMOTE_MODEL)
         self.assertEqual(coding["decision"]["rule"], "coding")
+        self.assertEqual(coding["request"]["model"], REMOTE_MODEL)
 
         status, _headers, body = _http_post_json(
-            f"{self.base_url}/router/evaluate",
+            f"{self.base_url}/route/{HEURISTIC_ROUTER}",
             {
-                "router": HEURISTIC_ROUTER,
                 "endpoint": "chat.completions",
                 "request": {"messages": [{"role": "user", "content": "Say hello."}]},
             },
@@ -256,10 +265,11 @@ class RouterEndpointTests(unittest.TestCase):
         simple = json.loads(body)
         self.assertEqual(simple["decision"]["selected_model"], LOCAL_MODEL)
         self.assertEqual(simple["decision"]["reason"], "default_model")
+        self.assertEqual(simple["request"]["model"], LOCAL_MODEL)
 
     def test_004_concrete_model_is_not_a_router(self):
         status, _headers, body = _http_post_json(
-            f"{self.base_url}/router/evaluate",
+            f"{self.base_url}/route",
             {
                 "endpoint": "chat.completions",
                 "request": {
@@ -269,7 +279,7 @@ class RouterEndpointTests(unittest.TestCase):
             },
         )
         self.assertEqual(status, 400, body)
-        self.assertEqual(json.loads(body)["error"]["code"], "not_a_router")
+        self.assertEqual(json.loads(body)["error"]["code"], "routing_error")
 
     def test_005_invalid_config_does_not_crash_server(self):
         self.write_routers({"version": 1, "routers": [{"id": "bad", "type": "unknown"}]})
@@ -279,26 +289,32 @@ class RouterEndpointTests(unittest.TestCase):
         self.assertNotIn("bad", ids)
 
         self.write_routers(_heuristic_config())
-        self.assertEqual(self._router_by_id(HEURISTIC_ROUTER)["recipe"], "router")
+        self.assertEqual(self._router_by_id(HEURISTIC_ROUTER)["type"], "heuristic")
 
     def test_006_agentic_router_metadata(self):
         self.write_routers(_agentic_config())
-        model = self._router_by_id(AGENTIC_ROUTER)
-        self.assertEqual(model["router"]["type"], "agentic")
-        self.assertEqual(model["router"]["router_model"], LOCAL_MODEL)
-        self.assertEqual(model["router"]["recommended_max_loaded_models"], 1)
-        self.assertEqual(model["router"]["default_model"], LOCAL_MODEL)
+        router = self._router_by_id(AGENTIC_ROUTER)
+        self.assertEqual(router["type"], "agentic")
+        self.assertEqual(router["router_model"], LOCAL_MODEL)
+        self.assertEqual(router["recommended_max_loaded_models"], 1)
+        self.assertEqual(router["default_model"], LOCAL_MODEL)
 
     def test_007_routing_stats_and_metrics_exist(self):
         status, _headers, body = _http_get(f"{self.base_url}/stats")
         self.assertEqual(status, 200, body)
         stats = json.loads(body)
         self.assertIn("routing", stats)
-        self.assertEqual(stats["routing"]["decisions_total"], 0)
+        self.assertEqual(stats["routing"]["decisions_total"], 2)
         self.assertEqual(stats["routing"]["fallbacks_total"], 0)
         self.assertIn("by_router", stats["routing"])
         self.assertIn("by_selected_model", stats["routing"])
         self.assertIn("by_rule", stats["routing"])
+        self.assertTrue(
+            any(item["selected_model"] == REMOTE_MODEL for item in stats["routing"]["by_selected_model"])
+        )
+        self.assertTrue(
+            any(item["selected_model"] == LOCAL_MODEL for item in stats["routing"]["by_selected_model"])
+        )
 
         status, _headers, body = _http_get(f"http://127.0.0.1:{self.port}/metrics")
         self.assertEqual(status, 200, body)

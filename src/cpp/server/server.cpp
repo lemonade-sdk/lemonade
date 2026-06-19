@@ -488,14 +488,47 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_by_id(req, res);
     });
 
+    // Routers endpoints
+    register_get("routers", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_routers(req, res);
+    });
+    web_server.Get(R"(/api/v0/routers/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_router_by_id(req, res);
+    });
+    web_server.Get(R"(/api/v1/routers/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_router_by_id(req, res);
+    });
+    web_server.Get(R"(/v0/routers/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_router_by_id(req, res);
+    });
+    web_server.Get(R"(/v1/routers/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_router_by_id(req, res);
+    });
+
     // Chat completions (OpenAI compatible)
     register_post("chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
         handle_chat_completions(req, res);
     });
 
-    // Model router dry-run/evaluation endpoint
-    register_post("router/evaluate", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_router_evaluate(req, res);
+    // Model route decision endpoint. Applications call this first, then send
+    // the returned request to chat/completions, completions, or responses.
+    register_post("route", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_route(req, res);
+    });
+    register_post("route/", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_route(req, res);
+    });
+    web_server.Post(R"(/api/v0/route/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_route_by_id(req, res);
+    });
+    web_server.Post(R"(/api/v1/route/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_route_by_id(req, res);
+    });
+    web_server.Post(R"(/v0/route/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_route_by_id(req, res);
+    });
+    web_server.Post(R"(/v1/route/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_route_by_id(req, res);
     });
 
     // Completions
@@ -1756,6 +1789,48 @@ void Server::apply_route_headers(const std::optional<RoutingDecision>& decision,
     }
 }
 
+json Server::evaluate_route_request(const nlohmann::json& body,
+                                    const std::string& router_id,
+                                    bool record_decision) {
+    std::string endpoint = body.value("endpoint", "chat.completions");
+
+    json request_json;
+    if (body.contains("request") && body["request"].is_object()) {
+        request_json = body["request"];
+    } else {
+        request_json = body;
+        request_json.erase("router");
+        request_json.erase("endpoint");
+    }
+
+    if (!router_id.empty()) {
+        request_json["model"] = router_id;
+    } else if (body.contains("router") && body["router"].is_string()) {
+        request_json["model"] = body["router"].get<std::string>();
+    }
+
+    normalize_client_model_name(request_json);
+
+    auto decision = resolve_routed_model(endpoint, request_json);
+    if (!decision) {
+        throw std::runtime_error("Request model is not a configured router alias");
+    }
+
+    if (record_decision) {
+        router_->record_routing_decision(*decision);
+    }
+
+    return {
+        {"object", "route.decision"},
+        {"endpoint", endpoint},
+        {"router", decision->router_id},
+        {"selected_model", decision->selected_model},
+        {"resolved_model", request_json.value("model", "")},
+        {"decision", decision->to_json()},
+        {"request", request_json}
+    };
+}
+
 void Server::ensure_collection_loaded(const ModelInfo& info) {
     LOG(INFO, "Server") << "Loading collection components for: " << info.model_name << std::endl;
     for (const auto& component : info.components) {
@@ -1855,12 +1930,6 @@ void Server::handle_models(const httplib::Request& req, httplib::Response& res) 
         response["data"].push_back(model_info_to_json(model_id, model_info));
     }
 
-    // Model router aliases are synthetic models. Surface them in both OpenAI
-    // mode and show_all mode so clients can select a router like any model.
-    for (const auto& policy : routing_policy_engine_->routers()) {
-        response["data"].push_back(policy.to_model_json());
-    }
-
     res.set_content(response.dump(), "application/json");
 }
 
@@ -1933,9 +2002,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& res) {
     std::string model_id = req.matches[1];
 
-    if (auto policy = routing_policy_engine_->get_router(model_id)) {
-        res.set_content(policy->to_model_json().dump(), "application/json");
-    } else if (model_manager_->model_exists(model_id)) {
+    if (model_manager_->model_exists(model_id)) {
         auto info = model_manager_->get_model_info(model_id);
         // Emit the wire-format id (bare for the precedence-winner, canonical-prefixed
         // for shadowed sources), regardless of which form the client requested.
@@ -1949,45 +2016,64 @@ void Server::handle_model_by_id(const httplib::Request& req, httplib::Response& 
     }
 }
 
-void Server::handle_router_evaluate(const httplib::Request& req, httplib::Response& res) {
+void Server::handle_routers(const httplib::Request& req, httplib::Response& res) {
+    if (req.method == "HEAD") {
+        res.status = 200;
+        return;
+    }
+
+    json response;
+    response["object"] = "list";
+    response["data"] = json::array();
+    for (const auto& policy : routing_policy_engine_->routers()) {
+        response["data"].push_back(policy.to_json());
+    }
+    res.set_content(response.dump(), "application/json");
+}
+
+void Server::handle_router_by_id(const httplib::Request& req, httplib::Response& res) {
+    std::string router_id = req.matches[1];
+    if (auto policy = routing_policy_engine_->get_router(router_id)) {
+        res.set_content(policy->to_json().dump(), "application/json");
+        return;
+    }
+
+    res.status = 404;
+    json error = {{"error", {
+        {"message", "Router not found: " + router_id},
+        {"type", "router_not_found"},
+        {"param", "router"},
+        {"code", "router_not_found"},
+        {"requested_router", router_id}
+    }}};
+    res.set_content(error.dump(), "application/json");
+}
+
+void Server::handle_route(const httplib::Request& req, httplib::Response& res) {
     try {
         json body = json::parse(req.body.empty() ? "{}" : req.body);
-        std::string endpoint = body.value("endpoint", "chat.completions");
-
-        json request_json;
-        if (body.contains("request") && body["request"].is_object()) {
-            request_json = body["request"];
-        } else {
-            request_json = body;
-        }
-
-        if (body.contains("router") && body["router"].is_string()) {
-            request_json["model"] = body["router"].get<std::string>();
-        }
-
-        normalize_client_model_name(request_json);
-
-        auto decision = resolve_routed_model(endpoint, request_json);
-        if (!decision) {
-            res.status = 400;
-            json error = {{"error", {
-                {"message", "Request model is not a configured router alias"},
-                {"type", "invalid_request_error"},
-                {"param", "model"},
-                {"code", "not_a_router"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        json response = {
-            {"object", "router.evaluation"},
-            {"decision", decision->to_json()},
-            {"resolved_model", request_json.value("model", "")}
-        };
+        json response = evaluate_route_request(body, "", /*record_decision=*/true);
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
-        LOG(ERROR, "Routing") << "Router evaluation failed: " << e.what() << std::endl;
+        LOG(ERROR, "Routing") << "Route failed: " << e.what() << std::endl;
+        res.status = 400;
+        json error = {{"error", {
+            {"message", e.what()},
+            {"type", "routing_error"},
+            {"code", "routing_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_route_by_id(const httplib::Request& req, httplib::Response& res) {
+    try {
+        json body = json::parse(req.body.empty() ? "{}" : req.body);
+        std::string router_id = req.matches[1];
+        json response = evaluate_route_request(body, router_id, /*record_decision=*/true);
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Routing") << "Route by id failed: " << e.what() << std::endl;
         res.status = 400;
         json error = {{"error", {
             {"message", e.what()},

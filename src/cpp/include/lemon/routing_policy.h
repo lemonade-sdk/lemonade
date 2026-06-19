@@ -48,7 +48,6 @@ struct RoutingPolicy {
 
     bool supports_endpoint(const std::string& endpoint) const;
     bool has_candidate(const std::string& model) const;
-    json to_model_json() const;
     json to_json() const;
 };
 

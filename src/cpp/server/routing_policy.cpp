@@ -216,25 +216,6 @@ bool RoutingPolicy::has_candidate(const std::string& model) const {
                        });
 }
 
-json RoutingPolicy::to_model_json() const {
-    json labels = json::array({"router", type});
-    return {
-        {"id", id},
-        {"object", "model"},
-        {"created", 1234567890},
-        {"owned_by", "lemonade"},
-        {"checkpoint", ""},
-        {"checkpoints", json::object()},
-        {"recipe", "router"},
-        {"downloaded", true},
-        {"suggested", false},
-        {"labels", labels},
-        {"components", json::array()},
-        {"recipe_options", json::object()},
-        {"router", to_json()}
-    };
-}
-
 json RoutingPolicy::to_json() const {
     json candidate_json = json::array();
     for (const auto& candidate : candidates) {
