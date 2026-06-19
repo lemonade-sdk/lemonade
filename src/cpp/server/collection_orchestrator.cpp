@@ -396,16 +396,31 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
             std::find(cm_labels.begin(), cm_labels.end(), "vision") != cm_labels.end();
     }
 
+    // App-provided tools are owned by the caller. GUI3 sends its own
+    // generate_image/text_to_speech/etc. tools so it can execute them client-side
+    // and render the resulting artifacts in the UI. If a caller-provided tool has
+    // the same name as a server-side omni tool, skip the internal tool with that
+    // name and pass the app tool through instead.
+    std::set<std::string> app_tool_names;
+    if (request.contains("tools") && request["tools"].is_array()) {
+        for (const auto& app_tool : request["tools"]) {
+            const std::string name = app_tool.value("function", json::object()).value("name", "");
+            if (!name.empty()) app_tool_names.insert(name);
+        }
+    }
+
     const json& defs = tool_definitions();
     std::string tool_list;
     // Per-tool prompt guidance, collected only for the tools actually included
     // so the prompt never references a tool the planner doesn't have (e.g.
-    // analyze_image / transcribe_audio, which are not server-side tools).
+    // analyze_image / transcribe_audio, which are not server-side tools), or a
+    // tool the client owns for GUI3 artifact rendering.
     std::string tool_guidance;
     if (defs.contains("tools") && defs["tools"].is_array()) {
         for (const auto& def : defs["tools"]) {
             const std::string name = def.value("function", json::object()).value("name", "");
             if (!supported_omni_tools().count(name)) continue;  // v1 scope
+            if (app_tool_names.count(name)) continue;  // caller-owned tool wins
 
             std::string match_model;
             if (def.contains("requires_labels") && def["requires_labels"].is_array()) {
@@ -450,11 +465,10 @@ CollectionOrchestrator::ToolSet CollectionOrchestrator::build_tools(const ModelI
         result.system_prompt = replace_all(prompt, "{tool_guidance}", tool_guidance);
     }
 
-    // Merge app-provided tools (omni tools win on name collision).
+    // Merge app-provided tools after the internal set. Any name collision was
+    // already removed above, so app tools are always passed back to the caller.
     if (request.contains("tools") && request["tools"].is_array()) {
         for (const auto& app_tool : request["tools"]) {
-            const std::string name = app_tool.value("function", json::object()).value("name", "");
-            if (!name.empty() && result.tool_models.count(name)) continue;
             result.tools.push_back(app_tool);
         }
     }
